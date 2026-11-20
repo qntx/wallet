@@ -107,9 +107,9 @@ const TX_STATES: ReadonlySet<string> = new Set([
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
 
 /**
- * States whose signed bytes may be on the network without a block answer: tracked until they
- * end. An included (`tx.block` set) row that is not final yet joins them — at the slower
- * finality interval — and a `final` one is never polled again.
+ * States whose signed bytes may be on the network without a block answer: tracked until they end.
+ * An included (`tx.block` set) row that is not final yet joins them — at the slower finality
+ * interval — and a `final` one is never polled again.
  */
 const LIVE_STATES: ReadonlySet<TxState> = new Set(["signed", "submitted", "pending"]);
 
@@ -698,13 +698,21 @@ export class TransactionController extends Controller<TransactionControllerState
       (row !== undefined && awaitingFinality(row) ? FINALITY_POLL_FACTOR : 1);
     this.timers.set(
       id,
-      repeat(this.options.setTimer, pollMs, async () => this.pollOnce(id), (error) => {
-        this.options.logger.warn("tx status poll failed", error);
-      }),
+      repeat(
+        this.options.setTimer,
+        pollMs,
+        async () => this.pollOnce(id),
+        (error) => {
+          this.options.logger.warn("tx status poll failed", error);
+        },
+      ),
     );
   }
 
-  /** Re-arms a transaction's loop — at the finality interval once included, back to `pollMs` after a reorg. */
+  /**
+   * Re-arms a transaction's loop — at the finality interval once included, back to `pollMs` after a
+   * reorg.
+   */
   private retrack(id: string, hash: string): void {
     this.untrack(id);
     this.track(id, hash);
@@ -716,10 +724,10 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /**
-   * One status poll. `included` keeps a non-final row tracked at the finality interval;
-   * `reorged` clears the block and returns the row to the pool as `submitted`; `ended` stops
-   * the loop. An answer describes the snapshot the poll started from — a concurrent transition
-   * (a sibling marking this replaced, a reload) means the row moved on and the next poll decides.
+   * One status poll. `included` keeps a non-final row tracked at the finality interval; `reorged`
+   * clears the block and returns the row to the pool as `submitted`; `ended` stops the loop. An
+   * answer describes the snapshot the poll started from — a concurrent transition (a sibling
+   * marking this replaced, a reload) means the row moved on and the next poll decides.
    */
   private async pollOnce(id: string): Promise<void> {
     const tx = this.getState().txs[id];

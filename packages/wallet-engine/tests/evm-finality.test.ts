@@ -1,9 +1,9 @@
 /**
  * Inclusion is not finality. An EVM transaction keeps the receipt's block while the network can
  * still unwind it — polled at the finality interval — drops back to `submitted` when the block
- * leaves the chain (its persisted raw rebroadcast, its nonce re-held), and only stops being
- * polled once the block reaches the endpoint's `finalized` tag. A replaced sibling revives the
- * same way. Polls run on `manualTimers`.
+ * leaves the chain (its persisted raw rebroadcast, its nonce re-held), and only stops being polled
+ * once the block reaches the endpoint's `finalized` tag. A replaced sibling revives the same way.
+ * Polls run on `manualTimers`.
  */
 import { keccak256 } from "viem";
 import type { Hex } from "viem";
@@ -17,7 +17,13 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
-import { fakeSignedEvm, idleNetworkDeps, replaceVia, send, simulateV1Result } from "./send-helpers.ts";
+import {
+  fakeSignedEvm,
+  idleNetworkDeps,
+  replaceVia,
+  send,
+  simulateV1Result,
+} from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 import type { ManualTimers } from "./support/timers.ts";
 
@@ -82,7 +88,7 @@ const world = () => {
     finalized: 0,
     /** When set, the `finalized` tag read fails like an endpoint that dropped it. */
     finalizedFail: false,
-    /** eth_getTransactionCount at `latest` / `pending`. */
+    /** Eth_getTransactionCount at `latest` / `pending`. */
     latest: 0,
     pending: 0,
     sent: [] as string[],
@@ -205,8 +211,7 @@ const world = () => {
     return { ctl, timers };
   };
 
-  const receiptReads = (): number =>
-    calls.filter((c) => c === "eth_getTransactionReceipt").length;
+  const receiptReads = (): number => calls.filter((c) => c === "eth_getTransactionReceipt").length;
 
   const persistedTx = async (id: string): Promise<Record<string, unknown> | undefined> => {
     const raw = await createMemoryEngineStore(backing).collection("transactions").get(id);
@@ -591,9 +596,7 @@ describe("evm inclusion, finality and reorgs", () => {
       .collection("transactions")
       .put(
         "bad",
-        new TextEncoder().encode(
-          JSON.stringify({ ...saved, id: "bad", block: { height: "10" } }),
-        ),
+        new TextEncoder().encode(JSON.stringify({ ...saved, id: "bad", block: { height: "10" } })),
       );
     const third = await w.boot();
     const { bad } = third.ctl.getState().txs;

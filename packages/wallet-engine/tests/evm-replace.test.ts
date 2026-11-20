@@ -77,7 +77,11 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
           ["0x1", "0x2", "0x3"],
         ],
       },
-      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` },
+      eth_getTransactionReceipt: {
+        status: "0x1",
+        blockNumber: "0x1",
+        blockHash: `0x${"11".repeat(32)}`,
+      },
       eth_getBlockByNumber: { number: "0x2" },
       ...overrides,
     };

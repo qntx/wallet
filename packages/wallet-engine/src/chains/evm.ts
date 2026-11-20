@@ -144,8 +144,7 @@ export const checkedHex = (v: string): `0x${string}` => {
   return v;
 };
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 const checkedBlockHash = (v: unknown): string => {
   if (typeof v !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(v)) {
@@ -493,9 +492,9 @@ export class EvmChainAdapter {
   }
 
   /**
-   * `eth_getTransactionReceipt` → `null` reads as no receipt (`undefined`); a malformed
-   * `blockHash` (0x + 64 hex) or `blockNumber` throws — the poll fails and is retried rather
-   * than trusting a half-answer.
+   * `eth_getTransactionReceipt` → `null` reads as no receipt (`undefined`); a malformed `blockHash`
+   * (0x + 64 hex) or `blockNumber` throws — the poll fails and is retried rather than trusting a
+   * half-answer.
    */
   async receipt(
     client: PublicClient,

@@ -1,7 +1,7 @@
 /**
  * Inclusion is not finality. A Solana transaction keeps the slot its status entry named while the
- * cluster can still unwind it — polled at the finality interval — drops back to `submitted` when
- * a bank at or past that slot no longer has the entry (its persisted wire rebroadcast), and only
+ * cluster can still unwind it — polled at the finality interval — drops back to `submitted` when a
+ * bank at or past that slot no longer has the entry (its persisted wire rebroadcast), and only
  * stops being polled at `finalized` commitment. Polls run on `manualTimers`.
  */
 import { base58, base64 } from "@scure/base";

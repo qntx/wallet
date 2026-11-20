@@ -1,14 +1,13 @@
 /**
- * Inclusion is not finality. A Bitcoin transaction keeps its block while the chain can still
- * unwind it — polled at the finality interval — drops back to `submitted` when the block at that
- * height no longer carries its hash (its persisted bytes rebroadcast, its inputs locked again so
- * automatic selection never double-spends them), and only stops being polled once six blocks sit
- * on top of it. A replaced sibling revives the same way. Polls run on `manualTimers`.
+ * Inclusion is not finality. A Bitcoin transaction keeps its block while the chain can still unwind
+ * it — polled at the finality interval — drops back to `submitted` when the block at that height no
+ * longer carries its hash (its persisted bytes rebroadcast, its inputs locked again so automatic
+ * selection never double-spends them), and only stops being polled once six blocks sit on top of
+ * it. A replaced sibling revives the same way. Polls run on `manualTimers`.
  */
 import { describe, expect, it } from "vite-plus/test";
 
 import { EsploraError } from "../src/chains/bitcoin.ts";
-
 import {
   flush,
   hashOf,
@@ -292,10 +291,7 @@ describe("bitcoin inclusion, finality and reorgs", () => {
     const booted = await w.boot();
 
     const txA = await w.send(booted, 49_400n, "req-a");
-    const repB = await booted.ctl.prepareReplacement(
-      { method: "speed-up", txId: txA.id },
-      "req-b",
-    );
+    const repB = await booted.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b");
     const txB = await repB.submit(VERIFY, () => undefined);
     expect(txB.replaces).toBe(txA.id);
 

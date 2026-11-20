@@ -5,10 +5,10 @@
  * consumed nonce stays spent even when an endpoint's pending count lags behind. A replacement
  * shares its nonce with the original it may displace (`shared`); a self-sponsored EIP-7702
  * transaction also holds its authorization's nonce. `consumed` records the nonces of in-block
- * transactions per id rather than one floor so a reorg can un-consume exactly its own: with A@5
- * and C@6 both consumed and only A's reorg seen, the floor stays 7 (C still counts) until C
- * reopens too. All state is in memory: a route is dropped at lock and `resume` re-anchors every
- * tracked transaction at unlock.
+ * transactions per id rather than one floor so a reorg can un-consume exactly its own: with A@5 and
+ * C@6 both consumed and only A's reorg seen, the floor stays 7 (C still counts) until C reopens
+ * too. All state is in memory: a route is dropped at lock and `resume` re-anchors every tracked
+ * transaction at unlock.
  */
 
 type Account = {
@@ -39,7 +39,10 @@ export class EvmNonces {
     const key = `${network}:${from.toLowerCase()}`;
     const account =
       this.accounts.get(key) ??
-      ({ consumed: new Map<string, ReadonlyArray<number>>(), holds: new Map<number, Set<string>>() } satisfies Account);
+      ({
+        consumed: new Map<string, ReadonlyArray<number>>(),
+        holds: new Map<number, Set<string>>(),
+      } satisfies Account);
     this.accounts.set(key, account);
     return account;
   }
@@ -113,8 +116,8 @@ export class EvmNonces {
   }
 
   /**
-   * A reorg returned `id` to the pool: its consumed record is lifted and its nonces are held
-   * again — recorded without the floor/holder checks, a chain fact that must never throw.
+   * A reorg returned `id` to the pool: its consumed record is lifted and its nonces are held again
+   * — recorded without the floor/holder checks, a chain fact that must never throw.
    */
   reopen(id: string, network: string, from: string, nonces: ReadonlyArray<number>): void {
     const account = this.account(network, from);

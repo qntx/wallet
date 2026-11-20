@@ -46,9 +46,9 @@ export type TxBlock = {
 };
 
 /**
- * What one status poll established; a poll returning `undefined` changes nothing. `included` is
- * a transaction in a block — kept tracked until `final`; `reorged` is its block leaving the
- * chain; `ended` is a terminal answer the tracker stops on.
+ * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
+ * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
+ * `ended` is a terminal answer the tracker stops on.
  */
 export type TxPoll =
   | {
@@ -102,8 +102,8 @@ export type TrackedTransaction = {
   readonly intent: DisplayIntent | undefined;
   readonly nonce: number;
   /**
-   * The block a `confirmed` or on-chain `failed` transaction is in; cleared when a reorg returns
-   * it to `submitted`.
+   * The block a `confirmed` or on-chain `failed` transaction is in; cleared when a reorg returns it
+   * to `submitted`.
    */
   readonly block?: TxBlock | undefined;
   /**

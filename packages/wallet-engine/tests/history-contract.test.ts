@@ -77,16 +77,16 @@ describe("historyResponse", () => {
 
   it("caps items and transfers per item", () => {
     const many = Array.from({ length: HISTORY_ITEMS_MAX + 1 }, () => item);
-    expect(
-      historyResponse.safeParse({ items: many, cursor: null, truncated: true }).success,
-    ).toBe(false);
+    expect(historyResponse.safeParse({ items: many, cursor: null, truncated: true }).success).toBe(
+      false,
+    );
     const fat = {
       ...item,
       transfers: Array.from({ length: HISTORY_TRANSFERS_MAX + 1 }, () => transfer),
     };
-    expect(
-      historyResponse.safeParse({ items: [fat], cursor: null, truncated: true }).success,
-    ).toBe(false);
+    expect(historyResponse.safeParse({ items: [fat], cursor: null, truncated: true }).success).toBe(
+      false,
+    );
     const empty = { ...item, transfers: [] };
     expect(
       historyResponse.safeParse({ items: [empty], cursor: null, truncated: false }).success,

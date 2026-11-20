@@ -377,13 +377,16 @@ const tipHeight = async (es: Esplora): Promise<number> => {
   return tip;
 };
 
-/** Confirmed at `height` is final once the tip leaves {@link BITCOIN_FINAL_CONFIRMATIONS} blocks on top of it. */
+/**
+ * Confirmed at `height` is final once the tip leaves {@link BITCOIN_FINAL_CONFIRMATIONS} blocks on
+ * top of it.
+ */
 const tipFinal = async (es: Esplora, height: number): Promise<boolean> =>
   (await tipHeight(es)) - height + 1 >= BITCOIN_FINAL_CONFIRMATIONS;
 
 /**
- * The finality recheck for a transaction already in `tx.block`: a status still carrying a
- * block compares against the persisted one; a status without it (unconfirmed or 404) asks
+ * The finality recheck for a transaction already in `tx.block`: a status still carrying a block
+ * compares against the persisted one; a status without it (unconfirmed or 404) asks
  * `/block-height/:height` whether that height still holds our hash — a different answer is the
  * reorg, while an equal hash or a height past the endpoint's tip (non-transient error) proves
  * nothing. Transient errors propagate and the poll is retried.
@@ -450,10 +453,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
 
   /**
    * Esplora `/tx/:txid/status` → `included` on a confirmed status (final once six blocks sit on
-   * top), or `undefined` to keep polling. While the endpoint does not know the transaction (and
-   * no live replacement explains why) its persisted bytes are rebroadcast with backoff; once
-   * neither endpoint has known it for {@link UNKNOWN_DROP_MS} it ends `dropped`. A confirmed
-   * transaction whose block left the chain answers `reorged`.
+   * top), or `undefined` to keep polling. While the endpoint does not know the transaction (and no
+   * live replacement explains why) its persisted bytes are rebroadcast with backoff; once neither
+   * endpoint has known it for {@link UNKNOWN_DROP_MS} it ends `dropped`. A confirmed transaction
+   * whose block left the chain answers `reorged`.
    */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
     if (tx.hash === undefined) {
@@ -1355,8 +1358,8 @@ export type BitcoinRoute = {
    */
   readonly reopen: (tx: TrackedTransaction) => void;
   /**
-   * A transaction that settled frees the outputs it locked; a confirmed one's inputs are spent
-   * and leave the lock table.
+   * A transaction that settled frees the outputs it locked; a confirmed one's inputs are spent and
+   * leave the lock table.
    */
   readonly settle: (id: string, state: TxState) => void;
   readonly prepareReplace: (

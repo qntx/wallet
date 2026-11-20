@@ -206,8 +206,8 @@ export type EvmRoute = {
    */
   readonly resume: (tx: TrackedTransaction) => void;
   /**
-   * A reorg returned the transaction to the pool: its consumed nonces are held again so a new
-   * send can never take them while it retries. No-op without a build record.
+   * A reorg returned the transaction to the pool: its consumed nonces are held again so a new send
+   * can never take them while it retries. No-op without a build record.
    */
   readonly reopen: (tx: TrackedTransaction) => void;
   /**
@@ -1898,8 +1898,8 @@ export const createEvmRoute = (): EvmRoute => {
   };
 
   /**
-   * A receipt settles inclusion; `final` compares its block against the endpoint's `finalized`
-   * tag — a failing tag read answers `final: false` and is rechecked at the next poll.
+   * A receipt settles inclusion; `final` compares its block against the endpoint's `finalized` tag
+   * — a failing tag read answers `final: false` and is rechecked at the next poll.
    */
   const included = async (
     client: ReturnType<RouteContext["options"]["networks"]["client"]>,
@@ -1915,9 +1915,9 @@ export const createEvmRoute = (): EvmRoute => {
   });
 
   /**
-   * The finality recheck for a transaction already in `tx.block`: the receipt confirms or moves
-   * its block, a different hash at that height proves the reorg, and a lagging endpoint (same
-   * hash, or no block that far) proves nothing. At most three reads; errors propagate.
+   * The finality recheck for a transaction already in `tx.block`: the receipt confirms or moves its
+   * block, a different hash at that height proves the reorg, and a lagging endpoint (same hash, or
+   * no block that far) proves nothing. At most three reads; errors propagate.
    */
   const recheck = async (
     client: ReturnType<RouteContext["options"]["networks"]["client"]>,
@@ -1959,9 +1959,9 @@ export const createEvmRoute = (): EvmRoute => {
 
   /**
    * Returns `included` once the receipt lands, `reorged` when a confirmed transaction's block
-   * leaves the chain, `ended` once the nonce is settled without our receipt, or `undefined` to
-   * keep polling. While the node does not know the transaction it is rebroadcast with
-   * exponential backoff.
+   * leaves the chain, `ended` once the nonce is settled without our receipt, or `undefined` to keep
+   * polling. While the node does not know the transaction it is rebroadcast with exponential
+   * backoff.
    */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
     if (tx.hash === undefined) {
@@ -2003,9 +2003,7 @@ export const createEvmRoute = (): EvmRoute => {
       watching.delete(tx.id);
       return {
         kind: "ended",
-        state: (await anyMined(ctx, tx, sameNonce(ctx, tx, record.from)))
-          ? "replaced"
-          : "dropped",
+        state: (await anyMined(ctx, tx, sameNonce(ctx, tx, record.from))) ? "replaced" : "dropped",
       };
     }
     watch.consumed = 0;

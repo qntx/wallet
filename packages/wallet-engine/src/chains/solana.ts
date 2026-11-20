@@ -623,9 +623,9 @@ export class SolanaChainAdapter {
 
   /**
    * `getSignatureStatuses` → the entry (its slot — a malformed one throws — its commitment with a
-   * missing/null `confirmationStatus` reading as `processed`, and whether `err` says the tx
-   * failed on-chain) or `undefined` when the cluster has no entry, plus the slot of the bank the
-   * status was read on. A processed-only entry can still land; only confirmed+ is a block fact.
+   * missing/null `confirmationStatus` reading as `processed`, and whether `err` says the tx failed
+   * on-chain) or `undefined` when the cluster has no entry, plus the slot of the bank the status
+   * was read on. A processed-only entry can still land; only confirmed+ is a block fact.
    */
   async signatureStatus(
     rpc: SolanaRpc,
