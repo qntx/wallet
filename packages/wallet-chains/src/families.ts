@@ -16,6 +16,7 @@ import type { PROGRAM_IDS } from "./solana/ids.ts";
 
 export type FamilyClaim =
   | { readonly surface: "evm.call"; readonly callee: "token-table" }
+  | { readonly surface: "tron.call"; readonly callee: "token-table" }
   | { readonly surface: "evm.typed-data"; readonly primaryType: RegExp }
   | {
       readonly surface: "evm.typed-data";
@@ -34,6 +35,12 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
   {
     family: "built-in token",
     claim: { surface: "evm.call", callee: "token-table" },
+    nearMiss: "token-function",
+  },
+  /* The same selectors in a TriggerSmartContract to a listed TRC-20 token. */
+  {
+    family: "built-in TRON token",
+    claim: { surface: "tron.call", callee: "token-table" },
     nearMiss: "token-function",
   },
   /* EIP-2612 and DAI Permit on any contract, and the Permit2 forms when addressed to Permit2. */

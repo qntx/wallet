@@ -58,9 +58,15 @@ export function tronAddressFromHex(hex: string): string {
   return tronAddressFromBytes(hexToBytes(hex));
 }
 
+const is0xPrefixed = (value: string): value is `0x${string}` => value.startsWith("0x");
+
 /** The 20-byte body rendered as an EIP-55 checksummed 0x address (ABI/EVM tooling form). */
-export function tronAddressToEvm(address: string): string {
-  return checksumEvmAddress(`0x${tronAddressToHex(address).slice(2)}`);
+export function tronAddressToEvm(address: string): `0x${string}` {
+  const checksummed = checksumEvmAddress(`0x${tronAddressToHex(address).slice(2)}`);
+  if (!is0xPrefixed(checksummed)) {
+    throw new ChainError("invalid-address", "EIP-55 checksum did not produce a 0x address");
+  }
+  return checksummed;
 }
 
 /** 0x plus 40 hex — an EVM-style encoding of the 20-byte body. */
