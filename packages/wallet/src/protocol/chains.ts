@@ -1,8 +1,8 @@
 /**
  * The chains module's method table and wire validators. `wallet.accounts` derives the public
- * account for a template at the wallet's group index — the EVM/Solana arm returns the address; the
- * Bitcoin arm returns the account-level extended public key plus the master fingerprint and account
- * path (both needed to build the PSBT `bip32Derivation` entries later). The protocol is free of
+ * account for a template at the wallet's group index — the EVM/Solana/TRON arm returns the address;
+ * the Bitcoin arm returns the account xpub plus the master fingerprint and account path (both
+ * needed to build the PSBT `bip32Derivation` entries later). The protocol is free of
  *
  * @qntx/wallet-chains imports; template names and path shapes are declared here.
  */
@@ -14,6 +14,7 @@ import { arr, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
 export type ChainTemplate =
   | "evm.bip44"
   | "solana.bip44-change"
+  | "tron.bip44"
   | "btc.bip44"
   | "btc.bip49"
   | "btc.bip84"
@@ -38,6 +39,11 @@ export type ChainAccount =
       readonly address: string;
     }
   | {
+      readonly template: "tron.bip44";
+      readonly network: string;
+      readonly address: string;
+    }
+  | {
       readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
       readonly network: string;
       readonly xpub: string;
@@ -50,6 +56,7 @@ export type ChainAccount =
 const template: Validator<ChainTemplate> = union(
   literal("evm.bip44"),
   literal("solana.bip44-change"),
+  literal("tron.bip44"),
   union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")),
   literal("btc.bip86"),
 );
@@ -62,12 +69,10 @@ const btcTemplate = union(
 );
 
 const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
-const addressResult = (t: "evm.bip44" | "solana.bip44-change"): Validator<ChainAccount> =>
-  obj({
-    template: literal(t),
-    network: caip2,
-    address: str(128, /^[0-9a-zA-Z-]{20,128}$/),
-  });
+const addressResult = (
+  t: "evm.bip44" | "solana.bip44-change" | "tron.bip44",
+  address: Validator<string> = str(128, /^[0-9a-zA-Z-]{20,128}$/),
+): Validator<ChainAccount> => obj({ template: literal(t), network: caip2, address });
 
 export type AccountRef =
   | {
@@ -79,7 +84,7 @@ export type AccountRef =
   | {
       readonly kind: "imported";
       readonly keyId: string;
-      readonly family: "evm" | "solana" | "bitcoin";
+      readonly family: "evm" | "solana" | "bitcoin" | "tron";
     };
 
 export type EvmAccessListEntryWire = {
@@ -195,7 +200,7 @@ const accountRef: Validator<AccountRef> = union(
   obj({
     kind: literal("imported"),
     keyId: str(64, /^[0-9a-f]{8,64}$/),
-    family: union(literal("evm"), literal("solana"), literal("bitcoin")),
+    family: union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron")),
   }),
 );
 
@@ -310,6 +315,7 @@ export const CHAINS_METHODS: {
     result: union(
       addressResult("evm.bip44"),
       addressResult("solana.bip44-change"),
+      addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)),
       obj({
         template: union(
           literal("btc.bip44"),

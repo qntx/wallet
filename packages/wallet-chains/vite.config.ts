@@ -11,6 +11,7 @@ const config: UserConfig = defineConfig({
       "solana-sign": "src/solana/sign.ts",
       bitcoin: "src/bitcoin/index.ts",
       "bitcoin-sign": "src/bitcoin/sign.ts",
+      tron: "src/tron/index.ts",
       networks: "src/networks.ts",
     },
     deps: {

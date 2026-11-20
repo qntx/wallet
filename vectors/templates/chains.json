@@ -5,6 +5,7 @@
     "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki \u2014 mainnet account xpub, first receive and change addresses",
     "EVM accounts 0 and 1: the widely published MetaMask/ethers values for this mnemonic at m/44'/60'/0'/0/i",
     "Solana groups 0 and 1: m/44'/501'/i'/0' (Phantom/Solflare layout), cross-checked against the wallet-chains SLIP-10 test helper that is verified against the SLIP-10 spec vectors",
+    "TRON groups 0 and 1: m/44'/195'/0'/0/i (TronLink/OneKey/Trust layout), tronweb 6.5.2 fromMnemonic \u2014 see vectors/chains/tron.json",
     "Testnet tpub entries (coin type 1') have no BIP text vector; they are regression values from @scure/bip32 and assert only the coin-type and version-byte choice"
   ],
   "master": {
@@ -35,6 +36,20 @@
       {
         "groupIndex": 1,
         "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb"
+      }
+    ]
+  },
+  "tron": {
+    "template": "tron.bip44",
+    "network": "tron:728126428",
+    "accounts": [
+      {
+        "groupIndex": 0,
+        "address": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
+      },
+      {
+        "groupIndex": 1,
+        "address": "TSeJkUh4Qv67VNFwY8LaAxERygNdy6NQZK"
       }
     ]
   },

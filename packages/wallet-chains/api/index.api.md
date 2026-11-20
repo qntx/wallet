@@ -77,7 +77,7 @@ export class ChainError extends Error {
 export type ChainErrorCode = "unknown-field" | "chain-id-mismatch" | "invalid-quantity" | "invalid-address" | "invalid-typed-data" | "invalid-request" | "unsupported";
 
 // @public (undocumented)
-export type ChainFamily = "evm" | "solana" | "bitcoin";
+export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 // @public (undocumented)
 export type DisplayExcerpt = {

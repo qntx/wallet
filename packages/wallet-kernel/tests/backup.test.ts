@@ -714,7 +714,7 @@ describe("backup enable/update/disable", () => {
     await a.settle();
     const { session } = await createPasskeyWallet(a);
     await createBackupEnvelope(a, session, [backupPassword()]);
-    // Add a mnemonic wallet + a derived nostr key, then update again.
+    // Add a mnemonic wallet + a TRON key, then update again.
     ok(
       await a.call(
         "wallet.importMnemonic",
@@ -723,6 +723,9 @@ describe("backup enable/update/disable", () => {
         },
         session,
       ),
+    );
+    ok(
+      await a.call("keys.import", { family: "tron", secret: new Uint8Array(32).fill(4) }, session),
     );
     const updated = ok(await a.call("backup.update", null, session));
     const envelope = strField(updated, "envelope");
@@ -742,6 +745,10 @@ describe("backup enable/update/disable", () => {
       }),
     );
     expect(arrField(restored, "wallets")).toHaveLength(2);
+    const keys = ok(
+      await b.call("keys.list", null, strField(restored, "session")),
+    ) as ReadonlyArray<{ family: string }>;
+    expect(keys.map((k) => k.family)).toStrictEqual(["tron"]);
   });
 
   it("merge restore never adopts the envelope's backup key", async () => {

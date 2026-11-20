@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
+import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 
 import { wipe } from "../src/secret/secret.ts";
 import type { KernelResponse } from "./harness.ts";
@@ -136,15 +137,48 @@ describe("keys.import", () => {
     expect(err(mism)).toBe("invalid-input");
   });
 
-  it("refuses a private key that derives an own EVM or Solana account", async () => {
+  it("imports a TRON key: TRON address, tron keyId and bare-hex export", async () => {
+    const { h, session } = await setup();
+    const tron = loadVectors("chains/tron.json") as {
+      keys: Array<{ name: string; privateKey: string; address: string }>;
+    };
+    const { vectors: keyIds } = loadVectors("key-id.json") as {
+      vectors: Array<{ name: string; keyId: string }>;
+    };
+    const anvil = must(tron.keys.find((k) => k.name === "anvil"));
+    const res = ok(
+      await h.call(
+        "keys.import",
+        { family: "tron", secret: hexToBytes(anvil.privateKey) },
+        session,
+      ),
+    );
+    expect(res["family"]).toBe("tron");
+    expect(res["address"]).toBe(anvil.address);
+    expect(res["address"]).toBe(
+      tronAddressFromPublicKey(secp256k1.getPublicKey(hexToBytes(anvil.privateKey), true)),
+    );
+    const keyId = res["keyId"] as string;
+    expect(keyId).toBe(must(keyIds.find((v) => v.name === "tron-hardhat0")).keyId);
+    const exported = ok(
+      await h.call("keys.export", { verify: PASSKEY(), keyId }, session),
+    ) as unknown as Uint8Array;
+    expect(new TextDecoder().decode(exported)).toBe(anvil.privateKey);
+  });
+
+  it("refuses a private key that derives an own EVM, Solana or TRON account", async () => {
     const { h, session } = await setup();
     const seed = mnemonicToSeedSync(new TextDecoder().decode(MNEMONIC));
     try {
-      // evm.bip44 group 0 — m/44'/60'/0'/0/0 — and solana.bip44-change group 0 —
-      // m/44'/501'/0'/0' — of the test mnemonic, derived exactly like ownAddresses does.
-      const evmChild = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
+      // evm.bip44 group 0 — m/44'/60'/0'/0/0 — tron.bip44 group 0 — m/44'/195'/0'/0/0 — and
+      // solana.bip44-change group 0 — m/44'/501'/0'/0' — of the test mnemonic, derived exactly
+      // like ownAddresses does.
+      const master = HDKey.fromMasterSeed(seed);
+      const evmChild = master.derive("m/44'/60'/0'/0/0");
+      const tronChild = master.derive("m/44'/195'/0'/0/0");
       const solChild = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'");
       const evmSecret = new Uint8Array(must(evmChild.privateKey));
+      const tronSecret = new Uint8Array(must(tronChild.privateKey));
       const solSecret = new Uint8Array(solChild.privateKey);
       try {
         expect(evmSecret).toHaveLength(32);
@@ -152,10 +186,15 @@ describe("keys.import", () => {
           err(await h.call("keys.import", { family: "evm", secret: evmSecret }, session)),
         ).toBe("conflict");
         expect(
+          err(await h.call("keys.import", { family: "tron", secret: tronSecret }, session)),
+        ).toBe("conflict");
+        expect(
           err(await h.call("keys.import", { family: "solana", secret: solSecret }, session)),
         ).toBe("conflict");
       } finally {
         evmChild.wipePrivateData();
+        tronChild.wipePrivateData();
+        master.wipePrivateData();
         wipe(solChild.privateKey);
       }
       // A key that is not a derived account still imports.

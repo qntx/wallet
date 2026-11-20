@@ -5,6 +5,7 @@ import Slip10 from "micro-key-producer/slip10.js";
 
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
+import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type { Factor, NullValue } from "@qntx/wallet/protocol";
 
 import { keyIdOf } from "../derive/key-id.ts";
@@ -30,13 +31,20 @@ export type ImportedKeyInfo = {
   readonly createdAt: number;
 };
 
-function evmKey(input: Uint8Array): { secret: Uint8Array; publicKey: Uint8Array; address: string } {
+function secp256k1Key(
+  input: Uint8Array,
+  family: "EVM" | "TRON",
+  addressOf: (publicKey: Uint8Array) => string,
+): { secret: Uint8Array; publicKey: Uint8Array; address: string } {
   if (input.length !== 32) {
-    throw new KernelError("invalid-input", "an EVM private key is exactly 32 bytes");
+    throw new KernelError(
+      "invalid-input",
+      `${family === "EVM" ? "an" : "a"} ${family} private key is exactly 32 bytes`,
+    );
   }
   try {
     const publicKey = secp256k1.getPublicKey(input, true);
-    return { secret: input, publicKey, address: evmAddressFromPublicKey(publicKey) };
+    return { secret: input, publicKey, address: addressOf(publicKey) };
   } catch {
     throw new KernelError("invalid-input", "not a valid secp256k1 private key");
   }
@@ -66,7 +74,7 @@ const equalBytes = (a: Uint8Array, b: Uint8Array): boolean =>
 
 /** The decoded secret, its public key and its chain address — input is wiped by the caller. */
 export function isKeyFamily(family: string): family is KeyFamily {
-  return family === "evm" || family === "solana" || family === "bitcoin";
+  return family === "evm" || family === "solana" || family === "bitcoin" || family === "tron";
 }
 
 export function keyMaterial(
@@ -74,10 +82,13 @@ export function keyMaterial(
   secret: Uint8Array,
 ): { secret: Uint8Array; publicKey: Uint8Array; address: string } {
   if (family === "evm") {
-    return evmKey(secret);
+    return secp256k1Key(secret, "EVM", evmAddressFromPublicKey);
   }
   if (family === "solana") {
     return solanaKey(secret);
+  }
+  if (family === "tron") {
+    return secp256k1Key(secret, "TRON", tronAddressFromPublicKey);
   }
   throw new KernelError("invalid-input", `keys are not supported on ${family}`);
 }
@@ -91,9 +102,9 @@ const keyInfoOf = (record: StoredRecord): ImportedKeyInfo => {
 };
 
 /**
- * Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44
- * plus Solana bip44-change. A key matching one of them is a second handle on an account the wallet
- * already owns, so import refuses it.
+ * Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44,
+ * Solana bip44-change plus TRON bip44. A key matching one of them is a second handle on an account
+ * the wallet already owns, so import refuses it.
  */
 async function ownAddresses(ctx: KernelContext, dek: Secret) {
   const addresses = new Set<string>();
@@ -106,15 +117,21 @@ async function ownAddresses(ctx: KernelContext, dek: Secret) {
         try {
           for (let group = 0; group < OWN_GROUP_BOUND; group += 1) {
             const evmChild = master.derive(`m/44'/60'/0'/0/${group}`);
+            const tronChild = master.derive(`m/44'/195'/0'/0/${group}`);
             const solChild = solanaRoot.derive(`m/44'/501'/${group}'/0'`);
             try {
               const pub = evmChild.publicKey;
               if (pub !== null) {
                 addresses.add(evmAddressFromPublicKey(pub).toLowerCase());
               }
+              const tronPub = tronChild.publicKey;
+              if (tronPub !== null) {
+                addresses.add(tronAddressFromPublicKey(tronPub));
+              }
               addresses.add(solanaAddressFromPublicKey(ed25519.getPublicKey(solChild.privateKey)));
             } finally {
               evmChild.wipePrivateData();
+              tronChild.wipePrivateData();
               wipe(solChild.privateKey);
             }
           }
@@ -198,9 +215,9 @@ export async function removeKey(
 }
 
 /**
- * The secret in the family's canonical encoding — hex `0x` for EVM, base58 for Solana — as wipeable
- * ASCII bytes. The encoders live in `src/secret/encode.ts` because the library encoders return
- * strings, and a private key held in a JS string can never be zeroed.
+ * The secret in the family's canonical encoding — `0x`-prefixed hex for EVM, base58 for Solana,
+ * bare hex for TRON — as wipeable ASCII bytes. The encoders live in `src/secret/encode.ts` because
+ * the library encoders return strings, and a private key held in a JS string can never be zeroed.
  */
 export async function exportKey(
   ctx: KernelContext,
@@ -221,10 +238,13 @@ export async function exportKey(
   const secret = openRecord(dek, record);
   try {
     if (header.family === "evm") {
-      return encodeHexAscii(secret);
+      return encodeHexAscii(secret, "0x");
     }
     if (header.family === "solana") {
       return encodeBase58Ascii(secret);
+    }
+    if (header.family === "tron") {
+      return encodeHexAscii(secret, "");
     }
     throw new KernelError("invalid-input", `keys are not supported on ${header.family}`);
   } finally {

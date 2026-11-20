@@ -100,6 +100,11 @@ const vectors = JSON.parse(
     network: string;
     accounts: Array<{ groupIndex: number; address: string }>;
   };
+  tron: {
+    template: string;
+    network: string;
+    accounts: Array<{ groupIndex: number; address: string }>;
+  };
   bitcoin: Array<{
     template: string;
     network: string;
@@ -505,6 +510,27 @@ describe("wallet.accounts", () => {
     }
   });
 
+  it("derives the vector TRON accounts", async () => {
+    const { h, session, walletId } = await setup();
+    const results = await Promise.all(
+      vectors.tron.accounts.map(async ({ groupIndex }) =>
+        h.call(
+          "wallet.accounts",
+          {
+            walletId,
+            groupIndex,
+            template: vectors.tron.template,
+            network: vectors.tron.network,
+          },
+          session,
+        ),
+      ),
+    );
+    for (const [i, { address }] of vectors.tron.accounts.entries()) {
+      expect(field(ok(results[i]!), "address")).toBe(address);
+    }
+  });
+
   it("derives the vector Bitcoin account xpubs and paths", async () => {
     const { h, session, walletId } = await setup();
     const results = await Promise.all(
@@ -537,6 +563,18 @@ describe("wallet.accounts", () => {
       session,
     );
     expect("err" in mismatch).toBe(true);
+    const results = await Promise.all(
+      ["eip155:1", "tron:0x2b6653dc"].map(async (network) =>
+        h.call(
+          "wallet.accounts",
+          { walletId, groupIndex: 0, template: "tron.bip44", network },
+          session,
+        ),
+      ),
+    );
+    for (const res of results) {
+      expect(errCode(res)).toBe("invalid-input");
+    }
     const missing = await h.call(
       "wallet.accounts",
       { walletId: "0000000000000000", groupIndex: 0, template: "evm.bip44", network: "eip155:1" },

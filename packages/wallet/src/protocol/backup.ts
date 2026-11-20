@@ -74,7 +74,7 @@ export type BackupHeaderWallet = {
 
 export type BackupHeaderKey = {
   readonly keyId: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
 
 export type BackupHeaderWire = {
@@ -97,7 +97,7 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
     arr(
       obj({
         keyId: str(16, /^[0-9a-f]{16}$/),
-        family: union(literal("evm"), literal("solana"), literal("bitcoin")),
+        family: union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron")),
       }),
       256,
     ),

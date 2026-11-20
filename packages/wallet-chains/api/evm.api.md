@@ -101,7 +101,7 @@ type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-varia
 export const canonicalHex: (value: bigint) => string;
 
 // @public (undocumented)
-type ChainFamily = "evm" | "solana" | "bitcoin";
+type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 // @public (undocumented)
 export function checksumEvmAddress(address: string): string;

@@ -14,6 +14,7 @@ import { bitcoinAddressFromXpub } from "../src/bitcoin/account.ts";
 import { evmAddressFromPublicKey } from "../src/evm/address.ts";
 import { ChainError } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
+import { tronAddressFromPublicKey } from "../src/tron/index.ts";
 
 const vectors = JSON.parse(
   readFileSync(join(import.meta.dirname, "../../../vectors/templates/chains.json"), "utf8"),
@@ -25,6 +26,7 @@ const vectors = JSON.parse(
     accounts: Array<{ groupIndex: number; address: string }>;
   };
   solana: { accounts: Array<{ address: string }> };
+  tron: { accounts: Array<{ groupIndex: number; address: string }> };
   bitcoin: Array<{ template: string; network: string; xpub: string; receive: string[] }>;
 };
 
@@ -70,6 +72,15 @@ describe("address derivation helpers", () => {
     for (const [i, { address }] of vectors.solana.accounts.entries()) {
       const priv = slip10(seed, [44, 501, i, 0]);
       expect(solanaAddressFromPublicKey(ed25519.getPublicKey(priv))).toBe(address);
+    }
+  });
+
+  it("tronAddressFromPublicKey matches the vector accounts", () => {
+    const master = HDKey.fromMasterSeed(seed);
+    for (const { groupIndex, address } of vectors.tron.accounts) {
+      const pub = master.derive(`m/44'/195'/0'/0/${groupIndex}`).publicKey;
+      expect(pub).not.toBeNull();
+      expect(tronAddressFromPublicKey(pub!)).toBe(address);
     }
   });
 

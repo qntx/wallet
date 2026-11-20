@@ -33,10 +33,11 @@ export const sessionId: Validator<string> = str(32, /^[0-9a-f]{32}$/);
 export const draftId: Validator<string> = str(32, /^[0-9a-f]{32}$/);
 export const walletId: Validator<string> = str(16, /^[0-9a-f]{16}$/);
 export const keyId: Validator<string> = str(16, /^[0-9a-f]{16}$/);
-export const keyFamily: Validator<"evm" | "solana" | "bitcoin"> = union(
+export const keyFamily: Validator<"evm" | "solana" | "bitcoin" | "tron"> = union(
   literal("evm"),
   literal("solana"),
   literal("bitcoin"),
+  literal("tron"),
 );
 
 export const publicKey: Validator<string> = str(64, /^[0-9a-f]{64}$/);
@@ -45,7 +46,7 @@ export const safeTime: Validator<number> = int(0, Number.MAX_SAFE_INTEGER);
 export const groupIndex: Validator<number> = int(0, 0x7fffffff);
 export const keyInfo: Validator<{
   readonly keyId: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly address: string;
   readonly createdAt: number;
 }> = obj({ keyId, family: keyFamily, address: str(90, /^.+$/), createdAt: safeTime });
@@ -358,10 +359,10 @@ export const CORE_METHODS: {
   >;
   readonly "dataKeys.get": MethodSpec<{ readonly purpose: string }, Uint8Array>;
   readonly "keys.import": MethodSpec<
-    { readonly family: "evm" | "solana" | "bitcoin"; readonly secret: Uint8Array },
+    { readonly family: "evm" | "solana" | "bitcoin" | "tron"; readonly secret: Uint8Array },
     {
       readonly keyId: string;
-      readonly family: "evm" | "solana" | "bitcoin";
+      readonly family: "evm" | "solana" | "bitcoin" | "tron";
       readonly address: string;
       readonly createdAt: number;
     }
@@ -370,7 +371,7 @@ export const CORE_METHODS: {
     NullValue,
     ReadonlyArray<{
       readonly keyId: string;
-      readonly family: "evm" | "solana" | "bitcoin";
+      readonly family: "evm" | "solana" | "bitcoin" | "tron";
       readonly address: string;
       readonly createdAt: number;
     }>

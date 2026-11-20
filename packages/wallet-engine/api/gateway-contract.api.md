@@ -125,6 +125,9 @@ export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
 export function endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType>(method: HttpMethod, path: `/v1/${string}`, request: Req, response: Res): Endpoint<Req, Res>;
 
 // @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
+
+// @public
 export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute>;
 
 // @public
@@ -414,7 +417,8 @@ export const nativeAssetId: (network: string) => string | undefined;
 export const networkById: (id: string) => NetworkInfo | undefined;
 
 // @public (undocumented)
-export type NetworkInfo = NetworkMeta & {
+export type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
     readonly multicall3?: string;
     readonly opStack?: true;
     readonly delegatorCodeHash?: string;

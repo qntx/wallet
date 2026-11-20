@@ -55,7 +55,7 @@ type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-varia
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta>;
 
 // @public (undocumented)
-type ChainFamily = "evm" | "solana" | "bitcoin";
+type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 // @public (undocumented)
 type DisplayIntent = {
@@ -130,7 +130,7 @@ type MessageContent = {
 // @public
 export type NetworkMeta = {
     readonly id: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly name: string;
     readonly symbol: string;
     readonly decimals: number;

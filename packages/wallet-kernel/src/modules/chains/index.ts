@@ -13,6 +13,7 @@ import { isBlindIntent } from "@qntx/wallet-chains";
 import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
+import { TRON_NETWORKS, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type {
   ChainAccount,
   ChainTemplate,
@@ -53,6 +54,9 @@ const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) {
     throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
   }
+  if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) {
+    throw new KernelError("invalid-input", `unknown tron network ${network}`);
+  }
 };
 
 const accountFor = (
@@ -86,6 +90,18 @@ const accountFor = (
     } finally {
       wipe(child.privateKey);
       wipe(root.privateKey);
+    }
+  }
+  if (template === "tron.bip44") {
+    const child = master.derive(`m/44'/195'/0'/0/${groupIndex}`);
+    try {
+      const pub = child.publicKey;
+      if (pub === null) {
+        throw new KernelError("integrity", "no public key at account path");
+      }
+      return { template, network, address: tronAddressFromPublicKey(pub) };
+    } finally {
+      child.wipePrivateData();
     }
   }
   const purpose = BTC_PURPOSE[template];

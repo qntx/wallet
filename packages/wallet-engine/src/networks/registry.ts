@@ -2,12 +2,16 @@
  * Built-in EVM network registry: the chain table lives in @qntx/wallet-chains/networks; this module
  * layers the engine-only fields the signing paths need on top of it (Multicall3, OP Stack L1 data
  * fee, EIP-7702 delegator code hash). Signing-time chainId always comes from the table, never from
- * an RPC endpoint.
+ * an RPC endpoint. TRON networks in the chain table are not served by the engine yet.
  */
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 import type { NetworkMeta } from "@qntx/wallet-chains/networks";
 
-export type NetworkInfo = NetworkMeta & {
+/** The chain families this registry serves. */
+export type EngineFamily = "evm" | "solana" | "bitcoin";
+
+export type NetworkInfo = Omit<NetworkMeta, "family"> & {
+  readonly family: EngineFamily;
   readonly multicall3?: string;
   /** OP Stack chain: transactions also pay an L1 data fee and an operator fee. */
   readonly opStack?: true;
@@ -41,7 +45,7 @@ const OP_STACK_CHAINS = new Set([8453, 10, 84532, 11155420]);
 // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (all entries below).
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const evmEntry = (meta: NetworkMeta): NetworkInfo => ({
+const evmEntry = (meta: NetworkMeta & { readonly family: "evm" }): NetworkInfo => ({
   ...meta,
   multicall3: MULTICALL3,
   ...(OP_STACK_CHAINS.has(meta.chainId) ? { opStack: true as const } : {}),
@@ -51,15 +55,15 @@ const evmEntry = (meta: NetworkMeta): NetworkInfo => ({
 });
 
 export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "evm",
+  (n): n is NetworkMeta & { readonly family: "evm" } => n.family === "evm",
 ).map(evmEntry);
 
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "bitcoin",
+  (n): n is NetworkMeta & { readonly family: "bitcoin" } => n.family === "bitcoin",
 );
 
 export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "solana",
+  (n): n is NetworkMeta & { readonly family: "solana" } => n.family === "solana",
 );
 
 export const networkById = (id: string): NetworkInfo | undefined =>
