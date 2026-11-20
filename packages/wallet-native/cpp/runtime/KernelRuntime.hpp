@@ -40,8 +40,9 @@ struct KernelScript {
 //     interrupts running JS via Hermes' async timeout. Destruction calls it.
 //   - running() is true from start() until teardown finishes on the kernel
 //     thread.
-//   - waitUntilStopped() blocks until teardown finished; it exists for tests
-//     and probes only — never call it on a UI thread.
+//   - waitUntilStopped() blocks until teardown finished; called on a kernel
+//     thread (a successor's beforeEvaluate) and by tests — never on a UI or
+//     JS thread.
 //
 // Host integration:
 //   - Hooks.beforeEvaluate runs on the kernel thread after globals install and

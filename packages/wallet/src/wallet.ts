@@ -653,14 +653,17 @@ export class KernelWallet implements Wallet {
       readonly factors: ReadonlyArray<UnlockFactor>;
     }): Promise<void> =>
       this.withVerifying(async () => {
-        await this.secretCall("backup.enable", async (wire) => ({
-          verify: await resolveVerifyFactor(this.factorSource, options.verify, wire),
-          factors: await Promise.all(
-            options.factors.map(async (factor) =>
-              resolveBackupFactor(this.factorSource, factor, wire),
-            ),
-          ),
-        }));
+        await this.secretCall("backup.enable", async (wire) => {
+          const verify = await resolveVerifyFactor(this.factorSource, options.verify, wire);
+          // One ceremony at a time: a browser runs one WebAuthn request at once, and a failed
+          // factor must not leave another ceremony still writing secrets to the wire.
+          const factors: Array<Awaited<ReturnType<typeof resolveBackupFactor>>> = [];
+          for (const factor of options.factors) {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- ceremonies run one after another
+            factors.push(await resolveBackupFactor(this.factorSource, factor, wire));
+          }
+          return { verify, factors };
+        });
       }),
     update: async (): Promise<string> => {
       const result = await this.channel.call("backup.update", null);

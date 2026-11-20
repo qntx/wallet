@@ -11,10 +11,18 @@ export const HISTORY_TRANSFERS_MAX = 100;
 
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
 const hash32 = z.string().check(z.regex(/^0x[0-9a-fA-F]{64}$/));
+const DECIMAL = /^(0|[1-9][0-9]*)$/;
 /** A non-negative integer in decimal — no leading zeros, floats, signs or hex. */
-const decimal = z.string().check(z.regex(/^(0|[1-9][0-9]*)$/));
-/** An inclusive upper block bound, decimal. */
-const blockNumber = decimal;
+const decimal = z.string().check(z.regex(DECIMAL));
+/**
+ * The highest block bound the upstream verifiably accepts (int64 max): Alchemy rejects a `toBlock`
+ * of 2^64 or more with a 400, so the contract refuses it before any upstream call.
+ */
+export const HISTORY_CURSOR_MAX: bigint = 2n ** 63n - 1n;
+/** An inclusive upper block bound, decimal, at most {@link HISTORY_CURSOR_MAX}. */
+const blockNumber = z
+  .string()
+  .check(z.refine((value) => DECIMAL.test(value) && BigInt(value) <= HISTORY_CURSOR_MAX));
 
 export const historyRequest = z.strictObject({
   // The address is in the body, never the URL: address-bearing routes are POST.

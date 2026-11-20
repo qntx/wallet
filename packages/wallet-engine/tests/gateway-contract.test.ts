@@ -441,7 +441,7 @@ describe("rpc call cost", () => {
     ["simulateTransaction", 3],
     ["getTransaction", 3],
     ["getSignaturesForAddress", 3],
-    ["getMultipleAccounts", 10],
+    ["getMultipleAccounts", 1],
     ["getVoteAccounts", 10],
   ])("costs %s at %i units", (method, units) => {
     expect(rpcCallCost(call(method))).toBe(units);

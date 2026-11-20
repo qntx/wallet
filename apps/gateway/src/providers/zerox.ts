@@ -4,8 +4,8 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
-import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
+import { ProviderFailure } from "./forward.ts";
 
 export type ZeroExConfig = {
   readonly apiKey: string;
@@ -105,7 +105,6 @@ const CLIENT_ERROR: ReadonlySet<number> = new Set([400, 403, 422]);
 
 export async function zeroExQuote(
   forwarder: Forwarder,
-  fetch: typeof globalThis.fetch,
   config: ZeroExConfig,
   query: {
     readonly chainId: number;
@@ -127,27 +126,27 @@ export async function zeroExQuote(
     url.searchParams.set("swapFeeRecipient", config.fee.recipient);
     url.searchParams.set("swapFeeBps", String(config.fee.bps));
   }
-  const { value } = await forwarder.run([PROVIDER], async (_provider, signal) => {
-    const http = await fetch(url, {
+  const { value } = await forwarder.run([PROVIDER], async (send) => {
+    const http = await send({
+      url,
       headers: { "0x-api-key": config.apiKey, "0x-version": "v2" },
-      signal,
     });
-    const text = await readCapped(http, MAX_RESPONSE_BYTES);
+    const text = await http.text(MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;
       }
-      throw new Error(`0x returned ${http.status}`);
+      throw new ProviderFailure(`status-${http.status}`, false);
     }
     let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
-      throw new Error("0x returned a non-JSON body");
+      throw new ProviderFailure("malformed", false);
     }
     const res = parseWith(zeroExUpstreamResponse, body);
     if (res === undefined) {
-      throw new Error("0x returned an unexpected body");
+      throw new ProviderFailure("malformed", false);
     }
     if (!res.liquidityAvailable) {
       return { liquidity: false } satisfies SwapQuoteResponse;
@@ -162,7 +161,7 @@ export async function zeroExQuote(
       res.minBuyAmount === undefined ||
       res.blockNumber === undefined
     ) {
-      throw new Error("0x returned an incomplete quote");
+      throw new ProviderFailure("malformed", false);
     }
 
     return {

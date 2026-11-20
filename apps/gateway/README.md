@@ -23,11 +23,18 @@ Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Res
 `400 invalid-request`, `404 unknown-network`/`not-found`, `429 rate-limited` and `503 unavailable`
 (both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
 
-Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), a
-non-2xx upstream status, or a malformed body moves on to the next provider; five consecutive
-failures open that provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is
-returned as-is. An upstream 400, 413 or 422 was provoked by the request itself: it is answered 400
-`invalid-request` without failover and without counting against the breaker.
+Providers are tried in the order of `src/config/networks.ts`. Every route reaches its upstreams
+through one forwarder (`src/providers/forward.ts`), the only holder of `fetch`, and the breaker
+counts only what the forwarder itself observes and no client input can provoke: a transport error,
+a timeout (10 s), a 5xx, a 429 (the gateway's own account throttled) or a failed auth lookup. Five
+consecutive outages open that provider's breaker for 30 s. Any other failed answer — a 401/403
+refusal, another 4xx, a malformed body, an upstream JSON-RPC error on history — moves on to the next
+provider without counting. A JSON-RPC error object on the RPC route is a valid answer and is
+returned as-is. An upstream 400, 413 or 422 on a JSON-RPC route, and an answer over the route's
+response cap, were provoked by the request itself: they are answered 400 `invalid-request` without
+failover. Request schemas refuse up front what an upstream would reject (a history cursor above
+int64, a quote amount wider than the chain's amount type). `tests/breaker.test.ts` enumerates every
+registered route and holds each one to this accounting.
 
 A request that relays a signed transaction (`eth_sendRawTransaction`, Solana `sendTransaction`,
 Esplora `POST /tx`) fails over only when the failed attempt provably never reached the provider —
@@ -43,10 +50,13 @@ client IP prefix, then `x-client-id` + prefix on either the RPC limiter (transpo
 default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
 summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
 a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
-`eth_getBlockReceipts`, `getMultipleAccounts`, `getVoteAccounts`, full-transaction blocks,
-programId-filtered `getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a
-batch of 20 `eth_getLogs` costs 200. Esplora requests stay at one unit: every allow-listed path is
-bounded.
+`eth_getBlockReceipts`, `getVoteAccounts`, full-transaction blocks, programId-filtered
+`getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a batch of 20
+`eth_getLogs` costs 200. Arrays the caller sizes pay per started 10 elements (`getMultipleAccounts`,
+`getSignatureStatuses` at 1, `eth_getProof` storage keys at 3) and `eth_simulateV1` pays 3 per
+simulated block or call, whichever is more. Esplora requests stay at one unit: every allow-listed
+path is bounded. A history page pays 2 units for its two upstream calls, and a drain round 2 more,
+charged before the drain is sent.
 
 ## Prices
 
@@ -55,7 +65,9 @@ spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
 `solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing }`: every asset is either
 priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt` in Unix ms) or
 `missing`. The asset set describes a portfolio, so it travels in the body and the answer is
-`no-store`. It costs one rate-limit unit per started 25 assets on the default limiter.
+`no-store`. It costs one rate-limit unit on the default limiter, plus one per upstream call its cache
+misses fan out to (one per CoinGecko token platform and one for the native coins, two for DefiLlama),
+charged before the calls are sent.
 
 Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
 client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then
@@ -99,7 +111,8 @@ polkadot-js/phishing.
 
 All log lines are JSON. Besides the per-request line, the forwarder logs
 `{"event":"upstream-failure","provider","upstream","reason"}` per failed attempt (reason:
-`status-<n>`, `malformed`, `auth`, `timeout`, `breaker-open`, `rejected`, `transport`),
+`status-<n>`, `malformed`, `rpc-error`, `auth`, `timeout`, `breaker-open`, `rejected`, `too-large`,
+`transport`, `error`),
 `{"event":"breaker","provider","upstream","state"}` on every open/half-open/closed transition, and
 `{"event":"all-providers-failed","providers":[…]}` once when every provider of a route is down —
 the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name
@@ -110,8 +123,9 @@ there is no alerting code in the worker.
 ## Layering
 
 `src/` imports exactly one workspace package: `@qntx/wallet-engine/gateway/contract` (schemas, the
-method and path allow-lists, the network registry). A lint rule in the root `vite.config.ts`
-rejects any other `@qntx/*` import, so the gateway never depends on engine runtime code. Contract
+method and path allow-lists, the network registry). `scripts/check-boundaries.ts` (part of
+`bun run lint`) resolves every import and rejects any other `@qntx/*` package or any path into
+another workspace package, so the gateway never depends on engine runtime code. Contract
 changes go in `packages/wallet-engine/src/gateway/contract/` first.
 
 `createGateway({ fetch, networks, limiters, corsOrigins })` in `src/app.ts` builds the Hono app; all
