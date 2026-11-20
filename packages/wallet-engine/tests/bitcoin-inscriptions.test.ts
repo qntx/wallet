@@ -61,7 +61,7 @@ describe("protected balances (ord postage rule)", () => {
       [{ kind: "address", address: TO84 }],
       new Set(),
     );
-    expect(read.totals).toStrictEqual({ native: "20001", unconfirmed: "0", frozen: "30876" });
+    expect(read.totals).toStrictEqual({ native: "20001", unconfirmed: "0", protected: "30876" });
     expect(read.utxos.map((u) => u.protected)).toStrictEqual([true, true, true, true, false]);
   });
 
@@ -72,7 +72,7 @@ describe("protected balances (ord postage rule)", () => {
       [{ kind: "address", address: TO86 }],
       new Set(),
     );
-    expect(read.totals).toStrictEqual({ native: "0", unconfirmed: "0", frozen: "1000000" });
+    expect(read.totals).toStrictEqual({ native: "0", unconfirmed: "0", protected: "1000000" });
     expect(read.utxos[0]?.protected).toBe(true);
   });
 });

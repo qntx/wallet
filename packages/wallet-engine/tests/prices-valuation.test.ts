@@ -120,10 +120,10 @@ describe("balanceHoldings", () => {
     ]);
   });
 
-  it("sums a bitcoin group's confirmed, unconfirmed and frozen sats", () => {
+  it("sums a bitcoin group's confirmed, unconfirmed and protected sats", () => {
     const [native] = balanceHoldings(
       `${BTC_MAINNET}:w:0`,
-      balances({ native: "100", unconfirmed: "20", frozen: "3" }),
+      balances({ native: "100", unconfirmed: "20", protected: "3" }),
     );
     expect(native).toMatchObject({ asset: BTC, symbol: "BTC", decimals: 8, amount: 123n });
   });

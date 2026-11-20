@@ -2,9 +2,9 @@
 
 App-side controllers over a [`@qntx/wallet`](https://www.npmjs.com/package/@qntx/wallet) `Wallet`:
 the account tree, Spark payments, zaps, encrypted metadata sync and cloud backup. Controllers
-expose Zustand stores; every I/O dependency (`fetch`, randomness, clock, storage, relays, cloud)
-is injected. The engine never holds signing keys — every wallet-owned outflow goes through the
-enclave's per-operation approval.
+expose read-only Zustand stores; every I/O dependency (`fetch`, randomness, clock, storage,
+relays, cloud) is injected. The engine never holds signing keys — every wallet-owned outflow goes
+through the enclave's per-operation approval.
 
 Peer dependencies: `@qntx/wallet` (the exact release — engine and wallet must agree on the
 protocol), `@qntx/wallet-chains` (exact), `@qntx/spark` and `@qntx/nostr`. The exact ranges are
@@ -52,39 +52,54 @@ in-memory state.
 
 ## Surface
 
-- `engine.networks` — `NetworkController`: configured chain networks and custom RPC endpoints.
-- `engine.assets` — `AssetsController`: token and balance reads per account.
-- `engine.prices` — `PricesController`: fiat spot prices and valuations, display-only.
+Each controller member is a `HostController<…>` facade: the host methods listed for it plus a
+read-only `store` (`getState`, `getInitialState`, `subscribe` — use it with zustand's `useStore`).
+Lifecycle, wiring between controllers and `setState` stay inside the engine. Name a member's type
+as `WalletEngine["spark"]`; every type in these signatures (`AccountRef`, `TrackedTransaction`,
+`PrepareParams`, `RequestResult`, the request displays, `SparkTokenBalance`, …) is exported from
+the package root.
+
+- `engine.networks` — configured chain networks (`enabled`, `info`, `endpoints`), their read
+  clients (`client`, `solanaRpc`, `esplora`) and custom RPC endpoints (`addRpc`).
+- `engine.assets` — token and balance reads per account. A Bitcoin balance counts outputs
+  protected as possible inscription or rune carriers in `protected`, apart from `native`; user
+  freezes are not part of the balance (a frozen coin still counts in `native`).
+- `engine.prices` — fiat spot prices and valuations, display-only.
   `setVisible` gates polling on app visibility; `setCurrency` switches the persisted quote
   currency and refetches.
 - `engine.portfolio` — `portfolio.group({ walletId, groupIndex })` values one account group:
   a `Valuation` with an exact decimal `total`, a `stale` flag and the `unpriced` holding count.
-- `engine.transactions` — `TransactionController` reads; the `prepare*` methods are not exposed
-  — sends go through `requests`. A broadcast whose outcome is unknown resolves `submitted` and
-  the engine rebroadcasts the same signed bytes — never re-send it. Coin control: `setUtxosFrozen` /
+- `engine.transactions` — tracked transactions (`store`, `txById`) and coin control; it builds,
+  signs and records nothing itself — sends, replacements and dApp signatures go through
+  `requests`. A broadcast whose outcome is unknown resolves `submitted` and the engine
+  rebroadcasts the same signed bytes — never re-send it. Coin control: `setUtxosFrozen` /
   `frozenUtxos` persist per-account freezes, and `inputs` on a send picks the outpoints (naming
   a UTXO protected as a possible inscription carrier is the opt-in to spend it).
-- `engine.requests` — `RequestController`: every wallet-owned outflow becomes a request here.
+- `engine.requests` — every wallet-owned outflow becomes a request here (`prepare`, `approve`,
+  `reject`, `outcome`, the sign log).
   `approve(id, method, { verify, acknowledged })` — `requiredAcknowledgement(request)` returns
   the `danger` findings and checks the host must have shown; approving without them throws
   `AcknowledgementRequiredError`. If a re-simulation changes the outcome at approval it throws
   `SimulationChangedError` and the request stays approvable. A blind request throws
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
-- `engine.history` — `HistoryController`: one newest-first activity list per account group
+- `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
   entries carry `verified`, `origin` and `flags`.
-- `engine.addressBook` — `AddressBookController`: contacts, synced through `metaSync`.
-- `engine.connections` — `ConnectionController`: dApp sessions and trusted origins.
+- `engine.addressBook` — contacts, synced through `metaSync`.
+- `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
+  (`checkOrigin`, `invalidateOrigin`).
 - `engine.eip1193`, `engine.nip07`, `engine.webln`, `engine.solanaWallet`,
-  `engine.bitcoinWallet` — the injected provider handlers for each wallet standard.
-- `engine.phishing` — `PhishingController`; its lifecycle is independent of the lock state.
-- `engine.spark` — `SparkController` reads, receives and holds token balances
-  (`SparkAccountState.tokens`); every payment goes through `requests`. Token sends are `pay`
-  with `token` and resolve `"token"`; `pending` and `token-pending` results mean the commit
-  response was lost — show them in flight, never failed, and never pay again. Cooperative
+  `engine.bitcoinWallet` — the injected provider handlers for each wallet standard (`handle`, and
+  `subscribe` where the standard has events).
+- `engine.phishing` — the phishing list (`check`, `sync`, `trust`, `untrust`); its lifecycle is
+  independent of the lock state.
+- `engine.spark` — Spark reads and receives, with token balances (`SparkAccountState.tokens`); it
+  has no send method — every payment, token sends included, goes through `requests`. Token sends
+  are `pay` with `token` and resolve `"token"`; `pending` and `token-pending` results mean the
+  commit response was lost — show them in flight, never failed, and never pay again. Cooperative
   exits take `amountSats` (what arrives at the Bitcoin address, the debit adds the quoted fee)
   and require `maxFeeSats`.
-- `engine.accounts` — `AccountTreeController`: wallets and account groups, selection, names,
+- `engine.accounts` — wallets and account groups, selection, names,
   hidden groups, Spark group discovery and social identity bindings.
 - `engine.watch` — watch-only accounts: `add`, `rename`, `remove`, `list` and per-network
   `assets`.
@@ -92,7 +107,7 @@ in-memory state.
   group-0 Nostr identity; pull before publish. Merge is not plain per-entry LWW: a record's
   identity is immutable, deletes are terminal, and remote stamps too far in the future are
   refused.
-- `engine.backup` — `BackupController` over an injected `CloudStore`. The backup password is
+- `engine.backup` — cloud backup over an injected `CloudStore`. The backup password is
   Argon2id-stretched, needs at least 12 characters and must reach zxcvbn's top score — rate a
   draft with `backupPasswordStrength(password)`, a refused one throws `weak-password`. A
   restore adopts the file's backup key only on a React Native kernel passkey restore; every

@@ -30,6 +30,7 @@ import { createWalletEngine } from "../src/engine.ts";
 import type { WalletEngine } from "../src/engine.ts";
 import type { PaymentParse } from "../src/payments/parse.ts";
 import type { PayInput } from "../src/requests/controller.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
 
@@ -302,7 +303,7 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
       await expect(
         poll(() => engine.accounts.getState().status === "ready", Date.now() + 30_000),
       ).resolves.toBe(true);
-      engine.spark.setAccounts([refA, refB]);
+      (engine.spark as SparkController).setAccounts([refA, refB]);
 
       const deadline = Date.now() + DEADLINE_MS;
       try {

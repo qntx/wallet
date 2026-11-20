@@ -627,7 +627,7 @@ describe("engine solana-sign send", () => {
       approval(request, { kind: "passkey" }),
     );
     await entered.promise;
-    engine.requests.invalidateOrigin(SITE);
+    engine.connections.invalidateOrigin(SITE);
     release.resolve();
     await expect(approving).rejects.toMatchObject({
       name: "RequestEndedError",

@@ -1,5 +1,5 @@
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkAccountState, SparkResult, WalletEngine } from "@qntx/wallet-engine";
+import type { SparkResult, SparkTokenBalance, WalletEngine } from "@qntx/wallet-engine";
 import { requiredAcknowledgement } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
@@ -7,7 +7,7 @@ import type { SparkAccountRef } from "@qntx/wallet/spark";
 export function tokenBalances(
   engine: WalletEngine,
   ref: SparkAccountRef,
-): NonNullable<SparkAccountState["tokens"]> {
+): ReadonlyArray<SparkTokenBalance> {
   const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
   return engine.spark.getState().accounts[key]?.tokens ?? [];
 }

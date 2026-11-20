@@ -5,6 +5,7 @@
  * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { base58 } from "@scure/base";
+import type { StoreApi } from "zustand/vanilla";
 
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
@@ -37,6 +38,7 @@ import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
+import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
 import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
 import { HistoryController } from "./history/controller.ts";
@@ -135,11 +137,36 @@ export type EngineOptions = {
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
 
+/** A controller's store without `setState`: hosts read and subscribe, only the engine writes. */
+export type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
+
+/**
+ * A controller as hosts hold it: its state, read-only, and the methods named in `K`. Lifecycle and
+ * the wiring between controllers stay with the engine, and a method added to a controller is not
+ * host API until it is listed here.
+ */
+export type HostController<
+  C extends Controller<Record<string, unknown>>,
+  K extends Exclude<keyof C, "store">,
+> = Pick<C, "getState" | K> & { readonly store: ReadonlyStore<ReturnType<C["getState"]>> };
+
 export type WalletEngine = {
-  readonly networks: NetworkController;
-  readonly assets: AssetsController;
+  readonly networks: HostController<
+    NetworkController,
+    "endpoints" | "info" | "enabled" | "client" | "solanaRpc" | "esplora" | "addRpc"
+  >;
+  readonly assets: HostController<
+    AssetsController,
+    | "setVisible"
+    | "refresh"
+    | "refreshBitcoinGroup"
+    | "isTracked"
+    | "tokenMetadata"
+    | "addToken"
+    | "setTokenHidden"
+  >;
   /** Spot prices of the held assets — display-only; nothing that builds or signs reads them. */
-  readonly prices: PricesController;
+  readonly prices: HostController<PricesController, "setVisible" | "setCurrency" | "refresh">;
   /**
    * Fiat valuation of the balances already in state, at the current quotes — exact decimals,
    * display-only. `group` covers the group's EVM and Solana addresses on every enabled network, its
@@ -151,21 +178,75 @@ export type WalletEngine = {
       readonly groupIndex: number;
     }) => Promise<Valuation>;
   };
-  readonly transactions: Omit<TransactionController, `prepare${string}`>;
-  readonly requests: RequestController;
-  readonly addressBook: AddressBookController;
-  readonly history: HistoryController;
-  readonly connections: ConnectionController;
-  readonly eip1193: Eip1193Handler;
-  readonly nip07: Nip07Handler;
-  readonly webln: WeblnHandler;
-  readonly solanaWallet: SolanaWalletHandler;
-  readonly bitcoinWallet: BitcoinWalletHandler;
+  /** Tracked transactions and coin control; every send, replacement and dApp signature is a request. */
+  readonly transactions: HostController<
+    TransactionController,
+    "txById" | "nextReceiveAddress" | "setUtxosFrozen" | "frozenUtxos"
+  >;
+  readonly requests: HostController<
+    RequestController,
+    "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog"
+  >;
+  readonly addressBook: HostController<
+    AddressBookController,
+    "add" | "rename" | "setNote" | "remove"
+  >;
+  readonly history: HostController<HistoryController, "load" | "loadMore">;
+  /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
+  readonly connections: HostController<
+    ConnectionController,
+    | "checkOrigin"
+    | "invalidateOrigin"
+    | "session"
+    | "pending"
+    | "sessionAccounts"
+    | "nostrIdentity"
+    | "isEnabled"
+    | "approveConnection"
+    | "rejectConnection"
+    | "revoke"
+    | "setCurrentNetwork"
+    | "activeIdentity"
+    | "setActiveIdentity"
+    | "nostrPolicy"
+    | "lightningPolicy"
+  >;
+  readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
+  readonly nip07: Pick<Nip07Handler, "handle">;
+  readonly webln: Pick<WeblnHandler, "handle">;
+  readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
+  readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
   /** The phishing list: lifecycle is independent of the lock state. */
-  readonly phishing: PhishingController;
+  readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
   /** Read and receive surface; every payment goes through `requests`. */
-  readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
-  readonly accounts: AccountTreeController;
+  readonly spark: HostController<
+    SparkController,
+    | "history"
+    | "accountBalance"
+    | "receiveAddress"
+    | "createInvoice"
+    | "newDepositAddress"
+    | "paymentStatus"
+    | "quoteExit"
+    | "registerLightningAddress"
+    | "unregisterLightningAddress"
+  >;
+  readonly accounts: HostController<
+    AccountTreeController,
+    | "imported"
+    | "addGroup"
+    | "addGroups"
+    | "renameWallet"
+    | "renameGroup"
+    | "setHidden"
+    | "select"
+    | "bind"
+    | "unbind"
+    | "bindingOf"
+    | "discoverSpark"
+    | "discoverGroups"
+    | "refreshTotals"
+  >;
   readonly watch: {
     readonly add: (input: {
       readonly family: "evm" | "solana" | "bitcoin";
@@ -177,8 +258,11 @@ export type WalletEngine = {
     readonly list: () => ReadonlyArray<WatchAccount>;
     readonly assets: (id: string, network: string) => Promise<AccountBalances>;
   };
-  readonly metaSync: MetaSyncController;
-  readonly backup: BackupController;
+  readonly metaSync: HostController<MetaSyncController, "sync">;
+  readonly backup: HostController<
+    BackupController,
+    "enable" | "disable" | "sync" | "list" | "restore"
+  >;
   readonly zaps: {
     readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
   };

@@ -33,6 +33,7 @@
     "native:consumer": "bun scripts/native-consumer.ts"
   },
   "devDependencies": {
+    "@microsoft/api-extractor": "7.60.1",
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",

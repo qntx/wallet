@@ -8,15 +8,18 @@
  */
 import { HDKey } from "@scure/bip32";
 import { NETWORK, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, expectTypeOf, it } from "vite-plus/test";
 
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { ChainsApi } from "@qntx/wallet/chains";
 
+import type { BitcoinTotals } from "../src/assets/bitcoin.ts";
 import { AssetsController } from "../src/assets/controller.ts";
+import type { AccountBalances, TokenBalance } from "../src/assets/controller.ts";
 import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { world } from "./support/btc-world.ts";
 
 const logger = { warn: () => {} };
 const BTC_NET = "bip122:000000000019d6689c085ae165831e93";
@@ -124,11 +127,15 @@ const make = (
     now: () => Date.now(),
   });
 
-/** Per-template totals: taproot outputs are protected under the ord-postage rule → frozen. */
+/** `key` reachable on `v` — totals objects must not carry a `frozen` field at all. */
+const hasKey = (v: unknown, key: string): boolean =>
+  typeof v === "object" && v !== null && key in v;
+
+/** Per-template totals: taproot outputs are protected under the ord-postage rule → protected. */
 const sourceTotals = (template: BitcoinAccountTemplate, value: number) =>
   template === "btc.bip86"
-    ? { native: "0", unconfirmed: "0", frozen: String(value) }
-    : { native: String(value), unconfirmed: "0", frozen: "0" };
+    ? { native: "0", unconfirmed: "0", protected: String(value) }
+    : { native: String(value), unconfirmed: "0", protected: "0" };
 
 describe("AssetsController bitcoin group", () => {
   it("sums every account template's xpub into one entry, each source reported apart", async () => {
@@ -157,7 +164,7 @@ describe("AssetsController bitcoin group", () => {
     }
     expect(balances.native).toBe("600000");
     expect(balances.unconfirmed).toBe("0");
-    expect(balances.frozen).toBe("400000");
+    expect(balances.protected).toBe("400000");
     expect(balances.utxos?.map((u) => u.source)).toStrictEqual([
       "btc.bip44",
       "btc.bip49",
@@ -185,7 +192,7 @@ describe("AssetsController bitcoin group", () => {
     expect(balances.sources?.["btc.bip84"]).toStrictEqual({
       native: "70000",
       unconfirmed: "50000",
-      frozen: "0",
+      protected: "0",
     });
     expect(balances.native).toBe("70000");
     expect(balances.unconfirmed).toBe("50000");
@@ -204,11 +211,11 @@ describe("AssetsController bitcoin group", () => {
     expect(balances.sources?.["btc.bip84"]).toStrictEqual({
       native: "70000",
       unconfirmed: "0",
-      frozen: "0",
+      protected: "0",
     });
   });
 
-  it("shows a protected UTXO under frozen and marks it protected, out of native", async () => {
+  it("counts a protected UTXO under protected, out of native, and marks it in utxos", async () => {
     const funded: Funded = {};
     fund(funded, addressOf("btc.bip84", 0, 0), [
       utxo("aa".repeat(32), 90_000, 800_000),
@@ -218,7 +225,7 @@ describe("AssetsController bitcoin group", () => {
     await assets.init();
     const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
     expect(balances.native).toBe("90000");
-    expect(balances.frozen).toBe("546");
+    expect(balances.protected).toBe("546");
     const dust = balances.utxos?.find((u) => u.value === 546);
     expect(dust?.protected).toBe(true);
     expect(dust?.source).toBe("btc.bip84");
@@ -236,7 +243,7 @@ describe("AssetsController bitcoin group", () => {
     await assets.init();
     const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
     expect(balances.native).toBe("20001");
-    expect(balances.frozen).toBe("20000");
+    expect(balances.protected).toBe("20000");
     expect(balances.utxos?.find((u) => u.value === 20_000)?.protected).toBe(true);
     expect(balances.utxos?.find((u) => u.value === 20_001)?.protected).toBe(false);
   });
@@ -251,13 +258,62 @@ describe("AssetsController bitcoin group", () => {
     await assets.init();
     const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
     expect(balances.native).toBe("0");
-    expect(balances.frozen).toBe("1045000");
+    expect(balances.protected).toBe("1045000");
     expect(balances.sources?.["btc.bip86"]).toStrictEqual({
       native: "0",
       unconfirmed: "0",
-      frozen: "1045000",
+      protected: "1045000",
     });
     expect(balances.utxos?.every((u) => u.protected)).toBe(true);
+  });
+
+  it("reports inscription-protected value as protected, never as frozen", async () => {
+    const funded: Funded = {};
+    fund(funded, addressOf("btc.bip84", 0, 0), [utxo("aa".repeat(32), 20_000, 800_000)]);
+    fund(funded, addressOf("btc.bip86", 0, 0), [utxo("bb".repeat(32), 500_000, 800_000)]);
+    const assets = make(esplora(funded, []));
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("0");
+    expect(balances.protected).toBe("520000");
+    expect(hasKey(balances, "frozen")).toBe(false);
+    for (const [template, value] of [
+      ["btc.bip84", "20000"],
+      ["btc.bip86", "500000"],
+    ] as const) {
+      const totals = balances.sources?.[template];
+      expect(totals).toStrictEqual({ native: "0", unconfirmed: "0", protected: value });
+      expect(hasKey(totals, "frozen")).toBe(false);
+    }
+  });
+
+  it("a user-frozen coin stays in native and is listed by frozenUtxos, not in protected", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const booted = await w.boot();
+    const outpoint = `${u.txid}:0`;
+    await booted.ctl.setUtxosFrozen(GROUP, BTC_NET, [outpoint], true);
+    expect(booted.ctl.frozenUtxos(GROUP, BTC_NET)).toStrictEqual([outpoint]);
+    // The balance read does not consult the freeze list: the coin still counts in native.
+    const assets = make(w.es, undefined, undefined, w.apis);
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("50000");
+    expect(balances.protected).toBe("0");
+    expect(hasKey(balances, "frozen")).toBe(false);
+    expect(balances.sources?.["btc.bip84"]).toStrictEqual({
+      native: "50000",
+      unconfirmed: "0",
+      protected: "0",
+    });
+  });
+
+  it("names the balance field protected at the type level; TokenBalance keeps frozen", () => {
+    expectTypeOf<BitcoinTotals>().toHaveProperty("protected");
+    expectTypeOf<BitcoinTotals>().not.toHaveProperty("frozen");
+    expectTypeOf<AccountBalances>().toHaveProperty("protected");
+    expectTypeOf<AccountBalances>().not.toHaveProperty("frozen");
+    expectTypeOf<TokenBalance>().toHaveProperty("frozen");
   });
 
   it("rejects when the kernel answers a bitcoin template with no xpub", async () => {
@@ -307,9 +363,9 @@ describe("AssetsController watched bitcoin address", () => {
     // spendable by default.
     expect(balances.native).toBe("0");
     expect(balances.unconfirmed).toBe("0");
-    expect(balances.frozen).toBe("125000");
+    expect(balances.protected).toBe("125000");
     expect(balances.sources).toStrictEqual({
-      address: { native: "0", unconfirmed: "0", frozen: "125000" },
+      address: { native: "0", unconfirmed: "0", protected: "125000" },
     });
     expect(balances.utxos?.map((u) => u.source)).toStrictEqual(["address"]);
     expect(assets.getState().balances[`${BTC_NET}:${address}`]).toStrictEqual(balances);

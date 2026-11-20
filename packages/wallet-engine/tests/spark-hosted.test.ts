@@ -18,6 +18,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
 import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import { sparkStore } from "../src/spark/store.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
@@ -166,7 +167,7 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
       // The account tree drives setAccounts([selected]) on unlock reconcile — wait for that
       // drive to land before declaring both accounts, or the reconcile would drop refB.
       await waitForTreeReady(engine, Date.now() + 30_000);
-      engine.spark.setAccounts([refA, refB]);
+      (engine.spark as SparkController).setAccounts([refA, refB]);
 
       const clientA = createSparkClient({
         network: "regtest",

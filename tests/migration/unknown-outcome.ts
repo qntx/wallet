@@ -1,8 +1,6 @@
-import type { WalletEngine } from "@qntx/wallet-engine";
+import type { TrackedTransaction, TxState, WalletEngine } from "@qntx/wallet-engine";
 
-type TrackedTransaction = NonNullable<ReturnType<WalletEngine["transactions"]["txById"]>>;
-
-const TERMINAL: ReadonlySet<TrackedTransaction["state"]> = new Set([
+const TERMINAL: ReadonlySet<TxState> = new Set([
   "confirmed",
   "failed",
   "rejected",

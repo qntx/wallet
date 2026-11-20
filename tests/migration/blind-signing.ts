@@ -1,9 +1,7 @@
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
-import type { PendingRequest, WalletEngine } from "@qntx/wallet-engine";
+import type { AccountRef, PendingRequest, WalletEngine } from "@qntx/wallet-engine";
 import { BlindSigningDisabledError, requiredAcknowledgement } from "@qntx/wallet-engine";
 import { chains } from "@qntx/wallet/chains";
-
-import type { AccountRef } from "./account-ref.ts";
 
 /** 0.13.0 kept the flag per account group in the engine; it is a vault setting now. */
 export function enableBlindSigningBefore(engine: WalletEngine, walletId: string): void {
