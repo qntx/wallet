@@ -1047,6 +1047,7 @@ export type GroupHistory = {
     readonly hasMore: boolean;
     readonly stale: boolean;
     readonly errors: Readonly<Record<string, string>>;
+    readonly truncated: ReadonlyArray<string>;
 };
 
 // @public (undocumented)

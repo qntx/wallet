@@ -659,7 +659,8 @@ from Esplora (all four Bitcoin templates), Solana RPC, the Spark operators and t
 Locally tracked sends fold into the matching chain entry. A gateway EVM entry is `verified` only
 after it was checked against RPC; show `flags` (`zero-value-transfer`, `lookalike-counterparty`,
 `token-impersonation`, `suspicious-token-symbol`, `chain-mismatch`) as warnings and never offer a
-history counterparty as a known recipient.
+history counterparty as a known recipient. `truncated` names the networks whose provider pages
+dropped entries that could not be paged — show a gap notice while it is non-empty.
 
 [`tests/migration/history.ts`](tests/migration/history.ts):
 
@@ -668,18 +669,19 @@ import type { GroupHistory, WalletEngine } from "@qntx/wallet-engine";
 
 /**
  * One newest-first activity list per account group, incoming transfers included. State is keyed
- * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`.
+ * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`. `gaps` names the
+ * networks whose provider pages dropped entries — render a gap notice while it is non-empty.
  */
 export function showActivity(
   engine: WalletEngine,
   group: { readonly walletId: string; readonly groupIndex: number },
-  render: (history: GroupHistory) => void,
+  render: (history: GroupHistory, gaps: ReadonlyArray<string>) => void,
 ): () => void {
   const key = `${group.walletId}:${String(group.groupIndex)}`;
   const stop = engine.history.store.subscribe((state) => {
     const history = state.groups[key];
     if (history !== undefined) {
-      render(history);
+      render(history, history.truncated);
     }
   });
   void engine.history.load(group);

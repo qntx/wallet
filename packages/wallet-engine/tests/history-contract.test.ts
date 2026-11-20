@@ -60,19 +60,37 @@ describe("historyRequest", () => {
 
 describe("historyResponse", () => {
   it("accepts the documented shape with a null cursor", () => {
-    expect(historyResponse.safeParse({ items: [item], cursor: null }).success).toBe(true);
+    expect(
+      historyResponse.safeParse({ items: [item], cursor: null, truncated: false }).success,
+    ).toBe(true);
+    expect(
+      historyResponse.safeParse({ items: [item], cursor: "26401664", truncated: true }).success,
+    ).toBe(true);
+  });
+
+  it("requires truncated", () => {
+    expect(historyResponse.safeParse({ items: [item], cursor: null }).success).toBe(false);
+    expect(
+      historyResponse.safeParse({ items: [item], cursor: null, truncated: "no" }).success,
+    ).toBe(false);
   });
 
   it("caps items and transfers per item", () => {
     const many = Array.from({ length: HISTORY_ITEMS_MAX + 1 }, () => item);
-    expect(historyResponse.safeParse({ items: many, cursor: null }).success).toBe(false);
+    expect(
+      historyResponse.safeParse({ items: many, cursor: null, truncated: true }).success,
+    ).toBe(false);
     const fat = {
       ...item,
       transfers: Array.from({ length: HISTORY_TRANSFERS_MAX + 1 }, () => transfer),
     };
-    expect(historyResponse.safeParse({ items: [fat], cursor: null }).success).toBe(false);
+    expect(
+      historyResponse.safeParse({ items: [fat], cursor: null, truncated: true }).success,
+    ).toBe(false);
     const empty = { ...item, transfers: [] };
-    expect(historyResponse.safeParse({ items: [empty], cursor: null }).success).toBe(false);
+    expect(
+      historyResponse.safeParse({ items: [empty], cursor: null, truncated: false }).success,
+    ).toBe(false);
   });
 });
 

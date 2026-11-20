@@ -60,6 +60,12 @@ export const historyResponse = z.strictObject({
   items: z.array(historyItem).check(z.maxLength(HISTORY_ITEMS_MAX)),
   /** Null: there is no older page. */
   cursor: z.union([decimal, z.null()]),
+  /**
+   * True when the gateway left out transfers in the range this page covers — a block or a
+   * transaction with more transfers than one page can carry. The cursor still moves past them
+   * (they cannot be paged), so the list has a gap there.
+   */
+  truncated: z.boolean(),
 });
 
 export const history = endpoint("POST", "/v1/history/:caip2", historyRequest, historyResponse);

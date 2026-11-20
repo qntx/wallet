@@ -89,7 +89,8 @@ the package root.
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
 - `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
-  entries carry `verified`, `origin` and `flags`.
+  entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
+  left unpagable gaps.
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).

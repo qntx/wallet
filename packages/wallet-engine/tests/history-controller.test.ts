@@ -167,7 +167,7 @@ const make = (options: {
       fetch: (async (_input: unknown, init?: { body?: string }) => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         requests.push(body);
-        const page = pages.shift() ?? { items: [], cursor: null };
+        const page = { truncated: false, ...(pages.shift() ?? { items: [], cursor: null }) };
         if (options.deferredAddresses?.includes(String(body["address"])) === true) {
           return new Promise<Response>((resolve) => {
             pending.push(() => {
@@ -523,6 +523,41 @@ describe("HistoryController", () => {
     expect(after.length).toBeGreaterThan(25);
     expect(after.slice(0, 25).map((e) => e.id)).toStrictEqual(before.map((e) => e.id));
     expect(requests.some((r) => r["cursor"] === "900")).toBe(true);
+    controller.lock();
+  });
+
+  it("surfaces a truncated provider page as a gap on the group", async () => {
+    const firstItems = Array.from({ length: 30 }, (_, i) =>
+      item(hash((i + 1).toString(16).padStart(2, "0")), 130 - i, 1_000_000 - i * 1000),
+    );
+    const secondItems = [item(hash("ef"), 90, 500_000)];
+    const { controller, requests } = make({
+      pages: [
+        { items: firstItems, cursor: "99", truncated: true },
+        { items: secondItems, cursor: null, truncated: false },
+      ],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    let group = controller.getState().groups["w:0"];
+    expect(group?.truncated).toStrictEqual(["eip155:1"]);
+    expect(group?.entries).toHaveLength(25);
+    expect(group?.hasMore).toBe(true);
+
+    await controller.loadMore(GROUP);
+    // The older page was paged with the first page's cursor, exactly once.
+    const second = requests.filter((r) => r["cursor"] === "99");
+    expect(second).toHaveLength(1);
+    group = controller.getState().groups["w:0"];
+    const ids = entriesOf(controller).map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(group?.entries).toHaveLength(31);
+    expect(group?.hasMore).toBe(false);
+    expect(group?.truncated).toStrictEqual(["eip155:1"]);
+
+    // A fresh load whose pages carry no gaps clears the marker.
+    await controller.load(GROUP);
+    expect(controller.getState().groups["w:0"]?.truncated).toStrictEqual([]);
     controller.lock();
   });
 
