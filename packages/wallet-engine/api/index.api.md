@@ -840,7 +840,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine;
 export function decodeExitChain(bytes: Uint8Array): SparkExitChain;
 
 // @public
-export type DeepReadonly<T> = T extends ((...args: never[]) => unknown) ? T : T extends Uint8Array | Uint8ClampedArray | Int8Array | Int16Array | Int32Array | Uint16Array | Uint32Array | Float16Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView ? T : T extends ReadonlyArray<infer E> ? ReadonlyArray<DeepReadonly<E>> : T extends ReadonlyMap<infer K, infer V> ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>> : T extends ReadonlySet<infer E> ? ReadonlySet<DeepReadonly<E>> : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]>; } : T;
+export type DeepReadonly<T> = T extends ((...args: never[]) => unknown) ? T : T extends Uint8Array | Uint8ClampedArray | Int8Array | Int16Array | Int32Array | Uint16Array | Uint32Array | Float16Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView ? T : T extends ReadonlyArray<infer E> ? ReadonlyArray<DeepReadonly<E>> : T extends ReadonlyMap<infer K, infer V> ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>> : T extends ReadonlySet<infer E> ? ReadonlySet<DeepReadonly<E>> : T extends Record<PropertyKey, unknown> ? { readonly [K in keyof T]: DeepReadonly<T[K]>; } : T;
 
 // @public
 export type DelegationStatus = {
