@@ -16,9 +16,8 @@ import { join } from "node:path";
 
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { beforeAll, describe, expect, it } from "vite-plus/test";
-
 import { TronWeb } from "tronweb";
+import { beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
@@ -173,6 +172,32 @@ const hashOf = (tx: TrackedTransaction): string => {
 };
 
 const expirationOf = (tx: TrackedTransaction): number => tx.tron?.expiration ?? 0;
+
+const dappSig = (tx: TrackedTransaction): string => {
+  const signature = tx.tron?.dappSignature;
+  if (signature === undefined) {
+    throw new Error("the observed entry carries no dappSignature");
+  }
+  return signature;
+};
+
+const receiptField = (info: Record<string, unknown>, field: string): unknown =>
+  (info["receipt"] as Record<string, unknown> | undefined)?.[field];
+
+/** `receipt.result` — absent on plain system contracts, which TRE treats as SUCCESS. */
+const receiptResult = (info: Record<string, unknown>): unknown =>
+  receiptField(info, "result") ?? "SUCCESS";
+
+const netFeeOf = (info: Record<string, unknown>): bigint =>
+  BigInt(String(receiptField(info, "net_fee") ?? 0));
+
+const intentExpiration = (pending: PendingRequest): number => {
+  const expiration = "tron" in pending.display ? pending.display.tron?.expiration : undefined;
+  if (expiration === undefined) {
+    throw new Error("the send intent carries no tron expiration");
+  }
+  return expiration;
+};
 
 const stateOf = (ctl: TransactionController, id: string): string | undefined =>
   ctl.getState().txs[id]?.state;
@@ -751,18 +776,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       const tx = await tw.transactionBuilder.sendTrx(tre1Addr, 1_000_000, A);
       const rawData = hexToBytes(tx.raw_data_hex);
       const signed = await dappTronSign(rawData);
-      const signature = signed.tron?.dappSignature;
-      if (signature === undefined) {
-        throw new Error("the observed entry carries no dappSignature");
-      }
       expect(signed.raw).toBeUndefined();
-      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(signature));
+      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(dappSig(signed)));
       expect(sent.id).toBe(signed.id);
       const finalTx = await waitFinal(transactions, sent.id, Date.now() + 240_000);
       expect(finalTx.state).toBe("confirmed");
       const info = await txInfo(hashOf(sent));
-      const receipt = info["receipt"] as { result?: string } | undefined;
-      expect(receipt?.result ?? "SUCCESS").toBe("SUCCESS");
+      expect(receiptResult(info)).toBe("SUCCESS");
     },
   );
 
@@ -783,16 +803,11 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       const tx = built.transaction;
       const rawData = hexToBytes(tx.raw_data_hex);
       const signed = await dappTronSign(rawData);
-      const signature = signed.tron?.dappSignature;
-      if (signature === undefined) {
-        throw new Error("the observed entry carries no dappSignature");
-      }
-      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(signature));
+      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(dappSig(signed)));
       const finalTx = await waitFinal(transactions, sent.id, Date.now() + 240_000);
       expect(finalTx.state).toBe("confirmed");
       const info = await txInfo(hashOf(sent));
-      const receipt = info["receipt"] as { result?: string } | undefined;
-      expect(receipt?.result ?? "SUCCESS").toBe("SUCCESS");
+      expect(receiptResult(info)).toBe("SUCCESS");
     },
   );
 
@@ -803,12 +818,11 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       const tx = await tw.transactionBuilder.sendTrx(tre1Addr, 1_000_000, A);
       const rawData = hexToBytes(tx.raw_data_hex);
       const signed = await dappTronSign(rawData);
-      const signature = signed.tron?.dappSignature;
-      if (signature === undefined) {
-        throw new Error("the observed entry carries no dappSignature");
-      }
       // The dApp — not the wallet — sends the signed transaction to the node.
-      const res = await post("/wallet/broadcasttransaction", { ...tx, signature: [signature] });
+      const res = await post("/wallet/broadcasttransaction", {
+        ...tx,
+        signature: [dappSig(signed)],
+      });
       expect(res["result"]).toBe(true);
       const finalTx = await waitFinal(transactions, signed.id, Date.now() + 240_000);
       expect(finalTx.state).toBe("confirmed");
@@ -825,7 +839,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       const rawData = hexToBytes(tx.raw_data_hex);
       const signed = await dappTronSign(rawData);
       expect(signed.raw).toBeUndefined();
-      const expiration = tx.raw_data.expiration;
+      const { expiration } = tx.raw_data;
       const deadline = Date.now() + Math.max(0, expiration - Date.now()) + 240_000;
       await waitDropped(transactions, signed.id, ticker, deadline);
       expect(transactions.getState().txs[signed.id]?.raw).toBeUndefined();
@@ -864,11 +878,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
         amount: 1_000_000n,
         fee: "normal",
       });
-      const originalExpiration =
-        "tron" in pending.display ? pending.display.tron?.expiration : undefined;
-      if (originalExpiration === undefined) {
-        throw new Error("the send intent carries no tron expiration");
-      }
+      const originalExpiration = intentExpiration(pending);
       // Under the 20 s freshness bound the route rebuilds on a fresh solidified head.
       clock = originalExpiration - 19_000;
       const sent = await timedRequests.approve(pending.id, "send", approval(pending, VERIFY));
@@ -900,8 +910,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       const rebuilt = decodeTronRawData(stripEnvelope(rawOf(finalTx)));
       expect(new TextDecoder().decode(rebuilt.memo)).toBe("qntx e2e");
       const info = await txInfo(hashOf(sent));
-      const receipt = info["receipt"] as { net_fee?: number } | undefined;
-      const netFee = BigInt(receipt?.net_fee ?? 0);
+      const netFee = netFeeOf(info);
       // TransferContract burns no energy: fee − net_fee is exactly the flat memo fee.
       expect(infoFee(info) - netFee).toBe(memoFeeSun);
     },

@@ -6,18 +6,18 @@ for four families, plus public-key account derivation.
 
 ## Entries
 
-| Subpath          | Contents                                                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.`              | `SignRequest`, `AccountRef`, `EvmTransaction`, `DisplayIntent`, `Verifiability`, `ChainError`                                                                     |
-| `./evm`          | `normalizeEvm`, `decodeEvm`/`verifiabilityEvm`, `isEvmAddress`/`checksumEvmAddress`, `evmAddressFromPublicKey`, `recoverEvmSigner`, token table                   |
-| `./evm/sign`     | `signEvmTransaction` (legacy/2930/1559/7702), `signEvmPersonalMessage` (EIP-191), `signEvmTypedData` (EIP-712)                                                    |
-| `./solana`       | `normalizeSolana`, `decodeSolana`/`verifiabilitySolana`, `isSolanaAddress`, `solanaAddressFromPublicKey`, `verifySolanaSignature`, `SOLANA_NETWORKS`, token table |
-| `./solana/sign`  | `signSolanaMessage` (ed25519, 64-byte signature)                                                                                                                  |
-| `./bitcoin`      | `normalizeBitcoin`, `decodeBitcoinPsbt`/`verifiabilityBitcoin`, `bitcoinAddressFromXpub`, `BITCOIN_NETWORKS`                                                      |
-| `./bitcoin/sign` | `signBitcoinPsbt` (P2WPKH/P2SH-P2WPKH/P2PKH/P2TR key path), `signBitcoinMessage` (BIP-322 simple, legacy)                                                         |
+| Subpath          | Contents                                                                                                                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.`              | `SignRequest`, `AccountRef`, `EvmTransaction`, `DisplayIntent`, `Verifiability`, `ChainError`                                                                                                                                                                              |
+| `./evm`          | `normalizeEvm`, `decodeEvm`/`verifiabilityEvm`, `isEvmAddress`/`checksumEvmAddress`, `evmAddressFromPublicKey`, `recoverEvmSigner`, token table                                                                                                                            |
+| `./evm/sign`     | `signEvmTransaction` (legacy/2930/1559/7702), `signEvmPersonalMessage` (EIP-191), `signEvmTypedData` (EIP-712)                                                                                                                                                             |
+| `./solana`       | `normalizeSolana`, `decodeSolana`/`verifiabilitySolana`, `isSolanaAddress`, `solanaAddressFromPublicKey`, `verifySolanaSignature`, `SOLANA_NETWORKS`, token table                                                                                                          |
+| `./solana/sign`  | `signSolanaMessage` (ed25519, 64-byte signature)                                                                                                                                                                                                                           |
+| `./bitcoin`      | `normalizeBitcoin`, `decodeBitcoinPsbt`/`verifiabilityBitcoin`, `bitcoinAddressFromXpub`, `BITCOIN_NETWORKS`                                                                                                                                                               |
+| `./bitcoin/sign` | `signBitcoinPsbt` (P2WPKH/P2SH-P2WPKH/P2PKH/P2TR key path), `signBitcoinMessage` (BIP-322 simple, legacy)                                                                                                                                                                  |
 | `./tron`         | `normalizeTron`, `decodeTron`, `decodeTronRawData`/`encodeTronTransaction`, `tronRawDataFromJson`, `parseTronTypedData`/`tronTypedDataFromArgs`/`tronTypedDataDigest` (TIP-712), `isTronAddress`, `tronAddressFromPublicKey`, `TRON_PERMIT2`, `TRON_NETWORKS`, token table |
-| `./tron/sign`    | `signTronTransaction` (canonical `raw_data` bytes), `signTronMessage` (TIP-191), `signTronTypedData` (TIP-712)                                                    |
-| `./networks`     | `NetworkMeta`, `BUILT_IN_NETWORKS`, `networkMeta`, `withNativeAmountMeta`                                                                                         |
+| `./tron/sign`    | `signTronTransaction` (canonical `raw_data` bytes), `signTronMessage` (TIP-191), `signTronTypedData` (TIP-712)                                                                                                                                                             |
+| `./networks`     | `NetworkMeta`, `BUILT_IN_NETWORKS`, `networkMeta`, `withNativeAmountMeta`                                                                                                                                                                                                  |
 
 `/sign` subpaths are for the signer kernel only — the host runtime uses the
 plain entries. No network, storage or entropy inside; every crypto primitive
