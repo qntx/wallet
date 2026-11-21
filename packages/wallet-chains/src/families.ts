@@ -125,7 +125,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     nearMiss: "typed-data-variant",
   },
   /* 1inch Limit Order Protocol orders at the Aggregation Router v6 (verified eip712Domain per
-     chain, evidence/onchain/out{1,2}.json) or the v5 router (code only — claim-only). */
+     chain in vectors/chains/order-protocols.json) or the v5 router (code only — claim-only). */
   {
     family: "1inch",
     claim: {
@@ -139,8 +139,9 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Standalone 1inch LOP v2 deployments, DOMAIN_SEPARATOR verified (evidence/onchain/out2.json;
-     addresses from erc7730 registry/1inch/eip712-1inch-limit-order.json). */
+  /* Standalone 1inch LOP v2 deployments, DOMAIN_SEPARATOR probed in
+     vectors/chains/order-protocols.json; addresses from the erc7730 registry at 3d332d5f
+     (https://github.com/LedgerHQ/clear-signing-erc7730-registry/blob/3d332d5fb832b78e4745ee6c7046a0c2ea100426/registry/1inch/eip712-1inch-limit-order.json). */
   {
     family: "1inch LOP",
     claim: {
@@ -156,7 +157,8 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* CoW GPv2 orders on the settlement contract (cow-contracts networks.json; research.md). */
+  /* CoW GPv2 orders on the settlement contract (networks.json in cowprotocol/contracts at
+     ea0c36591b6da73b9ba4e2e2107897080c7f9b68; probed in vectors/chains/order-protocols.json). */
   {
     family: "CoW",
     claim: {
@@ -177,8 +179,8 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* 0x v4 Exchange Proxy limit/RFQ/OTC orders (FixinEIP712.sol domain "ZeroEx"/1.0.0; on-chain
-     getLimitOrderHash matches the viem hash — evidence/onchain/zeroex.txt). */
+  /* 0x v4 Exchange Proxy limit/RFQ/OTC orders (FixinEIP712.sol domain "ZeroEx"/1.0.0; probed
+     in vectors/chains/order-protocols.json). */
   {
     family: "0x",
     claim: {
@@ -206,7 +208,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* LooksRare v2 (on-chain DOMAIN_SEPARATOR match — evidence/onchain/out2.json). */
+  /* LooksRare v2 (on-chain DOMAIN_SEPARATOR match — vectors/chains/order-protocols.json). */
   {
     family: "LooksRare",
     claim: {
@@ -216,8 +218,8 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Bebop RFQ (on-chain eip712Domain match; research.md) and Bebop JAM (on-chain separator,
-     evidence/onchain/brute.txt; Etherscan "Bebop: JamSettlement"). */
+  /* Bebop RFQ and Bebop JAM (deployments and domains probed on-chain in
+     vectors/chains/order-protocols.json). */
   {
     family: "Bebop",
     claim: {
@@ -236,8 +238,9 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Paraswap Augustus RFQ (erc7730 registry/paraswap/eip712-paraswap.json; code present,
-     evidence/onchain/out2.json). */
+  /* Paraswap Augustus RFQ (erc7730 registry at 3d332d5f
+     https://github.com/LedgerHQ/clear-signing-erc7730-registry/blob/3d332d5fb832b78e4745ee6c7046a0c2ea100426/registry/paraswap/eip712-paraswap.json;
+     code present — vectors/chains/order-protocols.json). */
   {
     family: "Paraswap",
     claim: {
@@ -262,7 +265,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* KyberSwap limit orders (on-chain separators, evidence/onchain/brute.txt). */
+  /* KyberSwap limit orders (on-chain separators — vectors/chains/order-protocols.json). */
   {
     family: "KyberSwap",
     claim: {
@@ -281,8 +284,10 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* OpenOcean limit order v2 (refs/openocean-lop-v2 contracts/LimitOrderProtocol.sol:26;
-     on-chain match evidence/onchain/out3.json; the HyperEVM README address has no code and is
+  /* OpenOcean limit order v2 (contracts/LimitOrderProtocol.sol in
+     openocean-finance/limit-order-protocol-v2 at 747ed8ea309ace67ceaa1b3d1a1a03b8331a1719 —
+     https://github.com/openocean-finance/limit-order-protocol-v2/blob/747ed8ea309ace67ceaa1b3d1a1a03b8331a1719/contracts/LimitOrderProtocol.sol;
+     probed in vectors/chains/order-protocols.json; the HyperEVM README address has no code and is
      not claimed). */
   {
     family: "OpenOcean",
@@ -306,7 +311,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Odos limit order v2 routers (on-chain eip712Domain, evidence/onchain/out3.json;
+  /* Odos limit order v2 routers (on-chain eip712Domain — vectors/chains/order-protocols.json;
      github.com/odos-xyz/odos-limit-orders README). */
   {
     family: "Odos",

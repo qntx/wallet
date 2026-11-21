@@ -7,9 +7,12 @@
  * packages/wallet-chains/src/families.ts (0x, Blur, LooksRare, Bebop, Paraswap, Velora Delta,
  * KyberSwap, OpenOcean, Odos).
  *
- * The (label, chainId, address) deployment list is the verified map behind those tables
- * (wallet-audit n2/f4-classify evidence/onchain/out{1,2,3}.json). The oracle is the public RPC set
- * below; each record is probed with eth_getCode, eip712Domain() (0x84b0196e), the three common
+ * The (label, chainId, address) deployment list is the verified map behind those tables — upstream
+ * addresses come from the pinned sources cited in the family rows (UniswapX README at
+ * eb7ce077036258b9510b42ad37aa920cf3aaf308, 1inch/limit-order-protocol tag 4.0.0
+ * c8be9c67247880bd6ec88cf7ad2e040a16a483f2, cowprotocol/contracts ea0c3659, the erc7730 registry at
+ * 3d332d5f, openocean-finance/limit-order-protocol-v2 at 747ed8ea). The oracle is the public RPC
+ * set below; each record is probed with eth_getCode, eip712Domain() (0x84b0196e), the three common
  * DOMAIN_SEPARATOR selectors (0x3644e515, 0xf698da25, 0xed24911d) and, for reactors, permit2()
  * (0x12261ee7).
  *
@@ -55,7 +58,8 @@ const RPCS: Record<number, string> = {
   747474: "https://rpc.katana.network",
 };
 
-/* label, chainId, address, reactor — verified deployment map (evidence/onchain/out{1,2,3}.json). */
+/* label, chainId, address, reactor — the deployment map the generator itself verifies on-chain
+   and writes to vectors/chains/order-protocols.json. */
 const TARGETS: ReadonlyArray<{
   readonly label: string;
   readonly chainId: number;

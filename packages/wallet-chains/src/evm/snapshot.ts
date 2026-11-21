@@ -1,8 +1,10 @@
 /**
  * Recognition of a Snapshot `Vote`: the document is a claim of the Snapshot family only when the
- * domain is exactly `{name: "snapshot", version: "0.1.4"}` (snapshot.js `src/sign/index.ts`), the
- * declared `EIP712Domain` is exactly `[string name, string version]`, the primary type is `Vote`
- * and `types` holds exactly `EIP712Domain` plus `Vote` with one of the three field lists
+ * domain is exactly `{name: "snapshot", version: "0.1.4"}` (snapshot.js `src/sign/index.ts` at
+ * 2c1198f5 —
+ * https://github.com/snapshot-labs/snapshot.js/blob/2c1198f5ead59cff427f2bd63cdb56336cdf351d/src/sign/index.ts),
+ * the declared `EIP712Domain` is exactly `[string name, string version]`, the primary type is
+ * `Vote` and `types` holds exactly `EIP712Domain` plus `Vote` with one of the three field lists
  * snapshot.js emits (`voteTypes`/`voteArrayTypes`/`voteStringTypes`, `src/sign/types.ts`). Any
  * other shape is not Snapshot and falls through to the generic rules.
  */
