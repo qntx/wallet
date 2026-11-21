@@ -48,7 +48,8 @@ export type TxBlock = {
 /**
  * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
  * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
- * `ended` is a terminal answer the tracker stops on.
+ * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says
+ * why the transaction cannot land yet, `undefined` clears an earlier note.
  */
 export type TxPoll =
   | {
@@ -58,7 +59,8 @@ export type TxPoll =
       readonly final: boolean;
     }
   | { readonly kind: "reorged" }
-  | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" };
+  | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" }
+  | { readonly kind: "waiting"; readonly error: string | undefined };
 
 /** In a block but not final yet: tracked at the finality interval. */
 export const awaitingFinality = (tx: TrackedTransaction): boolean =>

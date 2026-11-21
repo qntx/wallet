@@ -754,6 +754,8 @@ export class TransactionController extends Controller<TransactionControllerState
         state: answer.state,
         block: answer.block,
         final: answer.final,
+        // A landed transaction carries no stuck note.
+        error: undefined,
       });
       if (firstInclusion) {
         this.settle(updated);
@@ -779,6 +781,10 @@ export class TransactionController extends Controller<TransactionControllerState
       );
       await this.reviveSiblings(updated);
       this.retrack(id, updated.hash ?? "");
+      return;
+    }
+    if (answer.kind === "waiting") {
+      await this.transition(tx, { error: answer.error });
       return;
     }
     this.untrack(id);
