@@ -307,6 +307,19 @@ describe("polymarket live market views", () => {
     expect(sockets[0]!.readyState).toBe(3);
   });
 
+  it("closes the market socket on the last book view while an account stream stays open", async () => {
+    const { live } = setup();
+    const book = live.book(ASSET);
+    live.account({ walletId: "w", groupIndex: 0 });
+    await flush();
+    expect(sockets).toHaveLength(2);
+    sockets[0]!.opened();
+    sockets[1]!.opened();
+    await book.close();
+    expect(sockets[0]!.readyState).toBe(3);
+    expect(sockets[1]!.readyState).toBe(1);
+  });
+
   it("reconnect resubscribes every open asset and waits for a fresh book", async () => {
     const { live, timers } = setup();
     const view = live.book(ASSET);

@@ -440,7 +440,7 @@ export function createPolymarketLive(options: {
             core.send(updateFrame("unsubscribe", [assetId]));
           }
         }
-        if (views.size === 0 && accountViews.size === 0) {
+        if (views.size === 0) {
           core.close();
         }
         await Promise.resolve();
