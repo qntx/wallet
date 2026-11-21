@@ -20,6 +20,7 @@ import { compose, OrderedMerge } from "./merge.ts";
 import type { Stream } from "./merge.ts";
 import { solanaHistoryStream } from "./solana.ts";
 import { sparkHistoryStream, sparkRecordEntries, sparkRecordsChanged } from "./spark.ts";
+import { tronHistoryStream } from "./tron.ts";
 import type { HistoryEntry } from "./types.ts";
 
 const PAGE = 25;
@@ -51,7 +52,9 @@ export type HistoryControllerOptions = {
     | "independentClient"
     | "independentSolanaRpc"
     | "independentEsplora"
+    | "independentTronApi"
     | "solanaRpc"
+    | "tronApi"
     | "esplora"
   >;
   readonly chains: {
@@ -440,6 +443,26 @@ export class HistoryController extends Controller<HistoryState> {
             },
             (id, error) => {
               runtime.errors[id] = errorMessage(error);
+            },
+          ),
+        );
+      }
+    }
+    if (gateway !== undefined && own.tron !== undefined) {
+      for (const network of networks.enabled("tron")) {
+        // The indexer feeds are gateway-only; a custom-endpoint network is skipped like EVM.
+        if (networks.independentTronApi(network).kind === "not-needed") {
+          continue;
+        }
+        const address = own.tron;
+        streams.push(
+          tronHistoryStream(
+            { gateway, networks, setTimer: this.options.setTimer },
+            network,
+            address,
+            cached,
+            () => {
+              runtime.truncated.add(network);
             },
           ),
         );

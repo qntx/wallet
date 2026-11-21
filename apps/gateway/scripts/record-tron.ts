@@ -344,6 +344,121 @@ for (const network of NETWORKS) {
   }
 }
 
+/**
+ * History fixtures: the holder's real paged indexer feeds and the node evidence the stream
+ * cross-checks against. `history-transactions-N`/`history-trc20-N` are consecutive fingerprint
+ * pages; `history-tx-<txid>`/`history-info-<txid>` are
+ * `gettransactionbyid`/`gettransactioninfobyid` for every transfer txid in them (a few extra
+ * tx-feed pages hunt a TransferAssetContract row).
+ */
+type PageBody = {
+  readonly data?: ReadonlyArray<Record<string, unknown>>;
+  readonly meta?: { readonly fingerprint?: string };
+};
+
+const pageTxids = (body: unknown): ReadonlyArray<{ txid: string; kind: string }> => {
+  const out: Array<{ txid: string; kind: string }> = [];
+  for (const row of (body as PageBody | undefined)?.data ?? []) {
+    if (typeof row.txID === "string") {
+      const contracts = (row.raw_data as { contract?: Array<{ type?: string }> } | undefined)
+        ?.contract;
+      const type = contracts?.[0]?.type;
+      if (type === "TransferContract" || type === "TransferAssetContract") {
+        out.push({ txid: row.txID, kind: type });
+      }
+    }
+    if (typeof row.transaction_id === "string") {
+      out.push({ txid: row.transaction_id, kind: "trc20" });
+    }
+  }
+  return out;
+};
+
+const fingerprintOf = (body: unknown): string | undefined =>
+  (body as PageBody | undefined)?.meta?.fingerprint;
+
+const recordedBody = async (dir: string, name: string): Promise<unknown> => {
+  const file = Bun.file(`${OUT}/${dir}/${name}.json`);
+  return (await file.exists()) ? file.json() : undefined;
+};
+
+for (const network of NETWORKS) {
+  const provider = network.providers.find((p) => p.indexer === true);
+  if (provider === undefined) {
+    continue;
+  }
+  const dir = `${network.dir}-${provider.name}`;
+  const feeds: ReadonlyArray<{ name: string; feed: string; pages: number }> = [
+    { name: "history-transactions", feed: "transactions", pages: 4 },
+    { name: "history-trc20", feed: "transactions/trc20", pages: 2 },
+  ];
+  const txids = new Map<string, string>();
+  for (const { name, feed, pages } of feeds) {
+    let fingerprint: string | undefined;
+    for (let i = 0; i < pages; i += 1) {
+      const fixture = `${name}-${i}`;
+      const query = `only_confirmed=true&limit=25${fingerprint === undefined ? "" : `&fingerprint=${fingerprint}`}`;
+      if (!(await recorded(dir, fixture))) {
+        try {
+          const res = await fetch(`${provider.url}/v1/accounts/${HOLDER}/${feed}?${query}`);
+          const body = await readJson(res);
+          await write(dir, fixture, { status: res.status, body });
+          if (res.status !== 200) {
+            failures.push(`${dir}: ${fixture} status ${res.status}`);
+          }
+        } catch (error) {
+          failures.push(`${dir}: ${fixture} ${String(error)}`);
+        }
+        await sleep(provider.ms);
+      }
+      const entry = await recordedBody(dir, fixture);
+      const body = isObject(entry) ? entry.body : undefined;
+      for (const { txid, kind } of pageTxids(body)) {
+        txids.set(txid, kind);
+      }
+      fingerprint = fingerprintOf(body);
+      if (fingerprint === undefined) {
+        break;
+      }
+    }
+  }
+  // Node evidence for a few transfer claims of each kind — the bodies the stream cross-checks.
+  const perKind = new Map<string, number>();
+  for (const [txid, kind] of txids) {
+    const taken = perKind.get(kind) ?? 0;
+    if (taken >= 4) {
+      continue;
+    }
+    perKind.set(kind, taken + 1);
+    for (const [prefix, path] of [
+      ["history-tx", "/wallet/gettransactionbyid"],
+      ["history-info", "/wallet/gettransactioninfobyid"],
+    ] as const) {
+      const fixture = `${prefix}-${txid}`;
+      if (await recorded(dir, fixture)) {
+        continue;
+      }
+      try {
+        const res = await post(`${provider.url}${path}`, { value: txid });
+        const body = await readJson(res);
+        await write(dir, fixture, { status: res.status, body });
+        if (res.status !== 200) {
+          failures.push(`${dir}: ${fixture} status ${res.status}`);
+        }
+      } catch (error) {
+        failures.push(`${dir}: ${fixture} ${String(error)}`);
+      }
+      await sleep(provider.ms);
+    }
+  }
+  const kinds = [...txids.values()];
+  console.log(
+    `${dir}: history feeds — ${kinds.filter((k) => k === "TransferContract").length} TRX, ` +
+      `${kinds.filter((k) => k === "TransferAssetContract").length} TRC-10, ` +
+      `${kinds.filter((k) => k === "trc20").length} TRC-20 txids`,
+  );
+}
+
 if (failures.length > 0) {
   console.log(`\nprovider/path failures (${failures.length}):`);
   for (const failure of failures) {

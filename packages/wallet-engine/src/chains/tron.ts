@@ -33,6 +33,7 @@ import type {
   TronAccount,
   TronIndexerPath,
   TronLog,
+  TronMaybeTransaction,
   TronNodePath,
 } from "../gateway/contract/index.ts";
 
@@ -502,6 +503,19 @@ export const transactionKnown = async (api: TronApi, id: string): Promise<boolea
   const path = "/wallet/gettransactionbyid";
   const tx = parsed(tronTransactionResponse, path, await api.post(path, { value: id }));
   return "txID" in tx && tx.txID === id;
+};
+
+/**
+ * The `gettransactionbyid` body history cross-checks against indexer claims: the raw bytes (whose
+ * sha256 is the txid) plus the node's JSON view of each contract's parameter value.
+ */
+export const transactionById = async (
+  api: TronApi,
+  id: string,
+): Promise<TronMaybeTransaction | undefined> => {
+  const path = "/wallet/gettransactionbyid";
+  const tx = parsed(tronTransactionResponse, path, await api.post(path, { value: id }));
+  return "txID" in tx && tx.txID === id ? tx : undefined;
 };
 
 /** A `broadcasthex` refusal: `code` is the node's `Return.response_code` name. */

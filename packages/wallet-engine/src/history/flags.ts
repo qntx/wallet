@@ -1,4 +1,5 @@
 import { evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
+import { lookupTronToken, tronTokenTable } from "@qntx/wallet-chains/tron";
 
 import { suspiciousTokenSymbol } from "../assets/spam.ts";
 import { assessRecipients, impersonatesBuiltIn } from "../requests/risk.ts";
@@ -20,6 +21,33 @@ export const tokenFlags = (
   }
   const flags: HistoryFlag[] = [];
   if (impersonatesBuiltIn(chainId, contract, symbol)) {
+    flags.push("token-impersonation");
+  }
+  if (suspiciousTokenSymbol(symbol)) {
+    flags.push("suspicious-token-symbol");
+  }
+  return flags;
+};
+
+/**
+ * Token-symbol flags for an unlisted TRC-20 — `tokenFlags`'s TRON twin. A built-in table address is
+ * trusted; any other contract carrying a table symbol is impersonation.
+ */
+export const tronTokenFlags = (
+  network: string,
+  contract: string,
+  symbol: string | undefined,
+): ReadonlyArray<HistoryFlag> => {
+  if (lookupTronToken(tronTokenTable, network, contract) !== undefined || symbol === undefined) {
+    return [];
+  }
+  const flags: HistoryFlag[] = [];
+  const wanted = symbol.toLowerCase();
+  if (
+    Object.entries(tronTokenTable[network] ?? {}).some(
+      ([address, token]) => address !== contract && token.symbol.toLowerCase() === wanted,
+    )
+  ) {
     flags.push("token-impersonation");
   }
   if (suspiciousTokenSymbol(symbol)) {

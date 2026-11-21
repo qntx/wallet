@@ -192,8 +192,36 @@ export const tronBroadcastResponse = z.looseObject({
 });
 export type TronBroadcast = z.output<typeof tronBroadcastResponse>;
 
-/** `gettransactionbyid`: an unknown id answers `{}`. */
-export const tronTransactionResponse = z.union([z.looseObject({ txID: tronTxId }), tronEmpty]);
+/**
+ * A transfer contract's `parameter.value` as the node renders it (`owner_address`/`to_address` are
+ * 41-prefixed hex, `asset_name` the TRC-10 id). History cross-checks it against the indexer.
+ */
+const tronContractValue = z.looseObject({
+  owner_address: z.optional(z.string()),
+  to_address: z.optional(z.string()),
+  amount: z.optional(amountField),
+  asset_name: z.optional(z.string()),
+});
+
+/** `gettransactionbyid`: an unknown id answers `{}`. `raw_data_hex` lets history pin the body. */
+export const tronTransactionResponse = z.union([
+  z.looseObject({
+    txID: tronTxId,
+    block_timestamp: z.optional(intField),
+    raw_data_hex: z.optional(z.string()),
+    raw_data: z.optional(
+      z.looseObject({
+        contract: z.array(
+          z.looseObject({
+            type: z.string(),
+            parameter: z.looseObject({ value: tronContractValue }),
+          }),
+        ),
+      }),
+    ),
+  }),
+  tronEmpty,
+]);
 export type TronMaybeTransaction = z.output<typeof tronTransactionResponse>;
 
 /** `gettransactioninfobyid` (full or solidified): an unknown id answers `{}`. */
@@ -218,7 +246,7 @@ export const tronTransactionInfo = z.looseObject({
 export const tronTransactionInfoResponse = z.union([tronTransactionInfo, tronEmpty]);
 export type TronMaybeTransactionInfo = z.output<typeof tronTransactionInfoResponse>;
 
-const indexerPageResponse = z.looseObject({
+export const tronIndexerPageResponse = z.looseObject({
   success: z.literal(true),
   data: z.array(z.unknown()).check(z.maxLength(TRON_INDEXER_LIMIT_MAX)),
   meta: z.looseObject({ fingerprint: z.optional(z.string()) }),
@@ -228,8 +256,44 @@ const indexerAccountResponse = z.looseObject({
   data: z.array(z.unknown()).check(z.maxLength(1)),
   meta: z.looseObject({ fingerprint: z.optional(z.string()) }),
 });
-export type TronIndexerPage = z.output<typeof indexerPageResponse>;
+export type TronIndexerPage = z.output<typeof tronIndexerPageResponse>;
 export type TronIndexerAccount = z.output<typeof indexerAccountResponse>;
+
+/**
+ * One `/v1/accounts/transactions` row — only the fields history reads. Rows that fail this schema
+ * are skipped by the stream, never thrown: the indexer is display-only and untrusted.
+ */
+export const tronIndexerTransaction = z.looseObject({
+  txID: tronTxId,
+  block_timestamp: intField,
+  blockNumber: z.optional(intField),
+  raw_data: z.looseObject({
+    contract: z.array(
+      z.looseObject({
+        type: z.string(),
+        parameter: z.looseObject({ value: tronContractValue }),
+      }),
+    ),
+  }),
+});
+export type TronIndexerTransactionRow = z.output<typeof tronIndexerTransaction>;
+
+/** One `/v1/accounts/transactions/trc20` row — same skipped-not-thrown rule as the tx feed. */
+export const tronIndexerTrc20 = z.looseObject({
+  transaction_id: tronTxId,
+  block_timestamp: intField,
+  from: z.string(),
+  to: z.string(),
+  type: z.string(),
+  value: z.string(),
+  token_info: z.looseObject({
+    address: z.optional(z.string()),
+    symbol: z.optional(z.string()),
+    name: z.optional(z.string()),
+    decimals: z.optional(intField),
+  }),
+});
+export type TronIndexerTrc20Row = z.output<typeof tronIndexerTrc20>;
 
 /** `getavailableunfreezecount` — `{count: n}`, or `{}` when none is available. */
 export const tronUnfreezeCountResponse = z.looseObject({ count: z.optional(intField) });
@@ -375,12 +439,12 @@ export const TRON_NODE_PATHS = {
 export const TRON_INDEXER_PATHS = {
   "/v1/accounts/transactions": {
     request: indexerPageRequest,
-    response: indexerPageResponse,
+    response: tronIndexerPageResponse,
     cost: "scan",
   },
   "/v1/accounts/transactions/trc20": {
     request: indexerPageRequest,
-    response: indexerPageResponse,
+    response: tronIndexerPageResponse,
     cost: "scan",
   },
   "/v1/accounts/account": {
