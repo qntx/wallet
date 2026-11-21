@@ -15,10 +15,9 @@
  * for a fresh `book` before `live` again.
  *
  * Account views poll `openOrders` + `positions` every 10 s on the injected timer. The CLOB's
- * authenticated user channel needs the raw API secret in the main runtime — the secret never leaves
- * the kernel — so authenticated views poll instead of streaming (research.md §4). A failed poll
- * keeps the last data as `stale` and keeps polling; `unlock-required`/`not-enabled` and a wallet
- * lock stop the view entirely.
+ * authenticated user channel would put the raw API secret on the wire — authenticated views poll
+ * instead of streaming (research.md §4). A failed poll keeps the last data as `stale` and keeps
+ * polling; `unlock-required`/`not-enabled` and a wallet lock stop the view entirely.
  */
 import type * as z from "zod/mini";
 
@@ -112,8 +111,8 @@ export type PolymarketLive = {
   /** The order book for one outcome asset (CLOB token id). */
   readonly book: (assetId: string) => PolymarketLiveView<PolymarketMarketData>;
   /**
-   * Open orders + positions for the group — polled (the user channel would need the API secret,
-   * which stays inside the kernel). Stops on lock or a `unlock-required`/`not-enabled` error.
+   * Open orders + positions for the group — polled (the user channel would put the API secret on
+   * the wire). Stops on lock or a `unlock-required`/`not-enabled` error.
    */
   readonly account: (group: AppGroup) => PolymarketLiveView<PolymarketAccountLiveData>;
 };

@@ -1,19 +1,16 @@
 /**
  * The Polymarket `AppProvider`: locate → deploy → credentials → approvals → verify as one resumable
- * state machine (design.md §启用状态机). Facts live in the kernel (`pm-creds`), the relayer
- * (`/deployed`) and the Data API (`/v2/approvals`); the engine persists only the terms flag. Every
- * step writes through the flow so a lock or crash resumes — each step is idempotent and re-derives
- * its precondition from the facts rather than trusting the recorded step.
+ * state machine (design.md §启用状态机). Facts live in the apps store's credential records, the
+ * relayer (`/deployed`) and the Data API (`/v2/approvals`); the engine persists only the terms
+ * flag. Every step writes through the flow so a lock or crash resumes — each step is idempotent
+ * and re-derives its precondition from the facts rather than trusting the recorded step.
  *
- * Secret hygiene: the `POST /auth/api-key` answer's `secret` is handed to
- * `polymarket(wallet).importCredentials` inside the credentials step and goes out of scope with it
- * — it never reaches controller state, the store, the logger, or an error.
+ * Secret hygiene: the `POST /auth/api-key` answer's `secret` is stored through the credential
+ * store inside the credentials step and goes out of scope with it — it never reaches controller
+ * state, the logger, or an error.
  */
 
 import { toHex } from "viem";
-
-import type { Wallet } from "@qntx/wallet";
-import { polymarket } from "@qntx/wallet/polymarket";
 
 import type { EngineLogger } from "../../events.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
@@ -21,6 +18,7 @@ import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppProvider } from "../types.ts";
 import type { PolymarketAccountReads } from "./account.ts";
+import type { PolymarketCredentialStore } from "./credentials.ts";
 import {
   CONDITIONAL_TOKENS,
   CLOB_HOST,
@@ -171,7 +169,8 @@ const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> =>
 };
 
 export type PolymarketEnableOptions = {
-  readonly wallet: Wallet;
+  /** The credential records — the flow's own fact for the credentials step and `groups()`. */
+  readonly credentials: PolymarketCredentialStore;
   readonly account: PolymarketAccountReads;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
   readonly fetch: typeof globalThis.fetch;
@@ -183,7 +182,6 @@ export type PolymarketEnableOptions = {
 };
 
 export function createPolymarketEnable(options: PolymarketEnableOptions): AppProvider {
-  const api = (): ReturnType<typeof polymarket> => polymarket(options.wallet);
   const http = createPolymarketHttp({
     fetch: options.fetch,
     setTimer: options.setTimer,
@@ -196,9 +194,9 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
     setTimer: options.setTimer,
   });
 
-  /** The group's kernel credential set — the engine's own fact for the credentials step. */
+  /** The group's stored credential set — the engine's own fact for the credentials step. */
   const hasCredentials = async (group: AppGroup): Promise<boolean> =>
-    (await options.account.credentials(group)) !== undefined;
+    (await options.credentials.get(group)) !== undefined;
 
   /**
    * Open an `evm-sign` request for `typedData` and await the 65-byte owner signature —
@@ -324,9 +322,9 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
         clobAuthTypedData(account.signer, timestamp),
       );
       const credentials = await createOrDeriveCredentials(account.signer, signature, timestamp);
-      /* The secret is sealed into the vault here and drops out of scope with the step. */
-      await api().importCredentials({
-        owner: { walletId: group.walletId, groupIndex: group.groupIndex },
+      /* The secret lands in the apps store here and drops out of scope with the step. */
+      await options.credentials.put(group, {
+        owner: account.signer,
         apiKey: credentials.apiKey,
         secret: credentials.secret,
         passphrase: credentials.passphrase,
@@ -426,16 +424,7 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
         category === "unavailable" ? "blocked" : category,
         message,
       ),
-    groups: async () => {
-      const seen = new Map<string, AppGroup>();
-      for (const creds of await api().listCredentials()) {
-        seen.set(`${creds.walletId}/${creds.groupIndex}`, {
-          walletId: creds.walletId,
-          groupIndex: creds.groupIndex,
-        });
-      }
-      return [...seen.values()];
-    },
+    groups: options.credentials.groups,
     reconcile: async (group, flow) => guard(flow, async () => reconcileFlow(group, flow)),
     enable: async (group, flow) => guard(flow, async () => enableFlow(group, flow)),
     renew: async () => {
@@ -457,10 +446,7 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
             options.logger.warn("polymarket api-key revoke failed", error);
           }
         }
-        await api().deleteCredentials({
-          walletId: group.walletId,
-          groupIndex: group.groupIndex,
-        });
+        await options.credentials.delete(group);
         /* The wallet and its on-chain approvals stay — enabling again reuses them. Deriving with
            the same nonce returns the same credentials, so a local delete alone is no revoke. */
         flow.write({ status: "disabled", step: undefined, requestId: undefined });

@@ -1,9 +1,11 @@
 /**
  * The Polymarket app definition: `polymarket(config)` validates the builder code synchronously
  * and returns the `AppDefinition` `createApps` builds over the shared `AppContext` — the
- * provider and enable state machine wired exactly as the monolithic composition built them.
+ * credential store scoped to `context.storage`, the provider and the enable state machine wired
+ * exactly as the monolithic composition built them.
  */
 import type { AppContext, AppDefinition } from "../types.ts";
+import { createPolymarketCredentials } from "./credentials.ts";
 import { createPolymarketEnable } from "./enable.ts";
 import { createPolymarketProvider } from "./provider.ts";
 import type { PolymarketBuilder, PolymarketProvider } from "./provider.ts";
@@ -28,11 +30,16 @@ export function polymarket(
   return {
     id: "polymarket",
     create: (context: AppContext) => {
+      const credentials = createPolymarketCredentials({
+        storage: context.storage,
+        logger: context.logger,
+      });
       const provider = createPolymarketProvider({
         fetch: context.fetch,
         setTimer: context.setTimer,
         now: context.now,
         wallet: context.wallet,
+        credentials,
         requests: context.requests,
         random: context.random,
         socket: context.socket,
@@ -48,7 +55,7 @@ export function polymarket(
       return {
         api: provider,
         provider: createPolymarketEnable({
-          wallet: context.wallet,
+          credentials,
           account: provider.account,
           requests: context.requests,
           fetch: context.fetch,

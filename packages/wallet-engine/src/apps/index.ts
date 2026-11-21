@@ -20,4 +20,5 @@ export type {
   AppId,
   AppInstance,
   AppsState,
+  AppStorage,
 } from "./types.ts";

@@ -19,7 +19,6 @@ import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, PolymarketContent } from "@qntx/wallet-chains";
-import { polymarket } from "@qntx/wallet/polymarket";
 
 /* The SDK's exports map hides its builders; tests deep-import dist/ by relative path (test-only).
    The dist .d.ts for this module declares no members — the names resolve at runtime only. */
@@ -215,10 +214,8 @@ const depositWallet = derivePolymarketWallets(accountAt(0).address).beacon;
 
 beforeAll(async () => {
   w = await world();
-  await polymarket(w.wallet)
-    .importCredentials({ owner: { walletId: w.walletId, groupIndex: 0 }, ...API })
-    .catch(() => undefined);
   group = { walletId: w.walletId, groupIndex: 0 };
+  await w.credentials.put(group, { owner: accountAt(0).address, ...API });
 }, 60_000);
 
 const env = (
@@ -227,15 +224,16 @@ const env = (
 ): Env => {
   const requests: Captured[] = [];
   let typedData = "";
-  /* A per-env clock anchored to the real time — the kernel's ±30 s signing window compares the
-     L2 timestamp to the device clock, so a shared manual timer pumped past request TTLs would
-     invalidate every later signature. The request pipeline's own timers (w.timers) stay unpumped. */
+  /* A per-env clock anchored to the real time — the L2 skew gate compares `POLY_TIMESTAMP` to
+     `/time`, so a shared manual timer pumped past request TTLs would skew every later signature.
+     The request pipeline's own timers (w.timers) stay unpumped. */
   const timers = manualTimer(Date.now());
   const provider = createPolymarketProvider({
     fetch: makeFetch(state, requests, () => timers.time),
     setTimer: timers.setTimer,
     now: () => timers.time,
     wallet: w.wallet,
+    credentials: w.credentials,
     requests: {
       prepare: async (input) => {
         if (input.method === "evm-sign" && input.request.kind === "evm.typed-data") {
@@ -526,6 +524,9 @@ describe("polymarket trade — place", () => {
       expect(e.posts()).toHaveLength(0);
     } finally {
       await w.wallet.vault.unlock(VERIFY);
+      /* The session store reopens with the apps unlock transition, behind the kernel flag —
+         later tests must wait for it or their credential reads land in the gap. */
+      await until(() => w.session() !== undefined);
     }
   });
 
@@ -707,6 +708,7 @@ it("masks the salt to 53 bits — it always serializes as an exact JSON number",
     setTimer: timers.setTimer,
     now: () => timers.time,
     wallet: w.wallet,
+    credentials: w.credentials,
     requests: {
       prepare: async (input) => {
         saltSeen =

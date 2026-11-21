@@ -1,38 +1,53 @@
 /**
- * The L2 client — every authenticated CLOB request signs its headers inside the kernel
- * (`polymarket(wallet).signL2`, design.md §l2): `timestamp` floors the injected clock to seconds,
- * the kernel allow-list binds (method, path) — query strings ride unsigned on the URL — and the
- * body string sent is exactly the body string signed. Kernel `WalletError`s map the way the
- * Hyperliquid exchange maps them: `locked` → `unlock-required`, `not-found` → `not-enabled`,
- * `invalid-input` → `invalid-input`.
+ * The L2 client — every authenticated CLOB request HMACs its headers in the engine over the
+ * group's stored credentials (design.md §返工): `timestamp` floors the injected clock to
+ * seconds and the body string sent is exactly the body string signed. A missing record, a
+ * stored `owner` that no longer equals the group's `evm.bip44` signer, or a locked vault fails
+ * the request before anything leaves the process — `not-enabled`/`unlock-required` respectively.
  *
- * Clock gate: the kernel refuses a timestamp more than ±30 s off its wall clock, so a device clock
- * that far from the CLOB's `/time` can only produce refused signatures — before the first L2
- * request of a session and every ten minutes the client checks and fails `clock-skew` early.
+ * Clock gate: the CLOB validates `POLY_TIMESTAMP` against an undocumented tolerance, so a device
+ * clock far off can only produce refused requests — before the first L2 request of a session and
+ * every ten minutes the client checks the `/time` skew and fails `clock-skew` early, which beats
+ * an opaque 401.
+ *
+ * Error hygiene: a hostile server can echo the credentials it issued back inside an error body —
+ * every error the http call throws is scrubbed of the apiKey/secret/passphrase before it escapes
+ * (message redacted, body and cause dropped).
  */
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { base64url } from "@scure/base";
 import type * as z from "zod/mini";
-
-import { WalletError } from "@qntx/wallet";
-import type { Wallet } from "@qntx/wallet";
-import { polymarket } from "@qntx/wallet/polymarket";
-import type { PolymarketCredentialsInfo, PolymarketL2Method } from "@qntx/wallet/polymarket";
 
 import type { AppGroup } from "../types.ts";
 import { CLOB_HOST } from "./constants.ts";
+import { decodeSecret } from "./credentials.ts";
+import type { PolymarketCredentialStore, PolymarketCredentials } from "./credentials.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketHttp } from "./http.ts";
 
-/** The kernel sign window — a skew beyond it guarantees a refused signature. */
+/** The skew bound — beyond it the CLOB's timestamp check can only fail. */
 export const MAX_SKEW_MS = 30_000;
 const SKEW_REFRESH_MS = 600_000;
 
+export type PolymarketL2Method = "GET" | "POST" | "DELETE";
+
 export type PolymarketL2Request = {
   readonly method: PolymarketL2Method;
-  /** The allow-listed path — never carries a query string. */
+  /** The CLOB path — never carries a query string (queries ride unsigned on the URL). */
   readonly path: string;
   readonly query?: Readonly<Record<string, string | number | boolean>>;
-  /** The exact body string — the same bytes the kernel HMACs. */
+  /** The exact body string — the same bytes the HMAC covers. */
   readonly body?: string;
+};
+
+export type PolymarketL2Headers = {
+  readonly POLY_ADDRESS: string;
+  readonly POLY_SIGNATURE: string;
+  readonly POLY_TIMESTAMP: string;
+  readonly POLY_API_KEY: string;
+  readonly POLY_PASSPHRASE: string;
 };
 
 export type PolymarketL2 = {
@@ -41,46 +56,92 @@ export type PolymarketL2 = {
     request: PolymarketL2Request,
     schema: S,
   ) => Promise<z.output<S>>;
-  /** The group's credential header fields — `undefined` when the vault holds none. */
-  readonly credentials: (group: AppGroup) => Promise<PolymarketCredentialsInfo | undefined>;
+  /** The group's stored credentials — `undefined` when absent (internal seam for trade/enable). */
+  readonly credentials: (group: AppGroup) => Promise<PolymarketCredentials | undefined>;
 };
 
-/** The signing path's only failure mapping — never wraps request payloads into errors. */
-const mapKernel = (error: unknown): never => {
-  if (error instanceof WalletError) {
-    if (error.code === "locked") {
-      throw new PolymarketError("unlock-required", "the vault is locked", { cause: error });
-    }
-    if (error.code === "not-found") {
-      throw new PolymarketError("not-enabled", "the group has no Polymarket credentials", {
-        cause: error,
-      });
-    }
-    if (error.code === "invalid-input") {
-      throw new PolymarketError("invalid-input", "the kernel rejected the request", {
-        cause: error,
-      });
-    }
+/**
+ * The five `POLY_*` headers for one request — the oracle of vectors/chains/polymarket-l2.json:
+ * `POLY_SIGNATURE` is the url-safe base64 (padding kept) HMAC-SHA256 over
+ * `${timestamp}${method}${path}${body ?? ""}` keyed by the decoded secret.
+ */
+export function l2Headers(
+  credentials: PolymarketCredentials,
+  input: {
+    readonly method: string;
+    readonly path: string;
+    readonly body?: string;
+    readonly timestamp: number;
+  },
+): PolymarketL2Headers {
+  const key = decodeSecret(credentials.secret);
+  if (key === undefined) {
+    throw new PolymarketError("malformed", "the stored credential secret does not decode");
   }
-  throw new PolymarketError("unavailable", "the wallet failed to sign", { cause: error });
+  return {
+    POLY_ADDRESS: credentials.owner,
+    POLY_SIGNATURE: base64url.encode(
+      hmac(
+        sha256,
+        key,
+        utf8ToBytes(`${input.timestamp}${input.method}${input.path}${input.body ?? ""}`),
+      ),
+    ),
+    POLY_TIMESTAMP: `${input.timestamp}`,
+    POLY_API_KEY: credentials.apiKey,
+    POLY_PASSPHRASE: credentials.passphrase,
+  };
+}
+
+/**
+ * A hostile CLOB can reflect the issued credentials back inside an error — the thrown error is
+ * re-derived with every occurrence of the three values in the message/body/cause chain replaced
+ * or dropped, preserving category and status. Errors free of them pass through untouched.
+ */
+const scrub = (error: unknown, credentials: PolymarketCredentials): unknown => {
+  const secrets = [credentials.apiKey, credentials.secret, credentials.passphrase].filter(
+    (value) => value !== "",
+  );
+  const texts: string[] = [];
+  let cause: unknown = error;
+  while (cause instanceof Error) {
+    texts.push(cause.message);
+    cause = cause.cause;
+  }
+  if (error instanceof PolymarketError && error.body !== undefined) {
+    texts.push(JSON.stringify(error.body));
+  }
+  const leaks = (text: string): boolean => secrets.some((secret) => text.includes(secret));
+  if (!texts.some(leaks)) {
+    return error;
+  }
+  const redact = (text: string): string => {
+    let next = text;
+    for (const secret of secrets) {
+      next = next.replaceAll(secret, "[redacted]");
+    }
+    return next;
+  };
+  if (error instanceof PolymarketError) {
+    const options = error.status === undefined ? {} : { status: error.status };
+    return new PolymarketError(error.category, redact(error.message), options);
+  }
+  return new PolymarketError(
+    "unavailable",
+    redact(error instanceof Error ? error.message : String(error)),
+  );
 };
 
 export function createPolymarketL2(options: {
-  readonly wallet: Wallet;
   readonly http: PolymarketHttp;
+  /** The group's credential records in the apps store. */
+  readonly credentials: PolymarketCredentialStore;
+  /** The group's current `evm.bip44` signer — must equal the stored `owner`. */
+  readonly signerOf: (group: AppGroup) => Promise<`0x${string}`>;
   readonly now: () => number;
 }): PolymarketL2 {
-  const api = (): ReturnType<typeof polymarket> => polymarket(options.wallet);
   /** Last `now()` a skew check passed — one `/time` per session plus a refresh every 10 min. */
   let checkedAt: number | undefined;
-
-  /** The group's credential header fields — `undefined` when the vault holds none. */
-  const credentials = async (group: AppGroup): Promise<PolymarketCredentialsInfo | undefined> => {
-    const listed = await api().listCredentials().catch(mapKernel);
-    return listed.find(
-      (creds) => creds.walletId === group.walletId && creds.groupIndex === group.groupIndex,
-    );
-  };
 
   const assertClock = async (): Promise<void> => {
     if (checkedAt !== undefined && options.now() - checkedAt <= SKEW_REFRESH_MS) {
@@ -98,37 +159,46 @@ export function createPolymarketL2(options: {
 
   return {
     request: async (group, input, schema) => {
-      /* Fail cheap, in order: a locked vault or missing credentials refuse before any request
-         leaves the process, then the clock gate runs before the kernel is asked to sign. */
-      if ((await credentials(group)) === undefined) {
+      /* Fail cheap, in order: missing credentials or an owner that no longer matches the group's
+         signer refuse before any request leaves the process — never another account's headers. */
+      const credentials = await options.credentials.get(group);
+      if (credentials === undefined) {
         throw new PolymarketError("not-enabled", "the group has no Polymarket credentials");
+      }
+      const signer = await options.signerOf(group);
+      if (signer.toLowerCase() !== credentials.owner.toLowerCase()) {
+        throw new PolymarketError(
+          "not-enabled",
+          "the group's signer no longer matches its credentials",
+        );
       }
       await assertClock();
       const timestamp = Math.floor(options.now() / 1000);
-      const headers = await api()
-        .signL2({
-          owner: { walletId: group.walletId, groupIndex: group.groupIndex },
-          method: input.method,
-          path: input.path,
-          ...(input.body === undefined ? {} : { body: input.body }),
-          timestamp,
-        })
-        .catch(mapKernel);
-      return options.http.request(
-        {
-          host: CLOB_HOST,
-          method: input.method,
-          path: input.path,
-          ...(input.query === undefined ? {} : { query: input.query }),
-          headers: {
-            ...headers,
-            ...(input.body === undefined ? {} : { "content-type": "application/json" }),
+      const headers = l2Headers(credentials, {
+        method: input.method,
+        path: input.path,
+        ...(input.body === undefined ? {} : { body: input.body }),
+        timestamp,
+      });
+      try {
+        return await options.http.request(
+          {
+            host: CLOB_HOST,
+            method: input.method,
+            path: input.path,
+            ...(input.query === undefined ? {} : { query: input.query }),
+            headers: {
+              ...headers,
+              ...(input.body === undefined ? {} : { "content-type": "application/json" }),
+            },
+            ...(input.body === undefined ? {} : { body: input.body }),
           },
-          ...(input.body === undefined ? {} : { body: input.body }),
-        },
-        schema,
-      );
+          schema,
+        );
+      } catch (error) {
+        throw scrub(error, credentials);
+      }
     },
-    credentials,
+    credentials: (group) => options.credentials.get(group),
   };
 }

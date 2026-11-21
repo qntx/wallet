@@ -19,7 +19,9 @@ import { chains } from "@qntx/wallet/chains";
 
 import { createApps } from "../src/apps/index.ts";
 import { polymarket as polymarketApp } from "../src/apps/polymarket/index.ts";
+import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppSocket } from "../src/apps/socket.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
@@ -73,6 +75,11 @@ describe.runIf(RUN)("polymarket e2e: mainnet reads + live book", () => {
         /* Reads never touch the wallet — locate is exercised through the raw relayer read below
            instead of the group-bound `account.locate`. */
         wallet: Object.create(null),
+        /* Reads never reach L2 — the credential store is a closed-session stub. */
+        credentials: createPolymarketCredentials({
+          storage: createAppStorage("polymarket", () => undefined),
+          logger,
+        }),
         requests: Object.create(null),
         random,
         availability: () => "available",

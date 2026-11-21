@@ -21,8 +21,12 @@ import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
 import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
 import { polymarket as polymarketApp } from "../src/apps/polymarket/app.ts";
 import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
+import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
+import type { PolymarketCredentialStore } from "../src/apps/polymarket/credentials.ts";
 import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
+import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
@@ -326,6 +330,10 @@ export type World = {
   timers: ReturnType<typeof manualTimer>;
   hl: HlState;
   store: EngineStore;
+  /** The session store the apps controller currently holds — `undefined` while locked. */
+  session: () => EngineStore | undefined;
+  /** The Polymarket credential store over the live session — seeds and reads records. */
+  credentials: PolymarketCredentialStore;
   group: { walletId: string; groupIndex: number };
   /** Logger warnings collected for the world (diagnostics). */
   warns: string[];
@@ -439,13 +447,47 @@ export const world = async (
     setTimer: timers.setTimer,
     logger,
   });
-  const store = options.store ?? createMemoryEngineStore();
-  const openStore =
+  /* Session stores are restartable facades over `tables` — a lock closes the session, never the
+     records; `w.store` is a persistent read handle over the same backing. A caller-supplied
+     `store` keeps the old single-store wiring (worlds that share one deliberately). */
+  const tables = new Map<string, Map<string, Uint8Array>>();
+  const store = options.store ?? createMemoryEngineStore({ collections: tables });
+  const rawOpenStore =
     options.openStore ??
-    (async () => {
-      await Promise.resolve();
-      return store;
-    });
+    (options.store === undefined
+      ? restartableStore(tables)
+      : async () => {
+          await Promise.resolve();
+          return store;
+        });
+  /* Tracks the session store the apps controller holds — the same read `createApps` makes — so
+     the world can seed and inspect app records while unlocked. */
+  let session: EngineStore | undefined;
+  const openStore = async (): Promise<EngineStore> => {
+    const next = await rawOpenStore();
+    let closed = false;
+    const facade: EngineStore = {
+      collection: (name) => next.collection(name),
+      close: async () => {
+        if (!closed) {
+          closed = true;
+          session = undefined;
+          await next.close();
+        }
+      },
+    };
+    session = facade;
+    return facade;
+  };
+  const credentials = createPolymarketCredentials({
+    /* The vault flag gates the session like the real close — deterministic under a lock that
+       has resolved but whose transition is still queued. */
+    storage: createAppStorage(
+      "polymarket",
+      () => (wallet.getSnapshot().vault === "unlocked" ? session : undefined),
+    ),
+    logger,
+  });
   const definitions = [
     /* Only worlds built with `hyperliquid: false` omit the Hyperliquid lane, and they never
        read `provider`. */
@@ -541,6 +583,8 @@ export const world = async (
     timers,
     hl,
     store,
+    session: () => session,
+    credentials,
     group,
     warns,
     state,
@@ -548,6 +592,16 @@ export const world = async (
     approve,
   };
 };
+
+/**
+ * A credential store over `store` — the getter models the engine's session, so a test that
+ * returns `undefined` while the vault is locked gets `unlock-required` from every method.
+ */
+export const credentialsStore = (
+  store: () => EngineStore | undefined,
+  logger: EngineLogger = { warn: () => undefined },
+): PolymarketCredentialStore =>
+  createPolymarketCredentials({ storage: createAppStorage("polymarket", store), logger });
 
 export const requestId = (w: World): string => w.state()?.requestId ?? "";
 export const agentAddress = (w: World): string => w.state()?.agent?.address ?? "";
@@ -581,9 +635,11 @@ export { KERNEL_URL, MNEMONIC, PASSWORD, VERIFY, DAY };
 /**
  * An EngineStore whose `close()` ends the session but keeps the backing — each `openStore()`
  * returns a fresh facade over the same records, like a real persistent store across lock/unlock.
+ * `collections` may be shared with a read handle so a test can inspect what sessions wrote.
  */
-export const restartableStore = (): (() => Promise<EngineStore>) => {
-  const collections = new Map<string, Map<string, Uint8Array>>();
+export const restartableStore = (
+  collections = new Map<string, Map<string, Uint8Array>>(),
+): (() => Promise<EngineStore>) => {
   return async () => {
     await Promise.resolve();
     let closed = false;

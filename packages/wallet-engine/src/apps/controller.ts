@@ -19,6 +19,7 @@ import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
 import type { AppSocket } from "./socket.ts";
+import { createAppStorage } from "./storage.ts";
 import { isAppId } from "./types.ts";
 import type {
   AppApis,
@@ -479,9 +480,25 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
   options: CreateAppsOptions & { readonly apps: A },
 ): { readonly controller: AppsController; readonly destroy: () => Promise<void> } & AppApis<A> {
   /* `state` is lazy: definitions capture it at `create`, but the controller only exists once
-     every definition ran — gates read it per call. */
+     every definition ran — gates read it per call. `sessionStore` is the store the controller
+     last opened: set on open, cleared synchronously when that store's `close` runs (the
+     controller closes it on lock), which is what makes `AppStorage` throw `closed`. */
   const controllerRef: { current: AppsController | undefined } = { current: undefined };
-  const context: AppContext = {
+  let sessionStore: EngineStore | undefined;
+  const openStore = async (): Promise<EngineStore> => {
+    const store = await options.openStore();
+    sessionStore = store;
+    return {
+      collection: (name) => store.collection(name),
+      close: () => {
+        if (sessionStore === store) {
+          sessionStore = undefined;
+        }
+        return store.close();
+      },
+    };
+  };
+  const context = (definition: AppDefinition<AppId, unknown>): AppContext => ({
     wallet: options.wallet,
     requests: options.requests,
     fetch: options.fetch,
@@ -491,7 +508,8 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     logger: options.logger,
     socket: options.socket,
     state: () => controllerRef.current?.getState(),
-  };
+    storage: createAppStorage(definition.id, () => sessionStore),
+  });
   const providers = new Map<AppId, AppProvider>();
   const instances: Array<AppInstance<unknown>> = [];
   const apis: Record<string, unknown> = {};
@@ -499,11 +517,35 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     if (providers.has(definition.id)) {
       throw new Error(`app ${definition.id} is defined twice`);
     }
-    const instance = definition.create(context);
+    const instance = definition.create(context(definition));
     providers.set(definition.id, instance.provider);
     instances.push(instance);
     apis[definition.id] = instance.api;
   }
+
+  /* Generic prune (design.md 不变量 12): on every unlock and every wallet snapshot change the
+     app collections drop the records of wallets the snapshot no longer lists — the wallet id
+     is the key prefix before the first "/". The controller's own `apps` collection is never
+     touched. */
+  const prune = async (): Promise<void> => {
+    const store = sessionStore;
+    if (store === undefined) {
+      return;
+    }
+    const live = new Set(
+      options.wallet.getSnapshot().wallets.map((entry) => entry.walletId),
+    );
+    for (const definition of options.apps) {
+      const collection = store.collection(`apps.${definition.id}`);
+      for (const key of await collection.list()) {
+        const slash = key.indexOf("/");
+        if (!live.has(slash === -1 ? key : key.slice(0, slash))) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- records delete sequentially.
+          await collection.delete(key);
+        }
+      }
+    }
+  };
 
   /* `gatewayScope("/v1/eligibility")` is "service" — a fixed client id keeps the whole contract
      table (which `gatewayFetch` needs for per-route scopes) out of this entry. */
@@ -527,7 +569,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     },
     now: options.now,
     requests: options.requests,
-    openStore: options.openStore,
+    openStore,
     logger: options.logger,
   });
   controllerRef.current = controller;
@@ -560,6 +602,11 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
         instance.lock?.();
       }
       await controller.lock();
+    }
+    /* Every event while running prunes — this covers the post-`init` pass and the wallet
+       add/remove/rename snapshots; on a lock the store is already gone and prune no-ops. */
+    if (unlocked() && started) {
+      await prune();
     }
   };
   const schedule = (): void => {

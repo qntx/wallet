@@ -329,8 +329,8 @@ export const clobApiKeyDelete = z.string().check(z.maxLength(64));
 
 /**
  * `POST`/`GET /auth/api-key|derive-api-key` — the L1 credentials answer (specs/clob-openapi.yaml
- * `ApiKeyResponse`; getting-started/api.md §Create or Derive API Keys). Held only until
- * `importCredentials` seals it — never logged or stored.
+ * `ApiKeyResponse`; getting-started/api.md §Create or Derive API Keys). Held only until the
+ * credential store seals it — never logged.
  */
 export const clobApiKeyResponse = z.looseObject({
   apiKey: z.string().check(z.maxLength(64)),

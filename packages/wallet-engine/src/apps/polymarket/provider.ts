@@ -1,10 +1,12 @@
 /**
  * The Polymarket provider facade — unauthenticated market reads, account reads scoped to the
- * located wallet, L2-authenticated reads signed inside the kernel, order placement through a
- * kernel-described `TypedDataSign` approval, live book/account views over the injected socket, and
- * pUSD funding through the request pipeline and the builder-signed relayer.
+ * located wallet, L2-authenticated reads HMAC'd in the engine over the group's stored
+ * credentials, order placement through a kernel-described `TypedDataSign` approval, live
+ * book/account views over the injected socket, and pUSD funding through the request pipeline and
+ * the builder-signed relayer.
  */
 import type { Wallet } from "@qntx/wallet";
+import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../../events.ts";
@@ -14,6 +16,7 @@ import type { SetTimer } from "../../timer.ts";
 import type { AppSocket } from "../socket.ts";
 import type { AppGroup } from "../types.ts";
 import { createPolymarketAccount } from "./account.ts";
+import type { PolymarketCredentialStore } from "./credentials.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PolymarketError } from "./errors.ts";
 import { createPolymarketFunding } from "./funding.ts";
@@ -49,8 +52,10 @@ export type PolymarketProviderOptions = {
   readonly setTimer: SetTimer;
   readonly now: () => number;
   readonly timeoutMs?: number;
-  /** The wallet the kernel signs L2 requests for — `polymarket(wallet)` and `chains(wallet)`. */
+  /** The wallet the kernel signs orders for — `chains(wallet)` derives each group's signer. */
   readonly wallet: Wallet;
+  /** The group's stored CLOB credentials — built from `context.storage` by the app definition. */
+  readonly credentials: PolymarketCredentialStore;
   /** The approval pipeline orders are signed through. */
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
   /** Order salts come from this — 8 bytes → 53-bit. */
@@ -86,24 +91,40 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
   });
   /* Deferred so a provider built for reads only does not need a live wallet object — the first
      L2 or locate call resolves it (the Hyperliquid provider defers the same way). */
-  const l2 = createPolymarketL2({ wallet: options.wallet, http, now: options.now });
-  const account = createPolymarketAccount({
-    http,
-    l2,
-    wallets: createPolymarketWallets(http),
-    signerOf: async (group: AppGroup) => {
-      /* The signature chain names the group account: Polygon. */
-      const resolved = await chains(options.wallet).account({
+  const signerOf = async (group: AppGroup): Promise<`0x${string}`> => {
+    /* The signature chain names the group account: Polygon. */
+    let resolved;
+    try {
+      resolved = await chains(options.wallet).account({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
         template: "evm.bip44",
         network: "eip155:137",
       });
-      if (!("address" in resolved) || !isEvmAddress(resolved.address)) {
-        throw new PolymarketError("unavailable", "the group has no EVM address");
+    } catch (error) {
+      /* A lock landing between the store read and this derivation is the same gate — the
+         session close is event-ordered, so a kernel `locked` still maps to unlock-required. */
+      if (error instanceof WalletError && error.code === "locked") {
+        throw new PolymarketError("unlock-required", "the vault is locked", { cause: error });
       }
-      return resolved.address;
-    },
+      throw error;
+    }
+    if (!("address" in resolved) || !isEvmAddress(resolved.address)) {
+      throw new PolymarketError("unavailable", "the group has no EVM address");
+    }
+    return resolved.address;
+  };
+  const l2 = createPolymarketL2({
+    http,
+    credentials: options.credentials,
+    signerOf,
+    now: options.now,
+  });
+  const account = createPolymarketAccount({
+    http,
+    l2,
+    wallets: createPolymarketWallets(http),
+    signerOf,
   });
   const markets = createPolymarketMarkets(http);
   const trade = createPolymarketTrade({

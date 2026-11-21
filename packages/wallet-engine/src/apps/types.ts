@@ -173,6 +173,21 @@ export type AppContext = {
   readonly socket: (url: string) => AppSocket;
   /** The controller state — `undefined` until `createApps` returns. */
   readonly state: () => AppsState | undefined;
+  /** The app's own records in the apps store (collection `apps.<id>`) — unlocked sessions only. */
+  readonly storage: AppStorage;
+};
+
+/**
+ * The app's per-group records in the session EngineStore — keys
+ * `${walletId}/${groupIndex}/${name}` inside collection `apps.<id>`. Every method throws
+ * `EngineStoreError("closed")` while no session store is open (the controller closes it on lock).
+ */
+export type AppStorage = {
+  readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
+  readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
+  readonly delete: (group: AppGroup, name: string) => Promise<void>;
+  /** The groups with at least one record — deduplicated. */
+  readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
 };
 
 /** What an app definition's `create` hands back: the public api, the provider, lifecycle hooks. */

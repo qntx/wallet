@@ -468,6 +468,11 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
 
     place: async (group, params) => {
       validatePlace(params);
+      /* Credentials first: a locked vault fails `unlock-required` before locate derives anything. */
+      const creds = await options.l2.credentials(group);
+      if (creds === undefined) {
+        throw new PolymarketError("not-enabled", "the group has no Polymarket credentials");
+      }
       const located = await options.account.locate(group);
       if (located.kind === "safe") {
         throw new PolymarketError(
@@ -477,10 +482,6 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
       }
       if (!located.deployed) {
         throw new PolymarketError("not-enabled", "the account wallet is not deployed yet");
-      }
-      const creds = await options.l2.credentials(group);
-      if (creds === undefined) {
-        throw new PolymarketError("not-enabled", "the group has no Polymarket credentials");
       }
       if (params.side === "BUY") {
         await assertOpenable(group);

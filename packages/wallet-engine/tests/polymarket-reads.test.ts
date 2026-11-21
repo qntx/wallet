@@ -16,6 +16,8 @@ import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import { createPolymarketHttp } from "../src/apps/polymarket/http.ts";
 import { createPolymarketMarkets } from "../src/apps/polymarket/markets.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { credentialsStore } from "./apps-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 type Fixture = {
@@ -90,6 +92,8 @@ const fixtureFetch =
    first account/place call. */
 const NO_WALLET = {} as Wallet;
 const NO_REQUESTS = {} as Parameters<typeof createPolymarketProvider>[0]["requests"];
+/* Reads never reach the credential store — an always-open empty one is enough. */
+const NO_CREDENTIALS = credentialsStore(() => createMemoryEngineStore());
 
 const provider = () =>
   createPolymarketProvider({
@@ -97,6 +101,7 @@ const provider = () =>
     setTimer: () => () => undefined,
     now: () => 1_800_000_000_000,
     wallet: NO_WALLET,
+    credentials: NO_CREDENTIALS,
     requests: NO_REQUESTS,
     random: () => new Uint8Array(8),
     availability: () => "available",

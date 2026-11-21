@@ -9,7 +9,8 @@ import { createHmac } from "node:crypto";
  * and `DepositWallet` Batch requests are kernel-described (never blind), relayer submissions are
  * HMAC'd by the injected builder over the exact sent body, the L1 headers match clob-client-v2's
  * `createL1Headers` oracle, every step failure leaves a resumable state, and the credential
- * `secret` never reaches controller state, the store, logs or a later request.
+ * `secret` lands only in the encrypted apps collection — never controller state, logs or a later
+ * request.
  */
 import { createL1Headers } from "@polymarket/clob-client-v2";
 import type { WalletClient } from "viem";
@@ -17,7 +18,6 @@ import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, PolymarketContent } from "@qntx/wallet-chains";
-import { polymarket } from "@qntx/wallet/polymarket";
 
 import {
   CLOB_HOST,
@@ -36,10 +36,12 @@ import {
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import type { PolymarketBuilder } from "../src/apps/polymarket/provider.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
+import type { AppGroup } from "../src/apps/types.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import type { EngineStore } from "../src/store/port.ts";
 import {
   MNEMONIC,
+  VERIFY,
   manualTimer,
   pumpUntil,
   restartableStore,
@@ -119,6 +121,14 @@ type PmFeed = {
   apiKey?: { status: number; body: unknown };
   deriveApiKey?: { status: number; body: unknown };
   apiKeyDelete?: { status: number; body: unknown };
+  /** `/book` answer — a resting one-sided book by default (trade tests script their own). */
+  book?: Record<string, unknown>;
+  /** `POST /order` answer — `orderId` is echoed back as the accepted id when unset. */
+  postOrder?: { status: number; body: unknown };
+  /** The id the `POST /order` answer echoes — set from `place()`'s returned `orderId`. */
+  orderId?: string;
+  /** `DELETE /order` answer — a clean cancel by default. */
+  orderDelete?: { status: number; body: unknown };
 };
 
 type Call = {
@@ -234,6 +244,40 @@ const makeFetch = (feed: PmFeed, calls: Call[], now: () => number): typeof globa
       if (url.pathname === "/auth/ban-status/closed-only") {
         return new Response("no record", { status: 404 });
       }
+      if (url.pathname === "/book") {
+        return Response.json(
+          feed.book ?? {
+            market: `0x${"ab".repeat(32)}`,
+            asset_id: url.searchParams.get("token_id") ?? "1",
+            timestamp: "1700000000",
+            hash: "0x00",
+            bids: [{ price: "0.5", size: "100" }],
+            asks: [{ price: "0.55", size: "100" }],
+            min_order_size: "1",
+            tick_size: "0.01",
+            neg_risk: false,
+          },
+        );
+      }
+      if (url.pathname === "/order" && init?.method === "POST") {
+        const answer = feed.postOrder ?? {
+          status: 200,
+          body: {
+            success: true,
+            errorMsg: null,
+            orderID: feed.orderId ?? `0x${"cd".repeat(32)}`,
+            status: "live",
+          },
+        };
+        return Response.json(answer.body, { status: answer.status });
+      }
+      if (url.pathname === "/order" && init?.method === "DELETE") {
+        const answer = feed.orderDelete ?? {
+          status: 200,
+          body: { canceled: [feed.orderId ?? `0x${"cd".repeat(32)}`], not_canceled: null },
+        };
+        return Response.json(answer.body, { status: answer.status });
+      }
     }
     if (url.origin === DATA_HOST && url.pathname === "/v2/approvals") {
       return Response.json({
@@ -317,6 +361,8 @@ const pmWorld = async (
     timers: w.timers,
     hl: w.hl,
     store: w.store,
+    session: w.session,
+    credentials: w.credentials,
     group: w.group,
     warns: w.warns,
     state: w.state,
@@ -337,13 +383,11 @@ const deployBeacon = (w: PmWorld): void => {
 };
 
 const importCreds = async (w: PmWorld): Promise<void> => {
-  await polymarket(w.wallet).importCredentials({ owner: w.group, ...API });
+  await w.credentials.put(w.group, { owner: SIGNER, ...API });
 };
 
 const deleteCreds = async (w: PmWorld): Promise<void> => {
-  await polymarket(w.wallet)
-    .deleteCredentials({ walletId: w.walletId, groupIndex: w.group.groupIndex })
-    .catch(() => undefined);
+  await w.credentials.delete(w.group).catch(() => undefined);
 };
 
 /** The display of a pending request — the kernel's described content, never a blind payload. */
@@ -500,9 +544,16 @@ describe("polymarket enable — happy path", () => {
     /* The verify step refreshed the allowance exactly once. */
     expect(clobCalls(w, "/balance-allowance/update")).toHaveLength(1);
 
-    /* The kernel sealed the credentials; the persisted record is only the terms flag. */
-    const creds = await polymarket(w.wallet).listCredentials();
-    expect(creds.find((c) => c.groupIndex === 0)?.apiKey).toBe(API.apiKey);
+    /* The apps store sealed exactly the API answer + owner; the controller record stays the
+       terms flag alone. */
+    const creds = await w.credentials.get(w.group);
+    expect(creds).toStrictEqual({ owner: SIGNER, ...API });
+    const raw = await w
+      .session()
+      ?.collection("apps.polymarket")
+      .get(`${w.walletId}/${w.group.groupIndex}/eip155:137`);
+    expect(raw).toBeDefined();
+    expect(JSON.parse(new TextDecoder().decode(raw))).toStrictEqual({ owner: SIGNER, ...API });
     await expect(record(w)).resolves.toStrictEqual({ termsAcknowledged: true });
     await deleteCreds(w);
   });
@@ -944,10 +995,10 @@ describe("polymarket disable", () => {
     const revoked = w.calls.find(
       (c) => c.method === "DELETE" && c.url.pathname === "/auth/api-key",
     );
-    /* An L2 request — the kernel-signed headers identify the group's api key. */
+    /* An L2 request — the engine-signed headers identify the group's api key. */
     expect(revoked?.headers["POLY_API_KEY"]).toBe(API.apiKey);
     expect(revoked?.headers["POLY_SIGNATURE"]).toBeDefined();
-    await expect(polymarket(w.wallet).listCredentials()).resolves.toStrictEqual([]);
+    await expect(w.credentials.get(w.group)).resolves.toBeUndefined();
   });
 
   it("a failed revoke still disables — the error is recorded, not fatal", async () => {
@@ -956,27 +1007,108 @@ describe("polymarket disable", () => {
     await w.apps.disable(w.group, "polymarket", { revoke: true });
     await until(() => w.pmState()?.status === "disabled");
     expect(w.pmState()?.error?.category).toBe("unavailable");
-    await expect(polymarket(w.wallet).listCredentials()).resolves.toStrictEqual([]);
+    await expect(w.credentials.get(w.group)).resolves.toBeUndefined();
   });
 
-  it("revoke: false deletes only the vault record", async () => {
+  it("revoke: false deletes only the apps record", async () => {
     const w = await enabled();
     await w.apps.disable(w.group, "polymarket", { revoke: false });
     await until(() => w.pmState()?.status === "disabled");
     expect(w.calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
-    await expect(polymarket(w.wallet).listCredentials()).resolves.toStrictEqual([]);
+    await expect(w.credentials.get(w.group)).resolves.toBeUndefined();
+  });
+});
+
+describe("credential records", () => {
+  it("a locked vault fails every L2 read, place and cancel unlock-required with zero calls", async () => {
+    const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
+    deployBeacon(w);
+    await importCreds(w);
+    const pm = w.pm;
+    if (pm === undefined) {
+      throw new Error("the world has no polymarket provider");
+    }
+    await w.wallet.vault.lock();
+    /* The lock event closes the session store — the apps state reports locked first. */
+    await until(() => w.apps.getState().locked);
+    const calls = w.calls.length;
+    await expect(pm.account.openOrders(w.group, {})).rejects.toMatchObject({
+      category: "unlock-required",
+    });
+    await expect(
+      pm.trade.place(w.group, {
+        kind: "limit",
+        assetId: "1",
+        side: "BUY",
+        price: "0.5",
+        size: "1",
+        orderType: "GTC",
+      }),
+    ).rejects.toMatchObject({ category: "unlock-required" });
+    await expect(pm.trade.cancel(w.group, `0x${"cd".repeat(32)}`)).rejects.toMatchObject({
+      category: "unlock-required",
+    });
+    expect(w.calls).toHaveLength(calls);
+    await w.wallet.vault.unlock(VERIFY);
+  });
+
+  it("a deleted wallet's credential records are pruned on the wallet event", async () => {
+    const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
+    deployBeacon(w);
+    await importCreds(w);
+    /* A second wallet joins, gets a record, and is deleted — the wallet event prunes its row. */
+    const second = await w.wallet.wallets.importMnemonic({
+      mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    });
+    const foreign: AppGroup = { walletId: second.walletId, groupIndex: 0 };
+    await w.credentials.put(foreign, { owner: SIGNER, ...API });
+    await w.wallet.wallets.delete(second.walletId, VERIFY);
+    for (let i = 0; i < 100; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the prune runs on the wallet event.
+      if ((await w.credentials.get(foreign)) === undefined) {
+        break;
+      }
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the prune runs on the wallet event.
+      await tick();
+    }
+    await expect(w.credentials.get(foreign)).resolves.toBeUndefined();
+    /* The live wallet's record survives. */
+    await expect(w.credentials.get(w.group)).resolves.toStrictEqual({ owner: SIGNER, ...API });
+    await deleteCreds(w);
   });
 });
 
 describe("secret hygiene", () => {
-  it("the api secret never appears in state, logs or later requests", async () => {
+  it("credentials stay out of state, logs and errors across enable, place, cancel and disable", async () => {
     const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
     deployBeacon(w);
+    const pm = w.pm;
+    if (pm === undefined) {
+      throw new Error("the world has no polymarket provider");
+    }
     await w.apps.acknowledgeTerms(w.group, "polymarket");
     const flow = w.apps.enable(w.group, "polymarket");
+    /* FULL_APPROVALS leaves no batch — the ClobAuth is the flow's only request. */
     await w.approve(await pendingId(w));
     await pumpUntil(w.timers, () => w.pmState()?.status === "enabled", 200);
     await flow;
+
+    const placed = await pm.trade.place(w.group, {
+      kind: "limit",
+      assetId: "1",
+      side: "SELL",
+      price: "0.55",
+      size: "10",
+      orderType: "GTC",
+    });
+    w.feed.orderId = placed.orderId;
+    await w.approve(placed.requestId);
+    await placed.outcome;
+    await pm.trade.cancel(w.group, placed.orderId);
+    await w.apps.disable(w.group, "polymarket", { revoke: true });
+    await until(() => w.pmState()?.status === "disabled");
+
+    /* The apiKey and passphrase ride L2 headers legitimately — the secret never does. */
     const haystack = JSON.stringify(w.apps.getState()) + w.warns.join("\n");
     expect(haystack).not.toContain(API.secret);
     expect(haystack).not.toContain(API.passphrase);
@@ -984,6 +1116,26 @@ describe("secret hygiene", () => {
       expect(call.body ?? "").not.toContain(API.secret);
       expect(JSON.stringify(call.headers)).not.toContain(API.secret);
     }
-    await deleteCreds(w);
+  });
+
+  it("a hostile error body echoing the credentials is scrubbed from error, state and logs", async () => {
+    const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
+    deployBeacon(w);
+    await importCreds(w);
+    /* The revoke answer reflects all three credential fields back inside its error body. */
+    w.feed.apiKeyDelete = {
+      status: 500,
+      body: { error: API.apiKey, detail: API.secret, hint: API.passphrase },
+    };
+    await w.apps.disable(w.group, "polymarket", { revoke: true });
+    await until(() => w.pmState()?.status === "disabled");
+    const haystack =
+      JSON.stringify(w.pmState()?.error ?? {}) +
+      JSON.stringify(w.apps.getState()) +
+      w.warns.join("\n");
+    for (const value of [API.apiKey, API.secret, API.passphrase]) {
+      expect(haystack).not.toContain(value);
+    }
+    await expect(w.credentials.get(w.group)).resolves.toBeUndefined();
   });
 });

@@ -13,7 +13,7 @@ export type PolymarketErrorCategory =
   | "invalid-input"
   /** The CLOB rejected the request itself (a failed L2 action). */
   | "rejected"
-  /** The vault is locked — the kernel refused to sign; nothing was posted. */
+  /** The vault is locked — the credential store is closed; nothing was posted. */
   | "unlock-required"
   /** The group has no enabled Polymarket credentials — enable first. */
   | "not-enabled"

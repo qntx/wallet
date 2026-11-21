@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 
 /**
  * Account reads on the real Node kernel: public Data-v2 reads replay the recorded fixtures, the L2
- * reads sign inside the kernel and the sent `POLY_*` headers are compared byte-for-byte against
- * `createL2Headers` from @polymarket/clob-client-v2 — the independent oracle (the same one
- * vectors/chains/polymarket-l2.json was generated with). Kernel gates — locked vault, missing
- * credentials, clock skew — are asserted to fail before any request leaves the process.
+ * reads HMAC their headers in the engine over the stored credentials and the sent `POLY_*` headers
+ * are compared byte-for-byte against `createL2Headers` from @polymarket/clob-client-v2 — the
+ * independent oracle (the same one vectors/chains/polymarket-l2.json was generated with). Session
+ * gates — locked vault, missing credentials, a foreign owner, clock skew — are asserted to fail
+ * before any request leaves the process.
  */
 import { createL2Headers } from "@polymarket/clob-client-v2";
 import * as fc from "fast-check";
@@ -15,7 +16,6 @@ import { beforeAll, describe, expect, it } from "vite-plus/test";
 import * as z from "zod/mini";
 
 import type { Wallet } from "@qntx/wallet";
-import { polymarket } from "@qntx/wallet/polymarket";
 
 import { CLOB_HOST, DATA_HOST, RELAYER_HOST } from "../src/apps/polymarket/constants.ts";
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
@@ -37,7 +37,9 @@ import {
 } from "../src/apps/polymarket/schemas.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { AppGroup } from "../src/apps/types.ts";
-import { MNEMONIC, nodeWallet, VERIFY } from "./apps-helpers.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
+import { credentialsStore, MNEMONIC, nodeWallet, VERIFY } from "./apps-helpers.ts";
 
 const API_A = {
   apiKey: "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
@@ -185,17 +187,25 @@ const NO_REQUESTS = {
 
 let wallet: Wallet;
 let walletId: string;
-const owners: Record<number, string> = {};
+let backing: EngineStore;
 
 const group = (groupIndex: number): AppGroup => ({ walletId, groupIndex });
+
+/* The store models the engine session: a locked vault reads as a closed store. */
+const session = (): EngineStore | undefined =>
+  wallet.getSnapshot().vault === "unlocked" ? backing : undefined;
+const credentials = credentialsStore(session);
+const signerOf = async (g: AppGroup): Promise<`0x${string}`> =>
+  await Promise.resolve(accountAt(g.groupIndex).address);
 
 beforeAll(async () => {
   ({ wallet, walletId } = await nodeWallet());
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
-  /* Group 0/1 credentials — the kernel-derived owners are the viem accounts' EIP-55 addresses. */
-  const api = polymarket(wallet);
-  owners[0] = await api.importCredentials({ owner: group(0), ...API_A });
-  owners[1] = await api.importCredentials({ owner: group(1), ...API_B });
+  backing = createMemoryEngineStore();
+  /* Group 0/1 credentials — the owners are the viem accounts' EIP-55 addresses the kernel's
+     `evm.bip44` derivation produces for the same groups. */
+  await credentials.put(group(0), { owner: accountAt(0).address, ...API_A });
+  await credentials.put(group(1), { owner: accountAt(1).address, ...API_B });
 });
 
 const provider = (
@@ -208,6 +218,7 @@ const provider = (
     setTimer,
     now,
     wallet,
+    credentials,
     requests: NO_REQUESTS,
     random: () => new Uint8Array(8).fill(1),
     availability: () => "available",
@@ -294,11 +305,6 @@ describe("polymarket account — locate", () => {
 });
 
 describe("polymarket account — L2 reads", () => {
-  it("the kernel-derived owners are the oracle accounts' EIP-55 addresses", () => {
-    expect(owners[0]).toBe(accountAt(0).address);
-    expect(owners[1]).toBe(accountAt(1).address);
-  });
-
   it("openOrders replays the docs fixture with oracle-identical headers", async () => {
     const requests: Captured[] = [];
     const page = await provider(requests).account.openOrders(group(0), {});
@@ -417,7 +423,12 @@ describe("polymarket account — L2 reads", () => {
       setTimer,
       now: () => Date.now(),
     });
-    const l2 = createPolymarketL2({ wallet, http, now: () => Date.now() });
+    const l2 = createPolymarketL2({
+      http,
+      credentials,
+      signerOf,
+      now: () => Date.now(),
+    });
     const body = JSON.stringify({ deferExec: false, orderType: "GTC" });
     await l2.request(group(0), { method: "POST", path: "/order", body }, z.looseObject({}));
     const sent = required(requests.find((r) => r.url.pathname === "/order"));
@@ -433,26 +444,26 @@ describe("polymarket account — L2 reads", () => {
     expect(headers["POLY_SIGNATURE"]).toBe(expected.POLY_SIGNATURE);
   });
 
-  it("credentials returns only the group's own header fields", async () => {
+  it("credentials reads back the group's stored record without a fetch", async () => {
     const requests: Captured[] = [];
     const l2 = createPolymarketL2({
-      wallet,
       http: createPolymarketHttp({
         fetch: makeFetch({}, requests),
         setTimer,
         now: () => Date.now(),
       }),
+      credentials,
+      signerOf,
       now: () => Date.now(),
     });
     const creds = await l2.credentials(group(0));
     expect(creds?.apiKey).toBe(API_A.apiKey);
-    expect(creds?.groupIndex).toBe(0);
-    expect(JSON.stringify(creds)).not.toContain("secret");
-    expect(JSON.stringify(creds)).not.toContain("passphrase");
+    expect(creds?.owner).toBe(accountAt(0).address);
+    expect(requests).toHaveLength(0);
   });
 });
 
-describe("polymarket account — kernel gates", () => {
+describe("polymarket account — session gates", () => {
   it("a locked vault maps to unlock-required and no request leaves the process", async () => {
     await wallet.vault.lock();
     const requests: Captured[] = [];
@@ -471,6 +482,17 @@ describe("polymarket account — kernel gates", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("a record owned by another account refuses before any fetch", async () => {
+    /* Group 1's record carrying group 0's owner is never used — the signer check fails first. */
+    await credentials.put(group(1), { owner: accountAt(0).address, ...API_B });
+    const requests: Captured[] = [];
+    await expect(provider(requests).account.openOrders(group(1), {})).rejects.toMatchObject({
+      category: "not-enabled",
+    });
+    expect(requests).toHaveLength(0);
+    await credentials.put(group(1), { owner: accountAt(1).address, ...API_B });
+  });
+
   it("clock skew beyond the signing window refuses before signing", async () => {
     const requests: Captured[] = [];
     const skewed: FetchState = {
@@ -479,7 +501,7 @@ describe("polymarket account — kernel gates", () => {
     await expect(provider(requests, skewed).account.openOrders(group(0), {})).rejects.toMatchObject(
       { category: "clock-skew" },
     );
-    /* `/time` was the only request — the kernel was never asked to sign. */
+    /* `/time` was the only request — no L2 call ever left the process. */
     expect(requests.map((r) => r.url.pathname)).toStrictEqual(["/time"]);
   });
 
@@ -497,12 +519,9 @@ describe("polymarket account — kernel gates", () => {
     expect(timeCalls()).toBe(1);
     await account.openOrders(group(0), {});
     expect(timeCalls()).toBe(1);
-    /* +11 minutes refreshes the check; the kernel then refuses the stale-in-future timestamp —
-       proving both the refresh ran and the ±30 s kernel window holds end to end. */
+    /* +11 minutes refreshes the check — the third request signs at the new time and goes out. */
     now += 11 * 60 * 1000;
-    await expect(account.openOrders(group(0), {})).rejects.toMatchObject({
-      category: "invalid-input",
-    });
+    await account.openOrders(group(0), {});
     expect(timeCalls()).toBe(2);
   });
 });

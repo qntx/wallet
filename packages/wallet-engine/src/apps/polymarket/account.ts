@@ -1,6 +1,6 @@
 /**
  * Polymarket account reads (design.md §account): public Data-v2 queries keyed by the located
- * account `wallet`, and L2-authenticated CLOB reads keyed by the group's kernel credentials.
+ * account `wallet`, and L2-authenticated CLOB reads keyed by the group's stored credentials.
  *
  * `locate(group)` derives the group's `evm.bip44` signer, then resolves which of the three
  * candidate wallets exists on-chain through `wallets.locate` — the result is memoized per group per
@@ -12,8 +12,6 @@
  * rather than an error; every other non-2xx propagates `unavailable` with its status.
  */
 import type * as z from "zod/mini";
-
-import type { PolymarketCredentialsInfo } from "@qntx/wallet/polymarket";
 
 import type { AppGroup } from "../types.ts";
 import { DATA_HOST } from "./constants.ts";
@@ -197,8 +195,6 @@ export type PolymarketPage<T> = {
 export type PolymarketAccountReads = {
   /** Where this group's account lives — the located wallet or the beacon it will deploy to. */
   readonly locate: (group: AppGroup) => Promise<PolymarketAccount>;
-  /** The group's credential header fields — `undefined` when the vault holds none. */
-  readonly credentials: (group: AppGroup) => Promise<PolymarketCredentialsInfo | undefined>;
   readonly positions: (
     wallet: `0x${string}`,
     params?: PolymarketPositionsParams,
@@ -425,7 +421,6 @@ export function createPolymarketAccount(options: {
 
   return {
     locate,
-    credentials: options.l2.credentials,
 
     positions: async (wallet, params) => {
       checkWallet(wallet);
