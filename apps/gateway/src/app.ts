@@ -49,7 +49,10 @@ export function createGateway(
     return { ...provider, account: provider.id, costs: account.costs };
   };
   const log = options.log ?? ((line) => console.log(line));
-  const forwarder = createForwarder(options.fetch, log, { budget: options.budget });
+  const forwarder = createForwarder(options.fetch, log, {
+    budget: options.budget,
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
   const deps = { forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 
@@ -96,7 +99,14 @@ export function createGateway(
           ? []
           : [
               coingeckoSource(
-                priced({ id: "coingecko", url: COINGECKO_API }),
+                {
+                  ...priced({ id: "coingecko", url: COINGECKO_API }),
+                  probe: {
+                    url: `${COINGECKO_API}/ping`,
+                    headers: { "x-cg-pro-api-key": options.prices.coingecko.apiKey },
+                    cost: 1,
+                  },
+                },
                 options.prices.coingecko.apiKey,
               ),
             ]),

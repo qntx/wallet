@@ -518,7 +518,7 @@ describe("rpc forwarding", () => {
     },
   );
 
-  it.each([429, 500, 502, 503])(
+  it.each([500, 502, 503])(
     "upstream %i is a provider outage: failover, and the shared breaker opens after 5",
     async (status) => {
       const up = fakeFetch({
@@ -1386,7 +1386,7 @@ describe("upstream observability", () => {
     expect(lines.join("\n")).not.toContain("no credentials");
   });
 
-  it("logs timeout for an upstream that never answers", async () => {
+  it("logs the failed probe for an upstream that never answers", async () => {
     vi.useFakeTimers();
     const { lines, log } = capture();
     const up = fakeFetch({
@@ -1402,6 +1402,7 @@ describe("upstream observability", () => {
       `/v1/rpc/${SEPOLIA}`,
       post(call("eth_chainId")),
     );
+    // The attempt's 10 s timeout fires the probe; it too never answers and aborts at 3 s.
     await vi.advanceTimersByTimeAsync(10_000);
     const res = await pending;
     expect(res.status).toBe(200);
@@ -1410,7 +1411,7 @@ describe("upstream observability", () => {
         event: "upstream-failure",
         provider: "a",
         upstream: "https://a.test/evm",
-        reason: "timeout",
+        reason: "probe",
       },
     ]);
   });

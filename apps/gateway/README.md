@@ -26,10 +26,17 @@ Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Res
 Providers are tried in the order of `src/config/networks.ts`. Every route reaches its upstreams
 through one forwarder (`src/providers/forward.ts`), the only holder of `fetch`, and the breaker
 counts only what the forwarder itself observes and no client input can provoke: a transport error,
-a timeout (10 s), a 5xx, a 429 (the gateway's own account throttled) or a failed auth lookup. Five
-consecutive outages open that provider's breaker for 30 s. Any other failed answer — a 401/403
-refusal, another 4xx, a malformed body, an upstream JSON-RPC error on history — moves on to the next
-provider without counting. A JSON-RPC error object on the RPC route is a valid answer and is
+a 5xx, a failed auth lookup, or an attempt timeout (10 s) whose _probe_ also fails — a provider
+without a probe never counts a timeout, and one that answers its probe (any status below 500 other
+than 429) disproved it. Probes are cheap per-family calls (`eth_chainId` on EVM, `getHealth` on
+Solana, `/blocks/tip/height` on Esplora, `/ping` on CoinGecko), single-flight per provider with the
+verdict reused for 10 s, paid from the account budget but never the client share. Five consecutive
+outages open that provider's breaker for 30 s. A 429 is not an outage: the provider answered, so it
+is alive — it parks its _account_ (Alchemy throttles per account, across networks) for
+`min(Retry-After, 30)` seconds, 5 s when the header is missing, and every provider of that account
+is skipped without a call until the cool-down expires. Any other failed answer — a 401/403
+refusal, another 4xx, a malformed body, an upstream JSON-RPC error on history — moves on to the
+next provider without counting. A JSON-RPC error object on the RPC route is a valid answer and is
 returned as-is. An upstream 400, 413 or 422 on a JSON-RPC route, and an answer over the route's
 response cap, were provoked by the request itself: they are answered 400 `invalid-request` without
 failover. Request schemas refuse up front what an upstream would reject (a history cursor above
@@ -115,8 +122,9 @@ polkadot-js/phishing.
 
 All log lines are JSON. Besides the per-request line, the forwarder logs
 `{"event":"upstream-failure","provider","upstream","reason"}` per failed attempt (reason:
-`status-<n>`, `malformed`, `rpc-error`, `auth`, `timeout`, `breaker-open`, `rejected`, `too-large`,
-`transport`, `error`),
+`status-<n>`, `cooling-down`, `budget`, `probe`, `malformed`, `rpc-error`, `auth`, `timeout`,
+`breaker-open`, `rejected`, `too-large`, `transport`, `error`),
+`{"event":"upstream-throttled","account","retryAfter"}` once when a 429 parks an account,
 `{"event":"breaker","provider","upstream","state"}` on every open/half-open/closed transition, and
 `{"event":"all-providers-failed","providers":[…]}` once when every provider of a route is down —
 the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name

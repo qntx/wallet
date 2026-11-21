@@ -2,7 +2,9 @@ import type { MiddlewareHandler } from "hono";
 
 import { networkById } from "@qntx/wallet-engine/gateway/contract";
 
+import { probeCost, requestCost } from "../budget/costs.ts";
 import type { Account } from "../config/accounts.ts";
+import type { UpstreamRequest } from "../providers/forward.ts";
 import type { GatewayNetwork, ResolvedProvider, UpstreamAuth, UpstreamAuthId } from "../types.ts";
 import { GatewayHttpError } from "./errors.ts";
 
@@ -62,7 +64,12 @@ export function indexNetworks(
           `provider ${provider.id} on ${network.id} has a ${account.costs.kind} cost model`,
         );
       }
-      const resolved = { ...rest, account: accountName, costs: account.costs };
+      const resolved = {
+        ...rest,
+        account: accountName,
+        costs: account.costs,
+        probe: probeOf(provider.url, account, info.family),
+      };
       if (authId === undefined) {
         return resolved;
       }
@@ -78,3 +85,22 @@ export function indexNetworks(
   }
   return served;
 }
+
+/**
+ * The cheap liveness request the forwarder sends after an attempt on this provider times out:
+ * `eth_chainId` for EVM, `getHealth` for Solana, the tip height for Esplora — billed to the account
+ * like any other call.
+ */
+const probeOf = (url: string, account: Account, family: Family): UpstreamRequest => {
+  if (family === "bitcoin") {
+    return { url: `${url}/blocks/tip/height`, cost: requestCost(account.costs) };
+  }
+  const method = family === "solana" ? "getHealth" : "eth_chainId";
+  return {
+    url,
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
+    cost: probeCost(account.costs, method),
+  };
+};

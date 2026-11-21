@@ -49,6 +49,19 @@ export function requestCost(model: CostModel): number {
   return model.request.units;
 }
 
+/**
+ * The account units one probe call costs: its method row where the model prices it, else the
+ * fallback — unlisted methods (e.g. Solana's getHealth, billed 20 CU on Alchemy's page) are never
+ * free to send. Request-priced providers pay one credit like any other call.
+ */
+export function probeCost(model: CostModel, method: string): number {
+  if (model.kind === "request") {
+    return model.request.units;
+  }
+  const methods: Readonly<Record<string, CostRow>> = model.methods;
+  return methods[method]?.units ?? 20;
+}
+
 /** The account units one `alchemy_getAssetTransfers` call costs. */
 export function transfersCost(model: CostModel): number {
   if (model.kind !== "rpc" || model.transfers === undefined) {

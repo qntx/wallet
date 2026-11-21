@@ -17,17 +17,25 @@ export const UPSTREAM_TIMEOUT_MS = 10_000;
 export const BREAKER_FAILURES = 5;
 export const BREAKER_HALF_OPEN_MS = 30_000;
 export const UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
+export const PROBE_TIMEOUT_MS = 3000;
+/** A probe verdict is reused for this long, so a burst of timeouts on one provider costs one probe. */
+export const PROBE_VERDICT_MS = 10_000;
+/** A 429 parks its account at most this long; an absent or unparseable `Retry-After` means 5 s. */
+export const COOLDOWN_MAX_SECONDS = 30;
+export const COOLDOWN_DEFAULT_SECONDS = 5;
 
 /** Statuses a JSON-RPC upstream answers when the request itself is wrong: the caller's own 400. */
 export const REQUEST_ERROR_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
 
-/** Statuses where the provider refused the call before processing it (429 is an outage). */
+/** Statuses where the provider refused the call before processing it (a broadcast may fail over). */
 export const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 
 /**
- * A failed attempt the provider answered: a refusal (401/403, `refused`), a malformed body, an
- * upstream JSON-RPC error, or a status the attempt does not serve. The walk fails over, but the
- * breaker never counts it — every such answer is one a client can provoke with its own input.
+ * A failed attempt that is never a provider outage: a refusal (401/403, `refused`), a 429 (the
+ * account parks itself and the walk fails over), a spent budget, a parked account, a timeout the
+ * provider disproved by answering its probe, a malformed body, an upstream JSON-RPC error, or a
+ * status the attempt does not serve. The breaker never counts these — every one is an answer a
+ * client can provoke with its own input, or a wait the provider announced itself.
  */
 // oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
 export class ProviderFailure extends Error {
@@ -46,9 +54,10 @@ export class ProviderFailure extends Error {
 }
 
 /**
- * A provider-wide failure observed by {@link Send}: transport, 5xx, 429, or a failed auth lookup.
- * Only `send` constructs it and only it (and the attempt timeout) counts against the breaker, so no
- * attempt can make a request-specific answer open the breaker every client shares.
+ * A provider-wide failure observed by {@link Send}: transport, 5xx, a failed auth lookup — or a
+ * timed-out attempt whose probe also failed, which is what a dead provider looks like. Only `send`
+ * and the probe verdict construct it and only it counts against the breaker, so no attempt can make
+ * a request-specific answer (or its own slowness) open the breaker every client shares.
  */
 // oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
 class ProviderOutage extends Error {
@@ -98,7 +107,9 @@ export type UpstreamResponse = {
 
 /**
  * Sends one request to the attempt's provider. Every status below 500 except 429 comes back for the
- * attempt to interpret; transport errors, 5xx and 429 throw the outage the breaker counts.
+ * attempt to interpret; transport errors and 5xx throw the outage the breaker counts, while a 429
+ * throws a refusal that parks the account and a parked account or a spent budget throws without a
+ * byte being sent.
  */
 export type Send = (request: UpstreamRequest) => Promise<UpstreamResponse>;
 
@@ -125,12 +136,14 @@ export type ForwardOptions = {
 
 export type Forwarder = {
   /**
-   * Runs `attempt` against each provider in order, skipping any whose breaker is open; `attempt`
-   * reaches its provider only through `send`. A returned value ends the walk; a failed attempt
-   * cancels its other in-flight calls. An outage, a timeout or a {@link ProviderFailure} moves on to
-   * the next provider; a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
-   * answer (a 400 for the latter) and ends the walk. When every provider fails the caller gets a 503.
-   * Only outages and timeouts count against the shared breaker.
+   * Runs `attempt` against each provider in order, skipping any whose breaker is open or whose
+   * account is cooling down; `attempt` reaches its provider only through `send`. A returned value
+   * ends the walk; a failed attempt cancels its other in-flight calls. An outage or a
+   * {@link ProviderFailure} moves on to the next provider; a `GatewayHttpError` or a
+   * {@link ResponseTooLarge} is the request's own answer (a 400 for the latter) and ends the walk.
+   * When every provider fails the caller gets a 503 with the shortest announced wait. Only outages
+   * count against the shared breaker — and a timeout only becomes one when the provider's probe
+   * also fails.
    */
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
@@ -139,8 +152,7 @@ export type Forwarder = {
   ) => Promise<Forwarded<T>>;
 };
 
-const counted = (error: unknown): boolean =>
-  error instanceof ProviderOutage || error instanceof TaskCancelledError;
+const counted = (error: unknown): boolean => error instanceof ProviderOutage;
 
 /** Whether the provider provably never processed the attempt, so a broadcast may fail over. */
 const refused = (error: unknown): boolean =>
@@ -164,6 +176,24 @@ const failureReason = (error: unknown): string => {
   return error instanceof GatewayHttpError ? "rejected" : "error";
 };
 
+/** Delta-seconds only; an HTTP-date or anything unparseable counts as absent. */
+// oxlint-disable-next-line typescript/no-restricted-types -- Headers.get returns null
+const parseRetryAfter = (header: string | null): number | undefined =>
+  header !== null && /^\d+$/.test(header) ? Math.trunc(Number(header)) : undefined;
+
+/** Probes never touch the client share: they answer for the provider, not for the request. */
+const probeMeter: Meter = async () => {
+  await Promise.resolve();
+};
+
+/** Per-isolate account cool-down state the forwarder consults before metering. */
+type Throttle = {
+  /** Whole seconds left on the account's cool-down; 0 when callable (expired entries dropped). */
+  readonly remaining: (account: string) => number;
+  /** Parks the account for `seconds`, logging once when a fresh cool-down starts. */
+  readonly park: (account: string, seconds: number) => void;
+};
+
 const sendTo =
   (
     fetch: typeof globalThis.fetch,
@@ -171,8 +201,14 @@ const sendTo =
     meter: Meter,
     budget: ProviderBudget,
     signal: AbortSignal,
+    throttle: Throttle,
   ): Send =>
   async (request) => {
+    const cooled = throttle.remaining(provider.account);
+    if (cooled > 0) {
+      // The account itself announced the wait: the client is never charged for a skipped call.
+      throw new ProviderFailure("cooling-down", true, cooled);
+    }
     // The client pays its share of the provider account before the call exists: a refused
     // charge is the request's own 429/413 and nothing is sent.
     await meter(provider.account, request.cost);
@@ -205,10 +241,20 @@ const sendTo =
     } catch {
       throw new ProviderOutage("transport", false);
     }
-    if (response.status >= 500 || response.status === 429) {
+    if (response.status === 429) {
+      const seconds = Math.min(
+        parseRetryAfter(response.headers.get("retry-after")) ?? COOLDOWN_DEFAULT_SECONDS,
+        COOLDOWN_MAX_SECONDS,
+      );
       await response.body?.cancel().catch(() => undefined);
-      // A 429 is the gateway's own account being throttled: refused before processing.
-      throw new ProviderOutage(`status-${response.status}`, response.status === 429);
+      // The account itself is throttled (Alchemy bills per account, across networks): park every
+      // provider of it and fail over — a refusal before processing, never an outage.
+      throttle.park(provider.account, seconds);
+      throw new ProviderFailure("status-429", true, seconds);
+    }
+    if (response.status >= 500) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new ProviderOutage(`status-${response.status}`, false);
     }
     return {
       status: response.status,
@@ -237,8 +283,9 @@ const sendTo =
 export function createForwarder(
   fetch: typeof globalThis.fetch,
   log: (line: string) => void,
-  deps: { readonly budget: ProviderBudget },
+  deps: { readonly budget: ProviderBudget; readonly now?: () => number },
 ): Forwarder {
+  const now = deps.now ?? Date.now;
   const policies = new Map<string, ReturnType<typeof makePolicy>>();
   const policyFor = (provider: ResolvedProvider): ReturnType<typeof makePolicy> => {
     const key = `${provider.id}|${provider.url}`;
@@ -251,14 +298,104 @@ export function createForwarder(
     return created;
   };
 
+  /** Accounts a 429 parked, until ms epoch — per isolate; other isolates cool on their own 429s. */
+  const cooldowns = new Map<string, number>();
+  const throttle: Throttle = {
+    remaining: (account) => {
+      const until = cooldowns.get(account);
+      if (until === undefined) {
+        return 0;
+      }
+      const remaining = Math.ceil((until - now()) / 1000);
+      if (remaining <= 0) {
+        cooldowns.delete(account);
+        return 0;
+      }
+      return remaining;
+    },
+    park: (account, seconds) => {
+      const already = throttle.remaining(account) > 0;
+      cooldowns.set(account, now() + seconds * 1000);
+      if (!already) {
+        log(JSON.stringify({ event: "upstream-throttled", account, retryAfter: seconds }));
+      }
+    },
+  };
+
+  /** Latest probe verdict per provider (keyed like the policies); in-flight probes single-flight. */
+  const probeVerdicts = new Map<string, { readonly at: number; readonly failed: boolean }>();
+  const probeFlights = new Map<string, Promise<boolean>>();
+
+  /**
+   * Whether the provider's probe proves it dead after an attempt timed out. A provider without a
+   * probe reports healthy — its timeout is its own slowness and never counts.
+   */
+  const probeFailed = async (provider: ResolvedProvider): Promise<boolean> => {
+    const { probe } = provider;
+    if (probe === undefined) {
+      return false;
+    }
+    const key = `${provider.id}|${provider.url}`;
+    const cached = probeVerdicts.get(key);
+    if (cached !== undefined && now() - cached.at < PROBE_VERDICT_MS) {
+      return cached.failed;
+    }
+    const flying = probeFlights.get(key);
+    if (flying !== undefined) {
+      return flying;
+    }
+    const flight = (async (): Promise<boolean> => {
+      try {
+        // The probe runs through the provider's own policy, so its transport error, 5xx or own
+        // timeout is the ONE outage the attempt's timeout stands for; a ProviderFailure (cooling
+        // account, spent budget, a probe-side 429) counts nothing.
+        const response = await policyFor(provider).execute(async ({ signal }) =>
+          sendTo(
+            fetch,
+            provider,
+            probeMeter,
+            deps.budget,
+            AbortSignal.any([signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]),
+            throttle,
+          )(probe),
+        );
+        // Any answer under 500 is a live provider.
+        await response.body?.cancel().catch(() => undefined);
+        return false;
+      } catch (error) {
+        return error instanceof ProviderOutage;
+      }
+    })();
+    probeFlights.set(key, flight);
+    try {
+      const failed = await flight;
+      probeVerdicts.set(key, { at: now(), failed });
+      return failed;
+    } finally {
+      probeFlights.delete(key);
+    }
+  };
+
+  /**
+   * What a timed-out attempt means for the breaker: the probe failing is one outage (a dead
+   * provider), the probe answering — or the provider having no probe — is the provider's own
+   * slowness, a failure that fails over but counts nothing.
+   */
+  const classifyTimeout = async (
+    provider: ResolvedProvider,
+  ): Promise<ProviderFailure | ProviderOutage> =>
+    (await probeFailed(provider))
+      ? new ProviderOutage("probe", false)
+      : new ProviderFailure("timeout", false);
+
   return {
     async run<T>(
       providers: ReadonlyArray<ResolvedProvider>,
       attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
       options: ForwardOptions,
     ): Promise<Forwarded<T>> {
-      // The shortest announced wait among budget refusals (and later cool-downs): when every
-      // provider failed it replaces the fixed 30 s `Retry-After` on the 503.
+      // The shortest announced wait among budget refusals and cool-downs: when every provider
+      // failed it replaces the fixed 30 s `Retry-After` on the 503.
       let retryAfter = UNAVAILABLE_RETRY_AFTER_SECONDS;
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
@@ -285,6 +422,7 @@ export function createForwarder(
                   options.meter,
                   deps.budget,
                   AbortSignal.any([signal, failed.signal]),
+                  throttle,
                 ),
                 provider,
               );
@@ -295,33 +433,37 @@ export function createForwarder(
           });
           return { value, providerId: provider.id };
         } catch (error) {
+          // A timeout alone says nothing about the provider — ask its probe (once, briefly
+          // cached) whether it is still alive before deciding whether the attempt counted.
+          const failure =
+            error instanceof TaskCancelledError ? await classifyTimeout(provider) : error;
           log(
             JSON.stringify({
               event: "upstream-failure",
               provider: provider.id,
               upstream: provider.url,
-              reason: failureReason(error),
+              reason: failureReason(failure),
             }),
           );
-          if (error instanceof ResponseTooLarge) {
+          if (failure instanceof ResponseTooLarge) {
             // The caller chose an answer too large to relay; the next provider would send the same.
             throw new GatewayHttpError(400, "invalid-request");
           }
           if (
             !(
-              counted(error) ||
-              error instanceof ProviderFailure ||
-              error instanceof BrokenCircuitError
+              counted(failure) ||
+              failure instanceof ProviderFailure ||
+              failure instanceof BrokenCircuitError
             )
           ) {
-            throw error;
+            throw failure;
           }
-          if (options.broadcast === true && !refused(error)) {
+          if (options.broadcast === true && !refused(failure)) {
             // The provider may have relayed the transaction; no other answer is safe to invent.
             throw new GatewayHttpError(502, "outcome-unknown");
           }
-          if (error instanceof ProviderFailure && error.retryAfterSeconds !== undefined) {
-            retryAfter = Math.min(retryAfter, error.retryAfterSeconds);
+          if (failure instanceof ProviderFailure && failure.retryAfterSeconds !== undefined) {
+            retryAfter = Math.min(retryAfter, failure.retryAfterSeconds);
           }
           return from(index + 1);
         }

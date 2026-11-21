@@ -1,5 +1,6 @@
 import type { CostModel } from "./budget/costs.ts";
 import type { Account } from "./config/accounts.ts";
+import type { UpstreamRequest } from "./providers/forward.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
 
@@ -40,6 +41,11 @@ export type ResolvedProvider = Omit<UpstreamProvider, "auth"> & {
   readonly account: string;
   /** How `account` prices this provider's calls. */
   readonly costs: CostModel;
+  /**
+   * A cheap request the forwarder sends to learn whether the provider is alive after an attempt
+   * times out. Providers without one never charge a timeout against their breaker.
+   */
+  readonly probe?: UpstreamRequest;
 };
 
 /** A served network: a registry CAIP-2 id and its upstreams in priority order. */
