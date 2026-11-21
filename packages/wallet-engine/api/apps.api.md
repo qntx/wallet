@@ -37,6 +37,7 @@ import { UserFundingParameters } from '@nktkas/hyperliquid/api/info';
 import { UserFundingResponse } from '@nktkas/hyperliquid/api/info';
 import { UserRateLimitResponse } from '@nktkas/hyperliquid/api/info';
 import { UserRoleResponse } from '@nktkas/hyperliquid/api/info';
+import { Wallet } from '@qntx/wallet';
 
 export { AllMidsResponse }
 
@@ -46,6 +47,11 @@ export { ClearinghouseStateResponse }
 
 // @public (undocumented)
 export function createHyperliquidProvider(options: HyperliquidProviderOptions): HyperliquidProvider;
+
+// @public
+type EngineLogger = {
+    readonly warn: (message: string, error?: unknown) => void;
+};
 
 export { ExtraAgentsResponse }
 
@@ -67,6 +73,47 @@ export type HyperliquidAccount = {
     readonly extraAgents: (user: string) => Promise<ExtraAgentsResponse>;
     readonly maxBuilderFee: (user: string, builder: string) => Promise<MaxBuilderFeeResponse>;
     readonly role: (user: string) => Promise<UserRoleResponse>;
+};
+
+// @public
+export type HyperliquidActionOutcome = {
+    readonly kind: "ok";
+    readonly twapId?: number;
+} | {
+    readonly kind: "unknown";
+};
+
+// @public
+export type HyperliquidAgent = {
+    readonly address: string;
+    readonly owner: string;
+    readonly validUntil: number;
+};
+
+// @public (undocumented)
+export type HyperliquidAgentRegistry = {
+    readonly refresh: () => Promise<void>;
+    readonly markEnabled: (address: string) => void;
+    readonly markRejected: (address: string) => void;
+    readonly require: (group: HyperliquidGroup) => HyperliquidAgent;
+};
+
+// @public
+export type HyperliquidAsset = {
+    readonly asset: number;
+    readonly szDecimals: number;
+    readonly market: HyperliquidMarket;
+    readonly maxLeverage?: number;
+};
+
+// @public
+export type HyperliquidCancelOutcome = {
+    readonly kind: "cancelled";
+} | {
+    readonly kind: "rejected";
+    readonly message: string;
+} | {
+    readonly kind: "unknown";
 };
 
 // @public
@@ -93,7 +140,21 @@ export type HyperliquidErrorCategory = "network" |
 /** The device clock disagrees with the server beyond the bound — signing would be refused. */
 "clock-skew" |
 /** A price, size or other caller input fails the tick/lot/canonical rules. */
-"invalid-input";
+"invalid-input" |
+/** Hyperliquid rejected the signed action itself (a `status: "err"` exchange answer). */
+"rejected" |
+/** The vault is locked — the kernel refused to sign; nothing was posted. */
+"unlock-required" |
+/** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
+"reauthorization-required" |
+/** The account has no enabled, owner-verified agent on this network. */
+"not-enabled";
+
+// @public
+export type HyperliquidGroup = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+};
 
 // @public
 export type HyperliquidMarket = "perp" | "spot";
@@ -110,16 +171,86 @@ export type HyperliquidMarkets = {
     readonly mids: (params?: AllMidsParameters) => Promise<AllMidsResponse>;
 };
 
+// @public
+export type HyperliquidModifyParams = {
+    readonly coin: string;
+    readonly side: OrderSide;
+    readonly size: string;
+    readonly reduceOnly?: boolean;
+    readonly order: HyperliquidOrderKind;
+};
+
+// @public
+export type HyperliquidOrderKind = {
+    readonly kind: "limit";
+    readonly price: string;
+    readonly tif?: "Gtc" | "Ioc" | "Alo";
+} | {
+    readonly kind: "market";
+    readonly slippageBps?: number;
+} | ({
+    readonly kind: "trigger";
+    readonly tpsl: "tp" | "sl";
+} & HyperliquidTriggerParams);
+
+// @public
+export type HyperliquidOrderOutcome = {
+    readonly kind: "resting";
+    readonly oid?: number | undefined;
+    readonly cloid?: string | undefined;
+} | {
+    readonly kind: "filled";
+    readonly oid?: number | undefined;
+    readonly cloid?: string | undefined;
+    readonly totalSz: string;
+    readonly avgPx: string;
+} | {
+    readonly kind: "rejected";
+    readonly cloid?: string | undefined;
+    readonly reason: HyperliquidRejectReason;
+    readonly message: string;
+} | {
+    readonly kind: "not-placed";
+    readonly cloid?: string | undefined;
+} | {
+    readonly kind: "unknown";
+    readonly cloid?: string | undefined;
+};
+
+// @public
+export type HyperliquidOrderParams = {
+    readonly coin: string;
+    readonly side: OrderSide;
+    readonly size: string;
+    readonly reduceOnly?: boolean;
+    readonly order: HyperliquidOrderKind;
+    readonly takeProfit?: HyperliquidTriggerParams;
+    readonly stopLoss?: HyperliquidTriggerParams;
+    readonly positionTpsl?: boolean;
+};
+
+// @public
+export type HyperliquidPlaceResult = {
+    readonly outcomes: ReadonlyArray<HyperliquidOrderOutcome>;
+    readonly price: string;
+};
+
 // @public (undocumented)
 export type HyperliquidProvider = {
     readonly markets: HyperliquidMarkets;
     readonly account: HyperliquidAccount;
     readonly quote: HyperliquidQuote;
     readonly clock: HyperliquidClock;
+    readonly trade: HyperliquidTrade;
+    readonly agents: HyperliquidAgentRegistry;
 };
 
 // @public (undocumented)
-export type HyperliquidProviderOptions = Pick<HyperliquidTransportOptions, "network" | "fetch" | "setTimer" | "now" | "timeoutMs">;
+export type HyperliquidProviderOptions = Pick<HyperliquidTransportOptions, "network" | "fetch" | "setTimer" | "now" | "timeoutMs"> & {
+    readonly wallet: Wallet;
+    readonly random: (length: number) => Uint8Array;
+    readonly logger: EngineLogger;
+};
 
 // @public
 export type HyperliquidQuote = {
@@ -148,6 +279,55 @@ export type HyperliquidQuotePreview = {
     readonly meetsMinimum: boolean;
 };
 
+// @public
+export type HyperliquidRejectReason = "tick" | "min-notional" | "margin" | "reduce-only" | "post-only-would-match" | "ioc-no-match" | "bad-trigger" | "no-liquidity" | "open-interest-cap" | "insufficient-spot-balance" | "oracle" | "max-position" | "other";
+
+// @public (undocumented)
+export type HyperliquidTrade = {
+    readonly place: (group: HyperliquidGroup, params: HyperliquidOrderParams) => Promise<HyperliquidPlaceResult>;
+    readonly modify: (group: HyperliquidGroup, params: {
+        readonly oid: number | string;
+    } & HyperliquidModifyParams) => Promise<HyperliquidActionOutcome>;
+    readonly batchModify: (group: HyperliquidGroup, modifies: ReadonlyArray<{
+        readonly oid: number | string;
+    } & HyperliquidModifyParams>) => Promise<ReadonlyArray<HyperliquidOrderOutcome>>;
+    readonly cancel: (group: HyperliquidGroup, cancels: ReadonlyArray<{
+        readonly coin: string;
+        readonly oid: number;
+    }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
+    readonly cancelByCloid: (group: HyperliquidGroup, cancels: ReadonlyArray<{
+        readonly coin: string;
+        readonly cloid: string;
+    }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
+    readonly cancelAll: (group: HyperliquidGroup) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
+    readonly scheduleCancel: (group: HyperliquidGroup, time?: number) => Promise<HyperliquidActionOutcome>;
+    readonly twap: (group: HyperliquidGroup, params: {
+        readonly coin: string;
+        readonly side: "buy" | "sell";
+        readonly size: string;
+        readonly minutes: number;
+        readonly randomize: boolean;
+        readonly reduceOnly?: boolean;
+    }) => Promise<HyperliquidActionOutcome>;
+    readonly twapCancel: (group: HyperliquidGroup, params: {
+        readonly coin: string;
+        readonly twapId: number;
+    }) => Promise<HyperliquidActionOutcome>;
+    readonly setLeverage: (group: HyperliquidGroup, params: {
+        readonly coin: string;
+        readonly leverage: number;
+        readonly marginMode: "cross" | "isolated";
+    }) => Promise<HyperliquidActionOutcome>;
+    readonly adjustMargin: (group: HyperliquidGroup, params: {
+        readonly coin: string;
+        readonly amount: string;
+    }) => Promise<HyperliquidActionOutcome>;
+    readonly close: (group: HyperliquidGroup, params: {
+        readonly coin: string;
+        readonly slippageBps?: number;
+    }) => Promise<HyperliquidPlaceResult>;
+};
+
 // @public (undocumented)
 type HyperliquidTransportOptions = {
     readonly network: HyperliquidNetwork;
@@ -156,6 +336,14 @@ type HyperliquidTransportOptions = {
     readonly now: () => number;
     readonly clock: HyperliquidClock;
     readonly timeoutMs?: number;
+};
+
+// @public
+export type HyperliquidTriggerParams = {
+    readonly triggerPx: string;
+    readonly market?: boolean;
+    readonly price?: string;
+    readonly slippageBps?: number;
 };
 
 export { L2BookResponse }

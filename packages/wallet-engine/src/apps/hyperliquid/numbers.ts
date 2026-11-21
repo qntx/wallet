@@ -126,10 +126,10 @@ export const limitPrice = (
 ): string => roundPrice(price, szDecimals, market, side === "buy" ? "down" : "up");
 
 /**
- * The slippage-bounded price for a marketable (IOC) order: `reference` moved `slippageBps`
- * hundredths of a basis point against the order — buy: ×(1 + bps/10⁴), sell: ×(1 − bps/10⁴) — then
- * rounded the way {@link limitPrice} rounds. `slippageBps` is an integer: 1..10000 for a buy,
- * 1..9999 for a sell (0 or 100% is no market order).
+ * The slippage-bounded price for a marketable (IOC) order: `reference` moved `slippageBps` basis
+ * points against the order — buy: ×(1 + bps/10⁴), sell: ×(1 − bps/10⁴) — then rounded the way
+ * {@link limitPrice} rounds. `slippageBps` is an integer: 1..10000 for a buy, 1..9999 for a sell (0
+ * or 100% is no market order).
  */
 export const slippagePrice = (
   reference: string,

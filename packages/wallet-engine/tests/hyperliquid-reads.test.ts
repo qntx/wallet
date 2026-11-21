@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vite-plus/test";
 
+import type { Wallet } from "@qntx/wallet";
+
 /**
  * Every info read replays its recorded real response: the injected fetch asserts the exact request
  * body the fixture was recorded with and answers the fixture's raw response — so the read functions
@@ -95,12 +97,22 @@ const fixtureFetch =
 
 const HL_NETWORK = { mainnet: "Mainnet", testnet: "Testnet" } as const;
 
+// Reads never touch the wallet — a stub satisfies the trading deps the provider now takes.
+const WALLET_STUB = Object.create(null) as Wallet;
+const NO_RANDOM = (): Uint8Array => {
+  throw new Error("randomness is not injected into read tests");
+};
+const NO_LOG = { warn: () => undefined };
+
 const provider = (network: "mainnet" | "testnet"): HyperliquidProvider =>
   createHyperliquidProvider({
     network: HL_NETWORK[network],
     fetch: fixtureFetch(FIXTURES[network]),
     now: () => 1_800_000_000_000,
     setTimer: () => () => undefined,
+    wallet: WALLET_STUB,
+    random: NO_RANDOM,
+    logger: NO_LOG,
   });
 
 describe.each(["mainnet", "testnet"] as const)("hyperliquid reads (%s)", (network) => {
@@ -166,6 +178,9 @@ describe.each(["mainnet", "testnet"] as const)("hyperliquid reads (%s)", (networ
       fetch: fixtureFetch(FIXTURES[network]),
       now: () => 1_800_000_000_000,
       setTimer: () => () => undefined,
+      wallet: WALLET_STUB,
+      random: NO_RANDOM,
+      logger: NO_LOG,
     });
     expect(p2.clock.skew()).toBeUndefined();
     await p2.markets.mids();

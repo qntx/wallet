@@ -8,7 +8,15 @@ export type HyperliquidErrorCategory =
   /** The device clock disagrees with the server beyond the bound — signing would be refused. */
   | "clock-skew"
   /** A price, size or other caller input fails the tick/lot/canonical rules. */
-  | "invalid-input";
+  | "invalid-input"
+  /** Hyperliquid rejected the signed action itself (a `status: "err"` exchange answer). */
+  | "rejected"
+  /** The vault is locked — the kernel refused to sign; nothing was posted. */
+  | "unlock-required"
+  /** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
+  | "reauthorization-required"
+  /** The account has no enabled, owner-verified agent on this network. */
+  | "not-enabled";
 
 export class HyperliquidError extends Error {
   readonly category: HyperliquidErrorCategory;
