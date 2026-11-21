@@ -244,12 +244,7 @@ export class TronWalletHandler implements TronHandler {
       if (!legacy) {
         throw toProviderError(error);
       }
-      const code =
-        error instanceof ProviderError && error.code === 4001
-          ? 4001
-          : error instanceof ProviderError && error.code === -32002
-            ? 4000
-            : 4000;
+      const code = error instanceof ProviderError && error.code === 4001 ? 4001 : 4000;
       return { code, message: error instanceof Error ? error.message : String(error) };
     }
   }
