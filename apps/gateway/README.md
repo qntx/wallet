@@ -76,10 +76,13 @@ such as HyperEVM tokens, but prices major coins from CoinGecko itself, so it cov
 wrong answer). Provider numbers are turned into decimal strings from their shortest round-trip
 spelling and checked: positive, below 10^12, truncated to 18 decimals, updated at most 5 minutes
 ahead and at most a day ago; a 24 h change below -100 % or with more than six integer digits becomes
-`null`; DefiLlama quotes below confidence 0.9 are dropped. An asset is cached as `missing` only when
-every provider answered; when no asset could be priced and a provider failed, the route answers 503.
-Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD requests come back
-`missing`.
+`null`; DefiLlama quotes below confidence 0.9 are dropped. A refused charge makes that source
+unavailable — the request's own budget is spent, not the provider's — so answers already paid for
+are kept and the source's pending assets answer `missing`. An asset is cached as `missing` only when
+every provider answered — a failed or uncharged source might know it. When no asset could be priced
+and a provider failed, the route answers 503; when the only failures were refused charges, it
+rethrows the 429. Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD
+requests come back `missing`.
 
 ## Phishing list
 

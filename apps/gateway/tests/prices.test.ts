@@ -17,6 +17,7 @@ import {
 import type { PricesResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
+import { GatewayHttpError } from "../src/middleware/errors.ts";
 import { createForwarder } from "../src/providers/forward.ts";
 import type { Forwarder } from "../src/providers/forward.ts";
 import { NATIVE_COINS, TOKEN_PLATFORMS, priceTarget } from "../src/providers/prices-assets.ts";
@@ -44,6 +45,7 @@ import {
   post,
   recordingLimiter,
   allowAll,
+  countBefore,
 } from "./helpers.ts";
 import type { Upstream } from "./helpers.ts";
 
@@ -254,17 +256,87 @@ describe("POST /v1/prices fan-out accounting", () => {
   });
 
   it("refuses a batch whose fan-out the limiter will not pay before any upstream call", async () => {
-    const eightUnits: RateLimiter = {
-      limit: async ({ delta = 1 }) => Promise.resolve({ success: delta <= 8 }),
+    // Every source's charge exceeds one unit, so no call can be paid: a refused
+    // charge makes that source unavailable but never spends a call.
+    const oneUnit: RateLimiter = {
+      limit: async ({ delta = 1 }) => Promise.resolve({ success: delta <= 1 }),
     };
     const upstream = answers();
     const res = await gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: eightUnits, rpc: eightUnits, default: eightUnits },
+      limiters: { ip: oneUnit, rpc: oneUnit, default: oneUnit },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     }).request(prices.path, request(spread(0)));
     expect(res.status).toBe(429);
+    expect(upstream.calls).toHaveLength(0);
+  });
+});
+
+describe("POST /v1/prices refused charges", () => {
+  const TOKEN = `${ETH}/erc20:0x${"1".repeat(40)}`;
+  const LLAMA_KEY = `ethereum:0x${"1".repeat(40)}`;
+  const upstreams = () =>
+    fakeFetch({
+      [COINGECKO_API]: (call) =>
+        call.url.includes("token_price")
+          ? // CoinGecko does not know the ERC-20: only DefiLlama can price it.
+            Response.json({})
+          : Response.json({
+              ethereum: { usd: 3000, usd_24h_change: 1.5, last_updated_at: NOW / 1000 },
+            }),
+      [DEFILLAMA_API]: (call) =>
+        call.url.includes("/percentage/")
+          ? Response.json({ coins: { [LLAMA_KEY]: 2.5 } })
+          : Response.json({
+              coins: {
+                [LLAMA_KEY]: { price: 1.25, timestamp: NOW / 1000, confidence: 0.999 },
+              },
+            }),
+    });
+
+  it("keeps an earlier source's paid answer when the next charge is refused", async () => {
+    const upstream = upstreams();
+    const cache = memoryPriceCache();
+    // The request (1) and CoinGecko's two calls (2) fit; the DefiLlama charge does not.
+    const limited = gateway({
+      fetch: upstream.fetch,
+      now: () => NOW,
+      limiters: { ip: allowAll, rpc: allowAll, default: countBefore(3) },
+      prices: { cache, coingecko: { apiKey: "k" } },
+    });
+    const res = await limited.request(prices.path, request([ETH_NATIVE, TOKEN]));
+    expect(res.status).toBe(200);
+    const { prices: quoted, missing } = await body(res);
+    expect(quoted.map((q) => q.asset)).toStrictEqual([ETH_NATIVE]);
+    expect(missing).toStrictEqual([TOKEN]);
+    expect(upstream.callsTo(COINGECKO_API)).toHaveLength(2);
+    // The refused charge spent nothing: DefiLlama was never called.
+    expect(upstream.callsTo(DEFILLAMA_API)).toHaveLength(0);
+    // The paid answer is cached; the unpriced token is not cached as missing —
+    // an uncharged source might know it.
+    expect(cache.data.has(`usd/${ETH_NATIVE}`)).toBe(true);
+    expect(cache.data.has(`usd/${TOKEN}`)).toBe(false);
+
+    const open = app(upstream, { cache });
+    const second = await open.request(prices.path, request([ETH_NATIVE, TOKEN]));
+    expect(second.status).toBe(200);
+    const secondBody = await body(second);
+    expect(secondBody.missing).toStrictEqual([]);
+    // The cached coin was not refetched: no second CoinGecko coin call.
+    expect(upstream.callsTo(CG_SIMPLE)).toHaveLength(1);
+  });
+
+  it("answers 429 when a refused charge is the only failure", async () => {
+    const upstream = upstreams();
+    const res = await gateway({
+      fetch: upstream.fetch,
+      now: () => NOW,
+      limiters: { ip: allowAll, rpc: allowAll, default: countBefore(1) },
+      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+    }).request(prices.path, request([ETH_NATIVE]));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("10");
     expect(upstream.calls).toHaveLength(0);
   });
 });
@@ -782,6 +854,17 @@ describe("quotePrices", () => {
     },
   });
 
+  /** A `charge` that pays for `budget` units, then throws the limiter's 429 refusal. */
+  const chargeUpTo = (budget: number): ((units: number) => Promise<void>) => {
+    const limiter = countBefore(budget);
+    return async (units) => {
+      const { success } = await limiter.limit({ key: "charge", delta: units });
+      if (!success) {
+        throw new GatewayHttpError(429, "rate-limited", 10);
+      }
+    };
+  };
+
   it("ignores quotes for assets it never asked and prices that fail normalization", async () => {
     const source = fakeSource(
       new Map([
@@ -814,6 +897,49 @@ describe("quotePrices", () => {
         async () => {},
       ),
     ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("answers what earlier sources priced when a later charge is refused", async () => {
+    const quote = { price: 1810.44, change24h: undefined, updatedAtSeconds: NOW / 1000 };
+    const never: PriceSource = {
+      provider: { id: "never", url: "https://never.test" },
+      serves: () => true,
+      calls: () => 1,
+      quote: async () => Promise.reject(new TypeError("must not be called")),
+    };
+    const { response } = await quotePrices(
+      deps([fakeSource(new Map([[ETH_NATIVE, quote]])), never]),
+      { currency: "usd", assets: [ETH_NATIVE, BTC_NATIVE] },
+      chargeUpTo(1),
+    );
+    expect(response.prices.map((q) => q.asset)).toStrictEqual([ETH_NATIVE]);
+    expect(response.missing).toStrictEqual([BTC_NATIVE]);
+  });
+
+  it("rethrows the refused charge when nothing could be priced", async () => {
+    const quote = { price: 1810.44, change24h: undefined, updatedAtSeconds: NOW / 1000 };
+    await expect(
+      quotePrices(
+        deps([fakeSource(new Map([[ETH_NATIVE, quote]]))]),
+        { currency: "usd", assets: [ETH_NATIVE] },
+        chargeUpTo(0),
+      ),
+    ).rejects.toMatchObject({ status: 429, code: "rate-limited" });
+  });
+
+  it("answers 503 over 429 when a provider failed and a charge was refused", async () => {
+    const quote = { price: 1810.44, change24h: undefined, updatedAtSeconds: NOW / 1000 };
+    const forwarder: Forwarder = {
+      run: async () => Promise.reject(new GatewayHttpError(503, "unavailable", 30)),
+    };
+    const dead = { ...fakeSource(new Map()), provider: { id: "dead", url: "https://dead.test" } };
+    await expect(
+      quotePrices(
+        deps([dead, fakeSource(new Map([[BTC_NATIVE, quote]]))], forwarder),
+        { currency: "usd", assets: [ETH_NATIVE, BTC_NATIVE] },
+        chargeUpTo(1),
+      ),
+    ).rejects.toMatchObject({ status: 503 });
   });
 });
 

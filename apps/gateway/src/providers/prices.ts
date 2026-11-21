@@ -168,11 +168,14 @@ async function writeCached(deps: PriceDeps, key: string, entry: Entry, now: numb
 
 /**
  * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced,
- * `charge` paying for each source's upstream calls before they are sent (a refusal is a 429). An
- * asset no provider knows is `missing`; it is cached as such only when every source that serves the
- * currency answered — a failed provider might know it. When no asset could be priced and a provider
- * failed, the request fails `503 unavailable` rather than claiming everything is missing. Returns
- * the response and the providers whose data it carries.
+ * `charge` paying for each source's upstream calls before they are sent. A refused charge makes
+ * that source unavailable — the request's own budget is spent, not the provider's — so answers
+ * already paid for are kept and the source's still-pending assets answer `missing` without being
+ * cached as such. When no asset could be priced and the only failures were refused charges the
+ * request rethrows the 429; when a provider failed it answers `503 unavailable` rather than
+ * claiming everything is missing. An asset is cached as `missing` only when every source that
+ * serves the currency answered — a failed or uncharged source might know it. Returns the response
+ * and the providers whose data it carries.
  */
 export async function quotePrices(
   deps: PriceDeps,
@@ -202,13 +205,24 @@ export async function quotePrices(
 
   const fresh = new Map<string, Entry>();
   let failed = false;
+  let chargeRefused: GatewayHttpError | undefined;
   for (const source of deps.sources.filter((s) => s.serves(currency))) {
     const pending = new Map([...known].filter(([asset]) => !resolved.has(asset)));
     if (pending.size === 0) {
       break;
     }
-    // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-    await charge(source.calls(pending));
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
+      await charge(source.calls(pending));
+    } catch (error) {
+      if (!(error instanceof GatewayHttpError)) {
+        throw error;
+      }
+      // The request's own budget is spent, not the provider's: the source is
+      // unavailable, but nothing it could have answered may be cached missing.
+      chargeRefused ??= error;
+      continue;
+    }
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
       const { value } = await deps.forwarder.run([source.provider], async (send) =>
@@ -230,7 +244,7 @@ export async function quotePrices(
     }
   }
 
-  if (!failed) {
+  if (!failed && chargeRefused === undefined) {
     for (const asset of known.keys()) {
       if (!resolved.has(asset)) {
         fresh.set(asset, { quote: null, provider: "" });
@@ -243,6 +257,9 @@ export async function quotePrices(
   });
   if (priced.length === 0 && failed) {
     throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
+  }
+  if (priced.length === 0 && chargeRefused !== undefined) {
+    throw chargeRefused;
   }
   await Promise.all(
     [...fresh].map(async ([asset, entry]) =>
