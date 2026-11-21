@@ -202,6 +202,7 @@ describe("tronCaller lossless reads", () => {
       "getMaxFeeLimit",
       "getCreateNewAccountBandwidthRate",
       "getMaxCreateAccountTxSize",
+      "getMemoFee",
     ];
     const values = ["-1", ...params.slice(1).map(() => INT64_MIN)];
     const rows = params.map((key, i) => `{"key":"${key}","value":${values[i]}}`).join(",");
