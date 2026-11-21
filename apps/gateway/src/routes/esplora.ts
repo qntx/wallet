@@ -2,10 +2,12 @@ import { Hono } from "hono";
 
 import { PROVIDERS_HEADER, esploraPathAllowed } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
 import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
+import type { RateLimitVariables } from "../middleware/rate-limit.ts";
 import { capStream } from "../providers/body.ts";
 import type { Forwarder } from "../providers/forward.ts";
 import { ProviderFailure, REFUSED_STATUSES } from "../providers/forward.ts";
@@ -24,8 +26,11 @@ type Deps = {
 };
 
 /** `GET|POST /v1/esplora/:caip2/*` — allow-listed Esplora paths, bodies passed through. */
-export function esploraRoutes({ forwarder, served }: Deps): Hono<{ Variables: NetworkVariables }> {
-  const routes = new Hono<{ Variables: NetworkVariables }>();
+export function esploraRoutes({
+  forwarder,
+  served,
+}: Deps): Hono<{ Variables: NetworkVariables & RateLimitVariables }> {
+  const routes = new Hono<{ Variables: NetworkVariables & RateLimitVariables }>();
   routes.on(
     ["GET", "POST"],
     "/v1/esplora/:caip2/*",
@@ -37,8 +42,7 @@ export function esploraRoutes({ forwarder, served }: Deps): Hono<{ Variables: Ne
       if (!esploraPathAllowed(c.req.method, path)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
-      // One unit per request, charged up front: every allow-listed path is bounded (block
-      // heights, fee estimates, 25-tx pages, one transaction), so there is no call-cost to add.
+      // Every allow-listed path is one bounded upstream call, billed one request credit.
       const body = c.req.method === "POST" ? await c.req.text() : undefined;
 
       const { value, providerId } = await forwarder.run(
@@ -49,6 +53,7 @@ export function esploraRoutes({ forwarder, served }: Deps): Hono<{ Variables: Ne
             method: c.req.method === "POST" ? "POST" : "GET",
             ...(body === undefined ? {} : { headers: { "content-type": "text/plain" }, body }),
             bodyDeadlineMs: BODY_DEADLINE_MS,
+            cost: requestCost(provider.costs),
           });
           // 400/404 (bad request, unknown tx) are the upstream's real answer; 401 and 403 (an
           // access or bot block) refused the call.
@@ -66,7 +71,7 @@ export function esploraRoutes({ forwarder, served }: Deps): Hono<{ Variables: Ne
             body: response.body === null ? null : capStream(response.body, MAX_RESPONSE_BYTES),
           };
         },
-        { broadcast: path === "/tx" },
+        { meter: c.get("meter"), broadcast: path === "/tx" },
       );
 
       return new Response(value.body, {

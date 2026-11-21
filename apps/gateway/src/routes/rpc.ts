@@ -8,11 +8,11 @@ import {
   evmRpcRequest,
   rpc,
   rpcRequest,
-  rpcRequestCost,
   rpcResponse,
   solanaRpcRequest,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import { rpcCost } from "../budget/costs.ts";
 import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
@@ -57,8 +57,9 @@ export function rpcRoutes({
       if (!accepts(allowed, body)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
-      // The request paid one unit up front; a batch's calls now pay their real summed cost.
-      await c.get("charge")(rpcRequestCost(body) - 1);
+      // The request paid one unit up front; a batch's remaining calls pay one unit each. The
+      // provider's own price (compute units) is metered per upstream call by the forwarder.
+      await c.get("charge")((Array.isArray(body) ? body.length : 1) - 1);
       const payload = JSON.stringify(body);
 
       const { value, providerId } = await forwarder.run(
@@ -69,6 +70,7 @@ export function rpcRoutes({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: payload,
+            cost: rpcCost(provider.costs, body),
           });
           if (!response.ok) {
             if (REQUEST_ERROR_STATUSES.has(response.status)) {
@@ -94,7 +96,7 @@ export function rpcRoutes({
           }
           return text;
         },
-        { broadcast: containsBroadcast(body) },
+        { meter: c.get("meter"), broadcast: containsBroadcast(body) },
       );
 
       return c.body(value, 200, {

@@ -492,6 +492,13 @@ void KernelRuntime::Impl::teardown() {
     std::lock_guard<std::mutex> lock(interruptMutex);
     interruptable = nullptr;
   }
+  // The hook may capture the predecessor runtime and the script a full kernel
+  // image: a stopped Impl would otherwise keep its whole predecessor chain —
+  // every runtime ever started — reachable. Both are touched only on this
+  // thread; hooks.onIntegrity is read from post() on other threads, so the
+  // other members stay.
+  hooks.beforeEvaluate = nullptr;
+  script.bytes.reset();
   rt.reset();
   running.store(false, std::memory_order_release);
   {

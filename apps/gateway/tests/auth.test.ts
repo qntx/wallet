@@ -1,7 +1,7 @@
 /* oxlint-disable vitest/no-conditional-in-test -- the flatMap each already encodes the matrix */
 import { describe, expect, it } from "vite-plus/test";
 
-import { networkById } from "@qntx/wallet-engine/gateway/contract";
+import { PROVIDERS_HEADER, networkById } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
@@ -13,11 +13,13 @@ import {
   headers,
   memoryPriceCache,
   memoryRiskStore,
+  openBudget,
   post,
   rpcOk,
+  TEST_ACCOUNTS,
 } from "./helpers.ts";
 
-const limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
+const limiters = { ip: allowAll, rpc: allowAll, default: allowAll, share: allowAll };
 const risk = memoryRiskStore();
 const prices = { cache: memoryPriceCache() };
 
@@ -40,12 +42,15 @@ describe("upstream auth", () => {
       "https://bs.test": () => new Response("0000genesis"),
     });
     const app = createGateway({
+      accounts: TEST_ACCOUNTS,
+      budget: openBudget,
       fetch,
       networks: [NET, BTCNET],
       limiters,
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
       prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
@@ -72,12 +77,15 @@ describe("upstream auth", () => {
       "https://plain.test": () => rpcOk("0x2"),
     });
     const app = createGateway({
+      accounts: TEST_ACCOUNTS,
+      budget: openBudget,
       fetch,
       networks: [NET],
       limiters,
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
       prices,
       auth: {
         alchemy: async () => {
@@ -94,9 +102,69 @@ describe("upstream auth", () => {
     expect(plain["authorization"]).toBeUndefined();
   });
 
+  it("fails a broadcast over when the first provider's auth throws, never fetching it", async () => {
+    const txid = "ab".repeat(32);
+    const { fetch, callsTo } = fakeFetch({
+      "https://keyed.test": () => rpcOk(`0x${txid}`),
+      "https://plain.test": () => rpcOk(`0x${txid}`),
+      "https://bs-keyed.test": () => new Response("x"),
+      "https://bs-plain.test": () =>
+        new Response(txid, { status: 200, headers: { "content-type": "text/plain" } }),
+    });
+    const authDown = async () => {
+      await Promise.resolve();
+      throw new Error("auth down");
+    };
+    const app = createGateway({
+      accounts: TEST_ACCOUNTS,
+      budget: openBudget,
+      fetch,
+      networks: [
+        NET,
+        {
+          id: BTCNET.id,
+          providers: [
+            { id: "keyed", url: "https://bs-keyed.test/api", auth: "blockstream" as const },
+            { id: "plain", url: "https://bs-plain.test/api" },
+          ],
+        },
+      ],
+      limiters,
+      corsOrigins: [],
+      risk,
+      tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
+      prices,
+      auth: { alchemy: authDown, blockstream: authDown },
+    });
+    const r = await app.fetch(
+      new Request(
+        "https://gw.test/v1/rpc/eip155:11155111",
+        post(call("eth_sendRawTransaction", [`0x${"02".repeat(64)}`])),
+      ),
+    );
+    expect(r.status).toBe(200);
+    expect(r.headers.get(PROVIDERS_HEADER)).toBe("plain");
+    expect(callsTo("https://keyed.test")).toHaveLength(0);
+
+    const e = await app.fetch(
+      new Request("https://gw.test/v1/esplora/bip122:00000008819873e925422c1ff0f99f7c/tx", {
+        method: "POST",
+        headers: headers({ "content-type": "text/plain" }),
+        body: "0200000001",
+      }),
+    );
+    expect(e.status).toBe(200);
+    expect(e.headers.get(PROVIDERS_HEADER)).toBe("plain");
+    await expect(e.text()).resolves.toBe(txid);
+    expect(callsTo("https://bs-keyed.test")).toHaveLength(0);
+  });
+
   it("refuses to build when a provider names an unconfigured auth", () => {
     expect(() =>
       createGateway({
+        accounts: TEST_ACCOUNTS,
+        budget: openBudget,
         fetch: async () => {
           await Promise.resolve();
           return new Response();
@@ -106,6 +174,7 @@ describe("upstream auth", () => {
         corsOrigins: [],
         risk,
         tokens: memoryRiskStore(),
+        tokenNetworks: new Set(),
         prices,
         auth: {},
       }),

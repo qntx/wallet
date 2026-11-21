@@ -4,32 +4,44 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                                                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                                                        |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                        |
-| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                    |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                                 |
-| `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                     |
-| `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `503 unavailable` on networks without it (staging) |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                               |
-| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                                                        |
-| `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                            |
-| `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                    |
-| `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                                                              |
+| Route                            | Behavior                                                                                                                                                                                                                     |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                                                     |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                     |
+| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                 |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                              |
+| `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                  |
+| `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it |
+| `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                       |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                            |
+| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                                                     |
+| `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                         |
+| `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                 |
+| `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                                                           |
 
 Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
-`400 invalid-request`, `404 unknown-network`/`not-found`, `429 rate-limited` and `503 unavailable`
-(both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
+`400 invalid-request`, `404 unknown-network`/`not-found`/`unsupported`, `429 rate-limited` and
+`503 unavailable` (both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
+`unsupported` is permanent — the gateway has no coverage for that resource on the network or
+asset named, so a client must not retry: a served EVM network no history provider covers,
+a network no configured token-list source builds for, and (in the prices body) assets no
+price provider maps.
 
 Providers are tried in the order of `src/config/networks.ts`. Every route reaches its upstreams
 through one forwarder (`src/providers/forward.ts`), the only holder of `fetch`, and the breaker
 counts only what the forwarder itself observes and no client input can provoke: a transport error,
-a timeout (10 s), a 5xx, a 429 (the gateway's own account throttled) or a failed auth lookup. Five
-consecutive outages open that provider's breaker for 30 s. Any other failed answer — a 401/403
-refusal, another 4xx, a malformed body, an upstream JSON-RPC error on history — moves on to the next
-provider without counting. A JSON-RPC error object on the RPC route is a valid answer and is
+a 5xx, a failed auth lookup, or an attempt timeout (10 s) whose _probe_ also fails — a provider
+without a probe never counts a timeout, and one that answers its probe (any status below 500 other
+than 429) disproved it. Probes are cheap per-family calls (`eth_chainId` on EVM, `getHealth` on
+Solana, `/blocks/tip/height` on Esplora, `/ping` on CoinGecko), single-flight per provider with the
+verdict reused for 10 s, paid from the account budget but never the client share. Five consecutive
+outages open that provider's breaker for 30 s. A 429 is not an outage: the provider answered, so it
+is alive — it parks its _account_ (Alchemy throttles per account, across networks) for
+`min(Retry-After, 30)` seconds, 5 s when the header is missing, and every provider of that account
+is skipped without a call until the cool-down expires. Any other failed answer — a 401/403
+refusal, another 4xx, a malformed body, an upstream JSON-RPC error on history — moves on to the
+next provider without counting. A JSON-RPC error object on the RPC route is a valid answer and is
 returned as-is. An upstream 400, 413 or 422 on a JSON-RPC route, and an answer over the route's
 response cap, were provoked by the request itself: they are answered 400 `invalid-request` without
 failover. Request schemas refuse up front what an upstream would reject (a history cursor above
@@ -45,29 +57,45 @@ double-broadcast it.
 
 ## Rate limiting
 
-Three Workers limiters count weighted units per 10 s window (values in `wrangler.jsonc`): the
-client IP prefix, then `x-client-id` + prefix on either the RPC limiter (transport routes) or the
-default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
-summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
-a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
-`eth_getBlockReceipts`, `getVoteAccounts`, full-transaction blocks, programId-filtered
-`getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a batch of 20
-`eth_getLogs` costs 200. Arrays the caller sizes pay per started 10 elements (`getMultipleAccounts`,
-`getSignatureStatuses` at 1, `eth_getProof` storage keys at 3) and `eth_simulateV1` pays 3 per
-simulated block or call, whichever is more. Esplora requests stay at one unit: every allow-listed
-path is bounded. A history page pays 2 units for its two upstream calls, and a drain round 2 more,
-charged before the drain is sent.
+Three kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
+bindings counting requests per 10 s window (values in `wrangler.jsonc`) — answer `429 rate-limited`:
+every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet rotation inside a /48
+cannot hide and one /64 is not billed for its neighbours), then `x-client-id` + the most specific
+key on either the RPC limiter (transport routes) or the default one. Every request pays one unit up
+front; an RPC batch pays one more unit for each of its remaining calls.
+
+The **share limiter** (`SHARE_LIMITER`, 1000 units per 60 s) bills every upstream call at the
+provider's own price — compute units on Alchemy and dRPC (`src/budget/costs.ts` lists a row for
+every allow-listed method, plus `alchemy_getAssetTransfers`), one credit per call on request-priced
+endpoints. Before `send` fires, the forwarder charges
+`ceil(units × SHARE_LIMIT / (SHARE_OF_ACCOUNT × perMinute))` on every `account:` + IP key, so one
+IP buys at most `SHARE_OF_ACCOUNT` (5 %) of each account's tightest per-minute budget window
+(`src/config/accounts.ts` sets those budgets and their derivations). A refused charge never reaches
+the upstream — the request gets `429 rate-limited` — and a single delta over the whole 1000-unit
+window is `413 too-costly` without touching the limiter.
+
+The **account budget** (`PROVIDER_BUDGET`, one Durable Object per provider account) is the global
+bound the share limiter cannot express: the Workers rate-limit binding counts per Cloudflare
+location, so only a Durable Object can hold one account's worldwide quota (the binding
+documentation's "Strict limits" section prescribes exactly this). Each object keeps a multi-window
+token bucket in its SQLite storage; each isolate holds a one-second adaptive lease from it (sized
+by what it actually spent, capped at 1 % of the account's tightest window) so the object sees
+seconds, not requests — a Durable Object's ~1,000 rps soft limit and its round trip are amortised
+away. A spent account refuses with its own wait time; the request fails over — never a breaker
+outage — and when every provider is spent or cooling, the 503 `unavailable` carries the shortest
+announced wait. Operator note: the budgets in `src/config/accounts.ts` assume the provider plans
+listed in each row's comment — review them when a plan changes.
 
 ## Prices
 
 `POST /v1/prices` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their canonical
 spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
-`solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing }`: every asset is either
-priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt` in Unix ms) or
-`missing`. The asset set describes a portfolio, so it travels in the body and the answer is
-`no-store`. It costs one rate-limit unit on the default limiter, plus one per upstream call its cache
-misses fan out to (one per CoinGecko token platform and one for the native coins, two for DefiLlama),
-charged before the calls are sent.
+`solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing, unsupported }`: every
+asset is either priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt`
+in Unix ms), `missing` (no provider had a price now — a later request may) or `unsupported` (no
+price provider maps the asset — permanent, never asked upstream, never cached). The asset set describes a portfolio, so it travels in the body and the answer is
+`no-store`. Each upstream call its cache misses fan out to (one per CoinGecko token platform and one
+for the native coins, two for DefiLlama) is billed to the request's share of the source's account.
 
 Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
 client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then
@@ -76,10 +104,13 @@ such as HyperEVM tokens, but prices major coins from CoinGecko itself, so it cov
 wrong answer). Provider numbers are turned into decimal strings from their shortest round-trip
 spelling and checked: positive, below 10^12, truncated to 18 decimals, updated at most 5 minutes
 ahead and at most a day ago; a 24 h change below -100 % or with more than six integer digits becomes
-`null`; DefiLlama quotes below confidence 0.9 are dropped. An asset is cached as `missing` only when
-every provider answered; when no asset could be priced and a provider failed, the route answers 503.
-Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD requests come back
-`missing`.
+`null`; DefiLlama quotes below confidence 0.9 are dropped. A refused charge makes that source
+unavailable — the request's own budget is spent, not the provider's — so answers already paid for
+are kept and the source's pending assets answer `missing`. An asset is cached as `missing` only when
+every provider answered — a failed or uncharged source might know it. When no asset could be priced
+and a provider failed, the route answers 503; when the only failures were refused charges, it
+rethrows the 429. Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD
+requests come back `missing`.
 
 ## Phishing list
 
@@ -111,8 +142,9 @@ polkadot-js/phishing.
 
 All log lines are JSON. Besides the per-request line, the forwarder logs
 `{"event":"upstream-failure","provider","upstream","reason"}` per failed attempt (reason:
-`status-<n>`, `malformed`, `rpc-error`, `auth`, `timeout`, `breaker-open`, `rejected`, `too-large`,
-`transport`, `error`),
+`status-<n>`, `cooling-down`, `budget`, `probe`, `malformed`, `rpc-error`, `auth`, `timeout`,
+`breaker-open`, `rejected`, `too-large`, `transport`, `error`),
+`{"event":"upstream-throttled","account","retryAfter"}` once when a 429 parks an account,
 `{"event":"breaker","provider","upstream","state"}` on every open/half-open/closed transition, and
 `{"event":"all-providers-failed","providers":[…]}` once when every provider of a route is down —
 the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name

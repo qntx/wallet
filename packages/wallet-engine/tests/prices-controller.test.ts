@@ -50,6 +50,7 @@ const answer =
         return price === undefined ? [] : [quote(asset, price)];
       }),
       missing: request.assets.filter((asset) => priced[asset] === undefined),
+      unsupported: [],
     });
 
 /** A schema-valid success pricing every asked asset at "1". */
@@ -58,6 +59,7 @@ const allPriced: Responder = (request) =>
     currency: request.currency,
     prices: request.assets.map((asset) => quote(asset, "1")),
     missing: [],
+    unsupported: [],
   });
 
 /** A schema-valid success pricing `asset` at its price for the request's currency. */
@@ -69,6 +71,7 @@ const pricedByCurrency =
       currency: request.currency,
       prices: price === undefined ? [] : [quote(asset, price)],
       missing: request.assets.filter((a) => a !== asset || price === undefined),
+      unsupported: [],
     });
   };
 
@@ -251,6 +254,7 @@ describe("prices over the gateway", () => {
         currency: request.currency,
         prices: [quote(ETH, "2")],
         missing: [USDC],
+        unsupported: [],
       }),
     );
     await r.controller.refresh();
@@ -259,6 +263,44 @@ describe("prices over the gateway", () => {
     expect(state.quotes[USDC]?.price).toBe("1");
     expect(state.quotes[ETH]?.price).toBe("2");
     expect(state.failure).toBeNull();
+  });
+
+  it("marks an unsupported asset and drops the quote it had", async () => {
+    const r = rig({ held: [ETH, USDC], answer: answer({ [ETH]: "1", [USDC]: "1" }) });
+    await r.controller.init();
+    await flush();
+    expect(r.controller.getState().quotes[USDC]?.price).toBe("1");
+
+    r.setAnswer((request) =>
+      Response.json({
+        currency: request.currency,
+        prices: [quote(ETH, "2")],
+        missing: [],
+        unsupported: [USDC],
+      }),
+    );
+    await r.controller.refresh();
+    const state = r.controller.getState();
+    expect(state.errors).toStrictEqual({ [USDC]: "unsupported" });
+    expect(state.quotes[USDC]).toBeUndefined();
+    expect(state.quotes[ETH]?.price).toBe("2");
+    expect(state.failure).toBeNull();
+  });
+
+  it("rejects an answer that puts an asset in both prices and unsupported", async () => {
+    const r = rig({
+      held: [ETH],
+      answer: (request) =>
+        Response.json({
+          currency: request.currency,
+          prices: [quote(ETH, "1")],
+          missing: [],
+          unsupported: [ETH],
+        }),
+    });
+    await r.controller.init();
+    await flush();
+    expect(r.controller.getState().failure).toBe("invalid-response");
   });
 
   it("keeps a previous quote that is newer than the fresh answer", async () => {
@@ -272,6 +314,7 @@ describe("prices over the gateway", () => {
         currency: request.currency,
         prices: [{ asset: ETH, price: "9", change24h: null, updatedAt: NOW - 5000 }],
         missing: [],
+        unsupported: [],
       }),
     );
     await r.controller.refresh();
@@ -290,6 +333,7 @@ describe("prices over the gateway", () => {
           currency: request.currency,
           prices: [{ asset: ETH, price: "1", change24h: null, updatedAt: NOW + 60_000 }],
           missing: [],
+          unsupported: [],
         }),
     });
     await r.controller.init();
@@ -317,6 +361,7 @@ describe("prices over the gateway", () => {
           currency: request.currency,
           prices: [{ asset: ETH, price: "1e3", change24h: null, updatedAt: 1 }],
           missing: [USDC],
+          unsupported: [],
         }),
       "invalid-response",
     ],
@@ -327,6 +372,7 @@ describe("prices over the gateway", () => {
           currency: "eur",
           prices: [quote(ETH, "1"), quote(USDC, "1")],
           missing: [],
+          unsupported: [],
         }),
       "invalid-response",
     ],
@@ -337,6 +383,7 @@ describe("prices over the gateway", () => {
           currency: request.currency,
           prices: [quote(ETH, "1"), quote(BTC, "1")],
           missing: [],
+          unsupported: [],
         }),
       "invalid-response",
     ],
@@ -347,6 +394,7 @@ describe("prices over the gateway", () => {
           currency: request.currency,
           prices: [quote(ETH, "1")],
           missing: [],
+          unsupported: [],
         }),
       "invalid-response",
     ],

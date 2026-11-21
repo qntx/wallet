@@ -1,5 +1,25 @@
+import type { CostModel } from "./budget/costs.ts";
+import type { Account } from "./config/accounts.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
+
+/** One upstream exchange; `send` adds the provider's auth headers and the attempt's signal. */
+export type UpstreamRequest = {
+  readonly url: string | URL;
+  readonly method?: "GET" | "POST";
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string;
+  /**
+   * What this call costs the provider account, in the account's own metering unit (compute units or
+   * request credits) — required, so no call can reach the upstream unbilled.
+   */
+  readonly cost: number;
+  /**
+   * A deadline for a body streamed past the attempt (Esplora), which the attempt timeout no longer
+   * bounds once the attempt has returned.
+   */
+  readonly bodyDeadlineMs?: number;
+};
 
 export type RateLimiter = {
   limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
@@ -10,6 +30,11 @@ export type Limiters = {
   readonly ip: RateLimiter;
   readonly rpc: RateLimiter;
   readonly default: RateLimiter;
+  /**
+   * Shares of each provider account's per-minute budget, keyed `account:ip-prefix`: one client's
+   * traffic is bounded in the provider's own units even when its calls are cheap per request.
+   */
+  readonly share: RateLimiter;
 };
 
 /** The provider account an upstream authenticates against, by name — never a secret. */
@@ -26,15 +51,38 @@ export type UpstreamProvider = {
 /** Request headers authenticating one provider account, resolved per request. */
 export type UpstreamAuth = () => Promise<Readonly<Record<string, string>>>;
 
-/** A provider whose auth name has been resolved to its header function at construction. */
+/** A provider whose auth name and billing account were resolved at construction. */
 export type ResolvedProvider = Omit<UpstreamProvider, "auth"> & {
   readonly auth?: UpstreamAuth;
+  /** The provider account this provider's calls are metered against — `auth ?? id`. */
+  readonly account: string;
+  /** How `account` prices this provider's calls. */
+  readonly costs: CostModel;
+  /**
+   * A cheap request the forwarder sends to learn whether the provider is alive after an attempt
+   * times out. Providers without one never charge a timeout against their breaker.
+   */
+  readonly probe?: UpstreamRequest;
 };
 
 /** A served network: a registry CAIP-2 id and its upstreams in priority order. */
 export type GatewayNetwork = {
   readonly id: string;
   readonly providers: ReadonlyArray<UpstreamProvider>;
+};
+
+/** The verdict of one account-budget draw: granted, or refused with a wait hint. */
+export type BudgetDecision =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly retryAfterSeconds: number };
+
+/**
+ * The gateway-wide per-account budget — the counter every isolate shares, so the provider sees at
+ * most the account's configured quota worldwide. A refused `take` means the shared quota is spent:
+ * the caller must not reach the provider.
+ */
+export type ProviderBudget = {
+  readonly take: (account: string, units: number) => Promise<BudgetDecision>;
 };
 
 /**
@@ -56,10 +104,25 @@ export type GatewayOptions = {
   /** Published token lists the scheduled build writes and `GET /v1/tokens` serves. */
   readonly tokens: TokenListStore;
   /**
+   * Networks a configured token-list source covers. A served network outside the set is permanently
+   * `unsupported`; inside it an absent stored list is temporary (`503`).
+   */
+  readonly tokenNetworks: ReadonlySet<string>;
+  /**
    * Provider accounts by auth name. A configured provider naming an `auth` absent here fails
    * construction — a keyed endpoint is never called unauthenticated.
    */
   readonly auth: Readonly<Partial<Record<UpstreamAuthId, UpstreamAuth>>>;
+  /**
+   * Provider accounts by name (`auth ?? id`): cost model and budget for every upstream the gateway
+   * can call. A configured provider without an account fails construction.
+   */
+  readonly accounts: Readonly<Record<string, Account>>;
+  /**
+   * The shared per-account budget every upstream call draws after the client's share. Backed by the
+   * `PROVIDER_BUDGET` Durable Object in production, by an in-isolate implementation in tests.
+   */
+  readonly budget: ProviderBudget;
   /**
    * The 0x API key that enables `/v1/quotes/swap`, and the integrator fee the gateway charges on
    * top of a quote, when configured. Absent the route answers `unavailable`.

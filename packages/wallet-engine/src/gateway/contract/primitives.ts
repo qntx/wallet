@@ -23,6 +23,8 @@ export const GATEWAY_ERRORS = [
   "unavailable",
   "outcome-unknown",
   "internal",
+  "too-costly",
+  "unsupported",
 ] as const;
 
 export const gatewayError = z.object({ error: z.enum(GATEWAY_ERRORS) });

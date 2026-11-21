@@ -36,6 +36,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -1313,6 +1314,54 @@ __send("ready");
   return g_failures;
 }
 
+// A beforeEvaluate hook captures the still-stopping predecessor so the new
+// kernel never overlaps the old vault writer. Stored on the Impl, that
+// capture — and the Impl's copy of the script — must be released when the
+// runtime stops: a live Impl otherwise keeps its predecessor's Impl, whose
+// own hook keeps the one before, chaining every runtime ever started (each
+// holding a full kernel image). The hook only waits, exactly like the host's
+// gate; releasing the stored capture is teardown's job.
+int predecessorChainReleased() {
+  Mailbox box;
+  const KernelScript script =
+      sourceScript(std::string(kSendHelper) + "__send(\"ready\");");
+  std::vector<std::weak_ptr<KernelRuntime>> runtimes;
+  std::shared_ptr<KernelRuntime> previous;
+  for (int i = 0; i < 4; i++) {
+    auto hooks = hooksFor(box);
+    hooks.beforeEvaluate = [previous](jsi::Runtime&) {
+      if (previous != nullptr) {
+        while (!previous->waitUntilStopped(std::chrono::seconds(1))) {
+        }
+      }
+    };
+    auto rt = KernelRuntime::start(script, hooks, "");
+    runtimes.push_back(rt);
+    CHECK(
+        box.waitPosts(runtimes.size(), std::chrono::seconds(30)) == runtimes.size(),
+        "predecessor-chain: a runtime never evaluated");
+    rt->destroy();
+    CHECK(
+        rt->waitUntilStopped(std::chrono::seconds(5)),
+        "predecessor-chain: runtime still running after destroy");
+    previous = std::move(rt);
+  }
+  const auto last = std::move(previous);
+  // The locals are gone: only the chain itself could still hold runtimes 0..2.
+  for (size_t i = 0; i + 1 < runtimes.size(); i++) {
+    CHECK(
+        runtimes[i].expired(),
+        "predecessor-chain: a stopped runtime stayed reachable through the chain");
+  }
+  CHECK(
+      last != nullptr && !runtimes.back().expired(),
+      "predecessor-chain: the last runtime died while still referenced");
+  CHECK(
+      script.bytes.use_count() == 1,
+      "predecessor-chain: teardown did not release the script bytes");
+  return g_failures;
+}
+
 // The __qntx.file JS contract, exercised inside the real runtime: undefined on
 // a missing file, replace accepts a TypedArray view (a subarray with non-zero
 // byteOffset persists exactly those bytes) and returns whether the
@@ -1898,6 +1947,7 @@ int main(int argc, char** argv) {
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
       {"kernel-slot", [](const char*) { return kernelSlot(); }},
+      {"predecessor-chain", [](const char*) { return predecessorChainReleased(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},
       {"measure-timers-standard",
        [](const char*) { return measureTimers(KernelProfile::standard); }},

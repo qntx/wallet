@@ -8,10 +8,11 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 import type { HistoryResponse, HistoryTransfer } from "@qntx/wallet-engine/gateway/contract";
 
+import { transfersCost } from "../budget/costs.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import type { ResolvedNetwork } from "../middleware/network.ts";
 import type { ResolvedProvider } from "../types.ts";
-import type { Forwarded, Forwarder, Send } from "./forward.ts";
+import type { Forwarded, Forwarder, Meter, Send } from "./forward.ts";
 import { ProviderFailure, REFUSED_STATUSES, REQUEST_ERROR_STATUSES } from "./forward.ts";
 
 /**
@@ -125,6 +126,7 @@ const call = async (
       method: "alchemy_getAssetTransfers",
       params: [params],
     }),
+    cost: transfersCost(provider.costs),
   });
   if (!response.ok) {
     if (REQUEST_ERROR_STATUSES.has(response.status)) {
@@ -368,78 +370,81 @@ export const alchemyHistoryPage = async (
     readonly cursor?: string;
     readonly limit: number;
   },
-  /** Pays for the drain round's two extra calls; throws (429) before either is sent. */
-  chargeDrain: () => Promise<void>,
+  /** Pays each call's compute-unit price against the client's share of the Alchemy account. */
+  meter: Meter,
   log: (line: string) => void,
 ): Promise<Forwarded<HistoryResponse>> =>
-  forwarder.run(providers, async (send, provider) => {
-    const { chainId, address, cursor, limit } = params;
-    const bounds = {
-      fromBlock: "0x0",
-      toBlock: cursor === undefined ? "latest" : toHex(cursor),
-    };
-    const round = async (
-      roundBounds: { readonly fromBlock: string; readonly toBlock: string },
-      maxCount: string,
-    ): Promise<ReadonlyArray<UpstreamPage>> =>
-      Promise.all(
-        DIRECTIONS.map(async (direction) =>
-          call(send, provider, pageParams(direction, address, chainId, roundBounds, maxCount)),
-        ),
+  forwarder.run(
+    providers,
+    async (send, provider) => {
+      const { chainId, address, cursor, limit } = params;
+      const bounds = {
+        fromBlock: "0x0",
+        toBlock: cursor === undefined ? "latest" : toHex(cursor),
+      };
+      const round = async (
+        roundBounds: { readonly fromBlock: string; readonly toBlock: string },
+        maxCount: string,
+      ): Promise<ReadonlyArray<UpstreamPage>> =>
+        Promise.all(
+          DIRECTIONS.map(async (direction) =>
+            call(send, provider, pageParams(direction, address, chainId, roundBounds, maxCount)),
+          ),
+        );
+
+      const pages = await round(bounds, toHex(String(limit)));
+      const { transfers, frontier } = pageResult(pages);
+      let kept = transfers.filter(
+        (t) => frontier === undefined || (hexToBigInt(t.blockNum) ?? 0n) > frontier,
       );
+      let nextCursor = frontier === undefined ? null : decimalString(frontier);
 
-    const pages = await round(bounds, toHex(String(limit)));
-    const { transfers, frontier } = pageResult(pages);
-    let kept = transfers.filter(
-      (t) => frontier === undefined || (hexToBigInt(t.blockNum) ?? 0n) > frontier,
-    );
-    let nextCursor = frontier === undefined ? null : decimalString(frontier);
+      let drainTruncated = false;
+      if (kept.length === 0 && frontier !== undefined) {
+        const drainPages = await round(
+          { fromBlock: toHex(decimalString(frontier)), toBlock: toHex(decimalString(frontier)) },
+          DRAIN_MAX_COUNT,
+        );
+        drainTruncated = drainPages.some((page) => page.pageKey !== undefined);
+        if (drainTruncated) {
+          // The frontier block holds more than a max page: keep what came — one bounded round
+          // is the whole cost this route pays for it.
+          log(JSON.stringify({ event: "history-drain-truncated" }));
+        }
+        kept = drainPages.flatMap((page) => page.transfers);
+        nextCursor = frontier === 0n ? null : decimalString(frontier - 1n);
+      }
 
-    let drainTruncated = false;
-    if (kept.length === 0 && frontier !== undefined) {
-      await chargeDrain();
-      const drainPages = await round(
-        { fromBlock: toHex(decimalString(frontier)), toBlock: toHex(decimalString(frontier)) },
-        DRAIN_MAX_COUNT,
-      );
-      drainTruncated = drainPages.some((page) => page.pageKey !== undefined);
-      if (drainTruncated) {
-        // The frontier block holds more than a max page: keep what came — one bounded round
-        // is the whole cost this route pays for it.
-        log(JSON.stringify({ event: "history-drain-truncated" }));
+      const seen = new Set<string>();
+      const mapped: Kept[] = [];
+      for (const t of kept) {
+        if (seen.has(t.uniqueId)) {
+          continue;
+        }
+        const transfers = mapTransfer(t);
+        if (transfers.length === 0) {
+          continue;
+        }
+        seen.add(t.uniqueId);
+        const block = hexToBigInt(t.blockNum);
+        if (block === undefined) {
+          continue;
+        }
+        for (const transfer of transfers) {
+          mapped.push({
+            uniqueId: t.uniqueId,
+            hash: t.hash,
+            block,
+            timestamp: timestampOf(t),
+            transfer,
+          });
+        }
       }
-      kept = drainPages.flatMap((page) => page.transfers);
-      nextCursor = frontier === 0n ? null : decimalString(frontier - 1n);
-    }
-
-    const seen = new Set<string>();
-    const mapped: Kept[] = [];
-    for (const t of kept) {
-      if (seen.has(t.uniqueId)) {
-        continue;
+      const response = buildResponse(mapped, nextCursor, drainTruncated);
+      if (!accepts(historyResponse, response)) {
+        throw new ProviderFailure("malformed", false);
       }
-      const transfers = mapTransfer(t);
-      if (transfers.length === 0) {
-        continue;
-      }
-      seen.add(t.uniqueId);
-      const block = hexToBigInt(t.blockNum);
-      if (block === undefined) {
-        continue;
-      }
-      for (const transfer of transfers) {
-        mapped.push({
-          uniqueId: t.uniqueId,
-          hash: t.hash,
-          block,
-          timestamp: timestampOf(t),
-          transfer,
-        });
-      }
-    }
-    const response = buildResponse(mapped, nextCursor, drainTruncated);
-    if (!accepts(historyResponse, response)) {
-      throw new ProviderFailure("malformed", false);
-    }
-    return response;
-  });
+      return response;
+    },
+    { meter },
+  );

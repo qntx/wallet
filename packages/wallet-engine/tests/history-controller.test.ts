@@ -172,7 +172,14 @@ const make = (options: {
       fetch: (async (_input: unknown, init?: { body?: string }) => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         requests.push(body);
-        const page = { truncated: false, ...(pages.shift() ?? { items: [], cursor: null }) };
+        const page: Record<string, unknown> = {
+          truncated: false,
+          ...(pages.shift() ?? { items: [], cursor: null }),
+        };
+        const { status } = page;
+        if (typeof status === "number") {
+          return Promise.resolve(Response.json({ error: page["error"] }, { status }));
+        }
         if (options.deferredAddresses?.includes(String(body["address"])) === true) {
           return new Promise<Response>((resolve) => {
             pending.push(() => {
@@ -563,6 +570,25 @@ describe("HistoryController", () => {
     // A fresh load whose pages carry no gaps clears the marker.
     await controller.load(GROUP);
     expect(controller.getState().groups["w:0"]?.truncated).toStrictEqual([]);
+    controller.lock();
+  });
+
+  it("lists networks the gateway has no history for as unsupported — a clean load clears it", async () => {
+    const { controller } = make({
+      pages: [{ status: 404, error: "unsupported" }],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const group = controller.getState().groups["w:0"];
+    expect(group?.unsupported).toStrictEqual(["eip155:1"]);
+    expect(group?.entries).toStrictEqual([]);
+    expect(group?.hasMore).toBe(false);
+    // It is coverage, not a failure: nothing lands in errors.
+    expect(group?.errors).toStrictEqual({});
+
+    // The pages queue is empty: a fresh load gets a 200 empty page and clears the marker.
+    await controller.load(GROUP);
+    expect(controller.getState().groups["w:0"]?.unsupported).toStrictEqual([]);
     controller.lock();
   });
 

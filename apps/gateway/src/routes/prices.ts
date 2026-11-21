@@ -13,10 +13,10 @@ import type { PriceDeps } from "../providers/prices.ts";
 const MAX_BODY_BYTES = 16 * 1024;
 
 /**
- * `POST /v1/prices` — spot prices and 24 h change for a batch of assets in one fiat currency. The
- * request pays one rate-limit unit, plus one per upstream call its cache misses fan out to. The
- * answer is per-client (it names the client's assets), so it is `no-store`; reuse happens per asset
- * in the gateway's own cache.
+ * `POST /v1/prices` — spot prices and 24 h change for a batch of assets in one fiat currency. Each
+ * upstream call a cache miss fans out to is billed to the request's share of the source. The answer
+ * is per-client (it names the client's assets), so it is `no-store`; reuse happens per asset in the
+ * gateway's own cache.
  */
 export function pricesRoutes(deps: PriceDeps): Hono<{ Variables: RateLimitVariables }> {
   return new Hono<{ Variables: RateLimitVariables }>().post(
@@ -29,7 +29,7 @@ export function pricesRoutes(deps: PriceDeps): Hono<{ Variables: RateLimitVariab
     }),
     async (c) => {
       const request = c.req.valid("json");
-      const { response, providers } = await quotePrices(deps, request, c.get("charge"));
+      const { response, providers } = await quotePrices(deps, request, c.get("meter"));
       return c.json(response, 200, {
         "cache-control": "no-store",
         [PROVIDERS_HEADER]: providers.join(","),

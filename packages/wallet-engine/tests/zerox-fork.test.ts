@@ -83,7 +83,12 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
           return { success: true };
         },
       };
-      const limiters: Limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
+      const limiters: Limiters = {
+        ip: allowAll,
+        rpc: allowAll,
+        default: allowAll,
+        share: allowAll,
+      };
       const risk: RiskStore = {
         get: async () => Promise.resolve(undefined),
         put: async () => Promise.resolve(),
@@ -95,11 +100,40 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
       const gateway = createGateway({
         fetch: globalThis.fetch.bind(globalThis),
         networks: [{ id: N1, providers: [{ id: "fork", url: RPC_URL }] }],
+        tokenNetworks: new Set(),
+        accounts: {
+          fork: {
+            costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+            budget: [{ units: 1_000_000, seconds: 60 }],
+          },
+          "0x": {
+            costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+            budget: [{ units: 1_000_000, seconds: 60 }],
+          },
+          jupiter: {
+            costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+            budget: [{ units: 1_000_000, seconds: 60 }],
+          },
+          across: {
+            costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+            budget: [{ units: 1_000_000, seconds: 60 }],
+          },
+          defillama: {
+            costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+            budget: [{ units: 1_000_000, seconds: 60 }],
+          },
+        },
         limiters,
         corsOrigins: [],
         risk,
         tokens: risk,
         prices: { cache: priceCache },
+        budget: {
+          take: async () => {
+            await Promise.resolve();
+            return { ok: true as const };
+          },
+        },
         auth: {},
         zeroEx: { apiKey: KEY ?? "" },
         log: () => undefined,

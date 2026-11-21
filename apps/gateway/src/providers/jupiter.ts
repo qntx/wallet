@@ -3,8 +3,9 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteSolanaResponse } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
 import type { ResolvedProvider } from "../types.ts";
-import type { Forwarder } from "./forward.ts";
+import type { Forwarder, Meter } from "./forward.ts";
 import { ProviderFailure } from "./forward.ts";
 
 /** An optional Jupiter API key — absent, the `/build` API serves keyless at its public rate. */
@@ -12,7 +13,8 @@ export type JupiterConfig = { readonly apiKey?: string };
 
 const JUP_API_BASE = "https://api.jup.ag";
 
-const PROVIDER: ResolvedProvider = { id: "jupiter", url: JUP_API_BASE };
+/** The Jupiter build endpoint's identity; the app resolves its billing account into a provider. */
+export const JUPITER_PROVIDER = { id: "jupiter", url: JUP_API_BASE } as const;
 
 /** 22x the largest quote response measured (a 46 kB build). */
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -77,6 +79,8 @@ const CLIENT_ERROR: ReadonlySet<number> = new Set([400, 422]);
 export async function jupiterQuote(
   forwarder: Forwarder,
   config: JupiterConfig | undefined,
+  provider: ResolvedProvider,
+  meter: Meter,
   query: {
     readonly inputMint: string;
     readonly outputMint: string;
@@ -91,56 +95,61 @@ export async function jupiterQuote(
   url.searchParams.set("amount", query.amount);
   url.searchParams.set("taker", query.taker);
   url.searchParams.set("slippageBps", String(query.slippageBps));
-  const { value } = await forwarder.run([PROVIDER], async (send) => {
-    const http = await send({
-      url,
-      ...(config?.apiKey === undefined ? {} : { headers: { "x-api-key": config.apiKey } }),
-    });
-    const text = await http.text(MAX_RESPONSE_BYTES);
-    if (!http.ok) {
-      if (CLIENT_ERROR.has(http.status) && text.includes("No routes found")) {
-        return { liquidity: false } satisfies SwapQuoteSolanaResponse;
+  const { value } = await forwarder.run(
+    [provider],
+    async (send) => {
+      const http = await send({
+        url,
+        ...(config?.apiKey === undefined ? {} : { headers: { "x-api-key": config.apiKey } }),
+        cost: requestCost(provider.costs),
+      });
+      const text = await http.text(MAX_RESPONSE_BYTES);
+      if (!http.ok) {
+        if (CLIENT_ERROR.has(http.status) && text.includes("No routes found")) {
+          return { liquidity: false } satisfies SwapQuoteSolanaResponse;
+        }
+        if (CLIENT_ERROR.has(http.status)) {
+          return { badRequest: true } as const;
+        }
+        throw new ProviderFailure(`status-${http.status}`, false);
       }
-      if (CLIENT_ERROR.has(http.status)) {
-        return { badRequest: true } as const;
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new ProviderFailure("malformed", false);
       }
-      throw new ProviderFailure(`status-${http.status}`, false);
-    }
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      throw new ProviderFailure("malformed", false);
-    }
-    const res = parseWith(jupiterUpstreamResponse, body);
-    if (res === undefined) {
-      throw new ProviderFailure("malformed", false);
-    }
-    if (
-      res.swapInstruction === undefined ||
-      res.transactionVersion !== 0 ||
-      (res.otherInstructions !== undefined && res.otherInstructions.length > 0) ||
-      (res.tipInstruction !== undefined && res.tipInstruction !== null)
-    ) {
-      throw new ProviderFailure("malformed", false);
-    }
-    return {
-      liquidity: true,
-      provider: "jupiter",
-      inputMint: res.inputMint,
-      outputMint: res.outputMint,
-      inAmount: res.inAmount,
-      outAmount: res.outAmount,
-      otherAmountThreshold: res.otherAmountThreshold,
-      slippageBps: res.slippageBps,
-      setup: (res.setupInstructions ?? []).map(wireIx),
-      swap: wireIx(res.swapInstruction),
-      cleanup:
-        res.cleanupInstruction === undefined || res.cleanupInstruction === null
-          ? null
-          : wireIx(res.cleanupInstruction),
-      lookupTables: Object.keys(res.addressesByLookupTableAddress ?? {}),
-    } satisfies SwapQuoteSolanaResponse;
-  });
+      const res = parseWith(jupiterUpstreamResponse, body);
+      if (res === undefined) {
+        throw new ProviderFailure("malformed", false);
+      }
+      if (
+        res.swapInstruction === undefined ||
+        res.transactionVersion !== 0 ||
+        (res.otherInstructions !== undefined && res.otherInstructions.length > 0) ||
+        (res.tipInstruction !== undefined && res.tipInstruction !== null)
+      ) {
+        throw new ProviderFailure("malformed", false);
+      }
+      return {
+        liquidity: true,
+        provider: "jupiter",
+        inputMint: res.inputMint,
+        outputMint: res.outputMint,
+        inAmount: res.inAmount,
+        outAmount: res.outAmount,
+        otherAmountThreshold: res.otherAmountThreshold,
+        slippageBps: res.slippageBps,
+        setup: (res.setupInstructions ?? []).map(wireIx),
+        swap: wireIx(res.swapInstruction),
+        cleanup:
+          res.cleanupInstruction === undefined || res.cleanupInstruction === null
+            ? null
+            : wireIx(res.cleanupInstruction),
+        lookupTables: Object.keys(res.addressesByLookupTableAddress ?? {}),
+      } satisfies SwapQuoteSolanaResponse;
+    },
+    { meter },
+  );
   return value;
 }

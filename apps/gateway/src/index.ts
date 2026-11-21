@@ -2,9 +2,11 @@ import { createGateway } from "./app.ts";
 import { PHISHING_SOURCES } from "./config/phishing.ts";
 import { buildPhishingList } from "./risk/phishing.ts";
 import { buildTokenLists } from "./tokens/build.ts";
-import { tokenListSources } from "./tokens/sources.ts";
-import { gatewayFor, riskStoreOf } from "./worker.ts";
+import { gatewayFor, riskStoreOf, tokenSourcesFor } from "./worker.ts";
 import type { WorkerEnv } from "./worker.ts";
+
+// The PROVIDER_BUDGET binding resolves this class by name.
+export { ProviderBudgetObject } from "./budget/durable.ts";
 
 type Gateway = ReturnType<typeof createGateway>;
 
@@ -36,10 +38,7 @@ export default {
           store,
           now: () => Date.now(),
           log,
-          sources: tokenListSources({
-            coingecko: env.COINGECKO_API_KEY,
-            jupiter: env.JUPITER_API_KEY,
-          }),
+          sources: tokenSourcesFor(env),
         }),
       ]),
     );

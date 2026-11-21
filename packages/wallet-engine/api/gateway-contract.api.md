@@ -168,6 +168,12 @@ export const evmRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObj
 }, z.core.$strip>[]>>]>;
 
 // @public
+export const FEE_HISTORY_BLOCKS_MAX = 1024;
+
+// @public
+export const FEE_HISTORY_PERCENTILES_MAX = 100;
+
+// @public
 export type FeeModel =
 /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
     {
@@ -203,7 +209,7 @@ export const fiatCurrency: z.ZodMiniEnum<{
 export const fiatPrice: z.ZodMiniString<string>;
 
 // @public (undocumented)
-export const GATEWAY_ERRORS: readonly ["invalid-request", "unknown-network", "not-found", "rate-limited", "unavailable", "outcome-unknown", "internal"];
+export const GATEWAY_ERRORS: readonly ["invalid-request", "unknown-network", "not-found", "rate-limited", "unavailable", "outcome-unknown", "internal", "too-costly", "unsupported"];
 
 // @public (undocumented)
 export const gatewayError: z.ZodMiniObject<{
@@ -213,8 +219,10 @@ export const gatewayError: z.ZodMiniObject<{
         "not-found": "not-found";
         "outcome-unknown": "outcome-unknown";
         "rate-limited": "rate-limited";
+        "too-costly": "too-costly";
         unavailable: "unavailable";
         "unknown-network": "unknown-network";
+        unsupported: "unsupported";
     }>;
 }, z.core.$strip>;
 
@@ -574,6 +582,7 @@ export const prices: Endpoint<z.ZodMiniObject<{
         updatedAt: z.ZodMiniNumber<number>;
     }, z.core.$strip>>;
     missing: z.ZodMiniArray<z.ZodMiniString<string>>;
+    unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>>;
 
 // @public (undocumented)
@@ -622,6 +631,7 @@ export const pricesResponse: z.ZodMiniObject<{
         updatedAt: z.ZodMiniNumber<number>;
     }, z.core.$strip>>;
     missing: z.ZodMiniArray<z.ZodMiniString<string>>;
+    unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>;
 
 // @public (undocumented)
@@ -671,29 +681,13 @@ export const RPC_BATCH_MAX = 20;
 export const RPC_BROADCAST_METHODS: readonly ["eth_sendRawTransaction", "sendTransaction"];
 
 // @public
-export const RPC_COST_WEIGHTS: {
-    readonly point: 1;
-    readonly heavy: 3;
-    readonly scan: 10;
-};
+export const RPC_PROOF_KEYS_MAX = 100;
 
 // @public
-export const RPC_ELEMENTS_PER_UNIT = 10;
+export const RPC_SIMULATE_BLOCKS_MAX = 16;
 
 // @public
-export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, RpcCostClass>>;
-
-// @public (undocumented)
-type RpcCall = {
-    readonly method: string;
-    readonly params?: unknown;
-};
-
-// @public
-export function rpcCallCost(call: RpcCall): number;
-
-// @public (undocumented)
-export type RpcCostClass = keyof typeof RPC_COST_WEIGHTS;
+export const RPC_SIMULATE_CALLS_MAX = 100;
 
 // @public
 export const rpcPath: (caip2: string) => string;
@@ -710,9 +704,6 @@ export const rpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
     method: z.ZodMiniString<string>;
     params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
 }, z.core.$strip>>]>;
-
-// @public
-export function rpcRequestCost(body: RpcCall | ReadonlyArray<RpcCall>): number;
 
 // @public (undocumented)
 export const rpcResponse: z.ZodMiniUnion<readonly [z.ZodMiniUnion<readonly [z.ZodMiniObject<{

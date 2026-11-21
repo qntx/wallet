@@ -2,6 +2,8 @@ import * as z from "zod/mini";
 
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
+import type { ResolvedProvider } from "../types.ts";
 import { ProviderFailure } from "./forward.ts";
 import type { UpstreamResponse } from "./forward.ts";
 import { providerJson } from "./prices.ts";
@@ -41,17 +43,18 @@ const parsed = async <S extends z.ZodMiniType>(
  * an outage of the primary, not a wrong answer from it; its own value is the long tail CoinGecko
  * lacks (HyperEVM tokens among them).
  */
-export const defillamaSource: PriceSource = {
-  provider: { id: "defillama", url: DEFILLAMA_API },
+export const defillamaSource = (provider: ResolvedProvider): PriceSource => ({
+  provider,
   serves: (currency) => currency === "usd",
-  calls: () => 2,
   quote: async (send, _currency, targets) => {
     const keys = [...new Set([...targets.values()].map((target) => target.defillama))].join(",");
+    const cost = requestCost(provider.costs);
+    // Both calls are one answer — a refusal on either discards nothing another paid for.
     const [current, change] = await Promise.all([
-      send({ url: `${DEFILLAMA_API}/prices/current/${keys}` }).then(async (response) =>
+      send({ url: `${DEFILLAMA_API}/prices/current/${keys}`, cost }).then(async (response) =>
         parsed(currentPrices, response),
       ),
-      send({ url: `${DEFILLAMA_API}/percentage/${keys}?period=24h` }).then(async (response) =>
+      send({ url: `${DEFILLAMA_API}/percentage/${keys}?period=24h`, cost }).then(async (response) =>
         parsed(percentages, response),
       ),
     ]);
@@ -74,4 +77,4 @@ export const defillamaSource: PriceSource = {
       }),
     );
   },
-};
+});

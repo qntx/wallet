@@ -1066,6 +1066,7 @@ export type GroupHistory = {
     readonly stale: boolean;
     readonly errors: Readonly<Record<string, string>>;
     readonly truncated: ReadonlyArray<string>;
+    readonly unsupported: ReadonlyArray<string>;
 };
 
 // @public (undocumented)
@@ -1793,7 +1794,7 @@ export type PricesFailure = "no-gateway" | "unavailable" | "rate-limited" | "inv
 export type PricesState = {
     readonly currency: FiatCurrency;
     readonly quotes: Readonly<Record<string, PriceQuoteState>>;
-    readonly errors: Readonly<Record<string, "unpriced">>;
+    readonly errors: Readonly<Record<string, "unpriced" | "unsupported">>;
     readonly failure: PricesFailure | null;
     readonly fetchedAt: number | null;
 };
