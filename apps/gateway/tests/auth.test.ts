@@ -44,26 +44,25 @@ const FLARE = {
 };
 
 /** A full production env; the networks swap to FLARE so the real auth wiring answers Ankr. */
-const productionEnv = (): WorkerEnv =>
-  ({
-    RISK: {
-      get: async () => Promise.resolve(null),
-      put: async () => Promise.resolve(),
-    } as unknown as KVNamespace,
-    IP_LIMITER: allowAll,
-    RPC_LIMITER: allowAll,
-    DEFAULT_LIMITER: allowAll,
-    CORS_ORIGINS: "",
-    NETWORKS: "production",
-    ZEROX_API_KEY: "z",
-    JUPITER_API_KEY: "j",
-    ALCHEMY_API_KEY: "a",
-    DRPC_API_KEY: "d",
-    ANKR_API_KEY: "ankr-secret",
-    BLOCKSTREAM_CLIENT_ID: "id",
-    BLOCKSTREAM_CLIENT_SECRET: "sec",
-    COINGECKO_API_KEY: "cg",
-  }) as WorkerEnv;
+const productionEnv = (): WorkerEnv => ({
+  RISK: {
+    get: async () => Promise.resolve(null),
+    put: async () => Promise.resolve(),
+  } as unknown as KVNamespace,
+  IP_LIMITER: allowAll,
+  RPC_LIMITER: allowAll,
+  DEFAULT_LIMITER: allowAll,
+  CORS_ORIGINS: "",
+  NETWORKS: "production",
+  ZEROX_API_KEY: "z",
+  JUPITER_API_KEY: "j",
+  ALCHEMY_API_KEY: "a",
+  DRPC_API_KEY: "d",
+  ANKR_API_KEY: "ankr-secret",
+  BLOCKSTREAM_CLIENT_ID: "id",
+  BLOCKSTREAM_CLIENT_SECRET: "sec",
+  COINGECKO_API_KEY: "cg",
+});
 
 describe("upstream auth", () => {
   it("sends the provider's auth headers on rpc and esplora requests", async () => {
@@ -147,16 +146,15 @@ describe("upstream auth", () => {
   it("fails over from a 5xx dRPC to Ankr, keying it by header and never the URL", async () => {
     const { fetch, callsTo } = fakeFetch({
       "https://lb.drpc.live/flare": () => new Response("boom", { status: 502 }),
-      "https://rpc.ankr.com/flare": () =>
-        Response.json({ jsonrpc: "2.0", id: 1, result: "0xe" }),
+      "https://rpc.ankr.com/flare": () => Response.json({ jsonrpc: "2.0", id: 1, result: "0xe" }),
     });
     const app = createGateway({ ...gatewayFor(productionEnv()), fetch, networks: [FLARE] });
     const r = await app.fetch(
       new Request("https://gw.test/v1/rpc/eip155:11155111", post(call("eth_chainId"))),
     );
     expect(r.status).toBe(200);
-    expect(await r.json()).toStrictEqual({ jsonrpc: "2.0", id: 1, result: "0xe" });
-    const ankr = callsTo("https://rpc.ankr.com")[0];
+    await expect(r.json()).resolves.toStrictEqual({ jsonrpc: "2.0", id: 1, result: "0xe" });
+    const [ankr] = callsTo("https://rpc.ankr.com");
     expect(ankr?.url).toBe("https://rpc.ankr.com/flare");
     expect(ankr?.url).not.toContain("ankr-secret");
     const sent = ankr?.headers as Record<string, string>;
