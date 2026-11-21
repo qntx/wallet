@@ -16,7 +16,7 @@ import type { SetTimer } from "../../timer.ts";
 import type { AppFlow, AppGroup, AppProvider } from "../types.ts";
 import { HyperliquidError } from "./errors.ts";
 import type { HyperliquidErrorCategory } from "./errors.ts";
-import type { HyperliquidProvider } from "./provider.ts";
+import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";
 import type { HyperliquidUserSigned } from "./user-signed.ts";
 
 /** Hyperliquid's own bound is 180 days; 179 keeps a day of slack inside it (research §Agents). */
@@ -45,7 +45,7 @@ const feeRate = (tenthsBps: number): string => {
 
 export type HyperliquidEnableOptions = {
   readonly wallet: Wallet;
-  readonly provider: HyperliquidProvider;
+  readonly provider: HyperliquidProvider & HyperliquidProviderInternals;
   readonly userSigned: HyperliquidUserSigned;
   readonly requests: Pick<RequestController, "reject">;
   readonly network: HyperliquidNetwork;
@@ -178,18 +178,38 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
     if (flow.current().step !== "verify" && flow.current().step !== "approve-builder") {
       flow.write({ step: "approve-agent" });
       /* The kernel binds validity by signing `"<name> valid_until <ms>"` in agentName — the
-         exchange reads the suffix, not a separate field (docs §Approve an API wallet). */
+         exchange reads the suffix, not a separate field (docs §Approve an API wallet). The
+         `valid_until` always comes from the kernel record, never a fresh clock read. */
       const pending = await userSigned.approveAgent(group, {
         agentAddress: agent.address,
         agentName: `${options.agentName} valid_until ${agent.validUntil}`,
       });
       flow.write({ requestId: pending.requestId });
-      const outcome = await pending.outcome;
-      flow.write({ requestId: undefined });
-      /* A lost approve POST means the action may have committed — go to verify instead of
-         treating it as a failure; the agent is kept while it may be live. */
-      if (outcome.kind === "unknown") {
-        options.logger.warn("hyperliquid approveAgent outcome unknown — verifying by listing");
+      try {
+        const outcome = await pending.outcome;
+        flow.write({ requestId: undefined });
+        /* A lost approve POST means the action may have committed — go to verify instead of
+           treating it as a failure; the agent is kept while it may be live. */
+        if (outcome.kind === "unknown") {
+          options.logger.warn("hyperliquid approveAgent outcome unknown — verifying by listing");
+        }
+      } catch (error) {
+        /* Refusal and `status:"err"` are definitive — the agent never commits: delete the
+           orphan and leave the group disabled. Only `unknown` is uncertain. */
+        flow.write({ requestId: undefined });
+        if (
+          error instanceof HyperliquidError &&
+          (error.category === "approval-rejected" || error.category === "rejected")
+        ) {
+          await deleteAgent(agent.address);
+          flow.write({
+            status: "disabled",
+            agent: undefined,
+            step: undefined,
+            error: errorOf(error),
+          });
+        }
+        throw error;
       }
     }
     flow.write({ step: "verify" });
@@ -281,13 +301,26 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
 
   return {
     id: "hyperliquid",
+    groups: async () => {
+      const listed = await wallet().listAgents();
+      const seen = new Map<string, AppGroup>();
+      for (const agent of listed) {
+        if (agent.network === options.network) {
+          seen.set(`${agent.walletId}/${agent.groupIndex}`, {
+            walletId: agent.walletId,
+            groupIndex: agent.groupIndex,
+          });
+        }
+      }
+      return [...seen.values()];
+    },
     enable: async (group, flow) =>
       guard(flow, async () => {
         await enableFlow(group, flow);
       }),
-    renew: async (group, flow) =>
-      guard(flow, async () => {
-        const before = await kernelAgents(group);
+    renew: async (group, flow) => {
+      const before = await kernelAgents(group);
+      try {
         /* Same name ⇒ Hyperliquid deregisters the old agent when the new one is approved. The
            old kernel agent stays usable until the new one is enabled. */
         flow.write({
@@ -303,7 +336,40 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
             await deleteAgent(old.address);
           }
         }
-      }),
+      } catch (error) {
+        /* The failed flow deleted its unenabled agent (approveAgent); restore the old agent's
+           enabled state — it kept trading through the whole attempt. */
+        const remaining = await kernelAgents(group);
+        const old = remaining.find(
+          (a) =>
+            a.address.toLowerCase() !== flow.current().agent?.address.toLowerCase() &&
+            a.validUntil > options.now(),
+        );
+        flow.write(
+          old === undefined
+            ? {
+                status: "needs-reauthorization",
+                step: undefined,
+                requestId: undefined,
+                error: errorOf(error),
+              }
+            : {
+                status: "enabled",
+                agent: {
+                  address: old.address,
+                  name: old.name,
+                  validUntil: old.validUntil,
+                  network: old.network,
+                },
+                step: undefined,
+                requestId: undefined,
+                renewalDue: old.validUntil - options.now() < RENEWAL_WINDOW_MS,
+                error: errorOf(error),
+              },
+        );
+        throw error;
+      }
+    },
     disable: async (group, { revoke }, flow) =>
       guard(flow, async () => {
         await provider.agents.refresh();
@@ -328,9 +394,16 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
               validUntil: options.now() + REVOKE_VALID_MS,
             });
             throwaway = address;
+            /* The kernel binding needs the record's own validUntil — a second clock read here
+               could drift a millisecond and fail the check. */
+            const records = await kernelAgents(group);
+            const record = records.find((a) => a.address.toLowerCase() === address.toLowerCase());
+            if (record === undefined) {
+              throw new HyperliquidError("unavailable", "the kernel created no agent");
+            }
             const pending = await userSigned.approveAgent(group, {
               agentAddress: address,
-              agentName: `${options.agentName} valid_until ${options.now() + REVOKE_VALID_MS}`,
+              agentName: `${options.agentName} valid_until ${record.validUntil}`,
             });
             flow.write({ requestId: pending.requestId });
             await pending.outcome;
@@ -351,25 +424,61 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       }),
     cancel: async (group, flow) => {
       const state = flow.current();
+      if (state.status !== "enabling") {
+        throw new HyperliquidError("invalid-input", "no enablement flow is running");
+      }
+      if (state.agent !== undefined && provider.agents.enabled(state.agent.address)) {
+        throw new HyperliquidError("invalid-input", "the recorded agent is already enabled");
+      }
       if (state.requestId !== undefined) {
         /* A request the flow opened but the host never approved just ends. */
         options.requests.reject(state.requestId);
       }
       const agents = await kernelAgents(group);
       for (const agent of agents) {
-        /* An agent that was never marked enabled is an orphan of the abandoned flow. */
-        if (agent.address.toLowerCase() === state.agent?.address.toLowerCase()) {
+        /* Only the flow's own unenabled agent is an orphan — during a renew the old enabled
+           agent names another address and is never touched. */
+        if (
+          agent.address.toLowerCase() === state.agent?.address.toLowerCase() &&
+          !provider.agents.enabled(agent.address)
+        ) {
           // oxlint-disable-next-line eslint/no-await-in-loop -- one delete.
           await deleteAgent(agent.address);
         }
       }
-      flow.write({
-        status: "disabled",
-        step: undefined,
-        requestId: undefined,
-        agent: undefined,
-        error: undefined,
-      });
+      /* Restore what remains: a renew's old agent is still live and enabled — a fresh enable
+           leaves nothing and the group goes disabled. */
+      const [restored] = agents
+        .filter(
+          (a) =>
+            a.address.toLowerCase() !== state.agent?.address.toLowerCase() &&
+            a.validUntil > options.now(),
+        )
+        .sort((a, b) => b.validUntil - a.validUntil);
+      if (restored === undefined) {
+        flow.write({
+          status: "disabled",
+          step: undefined,
+          requestId: undefined,
+          agent: undefined,
+          error: undefined,
+        });
+      } else {
+        provider.agents.markEnabled(restored.address);
+        flow.write({
+          status: "enabled",
+          agent: {
+            address: restored.address,
+            name: restored.name,
+            validUntil: restored.validUntil,
+            network: restored.network,
+          },
+          step: undefined,
+          requestId: undefined,
+          renewalDue: restored.validUntil - options.now() < RENEWAL_WINDOW_MS,
+          error: undefined,
+        });
+      }
     },
     reconcile: async (group, flow) => {
       const now = options.now();
@@ -382,15 +491,14 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         .sort((a, b) => b.validUntil - a.validUntil);
       const [newest] = live;
       if (newest === undefined) {
-        /* Agents exist but all expired → the group once enabled needs a renew; none at all →
-           plain disabled. */
-        const had = agents.length > 0;
+        /* Every kernel agent expired or none exist: a group whose persisted record names an
+           enabled agent needs reauthorization; a group that never enabled is disabled. */
         for (const agent of agents) {
           // oxlint-disable-next-line eslint/no-await-in-loop -- orphan cleanup is sequential.
           await deleteAgent(agent.address);
         }
         flow.write({
-          status: had ? "needs-reauthorization" : "disabled",
+          status: flow.wasEnabledAgent() === undefined ? "disabled" : "needs-reauthorization",
           agent: undefined,
           builder: undefined,
         });
@@ -411,7 +519,11 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
           });
         } else {
           await deleteAgent(newest.address);
-          flow.write({ status: "disabled", agent: undefined, builder: undefined });
+          flow.write({
+            status: flow.wasEnabledAgent() === undefined ? "disabled" : "needs-reauthorization",
+            agent: undefined,
+            builder: undefined,
+          });
         }
         return;
       }

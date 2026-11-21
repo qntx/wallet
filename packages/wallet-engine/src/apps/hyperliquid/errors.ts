@@ -20,7 +20,9 @@ export type HyperliquidErrorCategory =
   /** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
   | "deposit-required"
   /** The user refused, or the approval request expired or was invalidated. */
-  | "approval-rejected";
+  | "approval-rejected"
+  /** An enablement flow is already running for the group — wait or cancel it. */
+  | "busy";
 
 export class HyperliquidError extends Error {
   readonly category: HyperliquidErrorCategory;

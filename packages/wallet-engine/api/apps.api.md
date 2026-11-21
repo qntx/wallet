@@ -154,7 +154,7 @@ type AddressFamily = "evm" | "solana" | "bitcoin" | "spark";
 export { AllMidsResponse }
 
 // @public (undocumented)
-export type AppAgent = {
+type AppAgent = {
     readonly address: string;
     readonly name: string;
     readonly validUntil: number;
@@ -162,16 +162,17 @@ export type AppAgent = {
 };
 
 // @public (undocumented)
-export type AppError = {
+type AppError = {
     readonly category: string;
     readonly message: string;
 };
 
 // @public
-export type AppFlow = {
+type AppFlow = {
     readonly current: () => AppGroupState;
     readonly write: (patch: AppGroupPatch) => void;
     readonly stale: () => boolean;
+    readonly wasEnabledAgent: () => string | undefined;
 };
 
 // @public
@@ -181,7 +182,7 @@ export type AppGroup = {
 };
 
 // @public
-export type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | undefined; };
+type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | undefined; };
 
 // @public
 export type AppGroupState = {
@@ -199,8 +200,9 @@ export type AppGroupState = {
 export type AppId = "hyperliquid" | "polymarket";
 
 // @public
-export type AppProvider = {
+type AppProvider = {
     readonly id: AppId;
+    readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly renew: (group: AppGroup, flow: AppFlow) => Promise<void>;
@@ -226,7 +228,6 @@ export type AppsBuilderConfig = {
 export class AppsController extends Controller<AppsState> {
     constructor(deps: AppsControllerDeps);
     acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void>;
-    // (undocumented)
     cancel(group: HyperliquidGroup, app: AppId): Promise<void>;
     // (undocumented)
     destroy(): Promise<void>;
@@ -239,13 +240,14 @@ export class AppsController extends Controller<AppsState> {
     // (undocumented)
     init(): Promise<void>;
     // (undocumented)
-    lock(): void;
+    lock(): Promise<void>;
+    reconcile(group: AppGroup): Promise<void>;
     // (undocumented)
     renew(group: HyperliquidGroup, app: AppId): Promise<void>;
 }
 
 // @public (undocumented)
-export type AppsControllerDeps = {
+type AppsControllerDeps = {
     readonly providers: ReadonlyMap<AppId, AppProvider>;
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "reject">;
@@ -267,7 +269,7 @@ export type AppsState = {
 };
 
 // @public
-export type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
+type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
 
 // @public
 type AssetChange = {
@@ -525,9 +527,6 @@ export type CreateAppsOptions = {
     readonly hyperliquid: AppsHyperliquidConfig;
 };
 
-// @public (undocumented)
-export function createHyperliquidProvider(options: HyperliquidProviderOptions): HyperliquidProvider;
-
 // @public
 type DelegationStatus = {
     readonly supported: boolean;
@@ -638,16 +637,6 @@ export type HyperliquidAgent = {
     readonly validUntil: number;
 };
 
-// @public (undocumented)
-export type HyperliquidAgentRegistry = {
-    readonly refresh: () => Promise<void>;
-    readonly markEnabled: (address: string) => void;
-    readonly markRejected: (address: string) => void;
-    readonly require: (group: HyperliquidGroup) => HyperliquidAgent;
-    readonly owner: (group: HyperliquidGroup) => Promise<string>;
-    readonly rejected: (address: string) => boolean;
-};
-
 // @public
 export type HyperliquidAsset = {
     readonly asset: number;
@@ -711,7 +700,9 @@ export type HyperliquidErrorCategory = "network" |
 /** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
 "deposit-required" |
 /** The user refused, or the approval request expired or was invalidated. */
-"approval-rejected";
+"approval-rejected" |
+/** An enablement flow is already running for the group — wait or cancel it. */
+"busy";
 
 // @public (undocumented)
 export type HyperliquidFund = {
@@ -821,8 +812,6 @@ export type HyperliquidProvider = {
     readonly quote: HyperliquidQuote;
     readonly clock: HyperliquidClock;
     readonly trade: HyperliquidTrade;
-    readonly agents: HyperliquidAgentRegistry;
-    readonly userSigned: HyperliquidUserSigned;
     readonly fund: HyperliquidFund;
     readonly transfer: {
         readonly toSpot: (group: HyperliquidGroup, amount: string) => Promise<HyperliquidPendingAction>;
@@ -841,18 +830,6 @@ export type HyperliquidProvider = {
             readonly amount: string;
         }) => Promise<HyperliquidPendingAction>;
     };
-};
-
-// @public (undocumented)
-export type HyperliquidProviderOptions = Pick<HyperliquidTransportOptions, "network" | "fetch" | "setTimer" | "now" | "timeoutMs"> & {
-    readonly wallet: Wallet;
-    readonly random: (length: number) => Uint8Array;
-    readonly logger: EngineLogger;
-    readonly requests?: Pick<RequestController, "prepare" | "outcome" | "reject">;
-    readonly builderFor?: (group: HyperliquidGroup) => {
-        readonly address: string;
-        readonly feeRateTenthsBps: number;
-    } | undefined;
 };
 
 // @public
@@ -931,51 +908,12 @@ export type HyperliquidTrade = {
     }) => Promise<HyperliquidPlaceResult>;
 };
 
-// @public (undocumented)
-type HyperliquidTransportOptions = {
-    readonly network: HyperliquidNetwork;
-    readonly fetch: typeof globalThis.fetch;
-    readonly setTimer: SetTimer;
-    readonly now: () => number;
-    readonly clock: HyperliquidClock;
-    readonly timeoutMs?: number;
-};
-
 // @public
 export type HyperliquidTriggerParams = {
     readonly triggerPx: string;
     readonly market?: boolean;
     readonly price?: string;
     readonly slippageBps?: number;
-};
-
-// @public (undocumented)
-export type HyperliquidUserSigned = {
-    readonly approveAgent: (group: HyperliquidGroup, params: {
-        readonly agentAddress: string;
-        readonly agentName: string;
-    }) => Promise<HyperliquidPendingAction>;
-    readonly approveBuilderFee: (group: HyperliquidGroup, params: {
-        readonly builder: string;
-        readonly maxFeeRate: string;
-    }) => Promise<HyperliquidPendingAction>;
-    readonly usdClassTransfer: (group: HyperliquidGroup, params: {
-        readonly amount: string;
-        readonly toPerp: boolean;
-    }) => Promise<HyperliquidPendingAction>;
-    readonly usdSend: (group: HyperliquidGroup, params: {
-        readonly destination: string;
-        readonly amount: string;
-    }) => Promise<HyperliquidPendingAction>;
-    readonly spotSend: (group: HyperliquidGroup, params: {
-        readonly destination: string;
-        readonly token: string;
-        readonly amount: string;
-    }) => Promise<HyperliquidPendingAction>;
-    readonly withdraw: (group: HyperliquidGroup, params: {
-        readonly destination: string;
-        readonly amount: string;
-    }) => Promise<HyperliquidPendingAction>;
 };
 
 // @public

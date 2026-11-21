@@ -208,6 +208,9 @@ export function createHyperliquidUserSigned(
       [doc.nonceField]: nonce,
     };
     const outcome = (async (): Promise<HyperliquidActionOutcome> => {
+      /* Pre-POST failures are real errors: a refused/expired request is `approval-rejected`, a
+         malformed result is `unavailable`. Only what the POST leaves behind is `unknown`. */
+      let signature: ReturnType<typeof signatureOf>;
       try {
         const result = await options.requests.outcome(pending.id);
         if (
@@ -216,30 +219,45 @@ export function createHyperliquidUserSigned(
         ) {
           throw new HyperliquidError("unavailable", "the request resolved without a signature");
         }
-        const signature = signatureOf(result);
-        // The envelope nonce equals the action's nonce/time — the docs require they match.
-        const body = await options.transport.request("exchange", { action, nonce, signature });
-        if (fieldOf(body, "status") === "ok") {
-          return { kind: "ok" };
-        }
-        const response = fieldOf(body, "response");
-        throw new HyperliquidError(
-          "rejected",
-          typeof response === "string" ? response : "Hyperliquid rejected the action",
-        );
+        signature = signatureOf(result);
       } catch (error) {
         if (error instanceof RequestEndedError) {
           throw new HyperliquidError("approval-rejected", `the request was ${error.stage}`, error);
         }
-        if (error instanceof HyperliquidError) {
-          if (error.category === "network" || error.category === "timeout") {
-            return { kind: "unknown" };
-          }
+        throw error;
+      }
+      try {
+        // The envelope nonce equals the action's nonce/time — the docs require they match.
+        const body = await options.transport.request("exchange", { action, nonce, signature });
+        const status = fieldOf(body, "status");
+        if (status === "ok") {
+          return { kind: "ok" };
+        }
+        if (status === "err") {
+          const response = fieldOf(body, "response");
+          throw new HyperliquidError(
+            "rejected",
+            typeof response === "string" ? response : "Hyperliquid rejected the action",
+          );
+        }
+        /* A malformed answer may have committed — unknown, never rejected. */
+        return { kind: "unknown" };
+      } catch (error) {
+        /* A non-2xx, a network error or a timeout may have committed; `rejected` is the only
+           outcome that definitively failed. */
+        if (error instanceof HyperliquidError && error.category === "rejected") {
           throw error;
         }
-        /* A transport throw is classified inside transport.request; a non-HyperliquidError here is
-           a post throw too — the action may have committed. */
         return { kind: "unknown" };
+      }
+    })();
+    /* The flow awaits `outcome` after `send` returns — mark it handled so a rejection that
+       lands in between is not an unhandled rejection. */
+    void (async () => {
+      try {
+        await outcome;
+      } catch {
+        // The consumer's own await still sees the rejection — this only marks it handled.
       }
     })();
     return { requestId: pending.id, outcome };

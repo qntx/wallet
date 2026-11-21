@@ -1,29 +1,32 @@
 /**
- * `@qntx/wallet-engine/apps` — app providers the main engine entry never loads: a host that
- * composes apps imports this entry next to `createWalletEngine`, so hosts that do not pay nothing.
- * Platform-neutral like the rest of src: every I/O dependency (fetch, timers, clock) is injected.
+ * `@qntx/wallet-engine/apps` — the apps composition the main engine entry never loads: a host that
+ * enables app trading imports this entry next to `createWalletEngine`, so hosts that do not pay
+ * nothing. Platform-neutral like the rest of src: every I/O dependency (fetch, timers, clock) is
+ * injected.
  *
- * `createHyperliquidProvider` builds the Hyperliquid read and L1-trading path: market and account
- * info reads over the SDK's request functions on an injected transport (never its HttpTransport,
- * which owns the global fetch and timers), pure quote previews that apply the tick and lot rules
- * with bigint-exact arithmetic, and `trade` — actions signed by the wallet's enabled agent through
- * `hyperliquid(wallet).signL1` and posted exactly as signed.
+ * `createApps` builds the whole surface: the `AppsController` (enablement state, terms
+ * acknowledgement, lifecycle on the wallet's lock state) and the `hyperliquid` provider — market
+ * and account reads, pure quote previews, L1 `trade` signed by the wallet's enabled agent,
+ * user-signed `transfer`/`fund` through the request pipeline. Internal seams (the agent registry,
+ * provider factories, flow types) stay in the source tree; tests import them by path.
  */
-export { createHyperliquidProvider } from "./hyperliquid/provider.ts";
+export { createApps } from "./controller.ts";
+export type { AppsController } from "./controller.ts";
+export type { AppsBuilderConfig, AppsHyperliquidConfig, CreateAppsOptions } from "./controller.ts";
+export type { AppGroup, AppGroupState, AppId, AppsState } from "./types.ts";
+export { HyperliquidError } from "./hyperliquid/errors.ts";
+export type { HyperliquidErrorCategory } from "./hyperliquid/errors.ts";
+export { HYPERLIQUID_DEPOSIT } from "./hyperliquid/provider.ts";
 export type {
+  HyperliquidDepositInfo,
+  HyperliquidFund,
   HyperliquidProvider,
-  HyperliquidProviderOptions,
   HyperliquidQuote,
   HyperliquidQuotePreview,
 } from "./hyperliquid/provider.ts";
-export { HyperliquidError } from "./hyperliquid/errors.ts";
-export type { HyperliquidErrorCategory } from "./hyperliquid/errors.ts";
+export type { HyperliquidPendingAction } from "./hyperliquid/user-signed.ts";
+export type { HyperliquidAgent, HyperliquidGroup } from "./hyperliquid/agents.ts";
 export type { HyperliquidClock } from "./hyperliquid/clock.ts";
-export type {
-  HyperliquidAgent,
-  HyperliquidAgentRegistry,
-  HyperliquidGroup,
-} from "./hyperliquid/agents.ts";
 export type {
   HyperliquidAsset,
   HyperliquidModifyParams,
@@ -65,25 +68,3 @@ export type {
   UserRateLimitResponse,
   UserRoleResponse,
 } from "./hyperliquid/account.ts";
-export type { HyperliquidPendingAction, HyperliquidUserSigned } from "./hyperliquid/user-signed.ts";
-export { HYPERLIQUID_DEPOSIT } from "./hyperliquid/provider.ts";
-export type { HyperliquidDepositInfo, HyperliquidFund } from "./hyperliquid/provider.ts";
-export { AppsController, createApps } from "./controller.ts";
-export type {
-  AppsBuilderConfig,
-  AppsControllerDeps,
-  AppsHyperliquidConfig,
-  CreateAppsOptions,
-} from "./controller.ts";
-export type {
-  AppAgent,
-  AppError,
-  AppFlow,
-  AppGroup,
-  AppGroupPatch,
-  AppGroupState,
-  AppId,
-  AppProvider,
-  AppsState,
-  AppStep,
-} from "./types.ts";

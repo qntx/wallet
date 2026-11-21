@@ -70,16 +70,6 @@ export type HyperliquidProvider = {
    * enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
    */
   readonly trade: HyperliquidTrade;
-  /**
-   * The kernel-agent registry `trade` uses — the layer-3 controller drives `refresh`,
-   * `markEnabled`, and sees `markRejected` latch rejections from the exchange path.
-   */
-  readonly agents: HyperliquidAgentRegistry;
-  /**
-   * Owner-signed actions (approvals, transfers, withdrawals) — the request pipeline signs the typed
-   * data; `{requestId, outcome}` lets the host show the approval prompt.
-   */
-  readonly userSigned: HyperliquidUserSigned;
   /** Funding moves on the signature chain: the Bridge2 deposit into Hyperliquid. */
   readonly fund: HyperliquidFund;
   /**
@@ -165,6 +155,23 @@ export type HyperliquidFund = {
   ) => Promise<HyperliquidPendingAction>;
 };
 
+/**
+ * Internal seams `createHyperliquidProvider` returns next to the public surface — the
+ * `AppsController`'s enable flow needs them; they are deliberately off the `apps` entry's exports.
+ */
+export type HyperliquidProviderInternals = {
+  /**
+   * The kernel-agent registry `trade` uses — the controller drives `refresh`, `markEnabled`,
+   * `reset`, and sees `markRejected` latch rejections from the exchange path.
+   */
+  readonly agents: HyperliquidAgentRegistry;
+  /**
+   * Owner-signed actions (approvals, transfers, withdrawals) — the request pipeline signs the typed
+   * data; `{requestId, outcome}` lets the host show the approval prompt.
+   */
+  readonly userSigned: HyperliquidUserSigned;
+};
+
 export type HyperliquidProviderOptions = Pick<
   HyperliquidTransportOptions,
   "network" | "fetch" | "setTimer" | "now" | "timeoutMs"
@@ -201,7 +208,7 @@ const preview = (price: string, size: string, szDecimals: number): HyperliquidQu
 
 export function createHyperliquidProvider(
   options: HyperliquidProviderOptions,
-): HyperliquidProvider {
+): HyperliquidProvider & HyperliquidProviderInternals {
   const clock = createHyperliquidClock(options.now);
   const transport = createHyperliquidTransport({ ...options, clock });
   const config = { transport };

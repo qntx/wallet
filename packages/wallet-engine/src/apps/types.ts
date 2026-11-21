@@ -65,6 +65,8 @@ export type AppFlow = {
   readonly current: () => AppGroupState;
   readonly write: (patch: AppGroupPatch) => void;
   readonly stale: () => boolean;
+  /** The address of the last agent a previous session enabled, when the record persisted one. */
+  readonly wasEnabledAgent: () => string | undefined;
 };
 
 /** A wallet group — identical to the trading path's `HyperliquidGroup`. */
@@ -76,6 +78,8 @@ export type AppGroup = {
 /** What the controller asks a per-app provider for — Hyperliquid implements it today. */
 export type AppProvider = {
   readonly id: AppId;
+  /** The groups that carry kernel-side app state — Hyperliquid's agents on this network. */
+  readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
   /** Re-derive the group's app state from kernel agents and Hyperliquid reads. */
   readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
   /** Run or resume the enable flow to `enabled`, or leave a resumable `enabling`/error state. */

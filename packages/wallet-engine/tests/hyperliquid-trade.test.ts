@@ -18,7 +18,10 @@ import { hyperliquid } from "@qntx/wallet/hyperliquid";
 
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
-import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
+import type {
+  HyperliquidProvider,
+  HyperliquidProviderInternals,
+} from "../src/apps/hyperliquid/provider.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -183,7 +186,7 @@ const rig = async (
   timers: ReturnType<typeof manualTimer>,
   answers: FetchAnswers = {},
 ): Promise<{
-  provider: HyperliquidProvider;
+  provider: HyperliquidProvider & HyperliquidProviderInternals;
   signCalls: () => number;
   wallet: Wallet;
   walletId: string;
@@ -276,7 +279,7 @@ const mustPost = (post: Posted | undefined): Posted => {
 const agents = new Map<string, string>();
 
 const createEnabledAgent = async (
-  provider: HyperliquidProvider,
+  provider: HyperliquidProvider & HyperliquidProviderInternals,
   wallet: Wallet,
   walletId: string,
   groupIndex = 0,

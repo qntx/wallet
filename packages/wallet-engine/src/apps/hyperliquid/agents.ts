@@ -38,6 +38,10 @@ export type HyperliquidAgentRegistry = {
   readonly owner: (group: HyperliquidGroup) => Promise<string>;
   /** True when the exchange path latched the agent as rejected — enablement must renew it. */
   readonly rejected: (address: string) => boolean;
+  /** True when an enable flow marked the agent enabled this session. */
+  readonly enabled: (address: string) => boolean;
+  /** A lock clears the session marks and verified list — the next unlock re-derives them. */
+  readonly reset: () => void;
 };
 
 const keyOf = (group: HyperliquidGroup): string => `${group.walletId}:${group.groupIndex}`;
@@ -99,6 +103,13 @@ export function createHyperliquidAgentRegistry(options: {
       rejected.add(address.toLowerCase());
     },
     rejected: (address) => rejected.has(address.toLowerCase()),
+    enabled: (address) => enabled.has(address.toLowerCase()),
+    reset: () => {
+      owners.clear();
+      verified = [];
+      enabled.clear();
+      rejected.clear();
+    },
     require: (group) => {
       const own = verified.filter(
         (agent) => agent.walletId === group.walletId && agent.groupIndex === group.groupIndex,

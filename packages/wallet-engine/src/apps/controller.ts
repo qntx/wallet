@@ -1,7 +1,8 @@
 /**
  * `createApps` — the app-enablement composition: a Hyperliquid provider wired to the request
- * pipeline, an `AppsController` that persists each group's app state through lock/unlock, and the
- * serialized lock lifecycle from engine.ts (`transition`/`schedule` on `wallet.subscribe`).
+ * pipeline, an `AppsController` that persists each group's terms flag and last-enabled agent
+ * through lock/unlock, and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
+ * `wallet.subscribe`).
  */
 import type { Wallet } from "@qntx/wallet";
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
@@ -14,6 +15,7 @@ import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
 import type { HyperliquidGroup } from "./hyperliquid/agents.ts";
 import { createHyperliquidEnable } from "./hyperliquid/enable.ts";
+import { HyperliquidError } from "./hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
@@ -24,6 +26,13 @@ const DEFAULT_GROUP: AppGroupState = {
   status: "disabled",
   termsAcknowledged: false,
   renewalDue: false,
+};
+
+/** What a group's record persists — nothing else is stable across sessions. */
+type StoredGroup = {
+  readonly termsAcknowledged: boolean;
+  /** The last agent that reached `enabled` — `enabledAgent` chooses the reconciled status. */
+  readonly enabledAgent?: string;
 };
 
 export type AppsBuilderConfig = {
@@ -57,6 +66,32 @@ const recordKey = (group: AppGroup, app: AppId): string =>
 
 const groupKey = (group: AppGroup): string => `${group.walletId}/${group.groupIndex}`;
 
+/** Exact keys only — a record with anything else reads as absent (logged by the caller). */
+const parseRecord = (raw: Uint8Array): StoredGroup | undefined => {
+  const value: unknown = readJson(raw);
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  if (Object.keys(value).some((k) => k !== "termsAcknowledged" && k !== "enabledAgent")) {
+    return undefined;
+  }
+  if (!("termsAcknowledged" in value) || value.termsAcknowledged !== true) {
+    return undefined;
+  }
+  if (
+    "enabledAgent" in value &&
+    (typeof value.enabledAgent !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value.enabledAgent))
+  ) {
+    return undefined;
+  }
+  return {
+    termsAcknowledged: true,
+    ...("enabledAgent" in value && typeof value.enabledAgent === "string"
+      ? { enabledAgent: value.enabledAgent }
+      : {}),
+  };
+};
+
 const isGroupState = (value: unknown): value is AppGroupState =>
   typeof value === "object" &&
   value !== null &&
@@ -65,13 +100,6 @@ const isGroupState = (value: unknown): value is AppGroupState =>
     value.status === "enabling" ||
     value.status === "enabled" ||
     value.status === "needs-reauthorization");
-
-const parseRecord = (raw: Uint8Array): AppGroupState | undefined => {
-  const value: unknown = readJson(raw);
-  /* Strict enough to resume: unknown fields are tolerated (forward records), required ones are
-     re-derived by the next reconcile. */
-  return isGroupState(value) ? { ...DEFAULT_GROUP, ...value } : undefined;
-};
 
 export type AppsControllerDeps = {
   readonly providers: ReadonlyMap<AppId, AppProvider>;
@@ -83,16 +111,20 @@ export type AppsControllerDeps = {
 
 /**
  * Per-group, per-app state machine owner. `init`/`lock` follow the engine's unlock lifecycle; host
- * calls run provider flows under a per-group generation so a new call supersedes an in-flight one
- * and a lock drops every write.
+ * calls run provider flows under a per-group generation so a superseding call or a lock drops stale
+ * writes, and one flow per group+app runs at a time (`busy` otherwise).
  */
 export class AppsController extends Controller<AppsState> {
   private readonly deps: AppsControllerDeps;
   private engineStore: EngineStore | undefined;
   private generation = 0;
   private readonly flowGen = new Map<string, number>();
-  /** Request ids the controller's flows opened and have not resolved — rejected on lock. */
+  /** Groups with a flow in flight — a second enable/renew/disable is `busy`. */
+  private readonly busy = new Set<string>();
+  /** Request ids the flows opened and have not resolved — rejected on lock/cancel. */
   private readonly pendingRequests = new Set<string>();
+  /** The last agent each record saw reach `enabled` — reconcile's status hint. */
+  private readonly enabledAgents = new Map<string, string>();
 
   constructor(deps: AppsControllerDeps) {
     super({ name: "apps", defaultState: () => ({ locked: true, groups: {} }) });
@@ -107,45 +139,60 @@ export class AppsController extends Controller<AppsState> {
     for (const key of keys) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- records load sequentially on unlock.
       const raw = await collection.get(key);
-      const state = raw === undefined ? undefined : parseRecord(raw);
+      const stored = raw === undefined ? undefined : parseRecord(raw);
       const slash = key.lastIndexOf("/");
       const group = key.slice(0, slash);
       const app = key.slice(slash + 1) === "hyperliquid" ? ("hyperliquid" as const) : undefined;
-      if (state === undefined || app === undefined) {
+      if (stored === undefined || app === undefined) {
         this.deps.logger.warn(`apps record ${key} skipped: malformed`);
       } else {
-        groups[group] = { ...groups[group], [app]: state };
+        groups[group] = {
+          ...groups[group],
+          [app]: { ...DEFAULT_GROUP, termsAcknowledged: stored.termsAcknowledged },
+        };
+        if (stored.enabledAgent !== undefined) {
+          this.enabledAgents.set(key, stored.enabledAgent);
+        }
       }
     }
     this.update(() => ({ locked: false, groups }));
-    /* Re-derive every recorded group: kernel agents may have expired or been cleaned while the
-       session was closed. */
-    await Promise.all(
-      Object.keys(groups).map(async (key) => {
-        const slash = key.lastIndexOf("/");
-        const group = {
-          walletId: key.slice(0, slash),
-          groupIndex: Number(key.slice(slash + 1)),
-        };
-        await this.reconcile(group);
-      }),
-    );
+    /* Re-derive every group that can carry state: persisted records and every group with a
+       kernel agent on this network. */
+    const union = new Map<string, AppGroup>();
+    for (const key of Object.keys(groups)) {
+      const slash = key.lastIndexOf("/");
+      union.set(key, {
+        walletId: key.slice(0, slash),
+        groupIndex: Number(key.slice(slash + 1)),
+      });
+    }
+    for (const provider of this.deps.providers.values()) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- providers enumerate in order.
+      for (const group of await provider.groups()) {
+        union.set(groupKey(group), group);
+      }
+    }
+    for (const group of union.values()) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- groups reconcile sequentially.
+      await this.reconcile(group);
+    }
   }
 
   async destroy(): Promise<void> {
-    this.lock();
-    await Promise.resolve();
+    await this.lock();
   }
 
-  lock(): void {
+  async lock(): Promise<void> {
     this.generation += 1;
     this.flowGen.clear();
     for (const id of this.pendingRequests) {
       this.deps.requests.reject(id);
     }
     this.pendingRequests.clear();
+    const store = this.engineStore;
     this.engineStore = undefined;
     this.update((state) => ({ ...state, locked: true }));
+    await store?.close();
   }
 
   private providerFor(app: AppId): AppProvider {
@@ -156,23 +203,34 @@ export class AppsController extends Controller<AppsState> {
     return provider;
   }
 
-  /** A flow for `group`/`app`: the captured generation makes a lock or a superseding call stale. */
-  private flowFor(group: AppGroup, app: AppId): AppFlow {
+  private requireUnlocked(): void {
+    if (this.getState().locked) {
+      throw new HyperliquidError("unlock-required", "the vault is locked");
+    }
+  }
+
+  /**
+   * A state view for `group`/`app` — `write` merges unless the captured generations went stale.
+   * `acknowledgeTerms` and `reconcile` share it without starting a flow generation.
+   */
+  private view(group: AppGroup, app: AppId): AppFlow {
     const key = recordKey(group, app);
     const gkey = groupKey(group);
-    const gen = (this.flowGen.get(gkey) ?? 0) + 1;
-    this.flowGen.set(gkey, gen);
     const { generation } = this;
-    const stale = (): boolean =>
-      generation !== this.generation || gen !== this.flowGen.get(gkey) || this.getState().locked;
+    /* The flow generation captured at creation — a `start` bump or a lock makes it stale. */
+    const myGen = this.flowGen.get(gkey) ?? 0;
     const current = (): AppGroupState => this.getState().groups[gkey]?.[app] ?? DEFAULT_GROUP;
-    const persist = (state: AppGroupState): void => {
+    const stale = (): boolean =>
+      generation !== this.generation ||
+      (this.flowGen.get(gkey) ?? 0) !== myGen ||
+      this.getState().locked;
+    const persist = (record: StoredGroup): void => {
       const { engineStore } = this;
       void (async (): Promise<void> => {
         try {
           await engineStore
             ?.collection(COLLECTION)
-            .put(key, new TextEncoder().encode(JSON.stringify(state)));
+            .put(key, new TextEncoder().encode(JSON.stringify(record)));
         } catch (error) {
           this.deps.logger.warn(`apps record ${key} write failed`, error);
         }
@@ -181,6 +239,7 @@ export class AppsController extends Controller<AppsState> {
     return {
       current,
       stale,
+      wasEnabledAgent: () => this.enabledAgents.get(key),
       write: (patch) => {
         if (stale()) {
           return;
@@ -193,18 +252,31 @@ export class AppsController extends Controller<AppsState> {
             merged[field] = value;
           }
         }
-        const next = isGroupState(merged) ? merged : current();
+        if (!isGroupState(merged)) {
+          return;
+        }
+        const next = merged;
         if (patch.requestId !== undefined) {
           this.pendingRequests.add(patch.requestId);
         }
         if (current().requestId !== undefined && patch.requestId !== current().requestId) {
           this.pendingRequests.delete(current().requestId ?? "");
         }
+        /* The persisted record keeps only the terms flag and the last enabled agent. */
+        if (next.status === "enabled" && next.agent !== undefined) {
+          this.enabledAgents.set(key, next.agent.address);
+        } else if (next.status === "disabled") {
+          this.enabledAgents.delete(key);
+        }
         this.update((state) => ({
           ...state,
           groups: { ...state.groups, [gkey]: { ...state.groups[gkey], [app]: next } },
         }));
-        persist(next);
+        const enabledAgent = this.enabledAgents.get(key);
+        persist({
+          termsAcknowledged: next.termsAcknowledged,
+          ...(enabledAgent === undefined ? {} : { enabledAgent }),
+        });
       },
     };
   }
@@ -213,40 +285,72 @@ export class AppsController extends Controller<AppsState> {
     return { walletId: group.walletId, groupIndex: group.groupIndex };
   }
 
-  /** Persisted terms acknowledgement — survives lock/unlock (stored in the group's record). */
+  /** Bump the group's flow generation — a running flow's writes go stale — then hand out a view. */
+  private start(group: AppGroup, app: AppId): AppFlow {
+    const gkey = groupKey(group);
+    this.flowGen.set(gkey, (this.flowGen.get(gkey) ?? 0) + 1);
+    return this.view(group, app);
+  }
+
+  /** Persisted terms acknowledgement — survives lock/unlock; never supersedes a running flow. */
   async acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void> {
-    const flow = this.flowFor(this.groupOf(group), app);
-    flow.write({ termsAcknowledged: true });
+    this.requireUnlocked();
+    this.view(this.groupOf(group), app).write({ termsAcknowledged: true });
     await Promise.resolve();
   }
 
+  private async flow(
+    group: HyperliquidGroup,
+    app: AppId,
+    run: (provider: AppProvider, flow: AppFlow) => Promise<void>,
+  ): Promise<void> {
+    this.requireUnlocked();
+    const gkey = groupKey(group);
+    if (this.busy.has(gkey)) {
+      throw new HyperliquidError("busy", "an enablement flow is already running");
+    }
+    const provider = this.providerFor(app);
+    const view = this.start(this.groupOf(group), app);
+    this.busy.add(gkey);
+    try {
+      await run(provider, view);
+    } finally {
+      this.busy.delete(gkey);
+    }
+  }
+
   async enable(group: HyperliquidGroup, app: AppId): Promise<void> {
-    const flow = this.flowFor(this.groupOf(group), app);
-    await this.providerFor(app).enable(this.groupOf(group), flow);
+    await this.flow(group, app, async (provider, view) => provider.enable(group, view));
   }
 
   async renew(group: HyperliquidGroup, app: AppId): Promise<void> {
-    const flow = this.flowFor(this.groupOf(group), app);
-    await this.providerFor(app).renew(this.groupOf(group), flow);
+    await this.flow(group, app, async (provider, view) => provider.renew(group, view));
   }
 
   async disable(group: HyperliquidGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
-    const flow = this.flowFor(this.groupOf(group), app);
-    await this.providerFor(app).disable(this.groupOf(group), options, flow);
+    await this.flow(group, app, async (provider, view) => provider.disable(group, options, view));
   }
 
+  /** Abort the running flow: supersede it (its writes die), then reject and clean up. */
   async cancel(group: HyperliquidGroup, app: AppId): Promise<void> {
-    const flow = this.flowFor(this.groupOf(group), app);
-    await this.providerFor(app).cancel(this.groupOf(group), flow);
+    this.requireUnlocked();
+    const provider = this.providerFor(app);
+    const view = this.start(this.groupOf(group), app);
+    await provider.cancel(this.groupOf(group), view);
   }
 
-  private async reconcile(group: AppGroup): Promise<void> {
+  /** Re-derive the group's state from the kernel and Hyperliquid — never a flow. */
+  async reconcile(group: AppGroup): Promise<void> {
+    if (this.getState().locked) {
+      return;
+    }
     for (const [app, provider] of this.deps.providers) {
-      const flow = this.flowFor(group, app);
       // oxlint-disable-next-line eslint/no-await-in-loop -- providers reconcile in order.
-      await provider.reconcile(group, flow).catch((error: unknown) => {
-        this.deps.logger.warn(`apps reconcile ${app} failed`, error);
-      });
+      await provider
+        .reconcile(this.groupOf(group), this.view(this.groupOf(group), app))
+        .catch((error: unknown) => {
+          this.deps.logger.warn(`apps reconcile ${app} failed`, error);
+        });
     }
   }
 }
@@ -289,8 +393,8 @@ export function createApps(options: CreateAppsOptions): {
     logger: options.logger,
     requests: options.requests,
     builderFor: (group) => {
-      /* Trades carry the builder only while the controller confirmed the fee — a lock or a
-         stale approval makes it return undefined and the field is omitted. */
+      /* Trades carry the builder only while the controller confirmed the fee this session —
+         a lock or a stale approval makes it return undefined and the field is omitted. */
       if (builder === undefined) {
         return undefined;
       }
@@ -336,7 +440,9 @@ export function createApps(options: CreateAppsOptions): {
       }
     } else if (!unlocked && started) {
       started = false;
-      controller.lock();
+      /* Session marks (enabled/rejected) are per-unlock — the next reconcile re-derives. */
+      provider.agents.reset();
+      await controller.lock();
     }
   };
   const schedule = (): void => {
@@ -357,7 +463,7 @@ export function createApps(options: CreateAppsOptions): {
     hyperliquid: provider,
     destroy: async () => {
       unsubscribe();
-      controller.lock();
+      await controller.lock();
       await chain;
     },
   };

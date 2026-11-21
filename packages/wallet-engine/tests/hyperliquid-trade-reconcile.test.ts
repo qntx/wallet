@@ -16,7 +16,10 @@ import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import { createHyperliquidAgentRegistry } from "../src/apps/hyperliquid/agents.ts";
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
-import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
+import type {
+  HyperliquidProvider,
+  HyperliquidProviderInternals,
+} from "../src/apps/hyperliquid/provider.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -206,7 +209,11 @@ const rig = async (
   posted: Posted[],
   timers: Timers,
   answers: Parameters<typeof serve>[2] = {},
-): Promise<{ provider: HyperliquidProvider; wallet: Wallet; walletId: string }> => {
+): Promise<{
+  provider: HyperliquidProvider & HyperliquidProviderInternals;
+  wallet: Wallet;
+  walletId: string;
+}> => {
   const { wallet, walletId } = await nodeWallet();
   const provider = createHyperliquidProvider({
     network: "Testnet",
@@ -223,7 +230,7 @@ const rig = async (
 let agentAddress: string | undefined;
 
 const enable = async (
-  provider: HyperliquidProvider,
+  provider: HyperliquidProvider & HyperliquidProviderInternals,
   wallet: Wallet,
   walletId: string,
 ): Promise<{ address: string; group: { walletId: string; groupIndex: number } }> => {
@@ -717,7 +724,7 @@ describe("hyperliquid trade — wire actions", () => {
 
   const wire = async (
     run: (
-      provider: HyperliquidProvider,
+      provider: HyperliquidProvider & HyperliquidProviderInternals,
       group: { walletId: string; groupIndex: number },
     ) => Promise<unknown>,
     answers: Parameters<typeof serve>[2] = {},
