@@ -45,6 +45,8 @@ export const NATIVE_COINS: Readonly<Record<string, string>> = {
   "eip155:534352/slip44:60": "ethereum",
   "eip155:60808/slip44:60": "ethereum",
   "eip155:204/slip44:714": "binancecoin",
+  "eip155:42170/slip44:60": "ethereum",
+  "eip155:167000/slip44:60": "ethereum",
   "eip155:7777777/slip44:60": "ethereum",
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501": "solana",
   "bip122:000000000019d6689c085ae165831e93/slip44:0": "bitcoin",
@@ -89,6 +91,9 @@ export const TOKEN_PLATFORMS: Readonly<
   "eip155:252": { coingecko: "fraxtal", defillama: "fraxtal" },
   "eip155:534352": { coingecko: "scroll", defillama: "scroll" },
   "eip155:204": { coingecko: "opbnb", defillama: "op_bnb" },
+  "eip155:42170": { coingecko: "arbitrum-nova", defillama: "arbitrum_nova" },
+  "eip155:167000": { coingecko: "taiko", defillama: "taiko" },
+  "eip155:14": { coingecko: "flare-network", defillama: "flare" },
   "eip155:7777777": { coingecko: "zora-network", defillama: "zora" },
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": { coingecko: "solana", defillama: "solana" },
 };

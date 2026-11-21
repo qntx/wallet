@@ -83,9 +83,10 @@ describe("decimal", () => {
 });
 
 describe("price asset ids", () => {
-  it("has no ids for Plasma or Fraxtal — no SLIP-44 coin type — and full ids for Monad", () => {
+  it("has no ids for Plasma, Fraxtal or Flare — no SLIP-44 coin type — and full ids for Monad", () => {
     expect(nativeAssetId("eip155:9745")).toBeUndefined();
     expect(nativeAssetId("eip155:252")).toBeUndefined();
+    expect(nativeAssetId("eip155:14")).toBeUndefined();
     expect(
       tokenAssetId("eip155:9745", "0x2d661C89D812261039AF9764eceaAee884f5F67F"),
     ).toBeUndefined();

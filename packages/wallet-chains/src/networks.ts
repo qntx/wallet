@@ -76,6 +76,9 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(534352, "Scroll", "ETH", false), // https://docs.scroll.io/en/developers/
   evm(60808, "BOB", "ETH", false), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
   evm(204, "opBNB", "BNB", false), // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/
+  evm(42170, "Arbitrum Nova", "ETH", false), // https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info
+  evm(167000, "Taiko", "ETH", false), // https://docs.taiko.xyz/quickstart/connect
+  evm(14, "Flare", "FLR", false), // https://dev.flare.network/network/overview
   evm(7777777, "Zora", "ETH", false), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
   evm(11155111, "Sepolia", "ETH", true), // https://ethereum.org/en/developers/docs/networks/
   evm(84532, "Base Sepolia", "ETH", true), // https://docs.base.org/docs/network-information

@@ -300,8 +300,8 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
 /**
  * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; chains
  * Alchemy does not serve use dRPC, falling back to Ankr. Bitcoin uses Blockstream Enterprise's
- * Esplora (the engine falls back to the host's own endpoints on a 503). Keys ride in headers —
- * URLs carry no key material.
+ * Esplora (the engine falls back to the host's own endpoints on a 503). Keys ride in headers — URLs
+ * carry no key material.
  */
 export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
   {
@@ -592,6 +592,30 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     providers: [
       { id: "alchemy", url: "https://opbnb-mainnet.g.alchemy.com/v2", auth: "alchemy" },
       { id: "drpc", url: "https://lb.drpc.live/opbnb", auth: "drpc" },
+    ],
+  },
+  {
+    // Arbitrum Nova — chain id 42170 (Alchemy does not serve it)
+    id: "eip155:42170",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/arbitrum-nova", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/arbitrumnova", auth: "ankr" },
+    ],
+  },
+  {
+    // Taiko — chain id 167000 (Alchemy does not serve it)
+    id: "eip155:167000",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/taiko", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/taiko", auth: "ankr" },
+    ],
+  },
+  {
+    // Flare — chain id 14 (Alchemy does not serve it)
+    id: "eip155:14",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/flare", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/flare", auth: "ankr" },
     ],
   },
   {
