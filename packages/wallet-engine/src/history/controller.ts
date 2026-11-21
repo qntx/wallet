@@ -19,7 +19,7 @@ import type { GroupAddresses, HistoryGroup } from "./local.ts";
 import { compose, OrderedMerge } from "./merge.ts";
 import type { Stream } from "./merge.ts";
 import { solanaHistoryStream } from "./solana.ts";
-import { sparkHistoryStream } from "./spark.ts";
+import { sparkHistoryStream, sparkRecordEntries, sparkRecordsChanged } from "./spark.ts";
 import type { HistoryEntry } from "./types.ts";
 
 const PAGE = 25;
@@ -62,7 +62,7 @@ export type HistoryControllerOptions = {
       readonly network: string;
     }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
   };
-  readonly spark: Pick<SparkController, "history">;
+  readonly spark: Pick<SparkController, "history" | "store">;
   readonly sparkNetwork: SparkNetwork;
   readonly transactions: Pick<TransactionController, "store">;
   readonly addressBook: Pick<AddressBookController, "store">;
@@ -197,6 +197,11 @@ export class HistoryController extends Controller<HistoryState> {
     this.unsubscribes = [
       this.options.transactions.store.subscribe(recompose),
       this.options.addressBook.store.subscribe(recompose),
+      this.options.spark.store.subscribe((next, previous) => {
+        if (sparkRecordsChanged(next, previous)) {
+          recompose();
+        }
+      }),
     ];
   }
 
@@ -263,10 +268,13 @@ export class HistoryController extends Controller<HistoryState> {
 
   private locals(group: HistoryGroup, own: GroupAddresses): ReadonlyArray<HistoryEntry> {
     const { txs } = this.options.transactions.store.getState();
-    return Object.values(txs).flatMap((tx) => {
-      const entry = localEntry(tx, group, own);
-      return entry === undefined ? [] : [entry];
-    });
+    return [
+      ...Object.values(txs).flatMap((tx) => {
+        const entry = localEntry(tx, group, own);
+        return entry === undefined ? [] : [entry];
+      }),
+      ...sparkRecordEntries(this.options.spark.store.getState(), this.options.sparkNetwork, group),
+    ];
   }
 
   /** Book entries + recipients of live tracked sends + the group's own addresses — never history. */

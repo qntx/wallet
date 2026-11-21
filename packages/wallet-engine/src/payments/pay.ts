@@ -8,12 +8,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { sparkTransferId } from "../spark/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { SparkControllerError } from "../spark/errors.ts";
-import {
-  INVOICE_EXPIRY_GRACE_MS,
-  feeCheck,
-  pendingOnUnknown,
-  tokenPendingOnUnknown,
-} from "./action.ts";
+import { INVOICE_EXPIRY_GRACE_MS, feeCheck, pendingOnUnknown } from "./action.ts";
 import type { PreparedSparkAction } from "./action.ts";
 import { PaymentError } from "./errors.ts";
 import type { PaymentOption } from "./parse.ts";
@@ -102,12 +97,13 @@ export async function preparePay(
           checks: [],
           staleReason: () => undefined,
           execute: async (spark, verify, commit) =>
-            tokenPendingOnUnknown(async () => ({
+            pendingOnUnknown(async () => ({
               kind: "token",
               transactionHash: await spark.sendToken(ref, {
                 receiver: address,
                 tokenIdentifier: token.identifier,
                 amount: token.amount,
+                transferId,
                 verify,
                 commit,
               }),
@@ -123,7 +119,7 @@ export async function preparePay(
         checks: [],
         staleReason: () => undefined,
         execute: async (spark, verify, commit) =>
-          pendingOnUnknown(transferId, async () => ({
+          pendingOnUnknown(async () => ({
             kind: "spark",
             transfer: await spark.send(ref, {
               receiver: address,
@@ -177,7 +173,7 @@ export async function preparePay(
         staleReason: (now) =>
           expiresAt !== undefined && expiresAt <= now ? "spark invoice expired" : undefined,
         execute: async (spark, verify, commit) =>
-          pendingOnUnknown(transferId, async () => ({
+          pendingOnUnknown(async () => ({
             kind: "spark",
             transfer: await spark.paySparkInvoice(ref, {
               invoice: option.invoice,
@@ -228,7 +224,7 @@ export async function preparePay(
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
         execute: async (spark, verify, commit) =>
-          pendingOnUnknown(transferId, async () => ({
+          pendingOnUnknown(async () => ({
             kind: "lightning",
             payment: await spark.payInvoice(ref, {
               invoice: option.invoice,
@@ -291,7 +287,7 @@ export async function preparePay(
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
         execute: async (spark, verify, commit) =>
-          pendingOnUnknown(transferId, async () => ({
+          pendingOnUnknown(async () => ({
             kind: "lightning",
             payment: await spark.payInvoice(ref, {
               invoice,
@@ -340,7 +336,7 @@ export async function preparePay(
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: () => undefined,
         execute: async (spark, verify, commit) =>
-          pendingOnUnknown(transferId, async () => ({
+          pendingOnUnknown(async () => ({
             kind: "withdraw",
             exit: await spark.withdraw(ref, {
               address,

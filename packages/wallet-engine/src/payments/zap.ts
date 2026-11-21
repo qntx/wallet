@@ -181,7 +181,7 @@ export function prepareZapAction(
     staleReason: (now) =>
       prepared.expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "zap invoice expired" : undefined,
     execute: async (spark, verify, commit) =>
-      pendingOnUnknown(transferId, async () => ({
+      pendingOnUnknown(async () => ({
         kind: "lightning",
         payment: await spark.payInvoice(account, {
           invoice: prepared.invoice,

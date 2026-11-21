@@ -1,5 +1,11 @@
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkResult, SparkTokenBalance, WalletEngine } from "@qntx/wallet-engine";
+import type {
+  SparkPaymentRecord,
+  SparkPaymentState,
+  SparkResult,
+  SparkTokenBalance,
+  WalletEngine,
+} from "@qntx/wallet-engine";
 import { requiredAcknowledgement } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
@@ -33,11 +39,21 @@ export async function payToken(
 }
 
 /**
- * `pending` and `token-pending` mean the response was lost after the payment may have committed:
- * show it as in flight, never as failed, and never pay again.
+ * `pending` means the response was lost after the payment may have committed: show it as in flight,
+ * never as failed, and never pay again.
  */
 export function describeSparkResult(result: SparkResult): "done" | "in-flight" {
-  return result.kind === "pending" || result.kind === "token-pending" ? "in-flight" : "done";
+  return result.kind === "pending" ? "in-flight" : "done";
+}
+
+/** The engine keeps following a pending payment: its record settles or fails in the account state. */
+export function paymentState(
+  engine: WalletEngine,
+  ref: SparkAccountRef,
+  payment: SparkPaymentRecord,
+): SparkPaymentState | undefined {
+  const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
+  return engine.spark.getState().accounts[key]?.payments?.[payment.id]?.state;
 }
 
 /**

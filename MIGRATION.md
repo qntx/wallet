@@ -496,8 +496,9 @@ tag, six Bitcoin confirmations, Solana `finalized` commitment. A reorg returns i
 (and polling, with rebroadcast of the persisted bytes), so show it pending again until `final`.
 A `final` transaction is never polled again.
 
-Spark payments behave alike: a lost response resolves `{ kind: "pending", transferId }` (or
-`token-pending`) instead of failing — see section 11.
+Spark payments behave alike: a lost response resolves `{ kind: "pending", payment }` instead of
+failing, and the engine keeps the payment record until the Spark operator settles or fails it —
+see section 12.
 
 [`tests/migration/unknown-outcome.ts`](tests/migration/unknown-outcome.ts):
 
@@ -806,11 +807,16 @@ export async function sendFromCoins(
 - `SparkAccountState.tokens` holds token balances in base units.
 - A token payment is a `pay` request with `token: { identifier, amount }` to a plain Spark address
   and no `amountSats` (`engine.spark` has no send method). It resolves
-  `{ kind: "token", transactionHash }` or, when the response was lost,
-  `{ kind: "token-pending", inputOutputIds }`.
-- Every Spark payment is idempotent per request: a lost response resolves
-  `{ kind: "pending", transferId }`. `SparkResult` gains `pending`, `token` and `token-pending`;
-  `SparkDisplay` gains a `token` variant.
+  `{ kind: "token", transactionHash }`.
+- Every Spark payment is idempotent per request and recorded before it is sent. A lost response
+  resolves `{ kind: "pending", payment }`, where `payment` is a `SparkPaymentRecord` (`state`
+  `submitted` | `unknown` | `settled` | `failed`). The open record is persisted, reconciled against
+  the Spark operator after unlock and on a backed-off poll, listed in
+  `SparkAccountState.payments` (by `payment.id`) and in `engine.history` as a pending entry. Show
+  it in flight and never pay again; `failed` only comes from the operator. `SparkResult` gains
+  `pending` and `token`; `SparkDisplay` gains a `token` variant.
+- While a token send with an unknown outcome is open, another send of the same token is refused
+  until it resolves.
 - Paying a Bitcoin address from Spark (cooperative exit): `amountSats` is what arrives, the exit
   debits `amountSats + feeSats`, the display carries `feeSats`, and `maxFeeSats` is required — a
   higher quote is refused at prepare.
@@ -819,7 +825,13 @@ export async function sendFromCoins(
 
 ```ts
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkResult, SparkTokenBalance, WalletEngine } from "@qntx/wallet-engine";
+import type {
+  SparkPaymentRecord,
+  SparkPaymentState,
+  SparkResult,
+  SparkTokenBalance,
+  WalletEngine,
+} from "@qntx/wallet-engine";
 import { requiredAcknowledgement } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
@@ -853,11 +865,21 @@ export async function payToken(
 }
 
 /**
- * `pending` and `token-pending` mean the response was lost after the payment may have committed:
- * show it as in flight, never as failed, and never pay again.
+ * `pending` means the response was lost after the payment may have committed: show it as in flight,
+ * never as failed, and never pay again.
  */
 export function describeSparkResult(result: SparkResult): "done" | "in-flight" {
-  return result.kind === "pending" || result.kind === "token-pending" ? "in-flight" : "done";
+  return result.kind === "pending" ? "in-flight" : "done";
+}
+
+/** The engine keeps following a pending payment: its record settles or fails in the account state. */
+export function paymentState(
+  engine: WalletEngine,
+  ref: SparkAccountRef,
+  payment: SparkPaymentRecord,
+): SparkPaymentState | undefined {
+  const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
+  return engine.spark.getState().accounts[key]?.payments?.[payment.id]?.state;
 }
 
 /**

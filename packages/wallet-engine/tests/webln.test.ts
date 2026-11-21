@@ -304,7 +304,17 @@ describe("WeblnHandler pending payment outcomes", () => {
 
   it("a pending (lost commit answer) payment rejects with the pending code naming the transfer", async () => {
     const { handler, requestsCalls } = rig({
-      prepareResult: { kind: "pending", transferId: TRANSFER },
+      prepareResult: {
+        kind: "pending",
+        payment: {
+          id: TRANSFER,
+          kind: "lightning",
+          state: "unknown",
+          receiver: "payee",
+          amount: "100",
+          submittedAt: TIMESTAMP * 1000,
+        },
+      },
       now: () => (TIMESTAMP + 10) * 1000,
     });
     const err = await handler.handle(SITE, { method: "sendPayment", params: invoice }).then(

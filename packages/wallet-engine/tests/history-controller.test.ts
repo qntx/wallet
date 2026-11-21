@@ -158,6 +158,7 @@ const make = (options: {
     },
     spark: {
       history: async () => Promise.resolve({ items: [], nextOffset: undefined }),
+      store: { getState: () => ({ accounts: {} }), subscribe: () => () => {} },
     },
     sparkNetwork: "regtest",
     transactions: { store: txStore },

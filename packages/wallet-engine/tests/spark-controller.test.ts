@@ -20,10 +20,12 @@ import { SparkControllerError } from "../src/spark/errors.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { encodePaymentNote } from "../src/spark/notes.ts";
 import type { PaymentNote } from "../src/spark/notes.ts";
+import { RECONCILE_BASE_MS } from "../src/spark/payments.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 import { b64 } from "./phishing-helpers.ts";
 import { fastTimer, realTimer } from "./send-helpers.ts";
+import { encodeTestBolt11 } from "./support/bolt11.ts";
 
 const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
@@ -31,6 +33,14 @@ const VERIFY = { kind: "password", password: new Uint8Array([1]) } as never;
 const LOGGER: EngineLogger = { warn: () => {} };
 /** A UUIDv7 — the shape a prepared request's `sparkTransferId` takes. */
 const TID = "01936f00-1111-7111-8111-111111111111";
+/** A fixed-amount (21 sat) BOLT-11 invoice — payInvoice decodes it for the payment record. */
+const TEST_INVOICE = encodeTestBolt11({
+  network: "regtest",
+  amountMsat: 21_000n,
+  paymentHash: new Uint8Array(32).fill(3),
+  secretKey: new Uint8Array(32).fill(7),
+  timestamp: 1_800_000_000,
+});
 
 function warnText(m: string, e: unknown): string {
   return `${m} ${e instanceof Error ? e.message : String(e ?? "")}`;
@@ -451,6 +461,7 @@ describe("SparkController.sendToken", () => {
       receiver: RECEIVER,
       tokenIdentifier: BTKN,
       amount: 123n,
+      transferId: TID,
       verify: VERIFY,
       commit: () => {
         committed = true;
@@ -480,6 +491,7 @@ describe("SparkController.sendToken", () => {
       receiver: RECEIVER,
       tokenIdentifier: BTKN,
       amount: 5n,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
       ...override,
@@ -503,6 +515,7 @@ describe("SparkController.sendToken", () => {
       receiver: RECEIVER,
       tokenIdentifier: BTKN,
       amount: 5n,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
     });
@@ -529,6 +542,7 @@ describe("SparkController.sendToken", () => {
         receiver: RECEIVER,
         tokenIdentifier: BTKN,
         amount: 5n,
+        transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       })
@@ -540,7 +554,7 @@ describe("SparkController.sendToken", () => {
     const sparkError = failure as SparkControllerError;
     expect(sparkError.category).toBe("unknown");
     expect(sparkError.message).toBe("token transfer outcome unknown");
-    expect(sparkError.inputOutputIds).toStrictEqual(["a:0", "b:1"]);
+    expect(sparkError.payment?.inputOutputIds).toStrictEqual(["a:0", "b:1"]);
     expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(4);
     await c.destroy();
   });
@@ -555,6 +569,7 @@ describe("SparkController.sendToken", () => {
         receiver: RECEIVER,
         tokenIdentifier: BTKN,
         amount: 5n,
+        transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       }),
@@ -1346,7 +1361,7 @@ describe("history and notes", () => {
   it("payInvoice writes the note under the transfer id", async () => {
     const { c, store } = await started();
     const payment = (await c.payInvoice(REF, {
-      invoice: "lnbcrt1",
+      invoice: TEST_INVOICE,
       maxFeeSats: 5,
       transferId: TID,
       verify: VERIFY,
@@ -1373,7 +1388,7 @@ describe("history and notes", () => {
     const col = store.collection(`spark-notes:${K}`);
     c.setStore(wrapped);
     const payment = (await c.payInvoice(REF, {
-      invoice: "lnbcrt1",
+      invoice: TEST_INVOICE,
       maxFeeSats: 5,
       transferId: TID,
       verify: VERIFY,
@@ -1544,7 +1559,7 @@ describe("commit before the client send", () => {
     const { c } = await setup(calls, approvals);
     await expect(
       c.payInvoice(REF, {
-        invoice: "lnbc1fake",
+        invoice: TEST_INVOICE,
         maxFeeSats: 5,
         transferId: TID,
         verify: VERIFY,
@@ -1669,8 +1684,12 @@ describe("idempotent commits", () => {
     };
     const approvals: unknown[] = [];
     const c = new SparkController({
-      // Backoff sleeps resolve on the next microtask — the test never waits on the wall clock.
+      // Commit backoff sleeps resolve on the next microtask — the test never waits on the wall
+      // clock; the payment-record poll is never fired.
       setTimer: (ms, fn) => {
+        if (ms >= RECONCILE_BASE_MS) {
+          return () => undefined;
+        }
         waits.push(ms);
         queueMicrotask(fn);
         return () => undefined;
@@ -1714,7 +1733,7 @@ describe("idempotent commits", () => {
       method: "pay",
       run: async (c) =>
         c.payInvoice(REF, {
-          invoice: "lnbcrt1x",
+          invoice: TEST_INVOICE,
           maxFeeSats: 5,
           transferId: TID,
           verify: VERIFY,
@@ -1776,7 +1795,10 @@ describe("idempotent commits", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(SparkControllerError);
-      expect(failure).toMatchObject({ category: "unknown", transferId: TID });
+      expect(failure).toMatchObject({
+        category: "unknown",
+        payment: { id: TID, state: "unknown" },
+      });
       expect(calls.filter((x) => x.method === method)).toHaveLength(4);
       expect(waits).toStrictEqual([1000, 2000, 4000]);
       expect(approvals).toHaveLength(1);
