@@ -510,6 +510,18 @@ describe("polymarket live account views", () => {
     expect(view.getState().data?.openOrders.map((o) => o.id)).toStrictEqual([BASE_ORDER.id]);
   });
 
+  it("removes an order on CANCELLATION even when the event carries no status", async () => {
+    const { live } = setup();
+    const view = live.account(group);
+    await flush();
+    sockets[0]!.opened();
+    await flush();
+    sockets[0]!.recv(JSON.stringify(FRAMES[0]));
+    expect(view.getState().data?.openOrders).toHaveLength(2);
+    sockets[0]!.recv(JSON.stringify({ ...FRAMES[2], status: undefined }));
+    expect(view.getState().data?.openOrders.map((o) => o.id)).toStrictEqual([BASE_ORDER.id]);
+  });
+
   it("removes an order whose event carries a non-LIVE status", async () => {
     const { live } = setup();
     const view = live.account(group);
@@ -642,6 +654,20 @@ describe("polymarket live account views", () => {
     expect(sockets).toHaveLength(1);
   });
 
+  it("stops on a fatal category from the snapshot", async () => {
+    const { live, timers } = setup();
+    accountBehavior = "not-enabled";
+    const view = live.account(group);
+    await flush();
+    sockets[0]!.opened();
+    await flush();
+    expect(view.getState().status).toBe("stale");
+    expect(view.getState().error).toBe("not-enabled");
+    /* A stopped view schedules nothing further — no fallback poll ticks. */
+    await timers.fire(10_000);
+    expect(calls.locate).toBe(1);
+  });
+
   it("drops hostile frames without a state change and never logs frame content", async () => {
     const { live } = setup();
     const view = live.account(group);
@@ -649,8 +675,13 @@ describe("polymarket live account views", () => {
     sockets[0]!.opened();
     await flush();
     sockets[0]!.recv("not json at all");
+    /* A non-JSON frame can carry a credential — its text must never reach the log either. */
+    sockets[0]!.recv(`{"broken ${CREDS.secret}`);
     sockets[0]!.recv(JSON.stringify([1, 2, 3]));
-    sockets[0]!.recv(JSON.stringify(Array.from({ length: 300 }, () => ({}))));
+    /* An oversized array is refused whole, even when every element would parse. */
+    sockets[0]!.recv(
+      JSON.stringify(Array.from({ length: 300 }, (_, i) => ({ ...FRAMES[0], id: `o-${i}` }))),
+    );
     sockets[0]!.recv(JSON.stringify({ event_type: "order" }));
     /* The only legit event carries the API key in `owner` — it must never reach view data. */
     sockets[0]!.recv(JSON.stringify({ ...FRAMES[0], owner: CREDS.apiKey }));

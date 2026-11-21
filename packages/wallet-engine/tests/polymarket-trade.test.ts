@@ -519,6 +519,20 @@ describe("polymarket trade — place", () => {
     },
   );
 
+  it("refuses a group with no credential record before an approval or a post", async () => {
+    await w.credentials.delete(group);
+    try {
+      const e = env();
+      await expect(e.provider.trade.place(group, LIMIT_BUY)).rejects.toMatchObject({
+        category: "not-enabled",
+      });
+      expect(e.prepares()).toBe(0);
+      expect(e.posts()).toHaveLength(0);
+    } finally {
+      await w.credentials.put(group, { owner: accountAt(0).address, ...API });
+    }
+  });
+
   it("refuses a record owned by another signer before an approval or a post", async () => {
     await w.credentials.put(group, { owner: accountAt(1).address, ...API });
     try {

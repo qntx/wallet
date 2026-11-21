@@ -143,6 +143,20 @@ describe("polymarket credential store", () => {
     expect(warns.at(-1)).not.toContain(OWNER);
   });
 
+  it("a stored row with an extra key reads as absent even when every field is valid", async () => {
+    const memory = createMemoryEngineStore();
+    await memory
+      .collection("apps.polymarket")
+      .put(
+        `${GROUP.walletId}/${GROUP.groupIndex}/eip155:137`,
+        new TextEncoder().encode(JSON.stringify({ owner: OWNER, ...API, extra: true })),
+      );
+    const credentials = store(() => memory);
+    const before = warns.length;
+    await expect(credentials.get(GROUP)).resolves.toBeUndefined();
+    expect(warns.length).toBe(before + 1);
+  });
+
   it("a closed session maps every method to unlock-required", async () => {
     const credentials = store(() => undefined);
     await expect(credentials.get(GROUP)).rejects.toMatchObject({
@@ -274,6 +288,66 @@ describe("polymarket l2 — request order", () => {
     }
     expect(thrown.message).toContain("[redacted]");
   });
+
+  it.each([
+    [
+      "body",
+      new PolymarketError("unavailable", "the CLOB answered 500", {
+        status: 500,
+        body: { error: API.apiKey, detail: API.secret, hint: API.passphrase },
+      }),
+    ],
+    [
+      "cause chain",
+      new PolymarketError("unavailable", "the CLOB answered 502", {
+        status: 502,
+        cause: new Error(`reflected ${API.secret}`),
+      }),
+    ],
+  ])(
+    "a hostile error leaking the credentials only through its %s is still scrubbed",
+    async (_label, error) => {
+      const memory = createMemoryEngineStore();
+      const credentials = store(() => memory);
+      await credentials.put(GROUP, { owner: OWNER, ...API });
+      const stub: PolymarketHttp = {
+        request: async () => {
+          await Promise.resolve();
+          throw error;
+        },
+        time: async () => {
+          await Promise.resolve();
+          return { serverSeconds: Math.floor(Date.now() / 1000), skewMs: 0 };
+        },
+      };
+      const client = createPolymarketL2({
+        http: stub,
+        credentials,
+        signerOf: async () => {
+          await Promise.resolve();
+          return OWNER;
+        },
+        now: () => Date.now(),
+      });
+      const thrown = await client
+        .request(GROUP, { method: "GET", path: "/data/orders" }, z.looseObject({}))
+        .then(
+          () => {
+            throw new Error("expected a throw");
+          },
+          (thrownError: unknown) => thrownError,
+        );
+      if (!(thrown instanceof PolymarketError)) {
+        throw new Error("expected a PolymarketError");
+      }
+      expect(thrown.body).toBeUndefined();
+      expect(thrown.cause).toBeUndefined();
+      const haystack = `${thrown.message} ${String(thrown)}`;
+      for (const secret of [API.apiKey, API.secret, API.passphrase]) {
+        expect(haystack).not.toContain(secret);
+      }
+    },
+  );
 
   it("a clean error passes through untouched", async () => {
     const memory = createMemoryEngineStore();
