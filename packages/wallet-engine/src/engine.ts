@@ -243,6 +243,7 @@ export type WalletEngine = {
     | "rejectConnection"
     | "revoke"
     | "setCurrentNetwork"
+    | "setTronNetwork"
     | "activeIdentity"
     | "setActiveIdentity"
     | "nostrPolicy"

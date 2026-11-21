@@ -1,7 +1,11 @@
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { describe, expect, test, vi } from "vite-plus/test";
+
+import { verifyEvent } from "@qntx/nostr";
+import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 import { TronBroadcastError } from "../src/chains/tron.ts";
 import {
@@ -15,7 +19,8 @@ import { installTron } from "../src/connect/inject/tron.ts";
 import type { TronInstallContext } from "../src/connect/inject/tron.ts";
 import type { TronProviderState } from "../src/connect/tron.ts";
 import { TronWalletHandler } from "../src/connect/tron.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createWalletEngine } from "../src/engine.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { BroadcastRefusedError } from "../src/transactions/broadcast.ts";
 
 const ORIGIN = "https://sun.io";
@@ -26,6 +31,10 @@ const WALLET = { walletId: "wallet-1", groupIndex: 0 };
 const TRON_ADDR = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 const TRON_ADDR_HEX = "41a614f803b6fd780986a42c78ec9c7f77e6ded13c";
 const GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc";
+const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
+const FACADE_PASSWORD = "correct horse battery staple";
+const FACADE_MNEMONIC =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 const SUNIO = JSON.parse(
   readFileSync(new URL("fixtures/tron-sunio-swap.json", import.meta.url), "utf8"),
@@ -763,5 +772,62 @@ describe("inject tron surface", () => {
     const tronGlobal = (ctx.global as unknown as { tron: { tronWeb: unknown } }).tron;
     expect(tronGlobal.tronWeb).not.toBe(false);
     expect(sent.map((e) => e.name)).toContain("connect");
+  });
+});
+
+describe("WalletEngine facade", () => {
+  test("connections.setTronNetwork switches a TRON session's network", async () => {
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet,
+      sparkNetwork: "regtest",
+      fetch: async () => Promise.reject(new Error("offline")),
+      random: (n) => randomBytes(n),
+      now: () => Date.now(),
+      logger: { warn: () => undefined },
+      showCallsStatus: () => undefined,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      rpc: { [TRON_NET]: ["https://api.trongrid.io"], [TRON_NILE]: ["https://nile.trongrid.io"] },
+    });
+    try {
+      await wallet.wallets.importMnemonic({
+        mnemonic: FACADE_MNEMONIC,
+        factor: { kind: "password", password: FACADE_PASSWORD },
+      });
+      await vi.waitFor(() => {
+        expect(engine.accounts.getState().selected).not.toBeNull();
+      });
+      const connecting = engine.tronWallet.handle(ORIGIN, { method: "tron_requestAccounts" });
+      await vi.waitFor(() => {
+        expect(engine.connections.pending()).not.toHaveLength(0);
+      });
+      const [entry] = engine.connections.pending();
+      await engine.connections.approveConnection(entry!.id, {
+        accounts: [],
+        network: TRON_NET,
+      });
+      await connecting;
+      expect(engine.connections.session(ORIGIN)?.tronNetwork).toBe(TRON_NET);
+      await engine.connections.setTronNetwork(ORIGIN, TRON_NILE);
+      expect(engine.connections.session(ORIGIN)?.tronNetwork).toBe(TRON_NILE);
+    } finally {
+      await wallet.destroy();
+    }
   });
 });

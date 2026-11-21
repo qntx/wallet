@@ -41,8 +41,8 @@ export function browserBridge(
  * transaction — created in `submitted` with `tron.dappSignature` and no `raw`, because the dApp
  * broadcasts and the wallet only observes — or a `SignatureResult` for `tron.message` /
  * `tron.typed-data`. When the dApp hands the signed transaction back for broadcast it calls the
- * injected `tronWeb.trx.sendRawTransaction`, which routes through the bridge to
- * `submitDappTron` on the same tracked entry — there is no host-side broadcast call to wire.
+ * injected `tronWeb.trx.sendRawTransaction`, which routes through the bridge to `submitDappTron` on
+ * the same tracked entry — there is no host-side broadcast call to wire.
  */
 export async function approveTronDapp(
   engine: WalletEngine,
@@ -59,8 +59,20 @@ export function observedDappSignature(tx: TrackedTransaction): string | undefine
 }
 
 /**
- * `send` gains a TRON-only `memo` — it becomes `raw_data.data` and costs the chain's flat memo
- * fee, quoted as `PendingRequest.tronFee.memo` (sun, decimal string).
+ * `connections` gains `setTronNetwork` next to `setCurrentNetwork`: the host's session UI switches
+ * a connected origin's TRON network (voiding that origin's unfinished requests) the same way it
+ * switches an EVM session's.
+ */
+export async function switchTronSessionNetwork(
+  engine: WalletEngine,
+  origin: string,
+): Promise<void> {
+  await engine.connections.setTronNetwork(origin, "tron:3448148188");
+}
+
+/**
+ * `send` gains a TRON-only `memo` — it becomes `raw_data.data` and costs the chain's flat memo fee,
+ * quoted as `PendingRequest.tronFee.memo` (sun, decimal string).
  */
 export async function sendTronWithMemo(
   engine: WalletEngine,
