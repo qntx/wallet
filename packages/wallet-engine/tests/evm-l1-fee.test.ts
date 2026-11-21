@@ -1,10 +1,17 @@
-import { toFunctionSelector, numberToHex } from "viem";
+import {
+  decodeFunctionData,
+  getAddress,
+  toFunctionSelector,
+  numberToHex,
+  parseAbi,
+  serializeTransaction,
+} from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { chains } from "@qntx/wallet/chains";
 
-import { OP_GAS_PRICE_ORACLE } from "../src/chains/evm.ts";
+import { OP_GAS_PRICE_ORACLE, SCROLL_L1_GAS_PRICE_ORACLE } from "../src/chains/evm.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -18,10 +25,23 @@ const ETHEREUM = "eip155:1";
 const MANTLE = "eip155:5000";
 const OPBNB = "eip155:204";
 const FRAXTAL = "eip155:252";
+const SCROLL = "eip155:534352";
 const VERIFY = { kind: "password" as const, password: "pw" };
 const GET_L1_FEE = toFunctionSelector("getL1Fee(bytes)");
 const GET_OPERATOR_FEE = toFunctionSelector("getOperatorFee(uint256)");
 const TOKEN_RATIO = toFunctionSelector("tokenRatio()");
+const GET_L1_FEE_ABI = parseAbi(["function getL1Fee(bytes data) view returns (uint256)"]);
+const MAX_SIG = { r: `0x${"ff".repeat(32)}`, s: `0x${"ff".repeat(32)}`, v: 28n } as const;
+
+/** The `bytes` argument of the node's first call to `to` — the getL1Fee read. */
+const pricedBytes = (calls: ReadonlyArray<{ to: string; data: string }>, to: string): string => {
+  const call = calls.find((c) => c.to.toLowerCase() === to.toLowerCase());
+  const { args } = decodeFunctionData({
+    abi: GET_L1_FEE_ABI,
+    data: (call?.data ?? "0x") as `0x${string}`,
+  });
+  return args[0];
+};
 
 type Node = {
   l1: bigint | "fail";
@@ -87,7 +107,9 @@ const world = (options: { gateway?: boolean } = {}) => {
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url === `${GATEWAY}/v1/networks`) {
-      return Promise.resolve(Response.json({ networks: [BASE, ETHEREUM, MANTLE, OPBNB, FRAXTAL] }));
+      return Promise.resolve(
+        Response.json({ networks: [BASE, ETHEREUM, MANTLE, OPBNB, FRAXTAL, SCROLL] }),
+      );
     }
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
       method: string;
@@ -126,6 +148,7 @@ const world = (options: { gateway?: boolean } = {}) => {
         [MANTLE]: [HOST],
         [OPBNB]: [HOST],
         [FRAXTAL]: [HOST],
+        [SCROLL]: [HOST],
       },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       logger,
@@ -373,4 +396,74 @@ describe("OP Stack L1 fee", () => {
       expect(firstLegacyTx(w.signed).gasPrice).toBe("0x7");
     },
   );
+});
+
+describe("Scroll L1 fee", () => {
+  it("adds the margined L1 data fee to the intent", async () => {
+    const w = world();
+    w.primary.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
+    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1250" });
+    expect(prepared.checks).not.toContain("reads-unverified");
+  });
+
+  it("rounds the margined L1 data fee up", async () => {
+    const w = world();
+    w.primary.l1 = 1001n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1252");
+  });
+
+  it("queries the L1GasPriceOracle for the signed encoding, never the OP Stack oracle", async () => {
+    const w = world();
+    const ctl = await w.boot();
+    await ctl.prepareSend(params(SCROLL, 1n), "req-1");
+    expect(w.primary.calls.map((c) => c.to.toLowerCase())).toStrictEqual([
+      SCROLL_L1_GAS_PRICE_ORACLE.toLowerCase(),
+    ]);
+    const bytes = pricedBytes(w.primary.calls, SCROLL_L1_GAS_PRICE_ORACLE);
+    expect(bytes).toBe(
+      serializeTransaction(
+        {
+          type: "eip1559",
+          chainId: 534352,
+          nonce: 0,
+          gas: 25_200n,
+          to: getAddress("0x00000000000000000000000000000000deadbeef"),
+          value: 1n,
+          data: "0x",
+          accessList: [],
+          maxFeePerGas: 4n,
+          maxPriorityFeePerGas: 2n,
+        },
+        MAX_SIG,
+      ),
+    );
+  });
+
+  it("compares the signed-encoding reads of primary and independent", async () => {
+    const w = world({ gateway: true });
+    w.primary.l1 = 2000n;
+    w.independent.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
+    expect(prepared.checks).toContain("fee-mismatch");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2500");
+  });
+
+  it("a replacement carries the margined L1 fee", async () => {
+    const w = world();
+    w.primary.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
+    const original = await prepared.submit(VERIFY, () => undefined);
+    w.primary.l1 = 3000n;
+    const replacement = await ctl.prepareReplacement(
+      { method: "speed-up", txId: original.id },
+      "req-2",
+    );
+    expect(replacement.intent.fee?.l1Data?.amount).toBe("3750");
+  });
 });

@@ -1026,6 +1026,11 @@ export type FeeModel =
     readonly pricing: GasPricing;
     readonly operatorFee: boolean;
     readonly tokenRatio: boolean;
+} |
+/** Scroll: an L1 data fee from the L1GasPriceOracle predeploy, priced on the signed encoding. */
+    {
+    readonly kind: "scroll";
+    readonly pricing: GasPricing;
 };
 
 // @public

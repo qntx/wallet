@@ -570,6 +570,14 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   {
+    // Scroll — chain id 534352
+    id: "eip155:534352",
+    providers: [
+      { id: "alchemy", url: "https://scroll-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/scroll", auth: "drpc" },
+    ],
+  },
+  {
     // BOB — chain id 60808
     id: "eip155:60808",
     providers: [

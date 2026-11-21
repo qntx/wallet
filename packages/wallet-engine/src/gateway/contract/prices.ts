@@ -57,6 +57,7 @@ export const NATIVE_SLIP44: Readonly<Record<string, number>> = {
   "eip155:4326": 60,
   "eip155:8217": 8217,
   "eip155:57073": 60,
+  "eip155:534352": 60,
   "eip155:60808": 60,
   "eip155:204": 714,
   "eip155:7777777": 60,

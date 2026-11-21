@@ -71,6 +71,12 @@ describe("network registry", () => {
     );
   });
 
+  it("marks exactly Scroll with the scroll fee model", () => {
+    expect(NETWORKS.filter((n) => n.feeModel?.kind === "scroll").map((n) => n.id)).toStrictEqual([
+      "eip155:534352",
+    ]);
+  });
+
   it("skips the operator fee exactly on the opBNB chains", () => {
     const opStack = NETWORKS.filter(
       (n): n is NetworkInfo & { readonly feeModel: Extract<FeeModel, { kind: "op-stack" }> } =>

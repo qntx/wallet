@@ -32,7 +32,9 @@ export type FeeModel =
       readonly operatorFee: boolean;
       /** `getL1Fee` is ETH-denominated and charged in the gas token at `tokenRatio()` (Mantle). */
       readonly tokenRatio: boolean;
-    };
+    }
+  /** Scroll: an L1 data fee from the L1GasPriceOracle predeploy, priced on the signed encoding. */
+  | { readonly kind: "scroll"; readonly pricing: GasPricing };
 
 /** The chain families this registry serves. */
 export type EngineFamily = "evm" | "solana" | "bitcoin";
@@ -51,10 +53,10 @@ export type NetworkInfo = Omit<NetworkMeta, "family"> & {
  * eth_getCode at the delegator, cross-checked on two endpoints; existing entries 2026-11-08,
  * additions 2026-11-20/21). Differs per chain because OpenZeppelin's EIP712 stores the chain id and
  * the domain separator as immutables. A chain is listed only when the delegator is deployed AND a
- * mined type-0x4 transaction proved EIP-7702 active: HyperEVM (999/998) has no deployment;
- * Avalanche C-Chain (43114/43113) has not activated 7702; Arc, Cronos, MegaETH, Sonic, ZKsync Era,
- * Katana, Unichain, Berachain, Sei, Fraxtal, BOB, opBNB and Zora deploy the delegator but no mined
- * 7702 transaction was found, so they are absent; all new testnets are absent.
+ * mined type-0x4 transaction proved EIP-7702 active: HyperEVM (999/998), Fraxtal, BOB, opBNB, Zora
+ * and Scroll have no deployment; Avalanche C-Chain (43114/43113) has not activated 7702; Arc,
+ * Cronos, MegaETH, Sonic, ZKsync Era, Katana, Unichain, Berachain and Sei deploy the delegator but
+ * no mined 7702 transaction was found, so they are absent; all new testnets are absent.
  */
 export const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
   1: "0x0b77e469f5603ed1e9ff0e7ee56238b61a8cf7cb3185b33e53e2eeaad50109ab",
@@ -146,6 +148,7 @@ export const EVM_FACTS: Readonly<
       tokenRatio: false,
     },
   },
+  534352: { multicall3: MULTICALL3, feeModel: { kind: "scroll", pricing: "eip1559" } },
   60808: { multicall3: MULTICALL3, feeModel: OP_STACK },
   204: {
     multicall3: MULTICALL3,

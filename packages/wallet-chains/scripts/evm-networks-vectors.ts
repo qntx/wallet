@@ -89,6 +89,7 @@ const cases = [
   },
   native(130, "Unichain", "ETH"),
   native(324, "ZKsync Era", "ETH"),
+  native(534352, "Scroll", "ETH"),
   native(46630, "Robinhood Chain Testnet", "ETH"),
   {
     // opBNB prices legacy: the Max fee line comes out of gas × gasPrice.
