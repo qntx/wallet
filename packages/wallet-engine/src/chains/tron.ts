@@ -248,6 +248,8 @@ export type TronChainParams = {
   readonly createNewAccountBandwidthRate: bigint;
   /** Max size of an activation transaction minus `ret` and signatures. */
   readonly maxCreateAccountTxSize: bigint;
+  /** Flat sun a non-empty `raw_data.data` memo costs each contract owner. */
+  readonly memoFee: bigint;
 };
 
 /** The chain's fee parameters; a missing or valueless parameter is a malformed answer. */
@@ -274,6 +276,7 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
     maxFeeLimit: take("getMaxFeeLimit"),
     createNewAccountBandwidthRate: take("getCreateNewAccountBandwidthRate"),
     maxCreateAccountTxSize: take("getMaxCreateAccountTxSize"),
+    memoFee: take("getMemoFee"),
   };
 };
 
@@ -411,7 +414,13 @@ export type TronCallOutcome =
       readonly result: Uint8Array;
       readonly logs: ReadonlyArray<TronLog>;
     }
-  | { readonly ok: false; readonly message: string | undefined };
+  | {
+      readonly ok: false;
+      readonly message: string | undefined;
+      /** A reverted call still reports the energy it consumed. */
+      readonly energyUsed: number;
+      readonly energyPenalty: number;
+    };
 
 type ConstantCallBody = z.output<typeof tronConstantCallResponse>;
 
@@ -456,6 +465,8 @@ export const constantCall = async (
   return {
     ok: false,
     message: body.result.message === undefined ? undefined : decodeMessage(body.result.message),
+    energyUsed: body.energy_used ?? 0,
+    energyPenalty: body.energy_penalty ?? 0,
   };
 };
 
@@ -633,7 +644,11 @@ export type TronFeeQuote = {
     /** Sun the transaction's `fee_limit` is set to. */
     readonly feeLimit: string;
   };
-  readonly warnings: ReadonlyArray<"recipient-not-activated" | "token-recipient-empty">;
+  /** Sun the memo costs (`getMemoFee`); present when `memo` was set. */
+  readonly memo?: string;
+  readonly warnings: ReadonlyArray<
+    "recipient-not-activated" | "token-recipient-empty" | "fee-limit-below-estimate"
+  >;
 };
 
 /**
@@ -654,6 +669,10 @@ export const tronFeeQuote = (input: {
   readonly energy?: { readonly used: number; readonly penalty: number } | undefined;
   /** A TRC-20 recipient whose token balance is zero. */
   readonly tokenRecipientEmpty?: boolean;
+  /** The transaction's own `fee_limit` — it replaces the estimate-derived one, whatever it is. */
+  readonly feeLimit?: bigint;
+  /** The transaction carries a non-empty memo (`raw_data.data`). */
+  readonly memo?: boolean;
 }): TronFeeQuote => {
   const bytes = tronBandwidthBytes(input.rawDataLength);
   const { params } = input;
@@ -699,7 +718,10 @@ export const tronFeeQuote = (input: {
   let energyExpected = 0n;
   let energyMax = 0n;
   if (input.energy !== undefined) {
-    const feeLimit = tronFeeLimit(input.energy.used, params.energyFee, params.maxFeeLimit);
+    /* A caller-fixed fee_limit is used as given — the dApp chose it — instead of the
+       estimate-derived ceiling (which may also refuse when the estimate beats the chain cap). */
+    const feeLimit =
+      input.feeLimit ?? tronFeeLimit(input.energy.used, params.energyFee, params.maxFeeLimit);
     const available = Math.max(0, input.resources.energyLimit - input.resources.energyUsed);
     energyExpected =
       BigInt(Math.trunc(Math.max(0, input.energy.used - available))) * params.energyFee;
@@ -712,10 +734,11 @@ export const tronFeeQuote = (input: {
       feeLimit: feeLimit.toString(),
     };
   }
+  const memoFee = input.memo === true ? params.memoFee : 0n;
 
   return {
-    expected: (bandwidthBurn + activation + energyExpected).toString(),
-    max: (bandwidthMax + activation + energyMax).toString(),
+    expected: (bandwidthBurn + activation + energyExpected + memoFee).toString(),
+    max: (bandwidthMax + activation + energyMax + memoFee).toString(),
     bandwidth: {
       bytes,
       source,
@@ -725,9 +748,15 @@ export const tronFeeQuote = (input: {
     },
     ...(input.activates === true ? { activation: activation.toString() } : {}),
     ...(energy === undefined ? {} : { energy }),
+    ...(input.memo === true ? { memo: params.memoFee.toString() } : {}),
     warnings: [
       ...(input.activates === true ? (["recipient-not-activated"] as const) : []),
       ...(input.tokenRecipientEmpty === true ? (["token-recipient-empty"] as const) : []),
+      ...(input.energy !== undefined &&
+      input.feeLimit !== undefined &&
+      BigInt(Math.trunc(input.energy.used)) * params.energyFee > input.feeLimit
+        ? (["fee-limit-below-estimate"] as const)
+        : []),
     ],
   };
 };

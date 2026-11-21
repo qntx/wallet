@@ -177,6 +177,8 @@ export const tronConstantCallResponse = z.union([
       code: z.optional(z.string()),
       message: z.optional(z.string()),
     }),
+    energy_used: z.optional(intField),
+    energy_penalty: z.optional(intField),
   }),
 ]);
 export type TronConstantCall = z.output<typeof tronConstantCallResponse>;
