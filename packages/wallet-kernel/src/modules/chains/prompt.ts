@@ -956,7 +956,7 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
           : flow.burn === true
             ? catalog.burn(formatAmount(catalog, flow.amount))
             : catalog.send(formatAmount(catalog, flow.amount), flow.to)
-        : catalog.sendTokenAccount(formatAmount(catalog, flow.amount), flow.tokenAccount, flow.to),
+        : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to),
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
