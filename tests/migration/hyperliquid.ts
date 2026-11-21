@@ -7,7 +7,12 @@
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qntx/wallet-engine";
 import { createWalletEngine } from "@qntx/wallet-engine";
-import type { AppSocket, HyperliquidGroup } from "@qntx/wallet-engine/apps";
+import type {
+  AppsController,
+  AppSocket,
+  HyperliquidGroup,
+  HyperliquidProvider,
+} from "@qntx/wallet-engine/apps";
 import { createApps } from "@qntx/wallet-engine/apps";
 import { chains } from "@qntx/wallet/chains";
 
@@ -23,7 +28,14 @@ export function createHost(params: {
   readonly gatewayUrl: string;
   readonly openStore: () => Promise<EngineStore>;
   readonly publicStore: PublicStore;
-}): { engine: WalletEngine; apps: Awaited<ReturnType<typeof createApps>> } {
+}): {
+  engine: WalletEngine;
+  apps: {
+    readonly controller: AppsController;
+    readonly hyperliquid: HyperliquidProvider;
+    readonly destroy: () => Promise<void>;
+  };
+} {
   const { wallet, verifyEvent, gatewayUrl } = params;
   const engine = createWalletEngine({
     wallet,
@@ -74,7 +86,7 @@ export function createHost(params: {
  */
 export async function enableGroup(
   engine: WalletEngine,
-  apps: Awaited<ReturnType<typeof createApps>>,
+  apps: ReturnType<typeof createHost>["apps"],
   group: HyperliquidGroup,
   verify: VerifyFactor,
 ): Promise<void> {
@@ -111,7 +123,7 @@ const ownerOf = async (wallet: Wallet, group: HyperliquidGroup): Promise<string>
 
 /** A limit and a market order: preview first — the market preview's price is the slippage cap. */
 export async function placeOrders(
-  apps: Awaited<ReturnType<typeof createApps>>,
+  apps: ReturnType<typeof createHost>["apps"],
   group: HyperliquidGroup,
 ): Promise<void> {
   const hl = apps.hyperliquid;
@@ -165,7 +177,7 @@ export async function placeOrders(
 }
 
 /** A live book: data renders as `live` only after the first post-confirmation snapshot. */
-export function readBook(apps: Awaited<ReturnType<typeof createApps>>): () => void {
+export function readBook(apps: ReturnType<typeof createHost>["apps"]): () => void {
   const view = apps.hyperliquid.live?.book("BTC");
   if (view === undefined) {
     return () => undefined;
@@ -186,7 +198,7 @@ export function readBook(apps: Awaited<ReturnType<typeof createApps>>): () => vo
 /** Close the whole BTC position at a 50 bp cap, then withdraw and deposit. */
 export async function fundAndWithdraw(
   engine: WalletEngine,
-  apps: Awaited<ReturnType<typeof createApps>>,
+  apps: ReturnType<typeof createHost>["apps"],
   wallet: Wallet,
   group: HyperliquidGroup,
   verify: VerifyFactor,
