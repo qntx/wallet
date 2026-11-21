@@ -54,6 +54,7 @@ export type PromptIntent = Pick<
   | "delegation"
   | "minimumReceived"
   | "bridge"
+  | "hyperliquidDeposit"
   | "contract"
   | "calls"
   | "blind"
@@ -156,6 +157,8 @@ type Catalog = {
   readonly viaAllowanceHolder: string;
   readonly receiveMin: (amount: string, to: string) => string;
   readonly receiveMinTokenAccount: (amount: string, tokenAccount: string) => string;
+  readonly hyperliquidDeposit: (amount: string, dex: string, recipient: string) => string;
+  readonly hyperliquidFee: (amount: string) => string;
   readonly until: (date: string) => string;
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
@@ -332,6 +335,9 @@ const zh: Catalog = {
   receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
   receiveMinTokenAccount: (amount, tokenAccount) =>
     `至少收到 ${amount} 个代币账户 ${tokenAccount} 所持代币的基本单位`,
+  hyperliquidDeposit: (amount, dex, recipient) =>
+    `向你的 Hyperliquid ${dex === "perps" ? "合约" : "现货"}账户 ${recipient} 存入 ${amount}`,
+  hyperliquidFee: (amount) => `Circle 手续费至多 ${amount}`,
   until: (date) => ` 至 ${date}（UTC）`,
   operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
   operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -583,6 +589,9 @@ const en: Catalog = {
   receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
   receiveMinTokenAccount: (amount, tokenAccount) =>
     `Receive at least ${amount} base units of the token in account ${tokenAccount}`,
+  hyperliquidDeposit: (amount, dex, recipient) =>
+    `Deposit ${amount} to your Hyperliquid ${dex} account ${recipient}`,
+  hyperliquidFee: (amount) => `Circle fee at most ${amount}`,
   until: (date) => ` until ${date} (UTC)`,
   operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
   operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -972,6 +981,18 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
+    ...(intent.hyperliquidDeposit === undefined
+      ? []
+      : [
+          catalog.hyperliquidDeposit(
+            intent.outflows[0] === undefined
+              ? "?"
+              : formatAmount(catalog, intent.outflows[0].amount),
+            intent.hyperliquidDeposit.dex,
+            intent.hyperliquidDeposit.recipient,
+          ),
+          catalog.hyperliquidFee(formatAmount(catalog, intent.hyperliquidDeposit.maxFee)),
+        ]),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
   ];
 }

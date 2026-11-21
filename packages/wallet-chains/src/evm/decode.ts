@@ -22,6 +22,7 @@ import { MAX_UINT160, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { recognizeApp } from "./apps.ts";
 import type { AppRecognition } from "./apps.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { decodeCctp, isCctpMessenger } from "./cctp.ts";
 import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
@@ -190,6 +191,28 @@ const protocolIntent = (
     };
   }
 
+  if (isCctpMessenger(chainId, call.to)) {
+    const cctp = decodeCctp(chainId, call, signer, table);
+    if (cctp !== undefined) {
+      return {
+        ...base,
+        summary: "transfer",
+        outflows: cctp.outflows,
+        hyperliquidDeposit: cctp.hyperliquidDeposit,
+        fee,
+        verifiability: "partial",
+      };
+    }
+    return {
+      ...base,
+      summary: "contract-call",
+      outflows: call.value > 0n ? nativeOutflow(call.value, call.to ?? "") : [],
+      fee,
+      verifiability: "opaque",
+      blind: "cctp-destination",
+    };
+  }
+
   const lido = decodeLido(chainId, call, signer, table);
   if (lido !== undefined) {
     return {
@@ -335,7 +358,7 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
       family: "evm",
       network: context.network,
       summary: "contract-call",
-      outflows: call.value > 0n ? nativeOutflow(call.value, call.to) : [],
+      outflows: call.value > 0n ? nativeOutflow(call.value, call.to ?? "") : [],
       approvals: [],
       fee: context.fee,
       warnings: [],

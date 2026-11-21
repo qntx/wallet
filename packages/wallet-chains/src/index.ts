@@ -180,7 +180,10 @@ export type BlindReason =
   // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range
   | "tron-field"
   // a TRON permission update: decoded in full, but it hands account control to other keys
-  | "tron-permission-update";
+  | "tron-permission-update"
+  // a call to a chain's CCTP TokenMessengerV2 that is not a fully described Hyperliquid
+  // deposit — an unrecognised burn or hook could send the minted USDC anywhere
+  | "cctp-destination";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -653,6 +656,15 @@ export type DisplayIntent = {
     readonly destinationNetwork: string;
     readonly fillDeadline: number;
     readonly refundTo: string;
+  };
+  /**
+   * A fully described CCTP Hyperliquid deposit: the forward-hook recipient (always the signer), the
+   * perps or spot account it funds, and the largest Circle fee the call permits.
+   */
+  readonly hyperliquidDeposit?: {
+    readonly recipient: string;
+    readonly dex: "perps" | "spot";
+    readonly maxFee: AssetAmount;
   };
   readonly warnings: ReadonlyArray<IntentWarning>;
   /** What a message request signs; absent for transactions. */
