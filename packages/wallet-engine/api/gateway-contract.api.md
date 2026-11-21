@@ -11,6 +11,16 @@ import * as z from 'zod/mini';
 export function accepts(schema: z.ZodMiniType, value: unknown): boolean;
 
 // @public
+export type AppAvailability = "available" | "close-only" | "blocked";
+
+// @public (undocumented)
+export const appAvailability: z.ZodMiniEnum<{
+    available: "available";
+    blocked: "blocked";
+    "close-only": "close-only";
+}>;
+
+// @public
 export const applyDiff: (list: HashList, add: HashList, remove: HashList) => HashList;
 
 // @public (undocumented)
@@ -109,6 +119,48 @@ export function decodeHashList(encoded: string): HashList | undefined;
 
 // @public
 export const difference: (a: HashList, b: HashList) => HashList;
+
+// @public
+export const eligibility: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
+    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    apps: z.ZodMiniObject<{
+        hyperliquid: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+        polymarket: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+    }, z.core.$strip>;
+}, z.core.$strip>>;
+
+// @public (undocumented)
+export const eligibilityRequest: z.ZodMiniUndefined;
+
+// @public (undocumented)
+export type EligibilityResponse = z.infer<typeof eligibilityResponse>;
+
+// @public (undocumented)
+export const eligibilityResponse: z.ZodMiniObject<{
+    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    apps: z.ZodMiniObject<{
+        hyperliquid: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+        polymarket: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+    }, z.core.$strip>;
+}, z.core.$strip>;
 
 // @public (undocumented)
 export const encodeHashList: (list: HashList) => string;

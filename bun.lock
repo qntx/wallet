@@ -136,6 +136,7 @@
       "name": "@qntx/wallet-engine",
       "version": "0.13.0",
       "dependencies": {
+        "@nktkas/hyperliquid": "0.33.3",
         "@noble/ciphers": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/siwx": "0.8.0",

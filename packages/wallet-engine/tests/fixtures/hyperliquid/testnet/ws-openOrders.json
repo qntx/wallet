@@ -1,0 +1,26 @@
+{
+  "subscription": { "type": "openOrders", "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6" },
+  "recordedAt": 1795260915878,
+  "echo": {
+    "method": "subscribe",
+    "subscription": {
+      "type": "openOrders",
+      "dex": "",
+      "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6"
+    }
+  },
+  "frames": [
+    {
+      "channel": "openOrders",
+      "data": { "dex": "", "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6", "orders": [] }
+    },
+    {
+      "channel": "openOrders",
+      "data": { "dex": "", "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6", "orders": [] }
+    },
+    {
+      "channel": "openOrders",
+      "data": { "dex": "", "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6", "orders": [] }
+    }
+  ]
+}

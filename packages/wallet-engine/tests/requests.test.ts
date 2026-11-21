@@ -57,6 +57,15 @@ const SEPOLIA = "eip155:11155111";
 const GATEWAY = "https://gw.test";
 const HOST = "https://host.test/evm";
 const VERIFY = { kind: "password" as const, password: "pw" };
+const TYPED_DATA = JSON.stringify({
+  types: {
+    EIP712Domain: [{ name: "name", type: "string" }],
+    Mail: [{ name: "contents", type: "string" }],
+  },
+  primaryType: "Mail",
+  domain: { name: "Test" },
+  message: { contents: "hello" },
+});
 const ONE_ETH = 10n ** 18n;
 const PARAMS = {
   method: "send" as const,
@@ -826,6 +835,68 @@ describe("EVM pipeline", () => {
       }),
     ).rejects.toThrow("address");
     expect(w.calls.every((c) => c.method !== "eth_call")).toBe(true);
+  });
+
+  it("an internal typed-data request prepares with an internal origin", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const r = await w.requests.prepare({
+      method: "evm-sign",
+      account: ACCOUNT,
+      network: SEPOLIA,
+      request: {
+        kind: "evm.typed-data",
+        network: SEPOLIA,
+        account: ACCOUNT,
+        typedData: TYPED_DATA,
+      },
+    });
+    expect(r.origin).toStrictEqual({ kind: "internal" });
+  });
+
+  it("an internal personal message is refused — it needs a page origin", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-sign",
+        account: ACCOUNT,
+        network: SEPOLIA,
+        request: {
+          kind: "evm.personal-message",
+          network: SEPOLIA,
+          account: ACCOUNT,
+          message: new TextEncoder().encode("hello"),
+        },
+      }),
+    ).rejects.toThrow("an internal request can only sign typed data");
+  });
+
+  it("an internal transaction is refused — it needs a page origin", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-sign",
+        account: ACCOUNT,
+        network: SEPOLIA,
+        request: {
+          kind: "evm.transaction",
+          network: SEPOLIA,
+          account: ACCOUNT,
+          tx: {
+            type: "legacy",
+            chainId: 11155111,
+            nonce: 0,
+            gas: "0x5208",
+            to: ADDR,
+            value: "0x0",
+            data: "0x",
+            gasPrice: "0x1",
+          },
+        },
+      }),
+    ).rejects.toThrow("an internal request can only sign typed data");
   });
 
   it("without a gateway nothing is cross-checked and the request is verified", async () => {

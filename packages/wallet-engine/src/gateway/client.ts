@@ -10,14 +10,10 @@ import {
   tokenList,
   tron,
 } from "./contract/index.ts";
+import type { GatewayConfig, GatewayScope } from "./session.ts";
 
-/** A gateway traffic class with its own client id: one per chain family plus the service routes. */
-export type GatewayScope = "evm" | "solana" | "bitcoin" | "tron" | "service";
-
-export type GatewayConfig = {
-  readonly url: string;
-  readonly clientIds: Readonly<Record<GatewayScope, string>>;
-};
+export { gatewaySession } from "./session.ts";
+export type { GatewayConfig, GatewayScope } from "./session.ts";
 
 /** The route prefix of a path template — the part before the first `:` parameter. */
 const routePrefix = (template: string): string => template.split("/:")[0] ?? template;
@@ -59,23 +55,6 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
     return "evm";
   }
   return "service";
-}
-
-const hex = (bytes: Uint8Array): string =>
-  [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-
-/** A fresh client id per scope for one engine session — unlinkable across scopes and sessions. */
-export function gatewaySession(url: string, random: (length: number) => Uint8Array): GatewayConfig {
-  return {
-    url,
-    clientIds: {
-      evm: hex(random(16)),
-      solana: hex(random(16)),
-      bitcoin: hex(random(16)),
-      tron: hex(random(16)),
-      service: hex(random(16)),
-    },
-  };
 }
 
 /** `fetch` that adds the scope's client id to requests bound for the gateway's origin only. */
