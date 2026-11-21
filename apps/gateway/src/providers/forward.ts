@@ -215,9 +215,12 @@ const sendTo =
       // The account itself announced the wait: the client is never charged for a skipped call.
       throw new ProviderFailure("cooling-down", true, cooled);
     }
+    // Every upstream call bills at least one unit: a zero-cost method row is a gap, and the share
+    // limiter and the account budget both charge this floor.
+    const cost = Math.max(1, request.cost);
     // The client pays its share of the provider account before the call exists: a refused
     // charge sends nothing, so it is safe to fail over — provider-local, never an outage.
-    const charge = await meter(provider.account, request.cost);
+    const charge = await meter(provider.account, cost);
     if (!charge.ok) {
       throw new ProviderFailure(
         `share-${charge.reason}`,
@@ -226,13 +229,11 @@ const sendTo =
         charge.reason,
       );
     }
-    if (request.cost > 0) {
-      // Then the account's shared quota: a refusal fails over — never a breaker outage, and the
-      // account's known wait time reaches the client when every provider is out of budget.
-      const decision = await budget.take(provider.account, request.cost);
-      if (!decision.ok) {
-        throw new ProviderFailure("budget", true, decision.retryAfterSeconds);
-      }
+    // Then the account's shared quota: a refusal fails over — never a breaker outage, and the
+    // account's known wait time reaches the client when every provider is out of budget.
+    const decision = await budget.take(provider.account, cost);
+    if (!decision.ok) {
+      throw new ProviderFailure("budget", true, decision.retryAfterSeconds);
     }
     let auth: Readonly<Record<string, string>>;
     try {

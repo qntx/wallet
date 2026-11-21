@@ -1,5 +1,5 @@
 import type { CostModel, CostRow } from "../budget/costs.ts";
-import { ALCHEMY_COSTS, DRPC_COSTS } from "../budget/costs.ts";
+import { ALCHEMY_COSTS } from "../budget/costs.ts";
 
 /**
  * A provider account's spending window: a token bucket of `units` capacity that refills fully every
@@ -67,9 +67,14 @@ export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
     budget: [{ units: 40_000, seconds: 5 }],
     clientShare: 0.05,
   },
-  // https://drpc.org/docs/pricing/plans — assumes PAYG 100 RPS × 20 CU = 2,000 CU/s; 80 %. The
-  // plan size is an operator assumption.
-  drpc: { costs: DRPC_COSTS, budget: [{ units: 8000, seconds: 5 }], clientShare: 0.05 },
+  // https://drpc.org/docs/howitworks/ratelimiting — assumes the PAYG plan for accounts created
+  // after 2026-10-19: 100 RPS, and rate limiting bills every call at least one request unit.
+  // 80 % = 400 calls/5 s; the plan itself is an operator assumption.
+  drpc: {
+    costs: request(1, "https://drpc.org/docs/howitworks/ratelimiting"),
+    budget: [{ units: 400, seconds: 5 }],
+    clientShare: 0.05,
+  },
   // https://blockstream.info/explorer-api — one credit per call. POLICY: no published rate limit.
   blockstream: {
     costs: request(1, "https://blockstream.info/explorer-api"),

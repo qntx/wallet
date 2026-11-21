@@ -107,9 +107,6 @@ export function durableBudget(
     if (found === undefined) {
       throw new Error(`provider account "${account}" is not configured`);
     }
-    if (units <= 0) {
-      return { ok: true };
-    }
     for (;;) {
       const live = leases.get(account);
       if (live !== undefined && live.expiresAt > now() && live.remaining >= units) {

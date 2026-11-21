@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { EVM_RPC_METHODS, SOLANA_RPC_METHODS } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
-import { ALCHEMY_COSTS, DRPC_COSTS } from "../src/budget/costs.ts";
+import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { gatewayFor, priceCacheOf, riskStoreOf } from "../src/worker.ts";
@@ -96,8 +96,8 @@ describe("gatewayFor", () => {
     expect(() => createGateway(options)).not.toThrow();
   });
 
-  it("prices every allow-listed method in both RPC cost tables", () => {
-    for (const table of [ALCHEMY_COSTS, DRPC_COSTS].map((m) => rpcMethods(m))) {
+  it("prices every allow-listed method in the RPC cost table", () => {
+    for (const table of [ALCHEMY_COSTS].map((m) => rpcMethods(m))) {
       for (const method of [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS]) {
         const row = table[method];
         expect(row).toBeDefined();

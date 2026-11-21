@@ -124,9 +124,6 @@ export const rateLimit =
       }
     };
     const meter: Meter = async (account, units) => {
-      if (units <= 0) {
-        return { ok: true };
-      }
       const found = accounts[account];
       if (found === undefined) {
         // Resolved providers carry a configured account; reaching this is a construction bug.
