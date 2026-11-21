@@ -248,8 +248,9 @@ type BitcoinSignResult = {
     readonly kind: "bitcoin.psbts";
     readonly signedPsbts: ReadonlyArray<Uint8Array>;
     readonly txids: ReadonlyArray<string>;
-    readonly refused?: {
+    readonly stopped?: {
         readonly index: number;
+        readonly reason: "refused" | "not-sent";
         readonly error: string;
     };
 };
@@ -1327,8 +1328,9 @@ type SolanaSignResult = {
     readonly send: boolean;
     readonly signatures?: ReadonlyArray<string>;
     readonly signedTransactions?: ReadonlyArray<Uint8Array>;
-    readonly refused?: {
+    readonly stopped?: {
         readonly index: number;
+        readonly reason: "refused" | "not-sent";
         readonly error: string;
     };
 } | {
@@ -1636,6 +1638,10 @@ type TrackedTransaction = {
     readonly block?: TxBlock | undefined;
     readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
+    readonly durableNonce?: {
+        readonly account: string | undefined;
+        readonly value: string;
+    };
     readonly replaces?: string;
     readonly parentId?: string;
     readonly sparkDeposit?: SparkDepositTag;

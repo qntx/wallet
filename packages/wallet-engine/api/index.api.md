@@ -503,8 +503,9 @@ export type BitcoinSignResult = {
     readonly kind: "bitcoin.psbts";
     readonly signedPsbts: ReadonlyArray<Uint8Array>;
     readonly txids: ReadonlyArray<string>;
-    readonly refused?: {
+    readonly stopped?: {
         readonly index: number;
+        readonly reason: "refused" | "not-sent";
         readonly error: string;
     };
 };
@@ -839,6 +840,9 @@ export function createWalletEngine(options: EngineOptions): WalletEngine;
 export function decodeExitChain(bytes: Uint8Array): SparkExitChain;
 
 // @public
+export type DeepReadonly<T> = T extends ((...args: never[]) => unknown) ? T : T extends Uint8Array | Uint8ClampedArray | Int8Array | Int16Array | Int32Array | Uint16Array | Uint32Array | Float16Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView ? T : T extends ReadonlyArray<infer E> ? ReadonlyArray<DeepReadonly<E>> : T extends ReadonlyMap<infer K, infer V> ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>> : T extends ReadonlySet<infer E> ? ReadonlySet<DeepReadonly<E>> : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]>; } : T;
+
+// @public
 export type DelegationStatus = {
     readonly supported: boolean;
     readonly state: "none" | "ours" | "other";
@@ -1165,8 +1169,9 @@ export type Holding = {
 };
 
 // @public
-export type HostController<C extends Controller<Record<string, unknown>>, K extends Exclude<keyof C, "store">> = Pick<C, "getState" | K> & {
-    readonly store: ReadonlyStore<ReturnType<C["getState"]>>;
+export type HostController<C extends Controller<Record<string, unknown>>, K extends Exclude<keyof C, "store">> = Pick<C, Exclude<K, "getState">> & {
+    readonly getState: () => DeepReadonly<ReturnType<C["getState"]>>;
+    readonly store: ReadonlyStore<DeepReadonly<ReturnType<C["getState"]>>>;
 };
 
 // @public
@@ -2112,8 +2117,9 @@ export type SolanaSignResult = {
     readonly send: boolean;
     readonly signatures?: ReadonlyArray<string>;
     readonly signedTransactions?: ReadonlyArray<Uint8Array>;
-    readonly refused?: {
+    readonly stopped?: {
         readonly index: number;
+        readonly reason: "refused" | "not-sent";
         readonly error: string;
     };
 } | {
@@ -2472,6 +2478,10 @@ export type TrackedTransaction = {
     readonly block?: TxBlock | undefined;
     readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
+    readonly durableNonce?: {
+        readonly account: string | undefined;
+        readonly value: string;
+    };
     readonly replaces?: string;
     readonly parentId?: string;
     readonly sparkDeposit?: SparkDepositTag;
