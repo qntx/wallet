@@ -797,7 +797,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     if (this.engineStore === undefined) {
       throw new Error("assets require an unlocked vault");
     }
-    const {generation} = this;
+    const { generation } = this;
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       if ((solanaTokenTable[network] ?? {})[address] !== undefined) {

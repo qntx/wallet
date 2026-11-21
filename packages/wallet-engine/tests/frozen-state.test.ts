@@ -140,8 +140,7 @@ describe("the facade's frozen snapshot cannot edit the engine's ledger", () => {
   const boot = async () => {
     const node = { known: new Set<string>(), sent: [] as string[], pending: 0 };
     const fetchImpl: typeof fetch = async (input, init) => {
-      const url =
-        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url === `${GATEWAY}/v1/networks`) {
         return Promise.resolve(Response.json({ networks: ["eip155:1"] }));
       }
@@ -213,6 +212,7 @@ describe("the facade's frozen snapshot cannot edit the engine's ledger", () => {
     expect(Object.isFrozen(state.txs[tx.id])).toBe(true);
 
     expect(() => {
+      // oxlint-disable-next-line typescript/no-dynamic-delete -- proving the delete throws
       delete state.txs[tx.id];
     }).toThrow(TypeError);
     expect(ctl.getState().txs[tx.id]).toBeDefined();

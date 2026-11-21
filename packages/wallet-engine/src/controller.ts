@@ -7,10 +7,10 @@ export type ControllerOptions<S> = {
 };
 
 /**
- * Freezes plain objects (prototype `Object.prototype` or `null`) and arrays recursively so no
- * state the facade hands out can be edited back into the engine. An already-frozen value returns
- * as-is — unchanged subtrees cost nothing — and everything else passes through untouched: typed
- * arrays (`Object.freeze` throws on non-empty views), Map, Set, class instances and functions.
+ * Freezes plain objects (prototype `Object.prototype` or `null`) and arrays recursively so no state
+ * the facade hands out can be edited back into the engine. An already-frozen value returns as-is —
+ * unchanged subtrees cost nothing — and everything else passes through untouched: typed arrays
+ * (`Object.freeze` throws on non-empty views), Map, Set, class instances and functions.
  */
 const deepFreeze = <T>(value: T): T => {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) {

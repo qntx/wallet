@@ -718,10 +718,11 @@ describe("MetaSyncController", () => {
 
 describe("a pull that outlives its session", () => {
   /** Parks each successive decrypt call on its own gate; calls beyond `gates` pass through. */
-  const gatedDecrypts = (
-    calls: { count: number },
-    gates: ReadonlyArray<Promise<void>>,
-  ): ((s: WalletSyncSigner) => WalletSyncSigner) =>
+  const gatedDecrypts =
+    (
+      calls: { count: number },
+      gates: ReadonlyArray<Promise<void>>,
+    ): ((s: WalletSyncSigner) => WalletSyncSigner) =>
     (inner) => ({
       getPublicKey: async () => inner.getPublicKey(),
       signEvent: async (e) => inner.signEvent(e),
