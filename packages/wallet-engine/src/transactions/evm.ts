@@ -911,8 +911,7 @@ const prepareCctpIntent = (
     outflow === undefined ||
     outflow.to.toLowerCase() !== messenger.toLowerCase() ||
     outflow.amount.amount !== input.amount.toString(10) ||
-    !
-    outflow.verified
+    !outflow.verified
   ) {
     throw new ChainError("invalid-request", "the built deposit does not decode to the request");
   }

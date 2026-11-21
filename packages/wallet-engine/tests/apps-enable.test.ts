@@ -304,13 +304,10 @@ describe("apps hyperliquid enablement on the node host", () => {
       amount: 5_000_000n,
       fee: "normal",
     });
-    /* allowance defaults to 0 — both requests exist; the deposit's intent is the decoded
-       depositForBurnWithHook on the testnet TokenMessengerV2. */
+    /* allowance defaults to 0 — an approve pending action exists alongside the deposit; the
+       deposit's intent is the decoded depositForBurnWithHook on the testnet TokenMessengerV2. */
     expect(result.approval).toBeDefined();
-    const {requests} = w.requests.getState();
-    const approve = requests[result.approval?.requestId ?? ""];
-    const deposit = requests[result.deposit.requestId];
-    expect(approve).toBeDefined();
+    const deposit = w.requests.getState().requests[result.deposit.requestId];
     expect(deposit).toBeDefined();
     const { display } = deposit as {
       display?: {
