@@ -18,6 +18,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 
+import { TronWeb } from "tronweb";
+
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import {
@@ -311,6 +313,9 @@ const blockedFetch: typeof fetch = async (input, init) => {
 
 const tronOnly = (family: string): string[] => (family === "tron" ? [NILE] : []);
 
+/** Node-side tronweb — builds dApp transactions against TRE exactly as sun.io's page would. */
+const tw = new TronWeb({ fullHost: BASE });
+
 const accountFor =
   (address: string) =>
   async (p: { template: string }): Promise<{ address: string }> =>
@@ -407,6 +412,24 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
   let activation: string;
   let energyFee: bigint;
   let maxFeeLimit: bigint;
+  let memoFeeSun: bigint;
+  let tokenAddress: string;
+
+  /** `tron-sign` prepare+approve for a dApp-built `raw_data` — observed, never broadcast by us. */
+  const dappTronSign = async (rawData: Uint8Array): Promise<TrackedTransaction> => {
+    const pending = await requests.prepare({
+      method: "tron-sign",
+      origin: { kind: "browser", origin: "https://dapp.e2e.qntx" },
+      account,
+      network: NILE,
+      request: { kind: "tron.transaction", network: NILE, account, rawData },
+    });
+    const result = await requests.approve(pending.id, "tron-sign", approval(pending, VERIFY));
+    if (!("state" in result)) {
+      throw new Error("a transaction tron-sign must return the tracked entry");
+    }
+    return result;
+  };
 
   beforeAll(async () => {
     const [first, second] = await trePair();
@@ -472,6 +495,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
     activation = String(param(params, "getCreateNewAccountFeeInSystemContract"));
     energyFee = param(params, "getEnergyFee");
     maxFeeLimit = param(params, "getMaxFeeLimit");
+    memoFeeSun = param(params, "getMemoFee");
   }, 120_000);
 
   it(
@@ -530,6 +554,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
         "TestToken",
         pad32(1_000_000n * 10n ** 18n),
       );
+      tokenAddress = token;
       await waitInfo(
         await setupTx(tre0, trc20TransferContract(tre0Addr, token, A, 500n * 10n ** 18n), {
           feeLimit: 500_000_000n,
@@ -716,6 +741,169 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       );
       expect(tronEntries.length).toBeGreaterThanOrEqual(4);
       expect(tronEntries.every((e) => e.origin === "local")).toBe(true);
+    },
+  );
+
+  it(
+    "a dApp's tronweb-built TRX transfer signs, pairs and broadcasts — final",
+    { timeout: 300_000 },
+    async () => {
+      const tx = await tw.transactionBuilder.sendTrx(tre1Addr, 1_000_000, A);
+      const rawData = hexToBytes(tx.raw_data_hex);
+      const signed = await dappTronSign(rawData);
+      const signature = signed.tron?.dappSignature;
+      if (signature === undefined) {
+        throw new Error("the observed entry carries no dappSignature");
+      }
+      expect(signed.raw).toBeUndefined();
+      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(signature));
+      expect(sent.id).toBe(signed.id);
+      const finalTx = await waitFinal(transactions, sent.id, Date.now() + 240_000);
+      expect(finalTx.state).toBe("confirmed");
+      const info = await txInfo(hashOf(sent));
+      const receipt = info["receipt"] as { result?: string } | undefined;
+      expect(receipt?.result ?? "SUCCESS").toBe("SUCCESS");
+    },
+  );
+
+  it(
+    "a dApp's tronweb-built TRC-20 transfer signs, pairs and broadcasts — final",
+    { timeout: 300_000 },
+    async () => {
+      const built = await tw.transactionBuilder.triggerSmartContract(
+        tokenAddress,
+        "transfer(address,uint256)",
+        { feeLimit: 500_000_000 },
+        [
+          { type: "address", value: tre1Addr },
+          { type: "uint256", value: "1000000" },
+        ],
+        A,
+      );
+      const tx = built.transaction;
+      const rawData = hexToBytes(tx.raw_data_hex);
+      const signed = await dappTronSign(rawData);
+      const signature = signed.tron?.dappSignature;
+      if (signature === undefined) {
+        throw new Error("the observed entry carries no dappSignature");
+      }
+      const sent = await transactions.submitDappTron(NILE, rawData, hexToBytes(signature));
+      const finalTx = await waitFinal(transactions, sent.id, Date.now() + 240_000);
+      expect(finalTx.state).toBe("confirmed");
+      const info = await txInfo(hashOf(sent));
+      const receipt = info["receipt"] as { result?: string } | undefined;
+      expect(receipt?.result ?? "SUCCESS").toBe("SUCCESS");
+    },
+  );
+
+  it(
+    "a dApp broadcasting the signed bytes itself finalizes — the wallet never broadcast",
+    { timeout: 300_000 },
+    async () => {
+      const tx = await tw.transactionBuilder.sendTrx(tre1Addr, 1_000_000, A);
+      const rawData = hexToBytes(tx.raw_data_hex);
+      const signed = await dappTronSign(rawData);
+      const signature = signed.tron?.dappSignature;
+      if (signature === undefined) {
+        throw new Error("the observed entry carries no dappSignature");
+      }
+      // The dApp — not the wallet — sends the signed transaction to the node.
+      const res = await post("/wallet/broadcasttransaction", { ...tx, signature: [signature] });
+      expect(res["result"]).toBe(true);
+      const finalTx = await waitFinal(transactions, signed.id, Date.now() + 240_000);
+      expect(finalTx.state).toBe("confirmed");
+      // `pollTron` only ever sends `tx.raw`; the entry never gained signed bytes.
+      expect(finalTx.raw).toBeUndefined();
+    },
+  );
+
+  it(
+    "a signed dApp transaction nobody broadcasts drops once the head passes its expiration",
+    { timeout: 400_000 },
+    async () => {
+      const tx = await tw.transactionBuilder.sendTrx(tre1Addr, 1_000_000, A);
+      const rawData = hexToBytes(tx.raw_data_hex);
+      const signed = await dappTronSign(rawData);
+      expect(signed.raw).toBeUndefined();
+      const expiration = tx.raw_data.expiration;
+      const deadline = Date.now() + Math.max(0, expiration - Date.now()) + 240_000;
+      await waitDropped(transactions, signed.id, ticker, deadline);
+      expect(transactions.getState().txs[signed.id]?.raw).toBeUndefined();
+    },
+  );
+
+  it(
+    "an engine send approved with under 20 s left rebuilds on the fresh head — final",
+    { timeout: 300_000 },
+    async () => {
+      let clock = Date.now();
+      const timedNetworks = new NetworkController({
+        ...idleNetworkDeps,
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { [NILE]: [BASE] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: { warn: () => undefined },
+      });
+      const timedTxs = new TransactionController({
+        wallet,
+        networks: timedNetworks,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: (n) => randomBytes(n),
+        setTimer: realTimer,
+        now: () => clock,
+        logger: { warn: () => undefined },
+        pollMs: 500,
+      });
+      await timedTxs.init();
+      const timedRequests = await requestsFor(timedTxs);
+      const pending = await timedRequests.prepare({
+        method: "send",
+        account,
+        network: NILE,
+        to: tre1Addr,
+        amount: 1_000_000n,
+        fee: "normal",
+      });
+      const originalExpiration =
+        "tron" in pending.display ? pending.display.tron?.expiration : undefined;
+      if (originalExpiration === undefined) {
+        throw new Error("the send intent carries no tron expiration");
+      }
+      // Under the 20 s freshness bound the route rebuilds on a fresh solidified head.
+      clock = originalExpiration - 19_000;
+      const sent = await timedRequests.approve(pending.id, "send", approval(pending, VERIFY));
+      const finalTx = await waitFinal(timedTxs, sent.id, Date.now() + 240_000);
+      expect(finalTx.state).toBe("confirmed");
+      const rebuilt = decodeTronRawData(stripEnvelope(rawOf(finalTx)));
+      expect(Number(rebuilt.expiration)).toBe(originalExpiration + 41_000);
+      expect(expirationOf(finalTx)).toBe(originalExpiration + 41_000);
+    },
+  );
+
+  it(
+    "a memo send lands — raw_data.data equals the memo and the receipt carries the memo fee",
+    { timeout: 300_000 },
+    async () => {
+      const pending = await requests.prepare({
+        method: "send",
+        account,
+        network: NILE,
+        to: tre1Addr,
+        amount: 1_000_000n,
+        fee: "normal",
+        memo: "qntx e2e",
+      });
+      expect(tronFeeOf(pending).memo).toBe(memoFeeSun.toString(10));
+      const sent = await requests.approve(pending.id, "send", approval(pending, VERIFY));
+      const finalTx = await waitFinal(transactions, sent.id, Date.now() + 240_000);
+      expect(finalTx.state).toBe("confirmed");
+      const rebuilt = decodeTronRawData(stripEnvelope(rawOf(finalTx)));
+      expect(new TextDecoder().decode(rebuilt.memo)).toBe("qntx e2e");
+      const info = await txInfo(hashOf(sent));
+      const receipt = info["receipt"] as { net_fee?: number } | undefined;
+      const netFee = BigInt(receipt?.net_fee ?? 0);
+      // TransferContract burns no energy: fee − net_fee is exactly the flat memo fee.
+      expect(infoFee(info) - netFee).toBe(memoFeeSun);
     },
   );
 });
