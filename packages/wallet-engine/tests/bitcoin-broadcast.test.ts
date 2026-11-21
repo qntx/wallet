@@ -745,8 +745,9 @@ describe("a dApp-signed Bitcoin broadcast", () => {
       () => undefined,
       broadcastRefusingCall(w, first, 2),
     );
-    expect(outcome.refused?.index).toBe(1);
-    expect(outcome.refused?.error).toMatch(/400|bad-txns/);
+    expect(outcome.stopped?.index).toBe(1);
+    expect(outcome.stopped?.reason).toBe("refused");
+    expect(outcome.stopped?.error).toMatch(/400|bad-txns/);
     expect(outcome.txids).toHaveLength(1);
     const states = Object.values(first.ctl.getState().txs)
       .map((t) => t.state)

@@ -10,7 +10,7 @@ import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
 import { SOLANA_METHODS, sessionAccounts } from "./controller.ts";
-import { ProviderError, broadcastRefused, invalidParams } from "./errors.ts";
+import { ProviderError, batchStopped, invalidParams } from "./errors.ts";
 import { checkSignInInput, signInMessageText } from "./siws.ts";
 import type { SignInFields } from "./siws.ts";
 import { SessionEvents } from "./subscription.ts";
@@ -224,8 +224,8 @@ export class SolanaWalletHandler implements SolanaHandler {
     if (!("kind" in outcome) || outcome.kind !== "solana.transactions") {
       throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
     }
-    if (send && outcome.refused !== undefined) {
-      throw broadcastRefused(outcome.refused, outcome.signatures ?? []);
+    if (send && outcome.stopped !== undefined) {
+      throw batchStopped(outcome.stopped, outcome.signatures ?? []);
     }
     return send
       ? { signatures: (outcome.signatures ?? []).map((signature) => base58.decode(signature)) }

@@ -9,6 +9,7 @@ import type { EsploraDeps } from "../src/chains/bitcoin.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
 import type { BitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, SendParams, TrackedTransaction } from "../src/transactions/route.ts";
@@ -319,3 +320,62 @@ export const fakeSignedEvm = (
         );
   return { kind: "evm.transaction", signedTransaction: hexToBytes(raw) };
 };
+
+/**
+ * A store whose `put` throws `engine store is on fire` whenever `bomb.fail` matches — a test-only
+ * fault injector for post-broadcast persistence failures.
+ */
+export const bombedStore = (
+  store: EngineStore,
+  bomb: {
+    fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+  },
+): EngineStore => ({
+  close: store.close,
+  collection: (name) => {
+    const col = store.collection(name);
+    return {
+      get: col.get,
+      put: async (key, bytes) => {
+        if (bomb.fail?.(name, key, bytes) === true) {
+          throw new Error("engine store is on fire");
+        }
+        await col.put(key, bytes);
+      },
+      delete: col.delete,
+      list: col.list,
+    };
+  },
+});
+
+/** The transactions-row key of a transaction that may not exist — `""` for none. */
+export const txKey = (tx: { readonly id: string } | undefined): string => tx?.id ?? "";
+
+/** The broadcast hash of a transaction that may not have one — `""` for none. */
+export const txHash = (tx: { readonly hash?: string | undefined } | undefined): string =>
+  tx?.hash ?? "";
+
+/**
+ * A `bombedStore` matcher: true for the Nth "transactions" row containing every fragment — with
+ * `nth` omitted it matches every such row.
+ */
+export const txRowPut = (
+  fragments: ReadonlyArray<string>,
+  nth?: number,
+): ((collection: string, key: string, bytes: Uint8Array) => boolean) => {
+  let seen = 0;
+  return (collection, _key, bytes) => {
+    if (collection !== "transactions") {
+      return false;
+    }
+    const row = new TextDecoder().decode(bytes);
+    if (!fragments.every((fragment) => row.includes(fragment))) {
+      return false;
+    }
+    seen += 1;
+    return nth === undefined || seen === nth;
+  };
+};
+
+/** `map.size`, zero for none — keeps `??` out of test bodies. */
+export const mapSize = (map: { readonly size: number } | undefined): number => map?.size ?? 0;

@@ -256,6 +256,17 @@ describe("WeblnHandler preimage polling", () => {
     ).rejects.toMatchObject({ code: PAYMENT_PENDING_CODE });
   }, 15000);
 
+  it("a request that settles pending rejects with the payment-pending code", async () => {
+    // An "unknown" controller error surfaces as a pending outcome — the dApp must see the
+    // payment-pending code, never an opaque internal error it might retry blindly.
+    const { handler } = rig({
+      prepareResult: { kind: "pending", payment: { id: "tid-1" } },
+    });
+    await expect(
+      handler.handle(SITE, { method: "sendPayment", params: invoice }),
+    ).rejects.toMatchObject({ code: PAYMENT_PENDING_CODE });
+  });
+
   it("a paymentStatus read error inside the poll is pending, not failed", async () => {
     const { handler } = rig({
       prepareResult: payment,

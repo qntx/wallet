@@ -22,15 +22,17 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { UNKNOWN_DROP_MS } from "../src/transactions/broadcast.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { approval } from "./approval.ts";
 import {
   bookDeps,
+  idleNetworkDeps,
   replaceVia,
   send,
   simulateSolanaStub,
   tokensStub,
-  idleNetworkDeps,
+  txKey,
 } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 import type { ManualTimers } from "./support/timers.ts";
@@ -367,7 +369,12 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   return { wallet, walletId: info.walletId };
 };
 
-const rig = async (url: string, timers: ManualTimers) => {
+const rig = async (
+  url: string,
+  timers: ManualTimers,
+  fetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+  now: () => number = () => 1000,
+) => {
   const { wallet, walletId } = await realWallet();
   const acct = {
     kind: "hd" as const,
@@ -388,7 +395,7 @@ const rig = async (url: string, timers: ManualTimers) => {
     wallet,
     networks: new NetworkController({
       ...idleNetworkDeps,
-      fetch: globalThis.fetch.bind(globalThis),
+      fetch,
       rpc: { "eip155:1": [url] },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       logger: anvilLogger,
@@ -396,12 +403,12 @@ const rig = async (url: string, timers: ManualTimers) => {
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: taggedRandom(),
     setTimer: timers.setTimer,
-    now: () => 1000,
+    now,
     logger: anvilLogger,
     pollMs: 1,
   });
   await ctl.init();
-  return { ctl, acct };
+  return { ctl, acct, from };
 };
 
 describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
@@ -1010,3 +1017,181 @@ const waitUntil = async (check: () => boolean, deadline = Date.now() + 10_000): 
   await sleep(50);
   return waitUntil(check, deadline);
 };
+
+/* Parks every eth_sendRawTransaction until release(); parked calls then answer in arrival
+   order — refuseFirst(n) gives the first n a JSON-RPC error (a refused send), setDrop(true)
+   makes a send's outcome vanish into the network (an unknown send). */
+const sendGate = () => {
+  const arrived: number[] = [];
+  let releaseGate = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let refused = 0;
+  let drop = false;
+  const fetch = (async (...args: Parameters<typeof globalThis.fetch>) => {
+    const [, init] = args;
+    const body =
+      typeof init?.body === "string"
+        ? (JSON.parse(init.body) as { method?: string; id?: unknown })
+        : {};
+    if (body.method === "eth_sendRawTransaction") {
+      const slot = arrived.length;
+      arrived.push(slot);
+      await gate;
+      if (slot < refused) {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          error: { code: -32000, message: "insufficient funds for gas * price + value" },
+        });
+      }
+      if (drop) {
+        throw new TypeError("fetch failed");
+      }
+    }
+    return globalThis.fetch(...args);
+  }) as typeof globalThis.fetch;
+  return {
+    fetch,
+    arrived,
+    release: releaseGate,
+    refuseFirst: (n: number) => {
+      refused = n;
+    },
+    setDrop: (value: boolean) => {
+      drop = value;
+    },
+  };
+};
+
+const sendE2e = async (
+  ctl: TransactionController,
+  acct: { kind: "hd"; walletId: string; groupIndex: number; template: "evm.bip44" },
+) =>
+  send(ctl, {
+    account: acct,
+    network: "eip155:1",
+    to: RECIPIENT,
+    amount: 10n ** 15n,
+    fee: "slow",
+    verify: VERIFY,
+  });
+
+describe.runIf(RUN)("anvil e2e: a released lower nonce is re-filled", () => {
+  it("a refused send frees its nonce: the next send signs it, not one above", async () => {
+    const port = 18560;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers = manualTimers();
+    const gate = sendGate();
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { ctl, acct, from } = await rig(url, timers, gate.fetch);
+      const aSend = sendE2e(ctl, acct);
+      void aSend.catch(() => undefined);
+      await waitUntil(() => gate.arrived.length === 1);
+      const [a] = Object.values(ctl.getState().txs);
+      const bSend = sendE2e(ctl, acct);
+      await waitUntil(() => gate.arrived.length === 2);
+      gate.refuseFirst(1);
+      gate.release();
+      await expect(aSend).rejects.toThrow(/insufficient funds/);
+      const b = await bSend;
+      expect(b.state).toBe("submitted");
+      expect(b.nonce).toBe(1);
+      expect(ctl.getState().txs[txKey(a)]?.state).toBe("failed");
+      const c = await sendE2e(ctl, acct);
+      expect(c.state).toBe("submitted");
+      expect(c.nonce).toBe(0);
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await timers.fire();
+      const { txs } = ctl.getState();
+      expect(txs[b.id]?.state).toBe("confirmed");
+      expect(txs[c.id]?.state).toBe("confirmed");
+      const count = await rpcCall(url, "eth_getTransactionCount", [from, "latest"]);
+      expect(Number(BigInt(String(count)))).toBe(2);
+    } finally {
+      proc.kill();
+    }
+  }, 120_000);
+
+  it("a lost send dropped after the window frees its nonce the same way", async () => {
+    const port = 18561;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers = manualTimers();
+    const gate = sendGate();
+    gate.release();
+    const clock = { t: 1000 };
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { ctl, acct, from } = await rig(url, timers, gate.fetch, () => clock.t);
+      gate.setDrop(true);
+      const a = await sendE2e(ctl, acct);
+      expect(a.state).toBe("submitted");
+      expect(a.nonce).toBe(0);
+      gate.setDrop(false);
+      const b = await sendE2e(ctl, acct);
+      expect(b.state).toBe("submitted");
+      expect(b.nonce).toBe(1);
+      gate.setDrop(true);
+      await timers.fire();
+      clock.t += UNKNOWN_DROP_MS + 1000;
+      await timers.fire();
+      expect(ctl.getState().txs[a.id]?.state).toBe("dropped");
+      gate.setDrop(false);
+      const c = await sendE2e(ctl, acct);
+      expect(c.state).toBe("submitted");
+      expect(c.nonce).toBe(0);
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await timers.fire();
+      const { txs } = ctl.getState();
+      expect(txs[b.id]?.state).toBe("confirmed");
+      expect(txs[c.id]?.state).toBe("confirmed");
+      const count = await rpcCall(url, "eth_getTransactionCount", [from, "latest"]);
+      expect(Number(BigInt(String(count)))).toBe(2);
+    } finally {
+      proc.kill();
+    }
+  }, 120_000);
+
+  it("a send stuck above a gap carries the note until a new send fills it", async () => {
+    const port = 18562;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers = manualTimers();
+    const gate = sendGate();
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { ctl, acct } = await rig(url, timers, gate.fetch);
+      const aSend = sendE2e(ctl, acct);
+      void aSend.catch(() => undefined);
+      await waitUntil(() => gate.arrived.length === 1);
+      const [a] = Object.values(ctl.getState().txs);
+      const bSend = sendE2e(ctl, acct);
+      await waitUntil(() => gate.arrived.length === 2);
+      gate.refuseFirst(1);
+      gate.release();
+      await expect(aSend).rejects.toThrow(/insufficient funds/);
+      const b = await bSend;
+      expect(b.state).toBe("submitted");
+      expect(ctl.getState().txs[txKey(a)]?.state).toBe("failed");
+      await timers.fire();
+      const note =
+        "nonce 0 below this transaction was never sent — the next send from this account fills it";
+      expect(ctl.getState().txs[b.id]?.error).toBe(note);
+      const c = await sendE2e(ctl, acct);
+      expect(c.nonce).toBe(0);
+      await timers.fire();
+      expect(ctl.getState().txs[b.id]?.error).toBeUndefined();
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await timers.fire();
+      const { txs } = ctl.getState();
+      expect(txs[b.id]?.state).toBe("confirmed");
+      expect(txs[c.id]?.state).toBe("confirmed");
+    } finally {
+      proc.kill();
+    }
+  }, 120_000);
+});

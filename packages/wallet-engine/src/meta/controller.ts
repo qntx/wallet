@@ -70,7 +70,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   private readonly lastRemoteCreatedAt = new Map<string, number>();
   private readonly lastExported = new Map<string, string>();
   private readonly timers = new Map<string, () => void>();
-  private readonly inflight = new Set<string>();
+  private readonly inflight = new Map<string, number>();
   private accountsUnsubscribe: (() => void) | undefined;
   private addressBookUnsubscribe: (() => void) | undefined;
 
@@ -156,7 +156,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       return;
     }
     const signer = this.options.nostr.syncSigner(walletId);
-    this.inflight.add(walletId);
+    this.inflight.set(walletId, gen);
     this.setStatus(walletId, { status: "syncing" });
     try {
       const pubkey = await signer.getPublicKey();
@@ -207,6 +207,12 @@ export class MetaSyncController extends Controller<MetaSyncState> {
           this.options.logger.warn(`meta sync: unreadable remote doc (${error})`);
           return; // not in `pulled` — debounced publishes stay blocked too
         }
+        // The decrypted doc was built by the session that asked for it — if the vault locked and
+        // reopened while the decrypt/decode was in flight, it belongs to a dead session and must
+        // never merge into the new one's tree.
+        if (gen !== this.generation) {
+          return;
+        }
         const merge = this.options.accounts.mergeMeta(walletId, doc);
         const contacts = await this.options.addressBook.merge(doc.contacts);
         if (gen !== this.generation) {
@@ -229,7 +235,11 @@ export class MetaSyncController extends Controller<MetaSyncState> {
         this.options.logger.warn("meta sync pull failed", error);
       }
     } finally {
-      this.inflight.delete(walletId);
+      /* Only this generation's own entry goes — a lock→unlock may have already started the new
+         session's pull for the same wallet. */
+      if (this.inflight.get(walletId) === gen) {
+        this.inflight.delete(walletId);
+      }
     }
   }
 

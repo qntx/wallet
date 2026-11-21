@@ -48,7 +48,8 @@ export type TxBlock = {
 /**
  * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
  * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
- * `ended` is a terminal answer the tracker stops on.
+ * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says why
+ * the transaction cannot land yet, `undefined` clears an earlier note.
  */
 export type TxPoll =
   | {
@@ -58,7 +59,8 @@ export type TxPoll =
       readonly final: boolean;
     }
   | { readonly kind: "reorged" }
-  | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" };
+  | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" }
+  | { readonly kind: "waiting"; readonly error: string | undefined };
 
 /** In a block but not final yet: tracked at the finality interval. */
 export const awaitingFinality = (tx: TrackedTransaction): boolean =>
@@ -113,6 +115,13 @@ export type TrackedTransaction = {
   readonly final?: boolean | undefined;
   /** Solana only — the blockhash expiry that turns an unconfirmed tx `dropped`. */
   readonly lastValidBlockHeight?: number;
+  /**
+   * Solana only — a durable-nonce transaction has no block-height expiry: `account` is the nonce
+   * account and `value` the nonce its first instruction advances, read back on each poll. `account`
+   * is undefined when the message loads it from a lookup table: nothing to read on it, so the
+   * transaction is never dropped — only resolved by landing.
+   */
+  readonly durableNonce?: { readonly account: string | undefined; readonly value: string };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */
@@ -375,7 +384,11 @@ export type RouteContext = {
   readonly options: Options;
   /**
    * Applies `next` to `tx` and persists the row. A locked vault skips the write — unless `durable`,
-   * which throws instead: signed bytes must be on disk before they leave.
+   * which throws instead: signed bytes must be on disk before they leave. Only a durable call may
+   * throw on a store failure: a failed non-durable write is retried by the next poll, since the
+   * bytes it describes may already be out. The context belongs to the session that created it:
+   * after a lock→unlock its calls are ignored (`durable` still throws), so a stale async result
+   * never writes into the new session.
    */
   readonly transition: (
     tx: TrackedTransaction,

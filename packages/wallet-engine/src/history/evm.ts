@@ -62,6 +62,35 @@ const sameAddress = (a: unknown, b: unknown): boolean =>
 
 const isHex = (v: string): v is Hex => /^0x[0-9a-fA-F]*$/.test(v);
 
+/**
+ * A provider claim's identity: two transfers equal on every chain-meaningful field are one claim —
+ * a gateway listing the same movement twice must never produce two changes or two claim checks.
+ */
+const claimKey = (t: HistoryTransfer): string =>
+  [
+    t.kind,
+    t.contract?.toLowerCase() ?? "",
+    t.from.toLowerCase(),
+    t.to?.toLowerCase() ?? "",
+    t.amount,
+    t.tokenId ?? "",
+    t.logIndex ?? "",
+  ].join(" ");
+
+const collapseClaims = (transfers: ReadonlyArray<HistoryTransfer>): HistoryTransfer[] => {
+  const seen = new Set<string>();
+  const claims: HistoryTransfer[] = [];
+  for (const t of transfers) {
+    const key = claimKey(t);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    claims.push(t);
+  }
+  return claims;
+};
+
 const directionOf = (changes: ReadonlyArray<HistoryChange>): HistoryEntry["direction"] => {
   const ins = changes.some((c) => c.direction === "in");
   const outs = changes.some((c) => c.direction === "out");
@@ -72,6 +101,32 @@ const directionOf = (changes: ReadonlyArray<HistoryChange>): HistoryEntry["direc
     return "in";
   }
   return outs ? "out" : "self";
+};
+
+/**
+ * Token warnings over every listed transfer — flags are display metadata, so a claim dropped as a
+ * duplicate still contributes its symbol's warnings.
+ */
+const tokenFlagScan = (
+  chainId: number,
+  address: string,
+  transfers: ReadonlyArray<HistoryTransfer>,
+): HistoryFlag[] => {
+  const flags: HistoryFlag[] = [];
+  for (const t of transfers) {
+    const native = t.kind === "native" || t.kind === "internal";
+    const fromOwn = sameAddress(t.from, address);
+    const toOwn = sameAddress(t.to, address);
+    if (native || t.contract === null || fromOwn === toOwn) {
+      continue;
+    }
+    const symbol =
+      lookupEvmToken(evmTokenTable, chainId, t.contract)?.symbol ?? t.symbol ?? undefined;
+    for (const flag of tokenFlags(chainId, t.contract, symbol)) {
+      flags.push(flag);
+    }
+  }
+  return flags;
 };
 
 /**
@@ -89,8 +144,8 @@ export const evmHistoryEntry = (
 ): HistoryEntry => {
   const changes: HistoryChange[] = [];
   const counterparties = new Set<string>();
-  const flags = new Set<HistoryFlag>();
-  for (const t of item.transfers) {
+  const flags = new Set<HistoryFlag>(tokenFlagScan(chainId, address, item.transfers));
+  for (const t of collapseClaims(item.transfers)) {
     const fromOwn = sameAddress(t.from, address);
     const toOwn = sameAddress(t.to, address);
     if (!fromOwn && !toOwn) {
@@ -128,11 +183,6 @@ export const evmHistoryEntry = (
     if (change.amount === "0") {
       flags.add("zero-value-transfer");
     }
-    if (!native && t.contract !== null) {
-      for (const flag of tokenFlags(chainId, t.contract, symbol)) {
-        flags.add(flag);
-      }
-    }
     changes.push(change);
   }
   return {
@@ -153,10 +203,19 @@ export const evmHistoryEntry = (
 };
 
 /** A contradiction between the provider claim and the chain: `chain-mismatch`, unverified. */
-const MISMATCH = { match: false, checkable: true } as const;
+const MISMATCH = { kind: "mismatch" } as const;
 /** The ledger cannot answer for this transfer (internal, or no pinned log) — never a mismatch. */
-const UNCHECKABLE = { match: true, checkable: false } as const;
-const MATCH = { match: true, checkable: true } as const;
+const UNCHECKABLE = { kind: "uncheckable" } as const;
+
+/**
+ * A claim's verdict against the chain: a match carries the movement key it binds — the receipt log
+ * index (plus the token id inside an ERC-1155 batch) or the tx's native leg — so a second claim on
+ * the same movement is caught.
+ */
+type Check =
+  | typeof MISMATCH
+  | typeof UNCHECKABLE
+  | { readonly kind: "match"; readonly key: string };
 
 const nativeCheck = (tx: Tx | undefined, t: HistoryTransfer): boolean =>
   tx !== undefined &&
@@ -217,39 +276,59 @@ const erc721Check = (log: Log | undefined, t: HistoryTransfer): boolean => {
   );
 };
 
+/**
+ * The amount of `t.tokenId` its pinned ERC-1155 log moved from the claim's `from` to `to`: a
+ * TransferSingle's own value, or the per-id sum inside a TransferBatch — every (ids[i], values[i])
+ * pair applies, a duplicated id included, so a claim for id k must carry the sum over all its
+ * entries in the batch, not one occurrence.
+ */
 const erc1155Check = (log: Log | undefined, t: HistoryTransfer): boolean => {
   if (log === undefined || !sameAddress(log.address, t.contract) || t.tokenId === null) {
     return false;
   }
   const event = decode(erc1155Abi, log);
-  const tokenId = BigInt(t.tokenId);
+  const id = BigInt(t.tokenId);
   const amount = BigInt(t.amount);
   if (event?.eventName === "TransferSingle") {
+    const { value } = event.args;
     return (
       sameAddress(event.args["from"], t.from) &&
       sameAddress(event.args["to"], t.to) &&
-      event.args["id"] === tokenId &&
-      event.args["value"] === amount
+      event.args["id"] === id &&
+      typeof value === "bigint" &&
+      value === amount
     );
   }
   if (event?.eventName === "TransferBatch") {
+    if (!sameAddress(event.args["from"], t.from) || !sameAddress(event.args["to"], t.to)) {
+      return false;
+    }
     const { ids } = event.args;
     const { values } = event.args;
-    const index = Array.isArray(ids) ? ids.indexOf(tokenId) : -1;
-    return (
-      index >= 0 &&
-      sameAddress(event.args["from"], t.from) &&
-      sameAddress(event.args["to"], t.to) &&
-      Array.isArray(values) &&
-      values[index] === amount
-    );
+    if (!Array.isArray(ids) || !Array.isArray(values) || ids.length !== values.length) {
+      return false;
+    }
+    let sum = 0n;
+    let found = false;
+    for (let i = 0; i < ids.length; i += 1) {
+      const value: unknown = values[i];
+      if (ids[i] === id && typeof value === "bigint") {
+        sum += value;
+        found = true;
+      }
+    }
+    return found && sum === amount;
   }
   return false;
 };
 
-type Check = { readonly match: boolean; readonly checkable: boolean };
-
-const transferCheck = (receipt: Receipt, tx: Tx | undefined, t: HistoryTransfer): Check => {
+/**
+ * One provider claim against the chain: `mismatch` when its pinned log — or the tx, for a native
+ * claim — contradicts it; `uncheckable` when the ledger cannot answer — an internal leg, a token
+ * claim without its contract or pinned log, or a native claim consistent with the tx but backed by
+ * no native movement (a zero-value or failed transaction). A match binds one movement key.
+ */
+const claimCheck = (receipt: Receipt, tx: Tx | undefined, t: HistoryTransfer): Check => {
   if (t.kind === "internal") {
     // Internal value moves leave no receipt log — the provider claim stands unproven.
     return UNCHECKABLE;
@@ -259,14 +338,32 @@ const transferCheck = (receipt: Receipt, tx: Tx | undefined, t: HistoryTransfer)
     if (tx === undefined) {
       return UNCHECKABLE;
     }
-    return nativeCheck(tx, t) ? MATCH : MISMATCH;
+    if (!nativeCheck(tx, t)) {
+      return MISMATCH;
+    }
+    // Consistent with the tx yet no native movement exists — the tx moved nothing or failed.
+    if (BigInt(tx.value) === 0n || receipt.status === "0x0") {
+      return UNCHECKABLE;
+    }
+    return { kind: "match", key: "native" };
   }
   if (t.contract === null || t.logIndex === null) {
     return UNCHECKABLE;
   }
+  const logIndex = BigInt(t.logIndex);
   const log = logAt(receipt, t);
-  const check = t.kind === "erc20" ? erc20Check : t.kind === "erc721" ? erc721Check : erc1155Check;
-  return check(log, t) ? MATCH : MISMATCH;
+  if (t.kind === "erc20") {
+    return erc20Check(log, t) ? { kind: "match", key: `erc20:${logIndex}` } : MISMATCH;
+  }
+  if (t.kind === "erc721") {
+    return erc721Check(log, t) ? { kind: "match", key: `erc721:${logIndex}` } : MISMATCH;
+  }
+  if (t.tokenId === null) {
+    return MISMATCH;
+  }
+  return erc1155Check(log, t)
+    ? { kind: "match", key: `erc1155:${logIndex}:${BigInt(t.tokenId)}` }
+    : MISMATCH;
 };
 
 /** A raw JSON-RPC call on the client transport; the result is schema-checked by the caller. */
@@ -296,13 +393,15 @@ const mapPool = async <T, R>(items: ReadonlyArray<T>, n: number, run: (t: T) => 
 };
 
 /**
- * One wallet-touching movement the chain proves: a token leg pinned to its log index (plus the
- * token id inside an ERC-1155 batch), or the tx's native value leg.
+ * One wallet-touching movement the chain proves: an ERC-20 leg, an ERC-721 leg, an ERC-1155 leg —
+ * one per (logIndex, id), a TransferBatch's repeated ids summed — or the tx's native value leg.
+ * `key` is the movement's claim binding: a claim at the same key must decode from the same log to
+ * match, so the decoded content itself does not have to ride along here.
  */
-type OwnMove =
-  | { readonly kind: "erc20" | "erc721"; readonly logIndex: bigint }
-  | { readonly kind: "erc1155"; readonly logIndex: bigint; readonly tokenId: bigint }
-  | { readonly kind: "native" };
+type OwnMove = {
+  readonly kind: "erc20" | "erc721" | "erc1155" | "native";
+  readonly key: string;
+};
 
 /**
  * Every movement that touched the wallet in this transaction, decoded from the receipt's logs and
@@ -327,8 +426,15 @@ const ownMovements = (
     const logIndex = BigInt(log.logIndex);
     if (log.topics.length === 3) {
       const event = decode(erc20Abi, log);
-      if (event?.eventName === "Transfer" && touches(event.args["from"], event.args["to"])) {
-        moves.push({ kind: "erc20", logIndex });
+      const from = event?.args["from"];
+      const to = event?.args["to"];
+      const value = event?.args["value"];
+      if (event?.eventName === "Transfer") {
+        if (typeof from !== "string" || typeof to !== "string" || typeof value !== "bigint") {
+          provable = false;
+        } else if (touches(from, to)) {
+          moves.push({ kind: "erc20", key: `erc20:${logIndex}` });
+        }
       }
       continue;
     }
@@ -336,29 +442,63 @@ const ownMovements = (
       continue;
     }
     const multi = decode(erc1155Abi, log);
-    if (multi?.eventName === "TransferSingle" && touches(multi.args["from"], multi.args["to"])) {
-      const tokenId = multi.args["id"];
-      if (typeof tokenId === "bigint") {
-        moves.push({ kind: "erc1155", logIndex, tokenId });
-      } else {
+    const from = multi?.args["from"];
+    const to = multi?.args["to"];
+    if (multi?.eventName === "TransferSingle") {
+      const { id } = multi.args;
+      const { value } = multi.args;
+      if (
+        typeof from !== "string" ||
+        typeof to !== "string" ||
+        typeof id !== "bigint" ||
+        typeof value !== "bigint"
+      ) {
         provable = false;
+      } else if (touches(from, to)) {
+        moves.push({ kind: "erc1155", key: `erc1155:${logIndex}:${id}` });
       }
       continue;
     }
-    if (multi?.eventName === "TransferBatch" && touches(multi.args["from"], multi.args["to"])) {
-      const tokenIds = multi.args["ids"];
-      if (Array.isArray(tokenIds) && tokenIds.every((id): id is bigint => typeof id === "bigint")) {
-        for (const tokenId of tokenIds) {
-          moves.push({ kind: "erc1155", logIndex, tokenId });
-        }
-      } else {
+    if (multi?.eventName === "TransferBatch") {
+      const { ids } = multi.args;
+      const { values } = multi.args;
+      const legible =
+        typeof from === "string" &&
+        typeof to === "string" &&
+        Array.isArray(ids) &&
+        Array.isArray(values) &&
+        ids.length === values.length &&
+        ids.every((id) => typeof id === "bigint") &&
+        values.every((value) => typeof value === "bigint");
+      if (!legible) {
         provable = false;
+      } else if (touches(from, to)) {
+        /* Every (ids[i], values[i]) pair applies — a duplicated id included — so the movements
+           aggregate per (logIndex, id) with the values summed. */
+        const sums = new Map<bigint, bigint>();
+        for (let i = 0; i < ids.length; i += 1) {
+          const id = ids[i];
+          const value = values[i];
+          if (typeof id === "bigint" && typeof value === "bigint") {
+            sums.set(id, (sums.get(id) ?? 0n) + value);
+          }
+        }
+        for (const id of sums.keys()) {
+          moves.push({ kind: "erc1155", key: `erc1155:${logIndex}:${id}` });
+        }
       }
       continue;
     }
     const event = decode(erc721Abi, log);
-    if (event?.eventName === "Transfer" && touches(event.args["from"], event.args["to"])) {
-      moves.push({ kind: "erc721", logIndex });
+    const efrom = event?.args["from"];
+    const eto = event?.args["to"];
+    const tokenId = event?.args["tokenId"];
+    if (event?.eventName === "Transfer") {
+      if (typeof efrom !== "string" || typeof eto !== "string" || typeof tokenId !== "bigint") {
+        provable = false;
+      } else if (touches(efrom, eto)) {
+        moves.push({ kind: "erc721", key: `erc721:${logIndex}` });
+      }
     }
   }
   if (
@@ -367,41 +507,18 @@ const ownMovements = (
     BigInt(tx.value) > 0n &&
     touches(tx.from, tx.to)
   ) {
-    moves.push({ kind: "native" });
+    moves.push({ kind: "native", key: "native" });
   }
   return { moves, provable };
 };
 
 /**
- * Whether the provider's transfer list accounts for `move`: same kind pinned at the same log index
- * (plus the same token id inside an ERC-1155 batch), or a native claim matching the tx's legs.
- */
-const claimedMove = (
-  move: OwnMove,
-  transfers: ReadonlyArray<HistoryTransfer>,
-  tx: Tx | undefined,
-): boolean =>
-  transfers.some((t) => {
-    if (move.kind === "native") {
-      return (
-        t.kind === "native" &&
-        tx !== undefined &&
-        sameAddress(t.from, tx.from) &&
-        sameAddress(t.to, tx.to)
-      );
-    }
-    if (t.kind !== move.kind || t.logIndex === null || BigInt(t.logIndex) !== move.logIndex) {
-      return false;
-    }
-    return move.kind !== "erc1155" || (t.tokenId !== null && BigInt(t.tokenId) === move.tokenId);
-  });
-
-/**
- * Verifies the provider's claims against the chain: each claimed transfer is matched to its pinned
- * receipt log or to the tx's native movement, and every wallet-touching movement the chain proves
- * must in turn be claimed — an omitted leg is `chain-mismatch`. A failed tx fetch, an unpinned log,
- * or an uncheckable claim (internal legs or missing data) leaves the entry unverified; `trusted` is
- * the caller's evidence that the reads went to a host endpoint.
+ * Verifies the provider's claims against the chain one-to-one: identical claims collapse into one,
+ * each remaining claim is matched to its pinned receipt log or to the tx's native movement and
+ * binds that movement's key — a second claim on a matched movement is `chain-mismatch` — and every
+ * wallet-touching movement the chain proves must in turn be claimed. A failed tx fetch, an unpinned
+ * log, or an uncheckable claim (internal legs or missing data) leaves the entry unverified;
+ * `trusted` is the caller's evidence that the reads went to a host endpoint.
  */
 const verifyEntry = async (
   client: PublicClient,
@@ -439,16 +556,26 @@ const verifyEntry = async (
   } catch {
     tx = undefined;
   }
-  for (const t of item.transfers) {
-    const check = transferCheck(receipt, tx, t);
-    if (!check.match) {
+  const { moves, provable } = ownMovements(receipt, tx, address);
+  const claimed = new Set<string>();
+  for (const t of collapseClaims(item.transfers)) {
+    const check = claimCheck(receipt, tx, t);
+    if (check.kind === "mismatch") {
       return mismatch();
     }
-    uncheckable ||= !check.checkable;
+    if (check.kind === "uncheckable") {
+      uncheckable = true;
+      continue;
+    }
+    /* Each movement may be matched by at most one claim — after collapsing identical claims a
+       second bind on a key is impossible by construction; it is asserted anyway. */
+    if (claimed.has(check.key)) {
+      return mismatch();
+    }
+    claimed.add(check.key);
   }
-  const { moves, provable } = ownMovements(receipt, tx, address);
   for (const move of moves) {
-    if (!claimedMove(move, item.transfers, tx)) {
+    if (!claimed.has(move.key)) {
       return mismatch();
     }
   }

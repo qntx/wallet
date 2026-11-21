@@ -227,6 +227,11 @@ type EvmWire = {
   readonly held: ReadonlyArray<number>;
   /** A replacement shares its nonce with the live original instead of owning it alone. */
   readonly shared: boolean;
+  /**
+   * The chain count the build computed its nonce against (the original's nonce for a replacement):
+   * `reserve` refuses to sign when a lower nonce is free again below the hold.
+   */
+  readonly base: number;
 };
 
 const signSubmit = async (
@@ -247,7 +252,7 @@ const signSubmit = async (
     raw = wire.finalize(result);
     /* The nonce becomes this transaction's own in the same segment as the request's commit:
        an overlapping send can never sign it, a refused broadcast frees only this hold. */
-    wire.nonces.reserve(tx.id, tx.network, account.from, wire.held, wire.shared);
+    wire.nonces.reserve(tx.id, tx.network, account.from, wire.held, wire.shared, wire.base);
     try {
       commit();
     } catch (error) {
@@ -964,19 +969,18 @@ export const createEvmRoute = (): EvmRoute => {
       independent.kind === "unavailable" ? "reads-unverified" : undefined,
     ];
 
-    let nonce = Math.max(await evm.pendingCount(client, from), nonces.next(network, from));
+    const primary = await evm.pendingCount(client, from);
+    let chain = primary;
     if (independent.kind === "available") {
       try {
-        const [primary, other] = await Promise.all([
-          evm.pendingCount(client, from),
-          evm.pendingCount(independent.client, from),
-        ]);
-        nonce = Math.max(nonce, other);
+        const other = await evm.pendingCount(independent.client, from);
+        chain = Math.max(primary, other);
         flags.push(primary === other ? undefined : "nonce-mismatch");
       } catch {
         flags.push("reads-unverified");
       }
     }
+    const nonce = nonces.next(network, from, chain);
     const unsigned = await evm.build(client, network, from, spec.intent, nonce);
     const quotes = await evm.estimateFee(client);
     let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
@@ -1062,6 +1066,7 @@ export const createEvmRoute = (): EvmRoute => {
           nonces,
           held: heldNonces(feed),
           shared: false,
+          base: chain,
         },
         commit,
       );
@@ -1076,10 +1081,19 @@ export const createEvmRoute = (): EvmRoute => {
       simulation,
       resimulate: async () =>
         evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer, delegatedCode),
-      staleReason: () =>
-        nonces.taken(network, from, unsigned.nonce)
-          ? "nonce already used by a newer transaction — start over"
-          : undefined,
+      staleReason: () => {
+        for (const held of heldNonces(feed)) {
+          if (nonces.taken(network, from, held)) {
+            return "nonce already used by a newer transaction — start over";
+          }
+        }
+        /* A prepared-but-unsigned request does not hold its nonce: a lower nonce freed since the
+           build makes this one a gap its signature would widen. */
+        const gap = nonces.gap(network, from, chain, unsigned.nonce);
+        return gap === undefined
+          ? undefined
+          : `nonce ${String(gap)} is free again — an earlier transaction was not sent; start over`;
+      },
       submit,
       release: () => undefined,
     };
@@ -1894,6 +1908,7 @@ export const createEvmRoute = (): EvmRoute => {
           nonces,
           held: heldNonces(unsigned),
           shared: true,
+          base: old.nonce,
         },
         commit,
       );
@@ -2005,7 +2020,8 @@ export const createEvmRoute = (): EvmRoute => {
     };
     watching.set(tx.id, watch);
 
-    if ((await evm.confirmedCount(client, record.from)) > tx.nonce) {
+    const confirmed = await evm.confirmedCount(client, record.from);
+    if (confirmed > tx.nonce) {
       const late = await evm.receipt(client, hash);
       if (late !== undefined) {
         watching.delete(tx.id);
@@ -2023,6 +2039,22 @@ export const createEvmRoute = (): EvmRoute => {
     }
     watch.consumed = 0;
 
+    /* A lower nonce free again means an earlier transaction never reached the network: this one
+       cannot land until a send fills it. An external pool transaction at that nonce is not a
+       gap — geth's pending count excludes queued gapped transactions but counts the ones that
+       can execute — so when it is higher it is the gap's base instead. */
+    let gap = nonces.gap(tx.network, record.from, confirmed, tx.nonce);
+    if (gap !== undefined) {
+      const pending = await evm.pendingCount(client, record.from);
+      gap = nonces.gap(tx.network, record.from, Math.max(confirmed, pending), tx.nonce);
+    }
+    const note =
+      gap === undefined
+        ? undefined
+        : `nonce ${String(gap)} below this transaction was never sent — the next send from this account fills it`;
+    const waiting = (): TxPoll | undefined =>
+      tx.error === note ? undefined : { kind: "waiting", error: note };
+
     const replacerLive = sameNonce(ctx, tx, record.from).some(
       (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
     );
@@ -2030,14 +2062,14 @@ export const createEvmRoute = (): EvmRoute => {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return undefined;
+      return waiting();
     }
 
     if (await evm.known(client, hash)) {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return undefined;
+      return waiting();
     }
     const now = ctx.options.now();
     watch.unknownSince ??= now;
@@ -2056,7 +2088,7 @@ export const createEvmRoute = (): EvmRoute => {
       watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;
     }
-    return undefined;
+    return waiting();
   };
 
   const readDelegationState = async (
@@ -2092,7 +2124,7 @@ export const createEvmRoute = (): EvmRoute => {
         nonces.spend(tx.id, tx.network, record.from, heldNoncesOf(tx));
         return;
       }
-      nonces.reserve(tx.id, tx.network, record.from, heldNoncesOf(tx), true);
+      nonces.reserve(tx.id, tx.network, record.from, heldNoncesOf(tx), true, tx.nonce);
     },
     reopen: (tx) => {
       watching.delete(tx.id);

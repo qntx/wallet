@@ -141,14 +141,50 @@ export type EngineOptions = {
 export type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
 
 /**
- * A controller as hosts hold it: its state, read-only, and the methods named in `K`. Lifecycle and
- * the wiring between controllers stay with the engine, and a method added to a controller is not
- * host API until it is listed here.
+ * Read-only view all the way down: primitives and functions pass through, `Uint8Array` and the
+ * other ArrayBuffer views stay as-is (they are runtime-frozen only as objects, and their contents
+ * are engine inputs anyway — the runtime freeze cannot cover them), arrays become ReadonlyArray,
+ * Map/Set their readonly twins, and every other object is mapped readonly recursively.
+ */
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends
+        | Uint8Array
+        | Uint8ClampedArray
+        | Int8Array
+        | Int16Array
+        | Int32Array
+        | Uint16Array
+        | Uint32Array
+        | Float16Array
+        | Float32Array
+        | Float64Array
+        | BigInt64Array
+        | BigUint64Array
+        | DataView
+    ? T
+    : T extends ReadonlyArray<infer E>
+      ? ReadonlyArray<DeepReadonly<E>>
+      : T extends ReadonlyMap<infer K, infer V>
+        ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
+        : T extends ReadonlySet<infer E>
+          ? ReadonlySet<DeepReadonly<E>>
+          : T extends Record<PropertyKey, unknown>
+            ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+            : T;
+
+/**
+ * A controller as hosts hold it: its state, deeply read-only, and the methods named in `K`.
+ * Lifecycle and the wiring between controllers stay with the engine, and a method added to a
+ * controller is not host API until it is listed here.
  */
 export type HostController<
   C extends Controller<Record<string, unknown>>,
   K extends Exclude<keyof C, "store">,
-> = Pick<C, "getState" | K> & { readonly store: ReadonlyStore<ReturnType<C["getState"]>> };
+> = Pick<C, Exclude<K, "getState">> & {
+  readonly getState: () => DeepReadonly<ReturnType<C["getState"]>>;
+  readonly store: ReadonlyStore<DeepReadonly<ReturnType<C["getState"]>>>;
+};
 
 export type WalletEngine = {
   readonly networks: HostController<
@@ -611,7 +647,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           kind: "solana.transactions" as const,
           send: true,
           signatures: batch.ids,
-          ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+          ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
         };
       }
       normalizeSolana(
@@ -654,7 +690,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids, refused } = await signDappPsbts(
+      const { signedPsbts, txids, stopped } = await signDappPsbts(
         chains(options.wallet),
         prepared,
         send,
@@ -666,7 +702,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         kind: "bitcoin.psbts" as const,
         signedPsbts,
         txids,
-        ...(refused === undefined ? {} : { refused }),
+        ...(stopped === undefined ? {} : { stopped }),
       };
     },
     bitcoinSign: async (account, network, request, verify) => {
