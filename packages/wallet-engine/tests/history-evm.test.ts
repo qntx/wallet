@@ -164,8 +164,11 @@ describe("evmHistoryStream verification", () => {
       items,
       "0xda98151f32d7fb8c8daad5849363590ca179c6511b3f7d7e6d613d50072b0533",
     );
-    expect(zero?.verified).toBe(true);
+    // A zero-value native claim is consistent with the tx but no movement exists for the ledger
+    // to bind — uncheckable, never verified, never a mismatch.
+    expect(zero?.verified).toBe(false);
     expect(zero?.flags).toContain("zero-value-transfer");
+    expect(zero?.flags).not.toContain("chain-mismatch");
 
     const mint = entryOf(
       items,
@@ -192,7 +195,7 @@ describe("evmHistoryStream verification", () => {
     expect(primaryCalls).toHaveLength(0);
   });
 
-  it("treats a contract-less token claim as uncheckable — skipped for changes, no mismatch", async () => {
+  it("a contract-less token claim is uncheckable and cannot claim the movement it likely means", async () => {
     const hash = "0x979e19a53feb2c15122009b523c48f66df025de6ff54db5290c567eac324f181";
     const { stream: s } = stream({
       network: "eip155:1",
@@ -202,8 +205,10 @@ describe("evmHistoryStream verification", () => {
     const { items } = await s.next();
     const e = entryOf(items, hash);
     expect(e?.changes).toStrictEqual([]);
+    // The claim carries no contract, so it binds no movement; the wallet-touching erc20 leg the
+    // chain actually moved then stands unclaimed — an omitted leg is a mismatch.
     expect(e?.verified).toBe(false);
-    expect(e?.flags).not.toContain("chain-mismatch");
+    expect(e?.flags).toContain("chain-mismatch");
   });
 
   it("leaves an internal claim unverified without flagging a mismatch", async () => {

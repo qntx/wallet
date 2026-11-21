@@ -72,6 +72,8 @@ const make = (options: {
   readonly solanaRpc?: { readonly call: (method: string, params: unknown[]) => Promise<unknown> };
   readonly solanaIndependent?: unknown;
   readonly evmIndependent?: "available" | "unavailable" | "not-needed";
+  /** The value the `eth_getTransactionByHash` answer carries; "0x0" when unset. */
+  readonly txValue?: string;
   readonly store?: EngineStore;
   readonly failAccounts?: boolean;
   /** Gateway requests carrying one of these `address`es hang until `respond()`. */
@@ -115,7 +117,7 @@ const make = (options: {
         if (method === "eth_getTransactionByHash") {
           const block = blockOf.get(params[0] as string);
           return Promise.resolve(
-            block === undefined ? null : { from: OTHER, to: OWNER, value: "0x0" },
+            block === undefined ? null : { from: OTHER, to: OWNER, value: options.txValue ?? "0x0" },
           );
         }
         const block = blockOf.get(params[0] as string);
@@ -456,7 +458,7 @@ describe("HistoryController", () => {
               to: OWNER,
               contract: null,
               tokenId: null,
-              amount: "0",
+              amount: "5",
               decimals: null,
               symbol: null,
               logIndex: null,
@@ -466,13 +468,13 @@ describe("HistoryController", () => {
       ],
       cursor: null,
     };
-    const trusted = make({ page: nativePage, evmIndependent: "available" });
+    const trusted = make({ page: nativePage, evmIndependent: "available", txValue: "0x5" });
     await trusted.controller.init();
     await trusted.controller.load(GROUP);
     expect(trusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(true);
     trusted.controller.lock();
 
-    const untrusted = make({ page: nativePage });
+    const untrusted = make({ page: nativePage, txValue: "0x5" });
     await untrusted.controller.init();
     await untrusted.controller.load(GROUP);
     expect(untrusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(false);
