@@ -62,6 +62,7 @@ const maxCostLogsBatch = () =>
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("health and identity", () => {
@@ -886,6 +887,48 @@ describe("esplora forwarding", () => {
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("30");
   });
+
+  // The streamed body outlives its attempt, so the route gives it a 30 s deadline of its own;
+  // the test controls that deadline instead of waiting it out (vi.spyOn, no fake timers: the
+  // upstream signal AbortSignal.timeout produces must be a real abortable signal).
+  it(
+    "aborts an upstream body still streaming past the attempt at its own deadline",
+    {
+      timeout: 5000,
+    },
+    async () => {
+      const deadline = new AbortController();
+      const deadlines: number[] = [];
+      vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        deadlines.push(ms);
+        return deadline.signal;
+      });
+      const up = fakeFetch({
+        "https://a.test/btc": (_call, signal) =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                signal.addEventListener("abort", () => {
+                  controller.error(new DOMException("aborted", "AbortError"));
+                });
+              },
+            }),
+            { status: 200, headers: { "content-type": "text/plain" } },
+          ),
+      });
+      const res = await gateway({ fetch: up.fetch }).request(`${base}/block-height/0`, {
+        headers: headers(),
+      });
+      expect(res.status).toBe(200);
+      expect(deadlines).toStrictEqual([30_000]);
+      const read = res.text().then(
+        () => "completed",
+        () => "aborted",
+      );
+      deadline.abort();
+      await expect(read).resolves.toBe("aborted");
+    },
+  );
 });
 
 describe("upstream response bounds", () => {

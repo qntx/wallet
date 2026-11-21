@@ -1,7 +1,7 @@
 /* oxlint-disable vitest/no-conditional-in-test -- the flatMap each already encodes the matrix */
 import { describe, expect, it } from "vite-plus/test";
 
-import { networkById } from "@qntx/wallet-engine/gateway/contract";
+import { PROVIDERS_HEADER, networkById } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
@@ -92,6 +92,61 @@ describe("upstream auth", () => {
     expect(r.status).toBe(200);
     const plain = callsTo("https://plain.test")[0]?.headers as Record<string, string>;
     expect(plain["authorization"]).toBeUndefined();
+  });
+
+  it("fails a broadcast over when the first provider's auth throws, never fetching it", async () => {
+    const txid = "ab".repeat(32);
+    const { fetch, callsTo } = fakeFetch({
+      "https://keyed.test": () => rpcOk(`0x${txid}`),
+      "https://plain.test": () => rpcOk(`0x${txid}`),
+      "https://bs-keyed.test": () => new Response("x"),
+      "https://bs-plain.test": () =>
+        new Response(txid, { status: 200, headers: { "content-type": "text/plain" } }),
+    });
+    const authDown = async () => {
+      await Promise.resolve();
+      throw new Error("auth down");
+    };
+    const app = createGateway({
+      fetch,
+      networks: [
+        NET,
+        {
+          id: BTCNET.id,
+          providers: [
+            { id: "keyed", url: "https://bs-keyed.test/api", auth: "blockstream" as const },
+            { id: "plain", url: "https://bs-plain.test/api" },
+          ],
+        },
+      ],
+      limiters,
+      corsOrigins: [],
+      risk,
+      tokens: memoryRiskStore(),
+      prices,
+      auth: { alchemy: authDown, blockstream: authDown },
+    });
+    const r = await app.fetch(
+      new Request(
+        "https://gw.test/v1/rpc/eip155:11155111",
+        post(call("eth_sendRawTransaction", [`0x${"02".repeat(64)}`])),
+      ),
+    );
+    expect(r.status).toBe(200);
+    expect(r.headers.get(PROVIDERS_HEADER)).toBe("plain");
+    expect(callsTo("https://keyed.test")).toHaveLength(0);
+
+    const e = await app.fetch(
+      new Request("https://gw.test/v1/esplora/bip122:00000008819873e925422c1ff0f99f7c/tx", {
+        method: "POST",
+        headers: headers({ "content-type": "text/plain" }),
+        body: "0200000001",
+      }),
+    );
+    expect(e.status).toBe(200);
+    expect(e.headers.get(PROVIDERS_HEADER)).toBe("plain");
+    await expect(e.text()).resolves.toBe(txid);
+    expect(callsTo("https://bs-keyed.test")).toHaveLength(0);
   });
 
   it("refuses to build when a provider names an unconfigured auth", () => {
