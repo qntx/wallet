@@ -1,73 +1,100 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  HISTORY_CURSOR_MAX,
+  FEE_HISTORY_BLOCKS_MAX,
+  FEE_HISTORY_PERCENTILES_MAX,
+  RPC_PROOF_KEYS_MAX,
+  RPC_SIMULATE_BLOCKS_MAX,
+  RPC_SIMULATE_CALLS_MAX,
   accepts,
-  bridgeQuoteRequest,
-  historyRequest,
-  swapQuoteRequest,
-  swapQuoteSolanaRequest,
+  evmRpcRequest,
 } from "../src/gateway/contract/index.ts";
 
-const ADDRESS = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
-const PUBKEY = "11111111111111111111111111111111";
+const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+const key = (i: number): string => `0x${i.toString(16).padStart(64, "0")}`;
 
-describe("request schemas refuse what the upstream would reject", () => {
-  it.each([
-    ["zero", "0", true],
-    ["int64 max", HISTORY_CURSOR_MAX.toString(), true],
-    ["int64 max + 1", (HISTORY_CURSOR_MAX + 1n).toString(), false],
-    ["2^64", (2n ** 64n).toString(), false],
-    ["4000 digits", "9".repeat(4000), false],
-    ["hex", "0x10", false],
-    ["a fraction", "1.5", false],
-  ])("history cursor %s accepted: %s", (_label, cursor, ok) => {
-    expect(accepts(historyRequest, { address: ADDRESS, cursor })).toBe(ok);
-  });
+const call = (method: string, params: unknown[]) => ({
+  jsonrpc: "2.0" as const,
+  id: 1,
+  method,
+  params,
+});
 
-  const UINT256_MAX = 2n ** 256n - 1n;
-  const swap = (sellAmount: string) => ({
-    network: "eip155:1",
-    sellToken: ADDRESS,
-    buyToken: ADDRESS,
-    sellAmount,
-    taker: ADDRESS,
-    slippageBps: "100",
-  });
-  const bridge = (amount: string) => ({
-    network: "eip155:1",
-    destinationNetwork: "eip155:10",
-    inputToken: ADDRESS,
-    outputToken: ADDRESS,
-    amount,
-    taker: ADDRESS,
-  });
-  const solana = (amount: string) => ({
-    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    inputMint: PUBKEY,
-    outputMint: PUBKEY,
-    amount,
-    taker: PUBKEY,
-    slippageBps: "50",
+const ok = (body: unknown): boolean => accepts(evmRpcRequest, body);
+
+describe("request parameter bounds", () => {
+  it(`accepts ${String(RPC_PROOF_KEYS_MAX)} eth_getProof keys and refuses one more`, () => {
+    expect(
+      ok(
+        call("eth_getProof", [
+          OWNER,
+          Array.from({ length: RPC_PROOF_KEYS_MAX }, (_v, i) => key(i)),
+          "latest",
+        ]),
+      ),
+    ).toBe(true);
+    expect(
+      ok(
+        call("eth_getProof", [
+          OWNER,
+          Array.from({ length: RPC_PROOF_KEYS_MAX + 1 }, (_v, i) => key(i)),
+          "latest",
+        ]),
+      ),
+    ).toBe(false);
   });
 
-  it.each([
-    ["one", "1", true],
-    ["uint256 max", UINT256_MAX.toString(), true],
-    ["uint256 max + 1", (UINT256_MAX + 1n).toString(), false],
-    ["zero", "0", false],
-    ["a leading zero", "01", false],
-  ])("EVM quote amount %s accepted: %s", (_label, amount, ok) => {
-    expect(accepts(swapQuoteRequest, swap(amount))).toBe(ok);
-    expect(accepts(bridgeQuoteRequest, bridge(amount))).toBe(ok);
+  it(`accepts ${String(RPC_SIMULATE_BLOCKS_MAX)} simulate blocks and refuses one more`, () => {
+    const blocks = (n: number) =>
+      Array.from({ length: n }, () => ({ calls: [{ from: OWNER, to: OWNER }] }));
+    expect(ok(call("eth_simulateV1", [{ blockStateCalls: blocks(RPC_SIMULATE_BLOCKS_MAX) }]))).toBe(
+      true,
+    );
+    expect(
+      ok(call("eth_simulateV1", [{ blockStateCalls: blocks(RPC_SIMULATE_BLOCKS_MAX + 1) }])),
+    ).toBe(false);
   });
 
-  it.each([
-    ["one", "1", true],
-    ["u64 max", (2n ** 64n - 1n).toString(), true],
-    ["2^64", (2n ** 64n).toString(), false],
-    ["an exponent", "1e3", false],
-  ])("Solana quote amount %s accepted: %s", (_label, amount, ok) => {
-    expect(accepts(swapQuoteSolanaRequest, solana(amount))).toBe(ok);
+  it(`accepts ${String(RPC_SIMULATE_CALLS_MAX)} simulate calls across blocks and refuses one more`, () => {
+    const block = (calls: number) => ({
+      calls: Array.from({ length: calls }, () => ({ from: OWNER, to: OWNER })),
+    });
+    expect(
+      ok(
+        call("eth_simulateV1", [
+          { blockStateCalls: [block(50), block(RPC_SIMULATE_CALLS_MAX - 50)] },
+        ]),
+      ),
+    ).toBe(true);
+    expect(
+      ok(
+        call("eth_simulateV1", [
+          { blockStateCalls: [block(50), block(RPC_SIMULATE_CALLS_MAX - 50 + 1)] },
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  it(`accepts ${String(FEE_HISTORY_BLOCKS_MAX)} fee-history blocks and refuses one more`, () => {
+    expect(ok(call("eth_feeHistory", [FEE_HISTORY_BLOCKS_MAX, "latest", [50]]))).toBe(true);
+    expect(ok(call("eth_feeHistory", [FEE_HISTORY_BLOCKS_MAX + 1, "latest", [50]]))).toBe(false);
+    expect(
+      ok(call("eth_feeHistory", [`0x${FEE_HISTORY_BLOCKS_MAX.toString(16)}`, "latest", [50]])),
+    ).toBe(true);
+    expect(
+      ok(
+        call("eth_feeHistory", [`0x${(FEE_HISTORY_BLOCKS_MAX + 1).toString(16)}`, "latest", [50]]),
+      ),
+    ).toBe(false);
+  });
+
+  it(`accepts ${String(FEE_HISTORY_PERCENTILES_MAX)} percentiles and refuses one more`, () => {
+    const percentiles = (n: number) => Array.from({ length: n }, (_v, i) => i % 100);
+    expect(
+      ok(call("eth_feeHistory", [10, "latest", percentiles(FEE_HISTORY_PERCENTILES_MAX)])),
+    ).toBe(true);
+    expect(
+      ok(call("eth_feeHistory", [10, "latest", percentiles(FEE_HISTORY_PERCENTILES_MAX + 1)])),
+    ).toBe(false);
   });
 });

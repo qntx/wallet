@@ -98,6 +98,17 @@ export const LOGS_BLOCK_RANGE_MAX = 500;
 export const LOGS_ADDRESS_MAX = 20;
 export const LOGS_TOPIC_ALTERNATIVES_MAX = 20;
 
+/** Eth_getProof storage keys: upstream time scales with them while the published price is flat. */
+export const RPC_PROOF_KEYS_MAX = 100;
+/** Eth_simulateV1 blockStateCalls: upstream time scales with blocks while the price is flat. */
+export const RPC_SIMULATE_BLOCKS_MAX = 16;
+/** Eth_simulateV1 calls across all blocks: upstream time scales with them, the price is flat. */
+export const RPC_SIMULATE_CALLS_MAX = 100;
+/** Eth_feeHistory blockCount: upstream time scales with it while the published price is flat. */
+export const FEE_HISTORY_BLOCKS_MAX = 1024;
+/** Eth_feeHistory rewardPercentiles: upstream time scales with them, the price is flat. */
+export const FEE_HISTORY_PERCENTILES_MAX = 100;
+
 const quantity = z.string().check(z.regex(/^0x[0-9a-fA-F]{1,64}$/));
 const hash32 = z.string().check(z.regex(/^0x[0-9a-fA-F]{64}$/));
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
@@ -186,6 +197,25 @@ export function logsFilterViolation(params: unknown): string | undefined {
     : undefined;
 }
 
+const simulateBlocks = z.array(z.looseObject({ calls: z.optional(z.array(z.unknown())) }));
+
+/** The eth_simulateV1 payload: loose except the bounds its flat price cannot cover. */
+const simulateInput = z.looseObject({}).check(
+  z.refine((input) => {
+    const parsed = z.safeParse(z.looseObject({ blockStateCalls: simulateBlocks }), input);
+    if (!parsed.success) {
+      // No blockStateCalls (or a shape we cannot read): no simulated work to bound.
+      return !("blockStateCalls" in input);
+    }
+    const { blockStateCalls } = parsed.data;
+    return (
+      blockStateCalls.length <= RPC_SIMULATE_BLOCKS_MAX &&
+      blockStateCalls.reduce((sum, block) => sum + (block.calls?.length ?? 0), 0) <=
+        RPC_SIMULATE_CALLS_MAX
+    );
+  }),
+);
+
 /** The params shape each allow-listed EVM method accepts — one entry per method, no wildcards. */
 const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_blobBaseFee: noParams,
@@ -195,9 +225,19 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_createAccessList: z.tuple([callTx, optional(blockParam)], z.unknown()),
   eth_estimateGas: z.tuple([callTx, optional(blockParam)], z.unknown()),
   eth_feeHistory: z.tuple([
-    z.union([quantity, z.int().check(z.nonnegative())]),
+    z.union([quantity, z.int().check(z.nonnegative())]).check(
+      z.refine((count) => {
+        try {
+          return BigInt(count) <= BigInt(FEE_HISTORY_BLOCKS_MAX);
+        } catch {
+          return true; // a malformed count is the union's own refusal, not this bound's
+        }
+      }),
+    ),
     tagOrNumber,
-    optional(z.union([z.array(z.number()), z.null()])),
+    optional(
+      z.union([z.array(z.number()).check(z.maxLength(FEE_HISTORY_PERCENTILES_MAX)), z.null()]),
+    ),
   ]),
   eth_gasPrice: noParams,
   eth_getBalance: z.tuple([evmAddress, optional(blockParam)]),
@@ -210,7 +250,11 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_getLogs: z
     .array(z.unknown())
     .check(z.refine((params) => logsFilterViolation(params) === undefined)),
-  eth_getProof: z.tuple([evmAddress, z.array(z.union([hash32, quantity])), blockParam]),
+  eth_getProof: z.tuple([
+    evmAddress,
+    z.array(z.union([hash32, quantity])).check(z.maxLength(RPC_PROOF_KEYS_MAX)),
+    blockParam,
+  ]),
   eth_getStorageAt: z.tuple([evmAddress, z.union([quantity, hash32]), optional(blockParam)]),
   eth_getTransactionByBlockHashAndIndex: z.tuple([hash32, quantity]),
   eth_getTransactionByBlockNumberAndIndex: z.tuple([tagOrNumber, quantity]),
@@ -219,7 +263,7 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_getTransactionReceipt: z.tuple([hash32]),
   eth_maxPriorityFeePerGas: noParams,
   eth_sendRawTransaction: z.tuple([hexData]),
-  eth_simulateV1: z.tuple([z.looseObject({}), optional(blockParam)]),
+  eth_simulateV1: z.tuple([simulateInput, optional(blockParam)]),
   net_version: noParams,
   web3_clientVersion: noParams,
 };
