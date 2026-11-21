@@ -164,18 +164,25 @@ const vectors = JSON.parse(
   }>;
 };
 
+const decode = (v: (typeof vectors.vectors)[number]): ReturnType<typeof decodeEvm> => {
+  const network = `eip155:${Number.parseInt(v.tx.chainId, 16)}`;
+  return decodeEvm(txReq(v.tx as unknown as EvmTransaction, network), v.signer);
+};
+
 describe("evm-cctp vectors", () => {
-  it.each(vectors.vectors.map((v) => [v.name, v] as const))(
-    "%s decodes to the expected intent",
-    (_name, v) => {
-      const network = `eip155:${Number.parseInt(v.tx.chainId, 16)}`;
-      const intent = decodeEvm(txReq(v.tx as unknown as EvmTransaction, network), v.signer);
-      expect(intent.verifiability).toBe(v.expect.verifiability);
-      if (v.expect.blind === undefined) {
-        expect(intent.hyperliquidDeposit).toMatchObject(v.expect.hyperliquidDeposit ?? {});
-      } else {
-        expect(intent.blind).toBe(v.expect.blind);
-      }
-    },
-  );
+  it.each(
+    vectors.vectors.filter((v) => v.expect.blind === undefined).map((v) => [v.name, v] as const),
+  )("%s decodes to the described deposit", (_name, v) => {
+    const intent = decode(v);
+    expect(intent.verifiability).toBe(v.expect.verifiability);
+    expect(intent.hyperliquidDeposit).toMatchObject(v.expect.hyperliquidDeposit ?? {});
+  });
+
+  it.each(
+    vectors.vectors.filter((v) => v.expect.blind !== undefined).map((v) => [v.name, v] as const),
+  )("%s falls back blind", (_name, v) => {
+    const intent = decode(v);
+    expect(intent.verifiability).toBe(v.expect.verifiability);
+    expect(intent.blind).toBe(v.expect.blind);
+  });
 });
