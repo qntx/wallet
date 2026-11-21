@@ -136,14 +136,17 @@ export const tronLogAddress = (address: string | undefined): string | undefined 
   return undefined;
 };
 
-/** A node's hex `message`/`resMessage` field as UTF-8 when it is printable text, else hex. */
-const decodeMessage = (hex: string): string => {
-  const bytes = hexBytes(hex);
+/** A node's hex `message`/`resMessage` field as UTF-8 when it is printable text, else verbatim. */
+const decodeMessage = (value: string): string => {
+  if (!/^([0-9a-fA-F]{2})*$/.test(value)) {
+    return value; // some nodes answer plain UTF-8, not hex
+  }
+  const bytes = hexBytes(value);
   try {
     const text = utf8.decode(bytes);
-    return printable.test(text) ? text : hex;
+    return printable.test(text) ? text : value;
   } catch {
-    return hex;
+    return value;
   }
 };
 
@@ -251,11 +254,10 @@ export type TronChainParams = {
 export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
   const path = "/wallet/getchainparameters";
   const body = parsed(tronChainParameters, path, await api.post(path, {}));
+  // proto3 emits a zero-valued parameter without `value`: key present = 0, key absent = missing.
   const values = new Map<string, number>();
   for (const entry of body.chainParameter) {
-    if (entry.value !== undefined) {
-      values.set(entry.key, entry.value);
-    }
+    values.set(entry.key, entry.value ?? 0);
   }
   const take = (key: string): bigint => {
     const value = values.get(key);
@@ -287,11 +289,10 @@ export type TronStakeParams = {
 export const stakeParams = async (api: TronApi): Promise<TronStakeParams> => {
   const path = "/wallet/getchainparameters";
   const body = parsed(tronChainParameters, path, await api.post(path, {}));
+  // proto3 emits a zero-valued parameter without `value`: key present = 0, key absent = missing.
   const values = new Map<string, number>();
   for (const entry of body.chainParameter) {
-    if (entry.value !== undefined) {
-      values.set(entry.key, entry.value);
-    }
+    values.set(entry.key, entry.value ?? 0);
   }
   const take = (key: string): bigint => {
     const value = values.get(key);

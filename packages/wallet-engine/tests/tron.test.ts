@@ -268,6 +268,19 @@ describe("tron readers", () => {
     );
   });
 
+  it("chainParams reads a present-but-valueless parameter as proto3 zero", async () => {
+    const body = {
+      chainParameter: [
+        { key: "getEnergyFee" },
+        ...CHAIN_PARAMETER_BODY.chainParameter.filter((e) => e.key !== "getEnergyFee"),
+      ],
+    };
+    await expect(chainParams(api({ "/wallet/getchainparameters": body }))).resolves.toStrictEqual({
+      ...PARAMS,
+      energyFee: 0n,
+    });
+  });
+
   it("chainParams truncates a fractional node value rather than throwing", async () => {
     const body = {
       chainParameter: [
@@ -329,6 +342,21 @@ describe("tron readers", () => {
       { owner: HOLDER, contract: HOLDER, data: new Uint8Array([0xa9, 0x05]) },
     );
     expect(outcome).toStrictEqual({ ok: false, message: "REVERT opcode executed" });
+  });
+
+  it("constantCall passes a non-hex failure message through verbatim", async () => {
+    const outcome = await constantCall(
+      api({
+        "/wallet/triggerconstantcontract": {
+          result: { code: "OTHER_ERROR", message: "Not enough energy for 'SSTORE' operation" },
+        },
+      }),
+      { owner: HOLDER, contract: HOLDER, data: new Uint8Array([0xa9, 0x05]) },
+    );
+    expect(outcome).toStrictEqual({
+      ok: false,
+      message: "Not enough energy for 'SSTORE' operation",
+    });
   });
 
   it("transactionInfo parses an included row and flags a receipt failure", async () => {
