@@ -5,6 +5,7 @@ import { verifyEvent } from "@qntx/nostr";
 import {
   encodeSparkAddress,
   encodeTokenIdentifier,
+  SparkError,
   SparkInputError,
   SparkRequestError,
   SparkTokenBroadcastError,
@@ -16,7 +17,7 @@ import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { PHISHING_REFRESH_MS } from "../src/phishing/controller.ts";
 import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
-import { SparkControllerError } from "../src/spark/errors.ts";
+import { SparkControllerError, categorize } from "../src/spark/errors.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { encodePaymentNote } from "../src/spark/notes.ts";
 import type { PaymentNote } from "../src/spark/notes.ts";
@@ -67,6 +68,10 @@ type FakeClaimOptions = {
   readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
   /** `transfers.history` pages returned in order — a rejected promise exercises the warn path. */
   readonly historyPages?: ReadonlyArray<unknown>;
+  /** `transfers.send` results in order — an Error rejects that attempt, else resolves the params. */
+  readonly sendResults?: ReadonlyArray<unknown>;
+  /** `lightning.pay` results in order — an Error rejects that attempt, else resolves the params. */
+  readonly payResults?: ReadonlyArray<unknown>;
   /** `tokens.balances` results in order — an Error rejects that read, exercising the warn path. */
   readonly tokenPages?: ReadonlyArray<unknown>;
   /** `tokens.transfer` results in order — an Error rejects that attempt, a string returns it. */
@@ -90,6 +95,8 @@ function fakeClient(
   const historyPages = [...(opts.historyPages ?? [])];
   const tokenPages = [...(opts.tokenPages ?? [])];
   const tokenResults = [...(opts.tokenResults ?? [])];
+  const sendResults = [...(opts.sendResults ?? [])];
+  const payResults = [...(opts.payResults ?? [])];
   let lastPage: unknown;
   let lastTokenPage: unknown;
   let streamCalls = 0;
@@ -113,6 +120,10 @@ function fakeClient(
       send: async (o: unknown) => {
         calls.push("send");
         sendArgs.push(o);
+        const result = sendResults.shift() ?? "ok";
+        if (result instanceof Error) {
+          return Promise.reject(result);
+        }
         return Promise.resolve(o);
       },
       history: async () => {
@@ -129,6 +140,10 @@ function fakeClient(
       createInvoice: async (o: unknown) => Promise.resolve(o),
       pay: async (o: unknown) => {
         calls.push("pay");
+        const result = payResults.shift() ?? "ok";
+        if (result instanceof Error) {
+          return Promise.reject(result);
+        }
         return Promise.resolve(o);
       },
     },
@@ -1226,6 +1241,24 @@ describe("createWalletEngine lifecycle", () => {
   });
 });
 
+function failPaymentDeletes(store: EngineStore, shouldThrow: () => boolean): EngineStore {
+  return {
+    close: store.close,
+    collection: (name) => {
+      const col = store.collection(name);
+      return {
+        ...col,
+        delete: async (key: string) => {
+          if (name.startsWith("spark-payments:") && shouldThrow()) {
+            throw new Error("engine store is on fire");
+          }
+          await col.delete(key);
+        },
+      };
+    },
+  };
+}
+
 describe("history and notes", () => {
   const K = "w1:0:regtest";
   const NOTE: PaymentNote = {
@@ -1320,21 +1353,7 @@ describe("history and notes", () => {
     let bombed = false;
     const { c, warns } = await started(
       [{ payments: [{ ...PAYMENT, id: TID }], nextOffset: undefined }],
-      (store) => ({
-        close: store.close,
-        collection: (name) => {
-          const col = store.collection(name);
-          return {
-            ...col,
-            delete: async (key: string) => {
-              if (name.startsWith("spark-payments:") && bombed) {
-                throw new Error("engine store is on fire");
-              }
-              await col.delete(key);
-            },
-          };
-        },
-      }),
+      (store) => failPaymentDeletes(store, () => bombed),
     );
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
     bombed = true;
@@ -1349,7 +1368,7 @@ describe("history and notes", () => {
     expect(result).toBeDefined();
     await until(
       () => warns.some((w) => w.includes("spark payment record write failed")),
-      (v) => v === true,
+      (v) => v,
     );
     await c.destroy();
   });
@@ -1858,6 +1877,264 @@ describe("idempotent commits", () => {
     expect(failure).not.toMatchObject({ category: "unknown" });
     expect(calls.filter((x) => x.method === method)).toHaveLength(1);
     expect(waits).toStrictEqual([]);
+    await c.destroy();
+  });
+});
+
+describe("categorize", () => {
+  it("a request or server error is a network failure whatever its message says", () => {
+    // A 502 whose server message contains "rejected" is still a network failure — the class, not
+    // the text, decides.
+    expect(
+      categorize(
+        new SparkRequestError("ssp request failed with status 502: upstream rejected the request", {
+          code: "http_502",
+        }),
+      ),
+    ).toBe("network");
+    expect(categorize(new SparkTokenBroadcastError("lost", { inputOutputIds: [] }))).toBe(
+      "network",
+    );
+    expect(categorize(new SparkRequestError("unavailable", { code: "unavailable" }))).toBe(
+      "network",
+    );
+  });
+
+  it("an input error is rejected — insufficient only when it says so", () => {
+    expect(categorize(new SparkInputError("insufficient balance for the send"))).toBe(
+      "insufficient-funds",
+    );
+    expect(categorize(new SparkInputError("leaf missing signing keyshare"))).toBe("rejected");
+  });
+
+  it("a plain SparkError is internal; only non-Spark errors read their message", () => {
+    expect(categorize(new SparkError("ssp send request is for a different invoice"))).toBe(
+      "internal",
+    );
+    expect(categorize(new SparkError("insufficient balance"))).toBe("internal");
+    expect(categorize(new Error("approval denied"))).toBe("rejected");
+    expect(categorize(new Error("approval required"))).toBe("approval-required");
+    expect(categorize(new Error("insufficient funds"))).toBe("insufficient-funds");
+    expect(categorize(new Error("fetch failed"))).toBe("network");
+  });
+});
+
+describe("a sats commit failure asks the operator before failing", () => {
+  const RECEIVER = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+  const boot = async (opts: Parameters<typeof controller>[2] = {}) => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = controller(calls, approvals, { setTimer: fastTimer, ...opts });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    return { calls, c };
+  };
+
+  const send = async (c: SparkController) =>
+    c.send(REF, {
+      receiver: RECEIVER,
+      amountSats: 10,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+  const payInvoice = async (c: SparkController) =>
+    c.payInvoice(REF, {
+      invoice: TEST_INVOICE,
+      maxFeeSats: 5,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+  const record = (c: SparkController) => c.getState().accounts["w1:0:regtest"]?.payments?.[TID];
+
+  it("a first-attempt error with no transfer listed fails definite — and is not retried", async () => {
+    const { calls, c } = await boot({
+      sendResults: [new SparkInputError("insufficient balance for the send")],
+      historyPages: [{ payments: [], nextOffset: undefined }],
+    });
+    const failure = await send(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "insufficient-funds" });
+    expect(record(c)).toMatchObject({ state: "failed" });
+    expect(calls.filter((x) => x === "send")).toHaveLength(1);
+    // The probe asked the operator before deciding.
+    expect(calls).toContain("history");
+    await c.destroy();
+  });
+
+  it("a first-attempt error whose probe cannot be answered stays unknown", async () => {
+    const { c } = await boot({
+      sendResults: [new SparkInputError("insufficient balance for the send")],
+      // Every history read fails — boot's refresh, the probe, the reconcile pass.
+      historyPages: Array.from({ length: 10 }, () => new Error("history unreachable")),
+    });
+    const failure = await send(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({
+      category: "unknown",
+      payment: { id: TID, state: "unknown" },
+    });
+    expect(record(c)).toMatchObject({ state: "unknown" });
+    await c.destroy();
+  });
+
+  it("a first-attempt error with an incomplete listing stays unknown — absent is never guessed", async () => {
+    const { c } = await boot({
+      sendResults: [new SparkInputError("insufficient balance for the send")],
+      // The listing never ends — every page has a next offset — so "not found" proves nothing.
+      historyPages: Array.from({ length: 12 }, () => ({
+        payments: [],
+        nextOffset: 1,
+      })),
+    });
+    const failure = await send(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "unknown" });
+    expect(record(c)).toMatchObject({ state: "unknown" });
+    await c.destroy();
+  });
+
+  it("a post-commit error with the transfer still listed is unknown, not internal", async () => {
+    const { calls, c } = await boot({
+      payResults: [new SparkError("ssp send request is for a different invoice")],
+      historyPages: [
+        {
+          payments: [{ id: TID, status: "pending", createdAt: 0, transferDirection: "OUTBOUND" }],
+          nextOffset: undefined,
+        },
+      ],
+    });
+    const failure = await payInvoice(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    // The commit ran and the operator lists the transfer — the caller is told the outcome is
+    // unknown, never a plain internal error it might retry.
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "unknown" });
+    expect(record(c)).toMatchObject({ state: "unknown" });
+    expect(calls.filter((x) => x === "pay")).toHaveLength(1);
+    await c.destroy();
+  });
+
+  it("a post-commit input error with the transfer listed is unknown", async () => {
+    const { c } = await boot({
+      sendResults: [new SparkInputError("leaf missing signing keyshare")],
+      historyPages: [
+        {
+          payments: [{ id: TID, status: "pending", createdAt: 0, transferDirection: "OUTBOUND" }],
+          nextOffset: undefined,
+        },
+      ],
+    });
+    const failure = await send(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "unknown" });
+    expect(record(c)).toMatchObject({ state: "unknown" });
+    await c.destroy();
+  });
+
+  it("a listed payment's final answer wins over the thrown error", async () => {
+    const { c } = await boot({
+      sendResults: [new SparkInputError("leaf missing signing keyshare")],
+      historyPages: [
+        {
+          payments: [{ id: TID, status: "failed", createdAt: 0, transferDirection: "OUTBOUND" }],
+          nextOffset: undefined,
+        },
+      ],
+    });
+    const failure = await send(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    // The operator says the transfer failed — the original error is rethrown, categorized by
+    // class, and the record carries the operator's own verdict.
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "rejected" });
+    expect(record(c)).toMatchObject({ state: "failed" });
+    await c.destroy();
+  });
+});
+
+describe("a token commit failure is definite before the broadcast", () => {
+  const boot = async (opts: Parameters<typeof controller>[2] = {}) => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], { setTimer: fastTimer, ...opts });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    return { calls, c };
+  };
+
+  const sendToken = async (c: SparkController) =>
+    c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+  const record = (c: SparkController) => c.getState().accounts["w1:0:regtest"]?.payments?.[TID];
+
+  it("an input error fails — selection runs before the broadcast", async () => {
+    const { calls, c } = await boot({ tokenResults: [new SparkInputError("not enough outputs")] });
+    const failure = await sendToken(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).not.toMatchObject({ category: "unknown" });
+    expect(record(c)).toMatchObject({ state: "failed" });
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(1);
+    await c.destroy();
+  });
+
+  it("a non-broadcast request error fails — the request never reached the broadcast", async () => {
+    const { calls, c } = await boot({
+      tokenResults: [new SparkRequestError("metadata lookup failed", { code: "unavailable" })],
+    });
+    const failure = await sendToken(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({ category: "network" });
+    expect(record(c)).toMatchObject({ state: "failed" });
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(1);
+    await c.destroy();
+  });
+
+  it("any other error after the commit call stays unknown — nothing proves it did not go out", async () => {
+    const { calls, c } = await boot({
+      tokenResults: [new SparkError("broadcast_transaction: unexpected commit status")],
+    });
+    const failure = await sendToken(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).toMatchObject({
+      category: "unknown",
+      payment: { id: TID, state: "unknown" },
+    });
+    expect(record(c)).toMatchObject({ state: "unknown" });
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(1);
     await c.destroy();
   });
 });

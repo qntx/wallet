@@ -1,3 +1,5 @@
+import { SparkError, SparkInputError, SparkRequestError } from "@qntx/spark";
+
 import type { SparkPaymentRecord } from "./payments.ts";
 
 /** SparkController error categories — never carry request bytes or secrets. */
@@ -30,9 +32,22 @@ export class SparkControllerError extends Error {
   }
 }
 
-/** Maps a thrown client/kernel error into a category without leaking payloads. */
+/**
+ * Maps a thrown client/kernel error into a category without leaking payloads. The library's own
+ * classes decide first — a `SparkRequestError` is a request or server failure whatever its message
+ * happens to say — and only non-Spark errors fall back to their message text.
+ */
 export function categorize(error: unknown): SparkErrorCategory {
-  const name = error instanceof Error ? error.name : "";
+  if (error instanceof SparkRequestError) {
+    // Includes SparkTokenBroadcastError — a request failure whose outcome was uncertain.
+    return "network";
+  }
+  if (error instanceof SparkInputError) {
+    return /insufficient/i.test(error.message) ? "insufficient-funds" : "rejected";
+  }
+  if (error instanceof SparkError) {
+    return "internal";
+  }
   const message = error instanceof Error ? error.message : "";
   if (/approval|denied|rejected/i.test(message)) {
     return /required/i.test(message) ? "approval-required" : "rejected";
@@ -40,7 +55,7 @@ export function categorize(error: unknown): SparkErrorCategory {
   if (/insufficient|not enough|balance/i.test(message)) {
     return "insufficient-funds";
   }
-  if (name === "SparkRequestError" || /fetch|network|timeout|unavailable|closed/i.test(message)) {
+  if (/fetch|network|timeout|unavailable|closed/i.test(message)) {
     return "network";
   }
   return "internal";
