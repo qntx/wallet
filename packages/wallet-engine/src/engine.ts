@@ -259,6 +259,7 @@ export type WalletEngine = {
     SparkController,
     | "history"
     | "accountBalance"
+    | "archivePayment"
     | "receiveAddress"
     | "createInvoice"
     | "newDepositAddress"

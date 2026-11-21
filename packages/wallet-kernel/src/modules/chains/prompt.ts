@@ -1,4 +1,4 @@
-import { hexToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 /**
  * The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
@@ -9,7 +9,12 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
  * excerpt.
  */
-import { displayExcerpt, messageBlindReason, messageTextHazard } from "@qntx/wallet-chains";
+import {
+  displayExcerpt,
+  hasHiddenCharacters,
+  messageBlindReason,
+  messageTextHazard,
+} from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -49,6 +54,7 @@ export type PromptIntent = Pick<
   | "delegation"
   | "minimumReceived"
   | "bridge"
+  | "hyperliquidDeposit"
   | "contract"
   | "calls"
   | "blind"
@@ -150,6 +156,9 @@ type Catalog = {
   readonly viaPermit2: string;
   readonly viaAllowanceHolder: string;
   readonly receiveMin: (amount: string, to: string) => string;
+  readonly receiveMinTokenAccount: (amount: string, tokenAccount: string) => string;
+  readonly hyperliquidDeposit: (amount: string, dex: string, recipient: string) => string;
+  readonly hyperliquidFee: (amount: string) => string;
   readonly until: (date: string) => string;
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
@@ -324,6 +333,11 @@ const zh: Catalog = {
   viaPermit2: " 经 Permit2",
   viaAllowanceHolder: " 经 AllowanceHolder",
   receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
+  receiveMinTokenAccount: (amount, tokenAccount) =>
+    `至少收到 ${amount} 个代币账户 ${tokenAccount} 所持代币的基本单位`,
+  hyperliquidDeposit: (amount, dex, recipient) =>
+    `向你的 Hyperliquid ${dex === "perps" ? "合约" : "现货"}账户 ${recipient} 存入 ${amount}`,
+  hyperliquidFee: (amount) => `Circle 手续费至多 ${amount}`,
   until: (date) => ` 至 ${date}（UTC）`,
   operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
   operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -573,6 +587,11 @@ const en: Catalog = {
   viaPermit2: " via Permit2",
   viaAllowanceHolder: " via AllowanceHolder",
   receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
+  receiveMinTokenAccount: (amount, tokenAccount) =>
+    `Receive at least ${amount} base units of the token in account ${tokenAccount}`,
+  hyperliquidDeposit: (amount, dex, recipient) =>
+    `Deposit ${amount} to your Hyperliquid ${dex} account ${recipient}`,
+  hyperliquidFee: (amount) => `Circle fee at most ${amount}`,
   until: (date) => ` until ${date} (UTC)`,
   operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
   operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -933,7 +952,9 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
   const received =
     intent.bridge === undefined
       ? (intent.minimumReceived ?? []).map((entry) =>
-          catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to),
+          entry.tokenAccount === undefined
+            ? catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)
+            : catalog.receiveMinTokenAccount(entry.amount.amount, entry.tokenAccount),
         )
       : [
           catalog.bridgeLine(
@@ -960,6 +981,18 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
+    ...(intent.hyperliquidDeposit === undefined
+      ? []
+      : [
+          catalog.hyperliquidDeposit(
+            intent.outflows[0] === undefined
+              ? "?"
+              : formatAmount(catalog, intent.outflows[0].amount),
+            intent.hyperliquidDeposit.dex,
+            intent.hyperliquidDeposit.recipient,
+          ),
+          catalog.hyperliquidFee(formatAmount(catalog, intent.hyperliquidDeposit.maxFee)),
+        ]),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
   ];
 }
@@ -1072,6 +1105,12 @@ function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
   const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
   return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
 }
+
+const CONTROL_CHAR = /\p{Cc}/u;
+
+/** Every code point prints plainly: no control characters, nothing hidden or reordering. */
+const isPlainText = (text: string): boolean =>
+  !CONTROL_CHAR.test(text) && !hasHiddenCharacters(text);
 
 /** The zero address in an order's `zone`: no zone contract gates fulfilment. */
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -1426,6 +1465,11 @@ function messagePrompt(
     };
   }
   const hazard = intent.blind === undefined ? undefined : messageTextHazard(message.text);
+  /* A digest-length text shows the signed bytes it could be a hash of, then the text only when
+     every code point prints plainly — a digest hiding control or invisible characters does not
+     get to pose as a message. */
+  const digest =
+    hazard === "digest-length" ? `0x${bytesToHex(utf8ToBytes(message.text))}` : undefined;
   return {
     title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
@@ -1438,7 +1482,10 @@ function messagePrompt(
         : hazard === undefined
           ? []
           : [catalog.textHazard[hazard]]),
-      ...textLines(catalog, message.text),
+      ...(digest === undefined ? [] : [catalog.bytesData(digest)]),
+      ...(digest !== undefined && !isPlainText(message.text)
+        ? []
+        : textLines(catalog, message.text)),
     ]),
   };
 }

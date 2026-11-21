@@ -6,9 +6,8 @@
  * metadata reads are capped per refresh like Solana's mint inspection. The TronGrid
  * `/v1/accounts/account` indexer is the only discovery source, and it is display-only.
  *
- * Node int64 fields can exceed 2^53 (`amountField` in the contract accepts the imprecision) — they
- * convert through `BigInt(Math.trunc(x))` everywhere, so whale balances may be off by a few sun of
- * rounding, never more.
+ * Node int64 fields can exceed 2^53 — `parseTronJson` carries them as `bigint`, so amounts stay
+ * exact end to end and convert straight through `BigInt`.
  */
 import { isTronAddress, tronAddressFromHex, tronAddressToHex } from "@qntx/wallet-chains/tron";
 
@@ -146,7 +145,7 @@ export const trc10Balances = (
 ): ReadonlyArray<{ readonly id: string; readonly balance: bigint }> =>
   (row.assetV2 ?? [])
     .filter((a) => /^\d+$/.test(a.key) && a.value > 0)
-    .map((a) => ({ id: a.key, balance: BigInt(Math.trunc(a.value)) }));
+    .map((a) => ({ id: a.key, balance: BigInt(a.value) }));
 
 const hexText = (hex: string | undefined): string | undefined => {
   if (hex === undefined || !/^([0-9a-fA-F]{2})+$/.test(hex)) {
@@ -178,7 +177,7 @@ export const tronTrc10Meta = async (
 const resource = (type: string | number | undefined): "bandwidth" | "energy" =>
   type === "ENERGY" || type === 1 ? "energy" : "bandwidth";
 
-const sun = (n: number | undefined): string => BigInt(Math.trunc(n ?? 0)).toString(10);
+const sun = (n: number | bigint | undefined): string => BigInt(n ?? 0).toString(10);
 
 /** The stake-resource view the account screen shows for a TRON account. */
 export type TronAccountView = {
@@ -196,11 +195,11 @@ export type TronAccountView = {
   /** Withdrawable voting reward, in sun. */
   readonly reward: string;
   readonly bandwidth: {
-    readonly free: { readonly limit: number; readonly used: number };
-    readonly staked: { readonly limit: number; readonly used: number };
+    readonly free: { readonly limit: string; readonly used: string };
+    readonly staked: { readonly limit: string; readonly used: string };
   };
-  readonly energy: { readonly limit: number; readonly used: number };
-  readonly tronPower: { readonly limit: number; readonly used: number };
+  readonly energy: { readonly limit: string; readonly used: string };
+  readonly tronPower: { readonly limit: string; readonly used: string };
 };
 
 /** `vote_address` is a `41…` hex or `T…` string — normalized to base58 for display. */
@@ -221,7 +220,7 @@ export const tronAccountView = (
 ): TronAccountView => {
   const frozen = { bandwidth: 0n, energy: 0n };
   for (const f of row.frozenV2 ?? []) {
-    frozen[resource(f.type)] += BigInt(Math.trunc(f.amount ?? 0));
+    frozen[resource(f.type)] += BigInt(f.amount ?? 0);
   }
   const unfreezing = (row.unfrozenV2 ?? [])
     .filter((u) => u.unfreeze_expire_time !== undefined)
@@ -248,11 +247,11 @@ export const tronAccountView = (
     votes,
     reward: rewardSun.toString(10),
     bandwidth: {
-      free: { limit: res.freeNetLimit, used: res.freeNetUsed },
-      staked: { limit: res.netLimit, used: res.netUsed },
+      free: { limit: res.freeNetLimit.toString(10), used: res.freeNetUsed.toString(10) },
+      staked: { limit: res.netLimit.toString(10), used: res.netUsed.toString(10) },
     },
-    energy: { limit: res.energyLimit, used: res.energyUsed },
-    tronPower: { limit: res.tronPowerLimit, used: res.tronPowerUsed },
+    energy: { limit: res.energyLimit.toString(10), used: res.energyUsed.toString(10) },
+    tronPower: { limit: res.tronPowerLimit.toString(10), used: res.tronPowerUsed.toString(10) },
   };
 };
 

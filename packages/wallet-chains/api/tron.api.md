@@ -65,7 +65,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination";
 
 // @public (undocumented)
 export const buildTronRawData: (header: TronTransactionHeader, contract: TronContract) => Uint8Array;
@@ -98,6 +98,7 @@ type DisplayIntent = {
     readonly minimumReceived?: ReadonlyArray<{
         readonly to: string;
         readonly amount: AssetAmount;
+        readonly tokenAccount?: string;
     }>;
     readonly fee: {
         readonly max: AssetAmount;
@@ -108,6 +109,11 @@ type DisplayIntent = {
         readonly destinationNetwork: string;
         readonly fillDeadline: number;
         readonly refundTo: string;
+    };
+    readonly hyperliquidDeposit?: {
+        readonly recipient: string;
+        readonly dex: "perps" | "spot";
+        readonly maxFee: AssetAmount;
     };
     readonly warnings: ReadonlyArray<IntentWarning>;
     readonly message?: MessageContent;

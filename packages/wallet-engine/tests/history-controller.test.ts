@@ -114,6 +114,9 @@ const make = (options: {
   const client = {
     transport: {
       request: async ({ method, params }: { method: string; params: unknown[] }) => {
+        if (method === "eth_getCode") {
+          return Promise.resolve("0x");
+        }
         if (method === "eth_getTransactionByHash") {
           const block = blockOf.get(params[0] as string);
           return Promise.resolve(

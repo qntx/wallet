@@ -180,8 +180,11 @@ export const prepareSolana = async (
       const mintBytes = arr(obj(owner)?.["data"])?.[0];
       const raw = typeof mintBytes === "string" ? base64.decode(mintBytes) : undefined;
       if (raw !== undefined && raw.length > 166) {
-        const epoch = obj(await rpc.call("getEpochInfo", []))?.["epoch"];
-        ext = parseMintExtensions(raw, BigInt(typeof epoch === "number" ? epoch : 0));
+        const epoch = u64(obj(await rpc.call("getEpochInfo", []))?.["epoch"]);
+        if (epoch === undefined) {
+          throw new TypeError("getEpochInfo: malformed epoch");
+        }
+        ext = parseMintExtensions(raw, epoch);
         if (ext.nonTransferable === true) {
           throw new Error("token is non-transferable");
         }
@@ -439,7 +442,11 @@ const stakeAccountInfo = async (
   if (parsed === undefined || obj(value["data"])?.["program"] !== "stake") {
     throw new ChainError("invalid-request", `${stakeAccount} is not a stake account`);
   }
-  return { lamports: BigInt(str(value["lamports"])), parsed };
+  const lamports = u64(value["lamports"]);
+  if (lamports === undefined) {
+    throw new TypeError("getAccountInfo: malformed lamports");
+  }
+  return { lamports, parsed };
 };
 
 const voteIsCurrent = async (rpc: SolanaRpc, vote: string): Promise<boolean> => {
@@ -474,7 +481,11 @@ const nextStakeSeed = async (
         { encoding: "base64", commitment: "confirmed" },
       ]),
     );
-    const list = arr(result?.["value"]) ?? [];
+    // The spec guarantees one slot per requested address; a short list is not "all seeds free".
+    const list = arr(result?.["value"]);
+    if (list === undefined || list.length !== derived.length) {
+      throw new TypeError("getMultipleAccounts: malformed value");
+    }
     for (const [i, candidate] of derived.entries()) {
       if (list[i] === null || list[i] === undefined) {
         return { seed: seeds[i] ?? "", stakeAccount: String(candidate) };
@@ -484,8 +495,13 @@ const nextStakeSeed = async (
   throw new ChainError("invalid-request", "no free stake account seed");
 };
 
-const currentEpoch = async (rpc: SolanaRpc): Promise<bigint> =>
-  u64(obj(await rpc.call("getEpochInfo", [{ commitment: "confirmed" }]))?.["epoch"]) ?? 0n;
+const currentEpoch = async (rpc: SolanaRpc): Promise<bigint> => {
+  const epoch = u64(obj(await rpc.call("getEpochInfo", [{ commitment: "confirmed" }]))?.["epoch"]);
+  if (epoch === undefined) {
+    throw new TypeError("getEpochInfo: malformed epoch");
+  }
+  return epoch;
+};
 
 const actionsEqual = (a: ReadonlyArray<StakeAction>, b: ReadonlyArray<StakeAction>): boolean =>
   a.length === b.length && a.every((action, i) => JSON.stringify(action) === JSON.stringify(b[i]));
@@ -542,16 +558,25 @@ export const prepareSolanaStake = async (
       }
     }
     const { seed, stakeAccount } = await nextStakeSeed(rpc, from);
+    /* The route reads the rent-exempt reserve once: the intent carries it to `build` so the
+       create instruction and the expected/balance checks share one strictly-read value. */
     const rentResult = await rpc.call("getMinimumBalanceForRentExemption", [STAKE_ACCOUNT_BYTES]);
-    const rent = BigInt(str(obj(rentResult)?.["value"] ?? rentResult));
-    const balance = BigInt(
-      str(obj(await rpc.call("getBalance", [from, { commitment: "confirmed" }]))?.["value"]),
+    const rent = u64(obj(rentResult)?.["value"] ?? rentResult);
+    if (rent === undefined) {
+      throw new TypeError("getMinimumBalanceForRentExemption: malformed value");
+    }
+    const balance = u64(
+      obj(await rpc.call("getBalance", [from, { commitment: "confirmed" }]))?.["value"],
     );
+    if (balance === undefined) {
+      throw new TypeError("getBalance: malformed value");
+    }
     intent = {
       kind: "stake-delegate",
       seed,
       stakeAccount,
       lamports: action.lamports,
+      rent,
       vote: action.vote,
     };
     expected = [

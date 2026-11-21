@@ -115,6 +115,9 @@ const verifiedStream = (options: { items: HistoryItem[]; answers: Record<string,
         if (method === "eth_getTransactionByHash") {
           return Promise.resolve(record?.tx ?? null);
         }
+        if (method === "eth_getCode") {
+          return Promise.resolve("0x");
+        }
         return Promise.reject(new Error(`unmocked ${method}`));
       },
     },

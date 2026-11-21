@@ -196,6 +196,19 @@ describe("messageContent", () => {
       hex: "0xff00",
     });
   });
+
+  it("keeps a leading BOM so the text still measures as the signed bytes", () => {
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...utf8("sign this digest for me now!!")]);
+    expect(bom).toHaveLength(32);
+    expect(messageContent(bom, "evm")).toStrictEqual({
+      kind: "text",
+      text: "\uFEFFsign this digest for me now!!",
+    });
+    expect(messageTextHazard("\uFEFFsign this digest for me now!!")).toBe("digest-length");
+    const short = new Uint8Array([0xef, 0xbb, 0xbf, ...utf8("hello")]);
+    expect(messageContent(short, "evm")).toStrictEqual({ kind: "text", text: "\uFEFFhello" });
+    expect(messageTextHazard("\uFEFFhello")).toBe("hidden-characters");
+  });
 });
 
 describe("isBlindIntent", () => {

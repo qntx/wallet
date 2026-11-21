@@ -28,6 +28,7 @@ import {
   selectableUtxos,
 } from "../chains/bitcoin.ts";
 import type { BtcUtxo, Esplora } from "../chains/bitcoin.ts";
+import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
   collectChecks,
@@ -1314,6 +1315,16 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         );
       }
     },
+    resume: (tx) => {
+      if (tx.btc !== undefined) {
+        // A persisted snapshot write can be lost before shutdown; the tx record's inputs are the
+        // durable source, so a resumed live send re-locks only what the snapshot lost.
+        bitcoinUtxos.restoreLocks(
+          tx.id,
+          tx.btc.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 })),
+        );
+      }
+    },
     settle: (id, state) => {
       bitcoinUtxos.endTx(id, state === "confirmed" ? "confirmed" : "dropped");
     },
@@ -1323,8 +1334,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     setUtxosFrozen: async (accountKey, outpoints, frozen) =>
       bitcoinFrozen.setFrozen(accountKey, outpoints, frozen),
     frozenUtxos: (accountKey) => bitcoinFrozen.frozenOf(accountKey),
-    unlock: async (store) => {
-      await bitcoinUtxos.unlock(store);
+    unlock: async (store, logger) => {
+      await bitcoinUtxos.unlock(store, logger);
       await bitcoinFrozen.unlock(store);
     },
     lock: () => {
@@ -1358,6 +1369,11 @@ export type BitcoinRoute = {
    */
   readonly reopen: (tx: TrackedTransaction) => void;
   /**
+   * A live transaction restored at boot re-locks the inputs its `btc` record carries — the record
+   * outlives a lost snapshot write, so a restart cannot leave a spent output selectable.
+   */
+  readonly resume: (tx: TrackedTransaction) => void;
+  /**
    * A transaction that settled frees the outputs it locked; a confirmed one's inputs are spent and
    * leave the lock table.
    */
@@ -1368,7 +1384,7 @@ export type BitcoinRoute = {
     mode: "speed-up" | "cancel",
     requestId: string,
   ) => Promise<PreparedRequest>;
-  readonly unlock: (store: EngineStore) => Promise<void>;
+  readonly unlock: (store: EngineStore, logger: EngineLogger) => Promise<void>;
   readonly lock: () => void;
   readonly prepareCpfp: (
     ctx: RouteContext,

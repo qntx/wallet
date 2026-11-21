@@ -120,3 +120,34 @@ export function energyView(balances: AccountBalances): string {
   }
   return `frozen energy ${tron.frozen.energy} sun, unfreezing ${tron.unfreezing.length}`;
 }
+
+/**
+ * `TronFeeQuote`'s availability fields are `bigint`, not `number` — java-tron answers int64 and
+ * resource counters pass 2^53, so the quote keeps them exact.
+ */
+export function stakedBandwidthBefore(request: PendingRequest): number {
+  // @ts-expect-error -- stakedAvailable is a bigint, not a number
+  return request.tronFee?.bandwidth.stakedAvailable ?? 0;
+}
+export function stakedBandwidth(request: PendingRequest): string {
+  const quote = request.tronFee;
+  if (quote === undefined) {
+    return "no tron fee";
+  }
+  return `staked bandwidth ${quote.bandwidth.stakedAvailable.toString(10)}, energy available ${
+    quote.energy?.available.toString(10) ?? "0"
+  }`;
+}
+
+/**
+ * `TronAccountView` counters are decimal strings, not numbers — parse with `BigInt` for arithmetic;
+ * they already render for display.
+ */
+export function energyLimitBefore(balances: AccountBalances): number {
+  // @ts-expect-error -- energy.limit is a string, not a number
+  return balances.tron?.energy.limit ?? 0;
+}
+export function energyLimit(balances: AccountBalances): bigint {
+  const view = balances.tron;
+  return view === undefined ? 0n : BigInt(view.energy.limit);
+}

@@ -6,6 +6,7 @@ import {
   TRON_INDEXER_PATHS,
   accepts,
   isTronIndexerPath,
+  parseTronJson,
   parseWith,
   tron,
   tronPathEntry,
@@ -55,7 +56,9 @@ const respond = async (
   const text = await response.text(MAX_RESPONSE_BYTES);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    /* int64 fields arrive as bare JSON numbers; JSON.parse would round them before the schema
+       could accept their bigint form. */
+    parsed = parseTronJson(text);
   } catch {
     throw new ProviderFailure("malformed", false);
   }

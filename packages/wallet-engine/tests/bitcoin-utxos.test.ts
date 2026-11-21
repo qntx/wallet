@@ -3,7 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { BtcFrozenStore, BtcUtxoStore, scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { ScanUtxo } from "../src/chains/bitcoin-scan.ts";
+import type { EngineLogger } from "../src/events.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import {
   ACCOUNT,
@@ -11,6 +13,7 @@ import {
   NET,
   RECIP,
   VERIFY,
+  flush,
   hashOf,
   inputTxidsOf,
   send,
@@ -78,6 +81,137 @@ describe("BtcUtxoStore", () => {
     expect(all).toContain("aa:locked");
     expect(all).toContain("bb:confirmed");
     expect(store.isLocked(a)).toBe(true);
+  });
+});
+
+const silentLogger: EngineLogger = { warn: () => {} };
+
+/** A store whose `put`s land only when the test releases them, recording the payloads. */
+const deferredStore = (): {
+  readonly store: EngineStore;
+  readonly releases: Array<() => void>;
+  readonly landed: Uint8Array[];
+} => {
+  const releases: Array<() => void> = [];
+  const landed: Uint8Array[] = [];
+  return {
+    releases,
+    landed,
+    store: {
+      collection: () => ({
+        get: async () => Promise.resolve(undefined),
+        put: async (_key: string, bytes: Uint8Array) =>
+          new Promise<void>((resolve) => {
+            releases.push(() => {
+              landed.push(bytes);
+              resolve();
+            });
+          }),
+        delete: async () => Promise.resolve(),
+        list: async () => Promise.resolve([]),
+      }),
+      close: async () => Promise.resolve(),
+    },
+  };
+};
+
+describe("BtcUtxoStore persistence", () => {
+  it("a slow earlier write never lands after a later snapshot", async () => {
+    const { store, releases, landed } = deferredStore();
+    const s = new BtcUtxoStore();
+    await s.unlock(store, silentLogger);
+    const a = utxo("aa", 0, 100_000);
+    s.lock([a], "tx-1");
+    s.endTx("tx-1", "failed");
+    await flush();
+    // Release the newer write's put first: concurrent writes land the stale snapshot last and it
+    // wins; writes serialized in issue order land oldest-first regardless of release order.
+    const newer = releases.pop();
+    expect(newer).toBeDefined();
+    newer!();
+    await flush();
+    const older = releases.pop();
+    expect(older).toBeDefined();
+    older!();
+    await flush();
+    expect(landed).toHaveLength(2);
+    const decoded = JSON.parse(new TextDecoder().decode(landed[1])) as Record<
+      string,
+      { status?: string }
+    >;
+    expect(decoded["aa:0"]?.status).toBe("confirmed");
+  });
+
+  it("a failed write warns and the next write rewrites the full snapshot", async () => {
+    const warnings: string[] = [];
+    const logger: EngineLogger = {
+      warn: (message) => {
+        warnings.push(message);
+      },
+    };
+    const backing = createMemoryEngineStore();
+    const realPut = backing.collection("btc-utxos").put;
+    let putImpl: (key: string, bytes: Uint8Array) => Promise<void> = async (key, bytes) =>
+      realPut(key, bytes);
+    const store: EngineStore = {
+      collection: (name) => {
+        const col = backing.collection(name);
+        return {
+          ...col,
+          put: async (key: string, bytes: Uint8Array) => putImpl(key, bytes),
+        };
+      },
+      close: async () => backing.close(),
+    };
+    const s = new BtcUtxoStore();
+    await s.unlock(store, logger);
+    const a = utxo("aa", 0, 100_000);
+    putImpl = async () => Promise.reject(new Error("disk full"));
+    s.lock([a], "tx-1");
+    await flush();
+    expect(warnings).toHaveLength(1);
+    putImpl = async (key, bytes) => realPut(key, bytes);
+    s.endTx("tx-1", "failed");
+    await flush();
+    const raw = await backing.collection("btc-utxos").get("state");
+    const decoded = JSON.parse(new TextDecoder().decode(raw)) as Record<
+      string,
+      { status?: string }
+    >;
+    expect(decoded["aa:0"]?.status).toBe("confirmed");
+  });
+
+  it("restoreLocks fills missing locks and never steals an existing owner", async () => {
+    const s = new BtcUtxoStore();
+    await s.unlock(createMemoryEngineStore(), silentLogger);
+    const a = utxo("aa", 0, 100_000);
+    const b = utxo("bb", 0, 50_000);
+    const c = utxo("cc", 0, 25_000);
+    s.lock([a], "tx-other");
+    s.restoreLocks("tx-1", [a, b, c]);
+    const owner = (u: ScanUtxo): string | undefined =>
+      s
+        .all()
+        .filter((r) => r.txid === u.txid)
+        .filter((r) => r.vout === u.vout)
+        .map((r) => r.txId)
+        .at(0);
+    expect(owner(a)).toBe("tx-other");
+    expect(owner(b)).toBe("tx-1");
+    expect(owner(c)).toBe("tx-1");
+  });
+
+  it("a lost lock snapshot is re-locked from the live transaction on boot", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const first = await w.boot();
+    const txA = await w.send(first, 10_000n, "req-a");
+    expect(txA.state).toBe("submitted");
+    await flush();
+    // The lock snapshot write was lost before the shutdown — the tx record is the durable source.
+    first.backing.collections.get("btc-utxos")?.delete("state");
+    const second = await w.boot(first.backing);
+    await expect(w.send(second, 5000n, "req-b")).rejects.toThrow(/insufficient/);
   });
 });
 

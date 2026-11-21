@@ -38,6 +38,11 @@ const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
 const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
+const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
+const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const CCTP_FORWARDER = "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757";
+const netArb = "Network: Arbitrum One";
+const netArbZh = "网络：Arbitrum One";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
@@ -59,12 +64,37 @@ const tx = (over: { to?: string; data?: string; value?: string }) => ({
     ...over,
   },
 });
+const arbTx = (over: { to?: string; data?: string; value?: string }) => ({
+  kind: "evm.transaction",
+  network: "eip155:42161",
+  account,
+  tx: {
+    type: "eip1559",
+    chainId: 42161,
+    nonce: 0,
+    gas: "0x30000",
+    value: "0x0",
+    data: "0x",
+    accessList: [],
+    maxFeePerGas: "0x3b9aca00",
+    maxPriorityFeePerGas: "0x1",
+    ...over,
+  },
+});
 const typedData = (doc: unknown) => ({
   kind: "evm.typed-data",
   network: "eip155:1",
   account,
   typedData: doc,
 });
+const solanaMessage = (hex: string) => ({
+  kind: "solana.message",
+  network: SOL_MAINNET,
+  account: SOL_ACCOUNT,
+  message: { $bytes: hex },
+  format: "raw",
+});
+
 const personal = (hex: string) => ({
   kind: "evm.personal-message",
   network: "eip155:1",
@@ -339,6 +369,13 @@ const bytes100 = "cd".repeat(100);
 const SAFE = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
 const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
 const GROUND_DIGEST = "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79";
+const TEXT32 = "Sign this harmless text, please!";
+const toHex = (bytes: Uint8Array) =>
+  `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+const TEXT32_HEX = toHex(utf8(TEXT32));
+const BOM32_HEX = toHex(
+  new Uint8Array([0xef, 0xbb, 0xbf, ...utf8("sign this digest for me now!!")]),
+);
 const hexText = `0x${"ab".repeat(32)}`;
 
 const seaportItemFields = [
@@ -775,8 +812,32 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
-      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x${GROUND_DIGEST}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x${GROUND_DIGEST}`,
+    ),
+  },
+  {
+    name: "personal_sign 32-byte text",
+    request: personal(TEXT32_HEX),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+    ),
+  },
+  {
+    name: "personal_sign BOM-prefixed 32-byte",
+    request: personal(BOM32_HEX),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${BOM32_HEX}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${BOM32_HEX}`,
     ),
   },
   {
@@ -1353,6 +1414,90 @@ const cases: VectorCase[] = [
       `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
     ),
   },
+  {
+    name: "solana message 32-byte text",
+    request: solanaMessage(TEXT32_HEX.slice(2)),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+    ),
+  },
+  {
+    name: "solana message 32 bytes",
+    request: solanaMessage("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    ),
+  },
+  {
+    name: "CCTP depositForBurnWithHook 5 USDC to Hyperliquid",
+    request: arbTx({
+      to: CCTP_MESSENGER,
+      data: encodeFunctionData({
+        abi: parseAbi([
+          "function depositForBurnWithHook(uint256,uint32,bytes32,address,bytes32,uint256,uint32,bytes)",
+        ]),
+        functionName: "depositForBurnWithHook",
+        args: [
+          5_000_000n,
+          19,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          ARB_USDC,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          200_000n,
+          1000,
+          `0x636374702d666f7277617264${"00".repeat(12)}0000000000000018${SIGNER.slice(2)}00000000`,
+        ],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `${netArb}\nThere may be other outflows\nSend 5 USDC to ${CCTP_MESSENGER}\nDeposit 5 USDC to your Hyperliquid perps account ${SIGNER}\nCircle fee at most 0.2 USDC\n${fee}`,
+      `${netArbZh}\n可能还有其他转出\n发送 5 USDC 到 ${CCTP_MESSENGER}\n向你的 Hyperliquid 合约账户 ${SIGNER} 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n${feeZh}`,
+    ),
+  },
+  {
+    name: "CCTP depositForBurn wrong domain (blind)",
+    request: arbTx({
+      to: CCTP_MESSENGER,
+      data: encodeFunctionData({
+        abi: parseAbi([
+          "function depositForBurnWithHook(uint256,uint32,bytes32,address,bytes32,uint256,uint32,bytes)",
+        ]),
+        functionName: "depositForBurnWithHook",
+        args: [
+          5_000_000n,
+          3,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          ARB_USDC,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          200_000n,
+          1000,
+          `0x636374702d666f7277617264${"00".repeat(12)}0000000000000018${SIGNER.slice(2)}00000000`,
+        ],
+      }),
+    }),
+    verifiability: "opaque",
+    blind: "cctp-destination",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${netArb}\nCall contract ${CCTP_MESSENGER}, function 0x779b432d\n${fee}`,
+      `${netArbZh}\n调用合约 ${CCTP_MESSENGER}，函数 0x779b432d\n${feeZh}`,
+    ),
+  },
 ];
 
 const TRON_TX_EXPECTED: Readonly<
@@ -1739,12 +1884,29 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm blind signing",
         description:
-          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      },
+    },
+  },
+  "tron message 32-byte text": {
+    verifiability: "opaque",
+    blind: "message-bytes",
+    messageHex: "5369676e2074686973206861726d6c65737320746578742c20706c6561736521",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!",
       },
     },
   },

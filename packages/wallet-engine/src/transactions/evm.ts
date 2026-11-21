@@ -28,6 +28,10 @@ import {
   LIDO_STETH,
   ACROSS_SPOKEPOOLS,
   ACROSS_WRAPPED_NATIVE,
+  CCTP_FORWARDERS,
+  CCTP_MESSENGERS,
+  CCTP_USDC,
+  HYPERLIQUID_DOMAIN,
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
@@ -162,6 +166,7 @@ export type EvmInternalInput = Extract<
       | "evm-delegation"
       | "evm-batch"
       | "evm-approve"
+      | "evm-cctp"
       | "evm-swap"
       | "evm-bridge"
       | "evm-nft-send"
@@ -719,6 +724,31 @@ const ACROSS_DEPOSIT_ABI = [
 
 const pad32 = (address: string): `0x${string}` => `0x${address.slice(2).padStart(64, "0")}`;
 
+const CCTP_DEPOSIT_ABI = [
+  {
+    type: "function",
+    name: "depositForBurnWithHook",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
+      { name: "hookData", type: "bytes" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+/** The 56-byte `cctp-forward` hook the CctpForwarder reads (decoder layout: evm/cctp.ts). */
+const cctpForwardHook = (recipient: string, dex: "perps" | "spot"): `0x${string}` =>
+  `0x636374702d666f7277617264${"00".repeat(12)}0000000000000018${recipient
+    .slice(2)
+    .toLowerCase()}${dex === "perps" ? "00000000" : "ffffffff"}` as `0x${string}`;
+
 /** The SpokePool `deposit` calldata built from a verified quote — the SDK data suffix is not used. */
 const acrossDepositCall = (
   depositor: string,
@@ -820,6 +850,72 @@ const prepareApproveIntent = async (
       args: [getAddress(input.spender), input.amount],
     }),
   };
+};
+
+/* The built call must decode back to exactly the deposit: a USDC burn on the route's
+   TokenMessengerV2 with the forwarder hook carrying the depositor and its dex — like the
+   NFT guard, `decodeEvm` is the independent reader. */
+const prepareCctpIntent = (
+  input: Extract<ChainRequestInput, { method: "evm-cctp" }>,
+  from: string,
+): BuildIntent => {
+  const chainId = networkChainId(input.network);
+  const messenger = CCTP_MESSENGERS[chainId];
+  const usdc = CCTP_USDC[chainId];
+  const forwarder = CCTP_FORWARDERS[chainId];
+  if (messenger === undefined || usdc === undefined || forwarder === undefined) {
+    throw new ChainError("invalid-request", "no CCTP Hyperliquid route on this network");
+  }
+  if (input.amount <= 0n || input.maxFee <= 0n || input.maxFee >= input.amount) {
+    throw new ChainError("invalid-request", "the deposit must exceed the Circle fee");
+  }
+  const data = encodeFunctionData({
+    abi: CCTP_DEPOSIT_ABI,
+    functionName: "depositForBurnWithHook",
+    args: [
+      input.amount,
+      HYPERLIQUID_DOMAIN,
+      pad32(forwarder),
+      getAddress(usdc),
+      pad32(forwarder),
+      input.maxFee,
+      1000,
+      cctpForwardHook(from, input.dex),
+    ],
+  });
+  const request: SignRequest = {
+    kind: "evm.transaction",
+    network: input.network,
+    account: input.account,
+    tx: {
+      type: "eip1559",
+      chainId,
+      to: messenger,
+      value: "0x0",
+      nonce: 0,
+      gas: "0x0",
+      data,
+      accessList: [],
+      maxFeePerGas: "0x0",
+      maxPriorityFeePerGas: "0x0",
+    },
+  };
+  const intent = decodeEvm(request, from);
+  const deposit = intent.hyperliquidDeposit;
+  const [outflow] = intent.outflows;
+  if (
+    deposit === undefined ||
+    deposit.recipient.toLowerCase() !== from.toLowerCase() ||
+    deposit.dex !== input.dex ||
+    deposit.maxFee.amount !== input.maxFee.toString(10) ||
+    outflow === undefined ||
+    outflow.to.toLowerCase() !== messenger.toLowerCase() ||
+    outflow.amount.amount !== input.amount.toString(10) ||
+    !outflow.verified
+  ) {
+    throw new ChainError("invalid-request", "the built deposit does not decode to the request");
+  }
+  return { kind: "call", to: messenger, value: 0n, data };
 };
 
 /* The built call must decode back to exactly the send: one NFT outflow to the recipient
@@ -1629,6 +1725,8 @@ export const createEvmRoute = (): EvmRoute => {
       };
     } else if (input.method === "evm-approve") {
       intent = await prepareApproveIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-cctp") {
+      intent = prepareCctpIntent(input, from);
     } else if (input.method === "evm-swap") {
       intent = await prepareSwapIntent(ctx, input, from, flags);
     } else if (input.method === "evm-bridge") {

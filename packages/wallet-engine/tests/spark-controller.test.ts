@@ -81,6 +81,8 @@ type FakeClaimOptions = {
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Fee every speed quotes for an exit amount — exercises quote convergence. */
   readonly quoteFee?: (amountSats: number) => number;
+  /** The operator's `balance()` answer — defaults to 42. */
+  readonly balanceSats?: number;
 };
 
 function fakeClient(
@@ -102,7 +104,7 @@ function fakeClient(
   let streamCalls = 0;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
-    balance: async () => Promise.resolve(42),
+    balance: async () => Promise.resolve(opts.balanceSats ?? 42),
     transfers: {
       claimPending: async () => {
         calls.push("claimPending");
@@ -605,7 +607,10 @@ describe("cooperative exit quoting", () => {
     approvals: unknown[],
     quoteFee?: (amountSats: number) => number,
   ) {
-    const { c, client } = controller(calls, approvals, quoteFee === undefined ? {} : { quoteFee });
+    const { c, client } = controller(calls, approvals, {
+      balanceSats: 200_000,
+      ...(quoteFee === undefined ? {} : { quoteFee }),
+    });
     const store = createMemoryEngineStore();
     c.setAccounts([REF]);
     c.setStore(store);
@@ -1593,7 +1598,8 @@ describe("commit before the client send", () => {
   };
 
   async function setup(calls: string[], approvals: unknown[]) {
-    const { c, client } = controller(calls, approvals);
+    // A balance that always covers the send so the preflight passes and `commit` is what throws.
+    const { c, client } = controller(calls, approvals, { balanceSats: 1_000_000 });
     c.setAccounts([REF]);
     c.setStore(createMemoryEngineStore());
     await c.init();
@@ -1715,7 +1721,7 @@ describe("idempotent commits", () => {
     };
     const client = {
       identityPublicKey: async () => Promise.resolve(PK),
-      balance: async () => Promise.resolve(42),
+      balance: async () => Promise.resolve(10_000),
       transfers: {
         claimPending: async () => Promise.resolve({ leaves: [], failures: [] }),
         claim: async () => Promise.resolve([]),
@@ -1873,8 +1879,10 @@ describe("idempotent commits", () => {
       () => undefined,
       (error: unknown) => error,
     );
+    /* A definite error is not retried, but sats absence still proves nothing — the operator's
+       probe is the only verdict, so the record stays open as unknown. */
     expect(failure).toBeInstanceOf(SparkControllerError);
-    expect(failure).not.toMatchObject({ category: "unknown" });
+    expect(failure).toMatchObject({ category: "unknown" });
     expect(calls.filter((x) => x.method === method)).toHaveLength(1);
     expect(waits).toStrictEqual([]);
     await c.destroy();
@@ -1949,7 +1957,7 @@ describe("a sats commit failure asks the operator before failing", () => {
     });
   const record = (c: SparkController) => c.getState().accounts["w1:0:regtest"]?.payments?.[TID];
 
-  it("a first-attempt error with no transfer listed fails definite — and is not retried", async () => {
+  it("a first-attempt error with no transfer listed stays unknown — absence proves nothing", async () => {
     const { calls, c } = await boot({
       sendResults: [new SparkInputError("insufficient balance for the send")],
       historyPages: [{ payments: [], nextOffset: undefined }],
@@ -1959,8 +1967,8 @@ describe("a sats commit failure asks the operator before failing", () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(SparkControllerError);
-    expect(failure).toMatchObject({ category: "insufficient-funds" });
-    expect(record(c)).toMatchObject({ state: "failed" });
+    expect(failure).toMatchObject({ category: "unknown" });
+    expect(record(c)).toMatchObject({ state: "unknown" });
     expect(calls.filter((x) => x === "send")).toHaveLength(1);
     // The probe asked the operator before deciding.
     expect(calls).toContain("history");

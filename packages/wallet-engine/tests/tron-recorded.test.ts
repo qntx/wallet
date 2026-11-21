@@ -18,6 +18,7 @@ import {
   tronLogAddress,
 } from "../src/chains/tron.ts";
 import type { TronApi, TronCallOutcome } from "../src/chains/tron.ts";
+import { parseTronJson } from "../src/gateway/contract/index.ts";
 import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { AccountRef, RouteContext, SendParams } from "../src/transactions/route.ts";
 import { prepareTron } from "../src/transactions/tron.ts";
@@ -36,7 +37,8 @@ const DIRS = [
 type Body = Record<string, unknown>;
 
 const fixture = (dir: string, name: string): Body =>
-  (JSON.parse(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as { body: Body }).body;
+  (parseTronJson(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as { body: Body })
+    .body;
 
 const PATHS: Readonly<Record<string, string>> = {
   "/walletsolidity/getnowblock": "nowblock-solidity",

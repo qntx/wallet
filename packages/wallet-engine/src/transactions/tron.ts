@@ -162,7 +162,7 @@ const classify = (token: string | undefined): TokenKind => {
 
 /** The account's TRC-10 balance for `assetId` in base units. */
 const trc10Balance = (row: TronAccount | undefined, assetId: string): bigint =>
-  BigInt(Math.trunc(row?.assetV2?.find((e) => e.key === assetId)?.value ?? 0));
+  BigInt(row?.assetV2?.find((e) => e.key === assetId)?.value ?? 0);
 
 /** `balanceOf(address)` on `token`, as a bigint. */
 const tokenBalance = async (api: TronApi, token: string, holder: string): Promise<bigint> => {
@@ -382,7 +382,7 @@ export const prepareTron = async (
     head,
     params: params0,
     resources: res,
-    balance: BigInt(Math.trunc(fromRow.balance ?? 0)),
+    balance: BigInt(fromRow.balance ?? 0),
     outflow: token.kind === "trx" ? amount : 0n,
     ...(estimate === undefined ? {} : { estimate }),
     ...(activates ? { activates: true } : {}),
@@ -578,7 +578,7 @@ const frozenFor = (row: TronAccount, resource: 0 | 1): bigint => {
   let total = 0n;
   for (const f of row.frozenV2 ?? []) {
     if (frozenResource(f.type) === resource) {
-      total += BigInt(Math.trunc(f.amount ?? 0));
+      total += BigInt(f.amount ?? 0);
     }
   }
   return total;
@@ -624,7 +624,7 @@ export const prepareTronStake = async (
     throw new ChainError("invalid-request", "the sender account is not activated");
   }
   const res = await resources(api, from);
-  const balance = BigInt(Math.trunc(fromRow.balance ?? 0));
+  const balance = BigInt(fromRow.balance ?? 0);
   const now = ctx.options.now();
 
   let contract: TronContract;
@@ -954,7 +954,7 @@ export const prepareTronApprove = async (
     head,
     params: params0,
     resources: res,
-    balance: BigInt(Math.trunc(fromRow.balance ?? 0)),
+    balance: BigInt(fromRow.balance ?? 0),
     outflow: 0n,
     estimate,
     flags,
@@ -1042,10 +1042,45 @@ export const pollTron = async (
   /* A transaction neither node knows is dropped only once the solidified head is past its
      expiration — until then it may still land, so the signed bytes are rebroadcast. */
   if (expiration !== undefined && head.timestamp > expiration) {
-    return { kind: "ended", state: "dropped" };
+    const independent = ctx.options.networks.independentTronApi(tx.network);
+    if (independent.kind !== "available") {
+      return { kind: "ended", state: "dropped" };
+    }
+    /* A second node's word is required when one is configured: it must see a solidified head past
+       expiration too and know the transaction on neither its solidity nor its full node. Any
+       dissent or read failure means "not dropped" — the rebroadcast path continues. */
+    if (await independentlyDropped(independent.client, tx.hash, expiration)) {
+      return { kind: "ended", state: "dropped" };
+    }
   }
   if (tx.raw !== undefined) {
     await broadcastHex(api, tx.raw).catch(() => "");
   }
   return undefined;
+};
+
+/**
+ * Second-node drop proof, same read order as the primary's: solidified head past expiration, then
+ * no solidified info, then no full-node info. Every failure reads as "not proven".
+ */
+const independentlyDropped = async (
+  api: TronApi,
+  hash: string,
+  expiration: number,
+): Promise<boolean> => {
+  try {
+    const head = await solidHead(api);
+    if (head.timestamp <= expiration) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, true)) !== undefined) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, false)) !== undefined) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 };

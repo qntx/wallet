@@ -1247,11 +1247,67 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+        }
+      }
+    },
+    {
+      "name": "personal_sign 32-byte text",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
+        }
+      }
+    },
+    {
+      "name": "personal_sign BOM-prefixed 32-byte",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0xefbbbf7369676e20746869732064696765737420666f72206d65206e6f772121"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0xefbbbf7369676e20746869732064696765737420666f72206d65206e6f772121"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0xefbbbf7369676e20746869732064696765737420666f72206d65206e6f772121"
         }
       }
     },
@@ -3397,6 +3453,138 @@
       }
     },
     {
+      "name": "solana message 32-byte text",
+      "request": {
+        "kind": "solana.message",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "5369676e2074686973206861726d6c65737320746578742c20706c6561736521"
+        },
+        "format": "raw"
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
+        }
+      }
+    },
+    {
+      "name": "solana message 32 bytes",
+      "request": {
+        "kind": "solana.message",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        },
+        "format": "raw"
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        }
+      }
+    },
+    {
+      "name": "CCTP depositForBurnWithHook 5 USDC to Hyperliquid",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x779b432d00000000000000000000000000000000000000000000000000000000004c4b400000000000000000000000000000000000000000000000000000000000000013000000000000000000000000b21D281DEdb17AE5B501F6AA8256fe38C4e45757000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000b21D281DEdb17AE5B501F6AA8256fe38C4e457570000000000000000000000000000000000000000000000000000000000030d4000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000038636374702d666f727761726400000000000000000000000000000000000000182222222222222222222222222222222222222222000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Arbitrum One\nThere may be other outflows\nSend 5 USDC to 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\nDeposit 5 USDC to your Hyperliquid perps account 0x2222222222222222222222222222222222222222\nCircle fee at most 0.2 USDC\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Arbitrum One\n可能还有其他转出\n发送 5 USDC 到 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\n向你的 Hyperliquid 合约账户 0x2222222222222222222222222222222222222222 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "CCTP depositForBurn wrong domain (blind)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x779b432d00000000000000000000000000000000000000000000000000000000004c4b400000000000000000000000000000000000000000000000000000000000000003000000000000000000000000b21D281DEdb17AE5B501F6AA8256fe38C4e45757000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831000000000000000000000000b21D281DEdb17AE5B501F6AA8256fe38C4e457570000000000000000000000000000000000000000000000000000000000030d4000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000038636374702d666f727761726400000000000000000000000000000000000000182222222222222222222222222222222222222222000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "cctp-destination",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Arbitrum One\nCall contract 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d, function 0x779b432d\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Arbitrum One\n调用合约 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d，函数 0x779b432d\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "tron trx-transfer",
       "request": {
         "kind": "tron.transaction",
@@ -4060,11 +4248,39 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n��������\n������������������"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n��������\n������������������"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        }
+      }
+    },
+    {
+      "name": "tron tron message 32-byte text",
+      "request": {
+        "kind": "tron.message",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "message": {
+          "$bytes": "5369676e2074686973206861726d6c65737320746578742c20706c6561736521"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
         }
       }
     },

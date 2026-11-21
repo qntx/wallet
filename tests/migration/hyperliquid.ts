@@ -1,8 +1,8 @@
 /**
  * Host composition for `@qntx/wallet-engine/apps`: the complete Hyperliquid flow — engine and apps
  * creation, terms acknowledgement, enable with the approval request, orders with a quote preview, a
- * live book, a close, a withdraw and a Bridge2 deposit. Compiled only; the engine README's
- * Hyperliquid section describes the same surface.
+ * live book, a close, a withdraw and a CCTP deposit. Compiled only; the engine README's Hyperliquid
+ * section describes the same surface.
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qntx/wallet-engine";
@@ -44,6 +44,7 @@ export function createHost(params: {
   const apps = createApps({
     wallet,
     requests: engine.requests,
+    networks: engine.networks,
     fetch: globalThis.fetch.bind(globalThis),
     now: () => Date.now(),
     setTimer,
@@ -210,13 +211,62 @@ export async function fundAndWithdraw(
     // The action may have committed — refresh the account instead of retrying.
     await hl.account.state({ user: owner });
   }
-  // The Bridge2 deposit is a USDC transfer on Arbitrum — below the minimum it is lost.
-  const deposit = await hl.fund.deposit(group, {
-    amount: 20_000_000n, // 20 USDC — `HYPERLIQUID_DEPOSIT["Mainnet"].minimum` is 5 USDC.
+  /* The CCTP deposit burns USDC on Arbitrum's TokenMessengerV2 — Circle's forwarder mints it
+     on HyperEVM into the Hyperliquid account. It must clear the Circle fee the provider reads
+     from Iris and the on-chain per-message burn limit. When the messenger's USDC allowance is
+     short the call returns `approval-required` with only the exact-amount approve request — the
+     burn call cannot be prepared while the approval is unmined, so the host approves it and calls
+     `deposit` again; the re-read allowance then covers the amount and the `deposit` variant
+     carries the burn request. */
+  const first = await hl.fund.deposit(group, {
+    amount: 20_000_000n, // 20 USDC
     fee: "normal",
+    dex: hl.fund.depositInfo.dex, // "perps" by default — "spot" funds the spot account.
   });
-  await engine.requests.approve(deposit.requestId, "evm-sign", { verify });
-  await deposit.outcome;
+  if (first.kind === "approval-required") {
+    await engine.requests.approve(first.approval.requestId, "evm-sign", { verify });
+    await first.approval.outcome;
+  }
+  const result = await hl.fund.deposit(group, {
+    amount: 20_000_000n,
+    fee: "normal",
+    dex: hl.fund.depositInfo.dex,
+  });
+  if (result.kind === "deposit") {
+    await engine.requests.approve(result.deposit.requestId, "evm-sign", { verify });
+    await result.deposit.outcome;
+  }
 }
 
 export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps";
+
+/**
+ * The builder fee is optional now: `AppGroupState.builder` is `"approved" | "declined"` — a refusal
+ * during enable finishes `enabled` and trades without the builder. The host offers `approveBuilder`
+ * for a later consent; a second refusal stays declined and resolves normally.
+ */
+export async function offerBuilder(
+  apps: Awaited<ReturnType<typeof createApps>>,
+  group: HyperliquidGroup,
+): Promise<"approved" | "declined" | "unconfigured"> {
+  const state =
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
+  if (state?.builder === "approved") {
+    return "approved";
+  }
+  if (state?.status !== "enabled") {
+    throw new Error("the group is not enabled");
+  }
+  try {
+    await apps.controller.approveBuilder(group, "hyperliquid");
+  } catch (error) {
+    if (error instanceof Error && error.name === "HyperliquidError") {
+      return "unconfigured";
+    }
+    throw error;
+  }
+  return (
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid
+      ?.builder ?? "declined"
+  );
+}

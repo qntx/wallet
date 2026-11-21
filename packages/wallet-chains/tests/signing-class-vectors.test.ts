@@ -5,7 +5,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "../src/evm/index.ts";
-import { isBlindIntent } from "../src/index.ts";
+import { isBlindIntent, messageBlindReason, messageContent } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { decodeSolana } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
@@ -33,7 +33,8 @@ const request = (v: VectorCase): SignRequest => {
   if (
     v.request.kind === "evm.personal-message" ||
     v.request.kind === "tron.message" ||
-    v.request.kind === "solana.transaction"
+    v.request.kind === "solana.transaction" ||
+    v.request.kind === "solana.message"
   ) {
     return {
       ...v.request,
@@ -58,13 +59,36 @@ const familyOf = (
 } =>
   kind.startsWith("tron.")
     ? { decode: decodeTron, signer: vectors.signers.tron }
-    : kind.startsWith("solana.")
+    : kind === "solana.message"
       ? {
-          decode: (r, s) =>
-            decodeSolana(r as Extract<SignRequest, { kind: "solana.transaction" }>, s),
+          // `decodeSolana` is transaction-only; a raw message's display is the
+          // content classification plus its blind reason, as in decodeTron.
+          decode: (r) => {
+            const { message, network } = r as Extract<SignRequest, { kind: "solana.message" }>;
+            const content = messageContent(message, "solana");
+            const blind = messageBlindReason(content);
+            return {
+              family: "solana",
+              network,
+              summary: "message",
+              outflows: [],
+              approvals: [],
+              fee: undefined,
+              warnings: [],
+              message: content,
+              verifiability: "opaque",
+              ...(blind === undefined ? {} : { blind }),
+            };
+          },
           signer: vectors.signers.solana,
         }
-      : { decode: decodeEvm, signer: vectors.signers.evm };
+      : kind.startsWith("solana.")
+        ? {
+            decode: (r, s) =>
+              decodeSolana(r as Extract<SignRequest, { kind: "solana.transaction" }>, s),
+            signer: vectors.signers.solana,
+          }
+        : { decode: decodeEvm, signer: vectors.signers.evm };
 
 const blindOf = (intent: DisplayIntent): string | null => intent.blind ?? null;
 

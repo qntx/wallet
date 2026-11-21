@@ -83,7 +83,7 @@ export const manualTimer = (start = Date.now()): ManualTimer => {
 };
 
 export type Posted = {
-  readonly endpoint: "info" | "exchange";
+  readonly endpoint: "info" | "exchange" | "iris";
   readonly body: Record<string, unknown>;
 };
 
@@ -103,6 +103,17 @@ export type HlState = {
   noAutoBuilderFee?: boolean;
   /** The gateway's /v1/eligibility answer — a response factory, or throw for `error` status. */
   eligibility?: () => EligibilityResponse;
+  /** The Iris forward-fee rows `fund.deposit` parses — malformed/missing rows are tested here. */
+  iris?: { readonly status: number; readonly body: unknown };
+  /** The Arbitrum eth_call answers the deposit's CCTP reads get. */
+  arb?: {
+    /** `localMinter()` on the TokenMessengerV2 — defaults to a nonzero address. */
+    readonly minter?: string;
+    /** `burnLimitsPerMessage(USDC)` — defaults to `0xffffffffffffffff`. */
+    readonly burnLimit?: bigint;
+    /** `allowance(owner, messenger)` on USDC — defaults to 0 (approve runs). */
+    readonly allowance?: bigint;
+  };
 };
 
 const listAgent = (
@@ -129,6 +140,25 @@ export const hlFetch =
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const body = bodyJson(init);
     const headers = { date: new Date(timers.time).toUTCString() };
+    if (url.startsWith("https://iris-api")) {
+      const iris = hl.iris ?? {
+        status: 200,
+        body: [
+          {
+            finalityThreshold: 1000,
+            minimumFee: 0,
+            forwardFee: { low: 200000, med: 200000, high: 200000 },
+          },
+          {
+            finalityThreshold: 2000,
+            minimumFee: 0,
+            forwardFee: { low: 200000, med: 200000, high: 200000 },
+          },
+        ],
+      };
+      posted.push({ endpoint: "iris", body });
+      return Response.json(iris.body, { status: iris.status, headers });
+    }
     if (url.endsWith("/v1/eligibility")) {
       const answer =
         hl.eligibility === undefined
@@ -179,20 +209,48 @@ export const hlFetch =
     return Response.json(response, { headers });
   };
 
-const arbRpc = async (init?: RequestInit): Promise<Response> => {
+const word = (v: bigint | string | number): string =>
+  `0x${(typeof v === "bigint" ? v : BigInt(v)).toString(16).padStart(64, "0")}`;
+
+const arbRpc = async (init: RequestInit | undefined, hl: HlState): Promise<Response> => {
   const body = bodyJson(init);
   await Promise.resolve();
+  const params = Array.isArray(body["params"]) ? (body["params"] as unknown[]) : [];
+  const ethCall = isRecord(params[0]) ? params[0] : undefined;
+  const callData = typeof ethCall?.["data"] === "string" ? ethCall["data"] : "";
+  const callResult = callData.startsWith("0xcb75c11c")
+    ? word(hl.arb?.minter ?? "0x00000000000000000000000000000000deadbee5")
+    : callData.startsWith("0xa56ec632")
+      ? word(hl.arb?.burnLimit ?? 0xffffffffffffffffn)
+      : callData.startsWith("0xdd62ed3e")
+        ? word(hl.arb?.allowance ?? 0n)
+        : `0x${"00".repeat(32)}`;
+  /* On a real chain depositForBurnWithHook reverts while the approve is unmined — mirror that:
+     estimateGas answers an execution-reverted error whenever the allowance is below the amount
+     encoded in the call's first argument. */
+  const estimateResult =
+    callData.startsWith("0x779b432d") &&
+    (hl.arb?.allowance ?? 0n) < BigInt(`0x${callData.slice(10, 74)}`)
+      ? undefined
+      : "0x5208";
+  if (estimateResult === undefined) {
+    return Response.json({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: 3, message: "execution reverted" },
+    });
+  }
   const result =
     body["method"] === "eth_chainId"
       ? "0x66eee"
       : body["method"] === "eth_blockNumber"
         ? "0x1"
         : body["method"] === "eth_call"
-          ? `0x${"00".repeat(32)}`
+          ? callResult
           : body["method"] === "eth_getTransactionCount"
             ? "0x0"
             : body["method"] === "eth_estimateGas"
-              ? "0x5208"
+              ? estimateResult
               : body["method"] === "eth_feeHistory"
                 ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
                 : "0x0";
@@ -304,7 +362,7 @@ export const world = async (
     ...idleNetworkDeps,
     fetch: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      return url === "https://arb-sepolia.test/rpc" ? arbRpc(init) : fetch(input, init);
+      return url === "https://arb-sepolia.test/rpc" ? arbRpc(init, hl) : fetch(input, init);
     },
     rpc: { "eip155:421614": ["https://arb-sepolia.test/rpc"] },
     openStore: async () => {
@@ -375,6 +433,7 @@ export const world = async (
   } = createApps({
     wallet,
     requests,
+    networks,
     fetch,
     /* Advances 1 ms per read — two clock reads never agree, which is exactly what the
        revoke binding's single-read `validUntil` protects against. */

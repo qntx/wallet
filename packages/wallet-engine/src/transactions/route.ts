@@ -199,6 +199,7 @@ export type ChainRequestMethod =
   | "evm-delegation"
   | "evm-batch"
   | "evm-approve"
+  | "evm-cctp"
   | "evm-swap"
   | "evm-bridge"
   | "evm-nft-send"
@@ -241,6 +242,17 @@ export type ChainRequestInput =
       readonly token: string;
       readonly spender: string;
       readonly amount: bigint;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      /** The Hyperliquid CCTP deposit — `depositForBurnWithHook` on the route's messenger. */
+      readonly method: "evm-cctp";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly amount: bigint;
+      readonly dex: "perps" | "spot";
+      /** The Circle forward fee bound — strictly below `amount`. */
+      readonly maxFee: bigint;
       readonly fee: PrepareParams["fee"];
     }
   | {

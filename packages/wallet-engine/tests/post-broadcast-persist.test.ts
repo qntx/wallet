@@ -82,8 +82,8 @@ const evmAnswer = (node: EvmNode, method: string, params: unknown[]): unknown =>
       return {
         baseFeePerGas: ["0x1", "0x1"],
         reward: [
-          ["0x1", "0x2"],
-          ["0x1", "0x2"],
+          ["0x1", "0x2", "0x3"],
+          ["0x1", "0x2", "0x3"],
         ],
       };
     case "eth_blockNumber":

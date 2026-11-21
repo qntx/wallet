@@ -604,6 +604,14 @@ export type ChainRequestInput = ({
     readonly amount: bigint;
     readonly fee: PrepareParams["fee"];
 } | {
+    readonly method: "evm-cctp";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly amount: bigint;
+    readonly dex: "perps" | "spot";
+    readonly maxFee: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
     readonly method: "evm-swap";
     readonly account: AccountRef;
     readonly network: string;
@@ -711,7 +719,7 @@ export type ChainRequestInput = ({
 };
 
 // @public (undocumented)
-export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
+export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
 // @public
 export type CloudStore = {
@@ -1203,7 +1211,9 @@ export type HistoryEntry = {
 };
 
 // @public (undocumented)
-export type HistoryFlag = "zero-value-transfer" | "token-impersonation" | "suspicious-token-symbol" | "lookalike-counterparty" | "chain-mismatch";
+export type HistoryFlag = "zero-value-transfer" | "token-impersonation" | "suspicious-token-symbol" | "lookalike-counterparty" | "chain-mismatch" |
+/** The outcome is genuinely unknown and no evidence can still arrive — user-archived. */
+"unresolved";
 
 // @public (undocumented)
 export type HistoryGroup = {
@@ -2255,6 +2265,7 @@ export type SparkClientFactory = (options: {
 export class SparkController extends Controller<SparkControllerState> {
     constructor(options: SparkControllerOptions);
     accountBalance(ref: SparkAccountRef): number | undefined;
+    archivePayment(ref: SparkAccountRef, id: string): void;
     claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void>;
     // (undocumented)
     createInvoice(ref: SparkAccountRef, params: {
@@ -2416,7 +2427,9 @@ export type SparkDisplay = {
 // @public
 export type SparkErrorCategory = "network" | "approval-required" | "insufficient-funds" | "rejected" |
 /** The payment may have committed; `payment` is its open record. */
-"unknown" | "internal";
+"unknown" |
+/** An open `unknown` record already holds this payment's intent — resending risks a double pay. */
+"duplicate" | "internal";
 
 // @public
 export type SparkExitInput = {
@@ -2445,7 +2458,7 @@ export type SparkPaymentRecord = {
 };
 
 // @public
-export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed" | "archived";
 
 // @public (undocumented)
 export type SparkResult = {
@@ -2602,7 +2615,7 @@ export class TransactionController extends Controller<TransactionControllerState
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
-        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
@@ -2745,19 +2758,19 @@ const TRON_NODE_PATHS: {
         }, z.core.$strict>;
         readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
             address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            balance: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            balance: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             type: z.ZodMiniOptional<z.ZodMiniString<string>>;
             assetV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 key: z.ZodMiniString<string>;
-                value: z.ZodMiniNumber<number>;
+                value: z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>;
             }, z.core.$loose>>>;
             frozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>>;
             unfrozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                unfreeze_amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                unfreeze_amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                 unfreeze_expire_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             }, z.core.$loose>>>;
             votes: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
@@ -2766,11 +2779,11 @@ const TRON_NODE_PATHS: {
             }, z.core.$loose>>>;
             latest_withdraw_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             account_resource: z.ZodMiniOptional<z.ZodMiniObject<{
-                delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>;
-            delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
     };
     readonly "/wallet/getavailableunfreezecount": {
@@ -2789,7 +2802,7 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            max_size: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            max_size: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getdelegatedresourcev2": {
@@ -2802,8 +2815,8 @@ const TRON_NODE_PATHS: {
             delegatedResource: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 from: z.ZodMiniOptional<z.ZodMiniString<string>>;
                 to: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                 expire_time_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                 expire_time_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             }, z.core.$loose>>>;
@@ -2815,7 +2828,7 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            reward: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            reward: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getassetissuebyid": {
@@ -2843,14 +2856,14 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            freeNetLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            freeNetUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            NetLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            NetUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            EnergyLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            EnergyUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            tronPowerLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            tronPowerUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            freeNetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            freeNetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            NetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            NetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            EnergyLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            EnergyUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            tronPowerLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            tronPowerUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getchainparameters": {
@@ -2858,7 +2871,7 @@ const TRON_NODE_PATHS: {
         readonly response: z.ZodMiniObject<{
             chainParameter: z.ZodMiniArray<z.ZodMiniObject<{
                 key: z.ZodMiniString<string>;
-                value: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>;
         }, z.core.$loose>;
     };
@@ -2915,7 +2928,7 @@ const TRON_NODE_PATHS: {
                         value: z.ZodMiniObject<{
                             owner_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                             to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                            amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                             asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
                         }, z.core.$loose>;
                     }, z.core.$loose>;
@@ -3001,21 +3014,21 @@ export type TronAccountView = {
     readonly reward: string;
     readonly bandwidth: {
         readonly free: {
-            readonly limit: number;
-            readonly used: number;
+            readonly limit: string;
+            readonly used: string;
         };
         readonly staked: {
-            readonly limit: number;
-            readonly used: number;
+            readonly limit: string;
+            readonly used: string;
         };
     };
     readonly energy: {
-        readonly limit: number;
-        readonly used: number;
+        readonly limit: string;
+        readonly used: string;
     };
     readonly tronPower: {
-        readonly limit: number;
-        readonly used: number;
+        readonly limit: string;
+        readonly used: string;
     };
 };
 
@@ -3031,15 +3044,15 @@ export type TronFeeQuote = {
     readonly bandwidth: {
         readonly bytes: number;
         readonly source: "staked" | "free" | "burn" | "activation-staked" | "activation-fee";
-        readonly stakedAvailable: number;
-        readonly freeAvailable: number;
+        readonly stakedAvailable: bigint;
+        readonly freeAvailable: bigint;
         readonly burn: string;
     };
     readonly activation?: string;
     readonly energy?: {
         readonly used: number;
         readonly penalty: number;
-        readonly available: number;
+        readonly available: bigint;
         readonly burn: string;
         readonly feeLimit: string;
     };
@@ -3098,7 +3111,7 @@ export type WalletEngine = {
     readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
     readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
     readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
-    readonly spark: HostController<SparkController, "history" | "accountBalance" | "receiveAddress" | "createInvoice" | "newDepositAddress" | "paymentStatus" | "quoteExit" | "registerLightningAddress" | "unregisterLightningAddress">;
+    readonly spark: HostController<SparkController, "history" | "accountBalance" | "archivePayment" | "receiveAddress" | "createInvoice" | "newDepositAddress" | "paymentStatus" | "quoteExit" | "registerLightningAddress" | "unregisterLightningAddress">;
     readonly accounts: HostController<AccountTreeController, "imported" | "addGroup" | "addGroups" | "renameWallet" | "renameGroup" | "setHidden" | "select" | "bind" | "unbind" | "bindingOf" | "discoverSpark" | "discoverGroups" | "refreshTotals">;
     readonly watch: {
         readonly add: (input: {

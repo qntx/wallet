@@ -96,7 +96,7 @@ const evmWorld = (o: {
       eth_blockNumber: "0x1",
       eth_getTransactionCount: "0x0",
       eth_estimateGas: "0x5208",
-      eth_feeHistory: { baseFeePerGas: ["0x64"], reward: [["0x1"]] },
+      eth_feeHistory: { baseFeePerGas: ["0x64"], reward: [["0x1", "0x1", "0x1"]] },
       eth_sendRawTransaction: `0x${"ab".repeat(32)}`,
       eth_getTransactionReceipt: {
         status: "0x1",

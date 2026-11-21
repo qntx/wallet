@@ -1373,6 +1373,7 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "evm-delegation" ||
       input.method === "evm-batch" ||
       input.method === "evm-approve" ||
+      input.method === "evm-cctp" ||
       input.method === "evm-swap" ||
       input.method === "evm-nft-send" ||
       input.method === "evm-bridge" ||

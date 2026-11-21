@@ -188,6 +188,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
       logger,
     });
     const { controller, hyperliquid, destroy } = createApps({
+      networks,
       wallet,
       requests,
       fetch,

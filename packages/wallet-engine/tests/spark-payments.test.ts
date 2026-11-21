@@ -5,6 +5,7 @@ import type { Event } from "@qntx/nostr";
 import {
   encodeSparkAddress,
   encodeTokenIdentifier,
+  SparkError,
   SparkInputError,
   SparkRequestError,
   SparkTokenBroadcastError,
@@ -19,7 +20,6 @@ import { RequestController } from "../src/requests/controller.ts";
 import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
 import { SparkControllerError } from "../src/spark/errors.ts";
 import {
-  ABSENT_FAIL_MS,
   decodePaymentRecord,
   encodePaymentRecord,
   RECONCILE_BASE_MS,
@@ -129,7 +129,11 @@ function rig(
     /** The `recent` refresh's first page. */
     readonly recent?: () => Promise<Page>;
     readonly outputs?: () => Promise<ReadonlyArray<SparkTokenOutput>>;
+    /** The operator's `balance()` answer — an Error rejects the read. */
+    readonly balance?: number | Error;
     readonly now?: () => number;
+    /** The kernel approval answer — default resolves. */
+    readonly approve?: (params: unknown) => Promise<unknown>;
     /** Runs inside each commit call, before it answers. */
     readonly onCommit?: (store: EngineStore) => Promise<void>;
   } = {},
@@ -153,7 +157,10 @@ function rig(
   const warnings: string[] = [];
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
-    balance: async () => Promise.resolve(42),
+    balance: async () =>
+      options.balance instanceof Error
+        ? Promise.reject(options.balance)
+        : Promise.resolve(options.balance ?? 42),
     transfers: {
       claimPending: async () => Promise.resolve({ leaves: [], failures: [] }),
       claim: async () => Promise.resolve([]),
@@ -199,7 +206,7 @@ function rig(
       signer: () => null as never,
       approve: async (p: unknown) => {
         approvals.push(p);
-        return Promise.resolve({});
+        return options.approve === undefined ? Promise.resolve({}) : options.approve(p);
       },
     },
     fetch: async () => Promise.reject(new Error("no fetch")),
@@ -305,13 +312,65 @@ describe("Spark payment records", () => {
     await r.c.destroy();
   });
 
-  it("a definite first-attempt error fails the record and removes its row", async () => {
+  it("a definite first-attempt error is still unknown without positive evidence", async () => {
     const r = rig({ script: { send: [new SparkInputError("bad input")] } });
     await r.c.init();
     const error = await failure(send(r.c));
-    expect(error).not.toMatchObject({ category: "unknown" });
-    expect(r.records()[TID]).toMatchObject({ state: "failed", error: "bad input" });
-    await expect(stored(r.store)).resolves.toStrictEqual({});
+    expect(error).toMatchObject({ category: "unknown", payment: { state: "unknown" } });
+    expect(r.records()[TID]).toMatchObject({ state: "unknown", error: "bad input" });
+    await expect(storedRecord(r.store, TID)).resolves.toMatchObject({ state: "unknown" });
+    await r.c.destroy();
+  });
+
+  it.each([
+    ["a SparkError", new SparkError("weird")],
+    ["a non-Spark error", new Error("boom")],
+  ] as const)("%s on the first sats attempt is unknown", async (_name, failure_) => {
+    const r = rig({ script: { send: [failure_] } });
+    await r.c.init();
+    const error = await failure(send(r.c));
+    expect(error).toMatchObject({ category: "unknown", payment: { state: "unknown" } });
+    expect(r.calls).toHaveLength(1);
+    await r.c.destroy();
+  });
+
+  it("a retryable request error on the first attempt recovers", async () => {
+    const r = rig({ script: { send: [LOST] } });
+    await r.c.init();
+    await send(r.c);
+    expect(r.calls.filter((call) => call.method === "send")).toHaveLength(2);
+    expect(r.records()[TID]?.state).not.toBe("unknown");
+    await r.c.destroy();
+  });
+
+  it("an approval refusal writes no record and commits nothing", async () => {
+    const r = rig({ approve: async () => Promise.reject(new Error("refused")) });
+    await r.c.init();
+    const error = await failure(send(r.c));
+    expect(error).toBeInstanceOf(Error);
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it("a listed failure refolds the commit error, a listed success refolds as unknown", async () => {
+    const TID2 = "01936f00-3333-7333-8333-333333333333";
+    let listed: ReadonlyArray<SparkPayment> = [payment(TID, "failed")];
+    const r = rig({
+      script: { send: [LOST, LOST, LOST, LOST, LOST, LOST, LOST, LOST] },
+      scan: async () => Promise.resolve({ payments: listed }),
+    });
+    await r.c.init();
+    const failed = await failure(send(r.c));
+    expect(failed).toBeInstanceOf(SparkControllerError);
+    expect((failed as SparkControllerError).category).not.toBe("unknown");
+    expect(r.records()[TID]?.state).toBe("failed");
+    listed = [payment(TID2, "completed")];
+    const settled = await failure(send(r.c, TID2));
+    expect(settled).toMatchObject({
+      category: "unknown",
+      payment: { id: TID2, state: "settled" },
+    });
     await r.c.destroy();
   });
 
@@ -345,6 +404,256 @@ describe("Spark payment records", () => {
       (w) => w.filter((m) => m === "spark payment record ignored: unreadable").length === 2,
     );
     expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+});
+
+describe("Spark sats balance preflight", () => {
+  const SPARK_INVOICE = encodeSparkAddress({
+    network: "regtest",
+    identityPublicKey: PK,
+    invoice: {
+      version: 1,
+      id: "01936f00-0000-7000-8000-000000000001",
+      payment: { type: "sats", amount: 30 },
+    },
+  });
+
+  it("a transfer the balance cannot cover refuses before any record", async () => {
+    const r = rig({ balance: 9 });
+    await r.c.init();
+    const error = await failure(send(r.c));
+    expect(error).toMatchObject({ category: "insufficient-funds" });
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    expect(r.approvals).toHaveLength(1);
+    await r.c.destroy();
+  });
+
+  it("a lightning payment checks amount plus its fee bound", async () => {
+    const r = rig({ balance: 25 });
+    await r.c.init();
+    const error = await failure(
+      r.c.payInvoice(REF, {
+        invoice: INVOICE,
+        maxFeeSats: 5,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => {},
+      }),
+    );
+    expect(error).toMatchObject({ category: "insufficient-funds" });
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it("a spark invoice checks its amount", async () => {
+    const r = rig({ balance: 29 });
+    await r.c.init();
+    const error = await failure(
+      r.c.paySparkInvoice(REF, {
+        invoice: SPARK_INVOICE,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => {},
+      }),
+    );
+    expect(error).toMatchObject({ category: "insufficient-funds" });
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it("a cooperative exit checks amount plus the converged fee", async () => {
+    const r = rig({ balance: 0 });
+    await r.c.init();
+    const error = await failure(
+      r.c.withdraw(REF, {
+        address: P2TR,
+        amountSats: 1000,
+        speed: "FAST",
+        maxFeeSats: 10,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => {},
+      }),
+    );
+    expect(error).toMatchObject({ category: "insufficient-funds" });
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it("a balance exactly covering the debit proceeds", async () => {
+    const r = rig({ balance: 10 });
+    await r.c.init();
+    await send(r.c);
+    expect(r.calls.filter((call) => call.method === "send")).toHaveLength(1);
+    await r.c.destroy();
+  });
+
+  it("an unreadable balance is a network error with no record", async () => {
+    const r = rig({ balance: new SparkRequestError("balance read failed") });
+    await r.c.init();
+    const error = await failure(send(r.c));
+    expect(error).toMatchObject({ category: "network" });
+    expect(r.calls).toHaveLength(0);
+    expect(r.records()).toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it("a token send has no sats preflight", async () => {
+    const r = rig({ balance: 0 });
+    await r.c.init();
+    await expect(sendToken(r.c)).resolves.toBe("tok-hash");
+    await r.c.destroy();
+  });
+});
+
+describe("Spark duplicate refusal", () => {
+  const OTHER_TID = "01936f00-2222-7222-8222-222222222222";
+
+  it("a second send matching an unresolved record is refused", async () => {
+    const r = rig({ script: { send: [LOST, LOST, LOST, LOST] } });
+    await r.c.init();
+    await failure(send(r.c));
+    const second = await failure(send(r.c, OTHER_TID));
+    expect(second).toMatchObject({
+      category: "duplicate",
+      payment: { id: TID, kind: "transfer", state: "unknown" },
+    });
+    expect(r.calls.filter((call) => call.method === "send")).toHaveLength(4);
+    expect(r.records()[OTHER_TID]).toBeUndefined();
+    await r.c.destroy();
+  });
+
+  it("the same transfer id is an idempotent resume, not a duplicate", async () => {
+    const r = rig({ script: { send: [LOST, LOST, LOST, LOST] } });
+    await r.c.init();
+    await failure(send(r.c));
+    await send(r.c);
+    expect(r.calls.filter((call) => call.method === "send")).toHaveLength(5);
+    expect(r.records()[TID]?.state).not.toBe("unknown");
+    await r.c.destroy();
+  });
+
+  it("a different amount to the same receiver is not a duplicate", async () => {
+    const r = rig({ script: { send: [LOST, LOST, LOST, LOST] } });
+    await r.c.init();
+    await failure(send(r.c));
+    await r.c.send(REF, {
+      receiver: RECEIVER,
+      amountSats: 11,
+      transferId: OTHER_TID,
+      verify: VERIFY,
+      commit: () => {},
+    });
+    expect(r.records()[OTHER_TID]?.state).toBe("submitted");
+    await r.c.destroy();
+  });
+
+  it("an unresolved token record blocks its re-send too", async () => {
+    /* A token record without its spent output ids is not reconcilable, so `holdsToken` does not
+       refuse first — the duplicate check does. */
+    const r = rig({ script: { token: [new SparkError("weird")] } });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    const second = await failure(sendToken(r.c, OTHER_TID));
+    expect(second).toMatchObject({ category: "duplicate", payment: { id: TID, kind: "token" } });
+    await r.c.destroy();
+  });
+
+  it("an unresolved record for a different token does not block", async () => {
+    const lost = new SparkTokenBroadcastError("lost", { inputOutputIds: ["a:0"] });
+    const r = rig({
+      script: { token: [lost, lost, lost, lost] },
+      outputs: async () => Promise.resolve([output("a:0", "pending-outbound")]),
+    });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    await r.c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: encodeTokenIdentifier(new Uint8Array(32).fill(8), "regtest"),
+      amount: 5n,
+      transferId: OTHER_TID,
+      verify: VERIFY,
+      commit: () => {},
+    });
+    expect(r.records()[OTHER_TID]?.state).toBe("settled");
+    await r.c.destroy();
+  });
+});
+
+describe("Spark payment archive", () => {
+  /** A token record without its spent output ids — `unknown` and never reconcilable. */
+  const unresolvable = async (store?: EngineStore) => {
+    const r = rig({
+      ...(store === undefined ? {} : { store }),
+      script: { token: [new SparkError("weird")] },
+    });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    return r;
+  };
+
+  it("archives an open record the operator can never answer for", async () => {
+    const r = await unresolvable();
+    r.c.archivePayment(REF, TID);
+    expect(r.records()[TID]).toMatchObject({ kind: "token", state: "archived" });
+    await expect(storedRecord(r.store, TID)).resolves.toMatchObject({ state: "archived" });
+    await r.c.destroy();
+  });
+
+  it("an archived record survives a restart unreconciled", async () => {
+    const store = createMemoryEngineStore();
+    const r = await unresolvable(store);
+    r.c.archivePayment(REF, TID);
+    await r.c.destroy();
+    const fresh = rig({ store });
+    await fresh.c.init();
+    expect(fresh.records()[TID]?.state).toBe("archived");
+    expect(fresh.warnings).not.toContain("spark payment record ignored: unreadable");
+    await fresh.c.destroy();
+  });
+
+  it("refuses to archive a record that does not exist", async () => {
+    const r = rig();
+    await r.c.init();
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a submitted record — the operator can still answer", async () => {
+    const r = rig();
+    await r.c.init();
+    await send(r.c);
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a reconcilable record — its outputs still answer", async () => {
+    const lost = new SparkTokenBroadcastError("lost", { inputOutputIds: ["a:0"] });
+    const r = rig({ script: { token: [lost, lost, lost, lost] } });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    expect(r.records()[TID]?.state).toBe("unknown");
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a final record", async () => {
+    const r = rig();
+    await r.c.init();
+    await sendToken(r.c);
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("an archived record neither blocks a re-send nor holds the token", async () => {
+    const r = await unresolvable();
+    r.c.archivePayment(REF, TID);
+    await expect(sendToken(r.c, "01936f00-2222-7222-8222-222222222222")).resolves.toBe("tok-hash");
     await r.c.destroy();
   });
 });
@@ -431,7 +740,7 @@ describe("Spark payment reconciliation", () => {
     await r.c.destroy();
   });
 
-  it("an id the operator does not list fails only after the absence bound", async () => {
+  it("an id the operator does not list stays unknown at any age", async () => {
     let now = NOW;
     const r = rig({ store: await storeWith(open()), now: () => now });
     await r.c.init();
@@ -440,19 +749,19 @@ describe("Spark payment reconciliation", () => {
       (n) => n >= 1,
     );
     expect(r.records()[TID]?.state).toBe("unknown");
-    now = NOW + ABSENT_FAIL_MS;
+    now = NOW + 3_600_000;
     await r.timers.fire();
-    expect(r.records()[TID]).toMatchObject({
-      state: "failed",
-      error: "the Spark operator lists no such transfer",
-    });
+    expect(r.records()[TID]?.state).toBe("unknown");
+    now = NOW + 86_400_000;
+    await r.timers.fire();
+    expect(r.records()[TID]?.state).toBe("unknown");
     await r.c.destroy();
   });
 
   it("an incomplete listing never fails an absent id", async () => {
     const r = rig({
       store: await storeWith(open()),
-      now: () => NOW + ABSENT_FAIL_MS,
+      now: () => NOW + 3_600_000,
       // Ten full pages, all newer than the record: the scan stops at its page limit.
       scan: async (offset) =>
         Promise.resolve({
@@ -476,10 +785,10 @@ describe("Spark payment reconciliation", () => {
     await r.c.destroy();
   });
 
-  it("a listing that reaches entries older than the record is complete", async () => {
+  it("a listing complete past the record's age still proves nothing", async () => {
     const r = rig({
       store: await storeWith(open()),
-      now: () => NOW + ABSENT_FAIL_MS,
+      now: () => NOW + 3_600_000,
       scan: async (offset) =>
         Promise.resolve({
           payments: [payment("older", "completed", NOW - 3_600_000)],
@@ -487,15 +796,19 @@ describe("Spark payment reconciliation", () => {
         }),
     });
     await r.c.init();
-    await until(r.records, (records) => records[TID]?.state === "failed");
+    await until(
+      () => r.timers.armed(),
+      (n) => n === 1,
+    );
     expect(r.historyCalls.filter((p) => p.limit === 100)).toHaveLength(1);
+    expect(r.records()[TID]?.state).toBe("unknown");
     await r.c.destroy();
   });
 
   it("a history read error decides nothing", async () => {
     const r = rig({
       store: await storeWith(open()),
-      now: () => NOW + ABSENT_FAIL_MS,
+      now: () => NOW + 3_600_000,
       scan: async () => Promise.reject(new SparkRequestError("down")),
     });
     await r.c.init();
@@ -535,6 +848,7 @@ describe("Spark payment reconciliation", () => {
     let listed: ReadonlyArray<SparkPayment> = [];
     const r = rig({
       script: { exit: [LOST, LOST, LOST, LOST] },
+      balance: 2000,
       scan: async () => Promise.resolve({ payments: listed }),
     });
     await r.c.init();
@@ -595,6 +909,43 @@ describe("Spark token payment records", () => {
       amount: "5",
       transactionHash: "tok-hash",
     });
+    await r.c.destroy();
+  });
+
+  it.each([
+    ["a SparkRequestError", new SparkRequestError("down")],
+    ["a SparkInputError", new SparkInputError("bad token input")],
+  ] as const)("a definite commit error fails a token record: %s", async (_name, failure_) => {
+    const r = rig({ script: { token: [failure_] } });
+    await r.c.init();
+    const error = await failure(sendToken(r.c));
+    expect(error).toBeInstanceOf(SparkControllerError);
+    expect((error as SparkControllerError).category).not.toBe("unknown");
+    expect(r.records()[TID]).toMatchObject({ state: "failed" });
+    await expect(stored(r.store)).resolves.toStrictEqual({});
+    await r.c.destroy();
+  });
+
+  it.each([
+    ["a SparkError", new SparkError("weird")],
+    ["a non-Spark error", new Error("boom")],
+  ] as const)("an uncertain commit error is unknown: %s", async (_name, failure_) => {
+    const r = rig({ script: { token: [failure_] } });
+    await r.c.init();
+    const error = await failure(sendToken(r.c));
+    expect(error).toMatchObject({ category: "unknown", payment: { kind: "token" } });
+    expect(r.records()[TID]?.state).toBe("unknown");
+    await r.c.destroy();
+  });
+
+  it("a failed token record write sends nothing", async () => {
+    const store = createMemoryEngineStore();
+    const r = rig({ store });
+    await r.c.init();
+    await store.close();
+    const error = await failure(sendToken(r.c));
+    expect(error).toBeInstanceOf(Error);
+    expect(r.calls).toHaveLength(0);
     await r.c.destroy();
   });
 
@@ -815,6 +1166,33 @@ describe("Spark payment records in history", () => {
     operator = [payment(TID, "completed")];
     await h.load({ walletId: "w1", groupIndex: 0 });
     expect(entries()).toMatchObject([
+      { id: `spark:regtest:${TID}`, status: "confirmed", origin: "chain" },
+    ]);
+    h.lock();
+    await r.c.destroy();
+  });
+
+  it("lists an archived record as pending flagged unresolved until the operator answers", async () => {
+    let operator: ReadonlyArray<SparkPayment> = [];
+    const r = rig({ script: { token: [new SparkError("weird")] } });
+    await r.c.init();
+    const h = history(r.c, () => operator);
+    await h.init();
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    await failure(sendToken(r.c));
+    r.c.archivePayment(REF, TID);
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    expect(h.getState().groups["w1:0"]?.entries).toMatchObject([
+      {
+        id: `spark:regtest:${TID}`,
+        status: "pending",
+        origin: "local",
+        flags: ["unresolved"],
+      },
+    ]);
+    operator = [payment(TID, "completed")];
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    expect(h.getState().groups["w1:0"]?.entries).toMatchObject([
       { id: `spark:regtest:${TID}`, status: "confirmed", origin: "chain" },
     ]);
     h.lock();

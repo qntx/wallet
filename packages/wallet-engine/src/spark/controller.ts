@@ -516,17 +516,37 @@ export class SparkController extends Controller<SparkControllerState> {
     call: () => Promise<T>,
     settled?: (result: T) => Pick<SparkPaymentRecord, "transactionHash">,
   ): Promise<T> {
+    /* A retry under a new id of a payment still open as unknown would double-pay: only the same
+       id (an idempotent resume) or a settled/failed earlier record may proceed. */
+    const earlier = ledger.duplicateOf(draft);
+    if (earlier !== undefined) {
+      throw new SparkControllerError(
+        "duplicate",
+        `payment ${earlier.id} to this receiver is still unresolved`,
+        undefined,
+        earlier,
+      );
+    }
     const record = await ledger.begin(draft);
     let result: T;
     try {
       result = await call();
     } catch (error) {
+      /* A sats commit error is not itself a verdict — the library throws the same classes before
+         and after the commit request, so only the operator's own listing decides. `check` folds a
+         listed final status into the record; anything else stays open as unknown. */
+      if (record.kind !== "token") {
+        await ledger.check(record);
+      }
       if (error instanceof UnknownOutcomeError) {
         const payment = ledger.resolve(record, {
           state: "unknown",
           error: errorText(error.cause),
           ...(error.inputOutputIds === undefined ? {} : { inputOutputIds: error.inputOutputIds }),
         });
+        if (payment.state === "failed") {
+          throw error;
+        }
         throw new SparkControllerError("unknown", error.message, error.cause, payment);
       }
       if (record.kind === "token") {
@@ -546,15 +566,6 @@ export class SparkController extends Controller<SparkControllerState> {
         const payment = ledger.resolve(record, { state: "unknown", error: errorText(error) });
         throw new SparkControllerError("unknown", "token transfer outcome unknown", error, payment);
       }
-      /* A sats commit error is not itself a verdict — the library throws the same classes before
-         and after the commit request, so only the operator's own listing decides. `check` probes
-         it now: an id absent from a complete listing means the coordinator holds no such transfer
-         and the error was pre-commit — failed; anything else stays open as unknown. */
-      const probe = await ledger.check(record);
-      if (probe === "absent") {
-        ledger.resolve(record, { state: "failed", error: errorText(error) });
-        throw error;
-      }
       const payment = ledger.resolve(record, { state: "unknown", error: errorText(error) });
       if (payment.state === "failed") {
         throw error;
@@ -565,6 +576,26 @@ export class SparkController extends Controller<SparkControllerState> {
       ledger.resolve(record, { state: "settled", ...settled(result) });
     }
     return result;
+  }
+
+  /**
+   * A definite pre-commit refusal for sats payments: the operator's balance answers before any
+   * record exists — an unreadable balance is `network` (nothing is committed), a shortfall is
+   * `insufficient-funds`.
+   */
+  private async requireSats(client: SparkClient, sats: number): Promise<void> {
+    let balance: number;
+    try {
+      balance = await client.balance();
+    } catch (error) {
+      throw new SparkControllerError("network", "the account balance could not be read", error);
+    }
+    if (balance < sats) {
+      throw new SparkControllerError(
+        "insufficient-funds",
+        `the balance ${balance} sats does not cover ${sats} sats`,
+      );
+    }
   }
 
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
@@ -725,6 +756,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      await this.requireSats(client, params.amountSats);
       params.commit();
       const transfer = await this.recorded(
         ledger,
@@ -915,6 +947,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      await this.requireSats(client, amountSats + params.maxFeeSats);
       params.commit();
       const payment = await this.recorded(
         ledger,
@@ -1009,6 +1042,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      await this.requireSats(client, amountSats);
       params.commit();
       const result = await this.recorded(
         ledger,
@@ -1059,6 +1093,22 @@ export class SparkController extends Controller<SparkControllerState> {
   /** Claims a confirmed L1 deposit paying one of the account's unused deposit addresses. */
   async claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void> {
     await this.guarded(async () => this.clientFor(ref).deposits.claim({ transaction }));
+  }
+
+  /**
+   * Archives an open payment record the operator can never answer for — a token send whose
+   * broadcast failed before its spent outputs were known. The archived outcome stays genuinely
+   * unknown forever: it stops blocking re-sends and `holdsToken`, and history flags it
+   * `unresolved`. The host must obtain the user's confirmation first.
+   */
+  archivePayment(ref: SparkAccountRef, id: string): void {
+    const { ledger } = this.connection(ref);
+    if (ledger.archive(id) === undefined) {
+      throw new SparkControllerError(
+        "rejected",
+        `payment ${id} cannot be archived: it is missing, reconcilable, or already final`,
+      );
+    }
   }
 
   /** The account's last-synced balance — a cached snapshot, not a fresh query. */
@@ -1145,6 +1195,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      await this.requireSats(client, exitSats);
       params.commit();
       const exit = await this.recorded(
         ledger,
