@@ -490,6 +490,12 @@ pending and never offer to send again. Only a definitive refusal rejects (`faile
 bytes moved from `TrackedTransaction.evm.raw` to `TrackedTransaction.raw` for every family.
 Bitcoin dApp `signAndSendTransaction` broadcasts are tracked the same way.
 
+`confirmed` is no longer terminal: a transaction records the block it landed in
+(`TrackedTransaction.block`) and stays tracked at a low frequency until `final` — EVM `finalized`
+tag, six Bitcoin confirmations, Solana `finalized` commitment. A reorg returns it to `submitted`
+(and polling, with rebroadcast of the persisted bytes), so show it pending again until `final`.
+A `final` transaction is never polled again.
+
 Spark payments behave alike: a lost response resolves `{ kind: "pending", transferId }` (or
 `token-pending`) instead of failing — see section 11.
 
@@ -498,19 +504,16 @@ Spark payments behave alike: a lost response resolves `{ kind: "pending", transf
 ```ts
 import type { TrackedTransaction, TxState, WalletEngine } from "@qntx/wallet-engine";
 
-const TERMINAL: ReadonlySet<TxState> = new Set([
-  "confirmed",
-  "failed",
-  "rejected",
-  "dropped",
-  "replaced",
-]);
+const ENDED: ReadonlySet<TxState> = new Set(["failed", "rejected", "dropped", "replaced"]);
 
 /**
  * A broadcast whose outcome is unknown (timeout, 5xx, transport error) no longer rejects: `approve`
  * resolves with a `submitted` transaction tracked under its own hash, and the engine rebroadcasts
  * the same bytes. Never offer "try again" for it — a second send could pay twice. Only a definitive
- * refusal rejects, and the transaction is then `failed`.
+ * refusal rejects, and the transaction is then `failed`. `confirmed` is no longer terminal either:
+ * a transaction in a block (`tx.block` set) stays tracked until `final` — EVM `finalized` tag, six
+ * Bitcoin confirmations, Solana `finalized` commitment — and a reorg puts it back to `submitted`,
+ * so show it pending again until `final`.
  */
 export function watchUntilSettled(
   engine: WalletEngine,
@@ -523,7 +526,7 @@ export function watchUntilSettled(
       return;
     }
     onChange(tx);
-    if (TERMINAL.has(tx.state)) {
+    if (tx.block === undefined ? ENDED.has(tx.state) : tx.final === true) {
       stop();
     }
   });
@@ -656,7 +659,8 @@ from Esplora (all four Bitcoin templates), Solana RPC, the Spark operators and t
 Locally tracked sends fold into the matching chain entry. A gateway EVM entry is `verified` only
 after it was checked against RPC; show `flags` (`zero-value-transfer`, `lookalike-counterparty`,
 `token-impersonation`, `suspicious-token-symbol`, `chain-mismatch`) as warnings and never offer a
-history counterparty as a known recipient.
+history counterparty as a known recipient. `truncated` names the networks whose provider pages
+dropped entries that could not be paged — show a gap notice while it is non-empty.
 
 [`tests/migration/history.ts`](tests/migration/history.ts):
 
@@ -665,18 +669,19 @@ import type { GroupHistory, WalletEngine } from "@qntx/wallet-engine";
 
 /**
  * One newest-first activity list per account group, incoming transfers included. State is keyed
- * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`.
+ * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`. `gaps` names the
+ * networks whose provider pages dropped entries — render a gap notice while it is non-empty.
  */
 export function showActivity(
   engine: WalletEngine,
   group: { readonly walletId: string; readonly groupIndex: number },
-  render: (history: GroupHistory) => void,
+  render: (history: GroupHistory, gaps: ReadonlyArray<string>) => void,
 ): () => void {
   const key = `${group.walletId}:${String(group.groupIndex)}`;
   const stop = engine.history.store.subscribe((state) => {
     const history = state.groups[key];
     if (history !== undefined) {
-      render(history);
+      render(history, history.truncated);
     }
   });
   void engine.history.load(group);

@@ -55,7 +55,6 @@ export type EvmFeeQuote = {
   readonly maxFeePerGas: bigint;
   readonly maxPriorityFeePerGas: bigint | undefined;
 };
-export type ChainTxStatus = "pending" | "confirmed" | "failed" | "finalized";
 
 export const ERC20_ABI = [
   {
@@ -143,6 +142,27 @@ export const checkedHex = (v: string): `0x${string}` => {
     throw new TypeError("malformed hex data");
   }
   return v;
+};
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const checkedBlockHash = (v: unknown): string => {
+  if (typeof v !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(v)) {
+    throw new TypeError("malformed block hash");
+  }
+  return v;
+};
+
+/** A JSON-RPC hex quantity as a safe non-negative integer. */
+const hexHeight = (v: unknown): number => {
+  if (typeof v !== "string" || !/^0x[0-9a-fA-F]+$/.test(v)) {
+    throw new TypeError("malformed block number");
+  }
+  const height = Number(BigInt(v));
+  if (!Number.isSafeInteger(height)) {
+    throw new TypeError("block number out of range");
+  }
+  return height;
 };
 
 const hex = (v: bigint | number): string => numberToHex(v);
@@ -471,34 +491,50 @@ export class EvmChainAdapter {
     return evmRpcHex(client, "eth_sendRawTransaction", [raw]);
   }
 
-  async status(client: PublicClient, hash: string): Promise<ChainTxStatus> {
-    const receipt: unknown = await evmRpc(client, "eth_getTransactionReceipt", [hash]);
-    if (receipt === null || typeof receipt !== "object") {
-      return "pending";
-    }
-    if (
-      "status" in receipt &&
-      typeof receipt.status === "string" &&
-      BigInt(receipt.status) === 0n
-    ) {
-      return "failed";
-    }
-    try {
-      const finalized: unknown = await evmRpc(client, "eth_getBlockByNumber", ["finalized", false]);
-      if (
-        finalized !== null &&
-        typeof finalized === "object" &&
-        "number" in finalized &&
-        typeof finalized.number === "string" &&
-        "blockNumber" in receipt &&
-        typeof receipt.blockNumber === "string" &&
-        BigInt(receipt.blockNumber) <= BigInt(finalized.number)
-      ) {
-        return "finalized";
+  /**
+   * `eth_getTransactionReceipt` → `null` reads as no receipt (`undefined`); a malformed `blockHash`
+   * (0x + 64 hex) or `blockNumber` throws — the poll fails and is retried rather than trusting a
+   * half-answer.
+   */
+  async receipt(
+    client: PublicClient,
+    hash: string,
+  ): Promise<
+    | {
+        readonly failed: boolean;
+        readonly block: { readonly hash: string; readonly height: number };
       }
-    } catch {
-      // endpoint does not know the `finalized` tag — receipt confirmation is enough
+    | undefined
+  > {
+    const receipt: unknown = await evmRpc(client, "eth_getTransactionReceipt", [hash]);
+    if (receipt === null) {
+      return undefined;
     }
-    return "confirmed";
+    const { blockHash, blockNumber, status } = isRecord(receipt) ? receipt : {};
+    return {
+      failed: typeof status === "string" && BigInt(status) === 0n,
+      block: { hash: checkedBlockHash(blockHash), height: hexHeight(blockNumber) },
+    };
+  }
+
+  /**
+   * `eth_getBlockByNumber("finalized", false)` → the endpoint's finalized height; every built-in
+   * network serves the tag, so a null or malformed answer is a `TypeError`, not a fallback.
+   */
+  async finalizedHeight(client: PublicClient): Promise<number> {
+    const block: unknown = await evmRpc(client, "eth_getBlockByNumber", ["finalized", false]);
+    return hexHeight(isRecord(block) ? block["number"] : undefined);
+  }
+
+  /**
+   * `eth_getBlockByNumber(height, false)` → that block's hash; `null` (past the endpoint's head)
+   * reads as `undefined`, a malformed block as a `TypeError`.
+   */
+  async blockHashAt(client: PublicClient, height: number): Promise<string | undefined> {
+    const block: unknown = await evmRpc(client, "eth_getBlockByNumber", [hex(height), false]);
+    if (block === null) {
+      return undefined;
+    }
+    return checkedBlockHash(isRecord(block) ? block["hash"] : undefined);
   }
 }

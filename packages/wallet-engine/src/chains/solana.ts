@@ -622,16 +622,22 @@ export class SolanaChainAdapter {
   }
 
   /**
-   * `getSignatureStatuses` → the entry's state (processed → confirmed → finalized; an `err` means
-   * the tx failed on-chain), whether the cluster has an entry at any commitment — a processed-only
-   * one can still land — and the slot of the bank the status was read on.
+   * `getSignatureStatuses` → the entry (its slot — a malformed one throws — its commitment with a
+   * missing/null `confirmationStatus` reading as `processed`, and whether `err` says the tx failed
+   * on-chain) or `undefined` when the cluster has no entry, plus the slot of the bank the status
+   * was read on. A processed-only entry can still land; only confirmed+ is a block fact.
    */
   async signatureStatus(
     rpc: SolanaRpc,
     signature: string,
   ): Promise<{
-    state: "pending" | "confirmed" | "finalized" | "failed";
-    seen: boolean;
+    entry:
+      | {
+          readonly slot: number;
+          readonly commitment: "processed" | "confirmed" | "finalized";
+          readonly failed: boolean;
+        }
+      | undefined;
     slot: bigint | undefined;
   }> {
     const result = obj(
@@ -642,20 +648,26 @@ export class SolanaChainAdapter {
     );
     const context = obj(result?.["context"]);
     const slot = context?.["slot"];
-    const entry = Array.isArray(result?.["value"]) ? obj(result["value"][0]) : undefined;
-    const state =
-      entry === undefined
-        ? "pending"
-        : entry["err"] !== null && entry["err"] !== undefined
-          ? "failed"
-          : entry["confirmationStatus"] === "finalized"
-            ? "finalized"
-            : entry["confirmationStatus"] === "confirmed"
-              ? "confirmed"
-              : "pending";
+    const raw = Array.isArray(result?.["value"]) ? obj(result["value"][0]) : undefined;
+    const entry =
+      raw === undefined
+        ? undefined
+        : {
+            slot: (() => {
+              const s = raw["slot"];
+              if (typeof s !== "number" || !Number.isSafeInteger(s) || s < 0) {
+                throw new TypeError("getSignatureStatuses returned a malformed entry slot");
+              }
+              return s;
+            })(),
+            commitment: ((): "processed" | "confirmed" | "finalized" => {
+              const c = raw["confirmationStatus"];
+              return c === "confirmed" || c === "finalized" ? c : "processed";
+            })(),
+            failed: raw["err"] !== null && raw["err"] !== undefined,
+          };
     return {
-      state,
-      seen: entry !== undefined,
+      entry,
       slot: typeof slot === "number" || typeof slot === "bigint" ? BigInt(slot) : undefined,
     };
   }

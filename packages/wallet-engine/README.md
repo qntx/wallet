@@ -72,9 +72,14 @@ the package root.
 - `engine.transactions` — tracked transactions (`store`, `txById`) and coin control; it builds,
   signs and records nothing itself — sends, replacements and dApp signatures go through
   `requests`. A broadcast whose outcome is unknown resolves `submitted` and the engine
-  rebroadcasts the same signed bytes — never re-send it. Coin control: `setUtxosFrozen` /
-  `frozenUtxos` persist per-account freezes, and `inputs` on a send picks the outpoints (naming
-  a UTXO protected as a possible inscription carrier is the opt-in to spend it).
+  rebroadcasts the same signed bytes — never re-send it. Inclusion is not finality: a
+  transaction in a block carries `block` (hash and height — EVM block number, Bitcoin height,
+  Solana slot) and stays tracked at a low frequency until `final` — EVM `finalized` tag, six
+  Bitcoin confirmations, Solana `finalized` commitment. A reorg returns it to `submitted`
+  (polling and rebroadcast resume) and a `final` transaction is never polled again. Coin
+  control: `setUtxosFrozen` / `frozenUtxos` persist per-account freezes, and `inputs` on a
+  send picks the outpoints (naming a UTXO protected as a possible inscription carrier is the
+  opt-in to spend it).
 - `engine.requests` — every wallet-owned outflow becomes a request here (`prepare`, `approve`,
   `reject`, `outcome`, the sign log).
   `approve(id, method, { verify, acknowledged })` — `requiredAcknowledgement(request)` returns
@@ -84,7 +89,8 @@ the package root.
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
 - `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
-  entries carry `verified`, `origin` and `flags`.
+  entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
+  left unpagable gaps.
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).

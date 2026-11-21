@@ -1047,6 +1047,7 @@ export type GroupHistory = {
     readonly hasMore: boolean;
     readonly stale: boolean;
     readonly errors: Readonly<Record<string, string>>;
+    readonly truncated: ReadonlyArray<string>;
 };
 
 // @public (undocumented)
@@ -2433,6 +2434,8 @@ export type TrackedTransaction = {
     readonly state: TxState;
     readonly intent: DisplayIntent | undefined;
     readonly nonce: number;
+    readonly block?: TxBlock | undefined;
+    readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
     readonly replaces?: string;
     readonly parentId?: string;
@@ -2514,6 +2517,12 @@ export class TransactionController extends Controller<TransactionControllerState
 // @public (undocumented)
 export type TransactionControllerState = {
     readonly txs: Record<string, TrackedTransaction>;
+};
+
+// @public
+export type TxBlock = {
+    readonly hash?: string;
+    readonly height: number;
 };
 
 // @public (undocumented)

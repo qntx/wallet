@@ -300,6 +300,7 @@ const pageResult = (
 const buildResponse = (
   kept: ReadonlyArray<Kept>,
   cursor: HistoryResponse["cursor"],
+  drainTruncated: boolean,
 ): HistoryResponse => {
   const byHash = new Map<string, Kept[]>();
   for (const k of kept) {
@@ -310,6 +311,10 @@ const buildResponse = (
       group.push(k);
     }
   }
+  const truncated =
+    drainTruncated ||
+    byHash.size > HISTORY_ITEMS_MAX ||
+    [...byHash.values()].some((group) => group.length > HISTORY_TRANSFERS_MAX);
   const items = [...byHash.values()]
     .map((group) => {
       const [first] = group;
@@ -332,7 +337,7 @@ const buildResponse = (
       a.block === b.block ? (a.hash < b.hash ? -1 : 1) : Number(BigInt(b.block) - BigInt(a.block)),
     )
     .slice(0, HISTORY_ITEMS_MAX);
-  return { items, cursor };
+  return { items, cursor, truncated };
 };
 
 /**
@@ -377,13 +382,15 @@ export const alchemyHistoryPage = async (
     );
     let nextCursor = frontier === undefined ? null : decimalString(frontier);
 
+    let drainTruncated = false;
     if (kept.length === 0 && frontier !== undefined) {
       await chargeDrain();
       const drainPages = await round(
         { fromBlock: toHex(decimalString(frontier)), toBlock: toHex(decimalString(frontier)) },
         DRAIN_MAX_COUNT,
       );
-      if (drainPages.some((page) => page.pageKey !== undefined)) {
+      drainTruncated = drainPages.some((page) => page.pageKey !== undefined);
+      if (drainTruncated) {
         // The frontier block holds more than a max page: keep what came — one bounded round
         // is the whole cost this route pays for it.
         log(JSON.stringify({ event: "history-drain-truncated" }));
@@ -417,7 +424,7 @@ export const alchemyHistoryPage = async (
         });
       }
     }
-    const response = buildResponse(mapped, nextCursor);
+    const response = buildResponse(mapped, nextCursor, drainTruncated);
     if (!accepts(historyResponse, response)) {
       throw new ProviderFailure("malformed", false);
     }

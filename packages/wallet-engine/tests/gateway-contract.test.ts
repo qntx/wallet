@@ -473,6 +473,7 @@ describe("esplora allow-list", () => {
     for (const path of [
       "/block-height/0",
       "/block-height/123456",
+      "/blocks/tip/height",
       "/fee-estimates",
       `/scripthash/${HASH}/txs`,
       `/scripthash/${HASH}/utxo`,
@@ -482,7 +483,7 @@ describe("esplora allow-list", () => {
       expect(esploraPathAllowed("GET", path)).toBe(true);
     }
     expect(esploraPathAllowed("POST", "/tx")).toBe(true);
-    expect(ESPLORA_ROUTES).toHaveLength(8);
+    expect(ESPLORA_ROUTES).toHaveLength(9);
   });
 
   it("rejects other paths, verbs, traversal and malformed hashes", () => {

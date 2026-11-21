@@ -29,10 +29,11 @@ import type {
   SignResult,
   SparkDepositTag,
   TrackedTransaction,
+  TxBlock,
   TxState,
   DelegationStatus,
 } from "./route.ts";
-import { accountAddressOf, newId } from "./route.ts";
+import { accountAddressOf, awaitingFinality, newId } from "./route.ts";
 import {
   pollSolana,
   prepareSolana,
@@ -105,8 +106,29 @@ const TX_STATES: ReadonlySet<string> = new Set([
 
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
 
-/** States whose signed bytes may be on the network: tracked until they end. */
+/**
+ * States whose signed bytes may be on the network without a block answer: tracked until they end.
+ * An included (`tx.block` set) row that is not final yet joins them — at the slower finality
+ * interval — and a `final` one is never polled again.
+ */
 const LIVE_STATES: ReadonlySet<TxState> = new Set(["signed", "submitted", "pending"]);
+
+/**
+ * A transaction in a block that is not final is polled at `pollMs` times this — a reorg is rare,
+ * and only the rare one needs a quick answer.
+ */
+export const FINALITY_POLL_FACTOR = 15;
+
+const decodeBlock = (v: unknown): TxBlock | undefined =>
+  isObject(v) &&
+  typeof v["height"] === "number" &&
+  Number.isSafeInteger(v["height"]) &&
+  v["height"] >= 0 &&
+  (v["hash"] === undefined || typeof v["hash"] === "string")
+    ? v["hash"] === undefined
+      ? { height: v["height"] }
+      : { hash: v["hash"], height: v["height"] }
+    : undefined;
 
 type BtcRecord = NonNullable<TrackedTransaction["btc"]>;
 const isBtcRecord = (v: unknown): v is BtcRecord => {
@@ -189,6 +211,8 @@ const decode = (
     state,
     intent,
     nonce,
+    block,
+    final,
     lastValidBlockHeight,
     replaces,
     parentId,
@@ -210,6 +234,8 @@ const decode = (
   ) {
     return undefined;
   }
+  const decoded = decodeBlock(block);
+  const decodedBlock = decoded === undefined ? {} : { block: decoded };
   return {
     id,
     family,
@@ -219,6 +245,8 @@ const decode = (
     state,
     intent: isIntent(intent) ? intent : undefined,
     nonce,
+    ...decodedBlock,
+    ...(typeof final === "boolean" ? { final } : {}),
     ...(typeof lastValidBlockHeight === "number" && Number.isSafeInteger(lastValidBlockHeight)
       ? { lastValidBlockHeight }
       : {}),
@@ -269,7 +297,7 @@ export class TransactionController extends Controller<TransactionControllerState
       }
       this.update((s) => ({ ...s, txs: { ...s.txs, [loaded.id]: loaded } }));
       const { hash } = loaded;
-      if (!LIVE_STATES.has(loaded.state) || hash === undefined) {
+      if ((!LIVE_STATES.has(loaded.state) && !awaitingFinality(loaded)) || hash === undefined) {
         continue;
       }
       // Signed bytes persisted but the broadcast never settled (the app stopped mid-send): the
@@ -664,11 +692,15 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.timers.has(id) || hash === "") {
       return;
     }
+    const row = this.getState().txs[id];
+    const pollMs =
+      (this.options.pollMs ?? 4000) *
+      (row !== undefined && awaitingFinality(row) ? FINALITY_POLL_FACTOR : 1);
     this.timers.set(
       id,
       repeat(
         this.options.setTimer,
-        this.options.pollMs ?? 4000,
+        pollMs,
         async () => this.pollOnce(id),
         (error) => {
           this.options.logger.warn("tx status poll failed", error);
@@ -677,12 +709,26 @@ export class TransactionController extends Controller<TransactionControllerState
     );
   }
 
+  /**
+   * Re-arms a transaction's loop — at the finality interval once included, back to `pollMs` after a
+   * reorg.
+   */
+  private retrack(id: string, hash: string): void {
+    this.untrack(id);
+    this.track(id, hash);
+  }
+
   private untrack(id: string): void {
     this.timers.get(id)?.();
     this.timers.delete(id);
   }
 
-  /** One status poll; a terminal answer stops the transaction's loop and settles a replace pair. */
+  /**
+   * One status poll. `included` keeps a non-final row tracked at the finality interval; `reorged`
+   * clears the block and returns the row to the pool as `submitted`; `ended` stops the loop. An
+   * answer describes the snapshot the poll started from — a concurrent transition (a sibling
+   * marking this replaced, a reload) means the row moved on and the next poll decides.
+   */
   private async pollOnce(id: string): Promise<void> {
     const tx = this.getState().txs[id];
     if (tx === undefined) {
@@ -690,35 +736,64 @@ export class TransactionController extends Controller<TransactionControllerState
       return;
     }
     const ctx = this.routeCtx();
-    const next =
+    const answer =
       tx.family === "solana"
         ? await pollSolana(ctx, tx)
         : tx.family === "bitcoin"
           ? await this.bitcoinRoute.poll(ctx, tx)
           : await this.evmRoute.poll(ctx, tx);
-    if (next === undefined || this.locked) {
+    if (answer === undefined || this.locked) {
       return;
     }
-    // The poll's answer describes the snapshot it started from; a concurrent transition — a
-    // sibling marking this replaced, a reload — means the row moved on. Keep tracking and let
-    // the next poll decide.
     if (this.getState().txs[id] !== tx) {
       return;
     }
-    this.untrack(id);
-    const updated = await this.transition(tx, { state: next });
-    this.settle(updated);
-    if (updated.state !== "confirmed" && updated.state !== "failed") {
+    if (answer.kind === "included") {
+      const firstInclusion = tx.block === undefined;
+      const updated = await this.transition(tx, {
+        state: answer.state,
+        block: answer.block,
+        final: answer.final,
+      });
+      if (firstInclusion) {
+        this.settle(updated);
+        await this.markReplacedSiblings(updated);
+      }
+      if (answer.final) {
+        this.untrack(id);
+      } else if (firstInclusion) {
+        this.retrack(id, updated.hash ?? "");
+      }
       return;
     }
-    // When one of a replace pair is mined, the sibling is `replaced`.
+    if (answer.kind === "reorged") {
+      const { block } = tx;
+      const updated = await this.transition(tx, {
+        state: "submitted",
+        block: undefined,
+        final: undefined,
+      });
+      this.reopen(updated);
+      this.options.logger.warn(
+        `transaction ${id} left block ${block?.hash ?? "?"} at height ${String(block?.height)}: reorged, tracking again`,
+      );
+      await this.reviveSiblings(updated);
+      this.retrack(id, updated.hash ?? "");
+      return;
+    }
+    this.untrack(id);
+    const updated = await this.transition(tx, { state: answer.state });
+    this.settle(updated);
+  }
+
+  /** When one of a replace pair is included, its live siblings are `replaced`. */
+  private async markReplacedSiblings(updated: TrackedTransaction): Promise<void> {
     const siblings = Object.values(this.getState().txs).filter(
       (t) =>
         t.id !== updated.id &&
         t.hash !== undefined &&
         t.state !== "replaced" &&
-        ((updated.replaces !== undefined && t.id === updated.replaces) ||
-          (t.replaces !== undefined && t.replaces === updated.id)) &&
+        replaceLinked(t, updated) &&
         (t.state === "submitted" || t.state === "pending"),
     );
     await Promise.all(
@@ -729,7 +804,35 @@ export class TransactionController extends Controller<TransactionControllerState
     );
   }
 
-  /** A transaction that ended frees what it locked, whichever way it ended. */
+  /** A reorged transaction revives `replaced` siblings: each is `submitted` and polled again. */
+  private async reviveSiblings(updated: TrackedTransaction): Promise<void> {
+    const siblings = Object.values(this.getState().txs).filter(
+      (t) =>
+        t.id !== updated.id &&
+        t.hash !== undefined &&
+        t.state === "replaced" &&
+        replaceLinked(t, updated),
+    );
+    await Promise.all(
+      siblings.map(async (sibling) => {
+        const revived = await this.transition(sibling, { state: "submitted" });
+        this.reopen(revived);
+        this.track(revived.id, revived.hash ?? "");
+      }),
+    );
+  }
+
+  /** A reorged transaction re-anchors what it consumed — EVM nonces, Bitcoin inputs. */
+  private reopen(tx: TrackedTransaction): void {
+    if (tx.family === "bitcoin") {
+      this.bitcoinRoute.reopen(tx);
+    }
+    if (tx.family === "evm") {
+      this.evmRoute.reopen(tx);
+    }
+  }
+
+  /** A transaction that settled frees what it locked, whichever way it settled. */
   private settle(tx: TrackedTransaction): void {
     if (tx.family === "bitcoin") {
       this.bitcoinRoute.settle(tx.id, tx.state);
@@ -739,3 +842,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }
   }
 }
+
+/** Two transactions linked through one's `replaces` pointing at the other's id. */
+const replaceLinked = (a: TrackedTransaction, b: TrackedTransaction): boolean =>
+  a.id !== b.id && (a.replaces === b.id || b.replaces === a.id);

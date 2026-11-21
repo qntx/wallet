@@ -60,7 +60,14 @@ describe("WalletEngine.history", () => {
       await sleep(100);
       (engine.history as HistoryController).store.setState({
         groups: {
-          "w:0": { status: "ready", entries: [], hasMore: false, stale: false, errors: {} },
+          "w:0": {
+            status: "ready",
+            entries: [],
+            hasMore: false,
+            stale: false,
+            errors: {},
+            truncated: [],
+          },
         },
       });
 

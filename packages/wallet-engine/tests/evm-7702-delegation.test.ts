@@ -145,7 +145,11 @@ function world(options: {
     eth_call: `0x${"00".repeat(32)}`,
     eth_feeHistory: { baseFeePerGas: ["0x64", "0x64"], reward: [["0x1", "0x2", "0x3"]] },
     eth_sendRawTransaction: `0x${"ab".repeat(32)}`,
-    eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" },
+    eth_getTransactionReceipt: {
+      status: "0x1",
+      blockNumber: "0x1",
+      blockHash: `0x${"11".repeat(32)}`,
+    },
     eth_getBlockByNumber: { number: "0x2" },
   };
   const calls: Array<{ url: string; method: string }> = [];

@@ -124,6 +124,7 @@ export type {
   TxState,
 } from "./transactions/controller.ts";
 export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transactions/route.ts";
+export type { TxBlock } from "./transactions/route.ts";
 export type { EvmFeeTier } from "./chains/evm.ts";
 export type { SolanaFeeTier } from "./chains/solana.ts";
 export type { BitcoinPsbtInput, BitcoinSigHash, SolanaAccount } from "./requests/types.ts";

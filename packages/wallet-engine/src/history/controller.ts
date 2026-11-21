@@ -35,6 +35,8 @@ export type GroupHistory = {
   readonly stale: boolean;
   /** Source id → error message; the other sources still list their entries. */
   readonly errors: Readonly<Record<string, string>>;
+  /** Networks whose provider omitted entries it could not page — the list has gaps there. */
+  readonly truncated: ReadonlyArray<string>;
 };
 
 export type HistoryState = {
@@ -154,6 +156,8 @@ type GroupRuntime = {
   mergeDone: boolean;
   own: GroupAddresses;
   errors: Record<string, string>;
+  /** Networks that reported a truncated page during this load. */
+  truncated: Set<string>;
 };
 
 const newRuntime = (group: HistoryGroup): GroupRuntime => ({
@@ -164,6 +168,7 @@ const newRuntime = (group: HistoryGroup): GroupRuntime => ({
   mergeDone: false,
   own: { bitcoin: new Set() },
   errors: {},
+  truncated: new Set(),
 });
 
 /**
@@ -250,6 +255,7 @@ export class HistoryController extends Controller<HistoryState> {
         hasMore: patch.hasMore ?? current?.hasMore ?? true,
         stale: patch.stale ?? current?.stale ?? false,
         errors: patch.errors ?? current?.errors ?? {},
+        truncated: patch.truncated ?? current?.truncated ?? [],
       };
       return { ...state, groups: { ...state.groups, [key]: next } };
     });
@@ -389,6 +395,9 @@ export class HistoryController extends Controller<HistoryState> {
             network,
             address,
             cached,
+            () => {
+              runtime.truncated.add(network);
+            },
           ),
         );
       }
@@ -482,6 +491,7 @@ export class HistoryController extends Controller<HistoryState> {
       }
       const persisted = new Map(runtime.emitted.map((entry) => [entry.id, entry]));
       runtime.errors = {};
+      runtime.truncated.clear();
       runtime.merge = new OrderedMerge(
         this.streams(group, runtime.own, persisted, runtime),
         (entry) => entry.timestamp ?? Number.MAX_SAFE_INTEGER,
@@ -506,6 +516,7 @@ export class HistoryController extends Controller<HistoryState> {
           hasMore: !page.done,
           stale: false,
           errors: { ...runtime.errors },
+          truncated: [...runtime.truncated].sort(),
         });
         await this.persist(key, runtime.emitted);
       } catch (error) {
@@ -549,6 +560,7 @@ export class HistoryController extends Controller<HistoryState> {
         hasMore: !page.done,
         stale: false,
         errors: { ...runtime.errors },
+        truncated: [...runtime.truncated].sort(),
       });
       await this.persist(key, runtime.emitted);
     });

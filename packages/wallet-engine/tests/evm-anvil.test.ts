@@ -79,10 +79,18 @@ const waitFor = async (
   client: PublicClient,
   hash: string,
   deadline: number,
-): Promise<string> => {
-  const state = await adapter.status(client, hash);
-  if (state !== "pending" || Date.now() >= deadline) {
-    return state;
+): Promise<"pending" | "confirmed" | "failed" | "finalized"> => {
+  const found = await adapter.receipt(client, hash);
+  if (found !== undefined) {
+    if (found.failed) {
+      return "failed";
+    }
+    return found.block.height <= (await adapter.finalizedHeight(client))
+      ? "finalized"
+      : "confirmed";
+  }
+  if (Date.now() >= deadline) {
+    return "pending";
   }
   await sleep(300);
   return waitFor(adapter, client, hash, deadline);
@@ -314,10 +322,10 @@ describe.runIf(RUN)("anvil e2e: evm replace", () => {
       });
       const bumpHash = await adapter.broadcast(client, bumpedSigned);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      const bumpState = await adapter.status(client, bumpHash);
-      const origState = await adapter.status(client, hash);
-      expect(["confirmed", "finalized"]).toContain(bumpState);
-      expect(["failed", "dropped", "pending"]).toContain(origState);
+      const bumpReceipt = await adapter.receipt(client, bumpHash);
+      const orig = await adapter.receipt(client, hash);
+      expect(bumpReceipt?.failed).toBe(false);
+      expect([undefined, true]).toContain(orig?.failed);
     } finally {
       proc.kill();
     }
@@ -359,44 +367,44 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   return { wallet, walletId: info.walletId };
 };
 
-describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
-  const rig = async (url: string, timers: ManualTimers) => {
-    const { wallet, walletId } = await realWallet();
-    const acct = {
-      kind: "hd" as const,
-      walletId,
-      groupIndex: 0,
-      template: "evm.bip44" as const,
-    };
-    const evmAccount = await chains(wallet).account({
-      walletId,
-      groupIndex: 0,
-      template: "evm.bip44",
-      network: "eip155:1",
-    });
-    const from = "address" in evmAccount ? evmAccount.address : "";
-    await rpcCall(url, "anvil_setBalance", [from, "0xde0b6b3a7640000"]);
-    await rpcCall(url, "evm_setAutomine", [false]);
-    const ctl = new TransactionController({
-      wallet,
-      networks: new NetworkController({
-        ...idleNetworkDeps,
-        fetch: globalThis.fetch.bind(globalThis),
-        rpc: { "eip155:1": [url] },
-        openStore: async () => Promise.resolve(createMemoryEngineStore()),
-        logger: anvilLogger,
-      }),
-      openStore: async () => Promise.resolve(createMemoryEngineStore()),
-      random: taggedRandom(),
-      setTimer: timers.setTimer,
-      now: () => 1000,
-      logger: anvilLogger,
-      pollMs: 1,
-    });
-    await ctl.init();
-    return { ctl, acct };
+const rig = async (url: string, timers: ManualTimers) => {
+  const { wallet, walletId } = await realWallet();
+  const acct = {
+    kind: "hd" as const,
+    walletId,
+    groupIndex: 0,
+    template: "evm.bip44" as const,
   };
+  const evmAccount = await chains(wallet).account({
+    walletId,
+    groupIndex: 0,
+    template: "evm.bip44",
+    network: "eip155:1",
+  });
+  const from = "address" in evmAccount ? evmAccount.address : "";
+  await rpcCall(url, "anvil_setBalance", [from, "0xde0b6b3a7640000"]);
+  await rpcCall(url, "evm_setAutomine", [false]);
+  const ctl = new TransactionController({
+    wallet,
+    networks: new NetworkController({
+      ...idleNetworkDeps,
+      fetch: globalThis.fetch.bind(globalThis),
+      rpc: { "eip155:1": [url] },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      logger: anvilLogger,
+    }),
+    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    random: taggedRandom(),
+    setTimer: timers.setTimer,
+    now: () => 1000,
+    logger: anvilLogger,
+    pollMs: 1,
+  });
+  await ctl.init();
+  return { ctl, acct };
+};
 
+describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
   it("speed-up confirms the replacement and marks the original replaced", async () => {
     const port = 18551;
     const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
@@ -488,6 +496,61 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
       await pollAll();
       expect(ctl.getState().txs[original.id]?.state).toBe("confirmed");
+    } finally {
+      proc.kill();
+    }
+  }, 60_000);
+});
+
+describe.runIf(RUN)("anvil e2e: reorg and finality", () => {
+  it("a reorged send returns to submitted, rebroadcasts, re-mines and finalizes", async () => {
+    const port = 18554;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers = manualTimers();
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { ctl, acct } = await rig(url, timers);
+      const tx = await send(ctl, {
+        account: acct,
+        network: "eip155:1",
+        to: RECIPIENT,
+        amount: 10n ** 15n,
+        fee: "slow",
+        verify: VERIFY,
+      });
+      await rpcCall(url, "anvil_mine", [1]);
+      await timers.fire();
+      const mined = ctl.getState().txs[tx.id];
+      expect(mined?.state).toBe("confirmed");
+      const firstBlock = mined?.block;
+      expect(firstBlock?.hash).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(mined?.final).toBe(false);
+
+      /* One-block reorg: the receipt is gone and the block at that height carries another hash. */
+      await rpcCall(url, "anvil_reorg", [1, []]);
+      await timers.fire();
+      const back = ctl.getState().txs[tx.id];
+      expect(back?.state).toBe("submitted");
+      expect(back?.block).toBeUndefined();
+      expect(back?.final).toBeUndefined();
+
+      /* The live poll rebroadcasts the persisted raw; the next mine lands a new block record. */
+      await timers.fire();
+      await rpcCall(url, "anvil_mine", [1]);
+      await timers.fire();
+      const again = ctl.getState().txs[tx.id];
+      expect(again?.state).toBe("confirmed");
+      expect(again?.final).toBe(false);
+      expect(again?.block?.hash?.toLowerCase()).not.toBe(firstBlock?.hash?.toLowerCase());
+
+      /* Anvil's finalized tag trails the head by 64: mine past it and the row goes final. */
+      await rpcCall(url, "anvil_mine", [65]);
+      await timers.fire();
+      const done = ctl.getState().txs[tx.id];
+      expect(done?.state).toBe("confirmed");
+      expect(done?.final).toBe(true);
+      expect(timers.armed()).toBe(0);
     } finally {
       proc.kill();
     }

@@ -258,6 +258,7 @@ const history_2: Endpoint<z.ZodMiniObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
     cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
+    truncated: z.ZodMiniBoolean<boolean>;
 }, z.core.$strict>>;
 export { history_2 as history }
 
@@ -341,6 +342,7 @@ export const historyResponse: z.ZodMiniObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
     cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
+    truncated: z.ZodMiniBoolean<boolean>;
 }, z.core.$strict>;
 
 // @public (undocumented)
