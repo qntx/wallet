@@ -33,14 +33,14 @@ const fixtures = JSON.parse(
 
 /* signature prefix → [expected blind (undefined = described), programAuthority entry count] */
 const expected: Record<string, readonly [BlindReason | undefined, number]> = {
-  zYfMbwWqc26i: ["program-authority", 1],
-  "4ZgGzFAQUZW2": ["program-authority", 1],
-  "3c196gtidd98": [undefined, 2],
-  "5SXmd3gsbs8m": [undefined, 1],
-  "5pm4LpEeFQYz": [undefined, 1],
-  "4jm6EBbGnmZN": [undefined, 1],
+  zYfMbwWqc26i: [undefined, 0],
+  "4ZgGzFAQUZW2": [undefined, 0],
+  "3c196gtidd98": [undefined, 1],
+  "5SXmd3gsbs8m": [undefined, 0],
+  "5pm4LpEeFQYz": [undefined, 0],
+  "4jm6EBbGnmZN": [undefined, 0],
   "2cu4yxFLmq8r": ["program-authority", 2],
-  "28zvUEaiK5mh": [undefined, 2],
+  "28zvUEaiK5mh": [undefined, 1],
   "5TxQMHyNe9zG": [undefined, 1],
   "4Gw1daGSyTk1": [undefined, 1],
   "3RKLg59qHt39": [undefined, 1],

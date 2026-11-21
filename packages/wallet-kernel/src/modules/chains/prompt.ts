@@ -155,6 +155,7 @@ type Catalog = {
   readonly viaPermit2: string;
   readonly viaAllowanceHolder: string;
   readonly receiveMin: (amount: string, to: string) => string;
+  readonly receiveMinTokenAccount: (amount: string, tokenAccount: string) => string;
   readonly until: (date: string) => string;
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
@@ -329,6 +330,8 @@ const zh: Catalog = {
   viaPermit2: " 经 Permit2",
   viaAllowanceHolder: " 经 AllowanceHolder",
   receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
+  receiveMinTokenAccount: (amount, tokenAccount) =>
+    `至少收到 ${amount} 个代币账户 ${tokenAccount} 所持代币的基本单位`,
   until: (date) => ` 至 ${date}（UTC）`,
   operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
   operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -578,6 +581,8 @@ const en: Catalog = {
   viaPermit2: " via Permit2",
   viaAllowanceHolder: " via AllowanceHolder",
   receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
+  receiveMinTokenAccount: (amount, tokenAccount) =>
+    `Receive at least ${amount} base units of the token in account ${tokenAccount}`,
   until: (date) => ` until ${date} (UTC)`,
   operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
   operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -938,7 +943,9 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
   const received =
     intent.bridge === undefined
       ? (intent.minimumReceived ?? []).map((entry) =>
-          catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to),
+          entry.tokenAccount === undefined
+            ? catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)
+            : catalog.receiveMinTokenAccount(entry.amount.amount, entry.tokenAccount),
         )
       : [
           catalog.bridgeLine(

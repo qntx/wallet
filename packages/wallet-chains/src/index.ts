@@ -628,6 +628,11 @@ export type DisplayIntent = {
   readonly minimumReceived?: ReadonlyArray<{
     readonly to: string;
     readonly amount: AssetAmount;
+    /**
+     * The instruction names no mint for what the destination account receives — the amount is in
+     * that SPL account's base units, like `AssetFlow.tokenAccount`.
+     */
+    readonly tokenAccount?: string;
   }>;
   /**
    * `l1Data`: an upper bound the engine computes — the L1 data fee estimate times the fee model's
