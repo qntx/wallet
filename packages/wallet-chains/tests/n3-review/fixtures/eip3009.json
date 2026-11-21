@@ -1,0 +1,722 @@
+{
+  "source": "wallet-audit/refs/erc7730-registry registry test documents @ 3d332d5",
+  "docs": [
+    {
+      "origin": "circle/tests/eip712-TransferWithAuthorization.tests.json",
+      "description": "CoinGecko x402 v2 - USDC transfer authorization for onchain DEX pool search API",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 8453,
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        },
+        "message": {
+          "from": "0x1234567890123456789012345678901234567890",
+          "to": "0x110cdBba7FE6434Ec4CE3464CC523942ad6Fb784",
+          "value": "10000",
+          "validAfter": "0",
+          "validBefore": "1738886400",
+          "nonce": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      }
+    },
+    {
+      "origin": "circle/tests/eip712-TransferWithAuthorization.tests.json",
+      "description": "Zapper x402 v1 - USDC transfer authorization for token price API",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 8453,
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        },
+        "message": {
+          "from": "0xABCDEF0123456789ABCDEF0123456789ABCDEF01",
+          "to": "0x43a2a720cd0911690c248075f4a29a5e7716f758",
+          "value": "3000",
+          "validAfter": "0",
+          "validBefore": "1738886410",
+          "nonce": "0x0000000000000000000000000000000000000000000000000000000000000002"
+        }
+      }
+    },
+    {
+      "origin": "circle/tests/eip712-TransferWithAuthorization.tests.json",
+      "description": "x402Factory x402 v1 - USDC transfer authorization for text-to-speech API",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 8453,
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        },
+        "message": {
+          "from": "0x9876543210987654321098765432109876543210",
+          "to": "0x402FaCcC3fAeb72351CC2b68C7966faF5f22B0d4",
+          "value": "300000",
+          "validAfter": "0",
+          "validBefore": "1738886460",
+          "nonce": "0x0000000000000000000000000000000000000000000000000000000000000003"
+        }
+      }
+    },
+    {
+      "origin": "circle/tests/eip712-TransferWithAuthorization.tests.json",
+      "description": "SilverbackDeFi x402 v2 - USDC transfer authorization for pool analysis API",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 8453,
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        },
+        "message": {
+          "from": "0xFEDCBA9876543210FEDCBA9876543210FEDCBA98",
+          "to": "0xD34411a70EffbDd000c529bbF572082ffDcF1794",
+          "value": "5000",
+          "validAfter": "0",
+          "validBefore": "1738886700",
+          "nonce": "0x0000000000000000000000000000000000000000000000000000000000000004"
+        }
+      }
+    },
+    {
+      "origin": "circle/tests/eip712-TransferWithAuthorization.tests.json",
+      "description": "Nittarab x402 v1 - USDC transfer authorization for secret content API",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 8453,
+          "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        },
+        "message": {
+          "from": "0x0123456789ABCDEF0123456789ABCDEF01234567",
+          "to": "0x89764c3dEd721c29999A237cF935a34e1C8EDf97",
+          "value": "50000",
+          "validAfter": "0",
+          "validBefore": "1738886700",
+          "nonce": "0x0000000000000000000000000000000000000000000000000000000000000005"
+        }
+      }
+    },
+    {
+      "origin": "circle/tests/eip712-ReceiveWithAuthorization.tests.json",
+      "description": "USDC receive authorization on Arbitrum",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "ReceiveWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "ReceiveWithAuthorization",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 42161,
+          "verifyingContract": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+        },
+        "message": {
+          "from": "0x9d7ae84c1e55c0f2dfd6909a88ba93f48617e750",
+          "to": "0xa95d9c1f655341597c94393fddc30cf3c08e4fce",
+          "value": "8080000",
+          "validAfter": "1772641538",
+          "validBefore": "1772645198",
+          "nonce": "0x433e3aad3b685127a168b6faca79fbddc1cb3f8d019325500b3c71baebb6e5ca"
+        }
+      }
+    },
+    {
+      "origin": "tether/testsv2/eip712-TransferWithAuthorization-usdt0-Flare.tests.json",
+      "description": "Authorize a USDT0 transfer",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TransferWithAuthorization",
+        "domain": {
+          "name": "USD\u20ae0",
+          "version": "1",
+          "chainId": 14,
+          "verifyingContract": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+        },
+        "message": {
+          "from": "0x3333333333333333333333333333333333333333",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "100000000",
+          "validAfter": "1738886400",
+          "validBefore": "1782864000",
+          "nonce": "0x4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "origin": "tether/testsv2/eip712-ReceiveWithAuthorization-usdt0-Flare.tests.json",
+      "description": "Authorize a USDT0 receipt",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "ReceiveWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "ReceiveWithAuthorization",
+        "domain": {
+          "name": "USD\u20ae0",
+          "version": "1",
+          "chainId": 14,
+          "verifyingContract": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+        },
+        "message": {
+          "from": "0x3333333333333333333333333333333333333333",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "100000000",
+          "validAfter": "1738886400",
+          "validBefore": "1782864000",
+          "nonce": "0x4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "origin": "tether/testsv2/eip712-CancelAuthorization-usdt0-Flare.tests.json",
+      "description": "Cancel a USDT0 authorization",
+      "data": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "CancelAuthorization": [
+            {
+              "name": "authorizer",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "CancelAuthorization",
+        "domain": {
+          "name": "USD\u20ae0",
+          "version": "1",
+          "chainId": 14,
+          "verifyingContract": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+        },
+        "message": {
+          "authorizer": "0x3333333333333333333333333333333333333333",
+          "nonce": "0x4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "origin": "zkstables/testsv2/eip712-zkemt.tests.json",
+      "description": "TransferWithAuthorization",
+      "data": {
+        "domain": {
+          "name": "ZK Stables USD",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x8ED36a645beF11075283524C01acA742CbAfC832"
+        },
+        "primaryType": "TransferWithAuthorization",
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TransferWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "message": {
+          "from": "0xE6455dEC538F906D28f6910c531e02F560E2f1f9",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "21370000",
+          "validAfter": "1767225600",
+          "validBefore": "1767225600",
+          "nonce": "0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+        }
+      }
+    },
+    {
+      "origin": "zkstables/testsv2/eip712-zkemt.tests.json",
+      "description": "ReceiveWithAuthorization",
+      "data": {
+        "domain": {
+          "name": "ZK Stables USD",
+          "version": "1",
+          "chainId": 8453,
+          "verifyingContract": "0x8ED36a645beF11075283524C01acA742CbAfC832"
+        },
+        "primaryType": "ReceiveWithAuthorization",
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "ReceiveWithAuthorization": [
+            {
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "validAfter",
+              "type": "uint256"
+            },
+            {
+              "name": "validBefore",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "message": {
+          "from": "0xE6455dEC538F906D28f6910c531e02F560E2f1f9",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "21370000",
+          "validAfter": "1767225600",
+          "validBefore": "1767225600",
+          "nonce": "0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+        }
+      }
+    }
+  ]
+}
