@@ -525,7 +525,7 @@ export const decodeEvm = (
   const { json } = parseTypedData(request.typedData);
   assertNoExecutionGrant(json.domain, signer);
   const chainId = networkChainId(request.network);
-  const permit = recognizePermit(json, chainId, table);
+  const permit = recognizePermit(json, chainId, table, signer);
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
@@ -583,20 +583,22 @@ export const decodeEvm = (
           ? "typed-data-commitment"
           : undefined
       : undefined);
-  const blind = typedDataBlind(safe, seaport, app, unclaimedBlind);
+  const order = cow ?? permit?.order;
+  const blind = permit?.blind ?? typedDataBlind(safe, seaport, app, unclaimedBlind);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
     domain: displayDomain(json.domain),
     data: json.message,
     ...(seaport === undefined ? {} : { seaport }),
-    ...(cow === undefined ? {} : { order: cow }),
+    ...(order === undefined ? {} : { order }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
     ...(app === undefined ? {} : app.content),
     ...(fields === undefined ? {} : { fields }),
+    ...(permit?.fields === undefined ? {} : { fields: permit.fields }),
   };
   const summary =
-    cow !== undefined || seaport !== undefined
+    order !== undefined || seaport !== undefined
       ? "swap"
       : safe === undefined
         ? permit === undefined

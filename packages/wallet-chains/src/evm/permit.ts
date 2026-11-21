@@ -3,7 +3,7 @@
  * signature-transfer types. A document is recognized only when the primary type and every struct it
  * references have exactly the canonical field lists; any other shape stays an opaque message.
  */
-import type { ApprovalChange, IntentWarning } from "../index.ts";
+import type { ApprovalChange, IntentWarning, OffchainOrder, TypedDataLeaf } from "../index.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import {
@@ -11,16 +11,26 @@ import {
   isTypedDataMessage,
   sameFields,
   typedDataAddress,
+  typedDataFields,
   typedDataUint,
 } from "./typed-data.ts";
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
+import { recognizeUniswapX } from "./uniswapx.ts";
 
 export type Permit = {
   readonly approvals: ReadonlyArray<ApprovalChange>;
   readonly warnings: ReadonlyArray<IntentWarning>;
+  /** The order the witness signs when it is a recognised UniswapX order. */
+  readonly order?: OffchainOrder;
+  /**
+   * The witness subtree's leaves when no order protocol recognised it, paths under `witness.`;
+   * absent when the subtree cannot be shown in full.
+   */
+  readonly fields?: ReadonlyArray<TypedDataLeaf>;
+  /** A witness subtree commitment or a document too large to show blinds the permit. */
+  readonly blind?: "typed-data-commitment" | "typed-data-oversize";
 };
 
-type Types = TypedDataInput["types"];
 type Message = TypedDataMessage;
 
 const isMessage = isTypedDataMessage;
@@ -42,12 +52,14 @@ const permit = (...approvals: ApprovalChange[]): Permit => ({ approvals, warning
 
 /**
  * The permit a typed-data document grants, or `undefined` when its shape is not exactly one of the
- * recognized ones. `chainId` is the request network's, used for the built-in token table.
+ * recognized ones. `chainId` is the request network's, used for the built-in token table. `signer`
+ * lets a witness be checked against the account it binds (UniswapX `info.swapper`).
  */
 export function recognizePermit(
   json: TypedDataInput,
   chainId: number,
   table: EvmTokenTable,
+  signer: string,
 ): Permit | undefined {
   const { types, primaryType, message, domain } = json;
   const verifying = address(domain["verifyingContract"]);
@@ -98,7 +110,7 @@ export function recognizePermit(
   if (verifying.toLowerCase() !== PERMIT2_ADDRESS.toLowerCase()) {
     return undefined;
   }
-  return recognizePermit2(types, primaryType, message, allow);
+  return recognizePermit2(json, allow, signer, chainId, table);
 }
 
 type Allow = (
@@ -109,12 +121,24 @@ type Allow = (
   extra?: { readonly expiration?: number; readonly via?: "permit2" },
 ) => ApprovalChange;
 
-const recognizePermit2 = (
-  types: Types,
-  primaryType: string,
-  message: Message,
-  allow: Allow,
+const all = (
+  list: ReadonlyArray<Message> | undefined,
+  build: (item: Message) => ApprovalChange | undefined,
 ): Permit | undefined => {
+  const built = list?.map(build);
+  return built === undefined || built.some((a) => a === undefined)
+    ? undefined
+    : permit(...built.filter((a): a is ApprovalChange => a !== undefined));
+};
+
+const recognizePermit2 = (
+  json: TypedDataInput,
+  allow: Allow,
+  signer: string,
+  chainId: number,
+  table: EvmTokenTable,
+): Permit | undefined => {
+  const { types, primaryType, message } = json;
   const via = "permit2" as const;
   const allowance = (details: Message): ApprovalChange | undefined => {
     const token = address(details["token"]);
@@ -134,16 +158,6 @@ const recognizePermit2 = (
           ...(deadline <= MAX_UINT48 ? { expiration: Number(deadline) } : {}),
         });
   };
-  const all = (
-    list: ReadonlyArray<Message> | undefined,
-    build: (item: Message) => ApprovalChange | undefined,
-  ): Permit | undefined => {
-    const built = list?.map(build);
-    return built === undefined || built.some((a) => a === undefined)
-      ? undefined
-      : permit(...built.filter((a): a is ApprovalChange => a !== undefined));
-  };
-
   if (primaryType === "PermitSingle") {
     const { details } = message;
     return sameFields(types, primaryType, [
@@ -194,5 +208,49 @@ const recognizePermit2 = (
       : undefined;
   return result === undefined || !witness
     ? result
-    : { approvals: result.approvals, warnings: [WITNESS_WARNING] };
+    : witnessOutcome(result, json, signer, chainId, table);
+};
+
+/**
+ * What a witness carries when the permit itself decoded: a recognised UniswapX order (the take-once
+ * approval stays; no further warning), or the witness subtree's leaves with the warning. A subtree
+ * that cannot be shown in full — too many leaves, a leaf not exactly encodable — or a recognised
+ * order over the item limit blinds the document; a commitment leaf blinds it too.
+ */
+const witnessOutcome = (
+  result: Permit,
+  json: TypedDataInput,
+  signer: string,
+  chainId: number,
+  table: EvmTokenTable,
+): Permit => {
+  const uniswapx = recognizeUniswapX(json, signer, chainId, table);
+  if (uniswapx?.kind === "order") {
+    return { approvals: result.approvals, warnings: [], order: uniswapx.order };
+  }
+  const witnessType = json.types[json.primaryType]?.at(-1)?.type;
+  const { witness } = json.message;
+  const subtree =
+    uniswapx === undefined && witnessType !== undefined && isMessage(witness)
+      ? typedDataFields({
+          types: json.types,
+          primaryType: witnessType,
+          domain: {},
+          message: witness,
+        })
+      : undefined;
+  return {
+    approvals: result.approvals,
+    warnings: [WITNESS_WARNING],
+    ...(subtree === undefined
+      ? {}
+      : {
+          fields: subtree.fields.map((leaf) => ({ ...leaf, path: `witness.${leaf.path}` })),
+        }),
+    ...(uniswapx !== undefined || subtree === undefined
+      ? { blind: "typed-data-oversize" as const }
+      : subtree.hasCommitment
+        ? { blind: "typed-data-commitment" as const }
+        : {}),
+  };
 };

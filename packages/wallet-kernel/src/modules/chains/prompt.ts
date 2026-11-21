@@ -1112,7 +1112,13 @@ function typedContentLines(
     return safeLines(catalog, message.safe);
   }
   if (intent.approvals.length > 0) {
-    return [catalog.otherOutflows, ...effectLines(catalog, intent)];
+    return [
+      catalog.otherOutflows,
+      ...effectLines(catalog, intent),
+      ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
+      ...(intent.blind === "typed-data-oversize" ? [catalog.typedOversize] : []),
+      ...(message.fields ?? []).map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+    ];
   }
   if (message.fields !== undefined) {
     return [

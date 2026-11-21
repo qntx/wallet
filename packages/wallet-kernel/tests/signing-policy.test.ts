@@ -443,7 +443,7 @@ describe("blind signing policy", () => {
           message: {
             offerer: address,
             zone: "0x0000000000000000000000000000000000000000",
-            offer: Array.from({ length: 5 }, () => ({
+            offer: Array.from({ length: 9 }, () => ({
               itemType: 0,
               token: "0x0000000000000000000000000000000000000000",
               identifierOrCriteria: "0",
@@ -476,7 +476,7 @@ describe("blind signing policy", () => {
           "Network: Ethereum\n" +
           "Verifying contract 0x0000000000000068F116a894984e2DB1123eB395\n" +
           "Type: OrderComponents\n" +
-          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
+          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
           "… 1 more items not shown\n" +
           `${address} receives 5 USDC`,
       }),
@@ -761,13 +761,13 @@ describe("described dApp requests on a fresh vault", () => {
     const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
     expect(errCode(response)).toBeUndefined();
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
-      title: "Confirm signature",
+      title: "Confirm swap",
       description:
         `App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n` +
-        `The wallet cannot verify what this signature authorises\n` +
-        `· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${address}\n· sellAmount = 1000000\n· buyAmount = 1\n` +
-        `· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n` +
-        `· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
+        `CoW Protocol order by ${address}\n` +
+        `Give at most 1 USDC\n` +
+        `${address} receives at least 1 base units of unverified token ${WETH}\n` +
+        `Valid until 2033-05-18 03:33 (UTC)`,
     });
     const signature = `0x${bytesToHex(bytesField(ok(response), "signature"))}`;
     const recovered = recoverTypedSignature({
