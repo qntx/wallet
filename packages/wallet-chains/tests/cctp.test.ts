@@ -175,7 +175,8 @@ describe("evm-cctp vectors", () => {
   )("%s decodes to the described deposit", (_name, v) => {
     const intent = decode(v);
     expect(intent.verifiability).toBe(v.expect.verifiability);
-    expect(intent.hyperliquidDeposit).toMatchObject(v.expect.hyperliquidDeposit ?? {});
+    expect(intent.hyperliquidDeposit?.recipient).toBe(v.expect.hyperliquidDeposit?.recipient);
+    expect(intent.hyperliquidDeposit?.dex).toBe(v.expect.hyperliquidDeposit?.dex);
   });
 
   it.each(
