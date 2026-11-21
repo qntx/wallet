@@ -356,6 +356,60 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   the request country/region against sourced restricted-jurisdiction lists for Hyperliquid and
   Polymarket. Display only — not a security boundary. Contract: `eligibility` in
   `@qntx/wallet-engine/gateway/contract`.
+- `@qntx/wallet-chains`: Solana swap decoders for Raydium AMM v4, Raydium CPMM, Raydium CLMM
+  `swap_v2` and Orca Whirlpool `swap_v2`. A swap whose layout bounds the signer's worst case is
+  described as a swap: at most `maxIn` leaves the source account and at least `minOut` reaches the
+  destination (named as the signer when it is the signer's own token account). AMM v4 names no
+  mint, so its amounts are shown in base units of the token accounts unless an account is the
+  signer's account of a built-in-table token. `DisplayIntent.minimumReceived[]` gains
+  `tokenAccount`. Any other instruction of these programs keeps the program-authority rule.
+- `@qntx/wallet-chains`: the Hyperliquid CCTP deposit — `TokenMessengerV2.depositForBurnWithHook`
+  on Arbitrum One / Arbitrum Sepolia to HyperEVM (domain 19) through Circle's `CctpForwarder` with a
+  forward hook naming the signer — is described ("deposit N USDC to your Hyperliquid perps/spot
+  account; Circle fee at most F") via `DisplayIntent.hyperliquidDeposit`. Every other call to those
+  messengers is blind with the new `BlindReason` `cctp-destination`.
+- `@qntx/wallet-engine`: `engine.spark.archivePayment(account, id)` archives an open Spark token
+  payment that can never be reconciled (its spent outputs were never reported). The record keeps
+  its history entry (status `pending`, new `HistoryFlag` `unresolved`), stops being reconciled and
+  stops blocking new sends. Call it only after the user confirmed.
+- `@qntx/wallet-engine`: Spark `SparkErrorCategory` `duplicate` — a new payment with the same kind,
+  receiver, amount (and token) as a payment whose outcome is still unknown is refused, carrying the
+  earlier record. Retrying the same request (same transfer id) is unaffected.
+- `@qntx/wallet-engine/apps`: the Hyperliquid builder fee is optional. Declining
+  `ApproveBuilderFee` finishes enabling with `builder: "declined"` (orders carry no builder); the
+  decline persists across unlock, renew and re-enable until `controller.approveBuilder(group,
+  "hyperliquid")` obtains an approval.
+- `@qntx/wallet-chains`: TIP-712 typed data — `SignRequest` `tron.typed-data { typedData }` (canonical JSON: `types` incl. `EIP712Domain`, `primaryType`, `domain`, `message`). `parseTronTypedData` / `tronTypedDataDigest` hash exactly like TronWeb 6.5.2 `_signTypedData` (address leaves drop the `0x41` prefix, `trcToken` is an atomic uint256, `domain.chainId` is the network's decimal CAIP-2 reference); `tronTypedDataFromArgs(domain, types, message)` turns TronWeb's argument form into that JSON; `@qntx/wallet-chains/tron/sign` `signTronTypedData`; `recoverTronTypedDataSigner` / `verifyTronTypedDataSignature`. `decodeTron` describes EIP-2612 permits and the SUN.io Permit2 deployment on mainnet (`TRON_PERMIT2`, PermitSingle/Batch/TransferFrom/WitnessTransferFrom) with base58 addresses; an unrecognised document lists its leaves or is blind (`typed-data-variant` for `Permit*`/Permit2/listed-token claims, `typed-data-oversize`, `typed-data-commitment`).
+- `@qntx/wallet-chains`: `tronRawDataFromJson(rawData, visible)` re-encodes a dApp's `raw_data` JSON under TronWeb `txCheck` semantics (strict: unknown keys, non-canonical forms and `AccountPermissionUpdateContract` refuse); `tronMemoBytes` / `TRON_MEMO_MAX_BYTES` (256 UTF-8 bytes, one line, no hidden characters — always shown in full by the kernel prompt).
+- `@qntx/wallet`: `chain.sign` request `tron.typed-data`; the kernel signs it and verifies the signature against the account.
+- `@qntx/wallet-engine`: TRON in-app-browser provider. The injected script adds `window.tron` (TIP-1193 `request`/`on`/`removeListener`, TIP-6963 announcement under the host's own `ProviderInfo` — never TronLink's name or rdns, no `isTronLink`), and `window.tronLink` / `window.tronWeb` as the same minimal object: `ready`, `defaultAddress`, `trx.sign`, `trx.signMessageV2`, `trx._signTypedData`/`signTypedData`, `trx.sendRawTransaction`, `trx.getBlockByNumber(0)`, no-op node setters, `addressChanged`. Everything else on TronWeb's surface rejects with 4200 (`trx.sign(hex)` digest signing, `trx.signMessage`, `trx.multiSign` included). Methods: `eth_requestAccounts`, legacy `tron_requestAccounts` (`{code}` result), `wallet_switchEthereumChain` between enabled TRON networks, `wallet_watchAsset` (TRC-20). The official `@tronweb3/tronwallet-adapter-tronlink` finds the wallet through `window.tronLink`.
+- `@qntx/wallet-engine`: request method `tron-sign` (dApp transaction, TIP-191 message, TIP-712 typed data). A dApp transaction is signed only as the exact `raw_data_hex` bytes after `sha256 == txID`, `raw_data` JSON re-encoding byte-equal, owner = the session account, a modeled contract type, `Permission_id` 0, `now + 20 s ≤ expiration ≤ now + 24 h` and a TaPoS reference block still on the chain; it gets the TRON fee quote (energy from `triggerconstantcontract`, the dApp's own `fee_limit` as the cap, `fee-limit-below-estimate` when it will run out of energy) and a TRC-20 balance-change simulation. After signing it is tracked by txid without the wallet broadcasting it (`TrackedTransaction.tron.dappSignature`); `trx.sendRawTransaction` of a transaction this wallet signed goes through the persisted, unknown-outcome-safe broadcast (`TransactionController.submitDappTron`), any other is refused.
+- `@qntx/wallet-engine`: TRON `send` accepts `memo` (written to `raw_data.data`); the quote adds the live `getMemoFee` (`TronFeeQuote.memo`). `vectors/chains/tron-fees.json` gains 25 mainnet memo transfers bounding it.
+- `@qntx/wallet-engine`: `watch-asset` accepts TRC-20 tokens (on-chain `symbol`/`decimals`, built-in-table impersonation check).
+- `ConnectionController`: `tron` namespace (scopes for every enabled TRON network, `ConnectionSession.tronNetwork`, `setTronNetwork`); the engine facade exposes `tronWallet`.
+- `@qntx/wallet-engine/walletconnect`: WalletConnect v2 wallet side on Reown WalletKit
+  (`@reown/walletkit` 1.6.0, `@walletconnect/core`/`utils` 2.25.0, exact pins; WalletConnect
+  Community License — commercial terms are a release gate). `createWalletConnect({ projectId,
+  metadata, storage, wallet, engine, now, logger })` pairs `wc:` URIs, validates session proposals
+  (`eip155`, `solana`, `bip122`; unsupported required namespaces/chains/methods/events are rejected
+  with 5104/5100/5101/5102), approves them as ConnectionController sessions keyed
+  `walletconnect:<topic>` and runs every `session_request` through the same EIP-1193, Solana and
+  Bitcoin handlers and request pipeline as the in-app browser. Verify (`VALID`/`INVALID`/`UNKNOWN`,
+  `isScam`) is merged with the phishing list; a mismatch or threat is a `danger` finding. Requests
+  that arrive while locked queue until unlock or expiry; pending requests survive a restart; expired
+  requests are answered `4100 Request expired`; group switches update the session and emit
+  `accountsChanged`/`chainChanged`; revoking, a peer delete, a session expiry or deleting the wallet
+  disconnects. One-click auth (`session_authenticate`, CAIP-222 + ReCaps) is approved as a SIWE
+  message through the pipeline. Telemetry is off. Hosts that do not import the entry bundle none of it.
+- `@qntx/wallet-engine`: `WalletConnectOrigin`, `WalletConnectVerify`, `DappOrigin`, `dappUrl`,
+  `walletConnectKey`; `RequestOrigin`, `ConnectionOrigin` and every dApp request input accept a
+  WalletConnect origin. Risk codes `verify-mismatch` and `verify-threat`.
+- `@qntx/wallet-engine`: `connections.establishWalletConnect`, `connections.previewAccounts`, `connections.authorize`,
+  `connections.touch` on the engine surface; `ConnectionState.ready`.
+- `@qntx/wallet-engine`: the EIP-1193, Solana and Bitcoin handler requests take an optional
+  `network` (CAIP-2); the in-app-browser bridge never sets it.
+- `@qntx/wallet-engine`: `parsePayment` returns `{ kind: "walletconnect", uri }` for a `wc:` v2
+  pairing URI.
 
 ### Changed
 
@@ -667,6 +721,35 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   per-session client id. `GatewayConfig` and `GatewayScope` are now exported from the package root.
 - `requests.prepare({ method: "evm-sign" })`: `origin` is optional; without it the request is the
   wallet's own and only `evm.typed-data` is accepted.
+- `@qntx/wallet-engine`: a Spark sats payment becomes `failed` only when the operator lists its
+  transfer as expired or returned. An id the operator does not list stays `unknown` at any age
+  (previously `failed` at once on a complete listing, or after 30 minutes) — operator lag can no
+  longer turn a committed payment into "failed" and invite a second payment. A shortfall is
+  checked against the balance before anything is recorded and fails `insufficient-funds`.
+- `@qntx/wallet-engine/apps`: Hyperliquid deposits go through CCTP (an exact USDC approval to
+  `TokenMessengerV2` when the allowance is short — `deposit` then returns `approval-required` and is
+  called again once it confirmed — and `depositForBurnWithHook` to the account's own HyperCore perps
+  or spot balance, Fast Transfer). `createApps` takes `networks` for the chain reads, and
+  `requests.prepare` gains the internal method `evm-cctp`. The fee cap comes from Circle's fee API; deposits at or below the fee, or above the
+  on-chain per-message burn limit, are refused. The deprecated Bridge2 deposit is removed.
+- `@qntx/wallet-engine`: TRON node responses are parsed losslessly: int64 amounts above 2^53
+  (balances, TRC-10 totals, delegated amounts, chain parameters) are exact `bigint`s.
+  `TronFeeQuote` availability fields are `bigint`; TRON account resource counters are decimal
+  strings.
+- `@qntx/wallet-engine`: a TRON transaction is `dropped` only when the independent endpoint (when
+  configured) also proves it expired and unknown; any dissent or read failure keeps it
+  `submitted`.
+- `@qntx/wallet-engine`: EVM history entries of an account that has code (an EIP-7702 delegation
+  included) are not `verified` unless the transaction reverted — a delegate can move native value
+  without leaving a trace the claims are checked against.
+- `@qntx/wallet-chains` / kernel prompt: a 32-byte message (digest-length hazard, still blind)
+  shows its bytes as `Data 0x…`, and its text only when every code point prints plainly; the same
+  in every family. Message decoders keep a leading BOM, so a 32-byte message starting with EF BB BF
+  no longer measures 29 bytes and escapes the digest-length rule.
+- `@qntx/wallet-engine`: a TRON transaction the engine built is rebuilt in place at approval when less than 20 s of validity remain or its reference block left the solidified chain (same contract and `fee_limit`, fresh block and 60 s expiry; refused when the fee cap would rise or the intent changes) — it used to fail at 5 s.
+- `@qntx/wallet-engine`: `createBrowserBridge` requires a `tron` handler (`engine.tronWallet`); the facade's `connections` gains `setTronNetwork`.
+- `@qntx/wallet-chains/evm`: `typedDataFields` takes an optional leaf-value override.
+- `@qntx/wallet-engine`: `bitcoin:signAndSendTransaction` results carry `signedPsbt` next to `txId`.
 
 ### Removed
 
@@ -871,6 +954,18 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `paths`, absolute specifiers, `require()` and `import.meta.glob` in library source.
 - Mantle and Mantle Sepolia showed an L1 data fee about 4,400 times too low: Mantle charges `getL1Fee × tokenRatio()` in MNT.
 - Speeding up or cancelling a legacy (type-0) EVM transaction re-signed it at the original, un-bumped gas price.
+- `@qntx/wallet-engine`: RPC answers missing a field the spec guarantees (Solana
+  `lastValidBlockHeight`, `blockhash`, `absoluteSlot`, `blockHeight`, rent, lamports, epoch; EVM
+  nonce, gas estimate, gas price, fee history, receipt `status`) are malformed answers, never read
+  as 0. A missing `lastValidBlockHeight` previously made a live transaction look expired; a receipt
+  without `status` looked successful.
+- `@qntx/wallet-engine`: Bitcoin UTXO lock snapshots are written in order and a failed write is
+  logged instead of an unhandled rejection; a restart re-locks the inputs of live tracked
+  transactions, so a lost snapshot cannot make spent outputs selectable.
+- `apps/gateway`: TRON upstream bodies are validated after the same lossless parse.
+- `@qntx/wallet-engine`: the in-app Solana and Bitcoin providers reported a rejected, expired or
+  invalidated request as `-32603 internal error`; they now reject with `4001` like EIP-1193 (and
+  `-32602` for a sign-in for another domain).
 
 ### Security
 
