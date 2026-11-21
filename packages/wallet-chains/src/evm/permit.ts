@@ -248,7 +248,7 @@ const witnessOutcome = (
       : {
           fields: subtree.fields.map((leaf) => ({ ...leaf, path: `witness.${leaf.path}` })),
         }),
-    ...(uniswapx !== undefined || subtree === undefined
+    ...(subtree === undefined
       ? { blind: "typed-data-oversize" as const }
       : subtree.hasCommitment
         ? { blind: "typed-data-commitment" as const }

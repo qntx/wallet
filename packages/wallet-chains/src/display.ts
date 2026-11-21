@@ -10,7 +10,7 @@
  * display as U+FFFD so they stay visible, the rest pass through. Everything else is text.
  */
 
-const DECEPTIVE = /[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069\uFFF9-\uFFFB]/u;
+const DECEPTIVE = /[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\uFFF9-\uFFFB]/u;
 const IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
 const FORMAT = /\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|\u034F|\p{Variation_Selector}/u;
 const JOINER = /\u200C|\u200D/u;
