@@ -25,7 +25,7 @@ export type HyperliquidTriggerParams = {
   readonly market?: boolean;
   /** The cap `p` on the wire. Optional for market triggers; required for limit triggers. */
   readonly price?: string;
-  /** Cap distance for market triggers without an explicit `price`, in basis points. */
+  /** Cap distance for market triggers without an explicit `price` — required then. */
   readonly slippageBps?: number;
 };
 
@@ -36,7 +36,7 @@ export type HyperliquidOrderKind =
       readonly price: string;
       readonly tif?: "Gtc" | "Ioc" | "Alo";
     }
-  | { readonly kind: "market"; readonly slippageBps?: number }
+  | { readonly kind: "market"; readonly slippageBps: number }
   | ({ readonly kind: "trigger"; readonly tpsl: "tp" | "sl" } & HyperliquidTriggerParams);
 
 /** One order to place — the entry; `takeProfit`/`stopLoss` attach reduce-only children. */
@@ -67,12 +67,6 @@ export type HyperliquidPlacedAction = {
   /** The entry order's wire price — for a market order, the slippage cap. */
   readonly price: string;
 };
-
-/**
- * The default cap distance for market orders and market triggers: 10% — the bound MetaMask's perps
- * controller recommends for TP/SL (orderCalculations.ts DefaultTpslSlippageBps).
- */
-const DEFAULT_SLIPPAGE_BPS = 1000;
 
 /** Kernel caps action arrays at 64 entries (packages/wallet/src/protocol/apps.ts `arr(.., 64)`). */
 const BATCH_CAP = 64;
@@ -180,13 +174,13 @@ const triggerOrder = (
     // Market triggers still cap the fill at triggerPx ± slippage, like the Python SDK's
     // _slippage_price (hyperliquid/exchange.py:112-137, market_close) and MetaMask's TP/SL
     // children (hyperLiquidValidation.ts positionTpsl → trigger × (1 ± slippage)).
-    p = slippagePrice(
-      triggerPx,
-      side,
-      spec.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
-      asset.szDecimals,
-      asset.market,
-    );
+    if (spec.slippageBps === undefined) {
+      throw new HyperliquidError(
+        "invalid-input",
+        "a market trigger needs slippageBps or an explicit price",
+      );
+    }
+    p = slippagePrice(triggerPx, side, spec.slippageBps, asset.szDecimals, asset.market);
   } else {
     throw new HyperliquidError("invalid-input", "a limit trigger needs an explicit price");
   }
@@ -268,13 +262,7 @@ export function createHyperliquidActions(options: {
     }
     if (kind.kind === "market") {
       return {
-        p: slippagePrice(
-          await mid(coin),
-          side,
-          kind.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
-          asset.szDecimals,
-          asset.market,
-        ),
+        p: slippagePrice(await mid(coin), side, kind.slippageBps, asset.szDecimals, asset.market),
         t: { limit: { tif: "Ioc" } },
       };
     }

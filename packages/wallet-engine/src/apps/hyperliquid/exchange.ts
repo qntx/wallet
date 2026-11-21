@@ -5,6 +5,7 @@ import type { Wallet } from "@qntx/wallet";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
 
+import { formatDecimal, parseDecimal } from "../../decimal.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import type { HyperliquidAgent, HyperliquidAgentRegistry, HyperliquidGroup } from "./agents.ts";
@@ -36,13 +37,16 @@ export type HyperliquidOrderOutcome =
       /** Absent for `waitingForFill`/`waitingForTrigger` statuses, which carry no oid. */
       readonly oid?: number | undefined;
       readonly cloid?: string | undefined;
+      /** Size already filled while still resting — only from `orderStatus` reconciliation. */
+      readonly filledSz?: string | undefined;
     }
   | {
       readonly kind: "filled";
       readonly oid?: number | undefined;
       readonly cloid?: string | undefined;
       readonly totalSz: string;
-      readonly avgPx: string;
+      /** `orderStatus` carries no fill price — absent on reconciled fills, never fabricated. */
+      readonly avgPx?: string | undefined;
     }
   | {
       readonly kind: "rejected";
@@ -162,34 +166,41 @@ const AGENT_REJECTION =
 
 const cloidOf = (entry: Record<string, unknown>): string | undefined => stringOf(entry["cloid"]);
 
-const orderStatusOutcome = (entry: unknown, cloid?: string): HyperliquidOrderOutcome => {
+/**
+ * An answered order status — strict on the documented shapes: anything else means the response was
+ * misread, and a misread "rejected" is how duplicate orders happen. `undefined` → reconcile.
+ */
+const orderStatusOutcome = (
+  entry: unknown,
+  cloid?: string,
+): HyperliquidOrderOutcome | undefined => {
   if (entry === "waitingForFill" || entry === "waitingForTrigger") {
     // Accepted without an oid yet — resting without one.
     return { kind: "resting", cloid };
   }
   if (isRecord(entry) && isRecord(entry["resting"])) {
-    return {
-      kind: "resting",
-      oid: numberOf(entry["resting"]["oid"]),
-      cloid: cloidOf(entry["resting"]) ?? cloid,
-    };
+    const oid = numberOf(entry["resting"]["oid"]);
+    return oid === undefined
+      ? undefined
+      : { kind: "resting", oid, cloid: cloidOf(entry["resting"]) ?? cloid };
   }
   if (isRecord(entry) && isRecord(entry["filled"])) {
-    return {
-      kind: "filled",
-      oid: numberOf(entry["filled"]["oid"]),
-      cloid: cloidOf(entry["filled"]) ?? cloid,
-      totalSz: stringOf(entry["filled"]["totalSz"]) ?? "0",
-      avgPx: stringOf(entry["filled"]["avgPx"]) ?? "0",
-    };
+    const totalSz = stringOf(entry["filled"]["totalSz"]);
+    const avgPx = stringOf(entry["filled"]["avgPx"]);
+    return totalSz === undefined || avgPx === undefined
+      ? undefined
+      : {
+          kind: "filled",
+          oid: numberOf(entry["filled"]["oid"]),
+          cloid: cloidOf(entry["filled"]) ?? cloid,
+          totalSz,
+          avgPx,
+        };
   }
   const message = isRecord(entry) ? stringOf(entry["error"]) : undefined;
-  return {
-    kind: "rejected",
-    cloid,
-    reason: message === undefined ? "other" : messageReason(message),
-    message: message ?? "unrecognized order status",
-  };
+  return message === undefined
+    ? undefined
+    : { kind: "rejected", cloid, reason: messageReason(message), message };
 };
 
 const cancelStatusOutcome = (entry: unknown): HyperliquidCancelOutcome => {
@@ -197,7 +208,7 @@ const cancelStatusOutcome = (entry: unknown): HyperliquidCancelOutcome => {
     return { kind: "cancelled" };
   }
   const message = isRecord(entry) ? stringOf(entry["error"]) : undefined;
-  return { kind: "rejected", message: message ?? "unrecognized cancel status" };
+  return message === undefined ? { kind: "unknown" } : { kind: "rejected", message };
 };
 
 /**
@@ -223,30 +234,57 @@ const statusesOf = (body: unknown): ReadonlyArray<unknown> | undefined => {
   return data["statuses"] as ReadonlyArray<unknown>;
 };
 
-/** `orderStatus` → the outcome for one cloid, or `undefined` to keep polling. */
+/** `origSz − sz` exactly — the filled part of an order, canonical, or undefined when unreadable. */
+const filledSize = (order: Record<string, unknown>): string | undefined => {
+  const orig = stringOf(order["origSz"]);
+  const open = stringOf(order["sz"]);
+  if (orig === undefined || open === undefined) {
+    return undefined;
+  }
+  const a = parseDecimal(orig);
+  const b = parseDecimal(open);
+  const scale = Math.max(a.scale, b.scale);
+  const diff = a.units * 10n ** BigInt(scale - a.scale) - b.units * 10n ** BigInt(scale - b.scale);
+  return formatDecimal({ units: diff < 0n ? 0n : diff, scale });
+};
+
+const positive = (size: string | undefined): size is string =>
+  size !== undefined && parseDecimal(size).units > 0n;
+
+/**
+ * `orderStatus` → the outcome for one cloid, or `undefined` to keep polling (unknownOid and
+ * malformed answers both keep polling — a misread is never a verdict).
+ */
 const statusOutcome = (result: unknown, cloid?: string): HyperliquidOrderOutcome | undefined => {
   if (!isRecord(result) || result["status"] !== "order" || !isRecord(result["order"])) {
-    return undefined; // unknownOid or malformed — keep polling
+    return undefined;
   }
   const detail = result["order"];
   const order = isRecord(detail["order"]) ? detail["order"] : {};
   const status = stringOf(detail["status"]) ?? "";
   const oid = numberOf(order["oid"]);
+  const filled = filledSize(order);
   if (status === "open" || status === "triggered") {
-    return { kind: "resting", oid, cloid };
+    return positive(filled)
+      ? { kind: "resting", oid, cloid, filledSz: filled }
+      : { kind: "resting", oid, cloid };
   }
   if (status === "filled") {
     return {
       kind: "filled",
       oid,
       cloid,
-      // orderStatus carries no fill price — origSz is the total, limitPx the worst bound.
-      totalSz: stringOf(order["origSz"]) ?? "0",
-      avgPx: stringOf(order["limitPx"]) ?? "0",
+      // orderStatus carries no fill price — avgPx stays absent, never fabricated.
+      totalSz: filled ?? stringOf(order["origSz"]) ?? "0",
     };
   }
-  // Every *Rejected/*Canceled terminal status — reasoned where the table names it.
-  return { kind: "rejected", cloid, reason: statusReason(status), message: status };
+  if (status === "") {
+    return undefined;
+  }
+  // Every *Rejected/*Canceled terminal status — a partial IOC fill still committed its filled part.
+  return positive(filled)
+    ? { kind: "filled", oid, cloid, totalSz: filled }
+    : { kind: "rejected", cloid, reason: statusReason(status), message: status };
 };
 
 const cloids = (action: HyperliquidL1Action): ReadonlyArray<string | undefined> =>
@@ -407,7 +445,7 @@ export function createHyperliquidExchange(options: {
   const execute = async <T>(
     group: HyperliquidGroup,
     action: HyperliquidL1Action,
-    onOk: (body: unknown) => T,
+    onOk: (body: unknown, master: string, expiresAfter: number) => T | Promise<T>,
     onLost: (master: string, expiresAfter: number) => T | Promise<T>,
   ): Promise<T> => {
     const agent = options.registry.require(group);
@@ -435,7 +473,7 @@ export function createHyperliquidExchange(options: {
       }
       throw new HyperliquidError("rejected", message);
     }
-    return onOk(response);
+    return onOk(response, agent.owner, expiresAfter);
   };
 
   return {
@@ -443,7 +481,7 @@ export function createHyperliquidExchange(options: {
       execute(
         group,
         action,
-        (body) => {
+        async (body, master, expiresAfter) => {
           const count =
             action.type === "order"
               ? action.orders.length
@@ -451,8 +489,18 @@ export function createHyperliquidExchange(options: {
                 ? action.modifies.length
                 : 1;
           const known = cloids(action);
-          return broadcast(statusesOf(body) ?? [], count).map((entry, index) =>
-            orderStatusOutcome(entry, known[index]),
+          const raw = statusesOf(body);
+          const entries = raw === undefined ? undefined : broadcast(raw, count);
+          /* A malformed/short answered response is as unknown as a lost POST — reconcile the
+             cloids it could not account for instead of fabricating rejections. */
+          if (entries === undefined || entries.length !== count) {
+            return Promise.all(known.map(async (cloid) => reconcile(master, cloid, expiresAfter)));
+          }
+          return Promise.all(
+            entries.map(async (entry, index) => {
+              const outcome = orderStatusOutcome(entry, known[index]);
+              return outcome ?? reconcile(master, known[index], expiresAfter);
+            }),
           );
         },
         async (master, expiresAfter) => {
@@ -469,7 +517,13 @@ export function createHyperliquidExchange(options: {
       return execute(
         group,
         action,
-        (body) => broadcast(statusesOf(body) ?? [], count).map(cancelStatusOutcome),
+        (body) => {
+          const raw = statusesOf(body);
+          const entries = raw === undefined ? undefined : broadcast(raw, count);
+          return entries === undefined || entries.length !== count
+            ? Array.from({ length: count }, () => ({ kind: "unknown" as const }))
+            : entries.map(cancelStatusOutcome);
+        },
         () => Array.from({ length: count }, () => ({ kind: "unknown" as const })),
       );
     },

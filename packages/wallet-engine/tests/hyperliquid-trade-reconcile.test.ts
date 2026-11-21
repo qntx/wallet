@@ -134,7 +134,10 @@ const serve = (
         });
       }
       return Response.json(
-        (await answers.exchange?.(body)) ?? { status: "ok", response: { type: "default" } },
+        (await answers.exchange?.(body)) ?? {
+          status: "ok",
+          response: { type: "order", data: { statuses: [{ resting: { oid: 7 } }] } },
+        },
         { headers },
       );
     }
@@ -278,7 +281,7 @@ const throwOnType = (type: string, error: unknown): InfoAnswers => {
 const orderFound = (status: string, order: Record<string, unknown> = {}): unknown => ({
   status: "order",
   order: {
-    order: { oid: 424242, origSz: "0.05", limitPx: "58000", ...order },
+    order: { oid: 424242, origSz: "0.05", sz: "0.05", limitPx: "58000", ...order },
     status,
     statusTimestamp: NOW,
   },
@@ -292,7 +295,7 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
       exchange: () => {
         throw new Error("connection reset");
       },
-      info: whenType("orderStatus", orderFound("filled")),
+      info: whenType("orderStatus", orderFound("filled", { sz: "0" })),
     });
     const { group } = await enable(provider, wallet, walletId);
 
@@ -300,7 +303,7 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
 
     expect(exchangeCount(posted)).toBe(1);
     expect(result.outcomes).toStrictEqual([
-      { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05", avgPx: "58000" },
+      { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05" },
     ]);
     const orderStatusCalls = posted.filter(isOrderStatusPost);
     expect(orderStatusCalls).toHaveLength(1);
@@ -377,6 +380,62 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     const result = await drive(timers, provider.trade.place(group, ORDER));
 
     expect(result.outcomes).toStrictEqual([{ kind: "resting", oid: 424242, cloid: CLOID }]);
+  });
+
+  it("an open order that already filled in part reports its filled size", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => {
+        throw new Error("connection reset");
+      },
+      info: whenType("orderStatus", orderFound("open", { sz: "0.02" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    expect(result.outcomes).toStrictEqual([
+      { kind: "resting", oid: 424242, cloid: CLOID, filledSz: "0.03" },
+    ]);
+  });
+
+  it("a terminal status with a partial fill reports the filled size, not a rejection", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => {
+        throw new Error("connection reset");
+      },
+      info: whenType("orderStatus", orderFound("canceled", { sz: "0.04" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    expect(result.outcomes).toStrictEqual([
+      { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.01" },
+    ]);
+  });
+
+  it("an answered but malformed status list reconciles by cloid instead of rejecting", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => ({
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ bogus: true }] } },
+      }),
+      info: whenType("orderStatus", orderFound("filled", { sz: "0" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    expect(exchangeCount(posted)).toBe(1);
+    expect(result.outcomes).toStrictEqual([
+      { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05" },
+    ]);
   });
 
   it("a lost non-order action reports unknown — never re-posted", async () => {
@@ -859,7 +918,7 @@ describe("hyperliquid trade — wire actions", () => {
     });
     const { group } = await enable(provider, wallet, walletId);
 
-    const result = await provider.trade.close(group, { coin: "BTC" });
+    const result = await provider.trade.close(group, { coin: "BTC", slippageBps: 100 });
     const action = actionOf(posted) as {
       orders: Array<Record<string, unknown>>;
       grouping: string;

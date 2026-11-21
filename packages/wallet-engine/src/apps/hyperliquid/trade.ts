@@ -88,7 +88,7 @@ export type HyperliquidTrade = {
   /** Market-close the whole position of `coin` — reduce-only IOC at the slippage cap. */
   readonly close: (
     group: HyperliquidGroup,
-    params: { readonly coin: string; readonly slippageBps?: number },
+    params: { readonly coin: string; readonly slippageBps: number },
   ) => Promise<HyperliquidPlaceResult>;
 };
 
@@ -158,10 +158,7 @@ export function createHyperliquidTrade(options: {
         side: szi.startsWith("-") ? "buy" : "sell",
         size: szi.replace(/^-/, ""),
         reduceOnly: true,
-        order: {
-          kind: "market",
-          ...(params.slippageBps === undefined ? {} : { slippageBps: params.slippageBps }),
-        },
+        order: { kind: "market", slippageBps: params.slippageBps },
       });
     },
   };

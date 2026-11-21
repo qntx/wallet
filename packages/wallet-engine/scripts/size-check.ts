@@ -6,8 +6,8 @@
  *   engine's own code — what a host that never touches apps pays. The bundle must also stay free of
  *   apps markers (the Hyperliquid base URL and the `@nktkas/hyperliquid` specifier survive
  *   minification), proving the apps entry never leaks into the main one.
- * - `apps`: the `@qntx/wallet-engine/apps` entry bundled whole — the real consumer cost, SDK and
- *   valibot included.
+ * - `apps`: the `@qntx/wallet-engine/apps` entry with `@qntx/*` workspace packages external (they are
+ *   the host's peer deps) and the Hyperliquid SDK bundled — the apps entry's own incremental cost.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -26,6 +26,7 @@ declare const Bun: {
     format: "esm";
     minify: boolean;
     packages?: "external";
+    external?: ReadonlyArray<string>;
   }) => Promise<BunBuildOutput>;
 };
 
@@ -35,7 +36,8 @@ type Entry = {
   readonly name: string;
   readonly source: string;
   readonly budget: number;
-  readonly external: boolean;
+  /** `true` → `packages: "external"` for every dep, or an explicit specifier list. */
+  readonly external: true | ReadonlyArray<string>;
   /** Literals that must not appear in the (minified) bundle. */
   readonly forbidden: ReadonlyArray<string>;
 };
@@ -51,13 +53,13 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    budget: 320 * 1024,
-    external: false,
+    budget: 16 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
     forbidden: [],
   },
 ];
 
-const measure = async (name: string, external: boolean): Promise<string> => {
+const measure = async (name: string, external: true | ReadonlyArray<string>): Promise<string> => {
   /* Bun emits a facade for a barrel-file entry, so measure a synthetic `export *` entry — the
      same shape a real consumer's bundler sees. */
   const result = await Bun.build({
@@ -65,7 +67,8 @@ const measure = async (name: string, external: boolean): Promise<string> => {
     target: "browser",
     format: "esm",
     minify: true,
-    packages: external ? "external" : undefined,
+    packages: external === true ? "external" : undefined,
+    external: external === true ? undefined : external,
   });
   if (!result.success) {
     for (const log of result.logs) {
