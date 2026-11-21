@@ -68,6 +68,8 @@ type Probe = {
   readonly land?: "kernel" | "engine";
   /** Grep string proving the forbidden payload landed. */
   readonly marker?: string;
+  /** Extra strings checked in the artifact when it lands (e.g. which exports condition won). */
+  readonly landProbeStrings?: ReadonlyArray<string>;
 };
 
 const kernelProbe = (id: string, source: string, init: Partial<Probe> = {}): Probe => ({
@@ -130,11 +132,25 @@ const PROBES: ReadonlyArray<Probe> = [
     "B7",
     'import * as m from "@qntx/wallet-chains/n3probe";\nexport const keys = Object.keys(m);\n',
     {
-      also: ["packages/wallet-chains/src/n3probe-rn.ts"],
+      also: [
+        "packages/wallet-chains/src/n3probe-rn.ts",
+        "packages/wallet-chains/src/n3probe-browser.ts",
+        "packages/wallet-chains/src/n3probe-worker.ts",
+      ],
+      // Each condition resolves to a different file carrying a per-condition tag, so one real
+      // native build reveals which exports condition the kernel bundler selected.
       extra: [
         {
           path: "packages/wallet-chains/src/n3probe-rn.ts",
-          source: `export { N3PROBE } from "../../wallet-engine/src/n3probe-marker.ts";\nexport const ${M("B7")} = "${M("B7")}";\n`,
+          source: `export { N3PROBE } from "../../wallet-engine/src/n3probe-marker.ts";\nexport const ${M("B7")}_RN = "${M("B7")}_react-native";\n`,
+        },
+        {
+          path: "packages/wallet-chains/src/n3probe-browser.ts",
+          source: `export { N3PROBE } from "../../wallet-engine/src/n3probe-marker.ts";\nexport const ${M("B7")}_BROWSER = "${M("B7")}_browser";\n`,
+        },
+        {
+          path: "packages/wallet-chains/src/n3probe-worker.ts",
+          source: `export { N3PROBE } from "../../wallet-engine/src/n3probe-marker.ts";\nexport const ${M("B7")}_WORKER = "${M("B7")}_worker";\n`,
         },
         markerExtra(ENGINE_MARKER, "ENGINE"),
       ],
@@ -143,11 +159,12 @@ const PROBES: ReadonlyArray<Probe> = [
           path: "packages/wallet-chains/package.json",
           search: '"exports": {',
           replace:
-            '"exports": {\n    "./n3probe": {\n      "react-native": "./src/n3probe-rn.ts",\n      "browser": "./src/n3probe-rn.ts",\n      "worker": "./src/n3probe-rn.ts",\n      "default": "./src/index.ts"\n    },',
+            '"exports": {\n    "./n3probe": {\n      "react-native": "./src/n3probe-rn.ts",\n      "browser": "./src/n3probe-browser.ts",\n      "worker": "./src/n3probe-worker.ts",\n      "default": "./src/index.ts"\n    },',
         },
       ],
       land: "kernel",
-      marker: M("B7"),
+      marker: M("ENGINE"),
+      landProbeStrings: [`${M("B7")}_react-native`, `${M("B7")}_browser`, `${M("B7")}_worker`],
     },
   ),
   kernelProbe(
@@ -197,27 +214,29 @@ const PROBES: ReadonlyArray<Probe> = [
       ],
     },
   ),
-  kernelProbe(
-    "B15",
-    'import { N3PROBE_B15 } from "n3-probe-tramp";\nexport const x = typeof N3PROBE_B15;\n',
-    {
-      extra: [
-        {
-          path: "node_modules/n3-probe-tramp/package.json",
-          source: '{"name":"n3-probe-tramp","type":"module","exports":"./index.js"}\n',
-        },
-        {
-          path: "node_modules/n3-probe-tramp/index.js",
-          // @qntx/wallet-engine is not resolvable from inside node_modules (isolated install), so
-          // the trampoline walks out to the workspace source by relative path instead.
-          source: `export * from "../../packages/wallet-engine/src/n3probe-marker.ts";\nexport const ${M("B15")} = "${M("B15")}";\n`,
-        },
-        markerExtra(ENGINE_MARKER, "ENGINE"),
-      ],
-      land: "kernel",
-      marker: M("B15"),
-    },
-  ),
+  kernelProbe("B15", 'import * as e from "n3-probe-tramp";\nexport const keep = e;\n', {
+    extra: [
+      {
+        path: "node_modules/n3-probe-tramp/package.json",
+        source: '{"name":"n3-probe-tramp","type":"module","exports":"./index.js"}\n',
+      },
+      {
+        path: "node_modules/n3-probe-tramp/index.js",
+        // The trampoline carries NO marker of its own: whatever lands in the kernel bundle is
+        // engine code reached through the fake third-party package. The nested node_modules
+        // symlink models a published dep vendoring @qntx/wallet-engine (isolated install: the
+        // bare specifier cannot reach the workspace otherwise).
+        source: 'export * from "@qntx/wallet-engine";\n',
+      },
+      {
+        path: "node_modules/n3-probe-tramp/node_modules/@qntx/wallet-engine",
+        link: "packages/wallet-engine",
+      },
+    ],
+    land: "kernel",
+    // Engine-only string: 0× in the committed kernel-entry.js, 1× in wallet-engine/dist/index.mjs.
+    marker: "price snapshot could not be saved",
+  }),
   kernelProbe("B16", 'import * as viem from "viem";\nexport const all = viem;\n', {
     land: "kernel",
     marker: "viem.sh",
@@ -463,7 +482,12 @@ try {
         out(tail.split("\n").slice(-4).join("\n"));
         const hits =
           probe.marker === undefined ? 0 : grepCount(join(ROOT, KERNEL_ARTIFACT), probe.marker);
-        row.land = hits > 0 ? `LANDED (${String(hits)}× ${probe.marker ?? ""})` : "absent";
+        const conditions = (probe.landProbeStrings ?? []).filter(
+          (needle) => grepCount(join(ROOT, KERNEL_ARTIFACT), needle) > 0,
+        );
+        row.land =
+          (hits > 0 ? `LANDED (${String(hits)}× ${probe.marker ?? ""})` : "absent") +
+          (conditions.length > 0 ? ` [selected: ${conditions.join(",")}]` : "");
       } catch (error) {
         row.land = `build-failed (${errorText(error)})`;
       } finally {

@@ -1,8 +1,10 @@
 /**
  * Mutation testing of the N2 guard code: one exact string replacement at a time, then the existing
- * gateway suite (`bunx vitest run --exclude 'tests/n3-review/**'`). Each file is restored
- * byte-for-byte from the in-memory copy in `finally`. Output is a killed/survived table with the
- * first failing test for every killed mutant.
+ * gateway suite (`bunx vp test run --exclude 'tests/n3-review/**'` — the workspace runner, vitest
+ * 5.0.5; a bare `bunx vitest` resolves vitest@latest instead). Each file is restored byte-for-byte
+ * from the in-memory copy in `finally`. Verdicts come from the process exit code: any non-zero exit
+ * (test failure, type error, worker crash) or a 300 s timeout is KILLED. For every SURVIVED mutant
+ * the n3-review PoC suite is run as well, recorded in the `poc` column.
  *
  * Bun mutants.ts > <evidence>/mutation.txt
  */
@@ -83,7 +85,7 @@ const MUTANTS: ReadonlyArray<Mutant> = [
   {
     id: "M7",
     file: RATE_LIMIT,
-    find: `\`, \${normalized.slice(0, 3).join(":")}::/48\``,
+    find: `\`, \`\${normalized.slice(0, 3).join(":")}::/48\``,
     replace: "`",
     note: "IPv6 loses the coarse /48 key",
   },
@@ -336,31 +338,53 @@ const MUTANTS: ReadonlyArray<Mutant> = [
   },
 ];
 
-const run = (command: string, cwd: string): string => {
+type RunResult = {
+  readonly output: string;
+  readonly code: number | undefined;
+  readonly signal: string | undefined;
+  readonly timedOut: boolean;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const stringProp = (error: unknown, key: string): string | undefined => {
+  if (!isRecord(error)) {
+    return undefined;
+  }
+  const value = error[key];
+  return typeof value === "string" ? value : undefined;
+};
+
+const run = (command: string, cwd: string): RunResult => {
   try {
-    return execSync(command, {
+    const stdout = execSync(command, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
       timeout: 300_000,
     });
+    return { output: stdout, code: 0, signal: undefined, timedOut: false };
   } catch (error) {
-    const stdout =
+    const stdout = stringProp(error, "stdout") ?? "";
+    const stderr = stringProp(error, "stderr") ?? "";
+    const signal = stringProp(error, "signal");
+    const status =
       typeof error === "object" &&
       error !== null &&
-      "stdout" in error &&
-      typeof error.stdout === "string"
-        ? error.stdout
-        : "";
-    const stderr =
-      typeof error === "object" &&
-      error !== null &&
-      "stderr" in error &&
-      typeof error.stderr === "string"
-        ? error.stderr
-        : "";
-    return `${stdout}\n${stderr}`;
+      "status" in error &&
+      typeof error.status === "number"
+        ? error.status
+        : undefined;
+    const killed =
+      typeof error === "object" && error !== null && "killed" in error && error.killed === true;
+    return {
+      output: `${stdout}\n${stderr}`,
+      code: status,
+      signal,
+      timedOut: killed || signal === "SIGTERM",
+    };
   }
 };
 
@@ -376,11 +400,29 @@ const firstFailure = (output: string): string => {
   );
 };
 
-console.log(
-  `mutation run at ${new Date().toISOString()} — suite: bunx vitest run --exclude 'tests/n3-review/**'`,
-);
+const SUITE = "bunx vp test run --exclude 'tests/n3-review/**'";
+const POC = "bunx vp test run tests/n3-review";
+
+const verdictTag = ({ code, signal, timedOut, output }: RunResult): string => {
+  if (timedOut) {
+    return "timeout";
+  }
+  if (signal !== undefined) {
+    return `crash(${signal})`;
+  }
+  if (/SIGABRT|SIGSEGV|SIGILL|worker.*crash|terminated unexpectedly/i.test(output)) {
+    return "crash(output)";
+  }
+  return `exit=${String(code ?? "?")}`;
+};
+
+console.log(`mutation run at ${new Date().toISOString()} — suite: ${SUITE}`);
+const only = new Set(process.argv.slice(2));
 const results: string[] = [];
 for (const mutant of MUTANTS) {
+  if (only.size > 0 && !only.has(mutant.id)) {
+    continue;
+  }
   const path = join(ROOT, mutant.file);
   const original = readFileSync(path, "utf8");
   const occurrences = original.split(mutant.find).length - 1;
@@ -388,25 +430,34 @@ for (const mutant of MUTANTS) {
     console.log(
       `${mutant.id} SKIP — search string found ${String(occurrences)}× in ${mutant.file} (${mutant.note})`,
     );
-    results.push(`${mutant.id}\tSKIP(${String(occurrences)})\t-\t${mutant.note}`);
+    results.push(`${mutant.id}\tSKIP(${String(occurrences)})\t-\t-\t-\t${mutant.note}`);
     continue;
   }
   try {
     writeFileSync(path, original.replace(mutant.find, mutant.replace), "utf8");
-    const output = run("bunx vitest run --exclude 'tests/n3-review/**'", GATEWAY);
-    const killed = /\b\d+ failed\b|FAIL|✗/.test(output) || !output.includes("passed");
-    const failing = firstFailure(output);
+    const result = run(SUITE, GATEWAY);
+    const killed = result.timedOut || result.code !== 0;
+    const tag = killed ? verdictTag(result) : "-";
+    const failing = killed ? firstFailure(result.output) : "-";
     const verdict = killed ? "KILLED" : "SURVIVED";
-    console.log(`${mutant.id} ${verdict} ${failing}`);
-    results.push(`${mutant.id}\t${verdict}\t${failing}\t${mutant.note}`);
+    let poc = "-";
+    if (!killed) {
+      const pocResult = run(POC, GATEWAY);
+      poc =
+        pocResult.timedOut || pocResult.code !== 0
+          ? `poc-KILLED(${verdictTag(pocResult)} ${firstFailure(pocResult.output)})`
+          : "poc-clean";
+    }
+    console.log(`${mutant.id} ${verdict} ${tag} ${failing} ${poc}`);
+    results.push(`${mutant.id}\t${verdict}\t${tag}\t${failing}\t${poc}\t${mutant.note}`);
   } finally {
     writeFileSync(path, original, "utf8");
   }
 }
 
-console.log("\nid\tverdict\tfirst-failure\tnote");
+console.log("\nid\tverdict\tdetail\tfirst-failure\tpoc\tnote");
 for (const line of results) {
   console.log(line);
 }
 const diff = run("git diff --name-only -- apps/gateway/src packages", ROOT);
-console.log(`\nrestored-clean: ${diff.trim() === "" ? "yes" : `NO — ${diff}`}`);
+console.log(`\nrestored-clean: ${diff.output.trim() === "" ? "yes" : `NO — ${diff.output}`}`);

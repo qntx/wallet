@@ -32,6 +32,32 @@ export type ProductionAppOptions = {
   readonly now?: () => number;
 };
 
+/**
+ * The binding's real behaviour that `countBefore` omits: counters live inside a fixed period and
+ * reset when the clock crosses a period boundary. Same count-before-add semantics (a request is
+ * refused only when the window's count is already at the limit, then charged its delta anyway).
+ */
+export const windowedCountBefore = (
+  limit: number,
+  periodMs: number,
+  now: () => number,
+): RateLimiter => {
+  const state = new Map<string, { window: number; count: number }>();
+  return {
+    limit: async ({ key, delta = 1 }: { key: string; delta?: number }) => {
+      await Promise.resolve();
+      const window = Math.floor(now() / periodMs);
+      const entry = state.get(key);
+      const count = entry === undefined || entry.window !== window ? 0 : entry.count;
+      if (count >= limit) {
+        return { success: false };
+      }
+      state.set(key, { window, count: count + delta });
+      return { success: true };
+    },
+  };
+};
+
 export const productionApp = (options: ProductionAppOptions): ReturnType<typeof gateway> =>
   gateway({
     fetch: options.fetch,
