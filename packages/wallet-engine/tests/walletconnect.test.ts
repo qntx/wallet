@@ -20,6 +20,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 
 import type { ConnectionSession } from "../src/connect/controller.ts";
 import { createWalletEngine } from "../src/engine.ts";
+import type { PendingRequest } from "../src/index.ts";
 import type { RiskFinding } from "../src/requests/risk.ts";
 import { walletConnectKey } from "../src/requests/types.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
@@ -1185,6 +1186,276 @@ describe("walletconnect adversarial requests", () => {
       // The replayed copy never produced a second pipeline request.
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(awaiting(r)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+});
+
+type AuthOutcome =
+  | { value: { auths?: ReadonlyArray<unknown>; session?: SessionTypes.Struct } }
+  | { error: string };
+
+/** `dapp.authenticate` → `{uri, settled}` — the wallet's approve/reject lands in `settled`. */
+const authed = async (
+  client: Dapp,
+  params: Parameters<Dapp["authenticate"]>[0],
+): Promise<{ uri: string; settled: Promise<AuthOutcome> }> => {
+  const { uri, response } = await client.authenticate(params);
+  const settled = response()
+    .then((value): AuthOutcome => ({ value: value as { auths?: ReadonlyArray<unknown> } }))
+    .catch((error: unknown): AuthOutcome => ({
+      // The sign client rejects `response()` with the reason's message string.
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  settled.catch(() => undefined);
+  return { uri, settled };
+};
+
+const AUTH_PARAMS = {
+  chains: [EVM1],
+  domain: "dapp.example",
+  uri: DAPP_URL,
+  nonce: "0123456789abcdef",
+};
+
+const authValue = (
+  settled: AuthOutcome,
+): { auths?: ReadonlyArray<unknown>; session?: SessionTypes.Struct } => {
+  if ("error" in settled) {
+    throw new Error(`authenticate failed: ${JSON.stringify(settled.error)}`);
+  }
+  return settled.value;
+};
+
+/** The text the pipeline request displays — the message that was (or will be) signed. */
+const requestText = (request: PendingRequest): string => {
+  const message = "message" in request.display ? request.display.message : undefined;
+  if (message?.kind !== "text") {
+    throw new Error("the request displays no text message");
+  }
+  return message.text;
+};
+
+type Cacao = {
+  p: { iss: string };
+  s: { t: string; s: string };
+};
+
+describe("walletconnect one-click auth", () => {
+  it(
+    "signs the SIWE for the peer, verifies independently and serves the session",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      // The existing SIWE parse shows the sign-in for the peer's own domain.
+      expect(request.display).toMatchObject({
+        message: { kind: "text", signIn: { status: "valid" } },
+      });
+      expect(request.origin).toMatchObject({ kind: "walletconnect", url: DAPP_URL });
+      const text = requestText(request);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const { auths, session } = authValue(await settled);
+      const [cacao] = (auths ?? []) as Cacao[];
+      if (cacao === undefined) {
+        throw new Error("no cacao returned");
+      }
+      const signer = cacao.p.iss.slice(cacao.p.iss.lastIndexOf(":") + 1);
+      expect(cacao.s.t).toBe("eip191");
+      await expect(
+        verifyMessage({
+          address: signer as `0x${string}`,
+          message: text,
+          signature: cacao.s.s as `0x${string}`,
+        }),
+      ).resolves.toBe(true);
+      if (session === undefined) {
+        throw new Error("no session settled");
+      }
+      const ours = sessionOf(r, session.topic);
+      expect(ours?.scopes[EVM1]?.methods).toContain("personal_sign");
+      if (ours === undefined) {
+        throw new Error("no session persisted");
+      }
+      const account = accountOf(ours, EVM1);
+      expect(getAddress(account)).toBe(getAddress(signer));
+      // The session serves ordinary requests through the normal pipeline.
+      const sign = await call(r, client, session, "personal_sign", [`0x6869`, account], EVM1);
+      await sign.approve();
+      const signed = await sign.settled;
+      if (!("value" in signed)) {
+        throw new Error("personal_sign failed");
+      }
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "answers a pipeline rejection as a refused auth and keeps no session",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      r.engine.requests.reject(request.id);
+      await expect(settled).resolves.toMatchObject({
+        error: expect.stringContaining("User rejected"),
+      });
+      expect(Object.keys(r.engine.connections.getState().sessions)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "refuses a domain or URI that is not the peer's, chains it cannot serve, and foreign recaps",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      for (const params of [
+        { ...AUTH_PARAMS, domain: "other.example" },
+        { ...AUTH_PARAMS, uri: "https://other.example" },
+        { ...AUTH_PARAMS, chains: ["eip155:56"] },
+        {
+          ...AUTH_PARAMS,
+          methods: ["personal_sign"],
+          resources: [
+            `urn:recap:${Buffer.from(
+              JSON.stringify({
+                att: {
+                  eip155: { "request/personal_sign": [{ chains: [EVM1] }] },
+                  cosmos: { "request/anything": [{ chains: ["eip155:56"] }] },
+                },
+              }),
+            )
+              .toString("base64")
+              .replace(/=+$/, "")}`,
+          ],
+        },
+      ]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- auths are answered in order
+        const { uri, settled } = await authed(client, params);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- auths are answered in order
+        await r.wc.pair(uri);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- auths are answered in order
+        await expect(settled).resolves.toMatchObject({
+          error: expect.stringContaining("User rejected"),
+        });
+        expect(awaiting(r)).toHaveLength(0);
+      }
+      expect(Object.keys(r.engine.connections.getState().sessions)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "approves an auth-only request without a session or any granted scope",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { uri, settled } = await authed(client, AUTH_PARAMS);
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const { auths, session } = authValue(await settled);
+      expect(auths).toHaveLength(1);
+      expect(session).toBeUndefined();
+      expect(Object.keys(r.engine.connections.getState().sessions)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "refuses the auth when the group switched between signing and settling",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const other = await r.wallet.wallets.importMnemonic({ mnemonic: SECOND });
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      // Occupy the session write queue; its settle is held until the pipeline request is
+      // approved, then switches the group — a group switch voids unfinished requests, so the
+      // switch can only happen after approval. The auth's establish runs after this turn and
+      // binds the new group — not the group that signed.
+      const strayTopic = "f".repeat(64);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const stray = r.engine.connections.establishWalletConnect(
+        { [EVM1]: { methods: [], notifications: [] } },
+        async () => {
+          await gate;
+          r.engine.accounts.select(other.walletId, 0);
+          return {
+            kind: "walletconnect" as const,
+            origin: walletConnectKey(strayTopic),
+            topic: strayTopic,
+            url: DAPP_URL,
+            name: "stray",
+            verify: { validation: "VALID" as const, isScam: false },
+          };
+        },
+      );
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      release();
+      await stray;
+      await expect(settled).resolves.toMatchObject({
+        error: expect.stringContaining("User rejected"),
+      });
+      // No session was persisted for the auth; the stray may already be reconciled away (it
+      // never existed on the relay — wire orphans are revoked).
+      const topics = Object.values(r.engine.connections.getState().sessions).map((session) =>
+        session.origin.kind === "walletconnect" ? session.origin.topic : "",
+      );
+      expect(topics.every((topic) => topic === strayTopic)).toBe(true);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "holds an authenticate that arrives while locked and handles it after unlock",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      await r.wallet.vault.lock();
+      await until(() => !r.engine.connections.getState().ready);
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(awaiting(r)).toHaveLength(0);
+      await r.wallet.vault.unlock(PW);
+      const request = await openRequest(r);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const { session } = authValue(await settled);
+      expect(session).toBeDefined();
       await r.wc.dispose();
     },
   );

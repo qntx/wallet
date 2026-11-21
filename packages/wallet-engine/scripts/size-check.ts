@@ -87,8 +87,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "walletconnect",
     source: "src/walletconnect/index.ts",
-    /* measured 417226 B gzipped — our glue plus WalletKit, the sign client and the core. */
-    budget: 408 * 1024,
+    /* measured 418760 B gzipped — our glue plus WalletKit, the sign client and the core. */
+    budget: 409 * 1024,
     external: WALLETCONNECT_EXTERNAL,
     forbidden: [],
   },

@@ -13,6 +13,7 @@ export type WalletConnectEngine = {
     | "store"
     | "session"
     | "sessionAccounts"
+    | "previewAccounts"
     | "establishWalletConnect"
     | "revoke"
     | "invalidateOrigin"

@@ -21,6 +21,8 @@ import type { EngineLogger } from "../events.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { WalletConnectOrigin, WalletConnectVerify } from "../requests/types.ts";
 import { walletConnectKey } from "../requests/types.ts";
+import type { SessionAuthenticate } from "./authenticate.ts";
+import { handleAuthenticate } from "./authenticate.ts";
 import { bip122Addresses, bip122Row } from "./bip122.ts";
 import { eip155Row } from "./eip155.ts";
 import { WalletConnectError, requestError } from "./errors.ts";
@@ -132,6 +134,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     number,
     { readonly proposal: ProposalTypes.Struct; readonly verify: Promise<WalletConnectVerify> }
   >();
+  private readonly heldAuths = new Map<number, SessionAuthenticate>();
   private readonly lastNetwork = new Map<string, string>();
   private readonly gone = new Set<string>();
   private chain: Promise<void> = Promise.resolve();
@@ -166,6 +169,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     this.kit.on("session_request", this.onSessionRequest);
     this.kit.on("session_request_expire", this.onRequestExpire);
     this.kit.on("session_delete", this.onSessionDelete);
+    this.kit.on("session_authenticate", this.onSessionAuthenticate);
     const { signClient } = this.kit.engine;
     signClient.events.on("session_expire", this.onSessionExpire);
     this.off.push(
@@ -175,6 +179,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
         this.kit.off("session_request", this.onSessionRequest);
         this.kit.off("session_request_expire", this.onRequestExpire);
         this.kit.off("session_delete", this.onSessionDelete);
+        this.kit.off("session_authenticate", this.onSessionAuthenticate);
         signClient.events.off("session_expire", this.onSessionExpire);
       },
       engine.connections.store.subscribe(
@@ -190,6 +195,21 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     }
     for (const pending of this.kit.getPendingSessionRequests()) {
       this.enqueue(pending);
+    }
+    // The auth store keeps pending authenticates across restarts; they take the same path —
+    // a locked vault holds them until connections become ready, like proposals.
+    for (const pending of signClient.auth.requests.getAll()) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are offered in order
+      await this.offerAuth({
+        id: pending.id,
+        topic: pending.pairingTopic,
+        params: {
+          requester: pending.requester,
+          authPayload: pending.authPayload,
+          expiryTimestamp: pending.expiryTimestamp,
+        },
+        verifyContext: pending.verifyContext,
+      });
     }
     this.syncReady();
     this.scheduleReconcile();
@@ -216,6 +236,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     }
     this.judged.clear();
     this.held.clear();
+    this.heldAuths.clear();
     this.update(() => ({ proposals: {} }));
   }
 
@@ -646,13 +667,55 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     this.scheduleReconcile();
   }
 
-  /** Proposals held while locked get judged now, in arrival order. */
+  /** Proposals and auths held while locked get judged now, in arrival order. */
   private drainHeld(): void {
     for (const [id, held] of this.held) {
       this.held.delete(id);
       this.serialized(async () => this.offerProposal(held.proposal, async () => held.verify));
     }
+    for (const [id, auth] of this.heldAuths) {
+      this.heldAuths.delete(id);
+      this.serialized(async () => this.offerAuth(auth));
+    }
   }
+
+  /**
+   * A `session_authenticate` — live event or recovered from the auth store — handled end to end.
+   * While locked it is held raw (the enabled set is empty); when ready it validates, signs the SIWE
+   * through the pipeline and settles. Auth requests are short-lived, so a held one is never
+   * re-emitted and an expired one is simply refused when it finally runs.
+   */
+  private async offerAuth(event: SessionAuthenticate): Promise<void> {
+    if (!this.ready()) {
+      this.heldAuths.set(event.id, event);
+      return;
+    }
+    await handleAuthenticate(event, {
+      kit: this.kit,
+      engine: this.options.engine,
+      now: this.options.now,
+      warn: (message, error) => this.options.logger.warn(message, error),
+      establish: async (work) => {
+        this.establishing += 1;
+        try {
+          return await work();
+        } finally {
+          this.establishing -= 1;
+          this.scheduleReconcile();
+        }
+      },
+    });
+  }
+
+  private readonly onSessionAuthenticate = (event: SessionAuthenticate): void => {
+    this.serialized(async () => {
+      try {
+        await this.offerAuth(event);
+      } catch (error) {
+        this.options.logger.warn("walletconnect authenticate failed", error);
+      }
+    });
+  };
 
   /** Async lifecycle work runs strictly serial so repoints and deletions never interleave. */
   private serialized(work: () => Promise<void>): void {

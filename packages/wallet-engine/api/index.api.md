@@ -760,6 +760,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     nostrPolicy(origin: string): NostrPolicy | undefined;
     // (undocumented)
     pending(): ReadonlyArray<PendingConnection>;
+    previewAccounts(network: string): Promise<SessionAccounts | undefined>;
     // (undocumented)
     rejectConnection(id: string): void;
     request(origin: string, input: ConnectionRequest): Promise<ConnectionSession>;
@@ -3119,7 +3120,7 @@ export type WalletEngine = {
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
-    readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy" | "establishWalletConnect" | "authorize" | "touch">;
+    readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "previewAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy" | "establishWalletConnect" | "authorize" | "touch">;
     readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
     readonly nip07: Pick<Nip07Handler, "handle">;
     readonly webln: Pick<WeblnHandler, "handle">;

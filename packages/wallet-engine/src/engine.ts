@@ -236,6 +236,7 @@ export type WalletEngine = {
     | "session"
     | "pending"
     | "sessionAccounts"
+    | "previewAccounts"
     | "nostrIdentity"
     | "isEnabled"
     | "approveConnection"

@@ -368,3 +368,26 @@ describe("session store readiness and re-pointing", () => {
     await expect(waiting).rejects.toMatchObject({ code: 4001 });
   });
 });
+
+describe("previewAccounts", () => {
+  it("returns the group's bound addresses for each chain family and persists nothing", async () => {
+    const r = rig();
+    await r.connections.init();
+    const evm = await r.connections.previewAccounts(MAINNET);
+    expect(evm).toStrictEqual({ group: GROUP, addresses: ["0xevm0"] });
+    const sol = await r.connections.previewAccounts(SOL_NET);
+    expect(sol?.addresses).toStrictEqual(["sol-0"]);
+    const btc = await r.connections.previewAccounts(BTC_NET);
+    expect(btc?.addresses).toStrictEqual(["btc-0-payment", "btc-0-ordinals"]);
+    expect(r.connections.getState().sessions).toStrictEqual({});
+  });
+
+  it("is undefined when no group is selected or derivation fails", async () => {
+    const r = rig({ noGroup: true });
+    await r.connections.init();
+    await expect(r.connections.previewAccounts(MAINNET)).resolves.toBeUndefined();
+    const f = rig({ failEvm: true });
+    await f.connections.init();
+    await expect(f.connections.previewAccounts(MAINNET)).resolves.toBeUndefined();
+  });
+});

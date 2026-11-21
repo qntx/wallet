@@ -463,6 +463,27 @@ export class ConnectionController extends Controller<ConnectionState> {
     return sessionAccounts(this.session(origin), network);
   }
 
+  /**
+   * The selected group's accounts on `network` as a grant would bind them — a preview for callers
+   * that sign before a session exists; nothing is persisted. `undefined` when no group is selected
+   * or the account cannot be derived.
+   */
+  async previewAccounts(network: string): Promise<SessionAccounts | undefined> {
+    const group = this.options.selectedGroup();
+    if (group === undefined) {
+      return undefined;
+    }
+    const bound = await this.repointScopes(
+      { [network]: { accounts: [], methods: [], notifications: [] } },
+      group,
+    );
+    const scope = bound[network];
+    if (scope === undefined || scope.accounts.length === 0) {
+      return undefined;
+    }
+    return { group, addresses: scope.accounts.map(addressOf) };
+  }
+
   /** The identity the origin's `nostr` scope is bound to, with the pubkey the page sees. */
   nostrIdentity(
     origin: string,

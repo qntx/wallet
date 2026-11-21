@@ -483,6 +483,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     nostrPolicy(origin: string): NostrPolicy | undefined;
     // (undocumented)
     pending(): ReadonlyArray<PendingConnection>;
+    previewAccounts(network: string): Promise<SessionAccounts | undefined>;
     // (undocumented)
     rejectConnection(id: string): void;
     request(origin: string, input: ConnectionRequest): Promise<ConnectionSession>;
