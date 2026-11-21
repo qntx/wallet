@@ -171,6 +171,10 @@ export type BlindReason =
   // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
   // Token) that the signer takes part in
   | "core-instruction"
+  // an undecoded program outside the family table receives the signer, and the accounts it can act
+  // on cannot be listed — writable addresses loaded from lookup tables, or more than
+  // PROGRAM_AUTHORITY_ACCOUNTS
+  | "program-authority"
   // a TRON contract type the wallet does not describe (unsupported or unknown enum value)
   | "tron-contract"
   // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range
@@ -210,6 +214,11 @@ export type AssetFlow = {
    * 10,000-byte script limit): `amount` is destroyed and `to` is the script hex.
    */
   readonly burn?: true;
+  /**
+   * A Solana unchecked `Transfer` — the instruction names no mint: the asset is whatever token the
+   * SPL account holds, `amount.asset` is that account and the amount is in its base units.
+   */
+  readonly tokenAccount?: string;
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -280,6 +289,13 @@ export type StakeAction =
   | { readonly kind: "deactivate"; readonly account: string }
   | {
       readonly kind: "withdraw";
+      readonly account: string;
+      readonly to: string;
+      readonly lamports: string;
+    }
+  /** Stake `Split`: `lamports` of `account` move to the new stake account `to`. */
+  | {
+      readonly kind: "split";
       readonly account: string;
       readonly to: string;
       readonly lamports: string;
@@ -661,6 +677,11 @@ export type DisplayIntent = {
    * first-appearance order; present iff non-empty (so iff a Solana transaction is `opaque`).
    */
   readonly programs?: ReadonlyArray<string>;
+  /**
+   * Solana only: the undecoded programs outside the family table that receive the signer — what
+   * each can move with its authority; present iff non-empty.
+   */
+  readonly programAuthority?: ReadonlyArray<ProgramAuthority>;
   /** TRON transaction fields the prompt shows on every request. */
   readonly tron?: {
     readonly contractType: string;
@@ -726,6 +747,22 @@ export const messageBlindReason = (message: MessageContent): BlindReason | undef
     : message.kind === "text" && messageTextHazard(message.text) !== undefined
       ? "message-bytes"
       : undefined;
+
+/**
+ * An undecoded Solana program outside the family table that receives the signer, and the writable
+ * accounts it can reach with that signature.
+ */
+export type ProgramAuthority = {
+  readonly program: string;
+  /** The signer is writable in the message: the program can move all of its SOL. */
+  readonly sol: boolean;
+  /** The instruction's writable accounts other than the signer, first-appearance order. */
+  readonly accounts: ReadonlyArray<{
+    readonly address: string;
+    /** Set when the account is provably the signer's ATA (Token or Token-2022) for a listed mint. */
+    readonly token?: { readonly mint: string; readonly symbol: string };
+  }>;
+};
 
 export type ChainErrorCode =
   | "unknown-field"

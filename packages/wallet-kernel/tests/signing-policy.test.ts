@@ -294,9 +294,15 @@ describe("blind signing policy", () => {
       ]),
     ]);
 
+  /* A Transfer whose authority is a multisig account (4+ accounts) stays undecoded — the
+     signer-signed core-program near miss is blind. */
   const tokenTransferIx = (): Uint8Array =>
-    solMessage([SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN], 1, [
-      { program: 3, accounts: [1, 2, 0], data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]) },
+    solMessage([SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN, new Uint8Array(32).fill(0x55)], 1, [
+      {
+        program: 3,
+        accounts: [1, 2, 4, 0],
+        data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]),
+      },
     ]);
   const setAuthorityIx = (): Uint8Array =>
     solMessage([SOL_PAYER, SOL_SRC, SOL_TOKEN], 1, [
@@ -840,7 +846,7 @@ describe("described dApp requests on a fresh vault", () => {
     const program = base58.encode(unknown);
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(verifySolanaSignature(message, bytesField(ok(response), "signature"), SOL_ADDRESS)).toBe(
       true,

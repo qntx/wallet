@@ -53,6 +53,7 @@ export type PromptIntent = Pick<
   | "calls"
   | "blind"
   | "programs"
+  | "programAuthority"
   | "tron"
 > & {
   /** Decoders always set it; a message without a chain of its own omits it. */
@@ -95,6 +96,11 @@ type Catalog = {
   readonly externalInputs: string;
   readonly solanaPrograms: (ids: string) => string;
   readonly solanaProgramsWarning: string;
+  readonly programAuthority: (program: string, sol: boolean) => string;
+  readonly programAuthorityAccounts: (program: string, items: ReadonlyArray<string>) => string;
+  readonly programAuthorityYours: (symbol: string, address: string) => string;
+  readonly programAuthorityMaybeYours: (address: string) => string;
+  readonly programAuthorityUnbounded: (program: string) => string;
   readonly tokenFunction: (symbol: string, address: string) => string;
   readonly accountCode: string;
   readonly callContract: (address: string, selector: string) => string;
@@ -132,7 +138,9 @@ type Catalog = {
   readonly safeDelegatecall: (target: string) => string;
   readonly safeRefund: (receiver: string | undefined, amount: string, price: string) => string;
   readonly send: (amount: string, to: string) => string;
+  readonly sendTokenAccount: (amount: string, tokenAccount: string, to: string) => string;
   readonly burn: (amount: string) => string;
+  readonly burnTokenAccount: (amount: string, account: string) => string;
   readonly allow: (spender: string, amount: string) => string;
   readonly unlimited: (asset: string) => string;
   readonly revoke: (spender: string, asset: string) => string;
@@ -255,6 +263,16 @@ const zh: Catalog = {
   externalInputs: "包含其他签名者的输入；无法核实手续费",
   solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
   solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+  programAuthority: (program, sol) =>
+    sol
+      ? `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL`
+      : `程序 ${program} 获得本账户的签名`,
+  programAuthorityAccounts: (program, items) =>
+    `程序 ${program} 可以以本账户的权限操作：${items.join("；")}`,
+  programAuthorityYours: (symbol, address) => `你的 ${symbol} 账户 ${address}`,
+  programAuthorityMaybeYours: (address) => `${address}（可能属于你）`,
+  programAuthorityUnbounded: (program) =>
+    `程序 ${program} 获得本账户的签名，并可操作钱包无法列出的账户`,
   tokenFunction: (symbol, address) => `代币 ${symbol} ${address} 的未知函数，可能转走该代币`,
   accountCode: "以本账户的全部权限执行其自身代码",
   callContract: (address, selector) => `调用合约 ${address}，函数 ${selector}`,
@@ -293,7 +311,10 @@ const zh: Catalog = {
   safeRefund: (receiver, amount, price) =>
     `向 ${receiver ?? "执行者"} 支付 gas 退款：最多 ${amount}，另按每单位 gas ${price} 支付调用开销`,
   send: (amount, to) => `发送 ${amount} 到 ${to}`,
+  sendTokenAccount: (amount, tokenAccount, to) =>
+    `从代币账户 ${tokenAccount} 发送 ${amount} 个最小单位到 ${to}`,
   burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
+  burnTokenAccount: (amount, account) => `从代币账户 ${account} 销毁 ${amount}，永久消失`,
   allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
   unlimited: (asset) => `全部 ${asset}`,
   revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
@@ -386,6 +407,9 @@ const zh: Catalog = {
     }
     if (a.kind === "withdraw") {
       return [`从 ${a.account} 提取 ${sol(a.lamports)} 到 ${a.to}`];
+    }
+    if (a.kind === "split") {
+      return [`从质押账户 ${a.account} 拆分 ${sol(a.lamports)} 到 ${a.to}`];
     }
     if (a.kind === "lido-submit") {
       return [
@@ -484,6 +508,16 @@ const en: Catalog = {
   externalInputs: "Includes inputs from other signers; the fee cannot be verified",
   solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
   solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+  programAuthority: (program, sol) =>
+    sol
+      ? `Program ${program} receives this account's signature: it can move ALL SOL in this account`
+      : `Program ${program} receives this account's signature`,
+  programAuthorityAccounts: (program, items) =>
+    `Program ${program} can act with this account's authority on: ${items.join("; ")}`,
+  programAuthorityYours: (symbol, address) => `your ${symbol} account ${address}`,
+  programAuthorityMaybeYours: (address) => `${address} (may be yours)`,
+  programAuthorityUnbounded: (program) =>
+    `Program ${program} receives this account's signature and can reach accounts the wallet cannot list`,
   tokenFunction: (symbol, address) =>
     `An unrecognised function of token ${symbol} ${address} can move this token`,
   accountCode: "Runs this account's own code with full authority",
@@ -525,7 +559,11 @@ const en: Catalog = {
   safeRefund: (receiver, amount, price) =>
     `Pays ${receiver ?? "whoever executes it"} a gas refund of up to ${amount}, plus ${price} per gas of call overhead`,
   send: (amount, to) => `Send ${amount} to ${to}`,
+  sendTokenAccount: (amount, tokenAccount, to) =>
+    `Send ${amount} base units of the token in account ${tokenAccount} to ${to}`,
   burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
+  burnTokenAccount: (amount, account) =>
+    `Burn ${amount} from token account ${account}; it is destroyed`,
   allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
   unlimited: (asset) => `unlimited ${asset}`,
   revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
@@ -630,6 +668,9 @@ const en: Catalog = {
     }
     if (a.kind === "withdraw") {
       return [`Withdraw ${sol(a.lamports)} from ${a.account} to ${a.to}`];
+    }
+    if (a.kind === "split") {
+      return [`Split ${sol(a.lamports)} from stake account ${a.account} into ${a.to}`];
     }
     if (a.kind === "lido-submit") {
       return [
@@ -860,7 +901,24 @@ function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<st
   return lines;
 }
 
-/** What the decoded content does: contracts run, delegation, outflows, receipts, approvals. */
+/** What each signer-taking undecoded program can reach; unbounded reaches read as blind lines. */
+const programAuthorityLines = (catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> =>
+  (intent.programAuthority ?? []).flatMap((entry) => {
+    if (intent.blind === "program-authority") {
+      return [catalog.programAuthorityUnbounded(entry.program)];
+    }
+    const items = entry.accounts.map((a) =>
+      a.token === undefined
+        ? catalog.programAuthorityMaybeYours(a.address)
+        : catalog.programAuthorityYours(a.token.symbol, a.address),
+    );
+    const lines = [catalog.programAuthority(entry.program, entry.sol)];
+    if (items.length > 0) {
+      lines.push(catalog.programAuthorityAccounts(entry.program, items));
+    }
+    return lines;
+  });
+
 function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> {
   const sol = (lamports: string): string =>
     `${formatUnits(lamports, 9)} ${networkMeta(intent.network ?? "")?.symbol ?? "SOL"}`;
@@ -892,9 +950,13 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ...delegation,
     ...contractLines(catalog, intent),
     ...intent.outflows.map((flow) =>
-      flow.burn === true
-        ? catalog.burn(formatAmount(catalog, flow.amount))
-        : catalog.send(formatAmount(catalog, flow.amount), flow.to),
+      flow.tokenAccount === undefined
+        ? flow.burn === true && intent.family === "solana"
+          ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
+          : flow.burn === true
+            ? catalog.burn(formatAmount(catalog, flow.amount))
+            : catalog.send(formatAmount(catalog, flow.amount), flow.to)
+        : catalog.sendTokenAccount(formatAmount(catalog, flow.amount), flow.tokenAccount, flow.to),
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
@@ -964,6 +1026,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         ? []
         : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))]),
       ...network,
+      ...programAuthorityLines(catalog, intent),
       ...caveat,
       ...effectLines(catalog, intent),
       ...permissions,

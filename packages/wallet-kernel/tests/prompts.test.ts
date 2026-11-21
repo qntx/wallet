@@ -993,11 +993,11 @@ describe("chain prompts via the real decoders", () => {
     const program = base58.encode(unknown);
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认转账",
-      description: `网络：Solana\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
+      description: `网络：Solana\n程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
     });
   });
 
@@ -2424,16 +2424,8 @@ describe("near-miss blind prompts", () => {
       1,
       2,
       0,
+      1,
       9,
-      3,
-      5,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
     ]);
     const req = normalizeSolana(
       {

@@ -14,6 +14,8 @@ export type CompiledIx = {
 export type ParsedSolanaMessage = {
   readonly version: "legacy" | 0;
   readonly numRequiredSignatures: number;
+  readonly numReadonlySignerAccounts: number;
+  readonly numReadonlyNonSignerAccounts: number;
   readonly staticAccounts: ReadonlyArray<string>;
   readonly instructions: ReadonlyArray<CompiledIx>;
   readonly lookups: ReadonlyArray<LookupReference>;
@@ -97,6 +99,8 @@ export const parseCompiledMessage = (bytes: Uint8Array): ParsedSolanaMessage => 
   return {
     version: message.version,
     numRequiredSignatures: message.numSignerAccounts,
+    numReadonlySignerAccounts: message.numReadonlySignerAccounts,
+    numReadonlyNonSignerAccounts: message.numReadonlyNonSignerAccounts,
     staticAccounts,
     instructions: message.instructions,
     lookups: lookups.map((l) => ({
@@ -110,6 +114,8 @@ export const parseCompiledMessage = (bytes: Uint8Array): ParsedSolanaMessage => 
 type CompiledMessage = {
   readonly version: "legacy" | 0;
   readonly numSignerAccounts: number;
+  readonly numReadonlySignerAccounts: number;
+  readonly numReadonlyNonSignerAccounts: number;
   readonly staticAccounts: ReadonlyArray<string>;
   readonly instructions: ReadonlyArray<CompiledIx>;
   readonly addressTableLookups: ReadonlyArray<{
@@ -161,6 +167,8 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
   const lookups = value["addressTableLookups"];
   if (
     typeof header["numSignerAccounts"] !== "number" ||
+    typeof header["numReadonlySignerAccounts"] !== "number" ||
+    typeof header["numReadonlyNonSignerAccounts"] !== "number" ||
     !isStringArray(staticAccounts) ||
     !Array.isArray(instructions) ||
     !instructions.every(isIx) ||
@@ -197,10 +205,32 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
   return {
     version,
     numSignerAccounts: header["numSignerAccounts"],
+    numReadonlySignerAccounts: header["numReadonlySignerAccounts"],
+    numReadonlyNonSignerAccounts: header["numReadonlyNonSignerAccounts"],
     staticAccounts,
     instructions: ixs,
     addressTableLookups: tables,
   };
+};
+
+/**
+ * Whether the account `index` is writable in the message: a static signer index is writable below
+ * `numRequiredSignatures - numReadonlySignerAccounts`, a static non-signer index below
+ * `staticAccounts.length - numReadonlyNonSignerAccounts`, and a loaded index is writable exactly in
+ * the leading writable section of the loaded addresses.
+ */
+export const isWritableIndex = (parsed: ParsedSolanaMessage, index: number): boolean => {
+  const n = parsed.staticAccounts.length;
+  if (index < n) {
+    return index < parsed.numRequiredSignatures
+      ? index < parsed.numRequiredSignatures - parsed.numReadonlySignerAccounts
+      : index < n - parsed.numReadonlyNonSignerAccounts;
+  }
+  let writable = 0;
+  for (const lookup of parsed.lookups) {
+    writable += lookup.writableIndexes.length;
+  }
+  return index - n < writable;
 };
 
 /**

@@ -56,6 +56,13 @@ export type StakeIx =
       readonly lamports: bigint;
     }
   | {
+      readonly kind: "split";
+      readonly account: string;
+      readonly to: string;
+      readonly staker: string;
+      readonly lamports: bigint;
+    }
+  | {
       readonly kind: "authorize";
       readonly account: string;
       readonly role: "staker" | "withdrawer";
@@ -163,6 +170,22 @@ export const decodeStakeIx = (
         return undefined;
       }
       return { kind: "delegate", account: stake, validator: vote };
+    }
+    case 3: {
+      /* Split: [stake, splitStake, staker] — `lamports` of `stake` move to `splitStake`. */
+      const stake = acc(0);
+      const to = acc(1);
+      const staker = acc(2);
+      if (
+        data.length !== 12 ||
+        stake === undefined ||
+        to === undefined ||
+        staker === undefined ||
+        n !== 3
+      ) {
+        return undefined;
+      }
+      return { kind: "split", account: stake, to, staker, lamports: u64le(data, 4) };
     }
     case 4: {
       /* Withdraw: [stake, to, withdrawer, (cust)] or [stake, to, Clock, StakeHistory, withdrawer, (cust)]. */

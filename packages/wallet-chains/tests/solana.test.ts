@@ -61,6 +61,7 @@ import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
   PROGRAM_IDS,
   SOLANA_NATIVE_ASSET,
+  associatedTokenAddress,
   decodeSolana,
   mayBeTransactionMessage,
   parseCompiledMessage,
@@ -1191,6 +1192,201 @@ describe("undecodable instructions list their program ids", () => {
   });
 });
 
+describe("everyday token and stake instructions decode", () => {
+  const SRC = address("So11111111111111111111111111111111111111112");
+
+  const ix = (program: string, accounts: ReadonlyArray<object>, data: Uint8Array) => ({
+    programAddress: address(program),
+    accounts,
+    data,
+  });
+
+  it.each([
+    ["SPL Token", PROGRAM_IDS.token],
+    ["Token-2022", PROGRAM_IDS.token2022],
+  ])("an unchecked %s Transfer the signer authorises is described", (_name, program) => {
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(program, [w0(SRC), w0(DEST), sgn(FEE_PAYER)], cat(new Uint8Array([3]), u64le(5n))),
+        ]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: DEST,
+        amount: { asset: SRC, amount: "5" },
+        verified: false,
+        tokenAccount: SRC,
+      },
+    ]);
+  });
+
+  it.each([
+    ["Burn", cat(new Uint8Array([8]), u64le(5n))],
+    ["BurnChecked", cat(new Uint8Array([15]), u64le(5n), new Uint8Array([6]))],
+  ])("an SPL %s the signer authorises is described as a burn", (_name, data) => {
+    const intent = decodeSolana(
+      req(compile([ix(PROGRAM_IDS.token, [w0(SRC), ro(MINT), sgn(FEE_PAYER)], data)])) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: SRC,
+        amount: { asset: MINT, amount: "5" },
+        verified: false,
+        burn: true,
+      },
+    ]);
+  });
+
+  it("a Stake Split the staker signs is described", () => {
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(
+            PROGRAM_IDS.stake,
+            [w0(STAKE_ACCT), w0(DEST), sgn(FEE_PAYER)],
+            cat(u32le(3), u64le(7n)),
+          ),
+        ]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.staking).toStrictEqual([
+      { kind: "split", account: STAKE_ACCT, to: DEST, lamports: "7" },
+    ]);
+  });
+
+  it("a Stake Split whose staker is not the signer is blind", () => {
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(
+            PROGRAM_IDS.stake,
+            [w0(STAKE_ACCT), w0(DEST), sgn(FEE_PAYER), sgn(OTHER_KEY)],
+            cat(u32le(3), u64le(7n)),
+          ),
+        ]),
+      ) as never,
+      OTHER_KEY,
+    );
+    /* decoded for OTHER_KEY's message: the staker in slot 2 is FEE_PAYER, not OTHER_KEY —
+       undecoded + the signer takes part ⇒ core-instruction */
+    expect(intent.blind).toBe("core-instruction");
+  });
+});
+
+describe("program-authority: an unknown program taking the signer", () => {
+  const DRAINER = "Dra1ner111111111111111111111111111111111111";
+  const SRC = address("So11111111111111111111111111111111111111112");
+  const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+  const ix = (program: string, accounts: ReadonlyArray<object>, data: Uint8Array) => ({
+    programAddress: address(program),
+    accounts,
+    data,
+  });
+
+  it("lists the writable accounts it can reach, and whether it can move the SOL", () => {
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(
+            DRAINER,
+            [sgn(FEE_PAYER), w0(SRC), w0(DEST), ro(PROGRAM_IDS.token)],
+            cat(new Uint8Array([0]), u64le(5n)),
+          ),
+        ]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.programAuthority).toStrictEqual([
+      { program: DRAINER, sol: true, accounts: [{ address: SRC }, { address: DEST }] },
+    ]);
+  });
+
+  it("names a listed mint's ATA as the signer's token account", () => {
+    const ata = associatedTokenAddress(FEE_PAYER, USDC_MINT, PROGRAM_IDS.token);
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(DRAINER, [sgn(FEE_PAYER), w0(ata), w0(DEST)], cat(new Uint8Array([0]), u64le(5n))),
+        ]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.programAuthority).toStrictEqual([
+      {
+        program: DRAINER,
+        sol: true,
+        accounts: [
+          { address: ata, token: { mint: USDC_MINT, symbol: "USDC" } },
+          { address: DEST },
+        ],
+      },
+    ]);
+  });
+
+  it("a writable address loaded from a lookup table is blind", () => {
+    const table = address("AddressLookupTab1e1111111111111111111111111");
+    const extra = address("6wWVbLeHDVHvCCsLprB85jkbU1JhS9VezABT2ZZFJ5BB");
+    const message = compile(
+      [ix(DRAINER, [sgn(FEE_PAYER), w0(extra), w0(SRC)], cat(new Uint8Array([0]), u64le(5n)))],
+      0,
+      { [table]: [extra] },
+    );
+    const intent = decodeSolana(
+      {
+        kind: "solana.transaction",
+        network: MAINNET,
+        account: ACCOUNT,
+        message,
+        lookupTables: [{ address: table, addresses: [extra] }],
+      } as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBe("program-authority");
+    expect(intent.programAuthority?.[0]?.program).toBe(DRAINER);
+  });
+
+  it.each([
+    [12, undefined],
+    [13, "program-authority"],
+  ] as const)("%i writable accounts ⇒ blind %s", (count, blind) => {
+    const accounts = [sgn(FEE_PAYER)];
+    for (let i = 0; i < count; i++) {
+      accounts.push(w0(address(solanaAddressFromPublicKey(new Uint8Array(32).fill(i + 1)))));
+    }
+    const intent = decodeSolana(
+      req(compile([ix(DRAINER, accounts, cat(new Uint8Array([0]), u64le(5n)))])) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBe(blind);
+  });
+
+  it("an unknown program that does not take the signer carries no programAuthority", () => {
+    const intent = decodeSolana(
+      req(
+        compile([ix(DRAINER, [w0(SRC), w0(DEST)], cat(new Uint8Array([0]), u64le(5n)))]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.programAuthority).toBeUndefined();
+    expect(intent.programs).toStrictEqual([DRAINER]);
+  });
+});
+
 describe("core-program near misses are blind", () => {
   const SRC = address("So11111111111111111111111111111111111111112");
   const RECENT = "SysvarRecentB1ockHashes11111111111111111111";
@@ -1203,14 +1399,6 @@ describe("core-program near misses are blind", () => {
   });
 
   it.each([
-    [
-      "SPL Token Transfer",
-      ix(
-        PROGRAM_IDS.token,
-        [w0(SRC), w0(DEST), sgn(FEE_PAYER)],
-        cat(new Uint8Array([3]), u64le(5n)),
-      ),
-    ],
     [
       "SPL Token SetAuthority",
       ix(
@@ -1232,24 +1420,12 @@ describe("core-program near misses are blind", () => {
       ix(PROGRAM_IDS.token, [w0(SRC), w0(OTHER_KEY), sgn(FEE_PAYER)], new Uint8Array([9])),
     ],
     [
-      "Token-2022 Transfer",
-      ix(
-        PROGRAM_IDS.token2022,
-        [w0(SRC), w0(DEST), sgn(FEE_PAYER)],
-        cat(new Uint8Array([3]), u64le(5n)),
-      ),
-    ],
-    [
       "System Assign",
       ix(
         PROGRAM_IDS.system,
         [w0(FEE_PAYER)],
         cat(u32le(1), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY))),
       ),
-    ],
-    [
-      "Stake Split",
-      ix(PROGRAM_IDS.stake, [w0(STAKE_ACCT), w0(DEST), sgn(FEE_PAYER)], cat(u32le(3), u64le(7n))),
     ],
   ])("an undecoded %s the signer signs is blind", (_name, instruction) => {
     const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
