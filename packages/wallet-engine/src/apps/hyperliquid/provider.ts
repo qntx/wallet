@@ -188,11 +188,13 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 const word = (v: string): string => v.slice(2).toLowerCase().padStart(64, "0");
 
-/** The two-call CCTP deposit flow. When the messenger's USDC allowance is short, only the
-   exact-amount approve opens — the deposit call cannot be prepared yet (`eth_estimateGas` would
-   revert on-chain while the approval is unmined), so the host approves it and calls `deposit`
-   again once the approval confirmed; the re-read allowance then covers the amount and only the
-   burn request opens. */
+/**
+ * The two-call CCTP deposit flow. When the messenger's USDC allowance is short, only the
+ * exact-amount approve opens — the deposit call cannot be prepared yet (`eth_estimateGas` would
+ * revert on-chain while the approval is unmined), so the host approves it and calls `deposit` again
+ * once the approval confirmed; the re-read allowance then covers the amount and only the burn
+ * request opens.
+ */
 export type HyperliquidDeposit =
   | {
       readonly kind: "approval-required";

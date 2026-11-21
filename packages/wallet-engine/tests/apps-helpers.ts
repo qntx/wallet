@@ -251,7 +251,6 @@ const arbRpc = async (init: RequestInit | undefined, hl: HlState): Promise<Respo
             ? "0x0"
             : body["method"] === "eth_estimateGas"
               ? estimateResult
-          
               : body["method"] === "eth_feeHistory"
                 ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
                 : "0x0";
