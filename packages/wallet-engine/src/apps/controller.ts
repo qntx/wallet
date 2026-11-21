@@ -18,6 +18,8 @@ import { createHyperliquidEnable } from "./hyperliquid/enable.ts";
 import { HyperliquidError } from "./hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
+import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
+import type { AppSocket } from "./hyperliquid/socket.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
 
 const COLLECTION = "apps";
@@ -58,6 +60,11 @@ export type CreateAppsOptions = {
   readonly random: (length: number) => Uint8Array;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
+  /**
+   * The WebSocket factory live views stream over — `(url) => new WebSocket(url)` on any runtime
+   * (browser, RN, Node ≥ 22). One socket serves every subscription.
+   */
+  readonly socket: (url: string) => AppSocket;
   readonly hyperliquid: AppsHyperliquidConfig;
 };
 
@@ -389,6 +396,12 @@ export function createApps(options: CreateAppsOptions): {
   }
 
   const controllerRef: { current: AppsController | undefined } = { current: undefined };
+  const socket = createHyperliquidSocket({
+    network,
+    socket: options.socket,
+    setTimer: options.setTimer,
+    random: options.random,
+  });
   const provider = createHyperliquidProvider({
     wallet: options.wallet,
     network,
@@ -398,6 +411,7 @@ export function createApps(options: CreateAppsOptions): {
     random: options.random,
     logger: options.logger,
     requests: options.requests,
+    socket,
     builderFor: (group) => {
       /* Trades carry the builder only while the controller confirmed the fee this session —
          a lock or a stale approval makes it return undefined and the field is omitted. */
@@ -472,6 +486,7 @@ export function createApps(options: CreateAppsOptions): {
     hyperliquid: provider,
     destroy: async () => {
       unsubscribe();
+      socket.close();
       await controller.lock();
       await chain;
     },

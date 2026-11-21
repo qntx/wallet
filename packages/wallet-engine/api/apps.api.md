@@ -7,9 +7,11 @@
 import { AllMidsParameters } from '@nktkas/hyperliquid/api/info';
 import { AllMidsResponse } from '@nktkas/hyperliquid/api/info';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { CandleParameters } from '@nktkas/hyperliquid/api/subscription';
 import { CandleSnapshotParameters } from '@nktkas/hyperliquid/api/info';
 import { CandleSnapshotResponse } from '@nktkas/hyperliquid/api/info';
 import { chains } from '@qntx/wallet/chains';
+import { ClearinghouseStateEvent } from '@nktkas/hyperliquid/api/subscription';
 import { ClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
 import { ClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
 import { CooperativeExitResult } from '@qntx/spark';
@@ -21,6 +23,8 @@ import { FrontendOpenOrdersResponse } from '@nktkas/hyperliquid/api/info';
 import { FundingHistoryParameters } from '@nktkas/hyperliquid/api/info';
 import { FundingHistoryResponse } from '@nktkas/hyperliquid/api/info';
 import { HyperliquidNetwork } from '@qntx/wallet/protocol';
+import { ISubscriptionTransport } from '@nktkas/hyperliquid';
+import { L2BookEvent } from '@nktkas/hyperliquid/api/subscription';
 import { L2BookParameters } from '@nktkas/hyperliquid/api/info';
 import { L2BookResponse } from '@nktkas/hyperliquid/api/info';
 import { LightningInvoice } from '@qntx/spark';
@@ -34,6 +38,7 @@ import { MetaAndAssetCtxsParameters } from '@nktkas/hyperliquid/api/info';
 import { MetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
 import { NetworkMeta } from '@qntx/wallet-chains/networks';
 import { NostrKeyRef } from '@qntx/wallet';
+import { OpenOrdersEvent } from '@nktkas/hyperliquid/api/subscription';
 import { OrderStatusParameters } from '@nktkas/hyperliquid/api/info';
 import { OrderStatusResponse } from '@nktkas/hyperliquid/api/info';
 import { PortfolioResponse } from '@nktkas/hyperliquid/api/info';
@@ -56,6 +61,7 @@ import { SpotMetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
 import { StoreApi } from 'zustand/vanilla';
 import { UnsignedEvent } from '@qntx/nostr';
 import { UserFeesResponse } from '@nktkas/hyperliquid/api/info';
+import { UserFillsEvent } from '@nktkas/hyperliquid/api/subscription';
 import { UserFillsParameters } from '@nktkas/hyperliquid/api/info';
 import { UserFillsResponse } from '@nktkas/hyperliquid/api/info';
 import { UserFundingParameters } from '@nktkas/hyperliquid/api/info';
@@ -260,6 +266,19 @@ export type AppsHyperliquidConfig = {
     readonly network: HyperliquidNetwork;
     readonly agentName: string;
     readonly builder?: AppsBuilderConfig;
+};
+
+// @public
+export type AppSocket = {
+    readonly readyState: number;
+    readonly send: (data: string) => void;
+    readonly close: () => void;
+    onopen: (() => void) | null;
+    onmessage: ((event: {
+        readonly data: unknown;
+    }) => void) | null;
+    onclose: (() => void) | null;
+    onerror: (() => void) | null;
 };
 
 // @public
@@ -524,6 +543,7 @@ export type CreateAppsOptions = {
     readonly random: (length: number) => Uint8Array;
     readonly logger: EngineLogger;
     readonly openStore: () => Promise<EngineStore>;
+    readonly socket: (url: string) => AppSocket;
     readonly hyperliquid: AppsHyperliquidConfig;
 };
 
@@ -719,6 +739,18 @@ export type HyperliquidGroup = {
     readonly groupIndex: number;
 };
 
+// @public (undocumented)
+export type HyperliquidLive = {
+    readonly book: (coin: string, params?: {
+        readonly nSigFigs?: 2 | 3 | 4 | 5 | null;
+    }) => LiveView<L2BookEvent>;
+    readonly trades: (coin: string) => LiveView<RecentTradesResponse>;
+    readonly candles: (coin: string, interval: CandleParameters["interval"]) => LiveView<CandleSnapshotResponse>;
+    readonly account: (group: HyperliquidGroup) => LiveView<ClearinghouseStateEvent>;
+    readonly openOrders: (group: HyperliquidGroup) => LiveView<OpenOrdersEvent>;
+    readonly fills: (group: HyperliquidGroup) => LiveView<UserFillsEvent["fills"]>;
+};
+
 // @public
 export type HyperliquidMarket = "perp" | "spot";
 
@@ -830,6 +862,7 @@ export type HyperliquidProvider = {
             readonly amount: string;
         }) => Promise<HyperliquidPendingAction>;
     };
+    readonly live?: HyperliquidLive;
 };
 
 // @public
@@ -861,6 +894,18 @@ export type HyperliquidQuotePreview = {
 
 // @public
 export type HyperliquidRejectReason = "tick" | "min-notional" | "margin" | "reduce-only" | "post-only-would-match" | "ioc-no-match" | "bad-trigger" | "no-liquidity" | "open-interest-cap" | "insufficient-spot-balance" | "oracle" | "max-position" | "other";
+
+// @public (undocumented)
+export type HyperliquidSocket = ISubscriptionTransport & {
+    readonly isTestnet: boolean;
+    readonly status: () => HyperliquidSocketStatus;
+    readonly onStatus: (listener: (status: HyperliquidSocketStatus) => void) => () => void;
+    readonly onConfirmed: (listener: (channel: string, payload: unknown) => void) => () => void;
+    readonly close: () => void;
+};
+
+// @public
+export type HyperliquidSocketStatus = "connecting" | "open" | "closed";
 
 // @public (undocumented)
 export type HyperliquidTrade = {
@@ -961,6 +1006,20 @@ type LightningInvoiceDisplay = {
     readonly kind: "lightning.invoice";
     readonly amountSats: number;
     readonly memo?: string;
+};
+
+// @public
+export type LiveState<T> = {
+    readonly status: "connecting" | "live" | "stale";
+    readonly data: T | undefined;
+    readonly updatedAt: number | undefined;
+};
+
+// @public (undocumented)
+export type LiveView<T> = {
+    readonly getState: () => LiveState<T>;
+    readonly subscribe: (listener: (state: LiveState<T>) => void) => () => void;
+    readonly close: () => Promise<void>;
 };
 
 export { MaxBuilderFeeResponse }

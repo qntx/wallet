@@ -15,10 +15,13 @@ import { createHyperliquidClock } from "./clock.ts";
 import type { HyperliquidClock } from "./clock.ts";
 import { HyperliquidError } from "./errors.ts";
 import { createHyperliquidExchange } from "./exchange.ts";
+import { createHyperliquidLive } from "./live.ts";
+import type { HyperliquidLive } from "./live.ts";
 import { createHyperliquidMarkets } from "./markets.ts";
 import type { HyperliquidMarkets } from "./markets.ts";
 import { limitPrice, meetsMinimum, notional, roundSize, slippagePrice } from "./numbers.ts";
 import type { HyperliquidMarket, OrderSide } from "./numbers.ts";
+import type { HyperliquidSocket } from "./socket.ts";
 import { createHyperliquidTrade } from "./trade.ts";
 import type { HyperliquidTrade } from "./trade.ts";
 import { createHyperliquidTransport } from "./transport.ts";
@@ -101,6 +104,12 @@ export type HyperliquidProvider = {
       params: { readonly destination: string; readonly amount: string },
     ) => Promise<HyperliquidPendingAction>;
   };
+  /**
+   * Streaming views over the WebSocket transport — present only when the provider was built with a
+   * `socket` (createApps always wires one). Market views need no unlocked wallet; user views
+   * resolve the group to its owner and close on lock.
+   */
+  readonly live?: HyperliquidLive;
 };
 
 /**
@@ -194,6 +203,8 @@ export type HyperliquidProviderOptions = Pick<
   readonly builderFor?: (
     group: HyperliquidGroup,
   ) => { readonly address: string; readonly feeRateTenthsBps: number } | undefined;
+  /** The injected WebSocket transport live views stream over — absent on reads-only rigs. */
+  readonly socket?: HyperliquidSocket;
 };
 
 const preview = (price: string, size: string, szDecimals: number): HyperliquidQuotePreview => {
@@ -290,6 +301,17 @@ export function createHyperliquidProvider(
     }),
     agents,
     userSigned,
+    ...(options.socket === undefined
+      ? {}
+      : {
+          live: createHyperliquidLive({
+            socket: options.socket,
+            transport,
+            ownerOf: async (group) => agents.owner(group),
+            now: options.now,
+            wallet: options.wallet,
+          }),
+        }),
     transfer: {
       toSpot: async (group, amount) =>
         userSigned.usdClassTransfer(group, { amount, toPerp: false }),

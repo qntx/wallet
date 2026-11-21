@@ -25,6 +25,12 @@ export type {
   HyperliquidQuotePreview,
 } from "./hyperliquid/provider.ts";
 export type { HyperliquidPendingAction } from "./hyperliquid/user-signed.ts";
+export type {
+  AppSocket,
+  HyperliquidSocket,
+  HyperliquidSocketStatus,
+} from "./hyperliquid/socket.ts";
+export type { HyperliquidLive, LiveState, LiveView } from "./hyperliquid/live.ts";
 export type { HyperliquidAgent, HyperliquidGroup } from "./hyperliquid/agents.ts";
 export type { HyperliquidClock } from "./hyperliquid/clock.ts";
 export type {

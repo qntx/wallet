@@ -372,6 +372,17 @@ export const world = async (
     random: RANDOM,
     logger,
     openStore,
+    /* A socket that never opens — these tests exercise HTTP flows; live views are covered in
+       hyperliquid-live.test.ts with a controllable fake. */
+    socket: () => ({
+      readyState: 0,
+      send: () => undefined,
+      close: () => undefined,
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    }),
     hyperliquid: {
       network: "Testnet",
       agentName: options.agentName ?? "qntx-test",
