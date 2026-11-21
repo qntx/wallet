@@ -1016,3 +1016,70 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
 - NIP-07 confirms every replaceable, addressable and ephemeral event kind, whatever the origin's
   policy.
 - Password re-verification is rate-limited like unlock (`rate-limited` with `retryAt`).
+
+## 16. Built-in EVM networks and fee model
+
+### `NetworkInfo.opStack` → `NetworkInfo.feeModel`
+
+`NetworkInfo` (exported from `@qntx/wallet-engine`, `@qntx/wallet-engine/connect` and
+`@qntx/wallet-engine/gateway/contract`) no longer has `opStack?: true`. Every EVM entry now carries
+`feeModel: { kind: "execution" } | { kind: "op-stack" }`.
+
+```ts
+// before
+if (network.opStack === true) showL1Fee();
+// after
+if (network.feeModel?.kind === "op-stack") showL1Fee();
+```
+
+Treat an unknown future `kind` as "charges something beyond gas" rather than as "execution".
+
+### More built-in networks
+
+`BUILT_IN_NETWORKS` / `NETWORKS` grow from 8 + 8 EVM networks to 31 mainnets + 22 testnets in a fixed
+order (existing first). Hosts that hard-code the number of networks, index the array by position, or
+render every network unconditionally should filter by `testnet` and by what `engine.networks.enabled()`
+reports (networks with an endpoint or served by the gateway). Signing chain ids still come only from the
+table; `wallet_addEthereumChain` / `wallet_switchEthereumChain` for ids outside it still answer 4902.
+
+### Gateway
+
+Production now needs the Alchemy app and the dRPC key enabled for the new networks (see the report for
+the list). Staging serves every built-in EVM testnet through public keyless endpoints.
+
+## 17. TRON family
+
+- `ChainFamily`, `NetworkMeta.family`, `AccountRef` (imported `family`), `KeyInfo.family` and the `keys.import` family parameter now include `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions in host code need a `"tron"` case.
+- `ChainTemplate` includes `"tron.bip44"` and `ChainAccount` has a `tron.bip44` arm with a base58 `address`; `ChainSignRequest`/`ChainSignResult` have `tron.transaction` and `tron.message` arms.
+- `BUILT_IN_NETWORKS` (`@qntx/wallet-chains/networks`) contains three TRON entries. Code that iterates it without filtering by `family` will now see them.
+- `@qntx/wallet-engine` `NetworkInfo.family` is typed `EngineFamily`; code that assigned a `NetworkMeta` to `NetworkInfo` must narrow the family first.
+- A TRON private key's text form is 64 hex characters without `0x`; `keys.export` returns it in that form.
+
+## 18. Hyperliquid agent key and app signing
+
+### Vault
+
+- New record kind `hl-agent` (id: the agent's lowercase address; header
+  `{ walletId, groupIndex, owner, network, name, validUntil, createdAt }`; sealed payload: the
+  32-byte agent private key). `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows
+  like every other record.
+- No data migration: existing vaults are unchanged until the first `hyperliquid.createAgent`.
+- Downgrade: once a vault holds an `hl-agent` record, a build without this change reports the
+  vault `unsupported` (an unclaimed record kind) and leaves it untouched. Delete all agents
+  (`hyperliquid.deleteAgent`) before downgrading.
+- Backups never contain agent keys. After a restore, create and approve a new agent.
+
+### Host-visible behaviour
+
+- `chain.sign` of Hyperliquid user-signed typed data and of Polymarket orders, `ClobAuth` and
+  deposit-wallet batches now produces described prompts and `DisplayIntent.message.hyperliquid` /
+  `.polymarket`. Shapes under those domains that are not exactly the described ones are now blind
+  (`typed-data-variant`; `typed-data-commitment` for the Hyperliquid `Exchange`/`Agent` document)
+  and are refused unless the vault's blind-signing policy is on — previously they were shown as a
+  generic field list.
+- `chain.sign` of an `approveAgent` for an agent address this vault holds is refused with
+  `invalid-input` unless the signer is the agent's owner and `hyperliquidChain`, the agent name and
+  `valid_until` equal the values given to `hyperliquid.createAgent`. Build the name as
+  `` `${name} valid_until ${validUntil}` ``.
+- New methods `hyperliquid.createAgent`, `hyperliquid.listAgents`, `hyperliquid.deleteAgent`,
+  `hyperliquid.signL1` (session required). `hyperliquid.signL1` does not refresh the idle timer.

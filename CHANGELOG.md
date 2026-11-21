@@ -209,6 +209,61 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   reach, are recorded in `packages/<pkg>/api/<entry>.api.md` (API Extractor); `check:pkg` fails
   when the built declarations differ (`bun ../../scripts/check-api.ts . --update` regenerates
   them).
+- `@qntx/wallet-engine`: every wallet-initiated Spark payment (Spark send and invoice, Lightning,
+  cooperative exit, token send) is recorded before it is sent as a `SparkPaymentRecord`
+  (`submitted` | `unknown` | `settled` | `failed`), persisted while open and reconciled against
+  the Spark operator after unlock, after each event-stream catch-up and on a backed-off poll.
+  Records are listed in `SparkAccountState.payments` and as local Spark entries in
+  `engine.history` — token sends appear in history for the first time.
+
+- `@qntx/wallet-engine`: `TrackedTransaction.block` (`TxBlock`) records the block a `confirmed` or
+  on-chain `failed` transaction is in (hash + block number on EVM, hash + height on Bitcoin, slot on
+  Solana); `TrackedTransaction.final` marks it past the network's finality rule — the EVM `finalized`
+  tag, six Bitcoin confirmations, the Solana `finalized` commitment.
+- `@qntx/wallet-engine`: `GroupHistory.truncated` lists the networks whose history provider left
+  out transfers it could not list in full; the activity list has gaps there.
+- `@qntx/wallet-engine/gateway/contract`: the Esplora allow-list accepts `GET /blocks/tip/height`.
+
+- 23 built-in EVM mainnets: Robinhood Chain, Monad, Arc, Plasma, X Layer, Pharos, Mantle, Cronos, Gnosis, Stable, Katana, Berachain, World Chain, Unichain, Sei, Linea, Celo, Sonic, ZKsync Era, Soneium, MegaETH, Kaia and ApeChain, plus 14 testnets (Robinhood Chain Testnet, Monad Testnet, Arc Testnet, X Layer Testnet, Mantle Sepolia, Gnosis Chiado, Unichain Sepolia, Sei Testnet, Linea Sepolia, Celo Sepolia, Sonic Testnet, ZKsync Sepolia, Soneium Minato, ApeChain Curtis). Each chain id is checked against the chain's documentation and live endpoints; signing chain ids still come only from the built-in table.
+- EIP-7702 delegation on Robinhood Chain, Monad, Plasma, Mantle, Gnosis, Linea and Celo (delegator deployed and 7702 transactions observed on-chain).
+- Built-in USDC (Circle) on Monad, Plasma, X Layer, Pharos, Cronos, World Chain, Unichain, Sei, Linea, Celo, Sonic and ZKsync Era, and USDT (Tether) on Celo and Kaia.
+- Gateway: production routes (Alchemy + dRPC) for the new mainnets; staging routes for every built-in EVM testnet; prices, Uniswap token lists and Alchemy transfer history where the providers serve the network. Networks without a history provider answer `503 unavailable` without calling upstream; Celo's CELO token-duality contract is excluded from token lists.
+
+- `@qntx/wallet-chains`: TRON as the fourth chain family. `@qntx/wallet-chains/tron` adds the three TRON networks (`tron:728126428`, `tron:2494104990` Shasta, `tron:3448148188` Nile — decimal CAIP-2 references), base58check address helpers, a strict `Transaction.raw` protobuf codec, pure `raw_data` builders (`buildTronRawData`, `trc20TransferContract`, `trc20ApproveContract`), `decodeTron` and signature recovery/verification; `@qntx/wallet-chains/tron/sign` signs `sha256(raw_data)` and signMessageV2 messages.
+- TRON decoding describes TRX and TRC-10 transfers, TRC-20 calls (through the same token-standard decoder as EVM), Stake 2.0 (freeze, unfreeze, delegate, undelegate, withdraw, cancel), votes and reward claims. `AccountPermissionUpdateContract` is decoded in full but always blind (`tron-permission-update`) and its prompt leads with an account-takeover warning naming every new key; other contract types are blind (`tron-contract`) and fields the wallet cannot show are blind (`tron-field`). A contract whose `owner_address` is not the signing account is refused.
+- Built-in TRC-20 table: USDT, USDD, TUSD, WTRX, JST, SUN, BTT, WIN and NFT on mainnet, USDT on Nile.
+- `@qntx/wallet`: the `tron.bip44` template (`m/44'/195'/0'/0/{group}`), `chain.sign` requests `tron.transaction { rawData }` and `tron.message { message }`, and imported TRON private keys (`keys.import("tron", <64-hex without 0x>)`). Every TRON signature the kernel returns is verified against the account address.
+- Vectors: `vectors/chains/tron.json` (tronweb 6.5.2, Trust Wallet and TronLink core literals) and `vectors/chains/tron-mainnet.json` (140 mainnet transactions from TronGrid).
+
+- `@qntx/wallet-chains`: Hyperliquid user-signed actions (`HyperliquidSignTransaction` domain) are
+  decoded and described — `usdSend`, `spotSend`, `withdraw3`, `usdClassTransfer`, `sendAsset`,
+  `cDeposit`, `cWithdraw`, `tokenDelegate`, `approveAgent` (name and `valid_until` shown) and
+  `approveBuilderFee` — as `MessageContent.hyperliquid`. Every other shape under that domain is
+  blind `typed-data-variant`; a main-account Hyperliquid L1 phantom-agent document (`Exchange` /
+  `Agent`) is always blind `typed-data-commitment`.
+- `@qntx/wallet-chains`: Polymarket CLOB orders on the CTF, Neg Risk CTF and ExchangeV3 exchanges
+  (Polygon; Amoy for the CTF exchanges), including deposit-wallet ERC-7739 `TypedDataSign` orders,
+  `ClobAuth` credential requests and `DepositWallet` `Batch` call batches are decoded as
+  `MessageContent.polymarket`. Orders are `partial`: the trading fee is set at match time and is
+  not capped on-chain. Near misses under the three domains are blind `typed-data-variant`.
+- Kernel prompts for every described Hyperliquid and Polymarket shape in English and Simplified
+  Chinese.
+- `@qntx/wallet/protocol`: `hyperliquid.createAgent`, `hyperliquid.listAgents`,
+  `hyperliquid.deleteAgent` and `hyperliquid.signL1`, with `HyperliquidL1Action`,
+  `HyperliquidL1Order`, `HyperliquidAgentInfo` and `HyperliquidNetwork`.
+- Kernel: a Hyperliquid agent key per approval, generated in the enclave and sealed as a new
+  `hl-agent` vault record. It is never exported or backed up and is deleted with its wallet.
+  `hyperliquid.signL1` signs only the allow-listed trading actions (`order`, `cancel`,
+  `cancelByCloid`, `modify`, `batchModify`, `scheduleCancel`, `updateLeverage`,
+  `updateIsolatedMargin`, `twapOrder`, `twapCancel`), re-encoding the action and computing the
+  connectionId itself, only while the vault is unlocked, before the agent's `validUntil` and with a
+  nonce within five minutes of the kernel clock.
+- Kernel: signing an `approveAgent` with `chain.sign` says whether the agent key is held by this
+  wallet, and refuses an approval whose terms differ from the held agent's.
+- Vectors: `vectors/chains/hyperliquid.json` (from `@nktkas/hyperliquid` 0.33.3, asserting the
+  nktkas and Python SDK published signatures) and `vectors/chains/polymarket.json` (from
+  `@polymarket/clob-client-v2` 1.2.1, checked against each exchange's on-chain `hashOrder`); new
+  cases in `signing-classes.json`, `records.json` and `vault-manifest.json`.
 
 ### Changed
 
@@ -475,6 +530,28 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `BitcoinTotals.protected`), not `frozen`. User freezes stay the separate
   `transactions.frozenUtxos` list; a user-frozen coin still counts in `native`.
   `TokenBalance.frozen` (Solana) is unchanged.
+- **BREAKING:** `@qntx/wallet-engine`: `SparkResult`'s pending variant is
+  `{ kind: "pending", payment: SparkPaymentRecord }`; `token-pending` is removed.
+  `SparkControllerError` carries `payment` instead of `transferId` and `inputOutputIds`;
+  `HistoryControllerOptions.spark` needs the Spark controller's `store`.
+- `@qntx/wallet-engine`: while a token send with an unknown outcome is open, another send of the
+  same token is refused until it resolves.
+
+- **BREAKING:** `@qntx/wallet-engine`: `confirmed` is no longer terminal. A transaction in a block
+  stays tracked (every `pollMs × 15`) until `final`; if its block leaves the chain it returns to
+  `submitted`, its EVM nonce and Bitcoin inputs are held again, a replace-pair sibling marked
+  `replaced` is revived, and the persisted bytes are rebroadcast. Treat a transaction as settled
+  only when `final` is true (or it ended off chain: `failed` without a block, `rejected`,
+  `dropped`, `replaced`), and show it pending again after a reorg.
+- **BREAKING:** `@qntx/wallet-engine/gateway/contract`: `historyResponse` requires
+  `truncated: boolean`, set when the gateway omits transfers in the page's range (a drained block
+  over one upstream page, a transaction over `HISTORY_TRANSFERS_MAX` transfers, a page over
+  `HISTORY_ITEMS_MAX` items). Both schemas are strict: deploy the gateway and the engine together.
+
+- **BREAKING:** `NetworkInfo.opStack` is replaced by `NetworkInfo.feeModel` (`{ kind: "execution" }` or `{ kind: "op-stack" }`), set on every EVM network; the `FeeModel` type is exported from `@qntx/wallet-engine` and `@qntx/wallet-engine/gateway/contract`. See MIGRATION.md.
+- Multicall3 is per network; ZKsync Era and ZKsync Sepolia use 0xF9cda624FBC7e059355ce98a31693d299FACd963.
+
+- `@qntx/wallet-engine`: `NetworkInfo.family` is the new `EngineFamily` (`"evm" | "solana" | "bitcoin"`); TRON networks in the chain table are not served by the engine yet.
 
 ### Removed
 
@@ -622,6 +699,19 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   runtime destroyed while waiting never evaluates the kernel.
 - `.github/rulesets/apply.sh` leaves each environment exactly one deployment policy and no longer
   pipes into `grep -q` under `pipefail`.
+- `@qntx/wallet-engine`: a Spark payment whose commit answer was lost, or that was still in flight
+  when the app stopped, is no longer invisible after the request returns: it stays recorded and
+  shown as pending until the operator settles or fails it.
+- `@qntx/wallet-engine`: a definite error on a Spark commit retry that followed an uncertain attempt
+  no longer fails the request — the first attempt may have committed — it reports `pending`.
+
+- `@qntx/wallet-engine`: a transaction reorged out of its block no longer stays `confirmed`
+  forever; an on-chain `failed` transaction is tracked to finality the same way. A final
+  transaction is never polled again, also after a restart.
+- `@qntx/wallet-engine`: EVM nonce ownership stays consistent across a reorg — a reorged
+  transaction's nonce is held again, other included transactions' nonces stay consumed, and a
+  speed-up or cancel of the reorged transaction is accepted.
+- gateway: a truncated history page is no longer indistinguishable from a complete one (#378).
 
 ## [0.13.0] - 2026-11-09
 
