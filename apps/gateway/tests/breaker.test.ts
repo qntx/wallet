@@ -64,6 +64,7 @@ const get = (path: string): readonly [string, RequestInit] => [path, { headers: 
  */
 const ROUTES: Readonly<Record<string, Forwarded | null>> = {
   [`GET ${health.path}`]: null,
+  "GET /v1/eligibility": null,
   [`GET ${servedNetworks.path}`]: null,
   [`GET ${phishingListPath}`]: null,
   "GET /v1/tokens/:caip2": null,
@@ -177,14 +178,17 @@ describe("shared upstream breakers", () => {
     expect([...registered].toSorted()).toStrictEqual(Object.keys(ROUTES).toSorted());
   });
 
-  it.each([health.path, servedNetworks.path, phishingListPath, `/v1/tokens/${ETH}`])(
-    "GET %s never calls an upstream",
-    async (path) => {
-      const { app, up } = appWith(() => new Response("{}"));
-      await app.request(path, { headers: headers() });
-      expect(up.calls).toHaveLength(0);
-    },
-  );
+  it.each([
+    health.path,
+    servedNetworks.path,
+    phishingListPath,
+    "/v1/eligibility",
+    `/v1/tokens/${ETH}`,
+  ])("GET %s never calls an upstream", async (path) => {
+    const { app, up } = appWith(() => new Response("{}"));
+    await app.request(path, { headers: headers() });
+    expect(up.calls).toHaveLength(0);
+  });
 
   describe.each(forwardedRoutes)("%s", (_key, { request, upstreams }) => {
     const [watched] = upstreams;

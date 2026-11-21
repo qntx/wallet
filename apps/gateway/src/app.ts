@@ -13,6 +13,7 @@ import { requestLog } from "./middleware/request-log.ts";
 import { createForwarder } from "./providers/forward.ts";
 import { coingeckoSource } from "./providers/prices-coingecko.ts";
 import { defillamaSource } from "./providers/prices-defillama.ts";
+import { eligibilityRoutes } from "./routes/eligibility.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { historyRoutes } from "./routes/history.ts";
@@ -53,6 +54,7 @@ export function createGateway(
   app.use("/v1/*", requireClientId);
   app.use("/v1/*", rateLimit(options.limiters));
   app.route("/", healthRoutes);
+  app.route("/", eligibilityRoutes);
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
   app.route("/", historyRoutes({ ...deps, log }));
