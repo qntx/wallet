@@ -366,7 +366,7 @@ type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
 // @public
 type BitcoinSignInput = {
     readonly method: "bitcoin-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: BitcoinAccount;
     readonly network: string;
     readonly request: {
@@ -375,7 +375,7 @@ type BitcoinSignInput = {
     };
 } | {
     readonly method: "bitcoin-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: BitcoinGroup;
     readonly network: string;
     readonly request: {
@@ -414,6 +414,7 @@ type ChainApis = ReturnType<typeof chains>;
 // @public
 type ChainRequestInput = ({
     readonly method: "send";
+    readonly origin?: DappOrigin;
 } & PrepareParams) | {
     readonly method: "speed-up" | "cancel";
     readonly txId: string;
@@ -437,10 +438,7 @@ type ChainRequestInput = ({
         readonly data: string;
     }>;
     readonly fee: PrepareParams["fee"];
-    readonly origin?: {
-        readonly kind: "browser";
-        readonly origin: string;
-    };
+    readonly origin?: DappOrigin;
 } | {
     readonly method: "evm-approve";
     readonly account: AccountRef;
@@ -608,6 +606,9 @@ export type CreateAppsOptions = {
     readonly hyperliquid: AppsHyperliquidConfig;
 };
 
+// @public (undocumented)
+type DappOrigin = BrowserOrigin | WalletConnectOrigin;
+
 // @public
 type DelegationStatus = {
     readonly supported: boolean;
@@ -673,7 +674,7 @@ type EvmFeeTier = "slow" | "normal" | "fast";
 // @public
 type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin?: BrowserOrigin;
+    readonly origin?: DappOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -1181,7 +1182,7 @@ type NostrDisplay = {
 // @public
 type NostrSignInput = {
     readonly method: "nostr-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly ref: NostrKeyRef;
     readonly event: UnsignedEvent;
 };
@@ -1224,7 +1225,7 @@ export { OrderStatusResponse }
 // @public
 type PayInput = {
     readonly method: "pay";
-    readonly origin?: BrowserOrigin;
+    readonly origin?: DappOrigin;
 } & PayParams;
 
 // @public
@@ -1498,7 +1499,7 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "evm-dele
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | BrowserOrigin;
+} | DappOrigin;
 
 // @public
 type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
@@ -1508,7 +1509,7 @@ type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "verify-mismatch" | "verify-threat";
     readonly level: "warning" | "danger";
 };
 
@@ -1618,7 +1619,7 @@ type SolanaRpc = {
 // @public
 type SolanaSignInput = {
     readonly method: "solana-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: SolanaAccount;
     readonly network: string;
     readonly request: {
@@ -2416,9 +2417,25 @@ export { UserRateLimitResponse }
 export { UserRoleResponse }
 
 // @public
+type WalletConnectOrigin = {
+    readonly kind: "walletconnect";
+    readonly origin: string;
+    readonly topic: string;
+    readonly url: string;
+    readonly name: string;
+    readonly verify: WalletConnectVerify;
+};
+
+// @public (undocumented)
+type WalletConnectVerify = {
+    readonly validation: "VALID" | "INVALID" | "UNKNOWN";
+    readonly isScam: boolean;
+};
+
+// @public
 type WatchAssetInput = {
     readonly method: "watch-asset";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly address: string;
@@ -2427,7 +2444,7 @@ type WatchAssetInput = {
 // @public
 type WeblnInvoiceInput = {
     readonly method: "webln-invoice";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly ref: SparkAccountRef;
     readonly amountSats: number;
     readonly memo?: string;

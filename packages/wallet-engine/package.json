@@ -42,6 +42,11 @@
       "types": "./dist/apps.d.mts",
       "import": "./dist/apps.mjs",
       "default": "./dist/apps.mjs"
+    },
+    "./walletconnect": {
+      "types": "./dist/walletconnect.d.mts",
+      "import": "./dist/walletconnect.mjs",
+      "default": "./dist/walletconnect.mjs"
     }
   },
   "publishConfig": {

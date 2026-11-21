@@ -190,7 +190,7 @@ type BitcoinGroup = {
 
 // @public (undocumented)
 type BitcoinHandler = {
-    readonly handle: (origin: string, request: BitcoinRequest) => Promise<unknown>;
+    readonly handle: (origin: string | WalletConnectOrigin, request: BitcoinRequest) => Promise<unknown>;
     readonly subscribe: (listener: (event: BitcoinEvent) => void) => () => void;
 };
 
@@ -211,6 +211,7 @@ type BitcoinPurpose = "payment" | "ordinals";
 export type BitcoinRequest = {
     readonly method: string;
     readonly params?: unknown;
+    readonly network?: string;
 };
 
 // @public (undocumented)
@@ -222,7 +223,7 @@ type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
 // @public
 type BitcoinSignInput = {
     readonly method: "bitcoin-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: BitcoinAccount;
     readonly network: string;
     readonly request: {
@@ -231,7 +232,7 @@ type BitcoinSignInput = {
     };
 } | {
     readonly method: "bitcoin-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: BitcoinGroup;
     readonly network: string;
     readonly request: {
@@ -268,7 +269,7 @@ export type BitcoinWalletAccount = {
 export class BitcoinWalletHandler implements BitcoinHandler {
     constructor(options: Options$1_2);
     // (undocumented)
-    handle(origin: string, request: BitcoinRequest): Promise<unknown>;
+    handle(origin: string | WalletConnectOrigin, request: BitcoinRequest): Promise<unknown>;
     // (undocumented)
     readonly options: Options$1_2;
     // (undocumented)
@@ -306,6 +307,7 @@ type ChainApis = ReturnType<typeof chains>;
 // @public
 type ChainRequestInput = ({
     readonly method: "send";
+    readonly origin?: DappOrigin;
 } & PrepareParams) | {
     readonly method: "speed-up" | "cancel";
     readonly txId: string;
@@ -329,10 +331,7 @@ type ChainRequestInput = ({
         readonly data: string;
     }>;
     readonly fee: PrepareParams["fee"];
-    readonly origin?: {
-        readonly kind: "browser";
-        readonly origin: string;
-    };
+    readonly origin?: DappOrigin;
 } | {
     readonly method: "evm-approve";
     readonly account: AccountRef;
@@ -467,9 +466,10 @@ export class ConnectionController extends Controller<ConnectionState> {
         };
     }): Promise<ConnectionSession>;
     authorize(origin: string, network: string, method: string): ConnectionSession;
-    checkOrigin(origin: string): ConnectionOrigin;
+    checkOrigin(origin: string | WalletConnectOrigin): ConnectionOrigin;
     // (undocumented)
     destroy(): Promise<void>;
+    establishWalletConnect(scopes: Readonly<Record<string, Omit<ConnectionScope, "accounts">>>, settle: (scopes: Readonly<Record<string, ConnectionScope>>) => Promise<WalletConnectOrigin>): Promise<ConnectionSession>;
     // (undocumented)
     init(): Promise<void>;
     invalidateOrigin(origin: string): void;
@@ -517,10 +517,7 @@ type ConnectionControllerOptions = {
 };
 
 // @public (undocumented)
-type ConnectionOrigin = {
-    readonly kind: "browser";
-    readonly origin: string;
-};
+type ConnectionOrigin = DappOrigin;
 
 // @public
 type ConnectionRequest = {
@@ -555,6 +552,7 @@ export type ConnectionSession = {
 type ConnectionState = {
     readonly sessions: Readonly<Record<string, ConnectionSession>>;
     readonly pending: Readonly<Record<string, PendingConnection>>;
+    readonly ready: boolean;
 };
 
 // @public
@@ -582,6 +580,9 @@ type ControllerOptions<S> = {
 
 // @public (undocumented)
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge;
+
+// @public (undocumented)
+type DappOrigin = BrowserOrigin | WalletConnectOrigin;
 
 // @public
 type DelegationStatus = {
@@ -615,7 +616,7 @@ export type Eip1193Event = {
 export class Eip1193Handler {
     constructor(options: Eip1193HandlerOptions);
     // (undocumented)
-    handle(origin: string, request: Eip1193Request): Promise<unknown>;
+    handle(origin: string | WalletConnectOrigin, request: Eip1193Request): Promise<unknown>;
     subscribe(listener: (event: Eip1193Event) => void): () => void;
 }
 
@@ -644,6 +645,7 @@ type Eip1193HandlerOptions = {
 export type Eip1193Request = {
     readonly method: string;
     readonly params?: unknown;
+    readonly network?: string;
 };
 
 // @public
@@ -680,7 +682,7 @@ type EvmFeeTier = "slow" | "normal" | "fast";
 // @public
 type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin?: BrowserOrigin;
+    readonly origin?: DappOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -778,6 +780,9 @@ type LightningPolicy = {
     readonly balance: boolean;
 };
 
+// @public
+export const MAX_MESSAGE_BYTES: number;
+
 // @public (undocumented)
 class NetworkController extends Controller<NetworkControllerState> {
     constructor(options: Options$1);
@@ -859,7 +864,7 @@ export type NostrPolicy = {
 // @public
 type NostrSignInput = {
     readonly method: "nostr-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly ref: NostrKeyRef;
     readonly event: UnsignedEvent;
 };
@@ -925,7 +930,7 @@ type Options_2 = {
 // @public
 type PayInput = {
     readonly method: "pay";
-    readonly origin?: BrowserOrigin;
+    readonly origin?: DappOrigin;
 } & PayParams;
 
 // @public
@@ -1221,7 +1226,7 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "evm-dele
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | BrowserOrigin;
+} | DappOrigin;
 
 // @public
 type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
@@ -1231,7 +1236,7 @@ type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "verify-mismatch" | "verify-threat";
     readonly level: "warning" | "danger";
 };
 
@@ -1351,7 +1356,7 @@ type SolanaFeeTier = "slow" | "normal" | "fast";
 
 // @public (undocumented)
 type SolanaHandler = {
-    readonly handle: (origin: string, request: SolanaRequest) => Promise<unknown>;
+    readonly handle: (origin: string | WalletConnectOrigin, request: SolanaRequest) => Promise<unknown>;
     readonly subscribe: (listener: (event: SolanaEvent) => void) => () => void;
 };
 
@@ -1359,6 +1364,7 @@ type SolanaHandler = {
 export type SolanaRequest = {
     readonly method: string;
     readonly params?: unknown;
+    readonly network?: string;
 };
 
 // @public (undocumented)
@@ -1372,7 +1378,7 @@ type SolanaRpc = {
 // @public
 type SolanaSignInput = {
     readonly method: "solana-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: SolanaAccount;
     readonly network: string;
     readonly request: {
@@ -1416,7 +1422,7 @@ export type SolanaWalletAccount = {
 export class SolanaWalletHandler implements SolanaHandler {
     constructor(options: Options_2);
     // (undocumented)
-    handle(origin: string, request: SolanaRequest): Promise<unknown>;
+    handle(origin: string | WalletConnectOrigin, request: SolanaRequest): Promise<unknown>;
     // (undocumented)
     readonly options: Options_2;
     subscribe(listener: (event: SolanaEvent) => void): () => void;
@@ -2176,9 +2182,25 @@ type TxBlock = {
 type TxState = "draft" | "signed" | "submitted" | "pending" | "confirmed" | "failed" | "rejected" | "dropped" | "replaced";
 
 // @public
+type WalletConnectOrigin = {
+    readonly kind: "walletconnect";
+    readonly origin: string;
+    readonly topic: string;
+    readonly url: string;
+    readonly name: string;
+    readonly verify: WalletConnectVerify;
+};
+
+// @public (undocumented)
+type WalletConnectVerify = {
+    readonly validation: "VALID" | "INVALID" | "UNKNOWN";
+    readonly isScam: boolean;
+};
+
+// @public
 type WatchAssetInput = {
     readonly method: "watch-asset";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly address: string;
@@ -2206,7 +2228,7 @@ type WeblnHandlerOptions = {
 // @public
 type WeblnInvoiceInput = {
     readonly method: "webln-invoice";
-    readonly origin: BrowserOrigin;
+    readonly origin: DappOrigin;
     readonly ref: SparkAccountRef;
     readonly amountSats: number;
     readonly memo?: string;
