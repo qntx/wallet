@@ -32,6 +32,17 @@ const blockByNumRequest = z.strictObject({
   num: z.int().check(z.nonnegative()),
 });
 const transactionIdRequest = z.strictObject({ value: tronTxId });
+const ownerRequest = z.strictObject({ owner_address: tronAddress, visible: z.literal(true) });
+const canDelegateRequest = z.strictObject({
+  owner_address: tronAddress,
+  type: z.union([z.literal(0), z.literal(1)]),
+  visible: z.literal(true),
+});
+const delegatedResourceRequest = z.strictObject({
+  fromAddress: tronAddress,
+  toAddress: tronAddress,
+  visible: z.literal(true),
+});
 
 const triggerRequest = z.strictObject({
   owner_address: tronAddress,
@@ -85,6 +96,39 @@ export const tronAccount = z.looseObject({
   balance: z.optional(amountField),
   type: z.optional(z.string()),
   assetV2: z.optional(z.array(trc10Balance)),
+  /** Stake V2 rows: `{type?: "ENERGY", amount}` — absent type means BANDWIDTH (proto3 enum 0). */
+  frozenV2: z.optional(
+    z.array(
+      z.looseObject({
+        type: z.optional(z.union([z.string(), z.number()])),
+        amount: z.optional(amountField),
+      }),
+    ),
+  ),
+  /** Pending unfreeze rows: `{type?, unfreeze_amount, unfreeze_expire_time}`. */
+  unfrozenV2: z.optional(
+    z.array(
+      z.looseObject({
+        type: z.optional(z.union([z.string(), z.number()])),
+        unfreeze_amount: z.optional(amountField),
+        unfreeze_expire_time: z.optional(intField),
+      }),
+    ),
+  ),
+  /** `vote_address` is the witness's 21-byte hex form. */
+  votes: z.optional(
+    z.array(z.looseObject({ vote_address: z.optional(z.string()), vote_count: intField })),
+  ),
+  latest_withdraw_time: z.optional(intField),
+  /** Nested resource row: both ENERGY delegation totals live here (bandwidth is top-level). */
+  account_resource: z.optional(
+    z.looseObject({
+      delegated_frozenV2_balance_for_energy: z.optional(amountField),
+      acquired_delegated_frozenV2_balance_for_energy: z.optional(amountField),
+    }),
+  ),
+  delegated_frozenV2_balance_for_bandwidth: z.optional(amountField),
+  acquired_delegated_frozenV2_balance_for_bandwidth: z.optional(amountField),
 });
 export const tronAccountResponse = z.union([tronAccount, tronEmpty]);
 export type TronAccount = z.output<typeof tronAccount>;
@@ -98,6 +142,9 @@ export const tronAccountResource = z.looseObject({
   NetUsed: z.optional(amountField),
   EnergyLimit: z.optional(amountField),
   EnergyUsed: z.optional(amountField),
+  /** Staked-for-votes power = frozen BANDWIDTH + frozen ENERGY in TRX units. */
+  tronPowerLimit: z.optional(amountField),
+  tronPowerUsed: z.optional(amountField),
 });
 export type TronAccountResource = z.output<typeof tronAccountResource>;
 
@@ -184,6 +231,55 @@ const indexerAccountResponse = z.looseObject({
 export type TronIndexerPage = z.output<typeof indexerPageResponse>;
 export type TronIndexerAccount = z.output<typeof indexerAccountResponse>;
 
+/** `getavailableunfreezecount` — `{count: n}`, or `{}` when none is available. */
+export const tronUnfreezeCountResponse = z.looseObject({ count: z.optional(intField) });
+export type TronUnfreezeCount = z.output<typeof tronUnfreezeCountResponse>;
+
+/** `getcandelegatedmaxsize` — `{max_size: n}` in sun; `{}` means the account can delegate 0. */
+export const tronCanDelegateMaxSizeResponse = z.looseObject({
+  max_size: z.optional(amountField),
+});
+export type TronCanDelegateMaxSize = z.output<typeof tronCanDelegateMaxSizeResponse>;
+
+/** `getdelegatedresourcev2`: the row's lock expiry is per-resource, in ms. */
+export const tronDelegatedResourceResponse = z.looseObject({
+  delegatedResource: z.optional(
+    z.array(
+      z.looseObject({
+        from: z.optional(z.string()),
+        to: z.optional(z.string()),
+        frozen_balance_for_bandwidth: z.optional(amountField),
+        frozen_balance_for_energy: z.optional(amountField),
+        expire_time_for_bandwidth: z.optional(intField),
+        expire_time_for_energy: z.optional(intField),
+      }),
+    ),
+  ),
+});
+export type TronDelegatedResource = z.output<typeof tronDelegatedResourceResponse>;
+
+/** `getReward` — `{reward: sun}`, or `{}` when nothing is withdrawable. */
+export const tronRewardResponse = z.looseObject({ reward: z.optional(amountField) });
+export type TronReward = z.output<typeof tronRewardResponse>;
+
+/** `listwitnesses`: `address` is the witness's base58 or `41…` hex form. */
+/**
+ * `getassetissuebyid` — TRC-10 metadata. `name`/`abbr` are hex-encoded strings per the node;
+ * `precision` is the TRC-10 decimals.
+ */
+export const tronAssetIssueResponse = z.looseObject({
+  id: z.optional(z.string()),
+  name: z.optional(z.string()),
+  abbr: z.optional(z.string()),
+  precision: z.optional(intField),
+});
+export type TronAssetIssue = z.output<typeof tronAssetIssueResponse>;
+
+export const tronWitnessListResponse = z.looseObject({
+  witnesses: z.optional(z.array(z.looseObject({ address: z.optional(z.string()) }))),
+});
+export type TronWitnessList = z.output<typeof tronWitnessListResponse>;
+
 type TronPath = {
   readonly request: z.ZodMiniType;
   readonly response: z.ZodMiniType;
@@ -209,6 +305,32 @@ export const TRON_NODE_PATHS = {
     cost: "heavy",
   },
   "/wallet/getaccount": { request: accountRequest, response: tronAccountResponse, cost: "point" },
+  "/wallet/getavailableunfreezecount": {
+    request: ownerRequest,
+    response: tronUnfreezeCountResponse,
+    cost: "point",
+  },
+  "/wallet/getcandelegatedmaxsize": {
+    request: canDelegateRequest,
+    response: tronCanDelegateMaxSizeResponse,
+    cost: "point",
+  },
+  "/wallet/getdelegatedresourcev2": {
+    request: delegatedResourceRequest,
+    response: tronDelegatedResourceResponse,
+    cost: "point",
+  },
+  "/wallet/getReward": { request: accountRequest, response: tronRewardResponse, cost: "point" },
+  "/wallet/getassetissuebyid": {
+    request: z.strictObject({ value: z.int().check(z.nonnegative()) }),
+    response: tronAssetIssueResponse,
+    cost: "point",
+  },
+  "/wallet/listwitnesses": {
+    request: emptyRequest,
+    response: tronWitnessListResponse,
+    cost: "heavy",
+  },
   "/wallet/getaccountresource": {
     request: accountRequest,
     response: tronAccountResource,

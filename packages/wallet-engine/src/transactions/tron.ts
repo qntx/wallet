@@ -8,6 +8,7 @@ import { ChainError } from "@qntx/wallet-chains";
 import {
   buildTronRawData,
   decodeTron,
+  trc20ApproveContract,
   encodeTronTransaction,
   isTronAddress,
   lookupTronToken,
@@ -31,13 +32,19 @@ import {
   resources,
   solidHead,
   transactionInfo,
+  canDelegateMaxSize,
+  delegatedResource,
+  reward,
+  stakeParams,
   transactionKnown,
   tronBroadcastVerdict,
   tronLogAddress,
+  unfreezeCount,
+  witnesses,
   tronFeeLimit,
   tronFeeQuote,
 } from "../chains/tron.ts";
-import type { TronApi, TronChainParams, TronHead } from "../chains/tron.ts";
+import type { TronApi, TronChainParams, TronHead, TronResources } from "../chains/tron.ts";
 import type { TronAccount } from "../gateway/contract/index.ts";
 import type { Independent } from "../networks/controller.ts";
 import { collectChecks, feesDiffer } from "../requests/checks.ts";
@@ -47,6 +54,8 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 import { submitSigned } from "./broadcast.ts";
 import { includedPoll, newId, accountAddressOf, failTx } from "./route.ts";
 import type {
+  AccountRef,
+  ChainRequestInput,
   PrepareParams,
   PreparedRequest,
   RouteContext,
@@ -106,7 +115,7 @@ const crossCheckTron = async (
   independent: Independent<TronApi>,
   head: TronHead,
   params: TronChainParams,
-  extra: (api: TronApi) => Promise<void>,
+  extra?: (api: TronApi) => Promise<void>,
 ): Promise<"reads-unverified" | undefined> => {
   if (independent.kind !== "available") {
     return undefined;
@@ -123,7 +132,7 @@ const crossCheckTron = async (
     if (!paramsEqual(params, otherParams)) {
       throw new ChainError("invalid-request", "the endpoints disagree on chain parameters");
     }
-    await extra(api);
+    await extra?.(api);
     return undefined;
   } catch (error) {
     if (error instanceof ChainError) {
@@ -230,7 +239,6 @@ export const prepareTron = async (
   const token = classify(params.token);
   const api = ctx.options.networks.tronApi(network);
   const independent = ctx.options.networks.independentTronApi(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
   const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
   if (!isTronAddress(to)) {
     throw new ChainError("invalid-request", `${to} is not a TRON address`);
@@ -262,7 +270,6 @@ export const prepareTron = async (
   }
 
   let contract: TronContract;
-  let feeLimit: bigint | undefined;
   let estimate: { readonly used: number; readonly penalty: number } | undefined;
   let call: Awaited<ReturnType<typeof constantCall>> | undefined;
   /** The recipient's token balance — `undefined` for TRX/TRC-10 sends. */
@@ -339,64 +346,6 @@ export const prepareTron = async (
     }
   }
 
-  if (estimate !== undefined) {
-    feeLimit = tronFeeLimit(estimate.used, params0.energyFee, params0.maxFeeLimit);
-  }
-  const now = ctx.options.now();
-  const header = {
-    refBlock: { number: head.number, id: head.id },
-    timestamp: now,
-    expiration: now + TRON_TTL_MS,
-    ...(feeLimit === undefined ? {} : { feeLimit }),
-  };
-  const rawData = buildTronRawData(header, contract);
-  const quote = tronFeeQuote({
-    rawDataLength: rawData.length,
-    params: params0,
-    resources: res,
-    ...(activates ? { activates: true } : {}),
-    ...(estimate === undefined ? {} : { energy: estimate }),
-    ...(theirs === 0n ? { tokenRecipientEmpty: true } : {}),
-  });
-  const outflow = token.kind === "trx" ? amount : 0n;
-  const balance = BigInt(fromRow.balance ?? 0);
-  if (balance < outflow + BigInt(quote.expected)) {
-    throw new ChainError(
-      "invalid-request",
-      `balance ${balance.toString(10)} does not cover the send plus ${quote.expected} sun of fees`,
-    );
-  }
-  if (token.kind === "trx" && BigInt(quote.max) >= amount) {
-    flags.push("fee-exceeds-amount");
-  }
-  if (quote.warnings.includes("token-recipient-empty")) {
-    risk.push({ code: "token-recipient-empty", level: "warning" });
-  }
-
-  const request: Extract<SignParams["request"], { kind: "tron.transaction" }> = {
-    kind: "tron.transaction",
-    network,
-    account: ref,
-    rawData,
-  };
-  const intent = decodeTron(request, from);
-  const [flow] = intent.outflows;
-  const wantAsset =
-    token.kind === "trx" ? "sun" : token.kind === "trc10" ? `trc10:${token.assetId}` : token.token;
-  if (
-    intent.summary !== "transfer" ||
-    intent.outflows.length !== 1 ||
-    flow === undefined ||
-    flow.to !== to ||
-    flow.amount.amount !== amount.toString(10) ||
-    flow.amount.asset !== wantAsset
-  ) {
-    throw new ChainError(
-      "invalid-request",
-      "the built transaction does not decode to the requested transfer",
-    );
-  }
-  const id = newId(ctx.options.random);
   const verified =
     token.kind === "trc20" &&
     lookupTronToken(tronTokenTable, network, token.kind === "trc20" ? token.token : "") !==
@@ -421,6 +370,130 @@ export const prepareTron = async (
               };
         }
       : undefined;
+
+  return finishTron(ctx, {
+    api,
+    ref,
+    network,
+    from,
+    contract,
+    head,
+    params: params0,
+    resources: res,
+    balance: BigInt(fromRow.balance ?? 0),
+    outflow: token.kind === "trx" ? amount : 0n,
+    ...(estimate === undefined ? {} : { estimate }),
+    ...(activates ? { activates: true } : {}),
+    ...(theirs === 0n ? { tokenRecipientEmpty: true } : {}),
+    ...(token.kind === "trx" ? { exceedsAmount: amount } : {}),
+    flags,
+    risk,
+    assertIntent: (intent) => {
+      const [flow] = intent.outflows;
+      const wantAsset =
+        token.kind === "trx"
+          ? "sun"
+          : token.kind === "trc10"
+            ? `trc10:${token.assetId}`
+            : token.token;
+      if (
+        intent.summary !== "transfer" ||
+        intent.outflows.length !== 1 ||
+        flow === undefined ||
+        flow.to !== to ||
+        flow.amount.amount !== amount.toString(10) ||
+        flow.amount.asset !== wantAsset
+      ) {
+        throw new ChainError(
+          "invalid-request",
+          "the built transaction does not decode to the requested transfer",
+        );
+      }
+    },
+    ...(simulation === undefined ? {} : { simulation }),
+    ...(resimulate === undefined ? {} : { resimulate }),
+  });
+};
+
+type TronFinish = {
+  readonly api: TronApi;
+  readonly ref: AccountRef;
+  readonly network: string;
+  readonly from: string;
+  readonly contract: TronContract;
+  readonly head: TronHead;
+  readonly params: TronChainParams;
+  readonly resources: TronResources;
+  readonly balance: bigint;
+  /** Liquid TRX the operation locks or sends — checked against `balance` together with fees. */
+  readonly outflow: bigint;
+  readonly estimate?: { readonly used: number; readonly penalty: number };
+  readonly activates?: boolean;
+  readonly tokenRecipientEmpty?: boolean;
+  /** TRX amount `quote.max` must not exceed (a plain TRX send); absent skips the check. */
+  readonly exceedsAmount?: bigint;
+  readonly flags: Array<RequestCheckCode | undefined>;
+  readonly risk: RiskFinding[];
+  /** Refuses unless the locally built raw data decodes to exactly the requested operation. */
+  readonly assertIntent: (intent: ReturnType<typeof decodeTron>) => void;
+  readonly simulation?: SimulationOutcome;
+  readonly resimulate?: () => Promise<SimulationOutcome>;
+};
+
+/**
+ * The shared operation tail: fee_limit → header → raw data → quote → balance refusal → decode
+ * assertion → intent → sign → verify → broadcast → track. Every TRON operation sends the same
+ * single-signature transaction and never touches a node-provided `transaction` field.
+ */
+const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
+  const { api, ref, network, from, contract, head, params: params0, resources: res } = input;
+  const { flags, risk } = input;
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const { estimate } = input;
+  const feeLimit =
+    estimate === undefined
+      ? undefined
+      : tronFeeLimit(estimate.used, params0.energyFee, params0.maxFeeLimit);
+  const now = ctx.options.now();
+  const header = {
+    refBlock: { number: head.number, id: head.id },
+    timestamp: now,
+    expiration: now + TRON_TTL_MS,
+    ...(feeLimit === undefined ? {} : { feeLimit }),
+  };
+  const rawData = buildTronRawData(header, contract);
+  const quote = tronFeeQuote({
+    rawDataLength: rawData.length,
+    params: params0,
+    resources: res,
+    ...(input.activates === true ? { activates: true } : {}),
+    ...(estimate === undefined ? {} : { energy: estimate }),
+    ...(input.tokenRecipientEmpty === true ? { tokenRecipientEmpty: true } : {}),
+  });
+  if (input.balance < input.outflow + BigInt(quote.expected)) {
+    throw new ChainError(
+      "invalid-request",
+      `balance ${input.balance.toString(10)} does not cover the operation plus ${quote.expected} sun of fees`,
+    );
+  }
+  if (input.exceedsAmount !== undefined && BigInt(quote.max) >= input.exceedsAmount) {
+    flags.push("fee-exceeds-amount");
+  }
+  if (quote.warnings.includes("token-recipient-empty")) {
+    risk.push({ code: "token-recipient-empty", level: "warning" });
+  }
+
+  const request: Extract<SignParams["request"], { kind: "tron.transaction" }> = {
+    kind: "tron.transaction",
+    network,
+    account: ref,
+    rawData,
+  };
+  const intent = decodeTron(request, from);
+  input.assertIntent(intent);
+  const id = newId(ctx.options.random);
+  const { simulation } = input;
+  const { resimulate } = input;
 
   const submit = async (
     verify: SendParams["verify"],
@@ -490,6 +563,406 @@ export const prepareTron = async (
     submit,
     release: () => undefined,
   };
+};
+
+const RESOURCE_CODE = { bandwidth: 0, energy: 1 } as const;
+
+/** FrozenV2/unfrozenV2 `type` is an enum name or number; absent is BANDWIDTH (enum 0). */
+const frozenResource = (type: string | number | undefined): 0 | 1 =>
+  type === "ENERGY" || type === 1 ? 1 : 0;
+
+/** The sun amount staked for `resource` on `row`, or 0 when the account never froze it. */
+const frozenFor = (row: TronAccount, resource: 0 | 1): bigint => {
+  let total = 0n;
+  for (const f of row.frozenV2 ?? []) {
+    if (frozenResource(f.type) === resource) {
+      total += BigInt(Math.trunc(f.amount ?? 0));
+    }
+  }
+  return total;
+};
+
+const ONE_TRX = 1_000_000n;
+const DAY_MS = 86_400_000;
+
+const tronStakeAction = (intent: ReturnType<typeof decodeTron>) => {
+  if (intent.summary !== "stake" || intent.staking === undefined || intent.staking.length !== 1) {
+    return undefined;
+  }
+  return intent.staking[0];
+};
+
+const sunAmount = (a: { readonly amount: { readonly asset: string; readonly amount: string } }) =>
+  a.amount.asset === "sun" ? BigInt(a.amount.amount) : undefined;
+
+/**
+ * An internal `tron-stake` request: the java-tron actuator checks are run against the node's
+ * account/resource answers first (file@line cites live in the code), then the operation goes
+ * through the shared build → quote → decode-assert → sign → track tail.
+ */
+export const prepareTronStake = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "tron-stake" }>,
+): Promise<PreparedRequest> => {
+  const { account: ref, network, action } = input;
+  const api = ctx.options.networks.tronApi(network);
+  const independent = ctx.options.networks.independentTronApi(network);
+  const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
+  const flags: Array<RequestCheckCode | undefined> = [
+    independent.kind === "unavailable" ? "reads-unverified" : undefined,
+  ];
+  const risk: RiskFinding[] = [];
+
+  const head = await solidHead(api);
+  const params0 = await chainParams(api);
+  const fromRow = await account(api, from);
+  if (fromRow === undefined) {
+    throw new ChainError("invalid-request", "the sender account is not activated");
+  }
+  const res = await resources(api, from);
+  const balance = BigInt(fromRow.balance ?? 0);
+  const now = ctx.options.now();
+
+  let contract: TronContract;
+  let outflow = 0n;
+  let assert: (action0: NonNullable<ReturnType<typeof tronStakeAction>>) => boolean;
+  switch (action.kind) {
+    case "freeze": {
+      const resource = RESOURCE_CODE[action.resource];
+      if (action.amount < ONE_TRX) {
+        // FreezeBalanceActuatorV2 checks amount >= minFrozenBalance (1 TRX).
+        throw new ChainError("invalid-request", "freeze requires at least 1 TRX");
+      }
+      contract = {
+        type: "FreezeBalanceV2Contract",
+        owner: from,
+        amount: action.amount,
+        resource,
+      };
+      outflow = action.amount;
+      assert = (a) =>
+        a.kind === "tron-freeze" &&
+        a.resource === action.resource &&
+        sunAmount(a) === action.amount;
+      break;
+    }
+    case "unfreeze": {
+      const resource = RESOURCE_CODE[action.resource];
+      if (action.amount <= 0n || action.amount > frozenFor(fromRow, resource)) {
+        throw new ChainError(
+          "invalid-request",
+          `cannot unfreeze ${action.amount.toString(10)} sun of ${action.resource}`,
+        );
+      }
+      if ((await unfreezeCount(api, from)) <= 0) {
+        // UnfreezeBalanceV2Actuator refuses when the concurrent-unfreeze slot is exhausted.
+        throw new ChainError("invalid-request", "no unfreeze slot is available");
+      }
+      contract = {
+        type: "UnfreezeBalanceV2Contract",
+        owner: from,
+        amount: action.amount,
+        resource,
+      };
+      assert = (a) =>
+        a.kind === "tron-unfreeze" &&
+        a.resource === action.resource &&
+        sunAmount(a) === action.amount;
+      break;
+    }
+    case "withdraw-expired": {
+      const expired = (fromRow.unfrozenV2 ?? []).some(
+        (u) => Math.trunc(u.unfreeze_expire_time ?? Number.POSITIVE_INFINITY) <= now,
+      );
+      if (!expired) {
+        // WithdrawExpireUnfreezeActuator requires an unfrozenV2 row past its expire time.
+        throw new ChainError("invalid-request", "no expired unfreeze entry to withdraw");
+      }
+      contract = { type: "WithdrawExpireUnfreezeContract", owner: from };
+      assert = (a) => a.kind === "tron-withdraw-unfrozen";
+      break;
+    }
+    case "cancel-unfreeze":
+      if ((fromRow.unfrozenV2 ?? []).length === 0) {
+        // CancelAllUnfreezeV2Actuator refuses an empty unfreeze queue.
+        throw new ChainError("invalid-request", "no unfreeze entries to cancel");
+      }
+      contract = { type: "CancelAllUnfreezeV2Contract", owner: from };
+      assert = (a) => a.kind === "tron-cancel-unfreeze";
+      break;
+
+    case "delegate": {
+      const resource = RESOURCE_CODE[action.resource];
+      if (action.amount < ONE_TRX) {
+        // DelegateResourceActuator requires the delegated amount to be at least 1 TRX.
+        throw new ChainError("invalid-request", "delegate requires at least 1 TRX");
+      }
+      if (!isTronAddress(action.receiver)) {
+        throw new ChainError("invalid-request", `${action.receiver} is not a TRON address`);
+      }
+      if (action.receiver === from) {
+        throw new ChainError("invalid-request", "cannot delegate to the sender");
+      }
+      const receiver = await account(api, action.receiver);
+      if (receiver === undefined) {
+        throw new ChainError("invalid-request", "the delegation receiver does not exist");
+      }
+      if (receiver.type === "Contract") {
+        // DelegateResourceActuator refuses contract receivers.
+        throw new ChainError("invalid-request", "cannot delegate to a contract");
+      }
+      const max = await canDelegateMaxSize(api, from, resource);
+      if (action.amount > max) {
+        throw new ChainError(
+          "invalid-request",
+          `delegation exceeds the available ${max.toString(10)} sun`,
+        );
+      }
+      if (action.lockBlocks !== undefined) {
+        const stake = await stakeParams(api);
+        if (
+          action.lockBlocks < 1 ||
+          !Number.isInteger(action.lockBlocks) ||
+          BigInt(action.lockBlocks) > stake.maxDelegateLockPeriod
+        ) {
+          throw new ChainError(
+            "invalid-request",
+            `lock period must be 1..${stake.maxDelegateLockPeriod.toString(10)} blocks`,
+          );
+        }
+      }
+      contract = {
+        type: "DelegateResourceContract",
+        owner: from,
+        resource,
+        balance: action.amount,
+        receiver: action.receiver,
+        lock: action.lockBlocks !== undefined,
+        lockPeriod: BigInt(action.lockBlocks ?? 0),
+      };
+      outflow = action.amount;
+      assert = (a) =>
+        a.kind === "tron-delegate" &&
+        a.receiver === action.receiver &&
+        a.resource === action.resource &&
+        sunAmount(a) === action.amount &&
+        (action.lockBlocks === undefined
+          ? a.lock === undefined
+          : a.lock?.blocks === action.lockBlocks.toString(10));
+      break;
+    }
+    case "undelegate": {
+      const resource = RESOURCE_CODE[action.resource];
+      if (action.amount <= 0n) {
+        throw new ChainError("invalid-request", "undelegate amount must be positive");
+      }
+      if (!isTronAddress(action.receiver)) {
+        throw new ChainError("invalid-request", `${action.receiver} is not a TRON address`);
+      }
+      // Still-locked delegations cannot be un-delegated until their lock expires.
+      const delegated = await delegatedResource(api, from, action.receiver, resource, now);
+      if (action.amount > delegated.unlocked) {
+        throw new ChainError(
+          "invalid-request",
+          `undelegate exceeds the unlocked ${delegated.unlocked.toString(10)} sun`,
+        );
+      }
+      contract = {
+        type: "UnDelegateResourceContract",
+        owner: from,
+        resource,
+        balance: action.amount,
+        receiver: action.receiver,
+      };
+      assert = (a) =>
+        a.kind === "tron-undelegate" &&
+        a.receiver === action.receiver &&
+        a.resource === action.resource &&
+        sunAmount(a) === action.amount;
+      break;
+    }
+    case "vote": {
+      if (action.votes.length === 0 || action.votes.length > 30) {
+        // VoteWitnessActuator refuses an empty vote and caps at MAX_VOTE_NUMBER (30).
+        throw new ChainError("invalid-request", "vote takes 1..30 witnesses");
+      }
+      if (action.votes.some((v) => v.count <= 0n)) {
+        throw new ChainError("invalid-request", "vote counts must be positive");
+      }
+      const listed = new Set(await witnesses(api));
+      for (const vote of action.votes) {
+        if (!listed.has(vote.witness)) {
+          // VoteWitnessActuator counts votes for accounts that are not witnesses as invalid.
+          throw new ChainError("invalid-request", `${vote.witness} is not a witness`);
+        }
+      }
+      let total = 0n;
+      for (const v of action.votes) {
+        total += v.count;
+      }
+      if (total > BigInt(res.tronPowerLimit)) {
+        throw new ChainError("invalid-request", "votes exceed the available tron power");
+      }
+      contract = {
+        type: "VoteWitnessContract",
+        owner: from,
+        votes: action.votes.map((v) => ({ witness: v.witness, count: v.count })),
+        support: true,
+      };
+      assert = (a) =>
+        a.kind === "tron-vote" &&
+        a.votes.length === action.votes.length &&
+        a.votes.every(
+          (v, i) =>
+            v.witness === action.votes[i]?.witness &&
+            v.count === action.votes[i]?.count.toString(10),
+        );
+      break;
+    }
+    case "claim-rewards": {
+      if ((await reward(api, from)) <= 0n) {
+        // WithdrawBalanceActuator refuses when allowance/withdrawable reward is zero.
+        throw new ChainError("invalid-request", "there is no reward to claim");
+      }
+      const stake = await stakeParams(api);
+      const last = Math.trunc(fromRow.latest_withdraw_time ?? 0);
+      const wait = Number(stake.witnessAllowanceFrozenTime) * DAY_MS;
+      if (now - last < wait) {
+        // WithdrawBalanceActuator enforces witnessAllowanceFrozenTime days between claims.
+        throw new ChainError("invalid-request", "the claim period has not passed yet");
+      }
+      contract = { type: "WithdrawBalanceContract", owner: from };
+      assert = (a) => a.kind === "tron-claim-rewards";
+      break;
+    }
+  }
+
+  const flag = await crossCheckTron(independent, head, params0);
+  if (flag !== undefined) {
+    flags.push(flag);
+  }
+
+  return finishTron(ctx, {
+    api,
+    ref,
+    network,
+    from,
+    contract,
+    head,
+    params: params0,
+    resources: res,
+    balance,
+    outflow,
+    flags,
+    risk,
+    assertIntent: (intent) => {
+      const staking = tronStakeAction(intent);
+      if (staking === undefined || !assert(staking)) {
+        throw new ChainError(
+          "invalid-request",
+          "the built transaction does not decode to the requested stake operation",
+        );
+      }
+    },
+  });
+};
+
+/**
+ * An internal `tron-approve` request: builds the TRC-20 `approve` calldata locally, estimates its
+ * energy by replaying the exact call, and lets `chainRisk` flag an unlimited allowance. `amount` of
+ * 0 revokes.
+ */
+export const prepareTronApprove = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "tron-approve" }>,
+): Promise<PreparedRequest> => {
+  const { account: ref, network, token, spender, amount } = input;
+  const api = ctx.options.networks.tronApi(network);
+  const independent = ctx.options.networks.independentTronApi(network);
+  const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
+  if (!isTronAddress(token)) {
+    throw new ChainError("invalid-request", `${token} is not a TRON address`);
+  }
+  if (!isTronAddress(spender)) {
+    throw new ChainError("invalid-request", `${spender} is not a TRON address`);
+  }
+  if (amount < 0n) {
+    throw new ChainError("invalid-request", "amount must not be negative");
+  }
+  const flags: Array<RequestCheckCode | undefined> = [
+    independent.kind === "unavailable" ? "reads-unverified" : undefined,
+  ];
+  const risk: RiskFinding[] = [];
+
+  const head = await solidHead(api);
+  const params0 = await chainParams(api);
+  const fromRow = await account(api, from);
+  if (fromRow === undefined) {
+    throw new ChainError("invalid-request", "the sender account is not activated");
+  }
+  const res = await resources(api, from);
+
+  const contract = trc20ApproveContract(from, token, spender, amount);
+  const data = contract.type === "TriggerSmartContract" ? contract.data : new Uint8Array();
+  const call = await constantCall(api, { owner: from, contract: token, data });
+  if (!call.ok) {
+    throw new ChainError(
+      "invalid-request",
+      `the token's approve reverted${call.message === undefined ? "" : `: ${call.message}`}`,
+    );
+  }
+  let estimate = { used: call.energyUsed, penalty: call.energyPenalty };
+
+  const flag = await crossCheckTron(independent, head, params0, async (independentApi) => {
+    const other = await constantCall(independentApi, { owner: from, contract: token, data });
+    if (other.ok) {
+      if (feesDiffer(BigInt(other.energyUsed), BigInt(estimate.used))) {
+        flags.push("fee-mismatch");
+      }
+      estimate = {
+        used: Math.max(estimate.used, other.energyUsed),
+        penalty: Math.max(estimate.penalty, other.energyPenalty),
+      };
+    } else {
+      flags.push("reads-unverified");
+    }
+  });
+  if (flag !== undefined) {
+    flags.push(flag);
+  }
+
+  return finishTron(ctx, {
+    api,
+    ref,
+    network,
+    from,
+    contract,
+    head,
+    params: params0,
+    resources: res,
+    balance: BigInt(fromRow.balance ?? 0),
+    outflow: 0n,
+    estimate,
+    flags,
+    risk,
+    assertIntent: (intent) => {
+      const ok =
+        intent.approvals.length === 1 &&
+        intent.approvals.every(
+          (a) =>
+            a.kind === "allowance" &&
+            a.spender === spender &&
+            a.amount.asset === token &&
+            a.amount.amount === amount.toString(10),
+        );
+      if (!ok) {
+        throw new ChainError(
+          "invalid-request",
+          "the built transaction does not decode to the requested approval",
+        );
+      }
+    },
+  });
 };
 
 /**

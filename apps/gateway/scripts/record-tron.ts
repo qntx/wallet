@@ -185,6 +185,38 @@ const nodeRequests = (token: string): ReadonlyArray<Request_> => [
     path: "/walletsolidity/gettransactioninfobyid",
     body: ({ txid }) => ({ value: txid }),
   },
+  {
+    name: "availableunfreezecount",
+    path: "/wallet/getavailableunfreezecount",
+    body: () => ({ owner_address: HOLDER, visible: true }),
+  },
+  {
+    name: "candelegatedmaxsize-bandwidth",
+    path: "/wallet/getcandelegatedmaxsize",
+    body: () => ({ owner_address: HOLDER, type: 0, visible: true }),
+  },
+  {
+    name: "candelegatedmaxsize-energy",
+    path: "/wallet/getcandelegatedmaxsize",
+    body: () => ({ owner_address: HOLDER, type: 1, visible: true }),
+  },
+  {
+    name: "delegatedresourcev2",
+    path: "/wallet/getdelegatedresourcev2",
+    body: () => ({ fromAddress: HOLDER, toAddress: UNKNOWN, visible: true }),
+  },
+  {
+    name: "getreward",
+    path: "/wallet/getReward",
+    body: () => ({ address: HOLDER, visible: true }),
+  },
+  { name: "listwitnesses", path: "/wallet/listwitnesses", body: () => ({}) },
+  {
+    // TRC-10 id 1002000 (BTT) — the asset metadata read for balances.
+    name: "assetissuebyid",
+    path: "/wallet/getassetissuebyid",
+    body: () => ({ value: 1002000 }),
+  },
 ];
 
 /** The documented trim: `transactions` is dropped from block responses (they are megabytes). */

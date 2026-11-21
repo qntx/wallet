@@ -42,7 +42,7 @@ import {
   prepareSolanaSwap,
   submitDappSolana,
 } from "./solana.ts";
-import { pollTron, prepareTron } from "./tron.ts";
+import { pollTron, prepareTron, prepareTronApprove, prepareTronStake } from "./tron.ts";
 
 export type {
   AccountRef,
@@ -667,6 +667,31 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return prepareSolanaStake(this.routeCtx(), input);
+  }
+
+  /**
+   * Internal `tron-stake` requests: the java-tron actuator rules are checked against node reads,
+   * then the operation goes through the same build/sign/track tail as a send.
+   */
+  async prepareTronStake(
+    input: Extract<ChainRequestInput, { method: "tron-stake" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronStake(this.routeCtx(), input);
+  }
+
+  /** Internal `tron-approve` requests: TRC-20 `approve` (amount 0 revokes). */
+  async prepareTronApprove(
+    input: Extract<ChainRequestInput, { method: "tron-approve" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronApprove(this.routeCtx(), input);
   }
 
   async prepareSolanaSwap(

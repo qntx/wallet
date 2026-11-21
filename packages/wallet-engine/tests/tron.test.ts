@@ -237,6 +237,8 @@ describe("tron readers", () => {
       netUsed: 200,
       energyLimit: 8000,
       energyUsed: 100,
+      tronPowerLimit: 0,
+      tronPowerUsed: 0,
     });
     await expect(
       resources(api({ "/wallet/getaccountresource": {} }), HOLDER),
@@ -247,6 +249,8 @@ describe("tron readers", () => {
       netUsed: 0,
       energyLimit: 0,
       energyUsed: 0,
+      tronPowerLimit: 0,
+      tronPowerUsed: 0,
     });
   });
 
@@ -465,6 +469,8 @@ const RESOURCES = {
   netUsed: 0,
   energyLimit: 0,
   energyUsed: 0,
+  tronPowerLimit: 0,
+  tronPowerUsed: 0,
 };
 
 describe("tronFeeQuote", () => {
@@ -609,6 +615,8 @@ describe("fuzz", () => {
     netUsed: fc.nat({ max: 10 ** 7 }),
     energyLimit: fc.nat({ max: 10 ** 7 }),
     energyUsed: fc.nat({ max: 10 ** 7 }),
+    tronPowerLimit: fc.nat({ max: 10 ** 7 }),
+    tronPowerUsed: fc.nat({ max: 10 ** 7 }),
   });
   const inputArb = fc.record({
     rawDataLength: fc.integer({ min: 1, max: 10 ** 5 }),

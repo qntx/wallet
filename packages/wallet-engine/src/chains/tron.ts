@@ -18,8 +18,13 @@ import {
   tronAccountResource,
   tronBlockResponse,
   tronBroadcastResponse,
+  tronCanDelegateMaxSizeResponse,
   tronChainParameters,
   tronConstantCallResponse,
+  tronDelegatedResourceResponse,
+  tronRewardResponse,
+  tronUnfreezeCountResponse,
+  tronWitnessListResponse,
   tronMaybeBlockResponse,
   tronTransactionInfoResponse,
   tronTransactionResponse,
@@ -199,6 +204,9 @@ export type TronResources = {
   readonly netUsed: number;
   readonly energyLimit: number;
   readonly energyUsed: number;
+  /** TRX staked for either resource — the vote power bound and the used fraction. */
+  readonly tronPowerLimit: number;
+  readonly tronPowerUsed: number;
 };
 
 /** The account's resource counters; proto3 omits zero fields, so a missing counter is 0. */
@@ -215,6 +223,8 @@ export const resources = async (api: TronApi, address: string): Promise<TronReso
     netUsed: row.NetUsed ?? 0,
     energyLimit: row.EnergyLimit ?? 0,
     energyUsed: row.EnergyUsed ?? 0,
+    tronPowerLimit: row.tronPowerLimit ?? 0,
+    tronPowerUsed: row.tronPowerUsed ?? 0,
   };
 };
 
@@ -262,6 +272,126 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
     createNewAccountBandwidthRate: take("getCreateNewAccountBandwidthRate"),
     maxCreateAccountTxSize: take("getMaxCreateAccountTxSize"),
   };
+};
+
+/** The governance parameters the stake rules need; separate so the send path stays lean. */
+export type TronStakeParams = {
+  /** `getMaxDelegateLockPeriod` — the largest lock period `delegate` may ask for, in blocks. */
+  readonly maxDelegateLockPeriod: bigint;
+  /** `getWitnessAllowanceFrozenTime` — days between `claim-rewards` calls. */
+  readonly witnessAllowanceFrozenTime: bigint;
+};
+
+/** The stake-rule chain parameters — a missing one is a malformed answer, never a default. */
+export const stakeParams = async (api: TronApi): Promise<TronStakeParams> => {
+  const path = "/wallet/getchainparameters";
+  const body = parsed(tronChainParameters, path, await api.post(path, {}));
+  const values = new Map<string, number>();
+  for (const entry of body.chainParameter) {
+    if (entry.value !== undefined) {
+      values.set(entry.key, entry.value);
+    }
+  }
+  const take = (key: string): bigint => {
+    const value = values.get(key);
+    if (value === undefined) {
+      throw new Error(`${path}: missing ${key}`);
+    }
+    return BigInt(value);
+  };
+  return {
+    maxDelegateLockPeriod: take("getMaxDelegateLockPeriod"),
+    witnessAllowanceFrozenTime: take("getWitnessAllowanceFrozenTime"),
+  };
+};
+
+/** `getavailableunfreezecount` — `{}` means zero concurrent unfreezes are available. */
+export const unfreezeCount = async (api: TronApi, owner: string): Promise<number> => {
+  const path = "/wallet/getavailableunfreezecount";
+  const body = parsed(
+    tronUnfreezeCountResponse,
+    path,
+    await api.post(path, { owner_address: owner, visible: true }),
+  );
+  return body.count ?? 0;
+};
+
+/** `getcandelegatedmaxsize` — the largest delegation the account may make, in sun. */
+export const canDelegateMaxSize = async (
+  api: TronApi,
+  owner: string,
+  resource: 0 | 1,
+): Promise<bigint> => {
+  const path = "/wallet/getcandelegatedmaxsize";
+  const body = parsed(
+    tronCanDelegateMaxSizeResponse,
+    path,
+    await api.post(path, { owner_address: owner, type: resource, visible: true }),
+  );
+  return BigInt(Math.trunc(body.max_size ?? 0));
+};
+
+export type TronDelegatedRow = {
+  /** Unlocked (or already-expired lock) amount delegated to `to` for `resource`. */
+  readonly unlocked: bigint;
+  /** Locked amount whose lock has not yet expired for `resource`. */
+  readonly locked: bigint;
+};
+
+/** `getdelegatedresourcev2` — the from→to delegation split into unlocked vs still-locked parts. */
+export const delegatedResource = async (
+  api: TronApi,
+  from: string,
+  to: string,
+  resource: 0 | 1,
+  now: number,
+): Promise<TronDelegatedRow> => {
+  const path = "/wallet/getdelegatedresourcev2";
+  const body = parsed(
+    tronDelegatedResourceResponse,
+    path,
+    await api.post(path, { fromAddress: from, toAddress: to, visible: true }),
+  );
+  let unlocked = 0n;
+  let locked = 0n;
+  for (const row of body.delegatedResource ?? []) {
+    const amount = BigInt(
+      Math.trunc(
+        resource === 0
+          ? (row.frozen_balance_for_bandwidth ?? 0)
+          : (row.frozen_balance_for_energy ?? 0),
+      ),
+    );
+    const expires = Math.trunc(
+      resource === 0 ? (row.expire_time_for_bandwidth ?? 0) : (row.expire_time_for_energy ?? 0),
+    );
+    if (expires <= now) {
+      unlocked += amount;
+    } else {
+      locked += amount;
+    }
+  }
+  return { unlocked, locked };
+};
+
+/** `getReward` — sun withdrawable via WithdrawBalanceContract; `{}` means 0. */
+export const reward = async (api: TronApi, address: string): Promise<bigint> => {
+  const path = "/wallet/getReward";
+  const body = parsed(tronRewardResponse, path, await api.post(path, { address, visible: true }));
+  return BigInt(Math.trunc(body.reward ?? 0));
+};
+
+/** `listwitnesses` — witness addresses normalized to the `T…` form. */
+export const witnesses = async (api: TronApi): Promise<ReadonlyArray<string>> => {
+  const path = "/wallet/listwitnesses";
+  const body = parsed(tronWitnessListResponse, path, await api.post(path, {}));
+  // `listwitnesses` has no visible flag: the node answers `41…` hex.
+  return (body.witnesses ?? [])
+    .map((w) =>
+      /^41[0-9a-fA-F]{40}$/.test(w.address ?? "") ? w.address : tronLogAddress(w.address),
+    )
+    .map((a) => (a === undefined ? undefined : tronAddressFromHex(a)))
+    .filter((a): a is string => a !== undefined);
 };
 
 export type TronCallOutcome =

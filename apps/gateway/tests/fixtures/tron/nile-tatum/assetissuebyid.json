@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "body": {
+    "owner_address": "4168c4338462902ebc32791b5088df7ad24fd8118a",
+    "name": "54657374746f6b656e",
+    "abbr": "547474",
+    "total_supply": 10000000000,
+    "trx_num": 1,
+    "precision": 6,
+    "num": 1,
+    "start_time": 1651766400000,
+    "end_time": 1651852800000,
+    "description": "466f722054657374",
+    "url": "7777772e74657374746f6b656e2e636f6d",
+    "id": "1002000"
+  }
+}

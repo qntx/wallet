@@ -196,7 +196,9 @@ export type ChainRequestMethod =
   | "solana-core-send"
   | "evm-lido"
   | "solana-stake"
-  | "solana-swap";
+  | "solana-swap"
+  | "tron-stake"
+  | "tron-approve";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
@@ -297,6 +299,47 @@ export type ChainRequestInput =
             readonly lamports: bigint;
           };
       readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "tron-stake";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly action:
+        | {
+            readonly kind: "freeze" | "unfreeze";
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+          }
+        | { readonly kind: "withdraw-expired" }
+        | { readonly kind: "cancel-unfreeze" }
+        | {
+            readonly kind: "delegate";
+            readonly receiver: string;
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+            /** Lock the delegation for this many blocks (1..getMaxDelegateLockPeriod). */
+            readonly lockBlocks?: number;
+          }
+        | {
+            readonly kind: "undelegate";
+            readonly receiver: string;
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+          }
+        | {
+            readonly kind: "vote";
+            readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: bigint }>;
+          }
+        | { readonly kind: "claim-rewards" };
+    }
+  | {
+      readonly method: "tron-approve";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly token: string;
+      readonly spender: string;
+      /** The new allowance in token units; 0 revokes. */
+      readonly amount: bigint;
     };
 
 /** At most this many calls per batch — one approval stays reviewable. */

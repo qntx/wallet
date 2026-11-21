@@ -123,6 +123,8 @@ describe("readers on recorded node bodies", () => {
       netUsed: num(res["NetUsed"]),
       energyLimit: num(res["EnergyLimit"]),
       energyUsed: num(res["EnergyUsed"]),
+      tronPowerLimit: num(res["tronPowerLimit"]),
+      tronPowerUsed: num(res["tronPowerUsed"]),
     });
 
     const entries = new Map(

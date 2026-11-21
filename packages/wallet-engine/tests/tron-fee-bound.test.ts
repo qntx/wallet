@@ -56,6 +56,8 @@ const ZERO: TronResources = {
   netUsed: 0,
   energyLimit: 0,
   energyUsed: 0,
+  tronPowerLimit: 0,
+  tronPowerUsed: 0,
 };
 const KINDS = [
   "trx-existing",

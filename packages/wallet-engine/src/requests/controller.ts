@@ -1364,19 +1364,25 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "evm-lido" ||
       input.method === "solana-stake" ||
       input.method === "solana-swap" ||
-      input.method === "solana-core-send";
+      input.method === "solana-core-send" ||
+      input.method === "tron-stake" ||
+      input.method === "tron-approve";
     const prepared =
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)
         : input.method === "solana-stake"
           ? await this.options.transactions.prepareSolanaStake(input, id)
-          : input.method === "solana-swap"
-            ? await this.options.transactions.prepareSolanaSwap(input, id)
-            : input.method === "solana-core-send"
-              ? await this.options.transactions.prepareSolanaCoreSend(input, id)
-              : internal
-                ? await this.options.transactions.prepareEvmInternal(input, id)
-                : await this.options.transactions.prepareReplacement(input, id);
+          : input.method === "tron-stake"
+            ? await this.options.transactions.prepareTronStake(input, id)
+            : input.method === "tron-approve"
+              ? await this.options.transactions.prepareTronApprove(input, id)
+              : input.method === "solana-swap"
+                ? await this.options.transactions.prepareSolanaSwap(input, id)
+                : input.method === "solana-core-send"
+                  ? await this.options.transactions.prepareSolanaCoreSend(input, id)
+                  : internal
+                    ? await this.options.transactions.prepareEvmInternal(input, id)
+                    : await this.options.transactions.prepareReplacement(input, id);
     const built: Built = {
       account: prepared.account,
       network: prepared.network,

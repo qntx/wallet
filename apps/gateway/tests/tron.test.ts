@@ -326,6 +326,29 @@ describe("tron recorded fixtures", () => {
     ["transactionbyid-bogus", "/wallet/gettransactionbyid", { value: "ab".repeat(32) }],
     ["transactioninfobyid", "/wallet/gettransactioninfobyid", { value: TXID }],
     ["transactioninfobyid-solidity", "/walletsolidity/gettransactioninfobyid", { value: TXID }],
+    [
+      "availableunfreezecount",
+      "/wallet/getavailableunfreezecount",
+      { owner_address: HOLDER, visible: true },
+    ],
+    [
+      "candelegatedmaxsize-bandwidth",
+      "/wallet/getcandelegatedmaxsize",
+      { owner_address: HOLDER, type: 0, visible: true },
+    ],
+    [
+      "candelegatedmaxsize-energy",
+      "/wallet/getcandelegatedmaxsize",
+      { owner_address: HOLDER, type: 1, visible: true },
+    ],
+    [
+      "delegatedresourcev2",
+      "/wallet/getdelegatedresourcev2",
+      { fromAddress: HOLDER, toAddress: UNKNOWN, visible: true },
+    ],
+    ["getreward", "/wallet/getReward", { address: HOLDER, visible: true }],
+    ["listwitnesses", "/wallet/listwitnesses", {}],
+    ["assetissuebyid", "/wallet/getassetissuebyid", { value: 1002000 }],
   ];
 
   it.each(nodeFixtures.filter(([name]) => files.has(`${name}.json`)))(
@@ -366,7 +389,7 @@ describe("tron recorded fixtures", () => {
     for (const [name] of nodeFixtures) {
       expect(files.has(`${name}.json`), `${name}.json missing`).toBe(true);
     }
-    expect(Object.keys(TRON_NODE_PATHS)).toHaveLength(12);
+    expect(Object.keys(TRON_NODE_PATHS)).toHaveLength(18);
     expect(Object.keys(TRON_INDEXER_PATHS)).toHaveLength(3);
   });
 });
