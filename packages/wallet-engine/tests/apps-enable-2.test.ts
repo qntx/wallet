@@ -770,6 +770,65 @@ describe("declined builder", () => {
     await w2.destroy();
   }, 20000);
 
+  /* An opened builder request expires under the pump and still ends "declined" — only counting
+     the requests themselves proves the flow never asked. */
+  const countBuilderAsks = (w: World): (() => number) => {
+    let asks = 0;
+    const prepare = w.requests.prepare.bind(w.requests);
+    w.requests.prepare = async (input) => {
+      const pending = await prepare(input);
+      if (hlKind(w, pending.id) === "approve-builder-fee") {
+        asks++;
+      }
+      return pending;
+    };
+    return () => asks;
+  };
+
+  it("renew after a decline opens no builder request and stays declined", async () => {
+    const w = await world(45, { builder: BUILDER });
+    withMeta(w);
+    const done = declineBuilder(w);
+    await until(() => w.state()?.status === "enabled");
+    await done;
+    expect(w.state()?.builder).toBe("declined");
+    const builderAsks = countBuilderAsks(w);
+
+    const renewing = w.apps.renew(w.group, "hyperliquid");
+    await until(() => w.state()?.requestId !== undefined);
+    // The renew still needs the agent approval — only the builder ask is skipped.
+    expect(hlKind(w, requestId(w))).toBe("approve-agent");
+    await w.approve(requestId(w));
+    await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
+    await renewing;
+    expect(w.state()?.builder).toBe("declined");
+    expect(builderAsks()).toBe(0);
+    await w.destroy();
+  }, 20000);
+
+  it("disable and enable after a decline stays declined without asking", async () => {
+    const w = await world(46, { builder: BUILDER });
+    withMeta(w);
+    const done = declineBuilder(w);
+    await until(() => w.state()?.status === "enabled");
+    await done;
+    expect(w.state()?.builder).toBe("declined");
+
+    await w.apps.disable(w.group, "hyperliquid", { revoke: false });
+    expect(w.state()?.status).toBe("disabled");
+    const builderAsks = countBuilderAsks(w);
+
+    const reenabling = w.apps.enable(w.group, "hyperliquid");
+    await until(() => w.state()?.requestId !== undefined);
+    expect(hlKind(w, requestId(w))).toBe("approve-agent");
+    await w.approve(requestId(w));
+    await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
+    await reenabling;
+    expect(w.state()?.builder).toBe("declined");
+    expect(builderAsks()).toBe(0);
+    await w.destroy();
+  }, 20000);
+
   it("approveBuilder approves later; declining it again stays declined", async () => {
     const w = await world(42, { builder: BUILDER });
     withMeta(w);

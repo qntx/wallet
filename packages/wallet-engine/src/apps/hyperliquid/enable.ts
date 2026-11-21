@@ -234,6 +234,11 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
     if ((await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >= fee) {
       return "approved";
     }
+    /* A decline persists until an approval replaces it: renew and re-enable finish without a
+       builder instead of re-asking; only the explicit approveBuilder flow asks again. */
+    if (flow.wasBuilderDeclined() || flow.current().builder === "declined") {
+      return "declined";
+    }
     flow.write({ step: "approve-builder" });
     const pending = await userSigned.approveBuilderFee(group, {
       builder: builder.address,
