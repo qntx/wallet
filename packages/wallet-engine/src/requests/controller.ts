@@ -117,7 +117,8 @@ export type ZapInput = {
  */
 export type EvmSignInput = {
   readonly method: "evm-sign";
-  readonly origin: BrowserOrigin;
+  /** A page asking for the signature; absent means the wallet itself. */
+  readonly origin?: BrowserOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
@@ -1095,10 +1096,15 @@ export class RequestController extends Controller<RequestControllerState> {
       return this.sparkBuilt(input.account, action);
     }
     if (input.method === "evm-sign") {
+      if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
+        throw new Error("an internal request can only sign typed data");
+      }
       const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
       const isTransaction = input.request.kind === "evm.transaction";
       const signInRisk =
-        "signer" in prepared && prepared.intent.message?.kind === "text"
+        input.origin !== undefined &&
+        "signer" in prepared &&
+        prepared.intent.message?.kind === "text"
           ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "evm")
           : [];
       const blindRisk = this.blindRisk(prepared.intent);
