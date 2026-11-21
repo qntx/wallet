@@ -36,6 +36,7 @@ import type {
   TronMaybeTransaction,
   TronNodePath,
 } from "../gateway/contract/index.ts";
+import { parseTronJson } from "./tron-json.ts";
 
 /** TRON HTTP client: POSTs an allow-listed path to each endpoint in order. */
 export type TronApi = {
@@ -68,8 +69,11 @@ export const tronCaller = (
         }
         let parsed: unknown;
         try {
+          /* `res.json()` would lose int64 precision — java-tron prints int64 as bare numbers and
+             POST requests have no string form (JsonFormat INT64_AS_STRING is GET-only), so the
+             body is parsed losslessly here. A parser failure reads as non-JSON: next endpoint. */
           // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
-          parsed = await res.json();
+          parsed = parseTronJson(await res.text());
         } catch {
           last = new Error(`${path}: non-JSON response from ${url}`);
           continue;
@@ -202,15 +206,15 @@ export const account = async (api: TronApi, address: string): Promise<TronAccoun
 };
 
 export type TronResources = {
-  readonly freeNetLimit: number;
-  readonly freeNetUsed: number;
-  readonly netLimit: number;
-  readonly netUsed: number;
-  readonly energyLimit: number;
-  readonly energyUsed: number;
+  readonly freeNetLimit: number | bigint;
+  readonly freeNetUsed: number | bigint;
+  readonly netLimit: number | bigint;
+  readonly netUsed: number | bigint;
+  readonly energyLimit: number | bigint;
+  readonly energyUsed: number | bigint;
   /** TRX staked for either resource — the vote power bound and the used fraction. */
-  readonly tronPowerLimit: number;
-  readonly tronPowerUsed: number;
+  readonly tronPowerLimit: number | bigint;
+  readonly tronPowerUsed: number | bigint;
 };
 
 /** The account's resource counters; proto3 omits zero fields, so a missing counter is 0. */
@@ -255,7 +259,7 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
   const path = "/wallet/getchainparameters";
   const body = parsed(tronChainParameters, path, await api.post(path, {}));
   // proto3 emits a zero-valued parameter without `value`: key present = 0, key absent = missing.
-  const values = new Map<string, number>();
+  const values = new Map<string, number | bigint>();
   for (const entry of body.chainParameter) {
     values.set(entry.key, entry.value ?? 0);
   }
@@ -264,7 +268,7 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
     if (value === undefined) {
       throw new Error(`${path}: missing ${key}`);
     }
-    return BigInt(Math.trunc(value));
+    return BigInt(value);
   };
   return {
     transactionFee: take("getTransactionFee"),
@@ -290,7 +294,7 @@ export const stakeParams = async (api: TronApi): Promise<TronStakeParams> => {
   const path = "/wallet/getchainparameters";
   const body = parsed(tronChainParameters, path, await api.post(path, {}));
   // proto3 emits a zero-valued parameter without `value`: key present = 0, key absent = missing.
-  const values = new Map<string, number>();
+  const values = new Map<string, number | bigint>();
   for (const entry of body.chainParameter) {
     values.set(entry.key, entry.value ?? 0);
   }
@@ -299,7 +303,7 @@ export const stakeParams = async (api: TronApi): Promise<TronStakeParams> => {
     if (value === undefined) {
       throw new Error(`${path}: missing ${key}`);
     }
-    return BigInt(Math.trunc(value));
+    return BigInt(value);
   };
   return {
     maxDelegateLockPeriod: take("getMaxDelegateLockPeriod"),
@@ -330,7 +334,7 @@ export const canDelegateMaxSize = async (
     path,
     await api.post(path, { owner_address: owner, type: resource, visible: true }),
   );
-  return BigInt(Math.trunc(body.max_size ?? 0));
+  return BigInt(body.max_size ?? 0);
 };
 
 export type TronDelegatedRow = {
@@ -361,11 +365,9 @@ export const delegatedResource = async (
   let lockedUntil = 0;
   for (const row of body.delegatedResource ?? []) {
     const amount = BigInt(
-      Math.trunc(
-        resource === 0
-          ? (row.frozen_balance_for_bandwidth ?? 0)
-          : (row.frozen_balance_for_energy ?? 0),
-      ),
+      resource === 0
+        ? (row.frozen_balance_for_bandwidth ?? 0)
+        : (row.frozen_balance_for_energy ?? 0),
     );
     const expires = Math.trunc(
       resource === 0 ? (row.expire_time_for_bandwidth ?? 0) : (row.expire_time_for_energy ?? 0),
@@ -384,7 +386,7 @@ export const delegatedResource = async (
 export const reward = async (api: TronApi, address: string): Promise<bigint> => {
   const path = "/wallet/getReward";
   const body = parsed(tronRewardResponse, path, await api.post(path, { address, visible: true }));
-  return BigInt(Math.trunc(body.reward ?? 0));
+  return BigInt(body.reward ?? 0);
 };
 
 /** `listwitnesses` — witness addresses normalized to the `T…` form. */
@@ -606,6 +608,9 @@ export const tronFeeLimit = (
   return headroom < maxFeeLimit ? headroom : maxFeeLimit;
 };
 
+/** `max(0, v)` for the bigint resource deltas — `Math.max` cannot mix `number` and `bigint`. */
+const nonnegative = (v: bigint): bigint => (v > 0n ? v : 0n);
+
 export type TronFeeQuote = {
   /** Sun the transaction is expected to burn: bandwidth + activation + expected energy. */
   readonly expected: string;
@@ -614,8 +619,8 @@ export type TronFeeQuote = {
   readonly bandwidth: {
     readonly bytes: number;
     readonly source: "staked" | "free" | "burn" | "activation-staked" | "activation-fee";
-    readonly stakedAvailable: number;
-    readonly freeAvailable: number;
+    readonly stakedAvailable: bigint;
+    readonly freeAvailable: bigint;
     /** Sun the bandwidth is expected to burn. */
     readonly burn: string;
   };
@@ -627,7 +632,7 @@ export type TronFeeQuote = {
     /** The dynamic-energy penalty inside `used`. */
     readonly penalty: number;
     /** Staked energy available to the caller. */
-    readonly available: number;
+    readonly available: bigint;
     /** Sun the caller is expected to burn — the deployer's share only lowers it. */
     readonly burn: string;
     /** Sun the transaction's `fee_limit` is set to. */
@@ -657,8 +662,12 @@ export const tronFeeQuote = (input: {
 }): TronFeeQuote => {
   const bytes = tronBandwidthBytes(input.rawDataLength);
   const { params } = input;
-  const stakedAvailable = Math.max(0, input.resources.netLimit - input.resources.netUsed);
-  const freeAvailable = Math.max(0, input.resources.freeNetLimit - input.resources.freeNetUsed);
+  const stakedAvailable = nonnegative(
+    BigInt(input.resources.netLimit) - BigInt(input.resources.netUsed),
+  );
+  const freeAvailable = nonnegative(
+    BigInt(input.resources.freeNetLimit) - BigInt(input.resources.freeNetUsed),
+  );
 
   let source: TronFeeQuote["bandwidth"]["source"];
   let bandwidthBurn = 0n;
@@ -672,10 +681,7 @@ export const tronFeeQuote = (input: {
         "the transaction is too large to activate the recipient",
       );
     }
-    if (
-      BigInt(Math.trunc(stakedAvailable)) >=
-      BigInt(bytes) * params.createNewAccountBandwidthRate
-    ) {
+    if (stakedAvailable >= BigInt(bytes) * params.createNewAccountBandwidthRate) {
       source = "activation-staked";
     } else {
       source = "activation-fee";
@@ -683,10 +689,10 @@ export const tronFeeQuote = (input: {
     }
     bandwidthMax = params.createAccountFee;
     activation = params.createNewAccountFeeInSystemContract;
-  } else if (stakedAvailable >= bytes) {
+  } else if (stakedAvailable >= BigInt(bytes)) {
     source = "staked";
     bandwidthMax = BigInt(bytes) * params.transactionFee;
-  } else if (freeAvailable >= bytes) {
+  } else if (freeAvailable >= BigInt(bytes)) {
     source = "free";
     bandwidthMax = BigInt(bytes) * params.transactionFee;
   } else {
@@ -700,9 +706,10 @@ export const tronFeeQuote = (input: {
   let energyMax = 0n;
   if (input.energy !== undefined) {
     const feeLimit = tronFeeLimit(input.energy.used, params.energyFee, params.maxFeeLimit);
-    const available = Math.max(0, input.resources.energyLimit - input.resources.energyUsed);
-    energyExpected =
-      BigInt(Math.trunc(Math.max(0, input.energy.used - available))) * params.energyFee;
+    const available = nonnegative(
+      BigInt(input.resources.energyLimit) - BigInt(input.resources.energyUsed),
+    );
+    energyExpected = nonnegative(BigInt(input.energy.used) - available) * params.energyFee;
     energyMax = feeLimit;
     energy = {
       used: input.energy.used,

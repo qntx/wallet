@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { isTronAddress, tronAddressFromHex } from "@qntx/wallet-chains/tron";
 
+import { parseTronJson } from "../src/chains/tron-json.ts";
 import {
   account,
   blockId,
@@ -36,7 +37,8 @@ const DIRS = [
 type Body = Record<string, unknown>;
 
 const fixture = (dir: string, name: string): Body =>
-  (JSON.parse(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as { body: Body }).body;
+  (parseTronJson(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as { body: Body })
+    .body;
 
 const PATHS: Readonly<Record<string, string>> = {
   "/walletsolidity/getnowblock": "nowblock-solidity",

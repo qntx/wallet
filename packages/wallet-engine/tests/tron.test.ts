@@ -281,17 +281,16 @@ describe("tron readers", () => {
     });
   });
 
-  it("chainParams truncates a fractional node value rather than throwing", async () => {
+  it("chainParams rejects a fractional node value", async () => {
     const body = {
       chainParameter: [
         { key: "getTransactionFee", value: 1000.9 },
         ...CHAIN_PARAMETER_BODY.chainParameter.filter((e) => e.key !== "getTransactionFee"),
       ],
     };
-    await expect(chainParams(api({ "/wallet/getchainparameters": body }))).resolves.toStrictEqual({
-      ...PARAMS,
-      transactionFee: 1000n,
-    });
+    await expect(chainParams(api({ "/wallet/getchainparameters": body }))).rejects.toThrow(
+      "malformed /wallet/getchainparameters response",
+    );
   });
 
   it("constantCall returns the success shape with energy and constant_result bytes", async () => {
@@ -526,8 +525,8 @@ describe("tronFeeQuote", () => {
     expect(quote.bandwidth).toStrictEqual({
       bytes: 334,
       source: "staked",
-      stakedAvailable: 400,
-      freeAvailable: 600,
+      stakedAvailable: 400n,
+      freeAvailable: 600n,
       burn: "0",
     });
     expect(quote.expected).toBe("0");
@@ -613,7 +612,7 @@ describe("tronFeeQuote", () => {
     expect(covered.energy).toStrictEqual({
       used: 64285,
       penalty: 49635,
-      available: 70000,
+      available: 70000n,
       burn: "0",
       feeLimit: "9642750",
     });

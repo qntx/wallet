@@ -16,6 +16,7 @@ import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { AssetsController } from "../src/assets/controller.ts";
 import type { AccountBalances } from "../src/assets/controller.ts";
+import { parseTronJson } from "../src/chains/tron-json.ts";
 import type { TronApi } from "../src/chains/tron.ts";
 import { nativeAssetId, tokenAssetId } from "../src/gateway/contract/index.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -29,8 +30,11 @@ const OWNER = "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb";
 // Recorded by apps/gateway/scripts/record-tron.ts — real node bodies, shared with the route tests.
 const FIXTURES = resolve(import.meta.dirname, "../../../apps/gateway/tests/fixtures/tron");
 const fixture = (dir: string, name: string): unknown =>
-  (JSON.parse(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as { body: unknown })
-    .body;
+  (
+    parseTronJson(readFileSync(resolve(FIXTURES, dir, `${name}.json`), "utf8")) as {
+      body: unknown;
+    }
+  ).body;
 const MAINNET = "mainnet-trongrid";
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
@@ -200,9 +204,9 @@ describe("AssetsController tron balances", () => {
       delegatedIn: { bandwidth: "0", energy: "2000000" },
       votes: [],
       reward: "0",
-      bandwidth: { free: { limit: 600, used: 0 }, staked: { limit: 0, used: 0 } },
-      energy: { limit: 19, used: 0 },
-      tronPower: { limit: 0, used: 0 },
+      bandwidth: { free: { limit: "600", used: "0" }, staked: { limit: "0", used: "0" } },
+      energy: { limit: "19", used: "0" },
+      tronPower: { limit: "0", used: "0" },
     });
     expect(token(balances, USDT)).toStrictEqual({
       address: USDT,
@@ -497,9 +501,9 @@ describe("AssetsController tron balances", () => {
       delegatedIn: { bandwidth: "8000000", energy: "11000000" },
       votes: [{ witness: "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs", count: "7" }],
       reward: "42000000",
-      bandwidth: { free: { limit: 600, used: 12 }, staked: { limit: 5000, used: 400 } },
-      energy: { limit: 30_000, used: 600 },
-      tronPower: { limit: 5, used: 2 },
+      bandwidth: { free: { limit: "600", used: "12" }, staked: { limit: "5000", used: "400" } },
+      energy: { limit: "30000", used: "600" },
+      tronPower: { limit: "5", used: "2" },
     });
   });
 });

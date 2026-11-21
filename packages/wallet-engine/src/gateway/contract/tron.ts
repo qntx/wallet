@@ -79,10 +79,17 @@ export type TronMaybeBlock = z.output<typeof tronMaybeBlockResponse>;
 
 const intField = z.number().check(z.int(), z.nonnegative());
 /**
- * Account-side int64 amounts (sun balances, TRC-10 totals) can exceed 2^53 — JSON carries them
- * imprecisely, but refusing a whale account's body would break every read that touches it.
+ * Account-side int64 amounts (sun balances, TRC-10 totals) can exceed 2^53. `parseTronJson` emits a
+ * `bigint` for out-of-range integer literals and a safe `number` otherwise — both are exact.
  */
-const amountField = z.number().check(z.nonnegative());
+const amountField = z.union([
+  z.number().check(
+    z.int(),
+    z.nonnegative(),
+    z.refine((v) => Number.isSafeInteger(v)),
+  ),
+  z.bigint().check(z.nonnegative()),
+]);
 
 /** `assetV2` rows carry the account's TRC-10 balances: `{key: "<asset id>", value: <amount>}`. */
 const trc10Balance = z.looseObject({ key: z.string(), value: amountField });
@@ -148,7 +155,20 @@ export type TronAccountResource = z.output<typeof tronAccountResource>;
 
 export const tronChainParameters = z.looseObject({
   // Signed int64 — sentinel parameters carry -1 (e.g. getRemoveThePowerOfTheGr).
-  chainParameter: z.array(z.looseObject({ key: z.string(), value: z.optional(z.number()) })),
+  chainParameter: z.array(
+    z.looseObject({
+      key: z.string(),
+      value: z.optional(
+        z.union([
+          z.number().check(
+            z.int(),
+            z.refine((v) => Number.isSafeInteger(v)),
+          ),
+          z.bigint(),
+        ]),
+      ),
+    }),
+  ),
 });
 export type TronChainParameters = z.output<typeof tronChainParameters>;
 

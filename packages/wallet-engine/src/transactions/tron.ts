@@ -162,7 +162,7 @@ const classify = (token: string | undefined): TokenKind => {
 
 /** The account's TRC-10 balance for `assetId` in base units. */
 const trc10Balance = (row: TronAccount | undefined, assetId: string): bigint =>
-  BigInt(Math.trunc(row?.assetV2?.find((e) => e.key === assetId)?.value ?? 0));
+  BigInt(row?.assetV2?.find((e) => e.key === assetId)?.value ?? 0);
 
 /** `balanceOf(address)` on `token`, as a bigint. */
 const tokenBalance = async (api: TronApi, token: string, holder: string): Promise<bigint> => {
@@ -382,7 +382,7 @@ export const prepareTron = async (
     head,
     params: params0,
     resources: res,
-    balance: BigInt(Math.trunc(fromRow.balance ?? 0)),
+    balance: BigInt(fromRow.balance ?? 0),
     outflow: token.kind === "trx" ? amount : 0n,
     ...(estimate === undefined ? {} : { estimate }),
     ...(activates ? { activates: true } : {}),
@@ -578,7 +578,7 @@ const frozenFor = (row: TronAccount, resource: 0 | 1): bigint => {
   let total = 0n;
   for (const f of row.frozenV2 ?? []) {
     if (frozenResource(f.type) === resource) {
-      total += BigInt(Math.trunc(f.amount ?? 0));
+      total += BigInt(f.amount ?? 0);
     }
   }
   return total;
@@ -624,7 +624,7 @@ export const prepareTronStake = async (
     throw new ChainError("invalid-request", "the sender account is not activated");
   }
   const res = await resources(api, from);
-  const balance = BigInt(Math.trunc(fromRow.balance ?? 0));
+  const balance = BigInt(fromRow.balance ?? 0);
   const now = ctx.options.now();
 
   let contract: TronContract;
@@ -954,7 +954,7 @@ export const prepareTronApprove = async (
     head,
     params: params0,
     resources: res,
-    balance: BigInt(Math.trunc(fromRow.balance ?? 0)),
+    balance: BigInt(fromRow.balance ?? 0),
     outflow: 0n,
     estimate,
     flags,

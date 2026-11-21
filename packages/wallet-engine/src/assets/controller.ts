@@ -296,7 +296,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     }
     const [res, rew] = await Promise.all([resources(api, owner), reward(api, owner)]);
     const tron = tronAccountView(row, res, rew);
-    const native = BigInt(Math.trunc(row.balance ?? 0)).toString(10);
+    const native = BigInt(row.balance ?? 0).toString(10);
 
     const table = tronTokenTable[network] ?? {};
     const list = await this.lists.entries(network);
