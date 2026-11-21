@@ -100,7 +100,7 @@ void HybridKernelHost::startRuntime(
   std::weak_ptr<HybridKernelHost> weak =
       std::dynamic_pointer_cast<HybridKernelHost>(shared_from_this());
   qntx::KernelRuntime::Hooks hooks;
-  hooks.beforeEvaluate = [predecessor](facebook::jsi::Runtime&) {
+  hooks.beforeEvaluate = [predecessor](facebook::jsi::Runtime&) mutable {
     // The predecessor's runtime may still be tearing down: wait on this kernel
     // thread — never the JS thread — so the first file read follows its last
     // write. The wait has no deadline: a predecessor is itself held here until
@@ -110,6 +110,10 @@ void HybridKernelHost::startRuntime(
     if (predecessor != nullptr) {
       while (!predecessor->waitUntilStopped(std::chrono::seconds(1))) {
       }
+      // Once waited out, the capture is the predecessor's last reason to stay
+      // alive — held for the life of this runtime, it chains every runtime
+      // ever started.
+      predecessor.reset();
     }
   };
   hooks.onPost = [weak](qntx::SecretBytes bytes) {
