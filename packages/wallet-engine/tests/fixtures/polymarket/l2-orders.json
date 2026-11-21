@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://clob.polymarket.com/data/orders"
+  },
+  "fetchedAt": 0,
+  "source": "evidence/specs/clob-openapi.yaml:815-846 (getOrders 200 example; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "limit": 100,
+    "next_cursor": "MTAw",
+    "count": 2,
+    "data": [
+      {
+        "id": "0xabcdef1234567890abcdef1234567890abcdef12",
+        "status": "LIVE",
+        "owner": "f4f247b7-4ac7-ff29-a152-04fda0a8755a",
+        "maker_address": "0x1234567890123456789012345678901234567890",
+        "market": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "asset_id": "0xabc123def456",
+        "side": "BUY",
+        "original_size": "100",
+        "size_matched": "0",
+        "price": "0.5",
+        "outcome": "YES",
+        "expiration": "1735689600",
+        "order_type": "GTC",
+        "created_at": 1700000000
+      },
+      {
+        "id": "0xfedcba0987654321fedcba0987654321fedcba09",
+        "status": "LIVE",
+        "owner": "f4f247b7-4ac7-ff29-a152-04fda0a8755a",
+        "maker_address": "0x1234567890123456789012345678901234567890",
+        "market": "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "asset_id": "0xdef456abc789",
+        "side": "SELL",
+        "original_size": "200",
+        "size_matched": "50",
+        "price": "0.75",
+        "outcome": "NO",
+        "expiration": "1735689600",
+        "order_type": "GTC",
+        "created_at": 1700000001
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=3"
+  },
+  "fetchedAt": 0,
+  "source": "evidence/specs/clob-openapi.yaml:2810-2814 (getBalanceAllowance 200 example; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "balance": "1000000000000000000",
+    "allowances": {
+      "0x1234567890123456789012345678901234567890": "500000000000000000",
+      "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd": "1000000000000000000"
+    }
+  }
+}

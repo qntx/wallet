@@ -41,6 +41,7 @@ import { NostrKeyRef } from '@qntx/wallet';
 import { OpenOrdersEvent } from '@nktkas/hyperliquid/api/subscription';
 import { OrderStatusParameters } from '@nktkas/hyperliquid/api/info';
 import { OrderStatusResponse } from '@nktkas/hyperliquid/api/info';
+import { PolymarketCredentialsInfo } from '@qntx/wallet/polymarket';
 import { PortfolioResponse } from '@nktkas/hyperliquid/api/info';
 import { PredictedFundingsResponse } from '@nktkas/hyperliquid/api/info';
 import { PublicClient } from 'viem';
@@ -1357,6 +1358,83 @@ type PhishingState = {
 type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
 
 // @public (undocumented)
+export type PolymarketAccount = {
+    readonly signer: `0x${string}`;
+    readonly wallet: `0x${string}`;
+    readonly kind: "deposit-wallet" | "safe";
+    readonly deployed: boolean;
+    readonly legacySafe?: `0x${string}`;
+};
+
+// @public (undocumented)
+export type PolymarketAccountReads = {
+    readonly locate: (group: AppGroup) => Promise<PolymarketAccount>;
+    readonly credentials: (group: AppGroup) => Promise<PolymarketCredentialsInfo | undefined>;
+    readonly positions: (wallet: `0x${string}`, params?: PolymarketPositionsParams) => Promise<PolymarketPage<PolymarketPosition>>;
+    readonly value: (wallet: `0x${string}`) => Promise<string>;
+    readonly activity: (wallet: `0x${string}`, params?: PolymarketActivityParams) => Promise<PolymarketPage<PolymarketActivity>>;
+    readonly pnl: (wallet: `0x${string}`, params?: PolymarketPnlParams) => Promise<PolymarketPnl>;
+    readonly approvals: (wallet: `0x${string}`) => Promise<PolymarketApprovals>;
+    readonly openOrders: (group: AppGroup, params?: PolymarketOpenOrdersParams) => Promise<PolymarketPage<PolymarketOrder>>;
+    readonly order: (group: AppGroup, orderId: string) => Promise<PolymarketOrder | undefined>;
+    readonly trades: (group: AppGroup, params?: PolymarketTradesParams) => Promise<PolymarketPage<PolymarketTrade>>;
+    readonly balance: (group: AppGroup) => Promise<PolymarketBalance>;
+    readonly refreshAllowance: (group: AppGroup, params: {
+        readonly assetType: "COLLATERAL" | "CONDITIONAL";
+        readonly tokenId?: string;
+    }) => Promise<PolymarketBalance>;
+    readonly closedOnly: (group: AppGroup) => Promise<boolean>;
+};
+
+// @public (undocumented)
+export type PolymarketActivity = {
+    readonly type: string;
+    readonly timestamp: number;
+    readonly conditionId: string;
+    readonly assetId: string;
+    readonly side?: string;
+    readonly size?: string;
+    readonly usdcSize?: string;
+    readonly price?: string;
+    readonly transactionHash: string;
+    readonly outcome?: string;
+    readonly outcomeIndex?: number;
+};
+
+// @public (undocumented)
+export type PolymarketActivityParams = {
+    readonly cursor?: string;
+    readonly limit?: number;
+    readonly start?: number;
+    readonly end?: number;
+    readonly sortDirection?: "ASC" | "DESC";
+};
+
+// @public (undocumented)
+export type PolymarketApproval = {
+    readonly id: string;
+    readonly feature: string;
+    readonly token: `0x${string}`;
+    readonly spender: `0x${string}`;
+    readonly amount?: string;
+    readonly standard: string;
+    readonly approved: boolean;
+};
+
+// @public (undocumented)
+export type PolymarketApprovals = {
+    readonly address: `0x${string}`;
+    readonly checkedAt: string;
+    readonly contracts: ReadonlyArray<PolymarketApproval>;
+};
+
+// @public (undocumented)
+export type PolymarketBalance = {
+    readonly balance: string;
+    readonly allowances: Readonly<Record<string, string>>;
+};
+
+// @public (undocumented)
 export type PolymarketBook = {
     readonly assetId: string;
     readonly conditionId: string;
@@ -1417,9 +1495,15 @@ export type PolymarketClobMarket = {
 
 // @public (undocumented)
 export class PolymarketError extends Error {
-    constructor(category: PolymarketErrorCategory, message: string, cause?: unknown);
+    constructor(category: PolymarketErrorCategory, message: string, options?: {
+        readonly cause?: unknown;
+        readonly status?: number;
+        readonly body?: Readonly<Record<string, unknown>>;
+    });
+    readonly body?: Readonly<Record<string, unknown>>;
     // (undocumented)
     readonly category: PolymarketErrorCategory;
+    readonly status?: number;
 }
 
 // @public
@@ -1525,6 +1609,89 @@ export type PolymarketMarkets = {
 };
 
 // @public (undocumented)
+export type PolymarketOpenOrdersParams = {
+    readonly market?: string;
+    readonly assetId?: string;
+    readonly cursor?: string;
+};
+
+// @public (undocumented)
+export type PolymarketOrder = {
+    readonly id: string;
+    readonly status: string;
+    readonly conditionId: string;
+    readonly assetId: string;
+    readonly side: string;
+    readonly price: string;
+    readonly originalSize: string;
+    readonly sizeMatched: string;
+    readonly outcome?: string;
+    readonly orderType: string;
+    readonly expiration: string;
+    readonly createdAt: number;
+    readonly makerAddress: string;
+};
+
+// @public (undocumented)
+export type PolymarketPage<T> = {
+    readonly items: ReadonlyArray<T>;
+    readonly nextCursor?: string;
+};
+
+// @public (undocumented)
+export type PolymarketPnl = {
+    readonly wallet: string;
+    readonly interval: string;
+    readonly fidelity: string;
+    readonly points: ReadonlyArray<PolymarketPnlPoint>;
+};
+
+// @public (undocumented)
+export type PolymarketPnlParams = {
+    readonly interval?: "max" | "all" | "1m" | "1w" | "1d" | "12h" | "6h";
+    readonly fidelity?: "1d" | "18h" | "12h" | "3h" | "1h";
+};
+
+// @public (undocumented)
+export type PolymarketPnlPoint = {
+    readonly timestamp: number;
+    readonly realizedPnl: string;
+    readonly positionPnl?: string;
+    readonly economicPnl?: string;
+    readonly volume?: string;
+    readonly tradeCount?: number;
+};
+
+// @public (undocumented)
+export type PolymarketPosition = {
+    readonly assetId: string;
+    readonly conditionId: string;
+    readonly size: string;
+    readonly avgPrice?: string;
+    readonly price?: string;
+    readonly value?: string;
+    readonly entryCost?: string;
+    readonly realizedPnl?: string;
+    readonly unrealizedPnl?: string;
+    readonly totalPnl?: string;
+    readonly status: string;
+    readonly redeemable: boolean;
+    readonly mergeable: boolean;
+    readonly negRisk: boolean;
+    readonly title?: string;
+    readonly slug?: string;
+    readonly outcome?: string;
+    readonly outcomeIndex?: number;
+    readonly endDate?: string;
+};
+
+// @public (undocumented)
+export type PolymarketPositionsParams = {
+    readonly cursor?: string;
+    readonly limit?: number;
+};
+
+// @public (undocumented)
 export type PolymarketPricePoint = {
     readonly t: number;
     readonly p: string;
@@ -1533,6 +1700,7 @@ export type PolymarketPricePoint = {
 // @public (undocumented)
 export type PolymarketProvider = {
     readonly markets: PolymarketMarkets;
+    readonly account: PolymarketAccountReads;
     readonly builder?: PolymarketBuilder;
 };
 
@@ -1555,6 +1723,49 @@ export type PolymarketResolution = {
 type PolymarketServerTime = {
     readonly serverSeconds: number;
     readonly skewMs: number;
+};
+
+// @public (undocumented)
+export type PolymarketTrade = {
+    readonly id: string;
+    readonly takerOrderId: string;
+    readonly conditionId: string;
+    readonly assetId: string;
+    readonly side: string;
+    readonly size: string;
+    readonly price: string;
+    readonly status: string;
+    readonly matchTime: string;
+    readonly outcome?: string;
+    readonly transactionHash?: string;
+    readonly traderSide: string;
+    readonly makerOrders: ReadonlyArray<{
+        readonly orderId: string;
+        readonly matchedAmount: string;
+        readonly price: string;
+    }>;
+};
+
+// @public (undocumented)
+export type PolymarketTradesParams = {
+    readonly market?: string;
+    readonly assetId?: string;
+    readonly before?: number;
+    readonly after?: number;
+    readonly cursor?: string;
+};
+
+// @public (undocumented)
+export type PolymarketWalletCandidates = {
+    readonly beacon: `0x${string}`;
+    readonly uups: `0x${string}`;
+    readonly safe: `0x${string}`;
+};
+
+// @public (undocumented)
+export type PolymarketWallets = {
+    readonly derive: (signer: `0x${string}`) => PolymarketWalletCandidates;
+    readonly locate: (signer: `0x${string}`) => Promise<PolymarketAccount>;
 };
 
 export { PortfolioResponse }

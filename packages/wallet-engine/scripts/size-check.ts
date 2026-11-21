@@ -54,10 +54,15 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Polymarket market reads join the Hyperliquid stack: measured 30772 B at the layer-2
-       landing (was 25640 B). */
-    budget: 32 * 1024,
-    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    /* Polymarket market reads joined at layer 2 (30772 B); the layer-3 account lane — CREATE2
+       derivation, L2 client, account reads — measured 41732 B. */
+    budget: 44 * 1024,
+    external: [
+      "@qntx/wallet",
+      "@qntx/wallet/chains",
+      "@qntx/wallet/hyperliquid",
+      "@qntx/wallet/polymarket",
+    ],
     forbidden: [],
   },
 ];

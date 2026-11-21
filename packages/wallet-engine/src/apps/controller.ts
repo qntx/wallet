@@ -593,6 +593,7 @@ export function createApps(options: CreateAppsOptions): {
       fetch: options.fetch,
       setTimer: options.setTimer,
       now: options.now,
+      wallet: options.wallet,
       ...(builder === undefined ? {} : { builder }),
     });
   }

@@ -10,6 +10,8 @@ import * as z from "zod/mini";
  * checked against real wire data. Error mapping and hostile-response fuzzing go through the same
  * seam.
  */
+import type { Wallet } from "@qntx/wallet";
+
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import { createPolymarketHttp } from "../src/apps/polymarket/http.ts";
 import { createPolymarketMarkets } from "../src/apps/polymarket/markets.ts";
@@ -84,11 +86,15 @@ const fixtureFetch =
     return Response.json(found.response, { status: 200 });
   };
 
+/* Market reads never resolve the wallet — the provider defers it to the first account call. */
+const NO_WALLET = {} as Wallet;
+
 const provider = () =>
   createPolymarketProvider({
     fetch: fixtureFetch(FIXTURES),
     setTimer: () => () => undefined,
     now: () => 1_800_000_000_000,
+    wallet: NO_WALLET,
   }).markets;
 
 describe("polymarket market reads", () => {
@@ -249,6 +255,36 @@ describe("polymarket http error mapping", () => {
   it("maps a non-2xx without a JSON error to unavailable", async () => {
     const markets = respond(answer(new Response("oops", { status: 503 })));
     await expect(markets.midpoint("1")).rejects.toMatchObject({ category: "unavailable" });
+  });
+
+  it("unavailable carries the status and the parsed object error body", async () => {
+    const markets = respond(
+      answer(Response.json({ error: "not found", extra: 7 }, { status: 404 })),
+    );
+    let caught: unknown;
+    try {
+      await markets.midpoint("1");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      category: "unavailable",
+      status: 404,
+      body: { error: "not found", extra: 7 },
+    });
+  });
+
+  it("other categories carry no status or body", async () => {
+    const markets = respond(answer(new Response("<html>", { status: 200 })));
+    let caught: unknown;
+    try {
+      await markets.midpoint("1");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ category: "malformed" });
+    /* The fields exist on the class — `unavailable` is the only category that sets them. */
+    expect(caught).toMatchObject({ status: undefined, body: undefined });
   });
 
   it("maps a non-JSON body to malformed", async () => {

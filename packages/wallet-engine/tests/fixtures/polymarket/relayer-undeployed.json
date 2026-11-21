@@ -1,0 +1,1 @@
+{"request":{"method":"GET","url":"https://relayer-v2.polymarket.com/deployed?address=0x000000000000000000000000000000000000dEaD&type=WALLET"},"fetchedAt":1795270109790,"response":{"deployed":false}}

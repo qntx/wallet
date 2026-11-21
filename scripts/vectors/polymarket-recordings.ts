@@ -325,3 +325,116 @@ await save(
   get(`${DATA}/v2/resolutions?condition=${closedPick.conditionId}`),
   fetchedAt,
 );
+
+/* ---------------------------------------------------- account + relayer --- */
+
+/* One active account wallet, picked deterministically from the newest trades page: the first
+   `proxy_wallet` holding ≥ 1 position anchors the fixtures; the scan (bounded at 40 candidates)
+   prefers one carrying a redeemable/mergeable row and reports which it found. */
+const RELAYER = "https://relayer-v2.polymarket.com";
+
+const tradesPage = await get(`${DATA}/v2/trades?limit=500`);
+if (!isRecord(tradesPage) || !Array.isArray(tradesPage["data"])) {
+  throw new TypeError("data /v2/trades answered without a data array");
+}
+const accountCandidates: string[] = [];
+for (const row of tradesPage["data"]) {
+  if (
+    isRecord(row) &&
+    typeof row["proxy_wallet"] === "string" &&
+    !accountCandidates.includes(row["proxy_wallet"])
+  ) {
+    accountCandidates.push(row["proxy_wallet"]);
+  }
+}
+
+const positionsOf = async (wallet: string): Promise<ReadonlyArray<RawMarket>> => {
+  const page = await get(`${DATA}/v2/positions?user=${wallet}&limit=50`);
+  if (!isRecord(page) || !Array.isArray(page["data"])) {
+    return [];
+  }
+  return page["data"].filter(isRecord);
+};
+
+const hasFlag = (rows: ReadonlyArray<RawMarket>): boolean =>
+  rows.some((row) => row["redeemable"] === true || row["mergeable"] === true);
+
+let accountWallet: string | undefined;
+let accountFlagged = false;
+for (const candidate of accountCandidates.slice(0, 40)) {
+  // oxlint-disable-next-line eslint/no-await-in-loop -- candidates are probed one at a time
+  const rows = await positionsOf(candidate);
+  if (rows.length === 0) {
+    continue;
+  }
+  const flagged = hasFlag(rows);
+  if (accountWallet === undefined) {
+    accountWallet = candidate;
+    accountFlagged = flagged;
+  }
+  if (flagged) {
+    accountWallet = candidate;
+    accountFlagged = true;
+    break;
+  }
+}
+if (accountWallet === undefined) {
+  throw new Error("no recent-trades wallet holds a position");
+}
+console.log(
+  `account wallet: ${accountWallet} (${accountFlagged ? "carries" : "no"} redeemable/mergeable row)`,
+);
+writeFileSync(
+  resolve(OUT, "_account.json"),
+  `${JSON.stringify({ wallet: accountWallet, flagged: accountFlagged }, undefined, 2)}\n`,
+);
+
+await save(
+  "account-positions",
+  `${DATA}/v2/positions?user=${accountWallet}&limit=50`,
+  get(`${DATA}/v2/positions?user=${accountWallet}&limit=50`),
+  fetchedAt,
+);
+await save(
+  "account-value",
+  `${DATA}/v2/value?user=${accountWallet}`,
+  get(`${DATA}/v2/value?user=${accountWallet}`),
+  fetchedAt,
+);
+await save(
+  "account-activity",
+  `${DATA}/v2/activity?user=${accountWallet}&limit=50`,
+  get(`${DATA}/v2/activity?user=${accountWallet}&limit=50`),
+  fetchedAt,
+);
+await save(
+  "account-pnl",
+  `${DATA}/v2/user-pnl?user=${accountWallet}`,
+  get(`${DATA}/v2/user-pnl?user=${accountWallet}`),
+  fetchedAt,
+);
+await save(
+  "account-approvals",
+  `${DATA}/v2/approvals?user=${accountWallet}`,
+  get(`${DATA}/v2/approvals?user=${accountWallet}`),
+  fetchedAt,
+);
+
+/* The picked wallet is necessarily deployed; a vanity burn address never is. */
+await save(
+  "relayer-deployed",
+  `${RELAYER}/deployed?${new URLSearchParams({ address: accountWallet, type: "WALLET" }).toString()}`,
+  get(
+    `${RELAYER}/deployed?${new URLSearchParams({ address: accountWallet, type: "WALLET" }).toString()}`,
+  ),
+  fetchedAt,
+);
+const EMPTY_ADDRESS = "0x000000000000000000000000000000000000dEaD";
+await save(
+  "relayer-undeployed",
+  `${RELAYER}/deployed?${new URLSearchParams({ address: EMPTY_ADDRESS, type: "WALLET" }).toString()}`,
+  get(
+    `${RELAYER}/deployed?${new URLSearchParams({ address: EMPTY_ADDRESS, type: "WALLET" }).toString()}`,
+  ),
+  fetchedAt,
+);

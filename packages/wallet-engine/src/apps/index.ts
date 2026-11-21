@@ -97,3 +97,23 @@ export type {
   PolymarketPricePoint,
   PolymarketResolution,
 } from "./polymarket/markets.ts";
+export type {
+  PolymarketAccount,
+  PolymarketAccountReads,
+  PolymarketActivity,
+  PolymarketActivityParams,
+  PolymarketApproval,
+  PolymarketApprovals,
+  PolymarketBalance,
+  PolymarketOpenOrdersParams,
+  PolymarketOrder,
+  PolymarketPage,
+  PolymarketPnl,
+  PolymarketPnlParams,
+  PolymarketPnlPoint,
+  PolymarketPosition,
+  PolymarketPositionsParams,
+  PolymarketTrade,
+  PolymarketTradesParams,
+} from "./polymarket/account.ts";
+export type { PolymarketWalletCandidates, PolymarketWallets } from "./polymarket/wallets.ts";
