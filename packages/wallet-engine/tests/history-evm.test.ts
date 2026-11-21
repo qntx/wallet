@@ -48,13 +48,20 @@ const stream = (options: {
   pages?: ReadonlyArray<unknown>;
   client: unknown;
   independent?: unknown;
+  /** When set, every gateway request answers this status with the `error` body. */
+  status?: number;
+  error?: unknown;
   requests?: Array<Record<string, unknown>>;
   onTruncated?: () => void;
+  onUnsupported?: () => void;
 }) => {
   const requests = options.requests ?? [];
   const queue = [...(options.pages ?? [options.page])];
   const fetch = (async (_input: unknown, init?: { body?: string }) => {
     requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (options.status !== undefined) {
+      return Promise.resolve(Response.json(options.error ?? {}, { status: options.status }));
+    }
     return Promise.resolve(Response.json(queue.shift()));
   }) as typeof globalThis.fetch;
   const s = evmHistoryStream(
@@ -70,6 +77,7 @@ const stream = (options: {
     OWNER,
     new Map(),
     options.onTruncated ?? (() => {}),
+    options.onUnsupported ?? (() => {}),
   );
   return { stream: s, requests };
 };
@@ -338,6 +346,47 @@ describe("evmHistoryStream verification", () => {
     expect(requests[1]).toStrictEqual({ address: OWNER, cursor: "99", limit: 25 });
     expect(second.done).toBe(true);
     expect(truncated).toBe(2);
+  });
+});
+
+describe("evm history gateway coverage", () => {
+  it("a 404 'unsupported' ends the stream empty and fires onUnsupported", async () => {
+    const unsupported: string[] = [];
+    const { stream: s, requests } = stream({
+      network: "eip155:1",
+      status: 404,
+      error: { error: "unsupported" },
+      client: rpcClient("eip155:1", []),
+      onUnsupported: () => unsupported.push("eip155:1"),
+    });
+    await expect(s.next()).resolves.toStrictEqual({ items: [], done: true });
+    await expect(s.next()).resolves.toStrictEqual({ items: [], done: true });
+    expect(unsupported).toStrictEqual(["eip155:1"]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it.each([
+    ["unknown-network", { error: "unknown-network" }],
+    ["not-found", { error: "not-found" }],
+    ["a plain 404", { nope: true }],
+  ])("a 404 %s still throws like any non-2xx", async (_name, error) => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      status: 404,
+      error,
+      client: rpcClient("eip155:1", []),
+    });
+    await expect(s.next()).rejects.toThrow("status 404");
+  });
+
+  it("a 503 still throws like any non-2xx", async () => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      status: 503,
+      error: { error: "unavailable" },
+      client: rpcClient("eip155:1", []),
+    });
+    await expect(s.next()).rejects.toThrow("status 503");
   });
 });
 

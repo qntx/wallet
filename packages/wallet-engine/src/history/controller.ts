@@ -37,6 +37,8 @@ export type GroupHistory = {
   readonly errors: Readonly<Record<string, string>>;
   /** Networks whose provider omitted entries it could not page — the list has gaps there. */
   readonly truncated: ReadonlyArray<string>;
+  /** Networks the gateway has no history for — the entry list is complete for the others. */
+  readonly unsupported: ReadonlyArray<string>;
 };
 
 export type HistoryState = {
@@ -158,6 +160,8 @@ type GroupRuntime = {
   errors: Record<string, string>;
   /** Networks that reported a truncated page during this load. */
   truncated: Set<string>;
+  /** Networks the gateway answered `unsupported` during this load. */
+  unsupported: Set<string>;
 };
 
 const newRuntime = (group: HistoryGroup): GroupRuntime => ({
@@ -169,6 +173,7 @@ const newRuntime = (group: HistoryGroup): GroupRuntime => ({
   own: { bitcoin: new Set() },
   errors: {},
   truncated: new Set(),
+  unsupported: new Set(),
 });
 
 /**
@@ -261,6 +266,7 @@ export class HistoryController extends Controller<HistoryState> {
         stale: patch.stale ?? current?.stale ?? false,
         errors: patch.errors ?? current?.errors ?? {},
         truncated: patch.truncated ?? current?.truncated ?? [],
+        unsupported: patch.unsupported ?? current?.unsupported ?? [],
       };
       return { ...state, groups: { ...state.groups, [key]: next } };
     });
@@ -406,6 +412,9 @@ export class HistoryController extends Controller<HistoryState> {
             () => {
               runtime.truncated.add(network);
             },
+            () => {
+              runtime.unsupported.add(network);
+            },
           ),
         );
       }
@@ -500,6 +509,7 @@ export class HistoryController extends Controller<HistoryState> {
       const persisted = new Map(runtime.emitted.map((entry) => [entry.id, entry]));
       runtime.errors = {};
       runtime.truncated.clear();
+      runtime.unsupported.clear();
       runtime.merge = new OrderedMerge(
         this.streams(group, runtime.own, persisted, runtime),
         (entry) => entry.timestamp ?? Number.MAX_SAFE_INTEGER,
@@ -525,6 +535,7 @@ export class HistoryController extends Controller<HistoryState> {
           stale: false,
           errors: { ...runtime.errors },
           truncated: [...runtime.truncated].sort(),
+          unsupported: [...runtime.unsupported].sort(),
         });
         await this.persist(key, runtime.emitted);
       } catch (error) {
@@ -569,6 +580,7 @@ export class HistoryController extends Controller<HistoryState> {
         stale: false,
         errors: { ...runtime.errors },
         truncated: [...runtime.truncated].sort(),
+        unsupported: [...runtime.unsupported].sort(),
       });
       await this.persist(key, runtime.emitted);
     });

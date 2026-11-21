@@ -100,6 +100,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
       const gateway = createGateway({
         fetch: globalThis.fetch.bind(globalThis),
         networks: [{ id: N1, providers: [{ id: "fork", url: RPC_URL }] }],
+        tokenNetworks: new Set(),
         accounts: {
           fork: {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
@@ -127,6 +128,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         risk,
         tokens: risk,
         prices: { cache: priceCache },
+        budget: { take: () => Promise.resolve({ ok: true as const }) },
         auth: {},
         zeroEx: { apiKey: KEY ?? "" },
         log: () => undefined,

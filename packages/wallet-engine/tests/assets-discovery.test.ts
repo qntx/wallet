@@ -176,7 +176,9 @@ const listFetch = (
     });
     const doc = documents[Math.min(calls.length - 1, documents.length - 1)];
     if (doc === undefined || doc.status === 404) {
-      return new Response(null, { status: 404 });
+      return new Response(doc?.body === undefined ? null : JSON.stringify(doc.body), {
+        status: 404,
+      });
     }
     if (doc.status !== 200) {
       return new Response(null, { status: doc.status });
@@ -1052,15 +1054,35 @@ describe("TokenLists resilience", () => {
     logger,
   });
 
-  it("a 404 caches the empty list for six hours", async () => {
+  it.each(["unsupported", "unknown-network"])(
+    "a 404 %s caches the empty list for six hours",
+    async (code) => {
+      const fetches: FetchCall[] = [];
+      let now = 0;
+      const lists = new TokenLists(
+        options(listFetch([{ status: 404, body: { error: code } }], fetches), () => now),
+      );
+      await lists.load(createMemoryEngineStore());
+      await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
+      now += 60_000;
+      await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
+      expect(fetches).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["a plain 404 without a recognised code", { status: 404 }],
+    ["a 503", { status: 503 }],
+  ])("%s backs off ten minutes instead of caching", async (_name, doc) => {
     const fetches: FetchCall[] = [];
     let now = 0;
-    const lists = new TokenLists(options(listFetch([{ status: 404 }], fetches), () => now));
+    const lists = new TokenLists(options(listFetch([doc], fetches), () => now));
     await lists.load(createMemoryEngineStore());
     await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
-    now += 60_000;
+    // Nothing persisted — and the failure holds the next try for RETRY_MS, not six hours.
+    now += 10 * 60_000 + 1;
     await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
-    expect(fetches).toHaveLength(1);
+    expect(fetches).toHaveLength(2);
   });
 
   it("an invalid body or foreign network is warned away, the stored list kept", async () => {

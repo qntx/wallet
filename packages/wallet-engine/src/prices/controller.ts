@@ -7,9 +7,10 @@
  * held asset triggers a refresh; the full set is re-read every {@link PRICES_POLL_MS} while the
  * host is visible. Every answer is schema-checked as a whole — a malformed one is a failure, never
  * partial data. On failure the previous quotes stay (their `updatedAt` makes them stale); an asset
- * the gateway reports `missing` is marked `unpriced` and keeps its previous quote too. Quotes and
- * the chosen currency persist in the EngineStore (the asset set is private: never the public
- * store); lock clears them from memory.
+ * the gateway reports `missing` is marked `unpriced` and keeps its previous quote too; an
+ * `unsupported` answer is permanent — the asset loses any stored quote and is marked `unsupported`.
+ * Quotes and the chosen currency persist in the EngineStore (the asset set is private: never the
+ * public store); lock clears them from memory.
  */
 import * as z from "zod/mini";
 
@@ -51,8 +52,8 @@ export type PricesState = {
   readonly currency: FiatCurrency;
   /** Asset id → its latest quote; only assets still held are kept. */
   readonly quotes: Readonly<Record<string, PriceQuoteState>>;
-  /** Per-asset errors: `unpriced` when the last answer naming the asset had no price for it. */
-  readonly errors: Readonly<Record<string, "unpriced">>;
+  /** Per-asset errors: `unpriced` when no provider had a price, `unsupported` when none maps it. */
+  readonly errors: Readonly<Record<string, "unpriced" | "unsupported">>;
   // oxlint-disable-next-line typescript/no-restricted-types -- state shape: null after a success
   readonly failure: PricesFailure | null;
   /** The last successful fetch, Unix ms. */
@@ -109,7 +110,7 @@ const checkAnswer = (
   if (answer === undefined || answer.currency !== currency) {
     return "invalid-response";
   }
-  const named = [...answer.prices.map((q) => q.asset), ...answer.missing];
+  const named = [...answer.prices.map((q) => q.asset), ...answer.missing, ...answer.unsupported];
   const wanted = new Set(asked);
   return named.length === wanted.size &&
     new Set(named).size === wanted.size &&
@@ -279,6 +280,7 @@ export class PricesController extends Controller<PricesState> {
     const answered = answers.filter((a): a is PricesResponse => typeof a !== "string");
     const fresh = new Map(answered.flatMap((a) => a.prices).map((q) => [q.asset, q]));
     const missing = answered.flatMap((a) => a.missing);
+    const unsupported = new Set(answered.flatMap((a) => a.unsupported));
     const fetchedAt = this.options.now();
     this.update((s) => ({
       ...s,
@@ -286,13 +288,15 @@ export class PricesController extends Controller<PricesState> {
         assets.flatMap((asset) => {
           const previous = s.quotes[asset];
           const answered = fresh.get(asset);
+          // An unsupported asset has no price coverage at all — drop any stored quote.
           // An older answer must not rewind a newer stored quote — unless the stored quote is
           // future-dated, which is never kept over a real answer.
-          const quote =
-            previous !== undefined &&
-            answered !== undefined &&
-            previous.updatedAt > answered.updatedAt &&
-            previous.updatedAt <= fetchedAt
+          const quote = unsupported.has(asset)
+            ? undefined
+            : previous !== undefined &&
+                answered !== undefined &&
+                previous.updatedAt > answered.updatedAt &&
+                previous.updatedAt <= fetchedAt
               ? previous
               : (answered ?? previous);
           return quote === undefined
@@ -305,7 +309,10 @@ export class PricesController extends Controller<PricesState> {
               ];
         }),
       ),
-      errors: Object.fromEntries(missing.map((asset) => [asset, "unpriced" as const])),
+      errors: Object.fromEntries([
+        ...missing.map((asset) => [asset, "unpriced" as const] as const),
+        ...[...unsupported].map((asset) => [asset, "unsupported" as const] as const),
+      ]),
       failure: null,
       fetchedAt,
     }));

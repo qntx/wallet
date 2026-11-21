@@ -108,6 +108,7 @@ function world() {
               : [{ asset, price, change24h: null, updatedAt: Date.now() }];
           }),
           missing: request.assets.filter((asset) => PRICED[asset] === undefined),
+          unsupported: [],
         }),
       );
     }

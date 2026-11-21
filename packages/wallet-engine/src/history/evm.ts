@@ -4,7 +4,12 @@ import * as z from "zod/mini";
 
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 
-import { historyPath, historyResponse, parseWith } from "../gateway/contract/index.ts";
+import {
+  gatewayError,
+  historyPath,
+  historyResponse,
+  parseWith,
+} from "../gateway/contract/index.ts";
 import type { HistoryItem, HistoryTransfer } from "../gateway/contract/index.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { networkById } from "../networks/registry.ts";
@@ -482,6 +487,7 @@ export const evmHistoryStream = (
   address: string,
   cached: EvmHistoryCache,
   onTruncated: () => void,
+  onUnsupported: () => void,
 ): Stream<HistoryEntry> => {
   const info = networkById(network);
   if (info === undefined) {
@@ -513,6 +519,16 @@ export const evmHistoryStream = (
           signal: bound.signal,
         });
         if (!res.ok) {
+          // The gateway has no history for this network at all: the stream ends empty,
+          // permanently — it is not an error to retry.
+          if (res.status === 404) {
+            const error = parseWith(gatewayError, await res.json());
+            if (error?.error === "unsupported") {
+              done = true;
+              onUnsupported();
+              return { items: [], done: true };
+            }
+          }
           throw new Error(`history ${network}: status ${res.status}`);
         }
         const page = parseWith(historyResponse, await res.json());
