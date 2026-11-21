@@ -13,6 +13,7 @@ import {
   headers,
   memoryPriceCache,
   memoryRiskStore,
+  openBudget,
   post,
   rpcOk,
   TEST_ACCOUNTS,
@@ -42,6 +43,7 @@ describe("upstream auth", () => {
     });
     const app = createGateway({
       accounts: TEST_ACCOUNTS,
+      budget: openBudget,
       fetch,
       networks: [NET, BTCNET],
       limiters,
@@ -75,6 +77,7 @@ describe("upstream auth", () => {
     });
     const app = createGateway({
       accounts: TEST_ACCOUNTS,
+      budget: openBudget,
       fetch,
       networks: [NET],
       limiters,
@@ -112,6 +115,7 @@ describe("upstream auth", () => {
     };
     const app = createGateway({
       accounts: TEST_ACCOUNTS,
+      budget: openBudget,
       fetch,
       networks: [
         NET,
@@ -157,6 +161,7 @@ describe("upstream auth", () => {
     expect(() =>
       createGateway({
         accounts: TEST_ACCOUNTS,
+        budget: openBudget,
         fetch: async () => {
           await Promise.resolve();
           return new Response();

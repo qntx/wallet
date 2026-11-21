@@ -49,7 +49,7 @@ export function createGateway(
     return { ...provider, account: provider.id, costs: account.costs };
   };
   const log = options.log ?? ((line) => console.log(line));
-  const forwarder = createForwarder(options.fetch, log);
+  const forwarder = createForwarder(options.fetch, log, { budget: options.budget });
   const deps = { forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 

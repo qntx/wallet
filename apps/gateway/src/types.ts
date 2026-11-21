@@ -48,6 +48,20 @@ export type GatewayNetwork = {
   readonly providers: ReadonlyArray<UpstreamProvider>;
 };
 
+/** The verdict of one account-budget draw: granted, or refused with a wait hint. */
+export type BudgetDecision =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly retryAfterSeconds: number };
+
+/**
+ * The gateway-wide per-account budget — the counter every isolate shares, so the provider sees at
+ * most the account's configured quota worldwide. A refused `take` means the shared quota is spent:
+ * the caller must not reach the provider.
+ */
+export type ProviderBudget = {
+  readonly take: (account: string, units: number) => Promise<BudgetDecision>;
+};
+
 /**
  * Per-asset price cache shared by every client: keys never carry client identity. `get` answers
  * `undefined` on a miss; entries live at most `ttlSeconds` (the reader also checks the embedded
@@ -76,6 +90,11 @@ export type GatewayOptions = {
    * can call. A configured provider without an account fails construction.
    */
   readonly accounts: Readonly<Record<string, Account>>;
+  /**
+   * The shared per-account budget every upstream call draws after the client's share. Backed by the
+   * `PROVIDER_BUDGET` Durable Object in production, by an in-isolate implementation in tests.
+   */
+  readonly budget: ProviderBudget;
   /**
    * The 0x API key that enables `/v1/quotes/swap`, and the integrator fee the gateway charges on
    * top of a quote, when configured. Absent the route answers `unavailable`.

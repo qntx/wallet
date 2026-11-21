@@ -19,6 +19,15 @@ const kv = (): KVNamespace =>
     put: async () => Promise.resolve(),
   }) as unknown as KVNamespace;
 
+/** A PROVIDER_BUDGET namespace whose stub always grants — env shape only, never exercised here. */
+const budgetNs = () =>
+  ({
+    idFromName: (name: string) => name,
+    get: () => ({
+      lease: async () => Promise.resolve({ ok: true as const, granted: 0 }),
+    }),
+  }) as unknown as WorkerEnv["PROVIDER_BUDGET"];
+
 const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
     RISK: kv(),
@@ -26,6 +35,7 @@ const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
     SHARE_LIMITER: allowAll,
+    PROVIDER_BUDGET: budgetNs(),
     CORS_ORIGINS: "http://localhost:5173,http://localhost:8081",
     NETWORKS: "staging",
     ZEROX_API_KEY: "z",
@@ -39,6 +49,7 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
     SHARE_LIMITER: allowAll,
+    PROVIDER_BUDGET: budgetNs(),
     CORS_ORIGINS: "",
     NETWORKS: "production",
     ZEROX_API_KEY: "z",

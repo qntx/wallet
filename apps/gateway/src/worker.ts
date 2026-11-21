@@ -1,3 +1,4 @@
+import { durableBudget } from "./budget/leased.ts";
 import { PRODUCTION_ACCOUNTS, STAGING_ACCOUNTS } from "./config/accounts.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
 import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
@@ -63,11 +64,19 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     ...(zeroEx === undefined ? {} : { zeroEx }),
   };
   const cache = priceCacheOf(() => caches.default);
+  const accounts = env.NETWORKS === "production" ? PRODUCTION_ACCOUNTS : STAGING_ACCOUNTS;
+  const budget = durableBudget(
+    env.PROVIDER_BUDGET,
+    accounts,
+    () => Date.now(),
+    (line) => console.log(line),
+  );
   if (env.NETWORKS === "production") {
     return {
       ...base,
       networks: PRODUCTION_NETWORKS,
-      accounts: PRODUCTION_ACCOUNTS,
+      accounts,
+      budget,
       auth: {
         alchemy: bearer(env.ALCHEMY_API_KEY),
         drpc: header("Drpc-Key", env.DRPC_API_KEY),
@@ -85,7 +94,8 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
   return {
     ...base,
     networks: STAGING_NETWORKS,
-    accounts: STAGING_ACCOUNTS,
+    accounts,
+    budget,
     auth: {},
     prices: {
       cache,

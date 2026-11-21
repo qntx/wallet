@@ -15,6 +15,8 @@ export const RATE_LIMIT_RETRY_AFTER_SECONDS = 10;
 export const SHARE_LIMIT = 1000;
 /** Matches the binding's 60-second period. */
 export const SHARE_RETRY_AFTER_SECONDS = 60;
+/** Fraction of an account's slowest per-minute budget one IP may consume. */
+const SHARE_OF_ACCOUNT = 0.05;
 
 /** The slowest of an account's windows, expressed as units per minute. */
 const perMinute = (account: Account): number =>
@@ -99,12 +101,14 @@ export const rateLimit =
         // Resolved providers carry a configured account; reaching this is a construction bug.
         throw new Error(`provider account "${account}" is not configured`);
       }
-      // One IP buys at most 5 % of the account's slowest per-minute window.
-      const delta = Math.max(1, Math.ceil((units * 20_000) / perMinute(found)));
+      // One IP buys at most SHARE_OF_ACCOUNT of the account's slowest per-minute window.
+      const delta = Math.max(
+        1,
+        Math.ceil((units * SHARE_LIMIT) / (SHARE_OF_ACCOUNT * perMinute(found))),
+      );
       if (delta > SHARE_LIMIT) {
         throw new GatewayHttpError(413, "too-costly");
       }
-      // One key today — the same /24 or /48 `charge` uses; IPv6's /64 joins this loop later.
       for (const key of [prefix]) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- every key must be charged in order
         const result = await limiters.share.limit({ key: `${account}:${key}`, delta });

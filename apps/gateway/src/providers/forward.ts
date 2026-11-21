@@ -10,7 +10,7 @@ import {
 } from "cockatiel";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
-import type { ResolvedProvider } from "../types.ts";
+import type { ProviderBudget, ResolvedProvider } from "../types.ts";
 import { ResponseTooLarge, readCapped } from "./body.ts";
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
@@ -33,12 +33,15 @@ export const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 export class ProviderFailure extends Error {
   readonly reason: string;
   readonly refused: boolean;
+  /** How long the caller should wait, when the failure is a spent budget or a cool-down. */
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(reason: string, refused: boolean) {
+  constructor(reason: string, refused: boolean, retryAfterSeconds?: number) {
     super(reason);
     this.name = "ProviderFailure";
     this.reason = reason;
     this.refused = refused;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -166,12 +169,21 @@ const sendTo =
     fetch: typeof globalThis.fetch,
     provider: ResolvedProvider,
     meter: Meter,
+    budget: ProviderBudget,
     signal: AbortSignal,
   ): Send =>
   async (request) => {
     // The client pays its share of the provider account before the call exists: a refused
     // charge is the request's own 429/413 and nothing is sent.
     await meter(provider.account, request.cost);
+    if (request.cost > 0) {
+      // Then the account's shared quota: a refusal fails over — never a breaker outage, and the
+      // account's known wait time reaches the client when every provider is out of budget.
+      const decision = await budget.take(provider.account, request.cost);
+      if (!decision.ok) {
+        throw new ProviderFailure("budget", true, decision.retryAfterSeconds);
+      }
+    }
     let auth: Readonly<Record<string, string>>;
     try {
       auth = (await provider.auth?.()) ?? {};
@@ -225,6 +237,7 @@ const sendTo =
 export function createForwarder(
   fetch: typeof globalThis.fetch,
   log: (line: string) => void,
+  deps: { readonly budget: ProviderBudget },
 ): Forwarder {
   const policies = new Map<string, ReturnType<typeof makePolicy>>();
   const policyFor = (provider: ResolvedProvider): ReturnType<typeof makePolicy> => {
@@ -244,6 +257,9 @@ export function createForwarder(
       attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
       options: ForwardOptions,
     ): Promise<Forwarded<T>> {
+      // The shortest announced wait among budget refusals (and later cool-downs): when every
+      // provider failed it replaces the fixed 30 s `Retry-After` on the 503.
+      let retryAfter = UNAVAILABLE_RETRY_AFTER_SECONDS;
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
         if (provider === undefined) {
@@ -253,7 +269,7 @@ export function createForwarder(
               providers: providers.map((p) => p.id),
             }),
           );
-          throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
+          throw new GatewayHttpError(503, "unavailable", Math.max(1, retryAfter));
         }
         try {
           const value = await policyFor(provider).execute(async ({ signal }) => {
@@ -263,7 +279,13 @@ export function createForwarder(
             const failed = new AbortController();
             try {
               return await attempt(
-                sendTo(fetch, provider, options.meter, AbortSignal.any([signal, failed.signal])),
+                sendTo(
+                  fetch,
+                  provider,
+                  options.meter,
+                  deps.budget,
+                  AbortSignal.any([signal, failed.signal]),
+                ),
                 provider,
               );
             } catch (error) {
@@ -297,6 +319,9 @@ export function createForwarder(
           if (options.broadcast === true && !refused(error)) {
             // The provider may have relayed the transaction; no other answer is safe to invent.
             throw new GatewayHttpError(502, "outcome-unknown");
+          }
+          if (error instanceof ProviderFailure && error.retryAfterSeconds !== undefined) {
+            retryAfter = Math.min(retryAfter, error.retryAfterSeconds);
           }
           return from(index + 1);
         }

@@ -11,6 +11,7 @@ import type {
   GatewayNetwork,
   Limiters,
   PriceCache,
+  ProviderBudget,
   RateLimiter,
   ResolvedProvider,
 } from "../src/types.ts";
@@ -128,6 +129,14 @@ const decide = async (success: boolean): Promise<{ success: boolean }> => {
 export const allowAll: RateLimiter = { limit: async () => decide(true) };
 export const denyAll: RateLimiter = { limit: async () => decide(false) };
 
+/** A budget that never refuses — the default for tests not exercising account quotas. */
+export const openBudget: ProviderBudget = {
+  take: async () => {
+    await Promise.resolve();
+    return { ok: true };
+  },
+};
+
 export function recordingLimiter(): RateLimiter & {
   readonly keys: string[];
   readonly deltas: number[];
@@ -207,6 +216,7 @@ export function gateway(options: {
   readonly tokens?: TokenListStore;
   readonly limiters?: Limiters;
   readonly accounts?: Readonly<Record<string, Account>>;
+  readonly budget?: ProviderBudget;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
   readonly auth?: Parameters<typeof createGateway>[0]["auth"];
   readonly jupiter?: { apiKey: string };
@@ -224,6 +234,7 @@ export function gateway(options: {
       share: allowAll,
     },
     accounts: options.accounts ?? TEST_ACCOUNTS,
+    budget: options.budget ?? openBudget,
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     tokens: options.tokens ?? memoryRiskStore(),

@@ -6,6 +6,9 @@ import { tokenListSources } from "./tokens/sources.ts";
 import { gatewayFor, riskStoreOf } from "./worker.ts";
 import type { WorkerEnv } from "./worker.ts";
 
+// The PROVIDER_BUDGET binding resolves this class by name.
+export { ProviderBudgetObject } from "./budget/durable.ts";
+
 type Gateway = ReturnType<typeof createGateway>;
 
 // Bindings are stable for the life of an isolate, so the app (and its breaker state) is built once.
