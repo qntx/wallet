@@ -14,7 +14,7 @@ const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const ATTACKER = "0x00000000000000000000000000000000DeaDBeef";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const FILLER = "0x0000000000000000000000000000000000001234";
-/* refs/uniswapx README deployment addresses, verified by evidence/onchain/reactors.txt. */
+/* UniswapX README deployment addresses (eb7ce07), probed in vectors/chains/order-protocols.json. */
 const V3_REACTOR_1 = "0x0000000015757c461808EA25Eb309638B62681cf";
 const V2_REACTOR_1 = "0x00000011F84B9aa48e5f8aA8B9897600006289Be";
 const EXCLUSIVE_REACTOR_1 = "0x6000da47483062A0D734Ba3dc7576Ce6A0B645C4";
@@ -103,7 +103,7 @@ const info = (reactor: string, overrides: Record<string, unknown> = {}) => ({
 const permitDoc = (
   witnessType: keyof typeof TYPE_STRINGS,
   witness: Record<string, unknown>,
-  options: { spender?: string; chainId?: number; token?: string } = {},
+  options: { spender?: string; chainId?: number; token?: string; amount?: string } = {},
 ) => {
   const chainId = options.chainId ?? 1;
   return {
@@ -111,7 +111,8 @@ const permitDoc = (
     primaryType: "PermitWitnessTransferFrom",
     domain: { name: "Permit2", chainId, verifyingContract: PERMIT2_ADDRESS },
     message: {
-      permitted: { token: options.token ?? WETH, amount: "1" },
+      /* Well above every test's input bound, so only the dedicated clamp case limits the give. */
+      permitted: { token: options.token ?? WETH, amount: options.amount ?? "1000000000000000000" },
       spender: options.spender ?? V3_REACTOR_1,
       nonce: "0",
       deadline: "2000000000",
@@ -476,6 +477,63 @@ describe("decodeEvm: UniswapX Permit2 witness orders", () => {
     const withExtra = { ...doc, types: { ...doc.types, Extra: fields("uint256 a") } };
     expect(orderOf(withExtra)).toBeUndefined();
     expect(decode(withExtra).warnings).toHaveLength(1);
+  });
+
+  it("a zero output token is the native asset; the eeee… pseudo-address is an ordinary token", () => {
+    const pseudo = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    const doc = permitDoc(
+      "ExclusiveDutchOrder",
+      exclusiveWitness(EXCLUSIVE_REACTOR_1, {
+        outputs: [
+          { token: ZERO, startAmount: "2000000", endAmount: "1000000", recipient: SIGNER },
+          { token: pseudo, startAmount: "3", endAmount: "2", recipient: SIGNER },
+        ],
+      }),
+      { spender: EXCLUSIVE_REACTOR_1 },
+    );
+    const order = orderOf(doc);
+    expect(order?.receive[0]?.amount).toStrictEqual({
+      asset: EVM_NATIVE_ASSET,
+      amount: "1000000",
+      decimals: 18,
+      symbol: "ETH",
+    });
+    expect(order?.receive[1]?.amount).toStrictEqual({
+      asset: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      amount: "2",
+    });
+  });
+
+  it("a zero input token is an ordinary token, not the native asset", () => {
+    const doc = permitDoc(
+      "ExclusiveDutchOrder",
+      exclusiveWitness(EXCLUSIVE_REACTOR_1, { inputToken: ZERO }),
+      { spender: EXCLUSIVE_REACTOR_1, token: ZERO },
+    );
+    expect(orderOf(doc)?.give).toStrictEqual({ asset: ZERO, amount: "1" });
+  });
+
+  it("a zero recipient is shown verbatim — no mapping to the swapper", () => {
+    const doc = permitDoc(
+      "ExclusiveDutchOrder",
+      exclusiveWitness(EXCLUSIVE_REACTOR_1, {
+        outputs: [{ token: USDC, startAmount: "2000000", endAmount: "1000000", recipient: ZERO }],
+      }),
+      { spender: EXCLUSIVE_REACTOR_1 },
+    );
+    expect(orderOf(doc)?.receive[0]?.recipient).toBe(ZERO);
+  });
+
+  it("the give line never claims more than the permit allows", () => {
+    const doc = permitDoc(
+      "ExclusiveDutchOrder",
+      exclusiveWitness(EXCLUSIVE_REACTOR_1, {
+        inputStartAmount: "1",
+        inputEndAmount: "5",
+      }),
+      { spender: EXCLUSIVE_REACTOR_1, amount: "3" },
+    );
+    expect(orderOf(doc)?.give).toStrictEqual({ asset: WETH, amount: "3" });
   });
 
   it("an order with more outputs than the prompt lists is oversize-blind", () => {

@@ -14,6 +14,7 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const RECEIVER = "0x00000000000000000000000000000000DeaDBeef";
 const ZERO = "0x0000000000000000000000000000000000000000";
+const PSEUDO_NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 const table: EvmTokenTable = { "1": { [USDC]: { symbol: "USDC", decimals: 6 } } };
 
 /* MakerTraitsLib bit positions (refs/1inch-lop-4.0.0/contracts/libraries/MakerTraitsLib.sol). */
@@ -145,6 +146,16 @@ describe("decodeEvm: 1inch LOP v4 orders at Aggregation Router v6", () => {
     const intent = decode(doc({ salt: `0x${"ab".repeat(32)}`, makerTraits: flag.toString() }));
     expect(intent.blind).toBe("typed-data-variant");
     expect(orderOf(doc({ makerTraits: flag.toString() }))).toBeUndefined();
+  });
+
+  it.each([
+    ["a zero makerAsset", { makerAsset: ZERO }],
+    ["a zero takerAsset", { takerAsset: ZERO }],
+    ["the pseudo-native address as makerAsset", { makerAsset: PSEUDO_NATIVE }],
+    ["the pseudo-native address as takerAsset", { takerAsset: PSEUDO_NATIVE }],
+  ])("%s is a near miss — the LOP signs only ERC-20 assets", (_name, message) => {
+    expect(decode(doc(message)).blind).toBe("typed-data-variant");
+    expect(orderOf(doc(message))).toBeUndefined();
   });
 
   it.each([

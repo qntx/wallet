@@ -10,10 +10,12 @@ import { checksumEvmAddress } from "./address.ts";
  * the settlement contract does not interpret as value, so the order is described like every other
  * claimed protocol rather than blind.
  *
- * Sources: `refs/cow-contracts/src/contracts/libraries/GPv2Order.sol` (order fields, the
- * "sell"/"buy" kind markers, the "erc20"/"external"/"internal" balance markers,
- * RECEIVER_SAME_AS_OWNER, BUY_ETH_ADDRESS), `networks.json` + `evidence/onchain/out1.json`
- * (settlement address and the chains whose domain separator was verified).
+ * Sources: `src/contracts/libraries/GPv2Order.sol` in cowprotocol/contracts at
+ * ea0c36591b6da73b9ba4e2e2107897080c7f9b68
+ * (https://github.com/cowprotocol/contracts/blob/ea0c36591b6da73b9ba4e2e2107897080c7f9b68/src/contracts/libraries/GPv2Order.sol
+ * — order fields, the "sell"/"buy" kind markers, the "erc20"/"external"/"internal" balance markers,
+ * RECEIVER_SAME_AS_OWNER, BUY_ETH_ADDRESS), `networks.json` at the same commit (settlement address)
+ * and vectors/chains/order-protocols.json (the chains whose domain separator was probed).
  */
 import { MAX_UINT256 } from "./approval.ts";
 import { orderAmount } from "./order.ts";
@@ -24,7 +26,10 @@ import type { TypedDataInput } from "./typed-data.ts";
 /** GPv2Settlement (`cow-contracts` `networks.json`), lowercase for a case-insensitive compare. */
 export const GPV2_SETTLEMENT = "0x9008d19f58aabd9ed0d60971565aa8510560ab41";
 
-/** The chains the settlement's `domainSeparator()` was verified on (`evidence/onchain/out1.json`). */
+/**
+ * The chains the settlement's `domainSeparator()` was verified on
+ * (vectors/chains/order-protocols.json).
+ */
 export const GPV2_CHAINS: ReadonlySet<number> = new Set([
   1, 10, 56, 100, 130, 137, 143, 5000, 8453, 9745, 42161, 43114, 59144,
 ]);
@@ -46,6 +51,10 @@ const ORDER_FIELDS = [
 ] as const;
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+/* GPv2Order.sol's BUY_ETH_ADDRESS: an order buying the chain's native asset names this
+   pseudo-address as buyToken — and only there: no ERC-20 sits at it, so as sellToken it (and the
+   zero address on either leg) is malformed. */
+const BUY_ETH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const KINDS: ReadonlySet<string> = new Set(["sell", "buy"]);
 const SELL_BALANCES: ReadonlySet<string> = new Set(["erc20", "external", "internal"]);
 const BUY_BALANCES: ReadonlySet<string> = new Set(["erc20", "internal"]);
@@ -95,6 +104,9 @@ export const recognizeCow = (
   if (
     sellToken === undefined ||
     buyToken === undefined ||
+    sellToken.toLowerCase() === ZERO ||
+    sellToken.toLowerCase() === BUY_ETH ||
+    buyToken.toLowerCase() === ZERO ||
     receiver === undefined ||
     sellAmount === undefined ||
     buyAmount === undefined ||
@@ -113,7 +125,7 @@ export const recognizeCow = (
       {
         /* RECEIVER_SAME_AS_OWNER: the zero receiver means the maker keeps the proceeds. */
         recipient: receiver.toLowerCase() === ZERO ? checksumEvmAddress(signer) : receiver,
-        amount: orderAmount(buyToken, buyAmount, chainId, table),
+        amount: orderAmount(buyToken, buyAmount, chainId, table, BUY_ETH),
       },
     ],
     expiry: Number(validTo),

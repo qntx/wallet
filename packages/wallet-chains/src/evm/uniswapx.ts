@@ -15,20 +15,24 @@ import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 
 /**
  * Decoding of UniswapX orders carried as the witness of a Permit2 `PermitWitnessTransferFrom`
- * (`refs/uniswapx` at eb7ce07: the *OrderLib.sol PERMIT2_ORDER_TYPE strings give the exact field
- * lists; the reactors' bounds give the amounts shown). An order is decoded only when:
+ * (UniswapX at eb7ce077036258b9510b42ad37aa920cf3aaf308,
+ * https://github.com/Uniswap/UniswapX/tree/eb7ce077036258b9510b42ad37aa920cf3aaf308 — the
+ * *OrderLib.sol PERMIT2_ORDER_TYPE strings give the exact field lists; the reactors' bounds give
+ * the amounts shown; src/lib/CurrencyLibrary.sol's `NATIVE = address(0)` marks a native asset,
+ * which UniswapX uses for outputs only). An order is decoded only when:
  *
  * - The document's `types` are exactly the canonical set for the order type — no extra type and no
  *   extra, missing or retyped field;
  * - `message.spender` equals `witness.info.reactor` and is the reactor verified for this chain and
- *   order type (README "Deployment Addresses", code present, `permit2()` returning the Permit2
- *   address — `evidence/onchain/reactors.txt`);
+ *   order type (README "Deployment Addresses" at that commit; code present and `permit2()`
+ *   returning the Permit2 address — probed in vectors/chains/order-protocols.json);
  * - `witness.info.swapper` is the signer and the order's input token is the permitted token.
  *
  * The amount shown is the protocol bound, not the start value: Exclusive/V2 input can rise to
  * `max(start, end)` and an output can decay to `min(start, end)`; V3 is bounded by `maxAmount` /
- * `minAmount`; Priority by `amount`. The `cosignerData` of V2/V3/Priority orders is signed by the
- * cosigner, not the swapper, so it is not part of the witness.
+ * `minAmount`; Priority by `amount`. The give leg is also capped at `permitted.amount` — Permit2
+ * never transfers more than the permitted amount. The `cosignerData` of V2/V3/Priority orders is
+ * signed by the cosigner, not the swapper, so it is not part of the witness.
  */
 
 export type UniswapXRecognition =
@@ -37,7 +41,7 @@ export type UniswapXRecognition =
 
 type WitnessType = "ExclusiveDutchOrder" | "V2DutchOrder" | "V3DutchOrder" | "PriorityOrder";
 
-/* refs/uniswapx/src/lib/OrderInfoLib.sol ORDER_INFO_TYPE. */
+/* src/lib/OrderInfoLib.sol ORDER_INFO_TYPE (UniswapX eb7ce07). */
 const ORDER_INFO = [
   "address reactor",
   "address swapper",
@@ -47,7 +51,7 @@ const ORDER_INFO = [
   "bytes additionalValidationData",
 ] as const;
 
-/* refs/uniswapx/src/lib/DutchOrderLib.sol DUTCH_OUTPUT_TYPE. */
+/* src/lib/DutchOrderLib.sol DUTCH_OUTPUT_TYPE (UniswapX eb7ce07). */
 const DUTCH_OUTPUT = [
   "address token",
   "uint256 startAmount",
@@ -57,7 +61,7 @@ const DUTCH_OUTPUT = [
 
 /* The canonical `types` of the order document, minus the Permit2 framing. */
 const ORDER_TYPES: Readonly<Record<WitnessType, Record<string, ReadonlyArray<string>>>> = {
-  /* refs/uniswapx/src/lib/ExclusiveDutchOrderLib.sol EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE. */
+  /* src/lib/ExclusiveDutchOrderLib.sol EXCLUSIVE_DUTCH_LIMIT_ORDER_TYPE (UniswapX eb7ce07). */
   ExclusiveDutchOrder: {
     ExclusiveDutchOrder: [
       "OrderInfo info",
@@ -73,7 +77,7 @@ const ORDER_TYPES: Readonly<Record<WitnessType, Record<string, ReadonlyArray<str
     OrderInfo: ORDER_INFO,
     DutchOutput: DUTCH_OUTPUT,
   },
-  /* refs/uniswapx/src/lib/V2DutchOrderLib.sol V2_DUTCH_ORDER_TYPE. */
+  /* src/lib/V2DutchOrderLib.sol V2_DUTCH_ORDER_TYPE (UniswapX eb7ce07). */
   V2DutchOrder: {
     V2DutchOrder: [
       "OrderInfo info",
@@ -86,7 +90,7 @@ const ORDER_TYPES: Readonly<Record<WitnessType, Record<string, ReadonlyArray<str
     OrderInfo: ORDER_INFO,
     DutchOutput: DUTCH_OUTPUT,
   },
-  /* refs/uniswapx/src/lib/V3DutchOrderLib.sol V3_DUTCH_*_TYPE and NON_LINEAR_DECAY_TYPE. */
+  /* src/lib/V3DutchOrderLib.sol V3_DUTCH_*_TYPE and NON_LINEAR_DECAY_TYPE (UniswapX eb7ce07). */
   V3DutchOrder: {
     V3DutchOrder: [
       "OrderInfo info",
@@ -113,7 +117,7 @@ const ORDER_TYPES: Readonly<Record<WitnessType, Record<string, ReadonlyArray<str
     ],
     NonlinearDutchDecay: ["uint256 relativeBlocks", "int256[] relativeAmounts"],
   },
-  /* refs/uniswapx/src/lib/PriorityOrderLib.sol TOPLEVEL_PRIORITY_ORDER_TYPE and the input/output
+  /* src/lib/PriorityOrderLib.sol TOPLEVEL_PRIORITY_ORDER_TYPE and the input/output
      token types. */
   PriorityOrder: {
     PriorityOrder: [
@@ -142,9 +146,10 @@ const PERMIT2_TYPES: Record<string, ReadonlyArray<string>> = {
 };
 
 /**
- * The reactors verified for each chain and order type (`refs/uniswapx` README "Deployment
- * Addresses"; `evidence/onchain/reactors.txt` — code present, `permit2()` = the Permit2 address).
- * Chains whose deployment could not be verified are left out, so their orders fall back.
+ * The reactors verified for each chain and order type (UniswapX README "Deployment Addresses" at
+ * eb7ce077036258b9510b42ad37aa920cf3aaf308; probed on-chain — code present, `permit2()` = the
+ * Permit2 address — in vectors/chains/order-protocols.json). Chains whose deployment could not be
+ * verified are left out, so their orders fall back.
  */
 export const REACTORS: Readonly<Record<number, Partial<Record<WitnessType, string>>>> = {
   1: {
@@ -346,10 +351,12 @@ export const recognizeUniswapX = (
   const { witness } = message;
   const spender = address(message, "spender");
   const permittedToken = isTypedDataMessage(permitted) ? address(permitted, "token") : undefined;
+  const permittedAmount = isTypedDataMessage(permitted) ? uint(permitted, "amount") : undefined;
   const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : undefined;
   if (
     spender === undefined ||
     permittedToken === undefined ||
+    permittedAmount === undefined ||
     parsed === undefined ||
     parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()
   ) {
@@ -378,17 +385,19 @@ export const recognizeUniswapX = (
     return { kind: "oversize" };
   }
   const maker = checksumEvmAddress(signer);
+  /* Permit2 transfers at most `permitted.amount`; the order line must not claim more. */
+  const giveAmount = parsed.giveAmount < permittedAmount ? parsed.giveAmount : permittedAmount;
   return {
     kind: "order",
     order: {
       protocol: "uniswapx",
       maker,
-      give: orderAmount(parsed.inputToken, parsed.giveAmount, chainId, table),
+      give: orderAmount(parsed.inputToken, giveAmount, chainId, table),
+      /* CurrencyLibrary.sol's `NATIVE = address(0)` marks a native output; recipients are shown
+         verbatim — the reactor settles to `recipient` exactly as signed. */
       receive: parsed.outputs.map((o) => ({
-        /* A zero recipient means the swapper keeps the output (UniswapX reactors settle it to the
-           order's swapper). */
-        recipient: o.recipient.toLowerCase() === ZERO ? maker : o.recipient,
-        amount: orderAmount(o.token, o.amount, chainId, table),
+        recipient: o.recipient,
+        amount: orderAmount(o.token, o.amount, chainId, table, ZERO),
       })),
       expiry: Number(deadline),
       partialFill: false,

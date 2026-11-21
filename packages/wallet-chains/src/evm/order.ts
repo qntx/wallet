@@ -11,24 +11,22 @@ import type { EvmTokenTable } from "./tokens.ts";
  */
 export const ORDER_ITEMS = 8;
 
-/* CoW's GPv2 orders name the chain's native asset with this pseudo-address (cow-contracts
-   GPv2Order; the UniswapX output token uses the zero address). */
-const ETH_MARKER = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-const ZERO = "0x0000000000000000000000000000000000000000";
-
 /**
- * An order leg amount: the chain's native asset when `token` is the zero address or CoW's marker
- * (native symbol/decimals are attached by `withNativeAmountMeta` like every native amount), else
- * the ERC-20 address with symbol/decimals when the token is in the built-in table.
+ * An order leg amount: the chain's native asset when `token` matches `nativeMarker` — each protocol
+ * names its own marker and the leg it applies to (UniswapX: the zero address, outputs only —
+ * `CurrencyLibrary.NATIVE = address(0)`; CoW: `BUY_ETH_ADDRESS`, the buy token only); with no
+ * marker every address is an ERC-20 (1inch signs no native asset). The native symbol/decimals are
+ * attached by `withNativeAmountMeta` like every native amount; an ERC-20 gets symbol/decimals when
+ * the token is in the built-in table.
  */
 export const orderAmount = (
   token: string,
   amount: bigint,
   chainId: number,
   table: EvmTokenTable,
+  nativeMarker?: string,
 ): AssetAmount => {
-  const lower = token.toLowerCase();
-  if (lower === ZERO || lower === ETH_MARKER) {
+  if (nativeMarker !== undefined && token.toLowerCase() === nativeMarker) {
     return { asset: EVM_NATIVE_ASSET, amount: amount.toString(10) };
   }
   const found = lookupEvmToken(table, chainId, token);

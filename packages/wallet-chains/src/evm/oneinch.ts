@@ -9,9 +9,12 @@ import type { TypedDataInput } from "./typed-data.ts";
 
 /**
  * Decoding of 1inch Limit Order Protocol v4 orders signed at an Aggregation Router v6. The `Order`
- * type is verbatim from `refs/1inch-lop-4.0.0/contracts/OrderLib.sol` (tag 4.0.0); the router
- * domains `{name: "1inch Aggregation Router", version: "6", chainId, verifyingContract}` were
- * verified by on-chain `eip712Domain()` (`evidence/onchain/out{1,2}.json`).
+ * type is verbatim from `contracts/OrderLib.sol` in 1inch/limit-order-protocol at tag 4.0.0
+ * (https://github.com/1inch/limit-order-protocol/blob/c8be9c67247880bd6ec88cf7ad2e040a16a483f2/contracts/OrderLib.sol);
+ * the router domains `{name: "1inch Aggregation Router", version: "6", chainId, verifyingContract}`
+ * were verified by on-chain `eip712Domain()` probed in vectors/chains/order-protocols.json. The LOP
+ * signs only ERC-20 assets — the zero address and the `0xeeee…` pseudo-address other protocols use
+ * as a native marker are malformed here.
  *
  * `makerTraits` (bit layout in `contracts/libraries/MakerTraitsLib.sol`) decides whether anything
  * unsigned can change the order's bounds. Rejected — anything set makes the document a near miss:
@@ -34,7 +37,7 @@ const ORDER_FIELDS = [
   "uint256 makerTraits",
 ] as const;
 
-/* The verified Aggregation Router v6 deployments (`evidence/onchain/out{1,2}.json`). */
+/* The verified Aggregation Router v6 deployments (probed in vectors/chains/order-protocols.json). */
 export const V6_ROUTER = "0x111111125421ca6dc452d289314280a0f8842a65";
 export const V6_ZKSYNC_ROUTER = "0x6fd4383cb451173d5f9304f041c7bcbf27d561ff";
 export const V6_CHAINS: ReadonlySet<number> = new Set([
@@ -63,6 +66,8 @@ const ALLOWED_SENDER = (1n << 80n) - 1n;
 const EXPIRATION = ((1n << 40n) - 1n) << 80n;
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+/* Other protocols' native-asset pseudo-address; an order naming either as an asset is malformed. */
+const PSEUDO_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 /** The order under the exact Aggregation Router v6 domain, or `undefined` — a near miss. */
 export const recognizeOneinch = (
@@ -108,6 +113,10 @@ export const recognizeOneinch = (
     takingAmount === undefined ||
     traits === undefined ||
     typedDataUint(message["salt"], MAX_UINT256) === undefined ||
+    makerAsset.toLowerCase() === ZERO ||
+    makerAsset.toLowerCase() === PSEUDO_NATIVE ||
+    takerAsset.toLowerCase() === ZERO ||
+    takerAsset.toLowerCase() === PSEUDO_NATIVE ||
     (traits & REJECTED) !== 0n
   ) {
     return undefined;

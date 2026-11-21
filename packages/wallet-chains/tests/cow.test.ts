@@ -130,6 +130,9 @@ describe("decodeEvm: CoW GPv2 orders", () => {
     ["validTo above uint32", { validTo: "4294967296" }],
     ["sellAmount overflowing with the fee", { sellAmount: `${2n ** 256n - 1n}` }],
     ["a malformed sellToken", { sellToken: "0x1234" }],
+    ["a zero sellToken", { sellToken: ZERO }],
+    ["the native marker as sellToken", { sellToken: ETH_MARKER }],
+    ["a zero buyToken", { buyToken: ZERO }],
   ])("%s is a near miss, not an order", (_name, message) => {
     expect(decode(doc({}, message)).blind).toBe("typed-data-variant");
     expect(orderOf(doc({}, message))).toBeUndefined();
