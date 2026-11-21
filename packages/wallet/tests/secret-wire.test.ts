@@ -15,13 +15,15 @@ import type {
   BytesFieldOf,
   PasskeyCeremony,
   PrfResult,
+  PublicBytesField,
+  SecretField,
   SecretMethod,
   UnclassifiedBytesField,
 } from "../src/factors.ts";
 import { internalsOf } from "../src/internal.ts";
 import type { WalletInternals } from "../src/internal.ts";
 import { nostr } from "../src/nostr/index.ts";
-import type { ProtocolValue } from "../src/protocol/index.ts";
+import type { MethodName, ParamsOf, ProtocolValue } from "../src/protocol/index.ts";
 import { spark } from "../src/spark/index.ts";
 import { WalletError } from "../src/types.ts";
 import type { NostrKeyInfo, StatusPayload, Wallet } from "../src/types.ts";
@@ -803,7 +805,75 @@ describe("method classification", () => {
     expectTypeOf<UnclassifiedBytesField>().toBeNever();
     expect(bytesFieldChecks).toBeTypeOf("function");
   });
+
+  it("pins the secret and public byte-field lists exactly", () => {
+    expectTypeOf<SecretField>().toEqualTypeOf<
+      | "password"
+      | "prf"
+      | "prfWallet"
+      | "prfBackup"
+      | "mnemonic"
+      | "passphrase"
+      | "secret"
+      | "answers"
+    >();
+    expectTypeOf<PublicBytesField>().toEqualTypeOf<
+      | "adaptorPublicKey"
+      | "binding"
+      | "challenge"
+      | "ciphertext"
+      | "ciphertexts"
+      | "connectorTx"
+      | "credentialId"
+      | "exitTx"
+      | "hashLockPublicKey"
+      | "hiding"
+      | "identityPublicKey"
+      | "invoice"
+      | "message"
+      | "ownerPublicKey"
+      | "package"
+      | "partialTransaction"
+      | "paymentHash"
+      | "psbt"
+      | "rawData"
+      | "publicKey"
+      | "receiverIdentityPublicKey"
+      | "script"
+      | "secretCipher"
+      | "signatureShare"
+      | "sspSignature"
+      | "tokenIdentifier"
+      | "transaction"
+      | "txid"
+      | "verifyingKey"
+    >();
+  });
+
+  it("sends every method whose params carry an answers field through the secret call", () => {
+    expectTypeOf<ParamsCarrying<"answers">>().toEqualTypeOf<"wallet.confirmMnemonic">();
+    expectTypeOf<Extract<ParamsCarrying<"answers">, SecretMethod>>().toEqualTypeOf<
+      ParamsCarrying<"answers">
+    >();
+  });
 });
+
+/** True when any field reachable through T's objects, arrays or union members is named F. */
+type CarriesField<T, F extends PropertyKey> =
+  T extends ReadonlyArray<infer E>
+    ? CarriesField<E, F>
+    : T extends Readonly<Record<PropertyKey, unknown>>
+      ? true extends {
+          [K in keyof T]: K extends F ? true : CarriesField<T[K], F>;
+        }[keyof T]
+        ? true
+        : false
+      : false;
+
+/** The methods whose params can carry a field named F. */
+type ParamsCarrying<F extends PropertyKey> = {
+  [M in MethodName]: true extends CarriesField<ParamsOf<M>, F> ? M : never;
+}[MethodName];
 
 // BytesFieldOf boundary cases: nested in an array, inside a union member, and optional.
 const bytesFieldChecks = (): void => {
@@ -812,6 +882,28 @@ const bytesFieldChecks = (): void => {
   expectTypeOf<BytesFieldOf<Uint8Array>>().toBeNever();
   expectTypeOf<BytesFieldOf<{ answers: ReadonlyArray<Uint8Array> }>>().toEqualTypeOf<"answers">();
   expectTypeOf<BytesFieldOf<{ k?: ReadonlyArray<Uint8Array> }>>().toEqualTypeOf<"k">();
+  // Bytes a value can hold under any spelling still name their field: a bytes union member, a
+  // nullable array element, a bare buffer, a map value, a set element.
+  expectTypeOf<
+    BytesFieldOf<{
+      a: Uint8Array | string;
+      b: ReadonlyArray<Uint8Array | null>;
+      c: ArrayBuffer;
+      d: Uint8Array;
+      e: ReadonlyMap<string, Uint8Array>;
+    }>
+  >().toEqualTypeOf<"a" | "b" | "c" | "d" | "e">();
+  expectTypeOf<BytesFieldOf<{ s: ReadonlySet<Uint8Array> }>>().toEqualTypeOf<"s">();
+  expectTypeOf<BytesFieldOf<{ b: SharedArrayBuffer }>>().toEqualTypeOf<"b">();
+  expectTypeOf<
+    BytesFieldOf<{ m: ReadonlyMap<string, ReadonlyArray<Uint8Array | null>> }>
+  >().toEqualTypeOf<"m">();
+  // An object inside a container reports its own byte-carrying member, not the field's name.
+  expectTypeOf<
+    BytesFieldOf<{ m: ReadonlyMap<string, { sig: Uint8Array }> }>
+  >().toEqualTypeOf<"sig">();
+  expectTypeOf<BytesFieldOf<{ s: ReadonlySet<{ key: Uint8Array }> }>>().toEqualTypeOf<"key">();
+  expectTypeOf<BytesFieldOf<{ none: ReadonlyMap<string, string> }>>().toBeNever();
 };
 
 const typeOnlyChecks = (channel: Channel, internals: WalletInternals): void => {

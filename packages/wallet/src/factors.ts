@@ -248,7 +248,7 @@ export class SecretWire {
  * Param field names whose bytes are secrets. Everything else on the wire — credential ids, public
  * keys, unsigned payloads, ciphertexts — is public material.
  */
-type SecretField =
+export type SecretField =
   | "password"
   | "prf"
   | "prfWallet"
@@ -279,27 +279,53 @@ export type SecretMethod = {
 /** Methods whose params never carry secret bytes. */
 export type PlainMethod = Exclude<MethodName, SecretMethod>;
 
+/** The raw byte shapes a wire value can carry: a byte view or a bare buffer. */
+type BytesLike = Uint8Array | ArrayBufferLike;
+
 /**
- * Every field name under which T's values hold a `Uint8Array`, reached through objects, arrays,
- * union members and optional fields — a `ReadonlyArray<Uint8Array>` field names its field too.
+ * Whether a value of `T` — null and undefined already removed — can hold raw bytes: T is bytes
+ * itself, or a container (array, map, set) whose values can hold bytes through the same containers.
+ * Object members are not walked here: they are named fields, which {@link BytesFieldOf} reports
+ * instead.
  */
-export type BytesFieldOf<T> = T extends Uint8Array
+type HoldsBytes<T> =
+  Extract<T, BytesLike> extends never
+    ? T extends ReadonlyArray<infer E>
+      ? HoldsBytes<NonNullable<E>>
+      : T extends ReadonlyMap<unknown, infer V>
+        ? HoldsBytes<NonNullable<V>>
+        : T extends ReadonlySet<infer E>
+          ? HoldsBytes<NonNullable<E>>
+          : false
+    : true;
+
+/**
+ * Every field name under which T's values hold bytes, reached through objects, arrays, maps, sets,
+ * union members and optional fields. A field counts when its own type holds bytes — a `Uint8Array`,
+ * an `ArrayBuffer`, or a container of them — so a `ReadonlyMap<string, Uint8Array>` field names its
+ * field, while a `ReadonlyArray<{ seed: Uint8Array }>` field names `seed`.
+ */
+export type BytesFieldOf<T> = T extends BytesLike
   ? never
   : T extends ReadonlyArray<infer E>
-    ? BytesFieldOf<E>
-    : T extends Readonly<Record<PropertyKey, unknown>>
-      ? {
-          [K in keyof T]-?: NonNullable<T[K]> extends Uint8Array | ReadonlyArray<Uint8Array>
-            ? K
-            : BytesFieldOf<NonNullable<T[K]>>;
-        }[keyof T]
-      : never;
+    ? BytesFieldOf<NonNullable<E>>
+    : T extends ReadonlyMap<unknown, infer V>
+      ? BytesFieldOf<NonNullable<V>>
+      : T extends ReadonlySet<infer E>
+        ? BytesFieldOf<NonNullable<E>>
+        : T extends Readonly<Record<PropertyKey, unknown>>
+          ? {
+              [K in keyof T]-?: true extends HoldsBytes<NonNullable<T[K]>>
+                ? K
+                : BytesFieldOf<NonNullable<T[K]>>;
+            }[keyof T]
+          : never;
 
 /**
  * Param byte fields that are public material: credential ids, public keys, ciphertexts, unsigned
  * payloads, hashes and signature shares.
  */
-type PublicBytesField =
+export type PublicBytesField =
   | "adaptorPublicKey"
   | "binding"
   | "challenge"
