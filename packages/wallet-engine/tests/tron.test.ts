@@ -2,6 +2,7 @@ import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "@qntx/wallet-chains";
+import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import {
   TronBroadcastError,
@@ -20,6 +21,7 @@ import {
   tronCaller,
   tronFeeLimit,
   tronFeeQuote,
+  tronLogAddress,
 } from "../src/chains/tron.ts";
 import type { TronApi, TronChainParams } from "../src/chains/tron.ts";
 
@@ -96,7 +98,6 @@ const PARAMS: TronChainParams = {
   energyFee: 100n,
   createAccountFee: 100_000n,
   createNewAccountFeeInSystemContract: 1_000_000n,
-  memoFee: 1_000_000n,
   maxFeeLimit: 15_000_000_000n,
   createNewAccountBandwidthRate: 1n,
   maxCreateAccountTxSize: 1000n,
@@ -108,7 +109,6 @@ const CHAIN_PARAMETER_BODY = {
     { key: "getEnergyFee", value: 100 },
     { key: "getCreateAccountFee", value: 100_000 },
     { key: "getCreateNewAccountFeeInSystemContract", value: 1_000_000 },
-    { key: "getMemoFee", value: 1_000_000 },
     { key: "getMaxFeeLimit", value: 15_000_000_000 },
     { key: "getCreateNewAccountBandwidthRate", value: 1 },
     { key: "getMaxCreateAccountTxSize", value: 1000 },
@@ -598,7 +598,6 @@ describe("fuzz", () => {
     energyFee: fc.bigInt({ min: 0n, max: 10n ** 9n }),
     createAccountFee: fc.bigInt({ min: 0n, max: 10n ** 12n }),
     createNewAccountFeeInSystemContract: fc.bigInt({ min: 0n, max: 10n ** 12n }),
-    memoFee: fc.bigInt({ min: 0n, max: 10n ** 12n }),
     maxFeeLimit: fc.bigInt({ min: 0n, max: 10n ** 12n }),
     createNewAccountBandwidthRate: fc.bigInt({ min: 0n, max: 10n ** 3n }),
     maxCreateAccountTxSize: fc.bigInt({ min: 0n, max: 10n ** 6n }),
@@ -642,6 +641,41 @@ describe("fuzz", () => {
         expect(ok).toBe(true);
       }),
       { numRuns },
+    );
+  });
+});
+
+const logAddressValid = (s: string): boolean => {
+  const out = tronLogAddress(s);
+  return out === undefined || isTronAddress(out);
+};
+
+describe("tronLogAddress", () => {
+  it.each([
+    // gettransactioninfobyid: the 20-byte body as 40 hex characters (mainnet USDT).
+    ["a614f803b6fd780986a42c78ec9c7f77e6ded13c", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"],
+    // triggerconstantcontract with visible:true: the body base58check-encoded.
+    ["G9AHnMvAgqKJ2eWErupYfdzu6hgWVUZqu", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"],
+  ])("restores the version byte on %s", (input, expected) => {
+    expect(tronLogAddress(input)).toBe(expected);
+  });
+
+  it.each([
+    ["41a614f803b6fd780986a42c78ec9c7f77e6ded13c"], // the 21-byte hex form is not a log shape
+    ["TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"], // a full T… address decodes to 21 bytes
+    ["a614f803b6fd780986a42c78ec9c7f77e6ded1"], // 38 hex chars
+    ["zz"],
+    [""],
+    [undefined],
+  ])("returns undefined for %s", (input) => {
+    expect(tronLogAddress(input)).toBeUndefined();
+  });
+
+  it("returns undefined or a valid address for arbitrary strings", () => {
+    fc.assert(
+      fc.property(fc.string(), (s) => {
+        expect(logAddressValid(s)).toBe(true);
+      }),
     );
   });
 });

@@ -6,10 +6,15 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
  * is never consulted.
  */
 import { sha256 } from "@noble/hashes/sha2.js";
+import { createBase58check } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "@qntx/wallet-chains";
-import { tronAddressFromPublicKey, tronAddressToHex } from "@qntx/wallet-chains/tron";
+import {
+  tronAddressFromPublicKey,
+  tronAddressToBytes,
+  tronAddressToHex,
+} from "@qntx/wallet-chains/tron";
 
 import type { TronApi } from "../src/chains/tron.ts";
 import type { TronLog } from "../src/gateway/contract/index.ts";
@@ -46,7 +51,6 @@ const PARAMS = {
   getEnergyFee: 210,
   getCreateAccountFee: 100_000,
   getCreateNewAccountFeeInSystemContract: 1_000_000,
-  getMemoFee: 1_000_000,
   getMaxFeeLimit: 5_000_000_000,
   getCreateNewAccountBandwidthRate: 4,
   getMaxCreateAccountTxSize: 5000,
@@ -65,8 +69,14 @@ const RESOURCES = {
 const TRANSFER_TOPIC = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const topicOf = (address: string): string => `${"0".repeat(22)}${tronAddressToHex(address)}`;
 const u256 = (n: bigint): string => n.toString(16).padStart(64, "0");
+// `triggerconstantcontract` with visible:true emits the 20-byte body base58check-encoded — not
+// the `41…` form `raw_data` fields carry.
+const base58check = createBase58check(sha256);
+const logAddress = (address: string): string =>
+  base58check.encode(tronAddressToBytes(address).subarray(1));
+
 const transferLog = (from: string, to: string, amount: bigint): TronLog => ({
-  address: tronAddressToHex(TOKEN),
+  address: logAddress(TOKEN),
   topics: [TRANSFER_TOPIC, topicOf(from), topicOf(to)],
   data: u256(amount),
 });

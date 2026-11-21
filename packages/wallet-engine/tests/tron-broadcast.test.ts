@@ -46,7 +46,6 @@ const PARAMS = {
   getEnergyFee: 210,
   getCreateAccountFee: 100_000,
   getCreateNewAccountFeeInSystemContract: 1_000_000,
-  getMemoFee: 1_000_000,
   getMaxFeeLimit: 5_000_000_000,
   getCreateNewAccountBandwidthRate: 4,
   getMaxCreateAccountTxSize: 5000,

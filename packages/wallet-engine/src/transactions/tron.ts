@@ -14,7 +14,6 @@ import {
   trc20TransferContract,
   tronAddressFromHex,
   tronAddressToEvm,
-  tronAddressToHex,
   tronTokenTable,
   tronTransactionId,
   verifyTronTransactionSignature,
@@ -34,11 +33,13 @@ import {
   transactionInfo,
   transactionKnown,
   tronBroadcastVerdict,
+  tronLogAddress,
   tronFeeLimit,
   tronFeeQuote,
 } from "../chains/tron.ts";
-import type { TronApi, TronChainParams } from "../chains/tron.ts";
+import type { TronApi, TronChainParams, TronHead } from "../chains/tron.ts";
 import type { TronAccount } from "../gateway/contract/index.ts";
+import type { Independent } from "../networks/controller.ts";
 import { collectChecks, feesDiffer } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
@@ -55,7 +56,7 @@ import type {
   TxPoll,
 } from "./route.ts";
 
-/** `expiration` is this far ahead of the build timestamp — both are the node's millisecond clock. */
+/** `expiration` is this far ahead of the build timestamp — both read the engine's own clock. */
 const TRON_TTL_MS = 60_000;
 /** A prepared transaction whose expiry is nearer than this can no longer be signed safely. */
 const TRON_STALE_MS = 5000;
@@ -91,10 +92,46 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
   a.energyFee === b.energyFee &&
   a.createAccountFee === b.createAccountFee &&
   a.createNewAccountFeeInSystemContract === b.createNewAccountFeeInSystemContract &&
-  a.memoFee === b.memoFee &&
   a.maxFeeLimit === b.maxFeeLimit &&
   a.createNewAccountBandwidthRate === b.createNewAccountBandwidthRate &&
   a.maxCreateAccountTxSize === b.maxCreateAccountTxSize;
+
+/**
+ * The independent-endpoint cross-check (invariant 2): the reference block id and the fee-model
+ * chain parameters must match the primary's answers — a disagreement refuses the prepare; any other
+ * read failure degrades to a `reads-unverified` flag. `extra` runs the operation-specific checks
+ * (recipient existence, energy estimate) inside the same failure umbrella.
+ */
+const crossCheckTron = async (
+  independent: Independent<TronApi>,
+  head: TronHead,
+  params: TronChainParams,
+  extra: (api: TronApi) => Promise<void>,
+): Promise<"reads-unverified" | undefined> => {
+  if (independent.kind !== "available") {
+    return undefined;
+  }
+  try {
+    const api = independent.client;
+    const [otherId, otherParams] = await Promise.all([
+      blockId(api, head.number, false),
+      chainParams(api),
+    ]);
+    if (otherId !== head.id) {
+      throw new ChainError("invalid-request", "the endpoints disagree on the reference block");
+    }
+    if (!paramsEqual(params, otherParams)) {
+      throw new ChainError("invalid-request", "the endpoints disagree on chain parameters");
+    }
+    await extra(api);
+    return undefined;
+  } catch (error) {
+    if (error instanceof ChainError) {
+      throw error;
+    }
+    return "reads-unverified";
+  }
+};
 
 type TokenKind =
   | { readonly kind: "trx" }
@@ -146,11 +183,10 @@ const transferChanges = (
   from: string,
   verified: boolean,
 ): SimulationOutcome => {
-  const tokenHex = tronAddressToHex(token).toLowerCase();
   const changes: AssetChange[] = [];
   for (const log of logs) {
     const [topic0] = log.topics ?? [];
-    if (topic0 !== TRANSFER_TOPIC || log.address?.toLowerCase() !== tokenHex) {
+    if (topic0 !== TRANSFER_TOPIC || tronLogAddress(log.address) !== token) {
       continue;
     }
     const logFrom = topicAddress(log.topics?.[1]);
@@ -268,49 +304,38 @@ export const prepareTron = async (
     contract = { type: "TransferContract", owner: from, to, amount };
   }
 
-  if (independent.kind === "available") {
-    const independentApi = independent.client;
-    try {
-      const [otherId, otherParams, otherRow] = await Promise.all([
-        blockId(independentApi, head.number, false),
-        chainParams(independentApi),
-        account(independentApi, to),
-      ]);
-      if (otherId !== head.id) {
-        throw new ChainError("invalid-request", "the endpoints disagree on the reference block");
-      }
-      if (!paramsEqual(params0, otherParams)) {
-        throw new ChainError("invalid-request", "the endpoints disagree on chain parameters");
-      }
-      /* The more conservative answer wins: either endpoint saying "absent" means the send may
-         activate the recipient and pays activation. */
+  {
+    /* The more conservative answer wins: either endpoint saying "absent" means the send may
+       activate the recipient and pays activation. */
+    const extra = async (independentApi: TronApi): Promise<void> => {
+      const otherRow = await account(independentApi, to);
       activates = activates || (token.kind !== "trc20" && otherRow === undefined);
       if (!sameAccount(toRow, otherRow) && token.kind === "trc20") {
         flags.push("reads-unverified");
       }
-      if (estimate !== undefined) {
-        const otherCall = await constantCall(independentApi, {
-          owner: from,
-          contract: token.kind === "trc20" ? token.token : "",
-          data: contract.type === "TriggerSmartContract" ? contract.data : new Uint8Array(),
-        });
-        if (otherCall.ok) {
-          if (feesDiffer(BigInt(otherCall.energyUsed), BigInt(estimate.used))) {
-            flags.push("fee-mismatch");
-          }
-          estimate = {
-            used: Math.max(estimate.used, otherCall.energyUsed),
-            penalty: Math.max(estimate.penalty, otherCall.energyPenalty),
-          };
-        } else {
-          flags.push("reads-unverified");
+      if (estimate === undefined) {
+        return;
+      }
+      const otherCall = await constantCall(independentApi, {
+        owner: from,
+        contract: token.kind === "trc20" ? token.token : "",
+        data: contract.type === "TriggerSmartContract" ? contract.data : new Uint8Array(),
+      });
+      if (otherCall.ok) {
+        if (feesDiffer(BigInt(otherCall.energyUsed), BigInt(estimate.used))) {
+          flags.push("fee-mismatch");
         }
+        estimate = {
+          used: Math.max(estimate.used, otherCall.energyUsed),
+          penalty: Math.max(estimate.penalty, otherCall.energyPenalty),
+        };
+      } else {
+        flags.push("reads-unverified");
       }
-    } catch (error) {
-      if (error instanceof ChainError) {
-        throw error;
-      }
-      flags.push("reads-unverified");
+    };
+    const flag = await crossCheckTron(independent, head, params0, extra);
+    if (flag !== undefined) {
+      flags.push(flag);
     }
   }
 

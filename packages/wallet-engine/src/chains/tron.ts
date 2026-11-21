@@ -1,12 +1,16 @@
-import type * as z from "zod/mini";
-
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 /**
  * TRON chain adapter — readers over the node's `/wallet` and `/walletsolidity` HTTP API plus the
  * pure fee model. Every answer is parsed through the gateway contract schemas: a body that does not
  * satisfy its schema is a malformed `Error`, never a silent default, and the node's `transaction`
  * field is never read — transactions are built locally from phase-1 primitives.
  */
+import { createBase58check } from "@scure/base";
+import type * as z from "zod/mini";
+
 import { ChainError } from "@qntx/wallet-chains";
+import { tronAddressFromHex } from "@qntx/wallet-chains/tron";
 
 import {
   parseWith,
@@ -102,6 +106,31 @@ const utf8 = new TextDecoder("utf-8", { fatal: true });
 const printable = /^[\u0020-\u007E]*$/;
 
 /** A node's hex `message`/`resMessage` field as UTF-8 when it is printable text, else hex. */
+const base58check = createBase58check(sha256);
+
+/**
+ * The log `address` form depends on the call: `triggerconstantcontract` with `visible` base58checks
+ * the bare 20-byte body, `gettransactioninfobyid` returns 40 hex characters — neither carries the
+ * 0x41 version byte. Restores it so callers compare `T…` addresses; anything else is `undefined`.
+ */
+export const tronLogAddress = (address: string | undefined): string | undefined => {
+  if (typeof address !== "string") {
+    return undefined;
+  }
+  if (/^[0-9a-fA-F]{40}$/.test(address)) {
+    return tronAddressFromHex(`41${address}`);
+  }
+  try {
+    const decoded = base58check.decode(address);
+    if (decoded.length === 20) {
+      return tronAddressFromHex(`41${bytesToHex(decoded)}`);
+    }
+  } catch {
+    /* not base58check */
+  }
+  return undefined;
+};
+
 const decodeMessage = (hex: string): string => {
   const bytes = hexBytes(hex);
   try {
@@ -199,8 +228,6 @@ export type TronChainParams = {
   readonly createAccountFee: bigint;
   /** Sun charged by the system contract for activating an account. */
   readonly createNewAccountFeeInSystemContract: bigint;
-  /** Sun per non-empty `raw_data.data` memo — engine-built transactions carry none. */
-  readonly memoFee: bigint;
   /** Sun cap on a TriggerSmartContract's `fee_limit`. */
   readonly maxFeeLimit: bigint;
   /** Staked-bandwidth multiplier for account-activation transactions. */
@@ -231,7 +258,6 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
     energyFee: take("getEnergyFee"),
     createAccountFee: take("getCreateAccountFee"),
     createNewAccountFeeInSystemContract: take("getCreateNewAccountFeeInSystemContract"),
-    memoFee: take("getMemoFee"),
     maxFeeLimit: take("getMaxFeeLimit"),
     createNewAccountBandwidthRate: take("getCreateNewAccountBandwidthRate"),
     maxCreateAccountTxSize: take("getMaxCreateAccountTxSize"),
