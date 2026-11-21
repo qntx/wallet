@@ -358,11 +358,11 @@ describe.runIf(RUN)("walletconnect e2e: real relay", () => {
       );
 
       // bip122 getAccountAddresses + BIP-322 signMessage.
-      const addresses = (await client.request({
+      const addresses = await client.request<Array<{ address: string; intention?: string }>>({
         topic: live.topic,
         chainId: BTC_MAIN,
         request: { method: "getAccountAddresses", params: { account: btcAccount } },
-      })) as Array<{ address: string; intention?: string }>;
+      });
       expect(addresses.length).toBeGreaterThanOrEqual(1);
       expect(addresses[0]?.address).toBe(btcAccount);
       const btcCall = client.request({

@@ -40,14 +40,18 @@ import { chains } from "@qntx/wallet/chains";
 
 import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { ConnectionSession } from "../src/connect/controller.ts";
+import { unauthorized } from "../src/connect/errors.ts";
 import { createWalletEngine } from "../src/engine.ts";
+import { walletConnectKey } from "../src/requests/types.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
+import { bip122Row } from "../src/walletconnect/bip122.ts";
 import type {
   createWalletConnectClient as CreateClient,
   WalletConnect,
   WalletConnectProposal,
 } from "../src/walletconnect/client.ts";
+import type { WalletConnectCall, WalletConnectEngine } from "../src/walletconnect/namespaces.ts";
 import { approval } from "./approval.ts";
 import { b64 } from "./phishing-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
@@ -1188,4 +1192,47 @@ describe("walletconnect bip122", () => {
       await r.wc.dispose();
     },
   );
+
+  // The wire always satisfies the negotiated-methods check before the row sees a call, but a
+  // dispatch that reaches sendTransfer still re-authorizes against the session's scope methods —
+  // a scope without "sendTransfer" must refuse before the send pipeline is ever prepared.
+  it("sendTransfer answers 4100 when the session scope lacks its method", async () => {
+    const topic = "ab".repeat(32);
+    const call: WalletConnectCall = {
+      origin: {
+        kind: "walletconnect",
+        origin: walletConnectKey(topic),
+        topic,
+        url: "https://peer.example",
+        name: "peer",
+        verify: { validation: "VALID", isScam: false },
+      },
+      network: BTC_MAIN,
+      method: "sendTransfer",
+      params: { account: BIP84_FIRST, recipientAddress: RECIP, amount: "25000" },
+    };
+    let prepared = 0;
+    const engine = {
+      connections: {
+        sessionAccounts: () => ({
+          group: { walletId: "w", groupIndex: 0 },
+          addresses: [BIP84_FIRST],
+        }),
+        authorize: () => {
+          throw unauthorized();
+        },
+      },
+      requests: {
+        prepare: () => {
+          prepared += 1;
+          throw new Error("the send pipeline must not be prepared");
+        },
+        outcome: () => {
+          throw new Error("the send pipeline must not be prepared");
+        },
+      },
+    } as unknown as WalletConnectEngine;
+    await expect(bip122Row.dispatch(call, engine)).rejects.toMatchObject({ code: 4100 });
+    expect(prepared).toBe(0);
+  });
 });
