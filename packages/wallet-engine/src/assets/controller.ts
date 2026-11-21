@@ -368,10 +368,16 @@ export class AssetsController extends Controller<AssetsControllerState> {
       });
     }
 
-    await this.loadEvmMetadata(client, multicall3, network, [
-      ...custom.map((address) => ({ address, symbol: true })),
-      ...[...held.keys()].map((address) => ({ address, symbol: false })),
-    ]);
+    await this.loadEvmMetadata(
+      client,
+      multicall3,
+      network,
+      [
+        ...custom.map((address) => ({ address, symbol: true })),
+        ...[...held.keys()].map((address) => ({ address, symbol: false })),
+      ],
+      generation,
+    );
 
     const rows: TokenBalance[] = [];
     for (const [i, address] of tableKeys.entries()) {
@@ -463,6 +469,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     multicall3: string | undefined,
     network: string,
     wants: ReadonlyArray<{ readonly address: string; readonly symbol: boolean }>,
+    generation: number,
   ): Promise<void> {
     const missing = wants.filter(
       (want) => this.meta.get(`${network}:${want.address.toLowerCase()}`) === undefined,
@@ -471,6 +478,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     const read = await readEvmMetadata(client, multicall3, missing);
+    if (generation !== this.generation) {
+      return;
+    }
     for (const [i, want] of missing.entries()) {
       const got = read[i];
       if (got !== undefined && got.decimals !== undefined) {
@@ -543,8 +553,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const wanted = queue.slice(0, INSPECT_PER_REFRESH);
     if (wanted.length > 0) {
       const inspected = await inspectMints(rpc, wanted);
-      for (const [mint, facts] of inspected) {
-        this.mints.set(`${network}:${mint}`, facts);
+      if (generation === this.generation) {
+        for (const [mint, facts] of inspected) {
+          this.mints.set(`${network}:${mint}`, facts);
+        }
       }
     }
     const facts = (mint: string): MintFacts | "missing" | undefined =>
@@ -725,6 +737,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
    * verdict applies on the next refresh: a flag stays hidden until explicitly shown.
    */
   async setTokenHidden(network: string, address: string, hidden: boolean): Promise<void> {
+    if (this.engineStore === undefined) {
+      throw new Error("assets require an unlocked vault");
+    }
     const info = this.options.networks.info(network);
     let canonical: string;
     if (info.family === "evm") {
@@ -779,6 +794,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /** Reads the mint on-chain, marks unverified, persists; throws when the read fails. */
   async addToken(network: string, address: string): Promise<void> {
+    if (this.engineStore === undefined) {
+      throw new Error("assets require an unlocked vault");
+    }
+    const {generation} = this;
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       if ((solanaTokenTable[network] ?? {})[address] !== undefined) {
@@ -790,8 +809,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
       if (facts === undefined || facts === "missing") {
         throw new TypeError(`${address} is not a readable SPL mint on ${network}`);
       }
+      if (generation !== this.generation) {
+        return;
+      }
       this.mints.set(`${network}:${address}`, facts);
-      await this.persistToken(network, address);
+      await this.persistToken(network, address, generation);
       return;
     }
     const table = evmTokenTable[String(info.chainId)] ?? {};
@@ -799,11 +821,17 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     const meta = await this.tokenMetadata(network, address);
+    if (generation !== this.generation) {
+      return;
+    }
     this.meta.set(`${network}:${address.toLowerCase()}`, meta);
-    await this.persistToken(network, address);
+    await this.persistToken(network, address, generation);
   }
 
-  private async persistToken(network: string, address: string): Promise<void> {
+  private async persistToken(network: string, address: string, generation: number): Promise<void> {
+    if (generation !== this.generation) {
+      return;
+    }
     const existing = this.customTokens.get(network) ?? [];
     const evm = this.options.networks.info(network).family === "evm";
     const wanted = evm ? address.toLowerCase() : address;

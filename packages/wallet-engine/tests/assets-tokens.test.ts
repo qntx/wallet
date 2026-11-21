@@ -459,3 +459,83 @@ describe("AssetsController built-in tokens", () => {
     expect(balances.tokens.find((t) => t.address === CUSTOM)?.decimals).toBe(7);
   });
 });
+
+/** A deferred the test resolves once a session boundary has passed underneath a call. */
+const deferred = () => {
+  let resolve = (): void => {};
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
+
+/** Wraps `evmClient`'s request: matching `eth_call`s report `started` then park until `wait`. */
+const gateCall = (
+  client: PublicClient,
+  when: (to: string, data: `0x${string}`) => boolean,
+  gate: { readonly started: () => void; readonly wait: Promise<void> },
+): PublicClient =>
+  ({
+    transport: {
+      request: async (req: { method: string; params?: unknown[] }) => {
+        if (req.method === "eth_call") {
+          const [{ to, data }] = (req.params ?? [{}]) as [{ to?: string; data?: `0x${string}` }];
+          if (when(String(to), data ?? "0x")) {
+            gate.started();
+            await gate.wait;
+          }
+        }
+        return (client.transport as { request: (r: typeof req) => Promise<unknown> }).request(req);
+      },
+    },
+  }) as unknown as PublicClient;
+
+describe("AssetsController locked vault and stale sessions", () => {
+  it("addToken and setTokenHidden refuse while the vault is locked", async () => {
+    const c = evmClient(new Map([[CUSTOM.toLowerCase(), { symbol: "TST", decimals: 6 }]]), []);
+    const assets = make(c, { chainId: 1, multicall3: MULTICALL3 });
+    await expect(assets.addToken(MAINNET, CUSTOM)).rejects.toThrow(
+      "assets require an unlocked vault",
+    );
+    await expect(assets.setTokenHidden(MAINNET, CUSTOM, true)).rejects.toThrow(
+      "assets require an unlocked vault",
+    );
+    await assets.init();
+    await assets.lock();
+    await expect(assets.addToken(MAINNET, CUSTOM)).rejects.toThrow(
+      "assets require an unlocked vault",
+    );
+    await expect(assets.setTokenHidden(MAINNET, CUSTOM, true)).rejects.toThrow(
+      "assets require an unlocked vault",
+    );
+  });
+
+  it("an addToken read resolving after lock→unlock persists and caches nothing", async () => {
+    const calls: Call[] = [];
+    const store = createMemoryEngineStore();
+    const gate = deferred();
+    const reached = deferred();
+    const inner = evmClient(
+      new Map([[CUSTOM.toLowerCase(), { symbol: "TST", decimals: 6 }]]),
+      calls,
+    );
+    const c = gateCall(
+      inner,
+      (to, data) => to.toLowerCase() === CUSTOM.toLowerCase() && data === DECIMALS,
+      { started: reached.resolve, wait: gate.promise },
+    );
+    const assets = make(c, { chainId: 1, multicall3: MULTICALL3 }, store);
+    await assets.init();
+    const pending = assets.addToken(MAINNET, CUSTOM);
+    await reached.promise;
+    assets.lock();
+    await assets.init();
+    gate.resolve();
+    await pending;
+    // No customTokens row — and the token cannot appear in the new session's refresh.
+    const stored = await store.collection("assets-custom-tokens").get("customTokens");
+    expect(stored).toBeUndefined();
+    const balances = await assets.refresh(OWNER, MAINNET);
+    expect(balances.tokens.some((t) => t.address === CUSTOM.toLowerCase())).toBe(false);
+  });
+});

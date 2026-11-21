@@ -420,3 +420,121 @@ describe("AssetsController solana token holdings", () => {
     expect(balances.tokens.every((t) => t.decimals !== 9)).toBe(true);
   });
 });
+
+/** A deferred the test resolves once a session boundary has passed underneath a call. */
+const deferred = () => {
+  let resolve = (): void => {};
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
+
+/** A gated controller like `make` whose every `getMultipleAccounts` parks until `wait`. */
+const makeGated = (
+  accounts: Accounts,
+  calls: Call[],
+  mintAccounts: Record<string, unknown>,
+  gate: { readonly started: () => void; readonly wait: Promise<void> },
+  store = createMemoryEngineStore(),
+): AssetsController =>
+  new AssetsController({
+    ownBitcoinTxids: () => new Set(),
+    networks: {
+      info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
+      solanaRpc: () => {
+        const base = solRpc(accounts, calls, mintAccounts);
+        return {
+          call: async (method: string, params: unknown[]) => {
+            if (method === "getMultipleAccounts") {
+              gate.started();
+              await gate.wait;
+            }
+            return base.call(method, params);
+          },
+        } as SolanaRpc;
+      },
+    } as never,
+    chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
+    openStore: async () => Promise.resolve(store),
+    setTimer: () => () => {},
+    logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
+  });
+
+describe("AssetsController stale session writes", () => {
+  it("a held-mint inspection resolving after lock→unlock writes no mint facts", async () => {
+    const calls: Call[] = [];
+    const gate = deferred();
+    const reached = deferred();
+    const assets = makeGated(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: T22_MINT,
+            owner: OWNER,
+            amount: "1",
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+      { [T22_MINT]: mintAccount({ decimals: 9, program: PROGRAM_IDS.token2022 }) },
+      { started: reached.resolve, wait: gate.promise },
+    );
+    await assets.init();
+    // The first refresh parks inside the held-mint inspection.
+    const first = assets.refresh(OWNER, SOL_NET);
+    await reached.promise;
+    assets.lock();
+    await assets.init();
+    gate.resolve();
+    await first;
+    // The new session re-inspects the still-held mint — stale facts must not have cached it.
+    calls.length = 0;
+    await assets.refresh(OWNER, SOL_NET);
+    const inspect = calls.find((c) => c.method === "getMultipleAccounts");
+    expect(inspect?.params[0]).toContain(T22_MINT);
+  });
+
+  it("an addToken read resolving after lock→unlock persists and caches nothing", async () => {
+    const calls: Call[] = [];
+    const gate = deferred();
+    const reached = deferred();
+    const store = createMemoryEngineStore();
+    const assets = makeGated(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: T22_MINT,
+            owner: OWNER,
+            amount: "1",
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+      { [T22_MINT]: mintAccount({ decimals: 9, program: PROGRAM_IDS.token2022 }) },
+      { started: reached.resolve, wait: gate.promise },
+      store,
+    );
+    await assets.init();
+    const pending = assets.addToken(SOL_NET, T22_MINT);
+    await reached.promise;
+    assets.lock();
+    await assets.init();
+    gate.resolve();
+    await pending;
+    // Nothing persisted — and no mint facts survived for the still-held mint to skip re-inspection.
+    const stored = await store.collection("assets-custom-tokens").get("customTokens");
+    expect(stored).toBeUndefined();
+    calls.length = 0;
+    await assets.refresh(OWNER, SOL_NET);
+    const inspect = calls.find((c) => c.method === "getMultipleAccounts");
+    expect(inspect?.params[0]).toContain(T22_MINT);
+  });
+});
