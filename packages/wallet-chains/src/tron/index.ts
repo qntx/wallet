@@ -1,9 +1,11 @@
 import { isRecord, requestBase } from "../account-ref.ts";
+import { domainChainId } from "../evm/typed-data.ts";
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
 import { BUILT_IN_NETWORKS } from "../networks.ts";
 import { mayBeTronTransaction } from "./message.ts";
 import { decodeTronRawData } from "./raw.ts";
+import { parseTronTypedData } from "./typed-data.ts";
 
 export { TRON_NATIVE_ASSET } from "./assets.ts";
 export {
@@ -28,17 +30,35 @@ export {
   tronTransactionId,
 } from "./raw.ts";
 export type { TronContractSlot, TronRawData } from "./raw.ts";
-export { buildTronRawData, trc20ApproveContract, trc20TransferContract } from "./builders.ts";
+export {
+  TRON_MEMO_MAX_BYTES,
+  buildTronRawData,
+  trc20ApproveContract,
+  trc20TransferContract,
+  tronMemoBytes,
+} from "./builders.ts";
 export type { TronBlockRef, TronTransactionHeader } from "./builders.ts";
 export { lookupTronToken, tronTokenTable } from "./tokens.ts";
 export type { TronToken, TronTokenTable } from "./tokens.ts";
 export { mayBeTronTransaction, TRON_MESSAGE_PREFIX, tronMessageDigest } from "./message.ts";
+export { TRON_PERMIT2 } from "./permit2.ts";
+export { tronRawDataFromJson } from "./json.ts";
+export {
+  parseTronTypedData,
+  tronTypedDataBase58,
+  tronTypedDataDigest,
+  tronTypedDataFromArgs,
+  tronTypedDataLeaf,
+  tronTypedDataToEvm,
+} from "./typed-data.ts";
 export { decodeTron } from "./decode.ts";
 export {
   recoverTronMessageSigner,
   recoverTronTransactionSigner,
+  recoverTronTypedDataSigner,
   verifyTronMessageSignature,
   verifyTronTransactionSignature,
+  verifyTronTypedDataSignature,
 } from "./verify.ts";
 
 /** The TRON network ids in `BUILT_IN_NETWORKS` — mainnet plus the Shasta and Nile testnets. */
@@ -70,6 +90,25 @@ export const normalizeTron = (request: unknown): SignRequest => {
     }
     decodeTronRawData(rawData);
     return { kind: "tron.transaction", network, account, rawData };
+  }
+  if (request["kind"] === "tron.typed-data") {
+    const { typedData } = request;
+    if (typeof typedData !== "string") {
+      throw new ChainError(
+        "invalid-request",
+        "tron.typed-data payload must be the canonical JSON source string",
+      );
+    }
+    const { json } = parseTronTypedData(typedData);
+    const domainChain = domainChainId(json.domain);
+    const networkChain = BUILT_IN_NETWORKS.find((n) => n.id === network)?.chainId;
+    if (domainChain !== undefined && domainChain !== networkChain) {
+      throw new ChainError(
+        "chain-id-mismatch",
+        `typed-data domain.chainId ${domainChain} does not match network ${network}`,
+      );
+    }
+    return { kind: "tron.typed-data", network, account, typedData };
   }
   if (request["kind"] === "tron.message") {
     const { message } = request;

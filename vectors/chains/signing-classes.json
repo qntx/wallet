@@ -4095,6 +4095,84 @@
           "description": "内容像登录请求，但格式不合规\n消息：\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 还有 31 个字符未显示"
         }
       }
+    },
+    {
+      "name": "tron typed-data permit2",
+      "request": {
+        "kind": "tron.typed-data",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "typedData": "{\"types\":{\"PermitSingle\":[{\"name\":\"details\",\"type\":\"PermitDetails\"},{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"sigDeadline\",\"type\":\"uint256\"}],\"PermitDetails\":[{\"name\":\"token\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint160\"},{\"name\":\"expiration\",\"type\":\"uint48\"},{\"name\":\"nonce\",\"type\":\"uint48\"}],\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}]},\"domain\":{\"name\":\"Permit2\",\"chainId\":\"0x2b6653dc\",\"verifyingContract\":\"41be365314f2e77fd1257d60c346bb32dbda369403\"},\"primaryType\":\"PermitSingle\",\"message\":{\"details\":{\"token\":\"41a614f803b6fd780986a42c78ec9c7f77e6ded13c\",\"amount\":\"1000000\",\"expiration\":\"2000000000\",\"nonce\":\"7\"},\"spender\":\"410000000000000000000000000000000000000001\",\"sigDeadline\":\"2000000100\"}}"
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "App: Permit2\nNetwork: TRON\nVerifying contract TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9\nType: PermitSingle\nThere may be other outflows\nAllow T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn to spend 1 USDT via Permit2 until 2033-05-18 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "应用：Permit2\n网络：TRON\n验证合约 TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9\n类型：PermitSingle\n可能还有其他转出\n授权 T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn 使用 1 USDT 经 Permit2 至 2033-05-18（UTC）"
+        }
+      }
+    },
+    {
+      "name": "tron typed-data trctoken",
+      "request": {
+        "kind": "tron.typed-data",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "typedData": "{\"types\":{\"Send\":[{\"name\":\"asset\",\"type\":\"trcToken\"},{\"name\":\"to\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\"}],\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}]},\"domain\":{\"name\":\"TRC10\",\"chainId\":\"0x2b6653dc\"},\"primaryType\":\"Send\",\"message\":{\"asset\":\"1002000\",\"to\":\"41a614f803b6fd780986a42c78ec9c7f77e6ded13c\",\"amount\":\"42\"}}"
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: TRC10\nNetwork: TRON\nType: Send\nThe wallet cannot verify what this signature authorises\n· asset = 1002000\n· to = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\n· amount = 42"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：TRC10\n网络：TRON\n类型：Send\n钱包无法核实此签名授权的内容\n· asset = 1002000\n· to = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\n· amount = 42"
+        }
+      }
+    },
+    {
+      "name": "tron typed-data oversize",
+      "request": {
+        "kind": "tron.typed-data",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "typedData": "{\"types\":{\"Wide\":[{\"name\":\"f0\",\"type\":\"string\"},{\"name\":\"f1\",\"type\":\"string\"},{\"name\":\"f2\",\"type\":\"string\"},{\"name\":\"f3\",\"type\":\"string\"},{\"name\":\"f4\",\"type\":\"string\"},{\"name\":\"f5\",\"type\":\"string\"},{\"name\":\"f6\",\"type\":\"string\"},{\"name\":\"f7\",\"type\":\"string\"},{\"name\":\"f8\",\"type\":\"string\"},{\"name\":\"f9\",\"type\":\"string\"},{\"name\":\"f10\",\"type\":\"string\"},{\"name\":\"f11\",\"type\":\"string\"},{\"name\":\"f12\",\"type\":\"string\"},{\"name\":\"f13\",\"type\":\"string\"},{\"name\":\"f14\",\"type\":\"string\"},{\"name\":\"f15\",\"type\":\"string\"},{\"name\":\"f16\",\"type\":\"string\"},{\"name\":\"f17\",\"type\":\"string\"},{\"name\":\"f18\",\"type\":\"string\"},{\"name\":\"f19\",\"type\":\"string\"}],\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}]},\"domain\":{\"name\":\"Big\",\"chainId\":\"0x2b6653dc\"},\"primaryType\":\"Wide\",\"message\":{\"f0\":\"v0\",\"f1\":\"v1\",\"f2\":\"v2\",\"f3\":\"v3\",\"f4\":\"v4\",\"f5\":\"v5\",\"f6\":\"v6\",\"f7\":\"v7\",\"f8\":\"v8\",\"f9\":\"v9\",\"f10\":\"v10\",\"f11\":\"v11\",\"f12\":\"v12\",\"f13\":\"v13\",\"f14\":\"v14\",\"f15\":\"v15\",\"f16\":\"v16\",\"f17\":\"v17\",\"f18\":\"v18\",\"f19\":\"v19\"}}"
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-oversize",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Big\nNetwork: TRON\nType: Wide\nThis typed data is too large to show in full"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Big\n网络：TRON\n类型：Wide\n此类型数据过大，无法完整显示"
+        }
+      }
     }
   ]
 }

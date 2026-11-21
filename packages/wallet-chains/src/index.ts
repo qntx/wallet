@@ -103,6 +103,13 @@ export type SignRequest =
       readonly network: string;
       readonly account: AccountRef;
       readonly message: Uint8Array;
+    }
+  | {
+      readonly kind: "tron.typed-data";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** Canonical TIP-712 JSON (types incl. EIP712Domain, primaryType, domain, message). */
+      readonly typedData: string;
     };
 
 export type EvmAccessListEntry = {

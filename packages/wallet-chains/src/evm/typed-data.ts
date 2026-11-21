@@ -25,7 +25,7 @@ export type TypedDataInput = {
 const isField = (value: unknown): value is TypedDataField =>
   isRecord(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
 
-const isTypedDataInput = (value: unknown): value is TypedDataInput => {
+export const isTypedDataInput = (value: unknown): value is TypedDataInput => {
   if (!isRecord(value)) {
     return false;
   }
@@ -250,10 +250,13 @@ const isCommitmentLeaf = (type: string, value: unknown): boolean =>
  * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
  * declaration order, arrays element by element), as display lines, and whether any leaf is a
  * commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
- * shown exactly as it is encoded.
+ * shown exactly as it is encoded. `leaf` may override an atomic leaf's display — a string return is
+ * used verbatim (commitment flags still apply) and `undefined` falls back to the default rule,
+ * which aborts the expansion when it cannot show the leaf exactly.
  */
 export const typedDataFields = (
   json: TypedDataInput,
+  leaf?: (type: string, value: unknown) => string | undefined,
 ):
   | { readonly fields: ReadonlyArray<TypedDataLeaf>; readonly hasCommitment: boolean }
   | undefined => {
@@ -287,8 +290,8 @@ export const typedDataFields = (
         )
       );
     }
-    const leaf = leafValue(type, value);
-    return leaf !== undefined && push(path, leaf, isCommitmentLeaf(type, value));
+    const display = leaf?.(type, value) ?? leafValue(type, value);
+    return display !== undefined && push(path, display, isCommitmentLeaf(type, value));
   };
   return walk(json.primaryType, json.message, "") ? { fields: leaves, hasCommitment } : undefined;
 };
