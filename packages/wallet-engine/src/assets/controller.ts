@@ -902,11 +902,19 @@ export class AssetsController extends Controller<AssetsControllerState> {
     );
   }
 
-  /** The token's own `symbol` and `decimals` (EVM only); throws when either read fails. */
+  /** The token's own `symbol` and `decimals`; throws when either read fails. */
   async tokenMetadata(
     network: string,
     address: string,
   ): Promise<{ readonly symbol: string; readonly decimals: number }> {
+    if (this.options.networks.info(network).family === "tron") {
+      // The constant call's owner just has to be a valid address — use the contract itself.
+      const meta = await tronTokenMeta(this.options.networks.tronApi(network), address, address);
+      if (meta === undefined || meta.symbol === undefined) {
+        throw new TypeError(`${address} is not a readable TRC-20 contract on ${network}`);
+      }
+      return { symbol: meta.symbol, decimals: meta.decimals };
+    }
     const client = this.options.networks.client(network);
     const symbol = await callToken(client, address, "symbol");
     const decimals = await callToken(client, address, "decimals");

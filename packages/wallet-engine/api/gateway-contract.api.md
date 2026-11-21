@@ -1390,6 +1390,8 @@ export const TRON_NODE_PATHS: {
                 code: z.ZodMiniOptional<z.ZodMiniString<string>>;
                 message: z.ZodMiniOptional<z.ZodMiniString<string>>;
             }, z.core.$loose>;
+            energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
         }, z.core.$loose>]>;
     };
     readonly "/wallet/broadcasthex": {
@@ -1637,6 +1639,8 @@ export const tronConstantCallResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<
         code: z.ZodMiniOptional<z.ZodMiniString<string>>;
         message: z.ZodMiniOptional<z.ZodMiniString<string>>;
     }, z.core.$loose>;
+    energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+    energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
 }, z.core.$loose>]>;
 
 // @public (undocumented)

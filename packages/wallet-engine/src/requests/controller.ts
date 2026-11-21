@@ -20,6 +20,7 @@ import {
   normalizeSolana,
   SOLANA_NATIVE_ASSET,
 } from "@qntx/wallet-chains/solana";
+import { isTronAddress, lookupTronToken, tronTokenTable } from "@qntx/wallet-chains/tron";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
@@ -31,6 +32,7 @@ import { Controller } from "../controller.ts";
 import { TOKEN_SYMBOL_MAX, isAscii, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
+import { networkById } from "../networks/registry.ts";
 import type { PreparedSparkAction, SparkDisplay, SparkResult } from "../payments/action.ts";
 import { preparePay } from "../payments/pay.ts";
 import type { PayParams } from "../payments/pay.ts";
@@ -65,6 +67,7 @@ import {
   assessRecipients,
   assessSimulation,
   impersonatesBuiltIn,
+  impersonatesTronToken,
   mergeRisk,
   originRisk,
 } from "./risk.ts";
@@ -118,6 +121,19 @@ export type ZapInput = {
  */
 export type EvmSignInput = {
   readonly method: "evm-sign";
+  /** A page asking for the signature; absent means the wallet itself. */
+  readonly origin?: BrowserOrigin;
+  readonly account: AccountRef;
+  readonly network: string;
+  readonly request: SignRequest;
+};
+
+/**
+ * A dApp's TRON request: a transaction whose exact `raw_data` bytes are validated and signed
+ * unchanged, a TIP-191 message or TIP-712 typed data.
+ */
+export type TronSignInput = {
+  readonly method: "tron-sign";
   /** A page asking for the signature; absent means the wallet itself. */
   readonly origin?: BrowserOrigin;
   readonly account: AccountRef;
@@ -237,6 +253,7 @@ export type RequestInput =
   | PayInput
   | ZapInput
   | EvmSignInput
+  | TronSignInput
   | NostrSignInput
   | WeblnInvoiceInput
   | WatchAssetInput
@@ -1150,6 +1167,46 @@ export class RequestController extends Controller<RequestControllerState> {
         ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)
         : built;
     }
+    if (input.method === "tron-sign") {
+      if (input.origin === undefined && input.request.kind !== "tron.typed-data") {
+        throw new Error("an internal request can only sign typed data");
+      }
+      const prepared = await this.options.transactions.prepareDappTron(
+        input.account,
+        input.request,
+      );
+      const isTransaction = input.request.kind === "tron.transaction";
+      const signInRisk =
+        input.origin !== undefined &&
+        "signer" in prepared &&
+        prepared.intent.message?.kind === "text"
+          ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "tron")
+          : [];
+      const blindRisk = this.blindRisk(prepared.intent);
+      const { message } = prepared.intent;
+      const permitRisk =
+        message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
+      const built: Built = {
+        account: prepared.account,
+        network: prepared.network,
+        display: prepared.intent,
+        checks: collectChecks([
+          isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
+          message?.kind === "typed-data" && message.fields !== undefined
+            ? "decode-partial"
+            : undefined,
+          ...prepared.checks,
+        ]),
+        risk: isTransaction
+          ? mergeRisk(this.chainRisk(prepared.intent), prepared.risk ?? [])
+          : mergeRisk(mergeRisk(signInRisk, permitRisk), blindRisk),
+        run: { ...prepared, factor: "required" },
+        ...(prepared.tronFee === undefined ? {} : { tronFee: prepared.tronFee }),
+      };
+      return isTransaction
+        ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)
+        : built;
+    }
     if (input.method === "solana-sign") {
       const txs =
         input.request.kind === "transactions"
@@ -1304,7 +1361,11 @@ export class RequestController extends Controller<RequestControllerState> {
       };
     }
     if (input.method === "watch-asset") {
-      const address = checksumEvmAddress(input.address);
+      const tron = networkById(input.network)?.family === "tron";
+      if (tron && !isTronAddress(input.address)) {
+        throw new InvalidTokenError(`${input.address} is not a TRC-20 address`);
+      }
+      const address = tron ? input.address : checksumEvmAddress(input.address);
       const metadata = await this.options.tokens.metadata(input.network, address);
       const symbol = safeDisplayText(metadata.symbol, TOKEN_SYMBOL_MAX);
       const decimals = safeDecimals(metadata.decimals);
@@ -1314,7 +1375,9 @@ export class RequestController extends Controller<RequestControllerState> {
       if (decimals === undefined) {
         throw new InvalidTokenError("the token decimals are out of range");
       }
-      const chainId = Number(input.network.slice("eip155:".length));
+      const impersonated = tron
+        ? impersonatesTronToken(input.network, address, symbol)
+        : impersonatesBuiltIn(Number(input.network.slice("eip155:".length)), address, symbol);
       return {
         account: input.account,
         network: input.network,
@@ -1324,11 +1387,17 @@ export class RequestController extends Controller<RequestControllerState> {
           address,
           symbol,
           decimals,
-          verified: lookupEvmToken(evmTokenTable, chainId, address) !== undefined,
+          verified: tron
+            ? lookupTronToken(tronTokenTable, input.network, address) !== undefined
+            : lookupEvmToken(
+                evmTokenTable,
+                Number(input.network.slice("eip155:".length)),
+                address,
+              ) !== undefined,
         },
         checks: [],
         risk: [
-          ...(impersonatesBuiltIn(chainId, address, symbol)
+          ...(impersonated
             ? [{ code: "token-impersonation" as const, level: "danger" as const }]
             : []),
           ...(isAscii(symbol)
@@ -1436,7 +1505,7 @@ export class RequestController extends Controller<RequestControllerState> {
   ): Promise<SparkResult>;
   async approve(
     id: string,
-    method: "evm-sign",
+    method: "evm-sign" | "tron-sign",
     options?: ApproveOptions,
   ): Promise<TrackedTransaction | SignatureResult>;
   async approve(
@@ -1821,7 +1890,7 @@ export class RequestController extends Controller<RequestControllerState> {
     signIn: SignInParse | undefined,
     origin: BrowserOrigin,
     signer: string,
-    family: "evm" | "solana",
+    family: "evm" | "solana" | "tron",
   ): ReadonlyArray<RiskFinding> {
     if (signIn === undefined) {
       return [];
