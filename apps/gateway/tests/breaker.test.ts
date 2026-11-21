@@ -402,6 +402,7 @@ describe("account cool-down", () => {
 describe("upstream cost metering", () => {
   /** The billing account each upstream URL prefix belongs to. */
   const ACCOUNTS: ReadonlyArray<readonly [string, string]> = [
+    ["https://a.test/tron", "trongrid"],
     ["https://a.test", "a"],
     ["https://b.test", "b"],
     [ALCHEMY, "alchemy"],

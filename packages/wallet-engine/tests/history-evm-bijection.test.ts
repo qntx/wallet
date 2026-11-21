@@ -136,6 +136,7 @@ const verifiedStream = (options: { items: HistoryItem[]; answers: Record<string,
     OWNER,
     new Map(),
     () => undefined,
+    () => undefined,
   );
 };
 

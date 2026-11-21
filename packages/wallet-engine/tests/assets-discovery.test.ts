@@ -1407,7 +1407,7 @@ describe("AssetsController stale session writes", () => {
     expect(calls).toHaveLength(2);
     const agg = decodedAggregate(calls);
     expect(agg.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED, UNHELD].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED, UNHELD].map((a) => a.toLowerCase()),
     );
     const meta = decodedAggregate(calls, 1);
     expect(meta.args[0].map((call) => call.target.toLowerCase())).toStrictEqual([

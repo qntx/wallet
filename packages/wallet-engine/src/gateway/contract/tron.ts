@@ -3,8 +3,6 @@ import * as z from "zod/mini";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { endpoint } from "./endpoint.ts";
-import { RPC_COST_WEIGHTS } from "./rpc.ts";
-import type { RpcCostClass } from "./rpc.ts";
 
 /**
  * The TRON surface: the node's `/wallet` and `/walletsolidity` HTTP API plus the TronGrid
@@ -347,88 +345,72 @@ export type TronWitnessList = z.output<typeof tronWitnessListResponse>;
 type TronPath = {
   readonly request: z.ZodMiniType;
   readonly response: z.ZodMiniType;
-  readonly cost: RpcCostClass;
 };
 
-/** Node API paths forwarded to every provider: path → request schema, response schema, cost. */
+/** Node API paths forwarded to every provider: path → request schema, response schema. */
 export const TRON_NODE_PATHS = {
-  "/wallet/getnowblock": { request: emptyRequest, response: tronBlockResponse, cost: "heavy" },
+  "/wallet/getnowblock": { request: emptyRequest, response: tronBlockResponse },
   "/walletsolidity/getnowblock": {
     request: emptyRequest,
     response: tronBlockResponse,
-    cost: "heavy",
   },
   "/wallet/getblockbynum": {
     request: blockByNumRequest,
     response: tronMaybeBlockResponse,
-    cost: "heavy",
   },
   "/walletsolidity/getblockbynum": {
     request: blockByNumRequest,
     response: tronMaybeBlockResponse,
-    cost: "heavy",
   },
-  "/wallet/getaccount": { request: accountRequest, response: tronAccountResponse, cost: "point" },
+  "/wallet/getaccount": { request: accountRequest, response: tronAccountResponse },
   "/wallet/getavailableunfreezecount": {
     request: ownerRequest,
     response: tronUnfreezeCountResponse,
-    cost: "point",
   },
   "/wallet/getcandelegatedmaxsize": {
     request: canDelegateRequest,
     response: tronCanDelegateMaxSizeResponse,
-    cost: "point",
   },
   "/wallet/getdelegatedresourcev2": {
     request: delegatedResourceRequest,
     response: tronDelegatedResourceResponse,
-    cost: "point",
   },
-  "/wallet/getReward": { request: accountRequest, response: tronRewardResponse, cost: "point" },
+  "/wallet/getReward": { request: accountRequest, response: tronRewardResponse },
   "/wallet/getassetissuebyid": {
     request: z.strictObject({ value: z.int().check(z.nonnegative()) }),
     response: tronAssetIssueResponse,
-    cost: "point",
   },
   "/wallet/listwitnesses": {
     request: emptyRequest,
     response: tronWitnessListResponse,
-    cost: "heavy",
   },
   "/wallet/getaccountresource": {
     request: accountRequest,
     response: tronAccountResource,
-    cost: "point",
   },
   "/wallet/getchainparameters": {
     request: emptyRequest,
     response: tronChainParameters,
-    cost: "point",
   },
   "/wallet/triggerconstantcontract": {
     request: triggerRequest,
     response: tronConstantCallResponse,
-    cost: "heavy",
   },
   "/wallet/broadcasthex": {
     request: broadcastRequest,
     response: tronBroadcastResponse,
-    cost: "point",
   },
   "/wallet/gettransactionbyid": {
     request: transactionIdRequest,
     response: tronTransactionResponse,
-    cost: "point",
   },
   "/wallet/gettransactioninfobyid": {
     request: transactionIdRequest,
     response: tronTransactionInfoResponse,
-    cost: "point",
   },
   "/walletsolidity/gettransactioninfobyid": {
     request: transactionIdRequest,
     response: tronTransactionInfoResponse,
-    cost: "point",
   },
 } as const satisfies Readonly<Record<string, TronPath>>;
 
@@ -440,17 +422,14 @@ export const TRON_INDEXER_PATHS = {
   "/v1/accounts/transactions": {
     request: indexerPageRequest,
     response: tronIndexerPageResponse,
-    cost: "scan",
   },
   "/v1/accounts/transactions/trc20": {
     request: indexerPageRequest,
     response: tronIndexerPageResponse,
-    cost: "scan",
   },
   "/v1/accounts/account": {
     request: indexerAccountRequest,
     response: indexerAccountResponse,
-    cost: "scan",
   },
 } as const satisfies Readonly<Record<string, TronPath>>;
 
@@ -466,12 +445,6 @@ export const tronPathEntry = (path: string): TronPath | undefined =>
   (TRON_INDEXER_PATHS as Readonly<Record<string, TronPath>>)[path];
 
 export const tronPathAllowed = (path: string): boolean => tronPathEntry(path) !== undefined;
-
-/** The rate-limit units a request on `path` costs; 0 for an unlisted path. */
-export const tronPathCost = (path: string): number => {
-  const entry = tronPathEntry(path);
-  return entry === undefined ? 0 : RPC_COST_WEIGHTS[entry.cost];
-};
 
 /** Whether `path` is an indexer path — routed only to the network's indexer providers. */
 export const isTronIndexerPath = (path: string): path is TronIndexerPath =>

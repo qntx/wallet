@@ -61,6 +61,28 @@ export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
     costs: request(1, "https://blockstream.info/explorer-api"),
     budget: [{ units: 10, seconds: 2 }],
   },
+  // https://www.ankr.com/docs/rpc-service/service-plans/ — billed per request. POLICY 50 req/s:
+  // the plan's rate limit is an operator assumption.
+  ankr: {
+    costs: request(1, "https://www.ankr.com/docs/rpc-service/service-plans/"),
+    budget: [{ units: 250, seconds: 5 }],
+  },
+  // https://developers.tron.network/reference/rate-limits — one request per call; the page
+  // publishes no fixed quota ("depending on plan"). POLICY 10 req/s and 80,000/day: the key's plan
+  // is an operator assumption.
+  trongrid: {
+    costs: request(1, "https://developers.tron.network/reference/rate-limits"),
+    budget: [
+      { units: 50, seconds: 5 },
+      { units: 80_000, seconds: 86_400 },
+    ],
+  },
+  // https://docs.tatum.io/docs/rate-limits — one request per call. POLICY 5 req/s: the plan is an
+  // operator assumption.
+  tatum: {
+    costs: request(1, "https://docs.tatum.io/docs/rate-limits"),
+    budget: [{ units: 25, seconds: 5 }],
+  },
   // https://www.coingecko.com/en/api/pricing — "1 call = 1 credit"; assumes Analyst 500/min and
   // 500k/month (≈16,129/day); 80 % plus a daily share of the monthly cap.
   coingecko: COINGECKO,
@@ -113,6 +135,8 @@ export const STAGING_ACCOUNTS: Readonly<Record<string, Account>> = {
   soneium: publicEndpoint("https://soneium.org"),
   apechain: publicEndpoint("https://apechain.com"),
   tatum: publicEndpoint("https://tatum.io"),
+  trongrid: publicEndpoint("https://nile.trongrid.io"),
+  nileex: publicEndpoint("https://nileex.io"),
   blockstream: publicEndpoint("https://blockstream.info"),
   emzy: publicEndpoint("https://mempool.emzy.de"),
   coingecko: COINGECKO,

@@ -8,10 +8,10 @@ import {
   isTronIndexerPath,
   parseWith,
   tron,
-  tronPathCost,
   tronPathEntry,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
 import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
@@ -84,8 +84,8 @@ export function tronRoutes({
     if (!accepts(entry.request, body)) {
       throw new GatewayHttpError(400, "invalid-request");
     }
-    // The request paid one unit up front; it now pays the path's cost class.
-    await c.get("charge")(tronPathCost(path) - 1);
+    // Every allow-listed path is one bounded upstream call, billed one request credit.
+    const meter = c.get("meter");
 
     if (isTronIndexerPath(path)) {
       // The body already satisfied this same schema; re-parsing narrows it for the URL build.
@@ -97,11 +97,18 @@ export function tronRoutes({
       if (providers.length === 0) {
         throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
       }
-      const { value, providerId } = await forwarder.run(providers, async (send, provider) =>
-        respond(
-          await send({ url: tronIndexerUrl(provider, path, request), method: "GET" }),
-          entry.response,
-        ),
+      const { value, providerId } = await forwarder.run(
+        providers,
+        async (send, provider) =>
+          respond(
+            await send({
+              url: tronIndexerUrl(provider, path, request),
+              method: "GET",
+              cost: requestCost(provider.costs),
+            }),
+            entry.response,
+          ),
+        { meter },
       );
       return c.body(value, 200, {
         "content-type": "application/json",
@@ -119,10 +126,11 @@ export function tronRoutes({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: payload,
+            cost: requestCost(provider.costs),
           }),
           entry.response,
         ),
-      { broadcast: path === TRON_BROADCAST_PATH },
+      { meter, broadcast: path === TRON_BROADCAST_PATH },
     );
     return c.body(value, 200, {
       "content-type": "application/json",

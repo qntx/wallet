@@ -59,6 +59,9 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
       "0x",
       "jupiter",
       "across",
+      "trongrid",
+      "ankr",
+      "tatum",
     ].map((id) => [
       id,
       {

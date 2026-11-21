@@ -54,6 +54,11 @@ const productionEnv = (): WorkerEnv => ({
   IP_LIMITER: allowAll,
   RPC_LIMITER: allowAll,
   DEFAULT_LIMITER: allowAll,
+  SHARE_LIMITER: allowAll,
+  PROVIDER_BUDGET: {
+    idFromName: (name: string) => name,
+    get: () => ({ lease: async () => Promise.resolve({ ok: true as const, granted: 1000 }) }),
+  } as unknown as WorkerEnv["PROVIDER_BUDGET"],
   CORS_ORIGINS: "",
   NETWORKS: "production",
   ZEROX_API_KEY: "z",
@@ -64,6 +69,8 @@ const productionEnv = (): WorkerEnv => ({
   BLOCKSTREAM_CLIENT_ID: "id",
   BLOCKSTREAM_CLIENT_SECRET: "sec",
   COINGECKO_API_KEY: "cg",
+  TRONGRID_API_KEY: "tg",
+  TATUM_API_KEY: "t",
 });
 
 describe("upstream auth", () => {

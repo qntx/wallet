@@ -8,7 +8,6 @@ import {
   TRON_INDEXER_PATHS,
   TRON_NODE_PATHS,
   gatewayError,
-  tronPathCost,
 } from "@qntx/wallet-engine/gateway/contract";
 
 import type { GatewayNetwork } from "../src/types.ts";
@@ -112,22 +111,23 @@ describe("tron route", () => {
   });
 
   it.each([
-    ["point", "/wallet/getchainparameters", {}, 1],
-    ["heavy", "/wallet/getnowblock", {}, 3],
-    ["scan", "/v1/accounts/transactions", { address: HOLDER }, 10],
-  ])("charges %s class units on %s", async (_name, path, body, units) => {
-    const limiter = recordingLimiter();
+    ["/wallet/getchainparameters", {}],
+    ["/wallet/getnowblock", {}],
+    ["/v1/accounts/transactions", { address: HOLDER }],
+  ])("bills one request credit on the provider account for %s", async (path, body) => {
+    const share = recordingLimiter();
     const up = fakeFetch({
       "https://a.test/tron": () => Response.json(costFixture(path)),
     });
     const res = await gateway({
       fetch: up.fetch,
       networks: NETWORKS,
-      limiters: { ip: allowAll, rpc: limiter, default: allowAll },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share },
     }).request(`${BASE}${path}`, post(body));
     expect(res.status).toBe(200);
-    expect(limiter.deltas.reduce((a, b) => a + b, 0)).toBe(units);
-    expect(units).toBe(tronPathCost(path));
+    expect(up.calls).toHaveLength(1);
+    expect(share.keys).toStrictEqual(["trongrid:unknown"]);
+    expect(share.deltas.every((delta) => delta >= 1)).toBe(true);
   });
 
   const costFixture = (path: string): Record<string, unknown> => {
