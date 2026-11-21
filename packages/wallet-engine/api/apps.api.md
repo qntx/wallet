@@ -4,49 +4,20 @@
 
 ```ts
 
-import { AllMidsParameters } from '@nktkas/hyperliquid/api/info';
-import { AllMidsResponse } from '@nktkas/hyperliquid/api/info';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
-import { CandleParameters } from '@nktkas/hyperliquid/api/subscription';
-import { CandleSnapshotParameters } from '@nktkas/hyperliquid/api/info';
-import { CandleSnapshotResponse } from '@nktkas/hyperliquid/api/info';
 import { chains } from '@qntx/wallet/chains';
-import { ClearinghouseStateEvent } from '@nktkas/hyperliquid/api/subscription';
-import { ClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
-import { ClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
 import { Event as Event_2 } from '@qntx/nostr';
-import { ExtraAgentsResponse } from '@nktkas/hyperliquid/api/info';
-import { FrontendOpenOrdersParameters } from '@nktkas/hyperliquid/api/info';
-import { FrontendOpenOrdersResponse } from '@nktkas/hyperliquid/api/info';
-import { FundingHistoryParameters } from '@nktkas/hyperliquid/api/info';
-import { FundingHistoryResponse } from '@nktkas/hyperliquid/api/info';
-import { HyperliquidNetwork } from '@qntx/wallet/protocol';
-import { ISubscriptionTransport } from '@nktkas/hyperliquid';
-import { L2BookEvent } from '@nktkas/hyperliquid/api/subscription';
-import { L2BookParameters } from '@nktkas/hyperliquid/api/info';
-import { L2BookResponse } from '@nktkas/hyperliquid/api/info';
 import { LightningInvoice } from '@qntx/spark';
 import { LightningPayment } from '@qntx/spark';
 import { LightningSendStatus } from '@qntx/spark';
 import { LnurlPayRequest } from '@qntx/spark/lnurl';
 import { LnurlWithdrawRequest } from '@qntx/spark/lnurl';
-import { MaxBuilderFeeResponse } from '@nktkas/hyperliquid/api/info';
 import { MessageContent } from '@qntx/wallet-chains';
-import { MetaAndAssetCtxsParameters } from '@nktkas/hyperliquid/api/info';
-import { MetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
 import { NetworkMeta } from '@qntx/wallet-chains/networks';
 import { NostrKeyRef } from '@qntx/wallet';
-import { OpenOrdersEvent } from '@nktkas/hyperliquid/api/subscription';
-import { OrderStatusParameters } from '@nktkas/hyperliquid/api/info';
-import { OrderStatusResponse } from '@nktkas/hyperliquid/api/info';
-import { PolymarketCredentialsInfo } from '@qntx/wallet/polymarket';
-import { PortfolioResponse } from '@nktkas/hyperliquid/api/info';
-import { PredictedFundingsResponse } from '@nktkas/hyperliquid/api/info';
 import { PublicClient } from 'viem';
-import { RecentTradesParameters } from '@nktkas/hyperliquid/api/info';
-import { RecentTradesResponse } from '@nktkas/hyperliquid/api/info';
 import { SignRequest } from '@qntx/wallet-chains';
 import { SparkAccountRef } from '@qntx/wallet/protocol';
 import { SparkApproveIntent } from '@qntx/wallet/protocol';
@@ -56,20 +27,8 @@ import { SparkPayment } from '@qntx/spark';
 import { SparkSigner } from '@qntx/wallet/spark';
 import { SparkStore } from '@qntx/spark';
 import { SparkTransfer } from '@qntx/spark';
-import { SpotClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
-import { SpotClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
-import { SpotMetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
-import { SpotStateEvent } from '@nktkas/hyperliquid/api/subscription';
 import { StoreApi } from 'zustand/vanilla';
 import { UnsignedEvent } from '@qntx/nostr';
-import { UserFeesResponse } from '@nktkas/hyperliquid/api/info';
-import { UserFillsEvent } from '@nktkas/hyperliquid/api/subscription';
-import { UserFillsParameters } from '@nktkas/hyperliquid/api/info';
-import { UserFillsResponse } from '@nktkas/hyperliquid/api/info';
-import { UserFundingParameters } from '@nktkas/hyperliquid/api/info';
-import { UserFundingResponse } from '@nktkas/hyperliquid/api/info';
-import { UserRateLimitResponse } from '@nktkas/hyperliquid/api/info';
-import { UserRoleResponse } from '@nktkas/hyperliquid/api/info';
 import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
 import * as z from 'zod/mini';
@@ -160,8 +119,6 @@ type AddressBookTombstone = {
 // @public (undocumented)
 type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 
-export { AllMidsResponse }
-
 // @public (undocumented)
 type AppAgent = {
     readonly address: string;
@@ -171,7 +128,30 @@ type AppAgent = {
 };
 
 // @public
+export type AppApis<A extends ReadonlyArray<AppDefinition<AppId, unknown>>> = { readonly [D in A[number] as D["id"]]: D extends AppDefinition<AppId, infer Api> ? Api : never; };
+
+// @public
 type AppAvailability = "available" | "close-only" | "blocked";
+
+// @public
+export type AppContext = {
+    readonly wallet: Wallet;
+    readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly fetch: typeof globalThis.fetch;
+    readonly now: () => number;
+    readonly setTimer: SetTimer;
+    readonly random: (length: number) => Uint8Array;
+    readonly logger: EngineLogger;
+    readonly socket: (url: string) => AppSocket;
+    readonly state: () => AppsState | undefined;
+    readonly storage: AppStorage;
+};
+
+// @public
+export type AppDefinition<Id extends AppId, Api> = {
+    readonly id: Id;
+    readonly create: (context: AppContext) => AppInstance<Api>;
+};
 
 // @public (undocumented)
 type AppError = {
@@ -220,6 +200,15 @@ export type AppGroupState = {
 export type AppId = "hyperliquid" | "polymarket";
 
 // @public
+export type AppInstance<Api> = {
+    readonly api: Api;
+    readonly provider: AppProvider;
+    readonly unlock?: () => Promise<void>;
+    readonly lock?: () => void;
+    readonly close?: () => void;
+};
+
+// @public
 type AppProvider = {
     readonly id: AppId;
     readonly error: (category: "busy" | "unlock-required" | "unavailable", message: string) => Error;
@@ -239,25 +228,19 @@ type ApproveOptions = {
     readonly acknowledged?: RequestAcknowledgement;
 };
 
-// @public (undocumented)
-export type AppsBuilderConfig = {
-    readonly address: string;
-    readonly feeRateTenthsBps: number;
-};
-
 // @public
 export class AppsController extends Controller<AppsState> {
     constructor(deps: AppsControllerDeps);
-    acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void>;
-    cancel(group: HyperliquidGroup, app: AppId): Promise<void>;
+    acknowledgeTerms(group: AppGroup, app: AppId): Promise<void>;
+    cancel(group: AppGroup, app: AppId): Promise<void>;
     // (undocumented)
     destroy(): Promise<void>;
     // (undocumented)
-    disable(group: HyperliquidGroup, app: AppId, options: {
+    disable(group: AppGroup, app: AppId, options: {
         revoke: boolean;
     }): Promise<void>;
     // (undocumented)
-    enable(group: HyperliquidGroup, app: AppId): Promise<void>;
+    enable(group: AppGroup, app: AppId): Promise<void>;
     // (undocumented)
     init(): Promise<void>;
     // (undocumented)
@@ -265,7 +248,7 @@ export class AppsController extends Controller<AppsState> {
     reconcile(group: AppGroup): Promise<void>;
     refreshEligibility(): Promise<void>;
     // (undocumented)
-    renew(group: HyperliquidGroup, app: AppId): Promise<void>;
+    renew(group: AppGroup, app: AppId): Promise<void>;
 }
 
 // @public (undocumented)
@@ -288,13 +271,6 @@ type AppsEligibility = {
     readonly checkedAt?: number;
 };
 
-// @public (undocumented)
-export type AppsHyperliquidConfig = {
-    readonly network: HyperliquidNetwork;
-    readonly agentName: string;
-    readonly builder?: AppsBuilderConfig;
-};
-
 // @public
 export type AppSocket = {
     readonly readyState: number;
@@ -308,14 +284,6 @@ export type AppSocket = {
     onerror: (() => void) | null;
 };
 
-// @public
-type AppSocketStatus = "connecting" | "open" | "closed";
-
-// @public (undocumented)
-export type AppsPolymarketConfig = {
-    readonly builder?: PolymarketBuilder;
-};
-
 // @public (undocumented)
 export type AppsState = {
     readonly locked: boolean;
@@ -325,6 +293,14 @@ export type AppsState = {
 
 // @public
 type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "locate-wallet" | "deploy-wallet" | "credentials" | "approvals" | "verify" | "revoke";
+
+// @public
+export type AppStorage = {
+    readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
+    readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
+    readonly delete: (group: AppGroup, name: string) => Promise<void>;
+    readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
+};
 
 // @public
 type AssetChange = {
@@ -423,8 +399,6 @@ type BrowserOrigin = {
     readonly kind: "browser";
     readonly origin: string;
 };
-
-export { CandleSnapshotResponse }
 
 // @public (undocumented)
 type ChainApis = ReturnType<typeof chains>;
@@ -577,8 +551,6 @@ type ChainRequestInput = ({
 // @public (undocumented)
 type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
-export { ClearinghouseStateResponse }
-
 // @public
 abstract class Controller<S extends Record<string, unknown>> {
     protected constructor(options: ControllerOptions<S>);
@@ -603,20 +575,12 @@ type ControllerOptions<S> = {
 };
 
 // @public
-export function createApps<O extends CreateAppsOptions>(options: O): {
+export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, unknown>>>(options: CreateAppsOptions & {
+    readonly apps: A;
+}): {
     readonly controller: AppsController;
-    readonly hyperliquid: O["hyperliquid"] extends AppsHyperliquidConfig ? HyperliquidProvider : undefined;
-    readonly polymarket: O["polymarket"] extends AppsPolymarketConfig ? PolymarketProvider : undefined;
     readonly destroy: () => Promise<void>;
-};
-
-// @public (undocumented)
-export function createApps(options: CreateAppsOptions): {
-    readonly controller: AppsController;
-    readonly hyperliquid: HyperliquidProvider;
-    readonly polymarket: PolymarketProvider;
-    readonly destroy: () => Promise<void>;
-};
+} & AppApis<A>;
 
 // @public (undocumented)
 export type CreateAppsOptions = {
@@ -632,8 +596,6 @@ export type CreateAppsOptions = {
     readonly gateway: {
         readonly url: string;
     };
-    readonly hyperliquid?: AppsHyperliquidConfig;
-    readonly polymarket?: AppsPolymarketConfig;
 };
 
 // @public
@@ -707,8 +669,6 @@ type EvmSignInput = {
     readonly request: SignRequest;
 };
 
-export { ExtraAgentsResponse }
-
 // @public
 type FeeModel =
 /** Nothing beyond gas: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
@@ -729,10 +689,6 @@ type FeeModel =
     readonly pricing: GasPricing;
 };
 
-export { FrontendOpenOrdersResponse }
-
-export { FundingHistoryResponse }
-
 // @public
 type GasPricing =
 /** EIP-1559 caps from eth_feeHistory (maxFeePerGas = 2 × next base fee + the tier's reward). */
@@ -751,345 +707,6 @@ type GatewayConfig = {
 
 // @public
 type GatewayScope = "evm" | "solana" | "bitcoin" | "tron" | "service";
-
-// @public (undocumented)
-export const HYPERLIQUID_DEPOSIT: Record<"Mainnet" | "Testnet", HyperliquidDepositInfo>;
-
-// @public
-export type HyperliquidAccount = {
-    readonly state: (params: ClearinghouseStateParameters) => Promise<ClearinghouseStateResponse>;
-    readonly spot: (params: SpotClearinghouseStateParameters) => Promise<SpotClearinghouseStateResponse>;
-    readonly openOrders: (params: FrontendOpenOrdersParameters) => Promise<FrontendOpenOrdersResponse>;
-    readonly fills: (params: UserFillsParameters) => Promise<UserFillsResponse>;
-    readonly funding: (params: UserFundingParameters) => Promise<UserFundingResponse>;
-    readonly portfolio: (user: string) => Promise<PortfolioResponse>;
-    readonly rateLimit: (user: string) => Promise<UserRateLimitResponse>;
-    readonly fees: (user: string) => Promise<UserFeesResponse>;
-    readonly orderStatus: (params: OrderStatusParameters) => Promise<OrderStatusResponse>;
-    readonly extraAgents: (user: string) => Promise<ExtraAgentsResponse>;
-    readonly maxBuilderFee: (user: string, builder: string) => Promise<MaxBuilderFeeResponse>;
-    readonly role: (user: string) => Promise<UserRoleResponse>;
-};
-
-// @public
-export type HyperliquidActionOutcome = {
-    readonly kind: "ok";
-    readonly twapId?: number;
-} | {
-    readonly kind: "unknown";
-};
-
-// @public
-export type HyperliquidAgent = {
-    readonly address: string;
-    readonly owner: string;
-    readonly validUntil: number;
-};
-
-// @public
-export type HyperliquidAsset = {
-    readonly asset: number;
-    readonly szDecimals: number;
-    readonly market: HyperliquidMarket;
-    readonly maxLeverage?: number;
-};
-
-// @public
-export type HyperliquidCancelOutcome = {
-    readonly kind: "cancelled";
-} | {
-    readonly kind: "rejected";
-    readonly message: string;
-} | {
-    readonly kind: "unknown";
-};
-
-// @public
-export type HyperliquidClock = {
-    readonly record: (serverMs: number, requestStart: number, responseEnd: number) => void;
-    readonly skew: () => number | undefined;
-    readonly assertSkew: () => void;
-    readonly nextNonce: (signer: string) => number;
-};
-
-// @public
-export type HyperliquidDepositInfo = {
-    readonly bridge: string;
-    readonly usdc: string;
-    readonly network: string;
-    readonly minimum: bigint;
-    readonly creditSeconds: number;
-};
-
-// @public (undocumented)
-export class HyperliquidError extends Error {
-    constructor(category: HyperliquidErrorCategory, message: string, cause?: unknown);
-    // (undocumented)
-    readonly category: HyperliquidErrorCategory;
-}
-
-// @public
-export type HyperliquidErrorCategory = "network" |
-/** The request may have reached the server; an /exchange post's outcome is unknown. */
-"timeout" |
-/** The server answered with a non-2xx status. */
-"unavailable" |
-/** The device clock disagrees with the server beyond the bound — signing would be refused. */
-"clock-skew" |
-/** A price, size or other caller input fails the tick/lot/canonical rules. */
-"invalid-input" |
-/** Hyperliquid rejected the signed action itself (a `status: "err"` exchange answer). */
-"rejected" |
-/** The vault is locked — the kernel refused to sign; nothing was posted. */
-"unlock-required" |
-/** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
-"reauthorization-required" |
-/** The account has no enabled, owner-verified agent on this network. */
-"not-enabled" |
-/** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
-"deposit-required" |
-/** The user refused, or the approval request expired or was invalidated. */
-"approval-rejected" |
-/** An enablement flow is already running for the group — wait or cancel it. */
-"busy";
-
-// @public (undocumented)
-export type HyperliquidFund = {
-    readonly depositInfo: HyperliquidDepositInfo;
-    readonly deposit: (group: HyperliquidGroup, params: {
-        readonly amount: bigint;
-        readonly fee: EvmFeeTier;
-    }) => Promise<HyperliquidPendingAction>;
-};
-
-// @public
-export type HyperliquidGroup = {
-    readonly walletId: string;
-    readonly groupIndex: number;
-};
-
-// @public (undocumented)
-export type HyperliquidLive = {
-    readonly book: (coin: string, params?: {
-        readonly nSigFigs?: 2 | 3 | 4 | 5 | null;
-    }) => LiveView<L2BookEvent>;
-    readonly trades: (coin: string) => LiveView<RecentTradesResponse>;
-    readonly candles: (coin: string, interval: CandleParameters["interval"]) => LiveView<CandleSnapshotResponse>;
-    readonly account: (group: HyperliquidGroup) => LiveView<ClearinghouseStateEvent>;
-    readonly spotState: (group: HyperliquidGroup) => LiveView<SpotStateEvent>;
-    readonly openOrders: (group: HyperliquidGroup) => LiveView<OpenOrdersEvent>;
-    readonly fills: (group: HyperliquidGroup) => LiveView<UserFillsEvent["fills"]>;
-};
-
-// @public
-export type HyperliquidMarket = "perp" | "spot";
-
-// @public
-export type HyperliquidMarkets = {
-    readonly perps: (params?: MetaAndAssetCtxsParameters) => Promise<MetaAndAssetCtxsResponse>;
-    readonly spot: () => Promise<SpotMetaAndAssetCtxsResponse>;
-    readonly book: (params: L2BookParameters) => Promise<L2BookResponse>;
-    readonly candles: (params: CandleSnapshotParameters) => Promise<CandleSnapshotResponse>;
-    readonly trades: (params: RecentTradesParameters) => Promise<RecentTradesResponse>;
-    readonly fundingHistory: (params: FundingHistoryParameters) => Promise<FundingHistoryResponse>;
-    readonly predictedFundings: () => Promise<PredictedFundingsResponse>;
-    readonly mids: (params?: AllMidsParameters) => Promise<AllMidsResponse>;
-};
-
-// @public
-export type HyperliquidModifyParams = {
-    readonly coin: string;
-    readonly side: OrderSide;
-    readonly size: string;
-    readonly reduceOnly?: boolean;
-    readonly order: HyperliquidOrderKind;
-};
-
-// @public
-export type HyperliquidOrderKind = {
-    readonly kind: "limit";
-    readonly price: string;
-    readonly tif?: "Gtc" | "Ioc" | "Alo";
-} | {
-    readonly kind: "market";
-    readonly slippageBps: number;
-} | ({
-    readonly kind: "trigger";
-    readonly tpsl: "tp" | "sl";
-} & HyperliquidTriggerParams);
-
-// @public
-export type HyperliquidOrderOutcome = {
-    readonly kind: "resting";
-    readonly oid?: number | undefined;
-    readonly cloid?: string | undefined;
-    readonly filledSz?: string | undefined;
-} | {
-    readonly kind: "filled";
-    readonly oid?: number | undefined;
-    readonly cloid?: string | undefined;
-    readonly totalSz: string;
-    readonly avgPx?: string | undefined;
-} | {
-    readonly kind: "rejected";
-    readonly cloid?: string | undefined;
-    readonly reason: HyperliquidRejectReason;
-    readonly message: string;
-} | {
-    readonly kind: "not-placed";
-    readonly cloid?: string | undefined;
-} | {
-    readonly kind: "unknown";
-    readonly cloid?: string | undefined;
-};
-
-// @public
-export type HyperliquidOrderParams = {
-    readonly coin: string;
-    readonly side: OrderSide;
-    readonly size: string;
-    readonly reduceOnly?: boolean;
-    readonly order: HyperliquidOrderKind;
-    readonly takeProfit?: HyperliquidTriggerParams;
-    readonly stopLoss?: HyperliquidTriggerParams;
-    readonly positionTpsl?: boolean;
-};
-
-// @public
-export type HyperliquidPendingAction = {
-    readonly requestId: string;
-    readonly outcome: Promise<HyperliquidActionOutcome>;
-};
-
-// @public
-export type HyperliquidPlaceResult = {
-    readonly outcomes: ReadonlyArray<HyperliquidOrderOutcome>;
-    readonly price: string;
-};
-
-// @public (undocumented)
-export type HyperliquidProvider = {
-    readonly markets: HyperliquidMarkets;
-    readonly account: HyperliquidAccount;
-    readonly quote: HyperliquidQuote;
-    readonly clock: HyperliquidClock;
-    readonly trade: HyperliquidTrade;
-    readonly fund: HyperliquidFund;
-    readonly transfer: {
-        readonly toSpot: (group: HyperliquidGroup, amount: string) => Promise<HyperliquidPendingAction>;
-        readonly toPerp: (group: HyperliquidGroup, amount: string) => Promise<HyperliquidPendingAction>;
-        readonly usdSend: (group: HyperliquidGroup, params: {
-            readonly destination: string;
-            readonly amount: string;
-        }) => Promise<HyperliquidPendingAction>;
-        readonly spotSend: (group: HyperliquidGroup, params: {
-            readonly destination: string;
-            readonly token: string;
-            readonly amount: string;
-        }) => Promise<HyperliquidPendingAction>;
-        readonly withdraw: (group: HyperliquidGroup, params: {
-            readonly destination: string;
-            readonly amount: string;
-        }) => Promise<HyperliquidPendingAction>;
-    };
-    readonly live?: HyperliquidLive;
-};
-
-// @public
-export type HyperliquidQuote = {
-    readonly limit: (params: {
-        readonly price: string;
-        readonly size: string;
-        readonly side: OrderSide;
-        readonly szDecimals: number;
-        readonly market: HyperliquidMarket;
-    }) => HyperliquidQuotePreview;
-    readonly market: (params: {
-        readonly reference: string;
-        readonly size: string;
-        readonly side: OrderSide;
-        readonly slippageBps: number;
-        readonly szDecimals: number;
-        readonly market: HyperliquidMarket;
-    }) => HyperliquidQuotePreview;
-};
-
-// @public
-export type HyperliquidQuotePreview = {
-    readonly price: string;
-    readonly size: string;
-    readonly notional: string;
-    readonly meetsMinimum: boolean;
-};
-
-// @public
-export type HyperliquidRejectReason = "tick" | "min-notional" | "margin" | "reduce-only" | "post-only-would-match" | "ioc-no-match" | "bad-trigger" | "no-liquidity" | "open-interest-cap" | "insufficient-spot-balance" | "oracle" | "max-position" | "other";
-
-// @public (undocumented)
-export type HyperliquidSocket = ISubscriptionTransport & {
-    readonly isTestnet: boolean;
-    readonly status: () => HyperliquidSocketStatus;
-    readonly onStatus: (listener: (status: HyperliquidSocketStatus) => void) => () => void;
-    readonly onConfirmed: (listener: (channel: string, payload: unknown) => void) => () => void;
-    readonly close: () => void;
-};
-
-// @public (undocumented)
-export type HyperliquidSocketStatus = AppSocketStatus;
-
-// @public (undocumented)
-export type HyperliquidTrade = {
-    readonly place: (group: HyperliquidGroup, params: HyperliquidOrderParams) => Promise<HyperliquidPlaceResult>;
-    readonly modify: (group: HyperliquidGroup, params: {
-        readonly oid: number | string;
-    } & HyperliquidModifyParams) => Promise<HyperliquidActionOutcome>;
-    readonly batchModify: (group: HyperliquidGroup, modifies: ReadonlyArray<{
-        readonly oid: number | string;
-    } & HyperliquidModifyParams>) => Promise<ReadonlyArray<HyperliquidOrderOutcome>>;
-    readonly cancel: (group: HyperliquidGroup, cancels: ReadonlyArray<{
-        readonly coin: string;
-        readonly oid: number;
-    }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
-    readonly cancelByCloid: (group: HyperliquidGroup, cancels: ReadonlyArray<{
-        readonly coin: string;
-        readonly cloid: string;
-    }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
-    readonly cancelAll: (group: HyperliquidGroup) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
-    readonly scheduleCancel: (group: HyperliquidGroup, time?: number) => Promise<HyperliquidActionOutcome>;
-    readonly twap: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly side: "buy" | "sell";
-        readonly size: string;
-        readonly minutes: number;
-        readonly randomize: boolean;
-        readonly reduceOnly?: boolean;
-    }) => Promise<HyperliquidActionOutcome>;
-    readonly twapCancel: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly twapId: number;
-    }) => Promise<HyperliquidActionOutcome>;
-    readonly setLeverage: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly leverage: number;
-        readonly marginMode: "cross" | "isolated";
-    }) => Promise<HyperliquidActionOutcome>;
-    readonly adjustMargin: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly amount: string;
-    }) => Promise<HyperliquidActionOutcome>;
-    readonly close: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly slippageBps: number;
-    }) => Promise<HyperliquidPlaceResult>;
-};
-
-// @public
-export type HyperliquidTriggerParams = {
-    readonly triggerPx: string;
-    readonly market?: boolean;
-    readonly price?: string;
-    readonly slippageBps?: number;
-};
 
 // @public
 type Independent<T> = {
@@ -1129,32 +746,12 @@ type JupiterSwapQuote = {
     readonly fetchedAt: number;
 };
 
-export { L2BookResponse }
-
 // @public
 type LightningInvoiceDisplay = {
     readonly kind: "lightning.invoice";
     readonly amountSats: number;
     readonly memo?: string;
 };
-
-// @public
-export type LiveState<T> = {
-    readonly status: "connecting" | "live" | "stale";
-    readonly data: T | undefined;
-    readonly updatedAt: number | undefined;
-};
-
-// @public (undocumented)
-export type LiveView<T> = {
-    readonly getState: () => LiveState<T>;
-    readonly subscribe: (listener: (state: LiveState<T>) => void) => () => void;
-    readonly close: () => Promise<void>;
-};
-
-export { MaxBuilderFeeResponse }
-
-export { MetaAndAssetCtxsResponse }
 
 // @public (undocumented)
 class NetworkController extends Controller<NetworkControllerState> {
@@ -1243,11 +840,6 @@ type Options = {
     readonly pollMs?: number;
     readonly chains?: ReturnType<typeof chains>;
 };
-
-// @public (undocumented)
-export type OrderSide = "buy" | "sell";
-
-export { OrderStatusResponse }
 
 // @public
 type PayInput = {
@@ -1366,665 +958,6 @@ type PhishingState = {
 // @public
 type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
 
-// @public (undocumented)
-export type PolymarketAccount = {
-    readonly signer: `0x${string}`;
-    readonly wallet: `0x${string}`;
-    readonly kind: "deposit-wallet" | "safe";
-    readonly deployed: boolean;
-    readonly legacySafe?: `0x${string}`;
-};
-
-// @public (undocumented)
-export type PolymarketAccountLiveData = {
-    readonly wallet: `0x${string}`;
-    readonly openOrders: ReadonlyArray<PolymarketOrder>;
-    readonly positions: ReadonlyArray<PolymarketPosition>;
-};
-
-// @public (undocumented)
-export type PolymarketAccountReads = {
-    readonly locate: (group: AppGroup) => Promise<PolymarketAccount>;
-    readonly credentials: (group: AppGroup) => Promise<PolymarketCredentialsInfo | undefined>;
-    readonly positions: (wallet: `0x${string}`, params?: PolymarketPositionsParams) => Promise<PolymarketPage<PolymarketPosition>>;
-    readonly value: (wallet: `0x${string}`) => Promise<string>;
-    readonly activity: (wallet: `0x${string}`, params?: PolymarketActivityParams) => Promise<PolymarketPage<PolymarketActivity>>;
-    readonly pnl: (wallet: `0x${string}`, params?: PolymarketPnlParams) => Promise<PolymarketPnl>;
-    readonly approvals: (wallet: `0x${string}`) => Promise<PolymarketApprovals>;
-    readonly openOrders: (group: AppGroup, params?: PolymarketOpenOrdersParams) => Promise<PolymarketPage<PolymarketOrder>>;
-    readonly order: (group: AppGroup, orderId: string) => Promise<PolymarketOrder | undefined>;
-    readonly trades: (group: AppGroup, params?: PolymarketTradesParams) => Promise<PolymarketPage<PolymarketTrade>>;
-    readonly balance: (group: AppGroup) => Promise<PolymarketBalance>;
-    readonly refreshAllowance: (group: AppGroup, params: {
-        readonly assetType: "COLLATERAL" | "CONDITIONAL";
-        readonly tokenId?: string;
-    }) => Promise<PolymarketBalance>;
-    readonly closedOnly: (group: AppGroup) => Promise<boolean>;
-    readonly revokeApiKey: (group: AppGroup) => Promise<void>;
-};
-
-// @public (undocumented)
-export type PolymarketActivity = {
-    readonly type: string;
-    readonly timestamp: number;
-    readonly conditionId: string;
-    readonly assetId: string;
-    readonly side?: string;
-    readonly size?: string;
-    readonly usdcSize?: string;
-    readonly price?: string;
-    readonly transactionHash: string;
-    readonly outcome?: string;
-    readonly outcomeIndex?: number;
-};
-
-// @public (undocumented)
-export type PolymarketActivityParams = {
-    readonly cursor?: string;
-    readonly limit?: number;
-    readonly start?: number;
-    readonly end?: number;
-    readonly sortDirection?: "ASC" | "DESC";
-};
-
-// @public (undocumented)
-export type PolymarketApproval = {
-    readonly id: string;
-    readonly feature: string;
-    readonly token: `0x${string}`;
-    readonly spender: `0x${string}`;
-    readonly amount?: string;
-    readonly standard: string;
-    readonly approved: boolean;
-};
-
-// @public (undocumented)
-export type PolymarketApprovals = {
-    readonly address: `0x${string}`;
-    readonly checkedAt: string;
-    readonly contracts: ReadonlyArray<PolymarketApproval>;
-};
-
-// @public (undocumented)
-export type PolymarketBalance = {
-    readonly balance: string;
-    readonly allowances: Readonly<Record<string, string>>;
-};
-
-// @public (undocumented)
-export type PolymarketBook = {
-    readonly assetId: string;
-    readonly conditionId: string;
-    readonly version: "v1" | "v2";
-    readonly bids: ReadonlyArray<{
-        readonly price: string;
-        readonly size: string;
-    }>;
-    readonly asks: ReadonlyArray<{
-        readonly price: string;
-        readonly size: string;
-    }>;
-    readonly tickSize: string;
-    readonly minOrderSize: string;
-    readonly negRisk: boolean;
-    readonly timestamp: string;
-    readonly hash: string;
-};
-
-// @public (undocumented)
-export type PolymarketBookData = {
-    readonly bids: ReadonlyArray<PolymarketBookLevel>;
-    readonly asks: ReadonlyArray<PolymarketBookLevel>;
-    readonly tickSize: string | undefined;
-    readonly timestamp: string | undefined;
-    readonly hash: string | undefined;
-};
-
-// @public (undocumented)
-export type PolymarketBookLevel = {
-    readonly price: string;
-    readonly size: string;
-};
-
-// @public
-export type PolymarketBuilder = {
-    readonly code?: `0x${string}`;
-    readonly sign: (request: {
-        readonly method: string;
-        readonly path: string;
-        readonly body: string;
-    }) => Promise<PolymarketBuilderHeaders>;
-};
-
-// @public
-export type PolymarketBuilderHeaders = {
-    readonly POLY_BUILDER_API_KEY: string;
-    readonly POLY_BUILDER_PASSPHRASE: string;
-    readonly POLY_BUILDER_SIGNATURE: string;
-    readonly POLY_BUILDER_TIMESTAMP: string;
-};
-
-// @public (undocumented)
-export type PolymarketCancelResult = {
-    readonly canceled: ReadonlyArray<string>;
-    readonly notCanceled: Readonly<Record<string, string>>;
-};
-
-// @public (undocumented)
-export type PolymarketClobMarket = {
-    readonly conditionId?: string;
-    readonly tokens: ReadonlyArray<{
-        readonly assetId: string;
-        readonly outcome?: string;
-    }>;
-    readonly minOrderSize?: string;
-    readonly tickSize?: string;
-    readonly acceptingOrders?: boolean;
-    readonly buyOnly?: boolean;
-    readonly version: "v1" | "v2";
-    readonly blockaidEnabled?: boolean;
-    readonly rewards?: {
-        readonly enabled?: boolean;
-        readonly minIncentiveSize?: string;
-        readonly maxIncentiveRate?: string;
-        readonly minOrderAgeSec?: number;
-    };
-};
-
-// @public (undocumented)
-export class PolymarketError extends Error {
-    constructor(category: PolymarketErrorCategory, message: string, options?: {
-        readonly cause?: unknown;
-        readonly status?: number;
-        readonly body?: Readonly<Record<string, unknown>>;
-    });
-    readonly body?: Readonly<Record<string, unknown>>;
-    // (undocumented)
-    readonly category: PolymarketErrorCategory;
-    readonly status?: number;
-}
-
-// @public
-export type PolymarketErrorCategory =
-/** The request may have reached the server; an L2 post's outcome is unknown. */
-"network" | "timeout" |
-/** The server answered with a non-2xx status. */
-"unavailable" |
-/** The answer did not satisfy its schema — nothing was accepted into state. */
-"malformed" |
-/** The device clock disagrees with the CLOB `/time` beyond the signing window. */
-"clock-skew" |
-/** A caller input fails validation before any request. */
-"invalid-input" |
-/** The CLOB rejected the request itself (a failed L2 action). */
-"rejected" |
-/** The vault is locked — the kernel refused to sign; nothing was posted. */
-"unlock-required" |
-/** The group has no enabled Polymarket credentials — enable first. */
-"not-enabled" |
-/** The step needs the relayer, which requires the host's builder signer. */
-"builder-required" |
-/** The user refused, or the approval request expired or was invalidated. */
-"approval-rejected" |
-/** An enablement flow is already running for the group — wait or cancel it. */
-"busy" |
-/** The account or jurisdiction may only close positions, not open them. */
-"close-only" |
-/** A blocked jurisdiction, or an unknown/error eligibility answer — the gate fails closed. */
-"blocked" |
-/** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
-"needs-migration";
-
-// @public (undocumented)
-export type PolymarketEvent = {
-    readonly id: string;
-    readonly slug: string;
-    readonly title: string;
-    readonly active: boolean;
-    readonly closed: boolean;
-    readonly negRisk?: boolean;
-    readonly endDate?: string;
-    readonly markets: ReadonlyArray<PolymarketMarket>;
-};
-
-// @public (undocumented)
-export type PolymarketEventsParams = {
-    readonly limit?: number;
-    readonly offset?: number;
-    readonly closed?: boolean;
-    readonly order?: string;
-    readonly ascending?: boolean;
-    readonly tag_id?: number;
-};
-
-// @public
-export type PolymarketExchangeDomain = {
-    readonly verifyingContract: `0x${string}`;
-    readonly version: "2" | "3";
-};
-
-// @public (undocumented)
-export type PolymarketFunding = {
-    readonly deposit: (group: AppGroup, params: {
-        readonly amount: bigint;
-        readonly fee: EvmFeeTier;
-    }) => Promise<{
-        readonly requestId: string;
-        readonly outcome: Promise<PolymarketFundingOutcome>;
-    }>;
-    readonly withdraw: (group: AppGroup, params: {
-        readonly amount: bigint;
-    }) => Promise<{
-        readonly requestId: string;
-        readonly outcome: Promise<PolymarketFundingOutcome>;
-    }>;
-};
-
-// @public (undocumented)
-export type PolymarketFundingOutcome = {
-    readonly kind: "ok";
-} | {
-    readonly kind: "unknown";
-};
-
-// @public (undocumented)
-export type PolymarketHistoryParams = {
-    readonly startTs?: number;
-    readonly endTs?: number;
-    readonly interval?: "max" | "all" | "1m" | "1w" | "1d" | "6h" | "1h";
-    readonly fidelity?: number;
-};
-
-// @public (undocumented)
-export type PolymarketLimitParams = {
-    readonly assetId: string;
-    readonly side: PolymarketSide;
-    readonly price: string;
-    readonly size: string;
-};
-
-// @public (undocumented)
-export type PolymarketLive = {
-    readonly book: (assetId: string) => PolymarketLiveView<PolymarketMarketData>;
-    readonly account: (group: AppGroup) => PolymarketLiveView<PolymarketAccountLiveData>;
-};
-
-// @public
-export type PolymarketLiveState<T> = {
-    readonly status: "connecting" | "live" | "stale";
-    readonly data: T | undefined;
-    readonly error: string | undefined;
-    readonly updatedAt: number | undefined;
-};
-
-// @public (undocumented)
-export type PolymarketLiveView<T> = {
-    readonly getState: () => PolymarketLiveState<T>;
-    readonly subscribe: (listener: (state: PolymarketLiveState<T>) => void) => () => void;
-    readonly close: () => Promise<void>;
-};
-
-// @public (undocumented)
-export type PolymarketMarket = {
-    readonly id: string;
-    readonly conditionId: string;
-    readonly questionId?: string;
-    readonly question: string;
-    readonly slug: string;
-    readonly outcomes: ReadonlyArray<string>;
-    readonly assetIds: ReadonlyArray<string>;
-    readonly version: "v1" | "v2";
-    readonly negRisk: boolean;
-    readonly tickSize: string;
-    readonly minOrderSize: string;
-    readonly acceptingOrders: boolean;
-    readonly active: boolean;
-    readonly closed: boolean;
-    readonly endDate?: string;
-    readonly outcomePrices?: ReadonlyArray<string>;
-    readonly volume?: string;
-    readonly liquidity?: string;
-    readonly fees?: {
-        readonly makerBaseFee?: number;
-        readonly takerBaseFee?: number;
-    };
-};
-
-// @public (undocumented)
-export type PolymarketMarketData = {
-    readonly book?: PolymarketBookData | undefined;
-    readonly lastTrade?: {
-        readonly price: string;
-        readonly size: string;
-        readonly side: "BUY" | "SELL";
-    } | undefined;
-    readonly bestBidAsk?: {
-        readonly bestBid: string;
-        readonly bestAsk: string;
-        readonly spread: string;
-    } | undefined;
-    readonly resolved?: {
-        readonly winningAssetId: string;
-        readonly winningOutcome: string;
-    } | undefined;
-};
-
-// @public (undocumented)
-export type PolymarketMarketParams = {
-    readonly assetId: string;
-    readonly side: PolymarketSide;
-    readonly amount: string;
-    readonly slippageBps: number;
-    readonly orderType: "FOK" | "FAK";
-};
-
-// @public (undocumented)
-export type PolymarketMarkets = {
-    readonly events: (params?: PolymarketEventsParams) => Promise<ReadonlyArray<PolymarketEvent>>;
-    readonly event: (slug: string) => Promise<PolymarketEvent>;
-    readonly markets: (params?: PolymarketEventsParams) => Promise<ReadonlyArray<PolymarketMarket>>;
-    readonly market: (slug: string) => Promise<PolymarketMarket>;
-    readonly search: (query: string) => Promise<ReadonlyArray<PolymarketEvent>>;
-    readonly book: (assetId: string) => Promise<PolymarketBook>;
-    readonly price: (assetId: string, side: "BUY" | "SELL") => Promise<string>;
-    readonly midpoint: (assetId: string) => Promise<string>;
-    readonly history: (assetId: string, params?: PolymarketHistoryParams) => Promise<ReadonlyArray<PolymarketPricePoint>>;
-    readonly clobMarket: (conditionId: string) => Promise<PolymarketClobMarket>;
-    readonly feeRate: (assetId: string) => Promise<number>;
-    readonly resolution: (conditionId: string) => Promise<ReadonlyArray<PolymarketResolution>>;
-    readonly time: () => Promise<PolymarketServerTime>;
-};
-
-// @public (undocumented)
-export type PolymarketOpenOrdersParams = {
-    readonly market?: string;
-    readonly assetId?: string;
-    readonly cursor?: string;
-};
-
-// @public (undocumented)
-export type PolymarketOrder = {
-    readonly id: string;
-    readonly status: string;
-    readonly conditionId: string;
-    readonly assetId: string;
-    readonly side: string;
-    readonly price: string;
-    readonly originalSize: string;
-    readonly sizeMatched: string;
-    readonly outcome?: string;
-    readonly orderType: string;
-    readonly expiration: string;
-    readonly createdAt: number;
-    readonly makerAddress: string;
-};
-
-// @public
-export type PolymarketOrderDraft = {
-    readonly salt: string;
-    readonly maker: `0x${string}`;
-    readonly signer: `0x${string}`;
-    readonly tokenId: string;
-    readonly makerAmount: string;
-    readonly takerAmount: string;
-    readonly side: 0 | 1;
-    readonly signatureType: 3;
-    readonly timestamp: string;
-    readonly metadata: `0x${string}`;
-    readonly builder: `0x${string}`;
-    readonly expiration: string;
-};
-
-// @public (undocumented)
-export type PolymarketOrderOutcome =
-/** `live` — resting on the book. */
-    {
-    readonly kind: "resting";
-    readonly orderId: string;
-} | {
-    readonly kind: "matched";
-    readonly orderId: string;
-    readonly making?: string;
-    readonly taking?: string;
-    readonly tradeIds?: ReadonlyArray<string>;
-} |
-/** `delayed` — accepted, matching delayed by market conditions. */
-    {
-    readonly kind: "delayed";
-    readonly orderId: string;
-} | {
-    readonly kind: "unmatched";
-    readonly orderId: string;
-} |
-/** The CLOB definitively refused — nothing was posted. */
-    {
-    readonly kind: "rejected";
-    readonly reason: PolymarketRejectReason;
-    readonly message: string;
-} |
-/** Reconcile found the order canceled. */
-    {
-    readonly kind: "canceled";
-    readonly orderId: string;
-} |
-/** The CLOB has no such order after every reconcile read — the POST did not land. */
-    {
-    readonly kind: "not-found";
-    readonly orderId: string;
-} |
-/** The POST's fate is unknowable — refresh the account; the order may be live. */
-    {
-    readonly kind: "unknown";
-    readonly orderId: string;
-};
-
-// @public (undocumented)
-export type PolymarketOrderType = "GTC" | "GTD" | "FOK" | "FAK";
-
-// @public (undocumented)
-export type PolymarketPage<T> = {
-    readonly items: ReadonlyArray<T>;
-    readonly nextCursor?: string;
-};
-
-// @public (undocumented)
-export type PolymarketPlacedOrder = {
-    readonly requestId: string;
-    readonly orderId: string;
-    readonly quote: PolymarketQuote;
-    readonly outcome: Promise<PolymarketOrderOutcome>;
-};
-
-// @public (undocumented)
-export type PolymarketPlaceParams = ({
-    readonly kind: "limit";
-} & PolymarketLimitParams & {
-    readonly orderType: "GTC" | "GTD";
-    readonly expiration?: number;
-    readonly postOnly?: boolean;
-}) | ({
-    readonly kind: "market";
-} & PolymarketMarketParams);
-
-// @public (undocumented)
-export type PolymarketPnl = {
-    readonly wallet: string;
-    readonly interval: string;
-    readonly fidelity: string;
-    readonly points: ReadonlyArray<PolymarketPnlPoint>;
-};
-
-// @public (undocumented)
-export type PolymarketPnlParams = {
-    readonly interval?: "max" | "all" | "1m" | "1w" | "1d" | "12h" | "6h";
-    readonly fidelity?: "1d" | "18h" | "12h" | "3h" | "1h";
-};
-
-// @public (undocumented)
-export type PolymarketPnlPoint = {
-    readonly timestamp: number;
-    readonly realizedPnl: string;
-    readonly positionPnl?: string;
-    readonly economicPnl?: string;
-    readonly volume?: string;
-    readonly tradeCount?: number;
-};
-
-// @public (undocumented)
-export type PolymarketPosition = {
-    readonly assetId: string;
-    readonly conditionId: string;
-    readonly size: string;
-    readonly avgPrice?: string;
-    readonly price?: string;
-    readonly value?: string;
-    readonly entryCost?: string;
-    readonly realizedPnl?: string;
-    readonly unrealizedPnl?: string;
-    readonly totalPnl?: string;
-    readonly status: string;
-    readonly redeemable: boolean;
-    readonly mergeable: boolean;
-    readonly negRisk: boolean;
-    readonly title?: string;
-    readonly slug?: string;
-    readonly outcome?: string;
-    readonly outcomeIndex?: number;
-    readonly endDate?: string;
-};
-
-// @public (undocumented)
-export type PolymarketPositionsParams = {
-    readonly cursor?: string;
-    readonly limit?: number;
-};
-
-// @public (undocumented)
-export type PolymarketPricePoint = {
-    readonly t: number;
-    readonly p: string;
-};
-
-// @public (undocumented)
-export type PolymarketProvider = {
-    readonly markets: PolymarketMarkets;
-    readonly account: PolymarketAccountReads;
-    readonly trade: PolymarketTrading;
-    readonly live: PolymarketLive;
-    readonly fund: PolymarketFunding;
-};
-
-// @public (undocumented)
-export type PolymarketQuote = {
-    readonly kind: "limit" | "market";
-    readonly assetId: string;
-    readonly side: PolymarketSide;
-    readonly price?: string;
-    readonly size?: string;
-    readonly amount?: string;
-    readonly bound: string;
-    readonly makerAmount: string;
-    readonly takerAmount: string;
-    readonly impliedPrice: string;
-    readonly notional: string;
-    readonly minOrderSize: string;
-    readonly partial?: boolean;
-    readonly fees?: PolymarketQuoteFees;
-};
-
-// @public
-export type PolymarketQuoteFees = {
-    readonly makerBaseFee?: number;
-    readonly takerBaseFee?: number;
-};
-
-// @public
-export type PolymarketRejectReason = "balance-or-allowance" | "tick" | "min-size" | "market-closed" | "post-only-cross" | "fok-unfilled" | "invalid-signature" | "rate-limited" | "close-only" | "other";
-
-// @public (undocumented)
-export type PolymarketResolution = {
-    readonly conditionId?: string;
-    readonly questionId?: string;
-    readonly status: string;
-    readonly resolved: boolean;
-    readonly marketType?: string;
-    readonly reporter?: string;
-    readonly wasDisputed: boolean;
-    readonly extendedReview: boolean;
-    readonly resolvedAt?: string;
-    readonly payouts?: ReadonlyArray<number>;
-    readonly price?: string;
-};
-
-// @public (undocumented)
-type PolymarketServerTime = {
-    readonly serverSeconds: number;
-    readonly skewMs: number;
-};
-
-// @public (undocumented)
-export type PolymarketSide = "BUY" | "SELL";
-
-// @public (undocumented)
-export type PolymarketTrade = {
-    readonly id: string;
-    readonly takerOrderId: string;
-    readonly conditionId: string;
-    readonly assetId: string;
-    readonly side: string;
-    readonly size: string;
-    readonly price: string;
-    readonly status: string;
-    readonly matchTime: string;
-    readonly outcome?: string;
-    readonly transactionHash?: string;
-    readonly traderSide: string;
-    readonly makerOrders: ReadonlyArray<{
-        readonly orderId: string;
-        readonly matchedAmount: string;
-        readonly price: string;
-    }>;
-};
-
-// @public (undocumented)
-export type PolymarketTradesParams = {
-    readonly market?: string;
-    readonly assetId?: string;
-    readonly before?: number;
-    readonly after?: number;
-    readonly cursor?: string;
-};
-
-// @public (undocumented)
-export type PolymarketTrading = {
-    readonly quote: (group: AppGroup, params: PolymarketPlaceParams) => Promise<PolymarketQuote>;
-    readonly place: (group: AppGroup, params: PolymarketPlaceParams) => Promise<PolymarketPlacedOrder>;
-    readonly cancel: (group: AppGroup, orderId: string) => Promise<PolymarketCancelResult>;
-    readonly cancelMany: (group: AppGroup, orderIds: ReadonlyArray<string>) => Promise<PolymarketCancelResult>;
-    readonly cancelAll: (group: AppGroup) => Promise<PolymarketCancelResult>;
-    readonly cancelMarket: (group: AppGroup, params: {
-        readonly market?: string;
-        readonly assetId?: string;
-    }) => Promise<PolymarketCancelResult>;
-};
-
-// @public (undocumented)
-export type PolymarketWalletCandidates = {
-    readonly beacon: `0x${string}`;
-    readonly uups: `0x${string}`;
-    readonly safe: `0x${string}`;
-};
-
-// @public (undocumented)
-export type PolymarketWallets = {
-    readonly derive: (signer: `0x${string}`) => PolymarketWalletCandidates;
-    readonly locate: (signer: `0x${string}`) => Promise<PolymarketAccount>;
-};
-
-export { PortfolioResponse }
-
-export { PredictedFundingsResponse }
-
 // @public
 type PreparedBitcoinPsbt = {
     readonly request: Extract<SignRequest, {
@@ -2085,8 +1018,6 @@ type PublicStore = {
     readonly get: (key: string) => Promise<Uint8Array | undefined>;
     readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
 };
-
-export { RecentTradesResponse }
 
 // @public
 type RequestAcknowledgement = {
@@ -2194,9 +1125,6 @@ type RiskFinding = {
     readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty";
     readonly level: "warning" | "danger";
 };
-
-// @public (undocumented)
-export type RoundDirection = "down" | "up";
 
 // @public (undocumented)
 type SendParams = {
@@ -2582,10 +1510,6 @@ type SparkTokenBalance = {
     readonly amount: string;
     readonly outputCount: number;
 };
-
-export { SpotClearinghouseStateResponse }
-
-export { SpotMetaAndAssetCtxsResponse }
 
 // @public
 type TokenWatchDisplay = {
@@ -3087,16 +2011,6 @@ type TxBlock = {
 
 // @public (undocumented)
 type TxState = "draft" | "signed" | "submitted" | "pending" | "confirmed" | "failed" | "rejected" | "dropped" | "replaced";
-
-export { UserFeesResponse }
-
-export { UserFillsResponse }
-
-export { UserFundingResponse }
-
-export { UserRateLimitResponse }
-
-export { UserRoleResponse }
 
 // @public
 type WatchAssetInput = {

@@ -285,9 +285,6 @@ export type {
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidNetwork,
-  PolymarketCredentialsInfo,
-  PolymarketL2Headers,
-  PolymarketL2Method,
 } from "./apps.ts";
 export { CHAINS_METHODS } from "./chains.ts";
 export type {

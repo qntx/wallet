@@ -47,11 +47,6 @@
       "import": "./dist/nostr.mjs",
       "default": "./dist/nostr.mjs"
     },
-    "./polymarket": {
-      "types": "./dist/polymarket.d.mts",
-      "import": "./dist/polymarket.mjs",
-      "default": "./dist/polymarket.mjs"
-    },
     "./spark": {
       "types": "./dist/spark.d.mts",
       "import": "./dist/spark.mjs",

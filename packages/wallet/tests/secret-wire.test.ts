@@ -793,7 +793,6 @@ describe("method classification", () => {
       | "backup.disable"
       | "backup.restore"
       | "nostr.exportKey"
-      | "polymarket.importCredentials"
       | "chain.sign"
       | "spark.approve"
     >();

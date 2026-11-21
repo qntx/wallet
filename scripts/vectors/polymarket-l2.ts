@@ -1,19 +1,20 @@
 /// <reference types="node" />
 /**
  * Regenerates vectors/chains/polymarket-l2.json — Polymarket CLOB L2 request headers as the
- * reference client produces them, for the kernel's `polymarket.signL2` oracle comparison.
+ * reference client produces them, for the engine's `l2Headers` oracle comparison.
  *
  * Oracle: `createL2Headers` exported by @polymarket/clob-client-v2@1.2.1 (it calls its own
  * `buildPolyHmacSignature`: url-safe base64 WITH `=` padding of HMAC-SHA256 over
  * `${timestamp}${method}${requestPath}${body}`; the secret is decoded by its `decodeBase64Secret`,
  * which normalizes `-`/`_` to `+`/`/` and pads). The signer is a viem `mnemonicToAccount` of the
  * common test mnemonic (m/44'/60'/0'/0/0) behind the wallet-client `ClobSigner` shim, so
- * `POLY_ADDRESS` is that account's EIP-55 address — the same owner the kernel derives for group 0.
+ * `POLY_ADDRESS` is that account's EIP-55 address — the same owner the engine's group 0 evm.bip44
+ * signer resolves to.
  *
  * `secret` appears in the three encodings the import accepts — standard base64 with `+`/`/` and `=`
  * padding, url-safe with `-`/`_`, and unpadded — all decoding to the same 32-byte key, so the
  * signatures of one (timestamp, method, path, body) tuple agree across encodings. Each request is
- * an allow-listed (method, path) pair the kernel signs.
+ * an allow-listed (method, path) pair the engine signs.
  *
  * Run from the repo root: bun scripts/vectors/polymarket-l2.ts
  */

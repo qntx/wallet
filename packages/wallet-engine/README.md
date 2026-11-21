@@ -328,7 +328,8 @@ Polymarket support lives under `apps.polymarket` when `createApps` lists `polyma
 `@qntx/wallet-engine/apps/polymarket`. The provider trades from the account's **deposit wallet** —
 a Polymarket smart contract wallet the relayer deploys to a deterministic CREATE2 address derived
 from the group's `evm.bip44` signer. Everything else is discovered, not persisted: credentials
-live in the kernel vault, deployment is read from the relayer, approvals from the Data API.
+live in the engine's encrypted apps store, deployment is read from the relayer, approvals from
+the Data API.
 
 ```ts
 const apps = createApps({
@@ -396,8 +397,8 @@ a fixed 8-call table, signed as one `DepositWallet` `Batch` and submitted throug
 `verify` — each writing `{ step, requestId, error }` so a lock or crash resumes without repeating
 finished work. Statuses: `disabled`, `enabling`, `enabled`, `needs-reauthorization`,
 `needs-migration`, `unavailable`. `renew` does not apply — CLOB credentials do not expire.
-`disable({ revoke: true })` asks the CLOB to `DELETE /auth/api-key` first and then drops the kernel
-record; a local delete alone is **not** a revoke — the same wallet re-derives the same credentials,
+`disable({ revoke: true })` asks the CLOB to `DELETE /auth/api-key` first and then drops the
+stored credential record; a local delete alone is **not** a revoke — the same wallet re-derives the same credentials,
 so always use `revoke: true` to cut the key off server-side.
 
 Eligibility: `enable` accepts `available` **and** `close-only` jurisdictions (close-only users need
@@ -406,15 +407,16 @@ credentials to sell and withdraw); `blocked` and unknown/error answers fail clos
 
 ### Credential custody
 
-The `apiKey`/`secret`/`passphrase` the CLOB answers go straight into
-`polymarket(wallet).importCredentials` — sealed in the kernel vault as a `pm-creds` record and
-never persisted by the engine, logged, or echoed in errors. Every later authenticated request is
-HMAC'd **inside the kernel** (`polymarket.signL2`) with a ±30 s timestamp window. There is no
-authenticated WebSocket channel: the CLOB user channel would need the raw secret in the main
-runtime, so account live views poll the Data API and L2 reads instead. Residual risk: an unlocked
-vault plus a compromised main runtime can HMAC the allow-listed CLOB requests — cancel orders and
-read account data — and open order approvals the user must still approve; it cannot extract the
-secret, and every order is a kernel-described user approval.
+The `apiKey`/`secret`/`passphrase` the CLOB answers are written into the app's encrypted
+collection on the session store (`apps.polymarket`, key `<walletId>/<groupIndex>/eip155:137`) —
+closed with the vault, pruned when the wallet is deleted, and never surfaced in controller state,
+snapshots, logs, or error strings. Every later authenticated request is HMAC'd by the engine
+itself (`l2Headers`) with a ±30 s timestamp window, after checking the stored `owner` still
+equals the group's `evm.bip44` signer. There is no authenticated WebSocket channel: account live
+views poll the Data API and L2 reads instead. Residual risk: while the vault is unlocked the
+engine holds the secret — a compromised main runtime can HMAC the CLOB requests it already may
+(cancel orders, read account data) or exfiltrate the record; every order is still a
+kernel-described user approval.
 
 ### Trading
 

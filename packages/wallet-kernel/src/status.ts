@@ -4,7 +4,6 @@ import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
-import { parseCredentialsHeader, PM_CREDS_KIND } from "./modules/apps/pm-record.ts";
 import { HL_AGENT_KIND, parseAgentHeader } from "./modules/apps/record.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
 import {
@@ -148,8 +147,6 @@ export function statusContents(
       } else if (record.kind === HL_AGENT_KIND) {
         // A malformed agent header is vault corruption, like any other authenticated public row.
         parseAgentHeader(record.header);
-      } else if (record.kind === PM_CREDS_KIND) {
-        parseCredentialsHeader(record.header);
       } else if (modules.some((module) => module.ownsRecord(record.kind))) {
         owned.push(record);
       } else {

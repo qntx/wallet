@@ -45,7 +45,6 @@ function randomMalformed(next: () => number): unknown {
     "keys.list",
     "nostr.createNip46ClientKey",
     "hyperliquid.listAgents",
-    "polymarket.listCredentials",
   ]);
   const style = pick(8);
   if (nullParamMethods.has(method) && (style === 4 || style === 5 || style === 7)) {
