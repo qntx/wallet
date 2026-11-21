@@ -1400,6 +1400,39 @@ describe("program-authority: an unknown program taking the signer", () => {
     expect(intent.programAuthority).toBeUndefined();
     expect(intent.programs).toStrictEqual([DRAINER]);
   });
+
+  it("the signer's key in a non-signer slot does not take the signer", () => {
+    /* The decoder does not reject a duplicated key (the runtime would): index 0 is the signer,
+       index 3 the same key again as a non-signer. Both instructions reference only slot 3, so
+       neither the program-authority rule nor the core-instruction rule may treat them as
+       signer-taking. Byte-built because the kit compiler dedupes repeated keys. */
+    const enc = getAddressEncoder();
+    const keys = [FEE_PAYER, DRAINER, PROGRAM_IDS.token, FEE_PAYER].map((k) =>
+      enc.encode(address(k)),
+    );
+    const ixs = [
+      { program: 1, accounts: [3], data: new Uint8Array([0]) },
+      { program: 2, accounts: [3], data: new Uint8Array([0xff]) },
+    ];
+    const out: number[] = [1, 0, 0, keys.length];
+    for (const k of keys) {
+      out.push(...k);
+    }
+    out.push(...enc.encode(BLOCKHASH), ixs.length);
+    for (const instruction of ixs) {
+      out.push(
+        instruction.program,
+        instruction.accounts.length,
+        ...instruction.accounts,
+        instruction.data.length,
+        ...instruction.data,
+      );
+    }
+    const intent = decodeSolana(req(Uint8Array.from(out)) as never, FEE_PAYER);
+    expect(intent.blind).toBeUndefined();
+    expect(intent.programAuthority).toBeUndefined();
+    expect(intent.programs).toStrictEqual([DRAINER, PROGRAM_IDS.token]);
+  });
 });
 
 describe("core-program near misses are blind", () => {
