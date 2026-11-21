@@ -12,21 +12,23 @@ import { assertHex } from "./transaction.ts";
  * call to the messenger on these chains that does not match it exactly is blind
  * (`cctp-destination`): an unrecognised hook could send the burn anywhere.
  *
- * Sources: Circle's CCTP contract addresses (evidence H-1 `onchain-code.txt`) and the forwarder
- * addresses from the Hyperliquid docs (evidence H-1), verified 2026-11-21.
+ * Verified on chain 2026-11-21 (code present).
  */
 export const CCTP_MESSENGERS: Readonly<Record<number, string>> = {
+  // https://developers.circle.com/cctp/references/contract-addresses
   42161: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
   421614: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
 };
 
 export const CCTP_USDC: Readonly<Record<number, string>> = {
+  // https://developers.circle.com/stablecoins/usdc-contract-addresses
   42161: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
   421614: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
 };
 
-/** Circle's CctpForwarder on HyperEVM (999 mainnet, 998 testnet) — the mint recipient domain 19. */
+/** Circle's CctpForwarder on HyperEVM (999 mainnet, 998 testnet) — the mint recipient on domain 19. */
 export const CCTP_FORWARDERS: Readonly<Record<number, string>> = {
+  // https://developers.circle.com/cctp/references/hypercore-contract-addresses
   42161: "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757",
   421614: "0x02e39ECb8368b41bF68FF99ff351aC9864e5E2a2",
 };

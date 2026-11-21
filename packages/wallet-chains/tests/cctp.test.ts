@@ -3,6 +3,9 @@
  * 19: a fully matching call describes the deposit (outflow + `hyperliquidDeposit`), and every other
  * call to the messenger on these chains is blind with `cctp-destination`.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import * as AbiFunction from "ox/AbiFunction";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -140,4 +143,39 @@ describe("cctp depositForBurnWithHook", () => {
       ),
     ).toBeUndefined();
   });
+});
+
+/* vectors/chains/evm-cctp.json — viem-encoded described + near-miss shapes, then the four real
+   mainnet deposits from evidence/H-1/mainnet-direct-deposits.txt. Regenerate with
+   scripts/vectors/cctp.ts. */
+const vectors = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/evm-cctp.json"), "utf8"),
+) as {
+  name: string;
+  vectors: Array<{
+    name: string;
+    signer: string;
+    tx: { to: string; value: string; data: string; chainId: string };
+    expect: {
+      verifiability: string;
+      blind?: string;
+      hyperliquidDeposit?: { recipient: string; dex: string };
+    };
+  }>;
+};
+
+describe("evm-cctp vectors", () => {
+  it.each(vectors.vectors.map((v) => [v.name, v] as const))(
+    "%s decodes to the expected intent",
+    (_name, v) => {
+      const network = `eip155:${Number.parseInt(v.tx.chainId, 16)}`;
+      const intent = decodeEvm(txReq(v.tx as unknown as EvmTransaction, network), v.signer);
+      expect(intent.verifiability).toBe(v.expect.verifiability);
+      if (v.expect.blind === undefined) {
+        expect(intent.hyperliquidDeposit).toMatchObject(v.expect.hyperliquidDeposit ?? {});
+      } else {
+        expect(intent.blind).toBe(v.expect.blind);
+      }
+    },
+  );
 });

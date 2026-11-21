@@ -1,8 +1,8 @@
 /**
  * Host composition for `@qntx/wallet-engine/apps`: the complete Hyperliquid flow — engine and apps
  * creation, terms acknowledgement, enable with the approval request, orders with a quote preview, a
- * live book, a close, a withdraw and a Bridge2 deposit. Compiled only; the engine README's
- * Hyperliquid section describes the same surface.
+ * live book, a close, a withdraw and a CCTP deposit. Compiled only; the engine README's Hyperliquid
+ * section describes the same surface.
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qntx/wallet-engine";
@@ -44,6 +44,7 @@ export function createHost(params: {
   const apps = createApps({
     wallet,
     requests: engine.requests,
+    networks: engine.networks,
     fetch: globalThis.fetch.bind(globalThis),
     now: () => Date.now(),
     setTimer,
@@ -210,13 +211,21 @@ export async function fundAndWithdraw(
     // The action may have committed — refresh the account instead of retrying.
     await hl.account.state({ user: owner });
   }
-  // The Bridge2 deposit is a USDC transfer on Arbitrum — below the minimum it is lost.
+  /* The CCTP deposit burns USDC on Arbitrum's TokenMessengerV2 — Circle's forwarder mints it
+     on HyperEVM into the Hyperliquid account. It must clear the Circle fee the provider reads
+     from Iris and the on-chain per-message burn limit; an exact-amount approve request is
+     opened first only when the allowance is short. */
   const deposit = await hl.fund.deposit(group, {
-    amount: 20_000_000n, // 20 USDC — `HYPERLIQUID_DEPOSIT["Mainnet"].minimum` is 5 USDC.
+    amount: 20_000_000n, // 20 USDC
     fee: "normal",
+    dex: hl.fund.depositInfo.dex, // "perps" by default — "spot" funds the spot account.
   });
-  await engine.requests.approve(deposit.requestId, "evm-sign", { verify });
-  await deposit.outcome;
+  if (deposit.approval !== undefined) {
+    await engine.requests.approve(deposit.approval.requestId, "evm-sign", { verify });
+    await deposit.approval.outcome;
+  }
+  await engine.requests.approve(deposit.deposit.requestId, "evm-sign", { verify });
+  await deposit.deposit.outcome;
 }
 
 export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps";

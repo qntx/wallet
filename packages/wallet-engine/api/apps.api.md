@@ -453,6 +453,14 @@ type ChainRequestInput = ({
     readonly amount: bigint;
     readonly fee: PrepareParams["fee"];
 } | {
+    readonly method: "evm-cctp";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly amount: bigint;
+    readonly dex: "perps" | "spot";
+    readonly maxFee: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
     readonly method: "evm-swap";
     readonly account: AccountRef;
     readonly network: string;
@@ -560,7 +568,7 @@ type ChainRequestInput = ({
 };
 
 // @public (undocumented)
-type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
+type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
 export { ClearinghouseStateResponse }
 
@@ -598,6 +606,7 @@ export function createApps(options: CreateAppsOptions): {
 export type CreateAppsOptions = {
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly networks: Pick<NetworkController, "client">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
@@ -788,12 +797,20 @@ export type HyperliquidClock = {
 };
 
 // @public
+type HyperliquidDeposit = {
+    readonly approval: HyperliquidPendingAction | undefined;
+    readonly deposit: HyperliquidPendingAction;
+};
+
+// @public
 export type HyperliquidDepositInfo = {
-    readonly bridge: string;
+    readonly tokenMessenger: string;
     readonly usdc: string;
+    readonly forwarder: string;
     readonly network: string;
-    readonly minimum: bigint;
-    readonly creditSeconds: number;
+    readonly destinationDomain: number;
+    readonly minFinalityThreshold: number;
+    readonly dex: "perps" | "spot";
 };
 
 // @public (undocumented)
@@ -834,7 +851,8 @@ export type HyperliquidFund = {
     readonly deposit: (group: HyperliquidGroup, params: {
         readonly amount: bigint;
         readonly fee: EvmFeeTier;
-    }) => Promise<HyperliquidPendingAction>;
+        readonly dex?: "perps" | "spot";
+    }) => Promise<HyperliquidDeposit>;
 };
 
 // @public
@@ -1994,7 +2012,7 @@ class TransactionController extends Controller<TransactionControllerState> {
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
-        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";

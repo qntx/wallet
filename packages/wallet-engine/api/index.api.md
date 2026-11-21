@@ -604,6 +604,14 @@ export type ChainRequestInput = ({
     readonly amount: bigint;
     readonly fee: PrepareParams["fee"];
 } | {
+    readonly method: "evm-cctp";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly amount: bigint;
+    readonly dex: "perps" | "spot";
+    readonly maxFee: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
     readonly method: "evm-swap";
     readonly account: AccountRef;
     readonly network: string;
@@ -711,7 +719,7 @@ export type ChainRequestInput = ({
 };
 
 // @public (undocumented)
-export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
+export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
 // @public
 export type CloudStore = {
@@ -2607,7 +2615,7 @@ export class TransactionController extends Controller<TransactionControllerState
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
-        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";

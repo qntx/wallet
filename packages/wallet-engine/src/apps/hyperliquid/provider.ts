@@ -1,7 +1,10 @@
+import type { PublicClient } from "viem";
+
 import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 
+import { evmRpcHex } from "../../chains/evm.ts";
 import type { EvmFeeTier } from "../../chains/evm.ts";
 import type { EngineLogger } from "../../events.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
@@ -73,7 +76,7 @@ export type HyperliquidProvider = {
    * enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
    */
   readonly trade: HyperliquidTrade;
-  /** Funding moves on the signature chain: the Bridge2 deposit into Hyperliquid. */
+  /** Funding moves on the signature chain: the CCTP deposit into Hyperliquid. */
   readonly fund: HyperliquidFund;
   /**
    * Move balances the user-signed way — every method opens an approval request and posts the action
@@ -113,55 +116,159 @@ export type HyperliquidProvider = {
 };
 
 /**
- * The Bridge2 deposit: an Arbitrum USDC transfer that credits the Hyperliquid account. Below
- * `MINIMUM_USDC` the funds are not credited (docs §Bridge2 — recorded in research §Deposit path and
- * evidence/bridge2-onchain.txt). Sources:
+ * The CCTP deposit: a `depositForBurnWithHook` on this chain's TokenMessengerV2 burns USDC and
+ * Circle's CctpForwarder on HyperEVM (destination domain 19) mints it into the Hyperliquid account
+ * — the legacy Bridge2 route is deprecated (docs §Deposits; research §H-1). Sources:
  *
- * - Bridge2 contract — https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/bridge2
- * - USDC on Arbitrum One — https://developers.circle.com/stablecoins/usdc-contract-addresses
- * - USDC2 on Arbitrum Sepolia — Hyperliquid testnet docs (bridge2-onchain.txt).
+ * - TokenMessengerV2 — https://developers.circle.com/cctp/references/contract-addresses
+ * - USDC — https://developers.circle.com/stablecoins/usdc-contract-addresses
+ * - CctpForwarder — https://developers.circle.com/cctp/references/hypercore-contract-addresses
  */
 export type HyperliquidDepositInfo = {
-  /** The Bridge2 contract the deposit sends USDC to. */
-  readonly bridge: string;
+  /** The CCTP TokenMessengerV2 the deposit burns USDC through. */
+  readonly tokenMessenger: string;
   /** The USDC contract the deposit spends. */
   readonly usdc: string;
+  /** Circle's CctpForwarder on HyperEVM — mint recipient and destination caller. */
+  readonly forwarder: string;
   /** The signature chain, CAIP-2. */
   readonly network: string;
-  /** Deposits below this many base units (USDC has 6 decimals) are lost — 5 USDC. */
-  readonly minimum: bigint;
-  /** Bridge deposits credit inside a minute (docs §Bridge2). */
-  readonly creditSeconds: number;
+  /** The Hyperliquid CCTP destination domain. */
+  readonly destinationDomain: number;
+  /** The confirmed-finality threshold the deposit requests (instant, ~30 s). */
+  readonly minFinalityThreshold: number;
+  /** The hook's dex selector for the account the deposit funds. */
+  readonly dex: "perps" | "spot";
 };
 
 export const HYPERLIQUID_DEPOSIT: Record<"Mainnet" | "Testnet", HyperliquidDepositInfo> = {
   Mainnet: {
-    bridge: "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+    tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
     usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    forwarder: "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757",
     network: "eip155:42161",
-    minimum: 5_000_000n,
-    creditSeconds: 60,
+    destinationDomain: 19,
+    minFinalityThreshold: 1000,
+    dex: "perps",
   },
   Testnet: {
-    bridge: "0x08cfc1B6b2dCF36A1480b99353A354AA8AC56f89",
-    usdc: "0x1baAbB04529D43a73232B713C0FE471f7c7334d5",
+    tokenMessenger: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+    forwarder: "0x02e39ECb8368b41bF68FF99ff351aC9864e5E2a2",
     network: "eip155:421614",
-    minimum: 5_000_000n,
-    creditSeconds: 60,
+    destinationDomain: 19,
+    minFinalityThreshold: 1000,
+    dex: "perps",
   },
 };
 
+/** The Iris fee API host per network — the finality-1000 forward fee row feeds `maxFee`. */
+const IRIS_FEES_URL: Record<"Mainnet" | "Testnet", string> = {
+  Mainnet: "https://iris-api.circle.com/v2/burn/USDC/fees/3/19?forward=true&hyperCoreDeposit=true",
+  Testnet:
+    "https://iris-api-sandbox.circle.com/v2/burn/USDC/fees/3/19?forward=true&hyperCoreDeposit=true",
+};
+
+/** The eth_call selectors the deposit reads: localMinter(), burnLimitsPerMessage, allowance. */
+const SEL_LOCAL_MINTER = "0xcb75c11c";
+const SEL_BURN_LIMIT = "0xa56ec632";
+const SEL_ALLOWANCE = "0xdd62ed3e";
+
+const ethCallWord = async (client: PublicClient, to: string, data: string): Promise<string> => {
+  const result = await evmRpcHex(client, "eth_call", [{ to, data }, "latest"]);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(result)) {
+    throw new HyperliquidError("unavailable", "the CCTP chain read answered malformed");
+  }
+  return result;
+};
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const word = (v: string): string => v.slice(2).toLowerCase().padStart(64, "0");
+
+/** Both request outcomes of a CCTP deposit — the approve only exists when the allowance was short. */
+export type HyperliquidDeposit = {
+  /** The exact-amount USDC approve for the TokenMessengerV2 — absent when allowance sufficed. */
+  readonly approval: HyperliquidPendingAction | undefined;
+  /** The `depositForBurnWithHook` transaction. */
+  readonly deposit: HyperliquidPendingAction;
+};
+
+/** What the Iris forward-fee endpoint contributes: flat fee + the burn's bps minimum. */
+const fetchMaxFee = async (
+  fetcher: typeof globalThis.fetch,
+  url: string,
+  amount: bigint,
+): Promise<bigint> => {
+  let body: unknown;
+  try {
+    const res = await fetcher(url);
+    body = res.ok ? await res.json() : undefined;
+  } catch {
+    body = undefined;
+  }
+  const rows = Array.isArray(body) ? body.filter(isObject) : [];
+  const row = rows.find(
+    (r): r is Record<string, unknown> & { minimumFee: number; forwardFee: { high: number } } =>
+      r["finalityThreshold"] === 1000 &&
+      typeof r["minimumFee"] === "number" &&
+      isObject(r["forwardFee"]) &&
+      typeof r["forwardFee"]["high"] === "number",
+  );
+  if (
+    row === undefined ||
+    !Number.isInteger(row.minimumFee) ||
+    row.minimumFee < 0 ||
+    !Number.isInteger(row.forwardFee.high) ||
+    row.forwardFee.high < 0
+  ) {
+    throw new HyperliquidError("unavailable", "the Circle fee endpoint answered malformed");
+  }
+  return BigInt(row.forwardFee.high) + (amount * BigInt(row.minimumFee) + 9999n) / 10_000n;
+};
+
+/** The per-message burn limit for this route's USDC — `localMinter` → `burnLimitsPerMessage`. */
+const readBurnLimit = async (
+  client: PublicClient,
+  messenger: string,
+  usdc: string,
+): Promise<bigint> => {
+  const minterWord = await ethCallWord(client, messenger, SEL_LOCAL_MINTER);
+  const minter = minterWord.slice(26);
+  if (!/^[0-9a-fA-F]{40}$/.test(minter)) {
+    throw new HyperliquidError("unavailable", "the messenger answered no local minter");
+  }
+  return BigInt(await ethCallWord(client, `0x${minter}`, `${SEL_BURN_LIMIT}${word(usdc)}`));
+};
+
+/** `allowance(owner, spender)` on the route's USDC. */
+const readAllowance = async (
+  client: PublicClient,
+  usdc: string,
+  owner: string,
+  spender: string,
+): Promise<bigint> =>
+  BigInt(await ethCallWord(client, usdc, `${SEL_ALLOWANCE}${word(owner)}${word(spender)}`));
+
 export type HyperliquidFund = {
-  /** The Bridge2 deposit constants for the provider's network — the UI shows `minimum`. */
+  /** The CCTP route constants for the provider's network. */
   readonly depositInfo: HyperliquidDepositInfo;
   /**
-   * Fund the Hyperliquid account from the group's Arbitrum USDC: a `send` request to the Bridge2
-   * contract. `amount` is USDC base units (6 decimals); amounts under 5 USDC are refused.
+   * Fund the Hyperliquid account from the group's Arbitrum USDC through Circle's CCTP: an
+   * exact-amount `approve` to the TokenMessengerV2 when the allowance is short, then a
+   * `depositForBurnWithHook` routed to the CctpForwarder (domain 19, finality 1000). `amount` is
+   * USDC base units (6 decimals); it must exceed the Circle fee and fit the per-message burn limit.
+   * Both request outcomes are reported.
    */
   readonly deposit: (
     group: HyperliquidGroup,
-    params: { readonly amount: bigint; readonly fee: EvmFeeTier },
-  ) => Promise<HyperliquidPendingAction>;
+    params: {
+      readonly amount: bigint;
+      readonly fee: EvmFeeTier;
+      /** Which Hyperliquid account the deposit funds — `depositInfo.dex` when omitted. */
+      readonly dex?: "perps" | "spot";
+    },
+  ) => Promise<HyperliquidDeposit>;
 };
 
 /**
@@ -192,10 +299,15 @@ export type HyperliquidProviderOptions = Pick<
   /** Owner mismatches and other anomalies are reported here, never secrets. */
   readonly logger: EngineLogger;
   /**
-   * The request pipeline user-signed actions and the Bridge2 deposit go through — absent on a
+   * The request pipeline user-signed actions and the CCTP deposit go through — absent on a
    * reads-only provider, whose `transfer`/`fund`/`userSigned` throw `not-enabled`.
    */
   readonly requests?: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  /**
+   * The chain clients `deposit` reads allowance and the CCTP burn limit through — absent on a
+   * reads-only provider.
+   */
+  readonly networks?: { readonly client: (network: string) => PublicClient };
   /**
    * The builder the AppsController confirmed for this group — `order` actions carry `builder: {b,
    * f}` only while this returns one; never above the confirmed maximum.
@@ -324,15 +436,27 @@ export function createHyperliquidProvider(
     },
     fund: {
       depositInfo: HYPERLIQUID_DEPOSIT[options.network],
-      deposit: async (group, { amount, fee }) => {
-        const deposit = HYPERLIQUID_DEPOSIT[options.network];
-        if (requests === undefined) {
+      deposit: async (group, { amount, fee, dex }) => {
+        const route = HYPERLIQUID_DEPOSIT[options.network];
+        if (requests === undefined || options.networks === undefined) {
           throw new HyperliquidError("not-enabled", "this provider has no request pipeline");
         }
-        if (amount < deposit.minimum) {
+        const client = options.networks.client(route.network);
+        const owner = await agents.owner(group);
+        /* The Circle fee bound is read before any request is opened: a deposit it would
+           consume, or a fee answer we cannot parse, is refused with no prompt shown. */
+        const maxFee = await fetchMaxFee(options.fetch, IRIS_FEES_URL[options.network], amount);
+        if (amount <= maxFee) {
           throw new HyperliquidError(
             "invalid-input",
-            "deposits under 5 USDC are not credited by the bridge",
+            "the Circle fee would consume the whole deposit",
+          );
+        }
+        const limit = await readBurnLimit(client, route.tokenMessenger, route.usdc);
+        if (amount > limit) {
+          throw new HyperliquidError(
+            "invalid-input",
+            "the deposit exceeds the per-message burn limit",
           );
         }
         const account = {
@@ -341,37 +465,59 @@ export function createHyperliquidProvider(
           groupIndex: group.groupIndex,
           template: "evm.bip44" as const,
         };
-        const pending = await requests.prepare({
-          method: "send",
-          account,
-          network: deposit.network,
-          to: deposit.bridge,
-          amount,
-          token: deposit.usdc,
-          fee,
+        const track = (pending: { readonly id: string }): HyperliquidPendingAction => ({
+          requestId: pending.id,
+          outcome: (async (): Promise<{ readonly kind: "ok" }> => {
+            try {
+              const result = await requests.outcome(pending.id);
+              if (!("family" in result)) {
+                throw new HyperliquidError(
+                  "unavailable",
+                  "the deposit request resolved without a transaction",
+                );
+              }
+              return { kind: "ok" };
+            } catch (error) {
+              if (error instanceof RequestEndedError) {
+                throw new HyperliquidError(
+                  "approval-rejected",
+                  `the request was ${error.stage}`,
+                  error,
+                );
+              }
+              throw error;
+            }
+          })(),
         });
-        const outcome = (async (): Promise<{ readonly kind: "ok" }> => {
-          try {
-            const result = await requests.outcome(pending.id);
-            if (!("family" in result)) {
-              throw new HyperliquidError(
-                "unavailable",
-                "the deposit request resolved without a transaction",
+        /* An exact-amount approve only when the allowance is short — the pipeline itself
+           refuses an overwrite of a nonzero allowance, so the read must come first. */
+        const allowance = await readAllowance(client, route.usdc, owner, route.tokenMessenger);
+        const approval =
+          allowance >= amount
+            ? undefined
+            : track(
+                await requests.prepare({
+                  method: "evm-approve",
+                  account,
+                  network: route.network,
+                  token: route.usdc,
+                  spender: route.tokenMessenger,
+                  amount,
+                  fee,
+                }),
               );
-            }
-            return { kind: "ok" };
-          } catch (error) {
-            if (error instanceof RequestEndedError) {
-              throw new HyperliquidError(
-                "approval-rejected",
-                `the request was ${error.stage}`,
-                error,
-              );
-            }
-            throw error;
-          }
-        })();
-        return { requestId: pending.id, outcome };
+        const deposit = track(
+          await requests.prepare({
+            method: "evm-cctp",
+            account,
+            network: route.network,
+            amount,
+            dex: dex ?? route.dex,
+            maxFee,
+            fee,
+          }),
+        );
+        return { approval, deposit };
       },
     },
   };

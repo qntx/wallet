@@ -701,6 +701,7 @@ export class TransactionController extends Controller<TransactionControllerState
           | "evm-delegation"
           | "evm-batch"
           | "evm-approve"
+          | "evm-cctp"
           | "evm-swap"
           | "evm-bridge"
           | "evm-nft-send"

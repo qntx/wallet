@@ -291,24 +291,146 @@ describe("apps hyperliquid enablement on the node host", () => {
     await w.destroy();
   });
 
-  it("deposit rejects below 5 USDC and prepares a send to Bridge2", async () => {
+  it("deposit prepares an approve and a CCTP burn; a fee-eaten deposit is refused", async () => {
     const w = await world(27);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    /* The testnet fee row quotes 0.2 USDC — an amount at or under it is refused with no
+       request opened. */
     await expect(
-      w.provider.fund.deposit(w.group, { amount: 4_999_999n, fee: "normal" }),
+      w.provider.fund.deposit(w.group, { amount: 200_000n, fee: "normal" }),
     ).rejects.toMatchObject({ category: "invalid-input" });
-    const pending = await w.provider.fund.deposit(w.group, {
+    expect(w.requests.getState().requests).toStrictEqual({});
+    const result = await w.provider.fund.deposit(w.group, {
       amount: 5_000_000n,
       fee: "normal",
     });
-    const request = w.requests.getState().requests[pending.requestId];
-    expect(request).toBeDefined();
-    const { display } = request as {
-      display?: { outflows?: Array<{ to?: string; token?: string }> };
+    /* allowance defaults to 0 — both requests exist; the deposit's intent is the decoded
+       depositForBurnWithHook on the testnet TokenMessengerV2. */
+    expect(result.approval).toBeDefined();
+    const {requests} = w.requests.getState();
+    const approve = requests[result.approval?.requestId ?? ""];
+    const deposit = requests[result.deposit.requestId];
+    expect(approve).toBeDefined();
+    expect(deposit).toBeDefined();
+    const { display } = deposit as {
+      display?: {
+        outflows?: Array<{ to?: string; amount?: { amount?: string } }>;
+        hyperliquidDeposit?: {
+          recipient?: string;
+          dex?: string;
+          maxFee?: { amount?: string };
+        };
+      };
     };
     expect(display?.outflows?.[0]?.to?.toLowerCase()).toBe(
-      "0x08cfc1b6b2dcf36a1480b99353a354aa8ac56f89",
+      "0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa",
     );
+    expect(display?.outflows?.[0]?.amount?.amount).toBe("5000000");
+    expect(display?.hyperliquidDeposit?.dex).toBe("perps");
+    expect(display?.hyperliquidDeposit?.maxFee?.amount).toBe("200000");
+    await w.destroy();
+  });
+
+  it("a sufficient allowance skips the approve; fee and limit refusals open nothing", async () => {
+    const w = await world(28, {
+      hl: { arb: { allowance: 10_000_000n } },
+    });
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const result = await w.provider.fund.deposit(w.group, {
+      amount: 5_000_000n,
+      fee: "normal",
+    });
+    expect(result.approval).toBeUndefined();
+    expect(w.requests.getState().requests[result.deposit.requestId]).toBeDefined();
+    await w.destroy();
+    const low = await world(29, { hl: { arb: { burnLimit: 4_000_000n } } });
+    await low.apps.acknowledgeTerms(low.group, "hyperliquid");
+    await expect(
+      low.provider.fund.deposit(low.group, { amount: 5_000_000n, fee: "normal" }),
+    ).rejects.toMatchObject({ category: "invalid-input" });
+    await low.destroy();
+    const malformed = await world(30, { hl: { iris: { status: 200, body: [] } } });
+    await malformed.apps.acknowledgeTerms(malformed.group, "hyperliquid");
+    await expect(
+      malformed.provider.fund.deposit(malformed.group, {
+        amount: 5_000_000n,
+        fee: "normal",
+      }),
+    ).rejects.toMatchObject({ category: "unavailable" });
+    await malformed.destroy();
+    /* A non-integer `minimumFee` (bps) or a missing finality-1000 row is the same refusal. */
+    const nonInteger = await world(31, {
+      hl: {
+        iris: {
+          status: 200,
+          body: [
+            {
+              finalityThreshold: 1000,
+              minimumFee: 1.5,
+              forwardFee: { low: 200000, med: 200000, high: 200000 },
+            },
+          ],
+        },
+      },
+    });
+    await nonInteger.apps.acknowledgeTerms(nonInteger.group, "hyperliquid");
+    await expect(
+      nonInteger.provider.fund.deposit(nonInteger.group, {
+        amount: 5_000_000n,
+        fee: "normal",
+      }),
+    ).rejects.toMatchObject({ category: "unavailable" });
+    await nonInteger.destroy();
+    const noRow = await world(32, {
+      hl: {
+        iris: {
+          status: 200,
+          body: [
+            {
+              finalityThreshold: 2000,
+              minimumFee: 0,
+              forwardFee: { low: 200000, med: 200000, high: 200000 },
+            },
+          ],
+        },
+      },
+    });
+    await noRow.apps.acknowledgeTerms(noRow.group, "hyperliquid");
+    await expect(
+      noRow.provider.fund.deposit(noRow.group, {
+        amount: 5_000_000n,
+        fee: "normal",
+      }),
+    ).rejects.toMatchObject({ category: "unavailable" });
+    await noRow.destroy();
+  });
+
+  it("the deposit's maxFee is forwardFee.high + ceil(amount x minimumFee / 10_000)", async () => {
+    /* minimumFee 10 bps on 6 USDC adds 6000 base units to the 0.2 USDC flat fee. */
+    const w = await world(33, {
+      hl: {
+        iris: {
+          status: 200,
+          body: [
+            {
+              finalityThreshold: 1000,
+              minimumFee: 10,
+              forwardFee: { low: 100000, med: 200000, high: 300000 },
+            },
+          ],
+        },
+      },
+    });
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const result = await w.provider.fund.deposit(w.group, {
+      amount: 6_000_000n,
+      fee: "normal",
+    });
+    const deposit = w.requests.getState().requests[result.deposit.requestId];
+    const { display } = deposit as {
+      display?: { hyperliquidDeposit?: { maxFee?: { amount?: string } } };
+    };
+    expect(display?.hyperliquidDeposit?.maxFee?.amount).toBe("306000");
     await w.destroy();
   });
   it("a mark before verify never leaks: trading stays not-enabled while the agent is unlisted", async () => {

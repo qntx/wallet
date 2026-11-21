@@ -14,6 +14,7 @@ import type { AppAvailability, EligibilityResponse } from "../gateway/contract/e
 import { parseWith } from "../gateway/contract/endpoint.ts";
 import { CLIENT_ID_HEADER } from "../gateway/contract/primitives.ts";
 import { gatewaySession } from "../gateway/session.ts";
+import type { NetworkController } from "../networks/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -62,6 +63,8 @@ export type AppsHyperliquidConfig = {
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
+  readonly networks: Pick<NetworkController, "client">;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
   readonly setTimer: SetTimer;
@@ -548,6 +551,7 @@ export function createApps(options: CreateAppsOptions): {
     random: options.random,
     logger: options.logger,
     requests: options.requests,
+    networks: options.networks,
     socket,
     builderFor: (group) => {
       /* Trades carry the builder only while the controller confirmed the fee this session —

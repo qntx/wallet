@@ -38,6 +38,11 @@ const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
 const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
+const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
+const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const CCTP_FORWARDER = "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757";
+const netArb = "Network: Arbitrum One";
+const netArbZh = "网络：Arbitrum One";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
@@ -49,6 +54,23 @@ const tx = (over: { to?: string; data?: string; value?: string }) => ({
   tx: {
     type: "eip1559",
     chainId: 1,
+    nonce: 0,
+    gas: "0x30000",
+    value: "0x0",
+    data: "0x",
+    accessList: [],
+    maxFeePerGas: "0x3b9aca00",
+    maxPriorityFeePerGas: "0x1",
+    ...over,
+  },
+});
+const arbTx = (over: { to?: string; data?: string; value?: string }) => ({
+  kind: "evm.transaction",
+  network: "eip155:42161",
+  account,
+  tx: {
+    type: "eip1559",
+    chainId: 42161,
     nonce: 0,
     gas: "0x30000",
     value: "0x0",
@@ -1414,6 +1436,66 @@ const cases: VectorCase[] = [
       "确认盲签",
       "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
       "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    ),
+  },
+  {
+    name: "CCTP depositForBurnWithHook 5 USDC to Hyperliquid",
+    request: arbTx({
+      to: CCTP_MESSENGER,
+      data: encodeFunctionData({
+        abi: parseAbi([
+          "function depositForBurnWithHook(uint256,uint32,bytes32,address,bytes32,uint256,uint32,bytes)",
+        ]),
+        functionName: "depositForBurnWithHook",
+        args: [
+          5_000_000n,
+          19,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          ARB_USDC,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          200_000n,
+          1000,
+          `0x636374702d666f7277617264${"00".repeat(12)}0000000000000018${SIGNER.slice(2)}00000000`,
+        ],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `${netArb}\nThere may be other outflows\nSend 5 USDC to ${CCTP_MESSENGER}\nDeposit 5 USDC to your Hyperliquid perps account ${SIGNER}\nCircle fee at most 0.2 USDC\n${fee}`,
+      `${netArbZh}\n可能还有其他转出\n发送 5 USDC 到 ${CCTP_MESSENGER}\n向你的 Hyperliquid 合约账户 ${SIGNER} 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n${feeZh}`,
+    ),
+  },
+  {
+    name: "CCTP depositForBurn wrong domain (blind)",
+    request: arbTx({
+      to: CCTP_MESSENGER,
+      data: encodeFunctionData({
+        abi: parseAbi([
+          "function depositForBurnWithHook(uint256,uint32,bytes32,address,bytes32,uint256,uint32,bytes)",
+        ]),
+        functionName: "depositForBurnWithHook",
+        args: [
+          5_000_000n,
+          3,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          ARB_USDC,
+          `0x${CCTP_FORWARDER.slice(2).padStart(64, "0")}`,
+          200_000n,
+          1000,
+          `0x636374702d666f7277617264${"00".repeat(12)}0000000000000018${SIGNER.slice(2)}00000000`,
+        ],
+      }),
+    }),
+    verifiability: "opaque",
+    blind: "cctp-destination",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${netArb}\nCall contract ${CCTP_MESSENGER}, function 0x779b432d\n${fee}`,
+      `${netArbZh}\n调用合约 ${CCTP_MESSENGER}，函数 0x779b432d\n${feeZh}`,
     ),
   },
 ];
