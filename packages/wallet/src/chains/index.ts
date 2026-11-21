@@ -55,7 +55,7 @@ const checkPsbt = async (
   request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }>,
   result: ChainSignResult,
 ): Promise<void> => {
-  if (result.kind !== "bitcoin.psbt") {
+  if (result.kind !== request.kind) {
     throw integrity("result kind does not match the request");
   }
   if (!samePsbtContent(request.psbt, result.signedPsbt)) {
@@ -92,82 +92,154 @@ const checkPsbt = async (
   }
 };
 
-/** Whether the kernel's signature belongs to the account it was asked to sign for. */
-const checkSigner = (
-  request: ChainSignRequest,
+/**
+ * The account the request names: the hd template account via `wallet.accounts`, or the imported
+ * key's address via `keys.list` — a keyId the vault does not list is refused.
+ */
+const signAccount = async (
+  internals: WalletInternals,
+  request: Exclude<ChainSignRequest, { kind: "bitcoin.psbt" }>,
+): Promise<ChainAccount | { readonly address: string }> => {
+  if (request.account.kind === "hd") {
+    return internals.call("wallet.accounts", {
+      walletId: request.account.walletId,
+      groupIndex: request.account.groupIndex,
+      template: request.account.template,
+      network: request.network,
+    });
+  }
+  const { keyId } = request.account;
+  const keys = await internals.call("keys.list", null);
+  const key = keys.find((k) => k.keyId === keyId);
+  if (key === undefined) {
+    throw integrity("chain.sign answered for a key not in the vault");
+  }
+  return { address: key.address };
+};
+
+const checkEvm = async (
+  internals: WalletInternals,
+  request: Extract<ChainSignRequest, { kind: `evm.${string}` }>,
   result: ChainSignResult,
-  account: ChainAccount | { readonly address: string },
-) => {
-  if (request.kind === "bitcoin.message") {
-    if (!("xpub" in account)) {
-      throw integrity("chain account has no xpub");
-    }
-    if (request.kind === "bitcoin.message" && result.kind === "bitcoin.message") {
-      const derived = bitcoinAddressFromXpub(
-        account.xpub,
-        account.template,
-        request.network,
-        request.change,
-        request.index,
-      );
-      if (
-        derived !== request.address ||
-        !(request.format === "legacy" ? verifyLegacyBitcoinMessage : verifyBitcoinMessage)(
-          request.address,
-          request.message,
-          result.signature,
-          request.network,
-        )
-      ) {
-        throw integrity("message signature does not verify for the account");
-      }
-      return;
-    }
+): Promise<void> => {
+  if (result.kind !== request.kind) {
     throw integrity("result kind does not match the request");
   }
+  const account = await signAccount(internals, request);
   if (!("address" in account)) {
     throw integrity("chain account has no address");
   }
-  if (request.kind.startsWith("evm.")) {
-    if (
-      result.kind !== "evm.transaction" &&
-      result.kind !== "evm.personal-message" &&
-      result.kind !== "evm.typed-data"
-    ) {
-      throw integrity("result kind does not match the request");
+  let signer: string;
+  try {
+    signer = recoverEvmSigner(request, result);
+  } catch (error) {
+    if (error instanceof ChainError) {
+      throw integrity("signed content does not match the request");
     }
-    let signer: string;
-    try {
-      signer = recoverEvmSigner(request, result);
-    } catch (error) {
-      if (error instanceof ChainError) {
-        throw integrity("signed content does not match the request");
-      }
-      throw error;
-    }
-    if (signer.toLowerCase() !== account.address.toLowerCase()) {
-      throw integrity("signer does not match the account");
-    }
-    return;
+    throw error;
   }
-  if (
-    (request.kind === "solana.transaction" || request.kind === "solana.message") &&
-    (result.kind === "solana.transaction" || result.kind === "solana.message") &&
-    !verifySolanaSignature(request.message, result.signature, account.address)
-  ) {
+  if (signer.toLowerCase() !== account.address.toLowerCase()) {
+    throw integrity("signer does not match the account");
+  }
+};
+
+const checkSolana = async (
+  internals: WalletInternals,
+  request: Extract<ChainSignRequest, { kind: `solana.${string}` }>,
+  result: ChainSignResult,
+): Promise<void> => {
+  if (result.kind !== request.kind) {
+    throw integrity("result kind does not match the request");
+  }
+  const account = await signAccount(internals, request);
+  if (!("address" in account)) {
+    throw integrity("chain account has no address");
+  }
+  if (!verifySolanaSignature(request.message, result.signature, account.address)) {
     throw integrity("signature does not verify for the account");
   }
-  if (request.kind === "tron.transaction" || request.kind === "tron.message") {
-    if (result.kind !== request.kind) {
-      throw integrity("result kind does not match the request");
-    }
-    const verified =
-      request.kind === "tron.transaction"
-        ? verifyTronTransactionSignature(request.rawData, result.signature, account.address)
-        : verifyTronMessageSignature(request.message, result.signature, account.address);
-    if (!verified) {
-      throw integrity("signature does not verify for the account");
-    }
+};
+
+const checkTron = async (
+  internals: WalletInternals,
+  request: Extract<ChainSignRequest, { kind: `tron.${string}` }>,
+  result: ChainSignResult,
+): Promise<void> => {
+  if (result.kind !== request.kind) {
+    throw integrity("result kind does not match the request");
+  }
+  const account = await signAccount(internals, request);
+  if (!("address" in account)) {
+    throw integrity("chain account has no address");
+  }
+  const verified =
+    request.kind === "tron.transaction"
+      ? verifyTronTransactionSignature(request.rawData, result.signature, account.address)
+      : verifyTronMessageSignature(request.message, result.signature, account.address);
+  if (!verified) {
+    throw integrity("signature does not verify for the account");
+  }
+};
+
+const checkBitcoinMessage = async (
+  internals: WalletInternals,
+  request: Extract<ChainSignRequest, { kind: "bitcoin.message" }>,
+  result: ChainSignResult,
+): Promise<void> => {
+  if (result.kind !== request.kind) {
+    throw integrity("result kind does not match the request");
+  }
+  const account = await signAccount(internals, request);
+  if (!("xpub" in account)) {
+    throw integrity("chain account has no xpub");
+  }
+  const derived = bitcoinAddressFromXpub(
+    account.xpub,
+    account.template,
+    request.network,
+    request.change,
+    request.index,
+  );
+  if (
+    derived !== request.address ||
+    !(request.format === "legacy" ? verifyLegacyBitcoinMessage : verifyBitcoinMessage)(
+      request.address,
+      request.message,
+      result.signature,
+      request.network,
+    )
+  ) {
+    throw integrity("message signature does not verify for the account");
+  }
+};
+
+/**
+ * The `chain.sign` result check: a result whose kind is not the request's is refused for every
+ * request kind, then the family's check verifies the signature (or signed content) against the
+ * account. The switch is exhaustive over the request union; a trailing return is unreachable
+ * (TS7027).
+ */
+// oxlint-disable-next-line typescript/consistent-return
+const checkResult = async (
+  internals: WalletInternals,
+  request: ChainSignRequest,
+  result: ChainSignResult,
+): Promise<void> => {
+  switch (request.kind) {
+    case "evm.transaction":
+    case "evm.personal-message":
+    case "evm.typed-data":
+      return checkEvm(internals, request, result);
+    case "solana.transaction":
+    case "solana.message":
+      return checkSolana(internals, request, result);
+    case "tron.transaction":
+    case "tron.message":
+      return checkTron(internals, request, result);
+    case "bitcoin.message":
+      return checkBitcoinMessage(internals, request, result);
+    case "bitcoin.psbt":
+      return checkPsbt(internals, request, result);
   }
 };
 
@@ -180,25 +252,7 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
           request: params.request,
           verify: await internals.resolveVerifyFactor(params.verify, wire),
         }));
-        if (params.request.kind === "bitcoin.psbt") {
-          await checkPsbt(internals, params.request, result);
-        } else if (params.request.account.kind === "hd") {
-          const account = await internals.call("wallet.accounts", {
-            walletId: params.request.account.walletId,
-            groupIndex: params.request.account.groupIndex,
-            template: params.request.account.template,
-            network: params.request.network,
-          });
-          checkSigner(params.request, result, account);
-        } else {
-          const { keyId } = params.request.account;
-          const keys = await internals.call("keys.list", null);
-          const key = keys.find((k) => k.keyId === keyId);
-          if (key === undefined) {
-            throw integrity("chain.sign answered for a key not in the vault");
-          }
-          checkSigner(params.request, result, { address: key.address });
-        }
+        await checkResult(internals, params.request, result);
         return result;
       }),
   };
