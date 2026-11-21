@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AccountBalances } from "../src/assets/controller.ts";
+import { nativeAssetId, tokenAssetId } from "../src/gateway/contract/index.ts";
 import { assetValue, formatDecimal, parseDecimal, sumDecimals } from "../src/prices/decimal.ts";
 import {
   balanceHoldings,
@@ -78,6 +79,19 @@ describe("decimal", () => {
 
   it.each(["1e5", "", "1.2.3"])("parseDecimal rejects %j", (text) => {
     expect(() => parseDecimal(text)).toThrow(TypeError);
+  });
+});
+
+describe("price asset ids", () => {
+  it("has no ids for Plasma — no SLIP-44 coin type — and full ids for Monad", () => {
+    expect(nativeAssetId("eip155:9745")).toBeUndefined();
+    expect(
+      tokenAssetId("eip155:9745", "0x2d661C89D812261039AF9764eceaAee884f5F67F"),
+    ).toBeUndefined();
+    expect(nativeAssetId("eip155:143")).toBe("eip155:143/slip44:268435779");
+    expect(tokenAssetId("eip155:143", "0x754704Bc059F8C67012fEd69BC8A327a5aafb603")).toBe(
+      "eip155:143/erc20:0x754704bc059f8c67012fed69bc8a327a5aafb603",
+    );
   });
 });
 
@@ -171,6 +185,33 @@ describe("balanceHoldings", () => {
     );
     expect(holdings.map((h) => h.asset)).toStrictEqual([undefined, undefined]);
     expect(holdings[0]).toMatchObject({ symbol: "ETH", decimals: 18, amount: 9n });
+  });
+
+  it("leaves the asset undefined on a mainnet without prices (Plasma), counted unpriced", () => {
+    const PLASMA = "eip155:9745";
+    const PLASMA_USDC = "0x2d661C89D812261039AF9764eceaAee884f5F67F";
+    const holdings = balanceHoldings(
+      `${PLASMA}:${ADDR}`,
+      balances({
+        native: "9",
+        tokens: [
+          {
+            address: PLASMA_USDC,
+            symbol: "USDC",
+            decimals: 6,
+            balance: "1",
+            verified: true,
+            spam: [],
+            hidden: false,
+          },
+        ],
+      }),
+    );
+    expect(holdings.map((h) => h.asset)).toStrictEqual([undefined, undefined]);
+    expect(holdings[0]).toMatchObject({ symbol: "XPL", decimals: 18 });
+    const valuation = valueHoldings(holdings, { currency: "usd", quotes: {} }, 1_700_000_000_000);
+    expect(valuation.unpriced).toBe(2);
+    expect(valuation.holdings.map((h) => h.price)).toStrictEqual([undefined, undefined]);
   });
 
   it("reads nothing from a key on an unknown network", () => {

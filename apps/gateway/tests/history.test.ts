@@ -20,6 +20,8 @@ const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const ETH = "eip155:1";
 const ARB = "eip155:42161";
 const HYPE = "eip155:999";
+const ARC = "eip155:5042";
+const SONIC = "eip155:146";
 const SEPOLIA = "eip155:11155111";
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
@@ -27,6 +29,8 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
   { id: ETH, providers: [{ id: "alchemy", url: "https://eth.alchemy.test/v2" }] },
   { id: ARB, providers: [{ id: "alchemy", url: "https://arb.alchemy.test/v2" }] },
   { id: HYPE, providers: [{ id: "alchemy", url: "https://hype.alchemy.test/v2" }] },
+  { id: ARC, providers: [{ id: "alchemy", url: "https://arc.alchemy.test/v2" }] },
+  { id: SONIC, providers: [{ id: "alchemy", url: "https://sonic.alchemy.test/v2" }] },
   { id: SEPOLIA, providers: [{ id: "other", url: "https://other.test" }] },
   { id: SOLANA, providers: [{ id: "alchemy", url: "https://sol.alchemy.test" }] },
 ];
@@ -35,6 +39,8 @@ const UPSTREAM: Readonly<Record<string, string>> = {
   [ETH]: "https://eth.alchemy.test",
   [ARB]: "https://arb.alchemy.test",
   [HYPE]: "https://hype.alchemy.test",
+  [ARC]: "https://arc.alchemy.test",
+  [SONIC]: "https://sonic.alchemy.test",
 };
 
 type Fixture = { readonly response: unknown };
@@ -310,6 +316,34 @@ describe("history page", () => {
     for (const call of up.seen) {
       expect(params(call)["category"]).toStrictEqual(["external", "erc20", "erc721", "erc1155"]);
     }
+  });
+
+  it("includes the internal category on Arc", async () => {
+    const up = upstream({ to: () => ({ transfers: [] }), from: () => ({ transfers: [] }) });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ARC]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(ARC, { address: OWNER }));
+    expect(res.status).toBe(200);
+    for (const call of up.seen) {
+      expect(params(call)["category"]).toStrictEqual([
+        "external",
+        "internal",
+        "erc20",
+        "erc721",
+        "erc1155",
+      ]);
+    }
+  });
+
+  it("503s a served network outside the transfers set without an upstream call", async () => {
+    const fetch = fakeFetch({});
+    const app = gateway({ fetch: fetch.fetch, networks: NETWORKS });
+    const res = await app.request(...request(SONIC, { address: OWNER }));
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ error: "unavailable" });
+    expect(fetch.calls).toHaveLength(0);
   });
 
   it("maps the hyperevm fixture: one erc20 and two natives", async () => {

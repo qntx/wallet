@@ -16,8 +16,10 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 import type { PricesResponse } from "@qntx/wallet-engine/gateway/contract";
 
+import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
 import { createForwarder } from "../src/providers/forward.ts";
 import type { Forwarder } from "../src/providers/forward.ts";
+import { NATIVE_COINS, TOKEN_PLATFORMS, priceTarget } from "../src/providers/prices-assets.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
 import { normalizeQuote, plainDecimal, quotePrices } from "../src/providers/prices.ts";
@@ -812,5 +814,37 @@ describe("quotePrices", () => {
         async () => {},
       ),
     ).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("prices-assets tables", () => {
+  it("maps every production EVM network's tokens to a provider platform", () => {
+    for (const id of PRODUCTION_NETWORKS.map((n) => n.id).filter((id) =>
+      id.startsWith("eip155:"),
+    )) {
+      expect(TOKEN_PLATFORMS[id]).toBeDefined();
+    }
+  });
+
+  it("prices exactly the native assets the registry yields for the served networks", () => {
+    const natives = new Set(
+      PRODUCTION_NETWORKS.map(({ id }) => nativeAssetId(id)).filter(
+        (id): id is string => id !== undefined,
+      ),
+    );
+    expect(new Set(Object.keys(NATIVE_COINS))).toStrictEqual(natives);
+  });
+
+  it("leaves Plasma's native coin unpriced — no SLIP-44 coin type — while its ERC-20s price", () => {
+    expect(priceTarget("eip155:9745/slip44:60")).toBeUndefined();
+    const usdc = priceTarget("eip155:9745/erc20:0x2d661c89d812261039af9764eceaaee884f5f67f");
+    expect(usdc).toStrictEqual({
+      coingecko: {
+        kind: "token",
+        platform: "plasma",
+        address: "0x2d661c89d812261039af9764eceaaee884f5f67f",
+      },
+      defillama: "plasma:0x2d661c89d812261039af9764eceaaee884f5f67f",
+    });
   });
 });

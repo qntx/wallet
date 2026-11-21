@@ -134,7 +134,7 @@ export type {
   NetworkControllerState,
   SolanaRpc,
 } from "./networks/controller.ts";
-export type { NetworkInfo } from "./networks/registry.ts";
+export type { FeeModel, NetworkInfo } from "./networks/registry.ts";
 export type { Esplora } from "./chains/bitcoin.ts";
 export type { EnsResolution } from "./names/ens.ts";
 export type { LidoPosition, LidoWithdrawalRequest } from "./lido/index.ts";

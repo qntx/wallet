@@ -886,6 +886,39 @@ const nftRead = async <T>(
   return primary;
 };
 
+/**
+ * A fee `read` charges beyond `gasUsed × effectiveGasPrice` for `tx`, the larger of the primary and
+ * independent reads (the chain charges it either way; the figure only drives display and checks).
+ * Unknown when the primary read fails.
+ */
+const beyondGasRead = async (
+  ctx: RouteContext,
+  network: string,
+  tx: EvmUnsignedTransaction,
+  flags: Array<RequestCheckCode | undefined>,
+  read: (client: PublicClient, tx: EvmUnsignedTransaction) => Promise<bigint>,
+): Promise<bigint | undefined> => {
+  const { networks } = ctx.options;
+  let fee: bigint;
+  try {
+    fee = await read(networks.client(network), tx);
+  } catch {
+    flags.push("reads-unverified");
+    return undefined;
+  }
+  const independent = networks.independentClient(network);
+  if (independent.kind === "available") {
+    try {
+      const other = await read(independent.client, tx);
+      flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
+      fee = other > fee ? other : fee;
+    } catch {
+      flags.push("reads-unverified");
+    }
+  }
+  return fee;
+};
+
 /** Per-controller route — nonce ownership and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
@@ -903,36 +936,21 @@ export const createEvmRoute = (): EvmRoute => {
     readonly nativeValue: bigint | undefined;
   };
 
-  /**
-   * OP Stack L1 data fee plus operator fee for `tx`, the larger of the primary and independent
-   * reads (the chain charges it either way; the figure only drives display and checks). Unknown
-   * when the primary read fails.
-   */
-  const opStackFee = async (
+  /** What the network's fee model charges beyond `gasUsed × effectiveGasPrice`, if anything. */
+  // eslint-disable-next-line typescript/consistent-return -- the switch is exhaustive; a new fee model kind fails typecheck
+  const beyondGasFee = async (
     ctx: RouteContext,
     network: string,
     tx: EvmUnsignedTransaction,
     flags: Array<RequestCheckCode | undefined>,
   ): Promise<bigint | undefined> => {
-    const { networks } = ctx.options;
-    let fee: bigint;
-    try {
-      fee = await evm.opStackFee(networks.client(network), tx);
-    } catch {
-      flags.push("reads-unverified");
-      return undefined;
+    switch (ctx.options.networks.info(network).feeModel?.kind) {
+      case "op-stack":
+        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t));
+      case "execution":
+      case undefined:
+        return undefined;
     }
-    const independent = networks.independentClient(network);
-    if (independent.kind === "available") {
-      try {
-        const other = await evm.opStackFee(independent.client, tx);
-        flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
-        fee = other > fee ? other : fee;
-      } catch {
-        flags.push("reads-unverified");
-      }
-    }
-    return fee;
   };
 
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
@@ -986,7 +1004,7 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     const feed = evm.applyFee(unsigned, quote);
-    const l1 = info.opStack === true ? await opStackFee(ctx, network, feed, flags) : undefined;
+    const l1 = await beyondGasFee(ctx, network, feed, flags);
     if (
       spec.nativeValue !== undefined &&
       feeReachesAmount(
@@ -1840,10 +1858,7 @@ export const createEvmRoute = (): EvmRoute => {
           }
         : { ...original, ...feeFields };
     const request = evm.toSignRequest(unsigned, account, chainId);
-    const l1 =
-      networks.info(old.network).opStack === true
-        ? await opStackFee(ctx, old.network, unsigned, flags)
-        : undefined;
+    const l1 = await beyondGasFee(ctx, old.network, unsigned, flags);
     const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 

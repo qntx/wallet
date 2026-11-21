@@ -642,6 +642,17 @@ type EvmSignInput = {
     readonly request: SignRequest;
 };
 
+// @public
+type FeeModel =
+/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+    {
+    readonly kind: "execution";
+} |
+/** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+    {
+    readonly kind: "op-stack";
+};
+
 // @public (undocumented)
 type GatewayConfig = {
     readonly url: string;
@@ -739,7 +750,7 @@ type NetworkControllerState = {
 // @public (undocumented)
 type NetworkInfo = NetworkMeta & {
     readonly multicall3?: string;
-    readonly opStack?: true;
+    readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;
 };
 
