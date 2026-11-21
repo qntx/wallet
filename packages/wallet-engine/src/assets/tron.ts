@@ -45,13 +45,26 @@ const call = async (api: TronApi, owner: string, contract: string, data: Uint8Ar
   return outcome.ok ? outcome.result : undefined;
 };
 
-/** `balanceOf(owner)` on a TRC-20 contract, or `undefined` when the call fails. */
+/**
+ * `balanceOf(owner)` on a TRC-20 contract. A failed call throws — like an eth_call error on the EVM
+ * path — so a misbehaving node or contract never displays as a zero balance.
+ */
 export const tronBalanceOf = async (
   api: TronApi,
   owner: string,
   contract: string,
-): Promise<bigint | undefined> =>
-  word(await call(api, owner, contract, callData(BALANCE_OF, owner)));
+): Promise<bigint> => {
+  const outcome = await constantCall(api, {
+    owner,
+    contract,
+    data: callData(BALANCE_OF, owner),
+  });
+  const value = outcome.ok ? word(outcome.result) : undefined;
+  if (value === undefined) {
+    throw new TypeError(`balanceOf on ${contract} failed`);
+  }
+  return value;
+};
 
 const textOf = (r: Uint8Array | undefined): string | undefined =>
   r === undefined ? undefined : decodeText(r);

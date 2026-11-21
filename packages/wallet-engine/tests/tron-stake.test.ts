@@ -380,6 +380,52 @@ describe("delegate", () => {
       }).prepared,
     ).rejects.toThrow(/lock period/);
   });
+
+  it("delegates staked TRX — the liquid balance only covers the fee", async () => {
+    // 40 TRX delegated out of a 1 TRX balance: free bandwidth covers the ~0 fee, so the build
+    // succeeds; counting the delegation as liquid outflow would refuse it.
+    const p = await prepare(
+      { kind: "delegate", receiver: RECEIVER, amount: 40_000_000n, resource: "bandwidth" },
+      { account: { address: FROM, balance: 1_000_000 } },
+    ).prepared;
+    expect(p.intent.staking).toStrictEqual([
+      expect.objectContaining({ kind: "tron-delegate", receiver: RECEIVER }),
+    ]);
+  });
+
+  it("a live lock forces the new lock to cover its remaining time", async () => {
+    // now = 1_000_000; the old bandwidth lock expires at 1_090_000 — 30 blocks (90_000 ms) remain.
+    const liveLock = {
+      delegatedResource: [
+        { frozen_balance_for_bandwidth: 4_000_000, expire_time_for_bandwidth: 1_090_000 },
+      ],
+    };
+    const base = {
+      kind: "delegate" as const,
+      receiver: RECEIVER,
+      amount: 4_000_000n,
+      resource: "bandwidth" as const,
+    };
+    // 29 blocks (87_000 ms) < 90_000 ms remaining — refused.
+    await expect(
+      prepare({ ...base, lockBlocks: 29 }, { delegated: liveLock }).prepared,
+    ).rejects.toThrow(/remaining|live lock/);
+    // Exactly 30 blocks (90_000 ms) covers the remaining time — allowed.
+    const p = await prepare({ ...base, lockBlocks: 30 }, { delegated: liveLock }).prepared;
+    expect(p.intent.staking).toStrictEqual([
+      expect.objectContaining({ kind: "tron-delegate", lock: { blocks: "30" } }),
+    ]);
+    // An already-expired lock imposes nothing — a 1-block lock still builds.
+    const expired = {
+      delegatedResource: [
+        { frozen_balance_for_bandwidth: 4_000_000, expire_time_for_bandwidth: 900_000 },
+      ],
+    };
+    const q = await prepare({ ...base, lockBlocks: 1 }, { delegated: expired }).prepared;
+    expect(q.intent.staking).toStrictEqual([
+      expect.objectContaining({ kind: "tron-delegate", lock: { blocks: "1" } }),
+    ]);
+  });
 });
 
 describe("undelegate", () => {

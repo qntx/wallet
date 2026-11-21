@@ -110,7 +110,6 @@ const hexBytes = (value: string): Uint8Array => {
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 const printable = /^[\u0020-\u007E]*$/;
 
-/** A node's hex `message`/`resMessage` field as UTF-8 when it is printable text, else hex. */
 const base58check = createBase58check(sha256);
 
 /**
@@ -136,6 +135,7 @@ export const tronLogAddress = (address: string | undefined): string | undefined 
   return undefined;
 };
 
+/** A node's hex `message`/`resMessage` field as UTF-8 when it is printable text, else hex. */
 const decodeMessage = (hex: string): string => {
   const bytes = hexBytes(hex);
   try {
@@ -336,6 +336,8 @@ export type TronDelegatedRow = {
   readonly unlocked: bigint;
   /** Locked amount whose lock has not yet expired for `resource`. */
   readonly locked: bigint;
+  /** Latest still-unexpired lock `expire_time` for `resource`, ms — 0 when no lock is live. */
+  readonly lockedUntil: number;
 };
 
 /** `getdelegatedresourcev2` — the from→to delegation split into unlocked vs still-locked parts. */
@@ -354,6 +356,7 @@ export const delegatedResource = async (
   );
   let unlocked = 0n;
   let locked = 0n;
+  let lockedUntil = 0;
   for (const row of body.delegatedResource ?? []) {
     const amount = BigInt(
       Math.trunc(
@@ -369,9 +372,10 @@ export const delegatedResource = async (
       unlocked += amount;
     } else {
       locked += amount;
+      lockedUntil = Math.max(lockedUntil, expires);
     }
   }
-  return { unlocked, locked };
+  return { unlocked, locked, lockedUntil };
 };
 
 /** `getReward` — sun withdrawable via WithdrawBalanceContract; `{}` means 0. */

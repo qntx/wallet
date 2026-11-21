@@ -584,6 +584,8 @@ const frozenFor = (row: TronAccount, resource: 0 | 1): bigint => {
 
 const ONE_TRX = 1_000_000n;
 const DAY_MS = 86_400_000;
+/** Java-tron CommonParameter BLOCK_PRODUCED_INTERVAL — one block every 3 s. */
+const BLOCK_MS = 3000n;
 
 const tronStakeAction = (intent: ReturnType<typeof decodeTron>) => {
   if (intent.summary !== "stake" || intent.staking === undefined || intent.staking.length !== 1) {
@@ -730,6 +732,16 @@ export const prepareTronStake = async (
             `lock period must be 1..${stake.maxDelegateLockPeriod.toString(10)} blocks`,
           );
         }
+        // DelegateResourceActuator.validRemainTime: a still-locked delegation to the same
+        // receiver forces the new lock to cover the old lock's remaining time.
+        const row = await delegatedResource(api, from, action.receiver, resource, now);
+        const remain = BigInt(Math.trunc(row.lockedUntil)) - BigInt(Math.trunc(now));
+        if (remain > 0n && BigInt(action.lockBlocks) * BLOCK_MS < remain) {
+          throw new ChainError(
+            "invalid-request",
+            `lock period must cover the ${remain.toString(10)} ms left on the live lock`,
+          );
+        }
       }
       contract = {
         type: "DelegateResourceContract",
@@ -740,7 +752,7 @@ export const prepareTronStake = async (
         lock: action.lockBlocks !== undefined,
         lockPeriod: BigInt(action.lockBlocks ?? 0),
       };
-      outflow = action.amount;
+      // Delegation moves staked TRX, not liquid balance — the balance check covers fees only.
       assert = (a) =>
         a.kind === "tron-delegate" &&
         a.receiver === action.receiver &&

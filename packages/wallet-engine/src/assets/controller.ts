@@ -343,7 +343,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       await mapPool(
         custom.filter((c) => !discovered.has(c)),
         4,
-        async (contract) => [contract, (await tronBalanceOf(api, owner, contract)) ?? 0n] as const,
+        async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
       ),
     );
     const meta = (id: string): TronTokenMeta | "missing" | undefined =>

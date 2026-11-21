@@ -96,9 +96,7 @@ const tronApi = (answers: Answers, calls: Call[]): TronApi => ({
       const contract = String(b["contract_address"]);
       if (is(b, "70a08231")) {
         const balance = answers.balances?.[contract];
-        return Promise.resolve(
-          balance === undefined ? fail() : balance === "revert" ? fail() : ok(wordHex(balance)),
-        );
+        return Promise.resolve(balance === "revert" ? fail() : ok(wordHex(balance ?? 0n)));
       }
       const meta = answers.meta?.[contract];
       if (meta === "fail" || meta === undefined) {
@@ -130,7 +128,7 @@ const gatedApi = (gate: Promise<void>, calls: Call[]): TronApi => ({
       return accountBody();
     }
     if (path === "/wallet/triggerconstantcontract") {
-      return fail();
+      return is(isObject(body) ? body : {}, "70a08231") ? ok(wordHex(0n)) : fail();
     }
     return {};
   },
@@ -313,6 +311,29 @@ describe("AssetsController tron balances", () => {
     await assets.init();
     await assets.refresh(OWNER, TRON_NET);
     expect(calls.some((c) => c.path === "/v1/accounts/account")).toBe(false);
+  });
+
+  it("rejects the refresh rather than show a fabricated zero for a failed built-in read", async () => {
+    const calls: Call[] = [];
+    const assets = make({ account: accountBody(), balances: { [USDT]: "revert" } }, calls);
+    await assets.init();
+    await expect(assets.refresh(OWNER, TRON_NET)).rejects.toThrow(/balanceOf/);
+  });
+
+  it("rejects the refresh rather than show a fabricated zero for a failed custom read", async () => {
+    const calls: Call[] = [];
+    const custom = "TQhqRHgEonKEYqudomS8243o3bejg8dt1d";
+    const assets = make(
+      {
+        account: accountBody(),
+        meta: { [custom]: { decimals: 6, symbol: "GOLD" } },
+        balances: { [custom]: "revert" },
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(TRON_NET, custom);
+    await expect(assets.refresh(OWNER, TRON_NET)).rejects.toThrow(/balanceOf/);
   });
 
   it("decodes a recorded TRC-10 asset issue and marks the row unverified", async () => {
