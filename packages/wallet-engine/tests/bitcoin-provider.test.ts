@@ -625,6 +625,70 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
     }
   });
 
+  
+  it("a durable write failure stops the batch and names what went out, not a refusal", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      resetBroadcastMock();
+      // Item 1's durable (pre-broadcast) write throws — it never reaches the endpoint.
+      let seen = 0;
+      failPut.fail = (collection, _key, bytes) => {
+        if (collection !== "transactions") {
+          return false;
+        }
+        const row = new TextDecoder().decode(bytes);
+        if (!row.includes('"state":"signed"') || !row.includes('"hash":"')) {
+          return false;
+        }
+        seen += 1;
+        return seen === 2;
+      };
+      const first = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 100_000n,
+      });
+      const second = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 50_000n,
+        prevFill: 8,
+      });
+      const { settled, approve } = await signPsbt(
+        r,
+        [
+          { psbt: first, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+          { psbt: second, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+        ],
+        "bitcoin:signAndSendTransaction",
+      );
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      expect(broadcasts).toHaveLength(1); // only item 0 ever left
+      const [wire0] = broadcasts;
+      const txid0 = Transaction.fromRaw(hex.decode(String(wire0))).id;
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining("transaction 1 was not sent") },
+      });
+      expect(outcome).toMatchObject({ error: { message: expect.stringContaining(txid0) } });
+      expect(outcome).not.toMatchObject({
+        error: { message: expect.stringContaining("network refused") },
+      });
+      const submitted = Object.values(r.engine.transactions.getState().txs).filter(
+        (tx) => tx.state === "submitted",
+      );
+      expect(submitted.map((tx) => tx.hash)).toStrictEqual([txid0]);
+    } finally {
+      resetBroadcastMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
   it("signs a mixed payment+ordinals request: the ordinals output is not an outflow", async () => {
     const r = await rig();
     try {
