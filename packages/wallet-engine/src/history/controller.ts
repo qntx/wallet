@@ -283,6 +283,7 @@ export class HistoryController extends Controller<HistoryState> {
       evm: new Set(),
       solana: new Set(),
       bitcoin: new Set(),
+      tron: new Set(),
       spark: new Set(),
     };
     for (const record of Object.values(this.options.addressBook.store.getState().entries)) {
@@ -303,6 +304,9 @@ export class HistoryController extends Controller<HistoryState> {
     if (own.solana !== undefined) {
       by["solana"].add(own.solana);
     }
+    if (own.tron !== undefined) {
+      by["tron"].add(own.tron);
+    }
     for (const address of own.bitcoin) {
       by["bitcoin"].add(address);
     }
@@ -310,6 +314,7 @@ export class HistoryController extends Controller<HistoryState> {
       evm: [...by["evm"]],
       solana: [...by["solana"]],
       bitcoin: [...by["bitcoin"]],
+      tron: [...by["tron"]],
       spark: [...by["spark"]],
     };
   }
@@ -363,7 +368,8 @@ export class HistoryController extends Controller<HistoryState> {
   private async resolveOwn(group: HistoryGroup, own: GroupAddresses): Promise<void> {
     const [evmNetwork] = this.options.networks.enabled("evm");
     const [solanaNetwork] = this.options.networks.enabled("solana");
-    const [evmAccount, solanaAccount] = await Promise.all([
+    const [tronNetwork] = this.options.networks.enabled("tron");
+    const [evmAccount, solanaAccount, tronAccount] = await Promise.all([
       evmNetwork === undefined
         ? undefined
         : this.options.chains.account({ ...group, template: "evm.bip44", network: evmNetwork }),
@@ -374,12 +380,22 @@ export class HistoryController extends Controller<HistoryState> {
             template: "solana.bip44-change",
             network: solanaNetwork,
           }),
+      tronNetwork === undefined
+        ? undefined
+        : this.options.chains.account({
+            ...group,
+            template: "tron.bip44",
+            network: tronNetwork,
+          }),
     ]);
     if (evmAccount?.address !== undefined) {
       own.evm = evmAccount.address;
     }
     if (solanaAccount?.address !== undefined) {
       own.solana = solanaAccount.address;
+    }
+    if (tronAccount?.address !== undefined) {
+      own.tron = tronAccount.address;
     }
   }
 

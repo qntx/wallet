@@ -5,7 +5,7 @@ import { networkById } from "@qntx/wallet-engine/gateway/contract";
 import type { GatewayNetwork, ResolvedProvider, UpstreamAuth, UpstreamAuthId } from "../types.ts";
 import { GatewayHttpError } from "./errors.ts";
 
-export type Family = "evm" | "solana" | "bitcoin";
+export type Family = "evm" | "solana" | "bitcoin" | "tron";
 
 export type ResolvedNetwork = Omit<GatewayNetwork, "providers"> & {
   readonly family: Family;

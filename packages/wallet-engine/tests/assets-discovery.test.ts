@@ -158,7 +158,7 @@ const decodeStore = (raw: Uint8Array | undefined): unknown =>
 
 const GATEWAY = {
   url: "https://gateway.example",
-  clientIds: { evm: "e", solana: "s", bitcoin: "b", service: "v" },
+  clientIds: { evm: "e", solana: "s", bitcoin: "b", tron: "t", service: "v" },
 };
 
 type FetchCall = { readonly url: string; readonly headers?: Headers };

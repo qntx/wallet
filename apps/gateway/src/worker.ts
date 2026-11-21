@@ -70,6 +70,8 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
           clientSecret: env.BLOCKSTREAM_CLIENT_SECRET,
           now: () => Date.now(),
         }),
+        trongrid: header("TRON-PRO-API-KEY", env.TRONGRID_API_KEY),
+        tatum: header("x-api-key", env.TATUM_API_KEY),
       },
       jupiter: { apiKey: env.JUPITER_API_KEY },
       prices: { cache, coingecko: { apiKey: env.COINGECKO_API_KEY } },

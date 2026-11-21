@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "body": {
+    "transaction": {
+      "raw_data": {
+        "ref_block_bytes": "b918",
+        "ref_block_hash": "298f8f04ef1e0cf9",
+        "expiration": 1795254141000,
+        "contract": [
+          {
+            "parameter": {
+              "value": {
+                "owner_address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+                "contract_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+                "data": "a9059cbb00000000000000000000000031c56137ff5ed70721fd412ed3a7600ecb3f137c00000000000000000000000000000000000000000000000000000000000f4240"
+              },
+              "type_url": "type.googleapis.com/protocol.TriggerSmartContract"
+            },
+            "type": "TriggerSmartContract"
+          }
+        ],
+        "timestamp": 1795254083436
+      },
+      "ret": [{}],
+      "raw_data_hex": "0a02b9182208298f8f04ef1e0cf940c880f1eb9f345aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541e28b3cfd4e0e909077821478e9fcb86b84be786e121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb00000000000000000000000031c56137ff5ed70721fd412ed3a7600ecb3f137c00000000000000000000000000000000000000000000000000000000000f424070ecbeedeb9f34",
+      "txID": "bfa66cb942a1cc9e78e32db4be1bb5053fbca3bf1508a6f450f545d7606bc11e",
+      "visible": true
+    },
+    "constant_result": ["0000000000000000000000000000000000000000000000000000000000000000"],
+    "result": {
+      "result": true
+    },
+    "energy_used": 130285,
+    "logs": [
+      {
+        "address": "G9AHnMvAgqKJ2eWErupYfdzu6hgWVUZqu",
+        "topics": [
+          "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "000000000000000000000000e28b3cfd4e0e909077821478e9fcb86b84be786e",
+          "00000000000000000000000031c56137ff5ed70721fd412ed3a7600ecb3f137c"
+        ],
+        "data": "00000000000000000000000000000000000000000000000000000000000f4240"
+      }
+    ],
+    "energy_penalty": 100635
+  }
+}

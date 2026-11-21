@@ -43,10 +43,16 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   }) as WorkerEnv;
 
 describe("gatewayFor", () => {
-  it("production yields mainnets and all three provider auths", () => {
+  it("production yields mainnets and all five provider auths", () => {
     const options = gatewayFor(production());
     expect(options.networks).toBe(PRODUCTION_NETWORKS);
-    expect(Object.keys(options.auth).toSorted()).toStrictEqual(["alchemy", "blockstream", "drpc"]);
+    expect(Object.keys(options.auth).toSorted()).toStrictEqual([
+      "alchemy",
+      "blockstream",
+      "drpc",
+      "tatum",
+      "trongrid",
+    ]);
     expect(options.corsOrigins).toStrictEqual([]);
     expect(gatewayFor(production({ CORS_ORIGINS: "" })).corsOrigins).toStrictEqual([]);
     expect(options.jupiter).toStrictEqual({ apiKey: "j" });

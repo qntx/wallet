@@ -2,7 +2,7 @@
  * Built-in EVM network registry: the chain table lives in @qntx/wallet-chains/networks; this module
  * layers the engine-only fields the signing paths need on top of it (Multicall3, fee model,
  * EIP-7702 delegator code hash). Signing-time chainId always comes from the table, never from an
- * RPC endpoint. TRON networks in the chain table are not served by the engine yet.
+ * RPC endpoint.
  */
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 import type { NetworkMeta } from "@qntx/wallet-chains/networks";
@@ -15,7 +15,7 @@ export type FeeModel =
   | { readonly kind: "op-stack" };
 
 /** The chain families this registry serves. */
-export type EngineFamily = "evm" | "solana" | "bitcoin";
+export type EngineFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 export type NetworkInfo = Omit<NetworkMeta, "family"> & {
   readonly family: EngineFamily;
@@ -148,5 +148,9 @@ export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.fil
   (n): n is NetworkMeta & { readonly family: "solana" } => n.family === "solana",
 );
 
+export const TRON_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
+  (n): n is NetworkMeta & { readonly family: "tron" } => n.family === "tron",
+);
+
 export const networkById = (id: string): NetworkInfo | undefined =>
-  [...NETWORKS, ...SOLANA_NETWORKS, ...BITCOIN_NETWORKS].find((n) => n.id === id);
+  [...NETWORKS, ...SOLANA_NETWORKS, ...BITCOIN_NETWORKS, ...TRON_NETWORKS].find((n) => n.id === id);

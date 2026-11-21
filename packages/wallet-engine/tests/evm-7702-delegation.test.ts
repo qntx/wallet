@@ -200,6 +200,7 @@ function world(options: {
               evm: "a".repeat(32),
               solana: "a".repeat(32),
               bitcoin: "a".repeat(32),
+              tron: "a".repeat(32),
               service: "a".repeat(32),
             },
           },

@@ -22,6 +22,7 @@ import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
 import { rpcRoutes } from "./routes/rpc.ts";
 import { tokensRoutes } from "./routes/tokens.ts";
+import { tronRoutes } from "./routes/tron.ts";
 import type { GatewayOptions } from "./types.ts";
 
 export type { GatewayOptions } from "./types.ts";
@@ -57,6 +58,7 @@ export function createGateway(
   app.route("/", rpcRoutes(deps));
   app.route("/", historyRoutes({ ...deps, log }));
   app.route("/", esploraRoutes(deps));
+  app.route("/", tronRoutes(deps));
   app.route(
     "/",
     quotesRoutes({

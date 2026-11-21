@@ -35,7 +35,7 @@ const deps = (body: unknown, calls?: { n: number }) => ({
   }) as typeof globalThis.fetch,
   gateway: {
     url: "https://gw.test",
-    clientIds: { evm: "i", solana: "i", bitcoin: "i", service: "i" },
+    clientIds: { evm: "i", solana: "i", bitcoin: "i", tron: "i", service: "i" },
   },
   address: async () => {
     await Promise.resolve();

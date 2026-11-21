@@ -25,7 +25,7 @@ export type HistoryChange = {
 export type HistoryEntry = {
   /** `${network}:${hash}` */
   readonly id: string;
-  readonly family: "evm" | "solana" | "bitcoin" | "spark";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron" | "spark";
   /** CAIP-2; Spark uses `spark:${SparkNetwork}`. */
   readonly network: string;
   /** Tx hash / signature / txid / Spark transfer id. */

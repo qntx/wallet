@@ -3,7 +3,10 @@ import { accepts, health, networkById } from "@qntx/wallet-engine/gateway/contra
 import type { GatewayNetwork } from "../src/types.ts";
 
 /** One smoke check: the network id and the family deciding which call to send. */
-export type SmokeCheck = { readonly caip2: string; readonly family: "evm" | "solana" | "bitcoin" };
+export type SmokeCheck = {
+  readonly caip2: string;
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
+};
 
 /**
  * The smoke plan for a deployment: every configured network with its registry family. A configured

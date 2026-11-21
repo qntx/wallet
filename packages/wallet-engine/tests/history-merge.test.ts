@@ -28,7 +28,7 @@ const stream = (id: string, pages: Page[], calls?: { count: number }): Stream<It
 
 const item = (key: number, id?: string): Item => ({ id: id ?? `i${key}`, key });
 
-const NO_KNOWN = { evm: [], solana: [], bitcoin: [], spark: [] } as const;
+const NO_KNOWN = { evm: [], solana: [], bitcoin: [], tron: [], spark: [] } as const;
 
 const entry = (over: Partial<HistoryEntry> & Pick<HistoryEntry, "id">): HistoryEntry => ({
   family: "evm",

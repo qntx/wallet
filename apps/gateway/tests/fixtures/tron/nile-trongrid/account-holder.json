@@ -1,0 +1,63 @@
+{
+  "status": 200,
+  "body": {
+    "address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+    "balance": 2237007010,
+    "create_time": 1586426514000,
+    "latest_consume_time": 1710400752000,
+    "net_window_size": 28800000,
+    "net_window_optimized": true,
+    "account_resource": {
+      "latest_consume_time_for_energy": 1791334404000,
+      "energy_window_size": 28800000,
+      "energy_window_optimized": true
+    },
+    "owner_permission": {
+      "permission_name": "owner",
+      "threshold": 1,
+      "keys": [
+        {
+          "address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+          "weight": 1
+        }
+      ]
+    },
+    "active_permission": [
+      {
+        "type": "Active",
+        "id": 2,
+        "permission_name": "active",
+        "threshold": 1,
+        "operations": "7fff1fc0033e0b00000000000000000000000000000000000000000000000000",
+        "keys": [
+          {
+            "address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+            "weight": 1
+          }
+        ]
+      }
+    ],
+    "frozenV2": [
+      {},
+      {
+        "type": "ENERGY"
+      },
+      {
+        "type": "TRON_POWER"
+      }
+    ],
+    "assetV2": [
+      {
+        "key": "1000026",
+        "value": 10057228013
+      }
+    ],
+    "free_asset_net_usageV2": [
+      {
+        "key": "1000026",
+        "value": 0
+      }
+    ],
+    "asset_optimized": true
+  }
+}

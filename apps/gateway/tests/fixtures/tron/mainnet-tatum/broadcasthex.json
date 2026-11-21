@@ -1,0 +1,10 @@
+{
+  "status": 200,
+  "body": {
+    "result": false,
+    "code": "TRANSACTION_EXPIRATION_ERROR",
+    "message": "Transaction expired",
+    "transaction": "{\"raw_data\": {\"ref_block_bytes\": \"6c47\",\"ref_block_hash\": \"40b592daeb9f345a\",\"expiration\": 1750000060000,\"contract\": [{\"type\": \"TransferContract\",\"parameter\": {\"type_url\": \"type.googleapis.com/protocol.TransferContract\",\"value\": \"0a1541e28b3cfd4e0e909077821478e9fcb86b84be786e12154131c56137ff5ed70721fd412ed3a7600ecb3f137c1801\"}}],\"timestamp\": 1750000000000},\"signature\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+    "txid": "9d557e385e086de108b42b51f486cb61ffb2cfbf1c68dcffb247db1b9da2415c"
+  }
+}

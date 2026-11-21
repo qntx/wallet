@@ -31,7 +31,7 @@ export function ipPrefix(ip: string | undefined): string {
     .join(":")}::/48`;
 }
 
-const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/"];
+const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/", "/v1/tron/"];
 
 export type RateLimitVariables = {
   /**
