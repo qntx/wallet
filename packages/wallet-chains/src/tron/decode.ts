@@ -11,6 +11,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
+import { hasHiddenCharacters } from "../display.ts";
 import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
@@ -107,10 +108,14 @@ const memoDisplay = (
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "bytes"; readonly hex: string } => {
   try {
-    return { kind: "text", text: utf8.decode(memo) };
+    const text = utf8.decode(memo);
+    if (!hasHiddenCharacters(text)) {
+      return { kind: "text", text };
+    }
   } catch {
-    return { kind: "bytes", hex: `0x${bytesToHex(memo)}` };
+    // not UTF-8
   }
+  return { kind: "bytes", hex: `0x${bytesToHex(memo)}` };
 };
 
 type Effects = {

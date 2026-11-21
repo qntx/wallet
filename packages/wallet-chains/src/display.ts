@@ -113,7 +113,7 @@ const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
  * tag sequence.
  */
 const safeLine = (line: string): ReadonlyArray<string> => {
-  const chars = codePointsOf(line.replaceAll("	", " ").trim());
+  const chars = codePointsOf(line.replaceAll("\t", " ").trim());
   return chars.map((char, i) => {
     const cp = codePoint(char);
     if (cp >= TAG_FIRST && cp <= TAG_LAST) {
