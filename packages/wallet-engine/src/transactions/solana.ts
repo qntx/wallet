@@ -558,11 +558,11 @@ export const prepareSolanaStake = async (
       }
     }
     const { seed, stakeAccount } = await nextStakeSeed(rpc, from);
+    /* A missing value reads 0 here: the adapter's `rentExempt` re-reads the same RPC with a
+       strict check during `build`, before `expected`/`verify` are consumed — the identical
+       malformed error always surfaces first. */
     const rentResult = await rpc.call("getMinimumBalanceForRentExemption", [STAKE_ACCOUNT_BYTES]);
-    const rent = u64(obj(rentResult)?.["value"] ?? rentResult);
-    if (rent === undefined) {
-      throw new TypeError("getMinimumBalanceForRentExemption: malformed value");
-    }
+    const rent = u64(obj(rentResult)?.["value"] ?? rentResult) ?? 0n;
     const balance = u64(
       obj(await rpc.call("getBalance", [from, { commitment: "confirmed" }]))?.["value"],
     );
