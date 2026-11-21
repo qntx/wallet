@@ -192,6 +192,7 @@ const THROTTLED: ReadonlyArray<readonly [string, Upstream]> = [
 const isProbe = (call: UpstreamCall): boolean =>
   call.url.endsWith("/blocks/tip/height") ||
   call.url.endsWith("/ping") ||
+  call.url.endsWith("/wallet/getnowblock") ||
   call.body.includes('"method":"eth_chainId"') ||
   call.body.includes('"method":"getHealth"');
 
@@ -225,6 +226,7 @@ const PROBED = new Set([
   "POST /v1/history/:caip2",
   "GET /v1/esplora/:caip2/*",
   "POST /v1/esplora/:caip2/*",
+  "POST /v1/tron/:caip2/*",
   `POST ${prices.path}`,
 ]);
 

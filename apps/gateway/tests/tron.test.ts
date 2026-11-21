@@ -286,7 +286,7 @@ describe("tron indexer", () => {
     const up = fakeFetch({ "https://a.test/tron": () => Response.json(page) });
     const res = await gateway({
       fetch: up.fetch,
-      networks: [{ id: NILE, providers: [{ id: "node", url: "https://a.test/tron" }] }],
+      networks: [{ id: NILE, providers: [{ id: "b", url: "https://a.test/tron" }] }],
     }).request(`${BASE}/v1/accounts/transactions`, post({ address: HOLDER }));
     expect(res.status).toBe(503);
     expect(up.calls).toHaveLength(0);

@@ -772,7 +772,7 @@ describe("described dApp requests on a fresh vault", () => {
         `App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n` +
         `CoW Protocol order by ${address}\n` +
         `Give at most 1 USDC\n` +
-        `${address} receives at least 1 base units of unverified token ${WETH}\n` +
+        `${address} receives at least 0.000000000000000001 WETH\n` +
         `Valid until 2033-05-18 03:33 (UTC)`,
     });
     const signature = `0x${bytesToHex(bytesField(ok(response), "signature"))}`;

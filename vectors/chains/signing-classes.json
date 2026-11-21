@@ -226,11 +226,11 @@
       "prompt": {
         "en": {
           "title": "Confirm swap",
-          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x2222222222222222222222222222222222222222 receives at least 1 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nValid until 2033-05-18 03:33 (UTC)"
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x2222222222222222222222222222222222222222 receives at least 0.000000000000000001 WETH\nValid until 2033-05-18 03:33 (UTC)"
         },
         "zh-Hans": {
           "title": "确认兑换",
-          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x2222222222222222222222222222222222222222 至少收到 1 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n有效期至 2033-05-18 03:33（UTC）"
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x2222222222222222222222222222222222222222 至少收到 0.000000000000000001 WETH\n有效期至 2033-05-18 03:33（UTC）"
         }
       }
     },
@@ -2862,11 +2862,11 @@
       "prompt": {
         "en": {
           "title": "Confirm swap",
-          "description": "App: 1inch Aggregation Router\nNetwork: Ethereum\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x00000000000000000000000000000000DeaDBeef receives at least 500000000000000000 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nNo expiry\nCan be filled in parts at the same rate"
+          "description": "App: 1inch Aggregation Router\nNetwork: Ethereum\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x00000000000000000000000000000000DeaDBeef receives at least 0.5 WETH\nNo expiry\nCan be filled in parts at the same rate"
         },
         "zh-Hans": {
           "title": "确认兑换",
-          "description": "应用：1inch Aggregation Router\n网络：Ethereum\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x00000000000000000000000000000000DeaDBeef 至少收到 500000000000000000 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n无到期时间\n可按同一价格分批成交"
+          "description": "应用：1inch Aggregation Router\n网络：Ethereum\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x00000000000000000000000000000000DeaDBeef 至少收到 0.5 WETH\n无到期时间\n可按同一价格分批成交"
         }
       }
     },
@@ -3097,11 +3097,11 @@
       "prompt": {
         "en": {
           "title": "Confirm swap",
-          "description": "App: Permit2\nNetwork: Ethereum\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 100 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by 0x2222222222222222222222222222222222222222\nGive at most 9 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n0x2222222222222222222222222222222222222222 receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)"
+          "description": "App: Permit2\nNetwork: Ethereum\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 0.0000000000000001 WETH once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by 0x2222222222222222222222222222222222222222\nGive at most 0.000000000000000009 WETH\n0x2222222222222222222222222222222222222222 receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)"
         },
         "zh-Hans": {
           "title": "确认兑换",
-          "description": "应用：Permit2\n网络：Ethereum\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 100 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2） 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 9 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n0x2222222222222222222222222222222222222222 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）"
+          "description": "应用：Permit2\n网络：Ethereum\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 0.0000000000000001 WETH 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 0.000000000000000009 WETH\n0x2222222222222222222222222222222222222222 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）"
         }
       }
     },

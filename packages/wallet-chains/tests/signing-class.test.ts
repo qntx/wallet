@@ -196,7 +196,7 @@ describe("everyday contract calls are described, not blind", () => {
       receive: [
         {
           recipient: checksumEvmAddress(SIGNER),
-          amount: { asset: checksumEvmAddress(WETH), amount: "1" },
+          amount: { asset: checksumEvmAddress(WETH), amount: "1", symbol: "WETH", decimals: 18 },
         },
       ],
       expiry: 2_000_000_000,

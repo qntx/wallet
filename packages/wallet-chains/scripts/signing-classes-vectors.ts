@@ -471,8 +471,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm swap",
       "确认兑换",
-      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by ${SIGNER}\nGive at most 1 USDC\n${SIGNER} receives at least 1 base units of unverified token ${WETH}\nValid until 2033-05-18 03:33 (UTC)`,
-      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${SIGNER} 至少收到 1 个最小单位（未验证代币 ${WETH}）\n有效期至 2033-05-18 03:33（UTC）`,
+      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by ${SIGNER}\nGive at most 1 USDC\n${SIGNER} receives at least 0.000000000000000001 WETH\nValid until 2033-05-18 03:33 (UTC)`,
+      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${SIGNER} 至少收到 0.000000000000000001 WETH\n有效期至 2033-05-18 03:33（UTC）`,
     ),
   },
   {
@@ -1066,8 +1066,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm swap",
       "确认兑换",
-      `App: 1inch Aggregation Router\n${net}\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by ${SIGNER}\nGive at most 1 USDC\n${TO} receives at least 500000000000000000 base units of unverified token ${WETH}\nNo expiry\nCan be filled in parts at the same rate`,
-      `应用：1inch Aggregation Router\n${netZh}\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${TO} 至少收到 500000000000000000 个最小单位（未验证代币 ${WETH}）\n无到期时间\n可按同一价格分批成交`,
+      `App: 1inch Aggregation Router\n${net}\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by ${SIGNER}\nGive at most 1 USDC\n${TO} receives at least 0.5 WETH\nNo expiry\nCan be filled in parts at the same rate`,
+      `应用：1inch Aggregation Router\n${netZh}\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${TO} 至少收到 0.5 WETH\n无到期时间\n可按同一价格分批成交`,
     ),
   },
   {
@@ -1172,8 +1172,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm swap",
       "确认兑换",
-      `App: Permit2\n${net}\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 100 base units of unverified token ${WETH} once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by ${SIGNER}\nGive at most 9 base units of unverified token ${WETH}\n${SIGNER} receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)`,
-      `应用：Permit2\n${netZh}\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 100 个最小单位（未验证代币 ${WETH}） 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 ${SIGNER}\n最多付出 9 个最小单位（未验证代币 ${WETH}）\n${SIGNER} 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）`,
+      `App: Permit2\n${net}\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 0.0000000000000001 WETH once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by ${SIGNER}\nGive at most 0.000000000000000009 WETH\n${SIGNER} receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)`,
+      `应用：Permit2\n${netZh}\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 0.0000000000000001 WETH 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 ${SIGNER}\n最多付出 0.000000000000000009 WETH\n${SIGNER} 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）`,
     ),
   },
   {
