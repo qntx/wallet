@@ -1,6 +1,6 @@
 import * as TypedData from "ox/TypedData";
 
-import { displayExcerpt, isHexRendering } from "../display.ts";
+import { displayExcerpt, isEncodedBytes } from "../display.ts";
 import { ChainError } from "../index.ts";
 import type { TypedDataLeaf } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
@@ -237,13 +237,13 @@ const leafValue = (type: string, value: unknown): string | undefined => {
 
 /**
  * Whether the atomic leaf of `type` holding `value` is a commitment: `bytes`/`bytesN` always is —
- * the signature commits to raw bytes the owner cannot read — as is a `string` that is just the hex
- * rendering of ≥ 32 bytes. An empty-array leaf ("[]") is not (it carries nothing).
+ * the signature commits to raw bytes the owner cannot read — as is a `string` that is just an
+ * encoded-bytes rendering of ≥ 32 bytes. An empty-array leaf ("[]") is not (it carries nothing).
  */
 const isCommitmentLeaf = (type: string, value: unknown): boolean =>
   type === "bytes" ||
   FIXED_BYTES.test(type) ||
-  (type === "string" && typeof value === "string" && isHexRendering(value));
+  (type === "string" && typeof value === "string" && isEncodedBytes(value));
 
 /**
  * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in

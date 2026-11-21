@@ -1,6 +1,7 @@
 import { SignTypedDataVersion, TypedDataUtils } from "@metamask/eth-sig-util";
 import type { MessageTypes, TypedMessage } from "@metamask/eth-sig-util";
 import { hexToBytes } from "@noble/hashes/utils.js";
+import { base58, base64 } from "@scure/base";
 import * as fc from "fast-check";
 import { encodeFunctionData, parseAbi, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vite-plus/test";
@@ -766,18 +767,47 @@ describe("typed data that signs only hashes is blind", () => {
     expect(intent.blind).toBe("typed-data-commitment");
   });
 
-  it("a string leaf holding the hex of 32 bytes is a commitment; real text is not", () => {
-    const hex = decodeEvm(
-      typed(doc("Root", { s: RAW_HASH }, { Root: [{ name: "s", type: "string" }] })),
+  it("a string leaf encoding 32 bytes is a commitment; real text is not", () => {
+    const digest = new Uint8Array(32).fill(0xab);
+    const strings = [
+      RAW_HASH,
+      `0X${"ab".repeat(32)}`,
+      "ab".repeat(32),
+      `0x${"ab".repeat(32)}a`,
+      Array.from({ length: 32 }, () => "ab").join(" "),
+      Array.from({ length: 32 }, () => "ab").join(":"),
+      base64.encode(digest),
+      base58.encode(digest),
+    ];
+    for (const s of strings) {
+      const intent = decodeEvm(
+        typed(doc("Root", { s }, { Root: [{ name: "s", type: "string" }] })),
+        SIGNER,
+      );
+      expect(intent.blind, s.slice(0, 24)).toBe("typed-data-commitment");
+    }
+    /* A two-line encoding cannot be shown on one field line, so the document blinds as
+       unshowable rather than as a commitment — still blind either way. */
+    const multiline = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { s: `${"ab".repeat(16)}\n${"ab".repeat(16)}` },
+          { Root: [{ name: "s", type: "string" }] },
+        ),
+      ),
       SIGNER,
     );
-    expect(hex.blind).toBe("typed-data-commitment");
-    const text = decodeEvm(
-      typed(doc("Root", { s: "hello" }, { Root: [{ name: "s", type: "string" }] })),
-      SIGNER,
-    );
-    expect(text.blind).toBeUndefined();
-    expect(isBlindIntent(text)).toBe(false);
+    expect(multiline.blind).toBe("typed-data-oversize");
+    expect(isBlindIntent(multiline)).toBe(true);
+    for (const s of ["hello", `0x${"ab".repeat(20)}`, `nonce ${"ab".repeat(16)} ok`]) {
+      const intent = decodeEvm(
+        typed(doc("Root", { s }, { Root: [{ name: "s", type: "string" }] })),
+        SIGNER,
+      );
+      expect(intent.blind, s.slice(0, 24)).toBeUndefined();
+      expect(isBlindIntent(intent)).toBe(false);
+    }
   });
 
   it("a commitment leaf beside a readable one stays described", () => {
@@ -1246,15 +1276,15 @@ describe("personal messages", () => {
     expect(isBlindIntent(text)).toBe(false);
   });
 
-  it("a message of exactly 32 bytes is blind, whatever its content", () => {
+  it("a message of exactly 32 bytes is blind text, whatever its content", () => {
     /* A keccak digest that happens to be valid UTF-8. */
     const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
     const ground = decodeEvm(personal(digest), SIGNER);
-    expect(ground.message).toMatchObject({ kind: "bytes" });
+    expect(ground.message).toMatchObject({ kind: "text" });
     expect(ground.blind).toBe("message-bytes");
 
     const text32 = personalText("a".repeat(32));
-    expect(text32.message).toMatchObject({ kind: "bytes" });
+    expect(text32.message).toMatchObject({ kind: "text" });
     expect(text32.blind).toBe("message-bytes");
     for (const n of [31, 33]) {
       const intent = personalText("a".repeat(n));
@@ -1263,25 +1293,35 @@ describe("personal messages", () => {
     }
   });
 
-  it("text with an unsafe code point is blind bytes; permitted whitespace is not", () => {
+  it("text with a hidden code point is blind text; format characters and whitespace are not", () => {
     for (const char of ["\u0000", "\u202E", "\u200B"]) {
       const intent = personalText(`see ${char} this`);
-      expect(intent.message).toMatchObject({ kind: "bytes" });
+      expect(intent.message).toMatchObject({ kind: "text" });
       expect(intent.blind).toBe("message-bytes");
     }
     const ws = personalText("line one\nline two\r\n\tindented");
     expect(ws.message).toMatchObject({ kind: "text" });
     expect(ws.blind).toBeUndefined();
+    const joiner = personalText("Sign in 👨‍💻");
+    expect(joiner.message).toMatchObject({ kind: "text" });
+    expect(joiner.blind).toBeUndefined();
   });
 
-  it("text that only renders at least 32 bytes of hex is blind", () => {
-    for (const text of [`0x${"ab".repeat(32)}`, "ab".repeat(32), `0x${"AB".repeat(32)}`]) {
+  it("text that only renders bytes is blind; an address written as text is not", () => {
+    for (const text of [
+      `0x${"ab".repeat(32)}`,
+      "ab".repeat(32),
+      `0x${"AB".repeat(32)}`,
+      `0X${"ab".repeat(32)}`,
+      `0x${"ab".repeat(32)}a`,
+      Array.from({ length: 32 }, () => "ab").join(":"),
+    ]) {
       const intent = personalText(text);
       expect(intent.message).toMatchObject({ kind: "text" });
       expect(intent.blind).toBe("message-bytes");
     }
-    const short = personalText(`0x${"ab".repeat(31)}`);
-    expect(short.blind).toBeUndefined();
+    const address = personalText(`0x${"ab".repeat(20)}`);
+    expect(address.blind).toBeUndefined();
   });
 });
 

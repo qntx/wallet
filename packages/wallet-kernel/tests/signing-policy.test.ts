@@ -369,7 +369,8 @@ describe("blind signing policy", () => {
         }),
       () => ({
         title: "Confirm blind signing",
-        description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79`,
+        description:
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
       }),
     ],
     [

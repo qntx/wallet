@@ -11,7 +11,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
-import { ChainError, isReadableText, messageBlindReason, messageContent } from "../index.ts";
+import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -107,14 +107,10 @@ const memoDisplay = (
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "bytes"; readonly hex: string } => {
   try {
-    const text = utf8.decode(memo);
-    if (isReadableText(text)) {
-      return { kind: "text", text };
-    }
+    return { kind: "text", text: utf8.decode(memo) };
   } catch {
-    // not UTF-8
+    return { kind: "bytes", hex: `0x${bytesToHex(memo)}` };
   }
-  return { kind: "bytes", hex: `0x${bytesToHex(memo)}` };
 };
 
 type Effects = {

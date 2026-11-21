@@ -705,8 +705,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${blindBytes}\nData 0x${GROUND_DIGEST}`,
-      `${blindBytesZh}\n数据 0x${GROUND_DIGEST}`,
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
+      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
     ),
   },
   {
@@ -719,8 +719,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${blindBytes}\nMessage:\n${hexText}`,
-      `${blindBytesZh}\n消息：\n${hexText}`,
+      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab",
+      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab",
     ),
   },
   /* Hyperliquid: documents come from vectors/chains/hyperliquid.json (oracles: nktkas 0.33.3 and
@@ -1337,13 +1337,11 @@ const TRON_MSG_CASES = {
     prompt: {
       en: {
         title: "Confirm blind signing",
-        description:
-          "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        description: "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
       },
       "zh-Hans": {
         title: "确认盲签",
-        description:
-          "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        description: "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
       },
     },
   },

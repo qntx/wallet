@@ -1218,11 +1218,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
         }
       }
     },
@@ -1246,11 +1246,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n0xabababababababababababababababababababababababababababababababab"
+          "description": "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n0xabababababababababababababababababababababababababababababababab"
+          "description": "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -3407,11 +3407,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n��������\n������������������"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n��������\n������������������"
         }
       }
     },

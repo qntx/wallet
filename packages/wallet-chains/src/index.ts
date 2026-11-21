@@ -6,11 +6,11 @@
  * zero), token amounts are decimal strings of the smallest unit.
  */
 
-import { isHexRendering, isReadableText } from "./display.ts";
+import { hasHiddenCharacters, isEncodedBytes } from "./display.ts";
 import { parseSignIn } from "./sign-in.ts";
 import type { SignInParse } from "./sign-in.ts";
 
-export { displayExcerpt, isHexRendering, isReadableText, isUnsafeCodePoint } from "./display.ts";
+export { displayExcerpt, hasHiddenCharacters, isEncodedBytes } from "./display.ts";
 export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
@@ -154,9 +154,8 @@ export type Verifiability = "full" | "partial" | "opaque";
 
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
-  // message content that is not readable text: non-UTF-8 bytes, a message of exactly 32 bytes
-  // (digest length), text with an unsafe code point other than TAB/LF/CR, or text that is the hex
-  // rendering of ≥ 32 bytes
+  // message content that is not readable text: non-UTF-8 bytes, or text with a hazard —
+  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering
   | "message-bytes"
   | "typed-data-commitment" // typed data whose every leaf is a commitment (a hash or opaque bytes)
   // typed data a recognised family claims, in a shape the decoder does not recognise
@@ -541,6 +540,7 @@ export type MessageContent =
     };
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8Encode = new TextEncoder();
 
 const bytesContent = (bytes: Uint8Array): MessageContent => ({
   kind: "bytes",
@@ -548,11 +548,9 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
 });
 
 /**
- * Strict UTF-8 readable text with any sign-in recognition for `family`, else the raw bytes as hex.
- * A message of exactly 32 bytes is bytes, not text: Safe's eth_sign path (`v > 30`) and EIP-191
- * digest verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message
- * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
- * in 7×10⁷ keccak outputs are; grindable in minutes).
+ * Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex — every
+ * valid UTF-8 input is text, including 32-byte and hidden-character texts (`messageTextHazard`
+ * says which of those is blind); only a message that fails UTF-8 decoding is bytes.
  */
 export const messageContent = (
   bytes: Uint8Array,
@@ -562,9 +560,6 @@ export const messageContent = (
   try {
     text = utf8.decode(bytes);
   } catch {
-    return bytesContent(bytes);
-  }
-  if (bytes.length === 32 || !isReadableText(text)) {
     return bytesContent(bytes);
   }
   const signIn = parseSignIn(text, family);
@@ -665,20 +660,38 @@ export type DisplayIntent = {
 export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
   intent.blind !== undefined;
 
+export type MessageTextHazard = "digest-length" | "hidden-characters" | "encoded-bytes";
+
 /**
- * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its UTF-8
- * length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it holds an
- * unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of ≥ 32 bytes: the
- * owner sees the rendering, not the bytes it encodes. Checking the content again here gives callers
- * that build `{ kind: "text" }` themselves the same verdict.
+ * Why text `text` cannot be read as what the signature authorises, in precedence order: a UTF-8
+ * length of exactly 32 bytes is a digest — Safe's eth_sign path (`v > 30`) and EIP-191 digest
+ * verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message has
+ * that preimage, so no display can tell a 32-byte text from a digest that happens to be UTF-8;
+ * a deceptive code point means what the owner reads is not what was signed; and an encoded-bytes
+ * rendering shows the encoding, not the bytes it encodes.
+ */
+export const messageTextHazard = (text: string): MessageTextHazard | undefined => {
+  if (utf8Encode.encode(text).length === 32) {
+    return "digest-length";
+  }
+  if (hasHiddenCharacters(text)) {
+    return "hidden-characters";
+  }
+  if (isEncodedBytes(text)) {
+    return "encoded-bytes";
+  }
+  return undefined;
+};
+
+/**
+ * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when it
+ * carries a `messageTextHazard`. Checking the content again here gives callers that build
+ * `{ kind: "text" }` themselves the same verdict.
  */
 export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
   message.kind === "bytes"
     ? "message-bytes"
-    : message.kind === "text" &&
-        (new TextEncoder().encode(message.text).length === 32 ||
-          !isReadableText(message.text) ||
-          isHexRendering(message.text))
+    : message.kind === "text" && messageTextHazard(message.text) !== undefined
       ? "message-bytes"
       : undefined;
 

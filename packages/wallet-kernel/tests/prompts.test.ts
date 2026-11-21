@@ -491,11 +491,11 @@ describe("chain prompts", () => {
       description: "Message:\nhello",
     });
     const hostile = `pay \u202Ebob\n\n\n${"x".repeat(400)}\nhidden`;
-    /* A bidi override makes the message blind: warning first, then the sanitised excerpt. */
+    /* A bidi override makes the message blind: hazard line first, then the sanitised excerpt. */
     const hostilePrompt = messagePromptIntent({ kind: "text", text: hostile });
     expect(hostilePrompt.blind).toBe("message-bytes");
     expect(chainPrompt("zh-Hans", hostilePrompt).description).toBe(
-      `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\npay \uFFFDbob\n${"x".repeat(
+      `文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n消息：\npay \uFFFDbob\n${"x".repeat(
         312,
       )}\n… 还有 94 个字符未显示`,
     );
@@ -2335,17 +2335,55 @@ describe("blind text prompts", () => {
       SIGNER,
     );
 
-  it("hex-rendered text shows its excerpt under the blind warning, in both locales", () => {
+  it("hex-rendered text shows its excerpt under the encoded-bytes hazard, in both locales", () => {
     const text = `0x${"ab".repeat(32)}`;
     const intent = personal(text);
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n${text}`,
+      description: `This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n${text}`,
+      description: `文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n${text}`,
+    });
+  });
+
+  it("a 32-byte text shows under the digest-length hazard, in both locales", () => {
+    const text = "Sign in to app.example.org #4821";
+    const intent = personal(text);
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n${text}`,
+    });
+  });
+
+  it("text with a bidi override shows under the hidden-characters hazard, sanitised", () => {
+    const intent = personal("pay \u202Ebob");
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\nMessage:\npay �bob",
+    });
+  });
+
+  it("a Persian ZWNJ login is ordinary text, not blind", () => {
+    const text = "برای ورود به حساب کاربری می\u200Cخواهم امضا کنم";
+    const intent = personal(text);
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm signature",
+      description: `Message:\n${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认签名",
+      description: `消息：\n${text}`,
     });
   });
 });

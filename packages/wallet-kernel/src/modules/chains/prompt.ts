@@ -9,7 +9,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
  * excerpt.
  */
-import { displayExcerpt, messageBlindReason } from "@qntx/wallet-chains";
+import { displayExcerpt, messageBlindReason, messageTextHazard } from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -18,6 +18,7 @@ import type {
   HyperliquidAction,
   IntentSummary,
   MessageContent,
+  MessageTextHazard,
   SafeTransaction,
   PolymarketContent,
   SeaportOrder,
@@ -84,6 +85,7 @@ type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
   readonly blindTitle: string;
   readonly blindBytes: string;
+  readonly textHazard: Readonly<Record<MessageTextHazard, string>>;
   readonly bytesData: (hex: string) => string;
   readonly bytesLength: (bytes: number) => string;
   readonly otherOutflows: string;
@@ -231,6 +233,12 @@ const zh: Catalog = {
   },
   blindTitle: "确认盲签",
   blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
+  textHazard: {
+    "digest-length": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容",
+    "hidden-characters":
+      "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同",
+    "encoded-bytes": "文本是原始字节的编码；钱包无法看到它们授权的内容",
+  },
   bytesData: (hex) => `数据 ${hex}`,
   bytesLength: (bytes) => `${bytes} 字节`,
   otherOutflows: "可能还有其他转出",
@@ -438,6 +446,13 @@ const en: Catalog = {
   },
   blindTitle: "Confirm blind signing",
   blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
+  textHazard: {
+    "digest-length":
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to",
+    "hidden-characters":
+      "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed",
+    "encoded-bytes": "This text encodes raw bytes; the wallet cannot see what they authorise",
+  },
   bytesData: (hex) => `Data ${hex}`,
   bytesLength: (bytes) => `${bytes} bytes`,
   otherOutflows: "There may be other outflows",
@@ -1271,16 +1286,19 @@ function messagePrompt(
       description: joinLines(signInLines(catalog, message.signIn)),
     };
   }
+  const hazard = intent.blind === undefined ? undefined : messageTextHazard(message.text);
   return {
     title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
-      /* Blind text still shows its sanitised excerpt under the warning — never a sign-in
+      /* Blind text still shows its sanitised excerpt under the hazard line — never a sign-in
          rendering, whose chrome would present the request as legitimate. */
       ...(intent.blind === undefined
         ? message.signIn === undefined
           ? []
           : signInLines(catalog, message.signIn)
-        : [catalog.blindBytes]),
+        : hazard === undefined
+          ? []
+          : [catalog.textHazard[hazard]]),
       ...textLines(catalog, message.text),
     ]),
   };
