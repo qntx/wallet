@@ -1473,6 +1473,12 @@ export type PolymarketBuilderHeaders = {
 };
 
 // @public (undocumented)
+export type PolymarketCancelResult = {
+    readonly canceled: ReadonlyArray<string>;
+    readonly notCanceled: Readonly<Record<string, string>>;
+};
+
+// @public (undocumented)
 export type PolymarketClobMarket = {
     readonly conditionId?: string;
     readonly tokens: ReadonlyArray<{
@@ -1557,12 +1563,26 @@ export type PolymarketEventsParams = {
     readonly tag_id?: number;
 };
 
+// @public
+export type PolymarketExchangeDomain = {
+    readonly verifyingContract: `0x${string}`;
+    readonly version: "2" | "3";
+};
+
 // @public (undocumented)
 export type PolymarketHistoryParams = {
     readonly startTs?: number;
     readonly endTs?: number;
     readonly interval?: "max" | "all" | "1m" | "1w" | "1d" | "6h" | "1h";
     readonly fidelity?: number;
+};
+
+// @public (undocumented)
+export type PolymarketLimitParams = {
+    readonly assetId: string;
+    readonly side: PolymarketSide;
+    readonly price: string;
+    readonly size: string;
 };
 
 // @public (undocumented)
@@ -1589,6 +1609,15 @@ export type PolymarketMarket = {
         readonly makerBaseFee?: number;
         readonly takerBaseFee?: number;
     };
+};
+
+// @public (undocumented)
+export type PolymarketMarketParams = {
+    readonly assetId: string;
+    readonly side: PolymarketSide;
+    readonly amount: string;
+    readonly slippageBps: number;
+    readonly orderType: "FOK" | "FAK";
 };
 
 // @public (undocumented)
@@ -1632,11 +1661,92 @@ export type PolymarketOrder = {
     readonly makerAddress: string;
 };
 
+// @public
+export type PolymarketOrderDraft = {
+    readonly salt: string;
+    readonly maker: `0x${string}`;
+    readonly signer: `0x${string}`;
+    readonly tokenId: string;
+    readonly makerAmount: string;
+    readonly takerAmount: string;
+    readonly side: 0 | 1;
+    readonly signatureType: 3;
+    readonly timestamp: string;
+    readonly metadata: `0x${string}`;
+    readonly builder: `0x${string}`;
+    readonly expiration: string;
+};
+
+// @public (undocumented)
+export type PolymarketOrderOutcome =
+/** `live` — resting on the book. */
+    {
+    readonly kind: "resting";
+    readonly orderId: string;
+} | {
+    readonly kind: "matched";
+    readonly orderId: string;
+    readonly making?: string;
+    readonly taking?: string;
+    readonly tradeIds?: ReadonlyArray<string>;
+} |
+/** `delayed` — accepted, matching delayed by market conditions. */
+    {
+    readonly kind: "delayed";
+    readonly orderId: string;
+} | {
+    readonly kind: "unmatched";
+    readonly orderId: string;
+} |
+/** The CLOB definitively refused — nothing was posted. */
+    {
+    readonly kind: "rejected";
+    readonly reason: PolymarketRejectReason;
+    readonly message: string;
+} |
+/** Reconcile found the order canceled. */
+    {
+    readonly kind: "canceled";
+    readonly orderId: string;
+} |
+/** The CLOB has no such order after every reconcile read — the POST did not land. */
+    {
+    readonly kind: "not-found";
+    readonly orderId: string;
+} |
+/** The POST's fate is unknowable — refresh the account; the order may be live. */
+    {
+    readonly kind: "unknown";
+    readonly orderId: string;
+};
+
+// @public (undocumented)
+export type PolymarketOrderType = "GTC" | "GTD" | "FOK" | "FAK";
+
 // @public (undocumented)
 export type PolymarketPage<T> = {
     readonly items: ReadonlyArray<T>;
     readonly nextCursor?: string;
 };
+
+// @public (undocumented)
+export type PolymarketPlacedOrder = {
+    readonly requestId: string;
+    readonly orderId: string;
+    readonly quote: PolymarketQuote;
+    readonly outcome: Promise<PolymarketOrderOutcome>;
+};
+
+// @public (undocumented)
+export type PolymarketPlaceParams = ({
+    readonly kind: "limit";
+} & PolymarketLimitParams & {
+    readonly orderType: "GTC" | "GTD";
+    readonly expiration?: number;
+    readonly postOnly?: boolean;
+}) | ({
+    readonly kind: "market";
+} & PolymarketMarketParams);
 
 // @public (undocumented)
 export type PolymarketPnl = {
@@ -1701,8 +1811,36 @@ export type PolymarketPricePoint = {
 export type PolymarketProvider = {
     readonly markets: PolymarketMarkets;
     readonly account: PolymarketAccountReads;
+    readonly trade: PolymarketTrading;
     readonly builder?: PolymarketBuilder;
 };
+
+// @public (undocumented)
+export type PolymarketQuote = {
+    readonly kind: "limit" | "market";
+    readonly assetId: string;
+    readonly side: PolymarketSide;
+    readonly price?: string;
+    readonly size?: string;
+    readonly amount?: string;
+    readonly bound: string;
+    readonly makerAmount: string;
+    readonly takerAmount: string;
+    readonly impliedPrice: string;
+    readonly notional: string;
+    readonly minOrderSize: string;
+    readonly partial?: boolean;
+    readonly fees?: PolymarketQuoteFees;
+};
+
+// @public
+export type PolymarketQuoteFees = {
+    readonly makerBaseFee?: number;
+    readonly takerBaseFee?: number;
+};
+
+// @public
+export type PolymarketRejectReason = "balance-or-allowance" | "tick" | "min-size" | "market-closed" | "post-only-cross" | "fok-unfilled" | "invalid-signature" | "rate-limited" | "close-only" | "other";
 
 // @public (undocumented)
 export type PolymarketResolution = {
@@ -1724,6 +1862,9 @@ type PolymarketServerTime = {
     readonly serverSeconds: number;
     readonly skewMs: number;
 };
+
+// @public (undocumented)
+export type PolymarketSide = "BUY" | "SELL";
 
 // @public (undocumented)
 export type PolymarketTrade = {
@@ -1753,6 +1894,19 @@ export type PolymarketTradesParams = {
     readonly before?: number;
     readonly after?: number;
     readonly cursor?: string;
+};
+
+// @public (undocumented)
+export type PolymarketTrading = {
+    readonly quote: (group: AppGroup, params: PolymarketPlaceParams) => Promise<PolymarketQuote>;
+    readonly place: (group: AppGroup, params: PolymarketPlaceParams) => Promise<PolymarketPlacedOrder>;
+    readonly cancel: (group: AppGroup, orderId: string) => Promise<PolymarketCancelResult>;
+    readonly cancelMany: (group: AppGroup, orderIds: ReadonlyArray<string>) => Promise<PolymarketCancelResult>;
+    readonly cancelAll: (group: AppGroup) => Promise<PolymarketCancelResult>;
+    readonly cancelMarket: (group: AppGroup, params: {
+        readonly market?: string;
+        readonly assetId?: string;
+    }) => Promise<PolymarketCancelResult>;
 };
 
 // @public (undocumented)

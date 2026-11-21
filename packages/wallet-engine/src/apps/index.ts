@@ -117,3 +117,21 @@ export type {
   PolymarketTradesParams,
 } from "./polymarket/account.ts";
 export type { PolymarketWalletCandidates, PolymarketWallets } from "./polymarket/wallets.ts";
+export type {
+  PolymarketExchangeDomain,
+  PolymarketLimitParams,
+  PolymarketMarketParams,
+  PolymarketOrderDraft,
+  PolymarketOrderType,
+  PolymarketQuote,
+  PolymarketQuoteFees,
+  PolymarketSide,
+} from "./polymarket/orders.ts";
+export type {
+  PolymarketCancelResult,
+  PolymarketOrderOutcome,
+  PolymarketPlaceParams,
+  PolymarketPlacedOrder,
+  PolymarketRejectReason,
+  PolymarketTrading,
+} from "./polymarket/trade.ts";

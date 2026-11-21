@@ -517,8 +517,9 @@ export function createApps(options: CreateAppsOptions): {
   const providers = new Map<AppId, AppProvider>();
   let socket: ReturnType<typeof createHyperliquidSocket> | undefined;
   let provider: ReturnType<typeof createHyperliquidProvider> | undefined;
-  /* Wires the controller back into the Hyperliquid builder gate after construction. */
-  let deferredController: ((controller: AppsController) => void) | undefined;
+  /* Wire the controller back into provider-side gates after construction (the Hyperliquid
+     builder gate and the Polymarket availability gate). */
+  const deferredControllers: Array<(controller: AppsController) => void> = [];
 
   if (options.hyperliquid !== undefined) {
     const { network, agentName, builder } = options.hyperliquid;
@@ -578,9 +579,9 @@ export function createApps(options: CreateAppsOptions): {
       logger: options.logger,
     });
     providers.set("hyperliquid", enable);
-    deferredController = (controller) => {
+    deferredControllers.push((controller) => {
       controllerRef.current = controller;
-    };
+    });
   }
 
   let polymarketProvider: PolymarketProvider | undefined;
@@ -589,12 +590,24 @@ export function createApps(options: CreateAppsOptions): {
     if (builder?.code !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(builder.code)) {
       throw new Error("polymarket builder.code must be a 32-byte hex string");
     }
+    const controllerRef: { current: AppsController | undefined } = { current: undefined };
     polymarketProvider = createPolymarketProvider({
       fetch: options.fetch,
       setTimer: options.setTimer,
       now: options.now,
       wallet: options.wallet,
+      requests: options.requests,
+      random: options.random,
+      /* The last ready eligibility answer's per-app availability — `undefined` (unknown or
+         stale) fails BUY orders closed. */
+      availability: () => {
+        const state = controllerRef.current?.getState().eligibility;
+        return state?.status === "ready" ? state.apps?.["polymarket"] : undefined;
+      },
       ...(builder === undefined ? {} : { builder }),
+    });
+    deferredControllers.push((controller) => {
+      controllerRef.current = controller;
     });
   }
 
@@ -623,7 +636,9 @@ export function createApps(options: CreateAppsOptions): {
     openStore: options.openStore,
     logger: options.logger,
   });
-  deferredController?.(controller);
+  for (const deferred of deferredControllers) {
+    deferred(controller);
+  }
 
   /* Serialized lifecycle: every wallet status change queues behind the previous one, so a lock
      during an unlock's init cannot interleave. */

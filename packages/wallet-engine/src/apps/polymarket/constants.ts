@@ -47,3 +47,20 @@ export const SAFE_FACTORY: `0x${string}` = "0xaacFeEa03eb1561C4e67d661e40682Bd20
  */
 export const SAFE_INIT_CODE_HASH: `0x${string}` =
   "0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e6ef715ddb6fcecf";
+
+/* ------------------------------------------------------------ exchanges --- */
+
+/** The signature chain every Polymarket exchange domain commits to (docs §Order Domain). */
+export const EXCHANGE_CHAIN_ID = 137;
+
+/** The shared EIP-712 domain name of the CTF exchanges (docs §Order Domain). */
+export const CTF_EXCHANGE_NAME = "Polymarket CTF Exchange";
+
+/** CTF Exchange v2 — non-neg-risk V1 markets (docs §Order Domain; contracts.md). */
+export const CTF_EXCHANGE_V2: `0x${string}` = "0xE111180000d2663C0091e4f400237545B87B996B";
+
+/** CTF Exchange v2 — neg-risk V1 markets (docs §Order Domain; contracts.md). */
+export const NEG_RISK_EXCHANGE_V2: `0x${string}` = "0xe2222d279d744050d28e00520010520000310F59";
+
+/** CTF Exchange v3 — `version: "v2"` markets (docs §Order Domain; contracts.md). */
+export const CTF_EXCHANGE_V3: `0x${string}` = "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa";

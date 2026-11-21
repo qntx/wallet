@@ -1,0 +1,13 @@
+{
+  "request": { "method": "POST", "url": "https://clob.polymarket.com/order" },
+  "fetchedAt": 0,
+  "source": "evidence/specs/clob-openapi.yaml SendOrderResponse.status — 'unmatched' is the fourth live status the spec enum omits (post-only would cross / FAK without fill)",
+  "response": {
+    "success": true,
+    "orderID": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    "status": "unmatched",
+    "makingAmount": "",
+    "takingAmount": "",
+    "errorMsg": ""
+  }
+}

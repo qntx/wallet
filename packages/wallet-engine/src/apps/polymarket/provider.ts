@@ -1,11 +1,14 @@
 import type { Wallet } from "@qntx/wallet";
 /**
  * The Polymarket provider facade — unauthenticated market reads, account reads scoped to the
- * located wallet, and L2-authenticated reads signed inside the kernel. Enablement, trading, funding
- * and live views land in later layers on the same injected-I/O surface.
+ * located wallet, L2-authenticated reads signed inside the kernel, and order placement through a
+ * kernel-described `TypedDataSign` approval. Enablement, funding and live views land in later
+ * layers on the same injected-I/O surface.
  */
 import { chains } from "@qntx/wallet/chains";
 
+import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
+import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppGroup } from "../types.ts";
 import { createPolymarketAccount } from "./account.ts";
@@ -15,6 +18,8 @@ import { createPolymarketHttp } from "./http.ts";
 import { createPolymarketL2 } from "./l2.ts";
 import { createPolymarketMarkets } from "./markets.ts";
 import type { PolymarketMarkets } from "./markets.ts";
+import { createPolymarketTrade } from "./trade.ts";
+import type { PolymarketTrading } from "./trade.ts";
 import { createPolymarketWallets } from "./wallets.ts";
 
 /** The four `POLY_BUILDER_*` headers the host's builder signer returns (research.md §2/§9). */
@@ -46,6 +51,12 @@ export type PolymarketProviderOptions = {
   readonly timeoutMs?: number;
   /** The wallet the kernel signs L2 requests for — `polymarket(wallet)` and `chains(wallet)`. */
   readonly wallet: Wallet;
+  /** The approval pipeline orders are signed through. */
+  readonly requests: Pick<RequestController, "prepare" | "outcome">;
+  /** Order salts come from this — 8 bytes → 53-bit. */
+  readonly random: (length: number) => Uint8Array;
+  /** The gateway availability for `polymarket` — `undefined` refuses BUY orders (fail closed). */
+  readonly availability: () => AppAvailability | undefined;
   /** Stored for the enable/relayer layers — validated by `createApps`. */
   readonly builder?: PolymarketBuilder;
 };
@@ -53,6 +64,7 @@ export type PolymarketProviderOptions = {
 export type PolymarketProvider = {
   readonly markets: PolymarketMarkets;
   readonly account: PolymarketAccountReads;
+  readonly trade: PolymarketTrading;
   /** The configured builder, when the host supplied one — nothing else reads it yet. */
   readonly builder?: PolymarketBuilder;
 };
@@ -88,9 +100,22 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
       return resolved.address;
     },
   });
-  return {
-    markets: createPolymarketMarkets(http),
+  const markets = createPolymarketMarkets(http);
+  const trade = createPolymarketTrade({
+    l2,
     account,
+    markets,
+    requests: options.requests,
+    random: options.random,
+    now: options.now,
+    setTimer: options.setTimer,
+    availability: options.availability,
+    ...(options.builder === undefined ? {} : { builder: options.builder }),
+  });
+  return {
+    markets,
+    account,
+    trade,
     ...(options.builder === undefined ? {} : { builder: options.builder }),
   };
 }

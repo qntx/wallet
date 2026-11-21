@@ -173,6 +173,16 @@ const setTimer = (ms: number, fn: () => unknown): (() => void) => {
   };
 };
 
+/* Account tests never place orders — the pipeline is stubbed to fail loudly if reached. */
+const NO_REQUESTS = {
+  prepare: () => {
+    throw new Error("no requests in account tests");
+  },
+  outcome: () => {
+    throw new Error("no requests in account tests");
+  },
+};
+
 let wallet: Wallet;
 let walletId: string;
 const owners: Record<number, string> = {};
@@ -198,6 +208,9 @@ const provider = (
     setTimer,
     now,
     wallet,
+    requests: NO_REQUESTS,
+    random: () => new Uint8Array(8).fill(1),
+    availability: () => "available",
   });
 
 describe("polymarket account — public reads", () => {

@@ -86,8 +86,10 @@ const fixtureFetch =
     return Response.json(found.response, { status: 200 });
   };
 
-/* Market reads never resolve the wallet — the provider defers it to the first account call. */
+/* Market reads never resolve the wallet or the trade surface — the provider defers them to the
+   first account/place call. */
 const NO_WALLET = {} as Wallet;
+const NO_REQUESTS = {} as Parameters<typeof createPolymarketProvider>[0]["requests"];
 
 const provider = () =>
   createPolymarketProvider({
@@ -95,6 +97,9 @@ const provider = () =>
     setTimer: () => () => undefined,
     now: () => 1_800_000_000_000,
     wallet: NO_WALLET,
+    requests: NO_REQUESTS,
+    random: () => new Uint8Array(8),
+    availability: () => "available",
   }).markets;
 
 describe("polymarket market reads", () => {

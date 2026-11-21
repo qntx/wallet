@@ -385,3 +385,37 @@ export const clobBalanceAllowance = z.looseObject({
 
 /** `ClosedOnlyResponse` — a 404 (no record) normalises to `false` in account.ts. */
 export const clobClosedOnly = z.looseObject({ closed_only: z.boolean() });
+
+const clobHashList = z.array(z.string().check(z.maxLength(80))).check(z.maxLength(64));
+
+/**
+ * `SendOrderResponse` — the `POST /order` answer (specs/clob-openapi.yaml). `orderID`/`status` are
+ * validated against what we sent in trade.ts — a mismatched answer is never trusted.
+ */
+export const clobPostOrderResponse = z.looseObject({
+  success: z.boolean(),
+  errorMsg: z.optional(z.union([z.string().check(z.maxLength(2048)), z.null()])),
+  orderID: z.optional(z.union([z.string().check(z.maxLength(80)), z.null()])),
+  status: z.optional(z.union([z.string().check(z.maxLength(32)), z.null()])),
+  makingAmount: z.optional(wireDecimalOrNull),
+  takingAmount: z.optional(wireDecimalOrNull),
+  transactionsHashes: z.optional(z.union([clobHashList, z.null()])),
+  tradeIDs: z.optional(z.union([z.array(clobBoundedText).check(z.maxLength(64)), z.null()])),
+});
+
+/**
+ * The cancel answers (`DELETE /order`, `/orders`, `/cancel-all`, `/cancel-market-orders`;
+ * specs/clob-openapi.yaml): `canceled` lists ids that were dropped, `not_canceled` maps id →
+ * reason.
+ */
+export const clobCancelResponse = z.looseObject({
+  canceled: z.optional(z.union([z.array(clobBoundedText).check(z.maxLength(3000)), z.null()])),
+  not_canceled: z.optional(
+    z.union([
+      z
+        .record(clobBoundedText, z.string().check(z.maxLength(1024)))
+        .check(z.refine((map) => Object.keys(map).length <= 3000)),
+      z.null(),
+    ]),
+  ),
+});
