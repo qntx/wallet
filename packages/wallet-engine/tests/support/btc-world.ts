@@ -20,6 +20,7 @@ import type { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
 import type { SignParams, TrackedTransaction, TxState } from "../../src/transactions/route.ts";
+import { bombedStore } from "../send-helpers.ts";
 import { manualTimers } from "./timers.ts";
 import type { ManualTimers } from "./timers.ts";
 
@@ -167,6 +168,10 @@ export type BtcWorld = {
     confirmed: boolean,
   ) => void;
   readonly setPost: (mode: PostMode) => void;
+  /** When set, matching engine-store `put`s throw — a test-only persistence bomb. */
+  readonly bomb: {
+    fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+  };
   readonly utxos: Map<string, FakeUtxo[]>;
   readonly statuses: Map<string, unknown>;
   readonly broadcasts: string[];
@@ -492,6 +497,7 @@ export const world = (
 
   const clock = { t: 1_000_000 };
   let tag = 0;
+  const bomb: BtcWorld["bomb"] = { fail: undefined };
 
   const boot = async (backing?: Backing): Promise<Booted> => {
     const timers = manualTimers();
@@ -511,7 +517,7 @@ export const world = (
       ),
       openStore: async () => {
         await Promise.resolve();
-        return createMemoryEngineStore(store);
+        return bombedStore(createMemoryEngineStore(store), bomb);
       },
       random: (n) => {
         tag += 1;
@@ -587,6 +593,7 @@ export const world = (
     setPost: (mode: PostMode) => {
       postMode = mode;
     },
+    bomb,
     statuses,
     utxos,
     broadcasts,

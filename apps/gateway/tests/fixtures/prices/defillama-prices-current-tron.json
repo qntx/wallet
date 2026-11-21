@@ -1,0 +1,6 @@
+{
+  "url": "https://coins.llama.fi/prices/current/coingecko:tron,tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t?searchWidth=4h",
+  "fetchedAt": "2026-11-21T10:27:39Z",
+  "status": 200,
+  "body": "{\"coins\":{\"coingecko:tron\":{\"price\":0.30264311219999995,\"symbol\":\"TRX\",\"timestamp\":1795256852,\"confidence\":0.999},\"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\":{\"decimals\":6,\"symbol\":\"USDT\",\"price\":0.99829,\"timestamp\":1795256852,\"confidence\":0.999}}}"
+}

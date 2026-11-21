@@ -58,6 +58,8 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "evm-swap",
   "evm-lido",
   "solana-stake",
+  "tron-stake",
+  "tron-approve",
   "solana-swap",
   "pay",
   "zap",
@@ -77,7 +79,7 @@ const OUTCOMES: ReadonlySet<unknown> = new Set([
   "expired",
   "invalidated",
 ]);
-const FAMILIES: ReadonlySet<unknown> = new Set(["evm", "solana", "bitcoin"]);
+const FAMILIES: ReadonlySet<unknown> = new Set(["evm", "solana", "bitcoin", "tron"]);
 
 const isAccount = (
   value: unknown,

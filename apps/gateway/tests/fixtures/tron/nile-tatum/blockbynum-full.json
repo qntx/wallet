@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "body": {
+    "blockID": "0000000004586cd150f05c4139961fb5d93d0ff4bde69f0af14670dc5ed655a2",
+    "block_header": {
+      "raw_data": {
+        "timestamp": 1795254066000,
+        "txTrieRoot": "44ffc0f52785db67868f5df0686cff6ffb10a57c45d76e27691cd0fc8f6232d6",
+        "parentHash": "0000000004586cd0a7ea97646e5c089f2adb5ba1da46e7b86751fbd02c1e73b4",
+        "number": 72903889,
+        "witness_address": "41d4492e1c6e4850c11d196d0826be66d1542c44ec",
+        "version": 40
+      },
+      "witness_signature": "cb9b00c097ae35477d1564ea05473d0f9ef900cc1d37d8f8b819698d4707eb241a53ad530e5802a1e02545038738560367f1077c3d041be0c045f1c685ed44b200"
+    }
+  }
+}

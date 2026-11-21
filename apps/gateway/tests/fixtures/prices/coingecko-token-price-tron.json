@@ -1,0 +1,6 @@
+{
+  "url": "https://api.coingecko.com/api/v3/simple/token_price/tron?contract_addresses=TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full",
+  "fetchedAt": "2026-11-21T10:27:39Z",
+  "status": 200,
+  "body": "{\"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\":{\"usd\":0.9986540031881324,\"usd_24h_change\":-0.05314881676053849,\"last_updated_at\":1795256847}}"
+}

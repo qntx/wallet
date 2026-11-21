@@ -3,13 +3,15 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { BridgeQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
 import type { ResolvedProvider } from "../types.ts";
-import type { Forwarder } from "./forward.ts";
+import type { Forwarder, Meter } from "./forward.ts";
 import { ProviderFailure } from "./forward.ts";
 
 const ACROSS_API = "https://app.across.to";
 
-const PROVIDER: ResolvedProvider = { id: "across", url: ACROSS_API };
+/** The Across suggested-fees endpoint's identity; the app resolves its account into a provider. */
+export const ACROSS_PROVIDER = { id: "across", url: ACROSS_API } as const;
 
 /** 22x the largest quote response measured (a 46 kB Jupiter build). */
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -46,6 +48,8 @@ const tokenOf = (t: string | { readonly address: string }): string =>
  */
 export async function acrossQuote(
   forwarder: Forwarder,
+  provider: ResolvedProvider,
+  meter: Meter,
   query: {
     readonly inputToken: string;
     readonly outputToken: string;
@@ -60,48 +64,52 @@ export async function acrossQuote(
   url.searchParams.set("originChainId", query.originChainId);
   url.searchParams.set("destinationChainId", query.destinationChainId);
   url.searchParams.set("amount", query.amount);
-  const { value } = await forwarder.run([PROVIDER], async (send) => {
-    const http = await send({ url });
-    const text = await http.text(MAX_RESPONSE_BYTES);
-    if (!http.ok) {
-      if (CLIENT_ERROR.has(http.status)) {
-        return { badRequest: true } as const;
+  const { value } = await forwarder.run(
+    [provider],
+    async (send) => {
+      const http = await send({ url, cost: requestCost(provider.costs) });
+      const text = await http.text(MAX_RESPONSE_BYTES);
+      if (!http.ok) {
+        if (CLIENT_ERROR.has(http.status)) {
+          return { badRequest: true } as const;
+        }
+        throw new ProviderFailure(`status-${http.status}`, false);
       }
-      throw new ProviderFailure(`status-${http.status}`, false);
-    }
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      throw new ProviderFailure("malformed", false);
-    }
-    const res = parseWith(acrossUpstreamResponse, body);
-    if (res === undefined) {
-      throw new ProviderFailure("malformed", false);
-    }
-    const amount = BigInt(query.amount);
-    if (
-      res.isAmountTooLow ||
-      amount < BigInt(res.limits.minDeposit) ||
-      amount > BigInt(res.limits.maxDeposit)
-    ) {
-      return { liquidity: false } satisfies BridgeQuoteResponse;
-    }
-    return {
-      liquidity: true,
-      provider: "across",
-      inputToken: tokenOf(res.inputToken),
-      outputToken: tokenOf(res.outputToken),
-      inputAmount: query.amount,
-      outputAmount: res.outputAmount,
-      destinationNetwork: `eip155:${query.destinationChainId}`,
-      quoteTimestamp: res.timestamp,
-      fillDeadline: res.fillDeadline,
-      exclusiveRelayer: res.exclusiveRelayer,
-      exclusivityParameter: res.exclusivityDeadline,
-      spokePool: res.spokePoolAddress,
-      limits: { minDeposit: res.limits.minDeposit, maxDeposit: res.limits.maxDeposit },
-    } satisfies BridgeQuoteResponse;
-  });
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new ProviderFailure("malformed", false);
+      }
+      const res = parseWith(acrossUpstreamResponse, body);
+      if (res === undefined) {
+        throw new ProviderFailure("malformed", false);
+      }
+      const amount = BigInt(query.amount);
+      if (
+        res.isAmountTooLow ||
+        amount < BigInt(res.limits.minDeposit) ||
+        amount > BigInt(res.limits.maxDeposit)
+      ) {
+        return { liquidity: false } satisfies BridgeQuoteResponse;
+      }
+      return {
+        liquidity: true,
+        provider: "across",
+        inputToken: tokenOf(res.inputToken),
+        outputToken: tokenOf(res.outputToken),
+        inputAmount: query.amount,
+        outputAmount: res.outputAmount,
+        destinationNetwork: `eip155:${query.destinationChainId}`,
+        quoteTimestamp: res.timestamp,
+        fillDeadline: res.fillDeadline,
+        exclusiveRelayer: res.exclusiveRelayer,
+        exclusivityParameter: res.exclusivityDeadline,
+        spokePool: res.spokePoolAddress,
+        limits: { minDeposit: res.limits.minDeposit, maxDeposit: res.limits.maxDeposit },
+      } satisfies BridgeQuoteResponse;
+    },
+    { meter },
+  );
   return value;
 }

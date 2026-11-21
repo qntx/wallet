@@ -1047,6 +1047,60 @@ table; `wallet_addEthereumChain` / `wallet_switchEthereumChain` for ids outside 
 Production now needs the Alchemy app and the dRPC key enabled for the new networks (see the report for
 the list). Staging serves every built-in EVM testnet through public keyless endpoints.
 
+### `FeeModel` gains `pricing`, `operatorFee`, `tokenRatio` and a `scroll` kind
+
+`FeeModel` (exported from `@qntx/wallet-engine` and `@qntx/wallet-engine/gateway/contract`, reachable through
+`NetworkInfo.feeModel` from `@qntx/wallet-engine/connect` too) is now:
+
+```ts
+type GasPricing = "eip1559" | "legacy"; // newly exported
+type FeeModel =
+  | { kind: "execution"; pricing: GasPricing }
+  | { kind: "op-stack"; pricing: GasPricing; operatorFee: boolean; tokenRatio: boolean }
+  | { kind: "scroll"; pricing: GasPricing };
+```
+
+```ts
+// before
+if (network.feeModel?.kind === "op-stack") showL1Fee();
+// after — Scroll also charges an L1 data fee
+const model = network.feeModel;
+if (model !== undefined && model.kind !== "execution") showL1Fee();
+// legacy-priced networks (opBNB, Fraxtal) sign type-0 transactions: show a gas price, not 1559 caps
+if (model?.pricing === "legacy") showGasPriceOnly();
+```
+
+Code that constructs `FeeModel` literals (test fixtures) must add the new required fields.
+
+### `fee.l1Data` is an upper bound
+
+`DisplayIntent.fee.l1Data` on OP Stack and Scroll networks is now the oracle's L1 data-fee estimate × 5/4
+(rounded up) plus the operator fee at the full gas limit — an upper bound like `fee.max`, not a point estimate.
+Displayed maximum fees and the `fee-exceeds-amount` check move up accordingly; the fee actually charged is
+unchanged. Hosts that labelled `l1Data` "estimated" should label it a maximum. On Mantle the figure was ~4,400×
+too low before (now multiplied by `tokenRatio()`).
+
+### Token table roles
+
+`EvmToken` gains an optional `role: "native-alias" | "wrapped-native"`. Native-alias rows (Celo CELO, Arc USDC,
+Stable USDT0 and testnets) are never returned as token balances; hosts that iterate `evmTokenTable` themselves
+to read balances must skip them to avoid counting the native coin twice. Wrapped-native rows (WETH, WBNB,
+WPOL, … on 24 networks) now appear as ordinary token balances, and `deposit()`/`withdraw(uint256)` calls to them
+are described as a `swap` with `verifiability: "full"` instead of an opaque contract call.
+
+### More built-in networks
+
+10 mainnets (Ink, Fraxtal, Ronin, Scroll, BOB, opBNB, Arbitrum Nova, Taiko, Flare, Zora) and 4 testnets
+(Ink Sepolia, Fraxtal Hoodi, opBNB Testnet, Zora Sepolia) are appended after the existing entries of each group;
+existing positions do not move.
+
+### Gateway operators
+
+A new production secret `ANKR_API_KEY` is required (`wrangler.jsonc` `secrets.required`); Ankr serves Arbitrum
+Nova, Taiko and Flare after dRPC. Enable the new networks in the production Alchemy app (`ink-mainnet`,
+`frax-mainnet`, `ronin-mainnet`, `scroll-mainnet`, `bob-mainnet`, `opbnb-mainnet`, `zora-mainnet`) and on the dRPC
+paid plan.
+
 ## 17. TRON family
 
 - `ChainFamily`, `NetworkMeta.family`, `AccountRef` (imported `family`), `KeyInfo.family` and the `keys.import` family parameter now include `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions in host code need a `"tron"` case.
@@ -1083,3 +1137,149 @@ the list). Staging serves every built-in EVM testnet through public keyless endp
   `` `${name} valid_until ${validUntil}` ``.
 - New methods `hyperliquid.createAgent`, `hyperliquid.listAgents`, `hyperliquid.deleteAgent`,
   `hyperliquid.signL1` (session required). `hyperliquid.signL1` does not refresh the idle timer.
+
+## 19. Signing classification: message text, typed-data commitments, orders, Solana program authority
+
+### Message text
+
+- Every valid UTF-8 message decodes to `{ kind: "text" }`. 32-byte messages and text with hidden characters are no longer `{ kind: "bytes" }`. Only invalid UTF-8 is `bytes`.
+- `isReadableText`, `isUnsafeCodePoint` and `isHexRendering` are removed from `@qntx/wallet-chains`. Use `messageTextHazard(text)` (`"digest-length" | "hidden-characters" | "encoded-bytes" | undefined`) to learn whether text is blind and why, `hasHiddenCharacters(text)` to check for deceptive code points, and `isEncodedBytes(text)` to detect text that encodes raw bytes. `messageBlindReason` keeps its signature.
+- Before/after: `tests/migration/message-text.ts`.
+
+### Warnings and limits
+
+- `IntentWarning.kind` is now the closed union `IntentWarningKind`. Code that switches on `kind` gets exhaustiveness checking; code that constructs warnings with arbitrary strings no longer compiles.
+- `SEAPORT_ORDER_ITEMS` (4) is renamed `ORDER_ITEMS` (8) and is shared by Seaport and the new order decoders.
+
+### New intent content (display-only, host-visible)
+
+- `MessageContent` (typed-data) gains `order?: OffchainOrder` for decoded 1inch LOP v4, CoW Protocol and UniswapX orders.
+- `DisplayIntent` gains `programAuthority?: ReadonlyArray<ProgramAuthority>` (Solana).
+- `AssetFlow` gains `tokenAccount?: string` (SPL unchecked `Transfer`).
+- `StakeAction` gains `{ kind: "split" }`.
+- `BlindReason` gains `"program-authority"`. Exhaustive switches over `BlindReason` must handle it.
+
+### Behaviour
+
+- An undecoded typed-data document with any hash/bytes leaf is blind (`typed-data-commitment`). Documents of claimed order protocols (1inch, CoW, 0x v4, Blur, LooksRare v2, Bebop, Paraswap, Velora Delta, KyberSwap, OpenOcean, Odos) that are not decoded are blind (`typed-data-variant`). Hosts that offered these flows with blind signing off will now see `BlindSigningDisabledError` for them.
+- `chains(wallet).sign` throws `integrity` when the kernel's result kind differs from the request kind (previously possible for Solana requests).
+
+## 20. Engine: stopped batches, read-only state, durable nonces
+
+### Batch sends: `refused` → `stopped`
+
+`SolanaSignResult` (`solana-sign` requests with `send: true`) and `BitcoinSignResult`
+(`bitcoin-sign` with `send: true`) no longer report a partial batch as `refused`. The field is
+now `stopped`:
+
+```ts
+readonly stopped?: {
+  readonly index: number;                 // input that did not go out
+  readonly reason: "refused" | "not-sent";
+  readonly error: string;
+};
+```
+
+- `reason: "refused"` — the node itself rejected that input's bytes. It and every later input
+  were not sent; the dApp sees `the network refused transaction ${index}: …`.
+- `reason: "not-sent"` — a local failure (e.g. the durable pre-broadcast write) kept the input
+  from being broadcast at all; the dApp sees `transaction ${index} was not sent: …`. A
+  post-broadcast bookkeeping failure can no longer stop a batch: once bytes are out, the item is
+  reported as sent.
+
+The ids already submitted are still on `signatures` (Solana) / `txids` (Bitcoin) — never
+resubmit them. The first input failing still rejects the whole request as before (nothing went
+out). Snippet: `tests/migration/batch-stopped.ts`.
+
+### Engine state snapshots are deeply read-only
+
+Every controller's `getState()` (and `store.getState()`) on the `WalletEngine` facade now returns
+a deeply frozen snapshot, typed `DeepReadonly<…>` (new exported type). Host code that edited a
+snapshot in place — `delete state.txs[id]`, `rows.sort()`, assigning into `balances` — no longer
+compiles and throws a `TypeError` at runtime. Copy first (`Object.values(...).toSorted(...)`,
+`{ ...state.txs }`). Snippet: `tests/migration/readonly-state.ts`.
+
+### `TrackedTransaction.durableNonce`
+
+Additive: a Solana durable-nonce transaction carries `durableNonce: { account, value }` and no
+`lastValidBlockHeight`; `account` is `undefined` when the message loads the nonce account from an
+address lookup table. Such a transaction is never shown `dropped` by block height. No host change
+is required.
+
+## 21. Gateway coverage: unsupported
+
+The gateway now distinguishes _permanent_ absence of coverage from _temporary_ failure, with a new
+contract error code `"unsupported"` (HTTP 404, appended to `GATEWAY_ERRORS`): **this gateway will
+never serve this resource for this network or asset — do not retry.**
+
+### Before
+
+- `POST /v1/history/:caip2` on a served network whose providers offer no history answered
+  `503 unavailable` with `Retry-After` — clients retried forever for coverage that would never
+  appear.
+- `GET /v1/tokens/:caip2` answered `404 not-found` for every absent list — a network with no
+  configured token source looked exactly like one whose hourly build had not landed yet.
+- `POST /v1/prices` returned assets no provider maps inside `missing` — indistinguishable from
+  assets a provider might price on the next request.
+
+### After
+
+- `POST /v1/history/:caip2` on a served network with no history provider answers `404`
+  `{"error":"unsupported"}` (no `Retry-After`). Unknown or non-EVM networks still answer
+  `404 unknown-network`.
+- `GET /v1/tokens/:caip2`: a served network no configured token source covers → `404`
+  `{"error":"unsupported"}`; a covered network whose stored list is absent → `503`
+  `{"error":"unavailable"}` with `Retry-After` (the hourly build has not landed).
+- `POST /v1/prices` responses carry a third list `unsupported` — every requested asset is in
+  exactly one of `prices`, `missing` (no price now; may change) or `unsupported` (no provider maps
+  it; never sent upstream, never cached). `pricesResponse` requires the field: deploy gateway and
+  engine together.
+
+### Engine surfaces a host sees
+
+- `GroupHistory.unsupported: ReadonlyArray<string>` — sorted network ids the gateway has no
+  history for. The group's entry list is complete for every other network: render a "no history
+  for this network" notice instead of a load error. Lifecycle mirrors `truncated` (reset per
+  load, not persisted).
+- `PricesState.errors` values are now `"unpriced" | "unsupported"`. An asset reported
+  `unsupported` also loses any stored quote — it has no price coverage at all — so a stale
+  number never masquerades as a live one. Render it permanently absent (greyed out), not
+  retryable.
+- `TokenLists`: a 404 `unsupported` or `unknown-network` stores the empty list as before; a bare
+  404 without a recognised code and a 503 are failures — they back off ten minutes and keep any
+  stored list.
+
+See `tests/migration/unsupported.ts` (compiled by `bun run typecheck`) for the snippet.
+
+## 22. TRON in the engine and gateway
+
+The compiled host snippet is `tests/migration/tron.ts`.
+
+### Types
+
+- `EngineFamily`, `NetworkInfo.family`, `TrackedTransaction.family`, `HistoryEntry.family`,
+  `WatchAccount.family`, `AddressFamily`, `GatewayScope` and the sign-log family now include
+  `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions need a `"tron"` case.
+- `GatewayConfig.clientIds` has a `tron` entry. `gatewaySession` creates it; a host that builds
+  `clientIds` by hand must add a fresh random 128-bit id for `tron`. Both types are now exported from the package root.
+- `ChainRequestMethod`/`ChainRequestInput` gain `tron-stake` and `tron-approve`;
+  `RequestController.approve(id, "tron-stake" | "tron-approve")` returns the tracked transaction.
+- `PendingRequest.tronFee?: TronFeeQuote` is set on TRON requests; `AccountBalances.tron?:
+  TronAccountView` on TRON balance reads; `TrackedTransaction.tron?: { expiration, from }` on TRON
+  rows. `RiskFinding.code` gains `contract-recipient`, `token-contract-recipient`,
+  `token-recipient-empty`.
+
+### Configuration
+
+- Host `rpc` for `tron:728126428` / `tron:3448148188` lists full-node HTTP base URLs (for example
+  `https://api.trongrid.io`), not JSON-RPC URLs. A custom endpoint is validated by its block 0 id.
+- `send` with `token` set to a base58 `T…` address sends TRC-20, a 7-digit decimal id sends TRC-10,
+  absent sends TRX; the `fee` tier is ignored on TRON (there is no fee market). Show
+  `tronFee.expected`/`tronFee.max` and the warnings before approval.
+- A TRON transaction expires 60 s after it is built: approving later fails with "transaction
+  expired — start over" before anything is signed.
+
+### Gateway operators
+
+- Production needs the secrets `TRONGRID_API_KEY` and `TATUM_API_KEY` (`wrangler secret put`).
+  Staging serves Nile keyless.

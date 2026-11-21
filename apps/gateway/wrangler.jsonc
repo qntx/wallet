@@ -8,6 +8,8 @@
   // Invocation logs record request URLs (quote queries carry wallet addresses) and client
   // metadata — our own JSON request-log lines stay instead.
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // One object per provider account name; the binding lives per env, the migration is shared.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] }],
   "env": {
     "staging": {
       // Must differ from production's account: Workers Scripts Edit is account-wide, so a staging
@@ -31,8 +33,13 @@
           "preview_id": "41f33427d52a480784d01947ef604d7a",
         },
       ],
-      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
-      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
+      // Rate-limit bindings count per Cloudflare location; PROVIDER_BUDGET is the one
+      // worldwide counter an upstream credential's quota needs (README "Rate limiting").
+      "durable_objects": {
+        "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }],
+      },
+      // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
+      // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -48,6 +55,11 @@
           "name": "IP_LIMITER",
           "namespace_id": "1003",
           "simple": { "limit": 300, "period": 10 },
+        },
+        {
+          "name": "SHARE_LIMITER",
+          "namespace_id": "1004",
+          "simple": { "limit": 1000, "period": 60 },
         },
       ],
     },
@@ -65,14 +77,20 @@
           "JUPITER_API_KEY",
           "ALCHEMY_API_KEY",
           "DRPC_API_KEY",
+          "ANKR_API_KEY",
           "BLOCKSTREAM_CLIENT_ID",
           "BLOCKSTREAM_CLIENT_SECRET",
           "COINGECKO_API_KEY",
+          "TRONGRID_API_KEY",
+          "TATUM_API_KEY",
         ],
       },
       "kv_namespaces": [{ "binding": "RISK", "id": "983019ff51a54c5abea1a0a8189d299d" }],
-      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
-      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
+      "durable_objects": {
+        "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }],
+      },
+      // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
+      // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -88,6 +106,11 @@
           "name": "IP_LIMITER",
           "namespace_id": "2003",
           "simple": { "limit": 300, "period": 10 },
+        },
+        {
+          "name": "SHARE_LIMITER",
+          "namespace_id": "2004",
+          "simple": { "limit": 1000, "period": 60 },
         },
       ],
     },

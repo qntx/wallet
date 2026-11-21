@@ -8,10 +8,11 @@ import {
   swapQuote,
   swapQuoteSolana,
   tokenList,
+  tron,
 } from "./contract/index.ts";
 
 /** A gateway traffic class with its own client id: one per chain family plus the service routes. */
-export type GatewayScope = "evm" | "solana" | "bitcoin" | "service";
+export type GatewayScope = "evm" | "solana" | "bitcoin" | "tron" | "service";
 
 export type GatewayConfig = {
   readonly url: string;
@@ -22,6 +23,7 @@ export type GatewayConfig = {
 const routePrefix = (template: string): string => template.split("/:")[0] ?? template;
 const RPC_PREFIX = `${routePrefix(rpc.path)}/`;
 const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
+const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
 
@@ -40,6 +42,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(ESPLORA_PREFIX)) {
     return "bitcoin";
+  }
+  if (pathname.startsWith(TRON_PREFIX)) {
+    return "tron";
   }
   if (pathname.startsWith(HISTORY_PREFIX)) {
     return networkById(pathname.slice(HISTORY_PREFIX.length))?.family ?? "service";
@@ -67,6 +72,7 @@ export function gatewaySession(url: string, random: (length: number) => Uint8Arr
       evm: hex(random(16)),
       solana: hex(random(16)),
       bitcoin: hex(random(16)),
+      tron: hex(random(16)),
       service: hex(random(16)),
     },
   };

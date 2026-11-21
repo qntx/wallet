@@ -226,6 +226,46 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   {
+    // Ink Sepolia — chain id 763373
+    id: "eip155:763373",
+    providers: [
+      // https://docs.inkonchain.com/general/network-information — official Sepolia RPC
+      { id: "ink", url: "https://rpc-gel-sepolia.inkonchain.com" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://ink-sepolia.drpc.org" },
+    ],
+  },
+  {
+    // Fraxtal Hoodi — chain id 2523
+    id: "eip155:2523",
+    providers: [
+      // https://docs.frax.com/fraxtal/network/network-information — official testnet RPC
+      { id: "frax", url: "https://rpc.testnet.frax.com" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://fraxtal-testnet.drpc.org" },
+    ],
+  },
+  {
+    // opBNB Testnet — chain id 5611
+    id: "eip155:5611",
+    providers: [
+      // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/ — official testnet RPC
+      { id: "bnbchain", url: "https://opbnb-testnet-rpc.bnbchain.org" },
+      // https://www.publicnode.com/ — opBNB testnet public endpoint
+      { id: "publicnode", url: "https://opbnb-testnet-rpc.publicnode.com" },
+    ],
+  },
+  {
+    // Zora Sepolia — chain id 999999999
+    id: "eip155:999999999",
+    providers: [
+      // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json — official Sepolia RPC
+      { id: "zora", url: "https://sepolia.rpc.zora.energy" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://zora-sepolia.drpc.org" },
+    ],
+  },
+  {
     // Solana devnet
     id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     providers: [
@@ -255,12 +295,23 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
       { id: "emzy", url: "https://mempool.emzy.de/testnet4/api" },
     ],
   },
+  {
+    // TRON Nile — https://developers.tron.network/docs/networks
+    id: "tron:3448148188",
+    providers: [
+      // https://developers.tron.network/docs/networks — TronGrid Nile, keyless
+      { id: "trongrid", url: "https://nile.trongrid.io" },
+      // https://nileex.io — Nile public node, keyless
+      { id: "nileex", url: "https://api.nileex.io" },
+    ],
+  },
 ];
 
 /**
- * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; Bitcoin
- * uses Blockstream Enterprise's Esplora (the engine falls back to the host's own endpoints on a
- * 503). Keys ride in headers — URLs carry no key material.
+ * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; chains
+ * Alchemy does not serve use dRPC, falling back to Ankr. Bitcoin uses Blockstream Enterprise's
+ * Esplora (the engine falls back to the host's own endpoints on a 503). Keys ride in headers — URLs
+ * carry no key material.
  */
 export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
   {
@@ -514,6 +565,86 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   {
+    // Ink — chain id 57073
+    id: "eip155:57073",
+    providers: [
+      { id: "alchemy", url: "https://ink-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/ink", auth: "drpc" },
+    ],
+  },
+  {
+    // Fraxtal — chain id 252
+    id: "eip155:252",
+    providers: [
+      { id: "alchemy", url: "https://frax-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/fraxtal", auth: "drpc" },
+    ],
+  },
+  {
+    // Ronin — chain id 2020
+    id: "eip155:2020",
+    providers: [
+      { id: "alchemy", url: "https://ronin-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/ronin", auth: "drpc" },
+    ],
+  },
+  {
+    // Scroll — chain id 534352
+    id: "eip155:534352",
+    providers: [
+      { id: "alchemy", url: "https://scroll-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/scroll", auth: "drpc" },
+    ],
+  },
+  {
+    // BOB — chain id 60808
+    id: "eip155:60808",
+    providers: [
+      { id: "alchemy", url: "https://bob-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/bob", auth: "drpc" },
+    ],
+  },
+  {
+    // opBNB — chain id 204
+    id: "eip155:204",
+    providers: [
+      { id: "alchemy", url: "https://opbnb-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/opbnb", auth: "drpc" },
+    ],
+  },
+  {
+    // Arbitrum Nova — chain id 42170 (Alchemy does not serve it)
+    id: "eip155:42170",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/arbitrum-nova", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/arbitrumnova", auth: "ankr" },
+    ],
+  },
+  {
+    // Taiko — chain id 167000 (Alchemy does not serve it)
+    id: "eip155:167000",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/taiko", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/taiko", auth: "ankr" },
+    ],
+  },
+  {
+    // Flare — chain id 14 (Alchemy does not serve it)
+    id: "eip155:14",
+    providers: [
+      { id: "drpc", url: "https://lb.drpc.live/flare", auth: "drpc" },
+      { id: "ankr", url: "https://rpc.ankr.com/flare", auth: "ankr" },
+    ],
+  },
+  {
+    // Zora — chain id 7777777
+    id: "eip155:7777777",
+    providers: [
+      { id: "alchemy", url: "https://zora-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/zora", auth: "drpc" },
+    ],
+  },
+  {
     // Solana mainnet-beta
     id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     providers: [
@@ -533,6 +664,17 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
         url: "https://enterprise.blockstream.info/api",
         auth: "blockstream",
       },
+    ],
+  },
+  {
+    // TRON mainnet — https://developers.tron.network/docs/networks
+    id: "tron:728126428",
+    providers: [
+      // https://www.trongrid.io — key in the TRON-PRO-API-KEY header
+      { id: "trongrid", url: "https://api.trongrid.io", auth: "trongrid" },
+      // https://docs.tatum.io/reference/rpc-tron-restapi — node API base, key in the x-api-key
+      // header
+      { id: "tatum", url: "https://tron-mainnet.gateway.tatum.io", auth: "tatum" },
     ],
   },
 ];

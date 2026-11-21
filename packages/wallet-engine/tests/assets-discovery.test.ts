@@ -72,6 +72,7 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
 const CUSTOM = "0x1111111111111111111111111111111111111111" as `0x${string}`;
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as `0x${string}`;
 const LISTED = "0x1abc00000000000000000000000000000000beef" as `0x${string}`;
 const UNHELD = "0x2abc00000000000000000000000000000000beef" as `0x${string}`;
 const FAKER = "0x3abc00000000000000000000000000000000beef" as `0x${string}`;
@@ -158,7 +159,7 @@ const decodeStore = (raw: Uint8Array | undefined): unknown =>
 
 const GATEWAY = {
   url: "https://gateway.example",
-  clientIds: { evm: "e", solana: "s", bitcoin: "b", service: "v" },
+  clientIds: { evm: "e", solana: "s", bitcoin: "b", tron: "t", service: "v" },
 };
 
 type FetchCall = { readonly url: string; readonly headers?: Headers };
@@ -176,7 +177,9 @@ const listFetch = (
     });
     const doc = documents[Math.min(calls.length - 1, documents.length - 1)];
     if (doc === undefined || doc.status === 404) {
-      return new Response(null, { status: 404 });
+      return new Response(doc?.body === undefined ? null : JSON.stringify(doc.body), {
+        status: 404,
+      });
     }
     if (doc.status !== 200) {
       return new Response(null, { status: doc.status });
@@ -211,13 +214,18 @@ const makeEvm = (
     readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
     readonly store?: ReturnType<typeof createMemoryEngineStore>;
+    readonly chainId?: number;
   } = {},
 ) =>
   new AssetsController({
     ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
-      info: () => ({ family: "evm", chainId: 1, multicall3: MULTICALL3 }),
+      info: () => ({
+        family: "evm",
+        chainId: options.chainId ?? 1,
+        multicall3: MULTICALL3,
+      }),
     } as never,
     chains,
     openStore: async () => Promise.resolve(options.store ?? createMemoryEngineStore()),
@@ -263,7 +271,7 @@ describe("AssetsController EVM list discovery", () => {
     expect(calls).toHaveLength(2);
     const agg = decodedAggregate(calls);
     expect(agg.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED, UNHELD].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED, UNHELD].map((a) => a.toLowerCase()),
     );
     expect(agg.args[0].every((call) => call.callData === BALANCE_OF)).toBe(true);
     // Metadata aggregate: decimals only, once, for the held listed token.
@@ -273,7 +281,7 @@ describe("AssetsController EVM list discovery", () => {
     ]);
     expect(meta.args[0].map((call) => call.callData)).toStrictEqual([DECIMALS]);
     const rows = balances.tokens.map((t) => t.address);
-    expect(rows).toStrictEqual([USDC, USDT, LISTED]);
+    expect(rows).toStrictEqual([USDC, USDT, WETH, LISTED]);
     const listed = balances.tokens.find((t) => t.address === LISTED.toLowerCase());
     expect(listed).toStrictEqual({
       address: LISTED.toLowerCase(),
@@ -291,8 +299,36 @@ describe("AssetsController EVM list discovery", () => {
     expect(calls).toHaveLength(1);
     const again = decodedAggregate(calls);
     expect(again.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
+  });
+
+  it("a list entry at a native-alias address is a table token, never discovered", async () => {
+    // Celo's CELO alias: the table row is a balance shadow, so discovery must not re-add it.
+    const alias = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+    const celoUsdc = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
+    const celoUsdt = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
+    const calls: Call[] = [];
+    const c = evmClient(
+      new Map<string, TokenStub>([[alias.toLowerCase(), { balance: 9n, decimals: 18 }]]),
+      calls,
+    );
+    const assets = makeEvm(c, {
+      chainId: 42220,
+      gateway: GATEWAY,
+      fetch: listFetch(
+        [
+          {
+            status: 200,
+            body: listDoc("eip155:42220", 1, [evmEntry(alias, "CELO", "Celo native asset", 18)]),
+          },
+        ],
+        [],
+      ),
+    });
+    await assets.init();
+    const balances = await assets.refresh(OWNER, "eip155:42220");
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([celoUsdc, celoUsdt]);
   });
 
   it("a list token impersonating a table symbol is never eligible for discovery", async () => {
@@ -310,7 +346,7 @@ describe("AssetsController EVM list discovery", () => {
     });
     await assets.init();
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
   });
 
   it("a discovered list token whose decimals differ is unverified, not dropped", async () => {
@@ -341,8 +377,8 @@ describe("AssetsController EVM list discovery", () => {
     const balances = await assets.refresh(OWNER, MAINNET);
     expect(calls).toHaveLength(1);
     const agg = decodedAggregate(calls);
-    expect(agg.args[0]).toHaveLength(2);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(agg.args[0]).toHaveLength(3);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
   });
 });
 
@@ -694,8 +730,8 @@ describe("AssetsController EVM customs that are also list entries", () => {
     await assets.addToken(MAINNET, CUSTOM);
     const balances = await assets.refresh(OWNER, MAINNET);
     const rows = balances.tokens.map((t) => t.address);
-    expect(rows).toStrictEqual([USDC, USDT, CUSTOM]);
-    expect(balances.tokens[2]).toStrictEqual({
+    expect(rows).toStrictEqual([USDC, USDT, WETH, CUSTOM]);
+    expect(balances.tokens[3]).toStrictEqual({
       address: CUSTOM,
       symbol: "LST",
       name: "Listed Token",
@@ -747,7 +783,7 @@ describe("AssetsController EVM customs that are also list entries", () => {
 });
 
 describe("AssetsController EVM aggregate chunking", () => {
-  it("489 targets split into aggregate3 calls of 300 and 189, answers mapped in order", async () => {
+  it("490 targets split into aggregate3 calls of 300 and 190, answers mapped in order", async () => {
     const calls: Call[] = [];
     const addresses: Array<`0x${string}`> = Array.from(
       { length: 487 },
@@ -770,10 +806,10 @@ describe("AssetsController EVM aggregate chunking", () => {
     });
     await assets.init();
     const balances = await assets.refresh(OWNER, MAINNET);
-    // Two balance aggregates (300 + 189 targets), then one metadata aggregate for the three held.
+    // Two balance aggregates (300 + 190 targets), then one metadata aggregate for the three held.
     expect(calls).toHaveLength(3);
     expect(decodedAggregate(calls, 0).args[0]).toHaveLength(300);
-    expect(decodedAggregate(calls, 1).args[0]).toHaveLength(189);
+    expect(decodedAggregate(calls, 1).args[0]).toHaveLength(190);
     const meta = decodedAggregate(calls, 2);
     const held: ReadonlyArray<`0x${string}`> = [addresses[297]!, addresses[298]!, addresses[486]!];
     expect(meta.args[0].map((call) => call.target.toLowerCase()).toSorted()).toStrictEqual(
@@ -802,22 +838,26 @@ describe("AssetsController EVM discovery cadence", () => {
     });
     await assets.init();
     let balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
 
     // The token gains a balance between scans — a +9 min poll reads tracked+discovered only.
     stubs.set(LISTED.toLowerCase(), { balance: 11n, decimals: 6 });
     now += 9 * 60_000;
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
-    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([USDC, USDT]);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([
+      USDC,
+      USDT,
+      WETH,
+    ]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
 
     // The +10 min poll re-scans the whole list and finds it.
     now += 2 * 60_000;
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
     expect(decodedAggregate(calls).args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
     expect(balances.tokens.find((t) => t.address === LISTED.toLowerCase())?.verified).toBe(true);
 
@@ -827,12 +867,16 @@ describe("AssetsController EVM discovery cadence", () => {
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
     expect(decodedAggregate(calls).args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
     calls.length = 0;
     await assets.refresh(OWNER, MAINNET);
-    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([USDC, USDT]);
+    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([
+      USDC,
+      USDT,
+      WETH,
+    ]);
   });
 });
 
@@ -1052,15 +1096,35 @@ describe("TokenLists resilience", () => {
     logger,
   });
 
-  it("a 404 caches the empty list for six hours", async () => {
+  it.each(["unsupported", "unknown-network"])(
+    "a 404 %s caches the empty list for six hours",
+    async (code) => {
+      const fetches: FetchCall[] = [];
+      let now = 0;
+      const lists = new TokenLists(
+        options(listFetch([{ status: 404, body: { error: code } }], fetches), () => now),
+      );
+      await lists.load(createMemoryEngineStore());
+      await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
+      now += 60_000;
+      await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
+      expect(fetches).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["a plain 404 without a recognised code", { status: 404 }],
+    ["a 503", { status: 503 }],
+  ])("%s backs off ten minutes instead of caching", async (_name, doc) => {
     const fetches: FetchCall[] = [];
     let now = 0;
-    const lists = new TokenLists(options(listFetch([{ status: 404 }], fetches), () => now));
+    const lists = new TokenLists(options(listFetch([doc], fetches), () => now));
     await lists.load(createMemoryEngineStore());
     await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
-    now += 60_000;
+    // Nothing persisted — and the failure holds the next try for RETRY_MS, not six hours.
+    now += 10 * 60_000 + 1;
     await expect(lists.entries(MAINNET)).resolves.toHaveProperty("size", 0);
-    expect(fetches).toHaveLength(1);
+    expect(fetches).toHaveLength(2);
   });
 
   it("an invalid body or foreign network is warned away, the stored list kept", async () => {
@@ -1236,5 +1300,161 @@ describe("AssetsController visibility and prices", () => {
     await expect(
       assets.setTokenHidden("bip122:000000000019d6689c085ae165831e93", PYUSD, true),
     ).rejects.toThrow("no tokens");
+  });
+});
+
+/** A deferred the test resolves once a session boundary has passed underneath a call. */
+const deferred = () => {
+  let release = (): void => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, resolve: release };
+};
+
+/** Wraps `evmClient`'s request: matching `eth_call`s report `started` then park until `wait`. */
+const gateCall = (
+  client: PublicClient,
+  when: (to: string, data: `0x${string}`) => boolean,
+  gate: { readonly started: () => void; readonly wait: Promise<void> },
+): PublicClient =>
+  ({
+    transport: {
+      request: async (req: { method: string; params?: unknown[] }) => {
+        if (req.method === "eth_call") {
+          const [{ to, data }] = (req.params ?? [{}]) as [{ to?: string; data?: `0x${string}` }];
+          if (when(String(to), data ?? "0x")) {
+            gate.started();
+            await gate.wait;
+          }
+        }
+        return (client.transport as { request: (r: typeof req) => Promise<unknown> }).request(req);
+      },
+    },
+  }) as unknown as PublicClient;
+
+/** `when` for `gateCall`: the first aggregate3 only — module scope keeps tests conditional-free. */
+const firstAggregate =
+  (calls: Call[]) =>
+  (_to: string, data: `0x${string}`): boolean =>
+    data.startsWith(AGG_SELECTOR) && calls.length === 0;
+
+/** `when` for `gateCall`: a direct `decimals()` call against `token`. */
+const onTokenDecimals =
+  (token: string) =>
+  (to: string, data: `0x${string}`): boolean =>
+    to.toLowerCase() === token.toLowerCase() && data === DECIMALS;
+
+/** Whether `calls` holds an aggregate3 reading `decimals()` of `token`. */
+const hasDecimalsAggregate = (calls: Call[], token: string): boolean =>
+  calls.some(
+    (call) =>
+      call.data.startsWith(AGG_SELECTOR) &&
+      decodedAggregateFrom(call.data).args[0].some(
+        (inner2) =>
+          inner2.target.toLowerCase() === token.toLowerCase() && inner2.callData === DECIMALS,
+      ),
+  );
+
+const decodedAggregateFrom = (data: `0x${string}`) =>
+  decodeFunctionData({ abi: MULTICALL3_ABI, data });
+
+describe("AssetsController stale session writes", () => {
+  it("a scan resolving after lock→unlock discovers and caches nothing in the new session", async () => {
+    const calls: Call[] = [];
+    const fetches: FetchCall[] = [];
+    const gate = deferred();
+    const reached = deferred();
+    const inner = evmClient(
+      new Map<string, TokenStub>([
+        [USDC.toLowerCase(), { balance: 5n }],
+        [LISTED.toLowerCase(), { balance: 77n, decimals: 6 }],
+      ]),
+      calls,
+    );
+    const c = gateCall(inner, firstAggregate(calls), {
+      started: reached.resolve,
+      wait: gate.promise,
+    });
+    const assets = makeEvm(c, {
+      gateway: GATEWAY,
+      fetch: listFetch(
+        [
+          {
+            status: 200,
+            body: listDoc(MAINNET, 7, [
+              evmEntry(LISTED, "LST", "Listed Token", 6),
+              evmEntry(UNHELD, "NONE", "Unheld Token", 18),
+            ]),
+            etag: '"v7"',
+          },
+        ],
+        fetches,
+      ),
+    });
+    await assets.init();
+    // The first poll parks inside its discovery aggregate.
+    const first = assets.refresh(OWNER, MAINNET);
+    await reached.promise;
+    assets.lock();
+    await assets.init();
+    gate.resolve();
+    await first;
+    // The new session's first poll is a full scan — not a stale-discovery re-read —
+    // and re-reads the held list token's metadata because nothing cached survived.
+    calls.length = 0;
+    await assets.refresh(OWNER, MAINNET);
+    expect(calls).toHaveLength(2);
+    const agg = decodedAggregate(calls);
+    expect(agg.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
+      [USDC, USDT, WETH, LISTED, UNHELD].map((a) => a.toLowerCase()),
+    );
+    const meta = decodedAggregate(calls, 1);
+    expect(meta.args[0].map((call) => call.target.toLowerCase())).toStrictEqual([
+      LISTED.toLowerCase(),
+    ]);
+  });
+
+  it("an addToken metadata read resolving after lock→unlock seeds no metadata", async () => {
+    const calls: Call[] = [];
+    const fetches: FetchCall[] = [];
+    const gate = deferred();
+    const reached = deferred();
+    const inner = evmClient(
+      new Map<string, TokenStub>([
+        [USDC.toLowerCase(), { balance: 5n }],
+        [LISTED.toLowerCase(), { balance: 77n, symbol: "LST", decimals: 6 }],
+      ]),
+      calls,
+    );
+    const c = gateCall(inner, onTokenDecimals(LISTED), {
+      started: reached.resolve,
+      wait: gate.promise,
+    });
+    const assets = makeEvm(c, {
+      gateway: GATEWAY,
+      fetch: listFetch(
+        [
+          {
+            status: 200,
+            body: listDoc(MAINNET, 7, [evmEntry(LISTED, "LST", "Listed Token", 6)]),
+            etag: '"v7"',
+          },
+        ],
+        fetches,
+      ),
+    });
+    await assets.init();
+    // addToken parks on the decimals read; the session boundary passes underneath it.
+    const pending = assets.addToken(MAINNET, LISTED);
+    await reached.promise;
+    assets.lock();
+    await assets.init();
+    gate.resolve();
+    await pending;
+    // The dead session's metadata must not satisfy the new session's missing-metadata read.
+    calls.length = 0;
+    await assets.refresh(OWNER, MAINNET);
+    expect(hasDecimalsAggregate(calls, LISTED)).toBe(true);
   });
 });

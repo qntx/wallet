@@ -3,6 +3,9 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { FiatCurrency } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
+import { GatewayHttpError } from "../middleware/errors.ts";
+import type { ResolvedProvider } from "../types.ts";
 import { ProviderFailure } from "./forward.ts";
 import type { PriceTarget } from "./prices-assets.ts";
 import { providerJson } from "./prices.ts";
@@ -64,14 +67,10 @@ const groupTargets = (
  * `/simple/token_price/{platform}` call per token platform (at most 515 addresses each, above the
  * request cap). The key travels in the `x-cg-pro-api-key` header, never in the URL.
  */
-export function coingeckoSource(apiKey: string): PriceSource {
+export function coingeckoSource(provider: ResolvedProvider, apiKey: string): PriceSource {
   return {
-    provider: { id: "coingecko", url: COINGECKO_API },
+    provider,
     serves: () => true,
-    calls: (targets) => {
-      const { coins, platforms } = groupTargets(targets);
-      return (coins.size === 0 ? 0 : 1) + platforms.size;
-    },
     quote: async (send, currency, targets) => {
       const { coins, platforms } = groupTargets(targets);
       const query = `vs_currencies=${currency}&include_24hr_change=true&include_last_updated_at=true&precision=full`;
@@ -82,6 +81,7 @@ export function coingeckoSource(apiKey: string): PriceSource {
         const response = await send({
           url: `${COINGECKO_API}${path}${[...keys.keys()].join(",")}&${query}`,
           headers: { "x-cg-pro-api-key": apiKey },
+          cost: requestCost(provider.costs),
         });
         const body = parseWith(simplePrices, await providerJson(response));
         if (body === undefined) {
@@ -98,8 +98,22 @@ export function coingeckoSource(apiKey: string): PriceSource {
           read(`/simple/token_price/${platform}?contract_addresses=`, byAddress),
         ),
       ];
-      const rows = await Promise.all(reads);
-      return new Map(rows.flat());
+      // One refused or failed platform call must not discard the platforms already paid for:
+      // keep every read that answered and throw only when none did — a refusal (the request's
+      // own budget) in preference, so the caller can tell refusal from provider failure.
+      const settled = await Promise.allSettled(reads);
+      const rejected = settled.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (rejected.length === settled.length && settled.length > 0) {
+        const reason: unknown =
+          rejected.find((result) => result.reason instanceof GatewayHttpError)?.reason ??
+          rejected[0]?.reason;
+        throw reason instanceof Error ? reason : new Error(String(reason));
+      }
+      return new Map(
+        settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+      );
     },
   };
 }

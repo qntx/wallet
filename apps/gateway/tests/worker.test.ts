@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { EVM_RPC_METHODS, SOLANA_RPC_METHODS } from "@qntx/wallet-engine/gateway/contract";
+
 import { createGateway } from "../src/app.ts";
+import { ALCHEMY_COSTS, DRPC_COSTS } from "../src/budget/costs.ts";
+import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { gatewayFor, priceCacheOf, riskStoreOf } from "../src/worker.ts";
 import type { WorkerEnv } from "../src/worker.ts";
 import { allowAll } from "./helpers.ts";
+
+const rpcMethods = (model: CostModel): Readonly<Record<string, CostRow>> =>
+  model.kind === "rpc" ? model.methods : {};
 
 const kv = (): KVNamespace =>
   ({
@@ -12,12 +19,23 @@ const kv = (): KVNamespace =>
     put: async () => Promise.resolve(),
   }) as unknown as KVNamespace;
 
+/** A PROVIDER_BUDGET namespace whose stub always grants — env shape only, never exercised here. */
+const budgetNs = () =>
+  ({
+    idFromName: (name: string) => name,
+    get: () => ({
+      lease: async () => Promise.resolve({ ok: true as const, granted: 0 }),
+    }),
+  }) as unknown as WorkerEnv["PROVIDER_BUDGET"];
+
 const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
     RISK: kv(),
     IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
+    SHARE_LIMITER: allowAll,
+    PROVIDER_BUDGET: budgetNs(),
     CORS_ORIGINS: "http://localhost:5173,http://localhost:8081",
     NETWORKS: "staging",
     ZEROX_API_KEY: "z",
@@ -30,12 +48,15 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
+    SHARE_LIMITER: allowAll,
+    PROVIDER_BUDGET: budgetNs(),
     CORS_ORIGINS: "",
     NETWORKS: "production",
     ZEROX_API_KEY: "z",
     JUPITER_API_KEY: "j",
     ALCHEMY_API_KEY: "a",
     DRPC_API_KEY: "d",
+    ANKR_API_KEY: "n",
     BLOCKSTREAM_CLIENT_ID: "id",
     BLOCKSTREAM_CLIENT_SECRET: "sec",
     COINGECKO_API_KEY: "cg",
@@ -43,10 +64,17 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   }) as WorkerEnv;
 
 describe("gatewayFor", () => {
-  it("production yields mainnets and all three provider auths", () => {
+  it("production yields mainnets and all six provider auths", () => {
     const options = gatewayFor(production());
     expect(options.networks).toBe(PRODUCTION_NETWORKS);
-    expect(Object.keys(options.auth).toSorted()).toStrictEqual(["alchemy", "blockstream", "drpc"]);
+    expect(Object.keys(options.auth).toSorted()).toStrictEqual([
+      "alchemy",
+      "ankr",
+      "blockstream",
+      "drpc",
+      "tatum",
+      "trongrid",
+    ]);
     expect(options.corsOrigins).toStrictEqual([]);
     expect(gatewayFor(production({ CORS_ORIGINS: "" })).corsOrigins).toStrictEqual([]);
     expect(options.jupiter).toStrictEqual({ apiKey: "j" });
@@ -66,6 +94,17 @@ describe("gatewayFor", () => {
       apiKey: "cg2",
     });
     expect(() => createGateway(options)).not.toThrow();
+  });
+
+  it("prices every allow-listed method in both RPC cost tables", () => {
+    for (const table of [ALCHEMY_COSTS, DRPC_COSTS].map((m) => rpcMethods(m))) {
+      for (const method of [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS]) {
+        const row = table[method];
+        expect(row).toBeDefined();
+        expect(row?.units).toBeGreaterThanOrEqual(0);
+        expect(row?.source).toMatch(/^https:\/\//);
+      }
+    }
   });
 
   it("optional quote config passes through per env shape", () => {

@@ -19,7 +19,7 @@ import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 import { PROGRAM_IDS } from "./ids.ts";
 import { JUPITER_PROGRAM, WSOL_MINT, decodeJupiterIx } from "./jupiter.ts";
 import type { JupiterSwap } from "./jupiter.ts";
-import { parseCompiledMessage, resolveAccountIndex } from "./message.ts";
+import { isWritableIndex, parseCompiledMessage, resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 import { decodeStakeIx, decodeSystemCreate } from "./stake.ts";
 import type { StakeCreate, StakeIx, SystemCreate } from "./stake.ts";
@@ -42,6 +42,8 @@ type IxCall = {
     | "ata-create"
     | "ata-create-idempotent"
     | "token-transfer-checked"
+    | "token-transfer"
+    | "token-burn"
     | "token-approve"
     | "token-initialize-account"
     | "token-revoke"
@@ -55,6 +57,8 @@ type IxCall = {
   readonly amount?: bigint | undefined;
   readonly decimals?: number | undefined;
   readonly mint?: string | undefined;
+  /** An unchecked Transfer's source token account — the instruction names no mint. */
+  readonly tokenAccount?: string | undefined;
   readonly units?: number | undefined;
   readonly microLamports?: bigint | undefined;
   /** The instruction's source account — the transfer/create funder, not the fee payer. */
@@ -138,6 +142,35 @@ const classifyIx = (
         mint: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
       };
     }
+    if (data.length === 9 && data[0] === 3 && ix.accountIndices.length === 3) {
+      /* Transfer [source, destination, authority] — names no mint; the source account's contents
+         move, so the shown asset is the account itself. Only the signer's own authority decodes. */
+      const authority = resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups);
+      return authority === signer
+        ? {
+            kind: "token-transfer",
+            amount: u64le(data, 1),
+            tokenAccount: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
+            to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+          }
+        : { kind: "other" };
+    }
+    if (
+      ((data.length === 9 && data[0] === 8) || (data.length === 10 && data[0] === 15)) &&
+      ix.accountIndices.length === 3
+    ) {
+      /* Burn [account, mint, owner] / BurnChecked — the checked decimals byte is not proof, so a
+         listed mint alone carries symbol/decimals. */
+      const owner = resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups);
+      return owner === signer
+        ? {
+            kind: "token-burn",
+            amount: u64le(data, 1),
+            mint: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+            to: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
+          }
+        : { kind: "other" };
+    }
     if (data.length === 9 && data[0] === 4) {
       return {
         kind: "token-approve",
@@ -179,7 +212,10 @@ const classifyIx = (
   }
   if (program === PROGRAM_IDS.stake) {
     const stake = decodeStakeIx(parsed, ix, lookups);
-    return stake === undefined ? { kind: "other" } : { kind: "stake", stake };
+    /* A Split whose staker is not the signer stays "other" — the core-instruction rule applies. */
+    return stake === undefined || (stake.kind === "split" && stake.staker !== signer)
+      ? { kind: "other" }
+      : { kind: "stake", stake };
   }
   return { kind: "other" };
 };
@@ -211,7 +247,13 @@ const classify = (
     if (call.kind === "other") {
       return "opaque";
     }
-    if (call.kind === "token-approve" || call.kind === "jupiter" || call.kind === "core-transfer") {
+    if (
+      call.kind === "token-approve" ||
+      call.kind === "jupiter" ||
+      call.kind === "core-transfer" ||
+      call.kind === "token-transfer" ||
+      call.kind === "token-burn"
+    ) {
       allFull = false;
     }
     if (
@@ -223,6 +265,8 @@ const classify = (
     if (
       !FULL_KINDS.has(call.kind) &&
       call.kind !== "token-transfer-checked" &&
+      call.kind !== "token-transfer" &&
+      call.kind !== "token-burn" &&
       call.kind !== "token-approve" &&
       call.kind !== "jupiter" &&
       call.kind !== "core-transfer"
@@ -235,6 +279,9 @@ const classify = (
   }
   return allFull ? "full" : "partial";
 };
+
+/** The most writable accounts a signer-taking unknown program may reach before it is blind. */
+export const PROGRAM_AUTHORITY_ACCOUNTS = 12;
 
 const DEFAULT_INSTRUCTION_CU = 200_000n;
 const BUILTIN_INSTRUCTION_CU = 3000n;
@@ -384,6 +431,32 @@ const decodeTransaction = (
         verified: token !== undefined,
       });
     }
+    if (call.kind === "token-transfer" && call.tokenAccount !== undefined) {
+      otherTransfer = true;
+      outflows.push({
+        to: call.to ?? "",
+        amount: {
+          asset: call.tokenAccount,
+          amount: (call.amount ?? 0n).toString(10),
+        },
+        verified: false,
+        tokenAccount: call.tokenAccount,
+      });
+    }
+    if (call.kind === "token-burn") {
+      otherTransfer = true;
+      const token = lookupSolanaToken(table, request.network, call.mint ?? "");
+      outflows.push({
+        to: call.to ?? "",
+        amount: {
+          asset: call.mint ?? "",
+          amount: (call.amount ?? 0n).toString(10),
+          ...(token === undefined ? {} : { symbol: token.symbol, decimals: token.decimals }),
+        },
+        verified: token !== undefined,
+        burn: true,
+      });
+    }
     if (call.kind === "token-approve") {
       const token = lookupSolanaToken(table, request.network, call.mint ?? "");
       approvals.push({
@@ -467,6 +540,14 @@ const decodeTransaction = (
             });
           }
           break;
+        case "split":
+          staking.push({
+            kind: "split",
+            account: stake.account,
+            to: stake.to,
+            lamports: stake.lamports.toString(10),
+          });
+          break;
         case "authorize":
           if (stake.authority !== signer) {
             approvals.push({
@@ -484,6 +565,21 @@ const decodeTransaction = (
   // The fee is charged to the fee payer only — a sponsored signer pays nothing.
   const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
   const programs: string[] = [];
+  /* The writable non-signer accounts each signer-taking unknown program can reach, and whether it
+     can move the signer's SOL. */
+  const authority = new Map<string, { sol: boolean; accounts: string[] }>();
+  const atas = new Map<string, { mint: string; symbol: string }>();
+  for (const [mint, token] of Object.entries(table[request.network] ?? {})) {
+    for (const tokenProgram of [PROGRAM_IDS.token, PROGRAM_IDS.token2022]) {
+      atas.set(associatedTokenAddress(signer, mint, tokenProgram), {
+        mint,
+        symbol: token.symbol,
+      });
+    }
+  }
+  const signerIndex = parsed.staticAccounts.indexOf(signer);
+  const signerWritable = signerIndex !== -1 && isWritableIndex(parsed, signerIndex);
+  const altWritable = parsed.lookups.some((l) => l.writableIndexes.length > 0);
   let blind: BlindReason | undefined;
   for (const [index, ix] of parsed.instructions.entries()) {
     const program =
@@ -505,14 +601,40 @@ const decodeTransaction = (
         family.claim.surface === "solana.instruction" &&
         PROGRAM_IDS[family.claim.program] === program,
     );
+    const takesSigner = ix.accountIndices.some(
+      (i) => i < parsed.numRequiredSignatures && parsed.staticAccounts[i] === signer,
+    );
+    if (row !== undefined) {
+      if (blind === undefined && takesSigner) {
+        blind = row.nearMiss;
+      }
+      continue;
+    }
+    if (!takesSigner) {
+      continue;
+    }
+    /* An unknown program the signature is handed to can act with this account's full authority —
+       name what it can reach; a reach the wallet cannot list (writable ALT entries, or a union
+       past the prompt's account budget) is blind. */
+    const entry = authority.get(program) ?? { sol: signerWritable, accounts: [] };
+    for (const i of ix.accountIndices) {
+      const account = resolveAccountIndex(parsed, i, lookups);
+      if (
+        account === undefined ||
+        account === signer ||
+        !isWritableIndex(parsed, i) ||
+        entry.accounts.includes(account)
+      ) {
+        continue;
+      }
+      entry.accounts.push(account);
+    }
+    authority.set(program, entry);
     if (
       blind === undefined &&
-      row !== undefined &&
-      ix.accountIndices.some(
-        (i) => i < parsed.numRequiredSignatures && parsed.staticAccounts[i] === signer,
-      )
+      (altWritable || entry.accounts.length > PROGRAM_AUTHORITY_ACCOUNTS)
     ) {
-      blind = row.nearMiss;
+      blind = "program-authority";
     }
   }
   const summary = hasJupiter
@@ -524,6 +646,14 @@ const decodeTransaction = (
         : outflows.length > 0
           ? "transfer"
           : "contract-call";
+  const programAuthority = [...authority.entries()].map(([program, entry]) => ({
+    program,
+    sol: entry.sol,
+    accounts: entry.accounts.map((a) => {
+      const token = atas.get(a);
+      return token === undefined ? { address: a } : { address: a, token };
+    }),
+  }));
   return {
     family: "solana",
     network: request.network,
@@ -534,6 +664,7 @@ const decodeTransaction = (
     ...(staking.length === 0 ? {} : { staking }),
     ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
     ...(programs.length === 0 ? {} : { programs }),
+    ...(programAuthority.length === 0 ? {} : { programAuthority }),
     warnings,
     verifiability,
     ...(blind === undefined ? {} : { blind }),

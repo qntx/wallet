@@ -12,6 +12,7 @@ const GATEWAY = {
     evm: "0123456789abcdef0123456789abcdef",
     solana: "0123456789abcdef0123456789abcdef",
     bitcoin: "0123456789abcdef0123456789abcdef",
+    tron: "0123456789abcdef0123456789abcdef",
     service: "0123456789abcdef0123456789abcdef",
   },
 };

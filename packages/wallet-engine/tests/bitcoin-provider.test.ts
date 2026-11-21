@@ -23,6 +23,7 @@ import type { BitcoinEvent, BitcoinWalletAccount } from "../src/connect/bitcoin.
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
+import { bombedStore, txRowPut } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -41,6 +42,10 @@ const broadcasts: string[] = [];
 const acceptedTxids = new Set<string>();
 /** Index into broadcasts the endpoint refuses with a 400; undefined refuses none. */
 let refusePostAt: number | undefined;
+/** When set, matching engine-store `put`s throw — a test-only persistence bomb. */
+const failPut: {
+  fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+} = { fail: undefined };
 
 /** The raw transaction hex the endpoint was asked to broadcast. */
 const postedWire = (): string => {
@@ -55,6 +60,7 @@ const resetBroadcastMock = (): void => {
   broadcasts.length = 0;
   acceptedTxids.clear();
   refusePostAt = undefined;
+  failPut.fail = undefined;
 };
 
 /**
@@ -123,7 +129,8 @@ async function rig() {
     now: () => Date.now(),
     logger: { warn: () => undefined },
     showCallsStatus: () => undefined,
-    openStore: async () => Promise.resolve(createMemoryEngineStore({ collections: backing })),
+    openStore: async () =>
+      Promise.resolve(bombedStore(createMemoryEngineStore({ collections: backing }), failPut)),
     rpc: { [MAINNET]: ["https://esplora.invalid"] },
   });
   const info = await wallet.wallets.importMnemonic({
@@ -556,6 +563,116 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       ]);
       expect(txs.filter((tx) => tx.state === "failed")).toHaveLength(1);
       expect(r.engine.requests.getState().requests[String(request?.id)]?.stage).toBe("submitted");
+    } finally {
+      resetBroadcastMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a store failure on a broadcast PSBT's submitted row never reaches the page", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      resetBroadcastMock();
+      const batch = async (nth: number) => {
+        failPut.fail = txRowPut(['"state":"submitted"'], nth);
+        const first = dappPsbt({
+          from: BIP84_FIRST,
+          to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+          value: 100_000n,
+        });
+        const second = dappPsbt({
+          from: BIP84_FIRST,
+          to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+          value: 50_000n,
+          prevFill: 8,
+        });
+        const { settled, approve } = await signPsbt(
+          r,
+          [
+            {
+              psbt: first,
+              chain: "bitcoin:mainnet",
+              inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+            },
+            {
+              psbt: second,
+              chain: "bitcoin:mainnet",
+              inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+            },
+          ],
+          "bitcoin:signAndSendTransaction",
+        );
+        await approve();
+        const done = (await settled) as { value: Array<{ txId: string }> };
+        const txids = broadcasts.map((body) => Transaction.fromRaw(hex.decode(body)).id);
+        expect(txids).toHaveLength(2);
+        expect(done.value).toStrictEqual(txids.map((txId) => ({ txId })));
+      };
+      await batch(1);
+      resetBroadcastMock();
+      await batch(2);
+    } finally {
+      resetBroadcastMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a durable write failure stops the batch and names what went out, not a refusal", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      resetBroadcastMock();
+      // Item 1's durable (pre-broadcast) write throws — it never reaches the endpoint.
+      failPut.fail = txRowPut(['"state":"signed"', '"hash":"'], 2);
+      const first = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 100_000n,
+      });
+      const second = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 50_000n,
+        prevFill: 8,
+      });
+      const { settled, approve } = await signPsbt(
+        r,
+        [
+          {
+            psbt: first,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+          {
+            psbt: second,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+        ],
+        "bitcoin:signAndSendTransaction",
+      );
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      expect(broadcasts).toHaveLength(1); // only item 0 ever left
+      const [wire0] = broadcasts;
+      const txid0 = Transaction.fromRaw(hex.decode(String(wire0))).id;
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining("transaction 1 was not sent") },
+      });
+      expect(outcome).toMatchObject({ error: { message: expect.stringContaining(txid0) } });
+      expect(outcome).not.toMatchObject({
+        error: { message: expect.stringContaining("network refused") },
+      });
+      const submitted = Object.values(r.engine.transactions.getState().txs).filter(
+        (tx) => tx.state === "submitted",
+      );
+      expect(submitted.map((tx) => tx.hash)).toStrictEqual([txid0]);
     } finally {
       resetBroadcastMock();
       r.engine.unsubscribe();

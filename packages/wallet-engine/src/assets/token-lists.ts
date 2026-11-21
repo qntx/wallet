@@ -1,9 +1,11 @@
 /**
  * The engine's copy of the gateway's token lists: one document per network, fetched at most once
  * per six hours with `if-none-match` revalidation (304 when unchanged), persisted in the
- * `token-lists` collection so a wallet opens with last session's lists. A fetch failure blocks
- * retries for ten minutes, a document older than the stored one is a rollback and is ignored, and
- * without a configured gateway there are no lists at all.
+ * `token-lists` collection so a wallet opens with last session's lists. A 404 `unsupported` or
+ * `unknown-network` means the network has no list here at all and is stored as empty (an
+ * `unsupported` answer is permanent — the stored list ages out before it is asked again); any other
+ * fetch failure blocks retries for ten minutes, a document older than the stored one is a rollback
+ * and is ignored, and without a configured gateway there are no lists at all.
  */
 import * as z from "zod/mini";
 
@@ -11,6 +13,7 @@ import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
 import {
+  gatewayError,
   parseWith,
   tokenListEntry,
   tokenListPath,
@@ -143,8 +146,14 @@ export class TokenLists {
         return;
       }
       if (response.status === 404) {
-        await this.persist(network, { version: 0, fetchedAt: now(), tokens: [] }, epoch);
-        return;
+        // Only a recognised gateway code means "no list here": `unsupported` (no source covers
+        // the network — permanent) and `unknown-network`. A bare 404 is a fetch failure — back off.
+        const error = parseWith(gatewayError, await response.json());
+        if (error?.error === "unsupported" || error?.error === "unknown-network") {
+          await this.persist(network, { version: 0, fetchedAt: now(), tokens: [] }, epoch);
+          return;
+        }
+        throw new Error(`token list status ${String(response.status)}`);
       }
       if (response.status !== 200) {
         throw new Error(`token list status ${String(response.status)}`);

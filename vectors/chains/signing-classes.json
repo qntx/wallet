@@ -1,7 +1,8 @@
 {
   "signers": {
     "evm": "0x2222222222222222222222222222222222222222",
-    "tron": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG"
+    "tron": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+    "solana": "11111111111111111111111111111112"
   },
   "cases": [
     {
@@ -28,16 +29,16 @@
           "to": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
         }
       },
-      "verifiability": "opaque",
+      "verifiability": "full",
       "blind": null,
       "prompt": {
         "en": {
-          "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, function 0xd0e30db0\nSend 1 ETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nMax fee 0.000196608 ETH"
+          "title": "Confirm swap",
+          "description": "Network: Ethereum\nSend 1 ETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nReceive at least 1 WETH at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
-          "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2，函数 0xd0e30db0\n发送 1 ETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n最高手续费 0.000196608 ETH"
+          "title": "确认兑换",
+          "description": "网络：Ethereum\n发送 1 ETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n至少收到 1 WETH，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -220,16 +221,16 @@
           }
         }
       },
-      "verifiability": "opaque",
+      "verifiability": "partial",
       "blind": null,
       "prompt": {
         "en": {
-          "title": "Confirm signature",
-          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nThe wallet cannot verify what this signature authorises\nsellToken: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver: 0x2222222222222222222222222222222222222222\nsellAmount: 1000000\nbuyAmount: 1\nvalidTo: 2000000000\nappData: 0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount: 0\nkind: sell\npartiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20"
+          "title": "Confirm swap",
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x2222222222222222222222222222222222222222 receives at least 0.000000000000000001 WETH\nValid until 2033-05-18 03:33 (UTC)"
         },
         "zh-Hans": {
-          "title": "确认签名",
-          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n钱包无法核实此签名授权的内容\nsellToken：0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken：0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver：0x2222222222222222222222222222222222222222\nsellAmount：1000000\nbuyAmount：1\nvalidTo：2000000000\nappData：0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount：0\nkind：sell\npartiallyFillable：false\nsellTokenBalance：erc20\nbuyTokenBalance：erc20"
+          "title": "确认兑换",
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x2222222222222222222222222222222222222222 至少收到 0.000000000000000001 WETH\n有效期至 2033-05-18 03:33（UTC）"
         }
       }
     },
@@ -498,11 +499,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "App: Ether Mail\nNetwork: Ethereum\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\nThe wallet cannot verify what this signature authorises\nfrom.name: Cow\nfrom.wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name: Bob\nto.wallet: 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents: Hello, Bob!"
+          "description": "App: Ether Mail\nNetwork: Ethereum\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\nThe wallet cannot verify what this signature authorises\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "应用：Ether Mail\n网络：Ethereum\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n钱包无法核实此签名授权的内容\nfrom.name：Cow\nfrom.wallet：0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name：Bob\nto.wallet：0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents：Hello, Bob!"
+          "description": "应用：Ether Mail\n网络：Ethereum\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n钱包无法核实此签名授权的内容\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!"
         }
       }
     },
@@ -626,11 +627,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThe wallet cannot verify what this signature authorises\nf0: 1\nf1: 1\nf2: 1\nf3: 1\nf4: 1\nf5: 1\nf6: 1\nf7: 1\nf8: 1\nf9: 1\nf10: 1\nf11: 1\nf12: 1\nf13: 1\nf14: 1\nf15: 1"
+          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThe wallet cannot verify what this signature authorises\n· f0 = 1\n· f1 = 1\n· f2 = 1\n· f3 = 1\n· f4 = 1\n· f5 = 1\n· f6 = 1\n· f7 = 1\n· f8 = 1\n· f9 = 1\n· f10 = 1\n· f11 = 1\n· f12 = 1\n· f13 = 1\n· f14 = 1\n· f15 = 1"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n钱包无法核实此签名授权的内容\nf0：1\nf1：1\nf2：1\nf3：1\nf4：1\nf5：1\nf6：1\nf7：1\nf8：1\nf9：1\nf10：1\nf11：1\nf12：1\nf13：1\nf14：1\nf15：1"
+          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n钱包无法核实此签名授权的内容\n· f0 = 1\n· f1 = 1\n· f2 = 1\n· f3 = 1\n· f4 = 1\n· f5 = 1\n· f6 = 1\n· f7 = 1\n· f8 = 1\n· f9 = 1\n· f10 = 1\n· f11 = 1\n· f12 = 1\n· f13 = 1\n· f14 = 1\n· f15 = 1"
         }
       }
     },
@@ -896,11 +897,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nmessage: 0xabababababababababababababababababababababababababababababababab"
+          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· message = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nmessage：0xabababababababababababababababababababababababababababababababab"
+          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· message = 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -984,16 +985,16 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nfrom: 0x2222222222222222222222222222222222222222\nto: 0x00000000000000000000000000000000000BAd00\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: 0xabababababababababababababababababababababababababababababababab"
+          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nfrom：0x2222222222222222222222222222222222222222\nto：0x00000000000000000000000000000000000BAd00\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：0xabababababababababababababababababababababababababababababababab"
+          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
     {
-      "name": "Seaport OrderComponents, five offers (over the prompt limit)",
+      "name": "Seaport OrderComponents, nine offers (over the prompt limit)",
       "request": {
         "kind": "evm.typed-data",
         "network": "eip155:1",
@@ -1163,6 +1164,34 @@
                 "identifierOrCriteria": "0",
                 "startAmount": "1000000000000000000",
                 "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
               }
             ],
             "consideration": [
@@ -1190,11 +1219,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n0x2222222222222222222222222222222222222222 receives 0 ETH"
+          "description": "App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n0x2222222222222222222222222222222222222222 receives 0 ETH"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n0x2222222222222222222222222222222222222222 收到 0 ETH"
+          "description": "应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n0x2222222222222222222222222222222222222222 收到 0 ETH"
         }
       }
     },
@@ -1218,11 +1247,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW��N4ǵH�TP`M�tI��1�2ܽtaɮ;y"
         }
       }
     },
@@ -1246,11 +1275,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n0xabababababababababababababababababababababababababababababababab"
+          "description": "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n0xabababababababababababababababababababababababababababababababab"
+          "description": "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -1556,11 +1585,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Testnet\nsigners: [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce: 1700000001600"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Testnet\n· signers = [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\n· nonce = 1700000001600"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Testnet\nsigners：[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce：1700000001600"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Testnet\n· signers = [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\n· nonce = 1700000001600"
         }
       }
     },
@@ -1642,11 +1671,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000"
         }
       }
     },
@@ -1722,11 +1751,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000"
         }
       }
     },
@@ -1790,11 +1819,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         }
       }
     },
@@ -2338,11 +2367,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xE111180000d2663C0091e4f400237545B87B996B\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xE111180000d2663C0091e4f400237545B87B996B\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xE111180000d2663C0091e4f400237545B87B996B\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xE111180000d2663C0091e4f400237545B87B996B\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2451,11 +2480,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0x00000000000000000000000000000000C0FfeE00\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0x00000000000000000000000000000000C0FfeE00\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0x00000000000000000000000000000000C0FfeE00\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0x00000000000000000000000000000000C0FfeE00\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2564,11 +2593,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 800000080650\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount: 40000000\ntakerAmount: 80000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777957000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 800000080650\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 6048711698446802097821302547443908381638681757684206197981905346932645477957\n· makerAmount = 40000000\n· takerAmount = 80000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777957000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：800000080650\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount：40000000\ntakerAmount：80000000\nside：0\nsignatureType：0\ntimestamp：1777777957000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 800000080650\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 6048711698446802097821302547443908381638681757684206197981905346932645477957\n· makerAmount = 40000000\n· takerAmount = 80000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777957000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2637,11 +2666,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\naddress: 0x2222222222222222222222222222222222222222\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket"
+          "description": "App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· address = 0x2222222222222222222222222222222222222222\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\naddress：0x2222222222222222222222222222222222222222\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket"
+          "description": "应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· address = 0x2222222222222222222222222222222222222222\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket"
         }
       }
     },
@@ -2740,6 +2769,630 @@
         "zh-Hans": {
           "title": "确认盲签",
           "description": "网络：Polygon\nPolymarket 存款钱包 0x3000000000000000000000000000000000000003 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n钱包无法核实此调用会做什么\n以本账户的全部权限执行其自身代码\n调用合约 0x3000000000000000000000000000000000000003，函数 0x095ea7b3"
+        }
+      }
+    },
+    {
+      "name": "1inch LOP v4 Order at Aggregation Router v6 (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "receiver",
+                "type": "address"
+              },
+              {
+                "name": "makerAsset",
+                "type": "address"
+              },
+              {
+                "name": "takerAsset",
+                "type": "address"
+              },
+              {
+                "name": "makingAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takingAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "makerTraits",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "1inch Aggregation Router",
+            "version": "6",
+            "chainId": 1,
+            "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+          },
+          "message": {
+            "salt": "0",
+            "maker": "0x2222222222222222222222222222222222222222",
+            "receiver": "0x00000000000000000000000000000000DeaDBeef",
+            "makerAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "takerAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+            "makingAmount": "1000000",
+            "takingAmount": "500000000000000000",
+            "makerTraits": "0"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "App: 1inch Aggregation Router\nNetwork: Ethereum\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x00000000000000000000000000000000DeaDBeef receives at least 0.5 WETH\nNo expiry\nCan be filled in parts at the same rate"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "应用：1inch Aggregation Router\n网络：Ethereum\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x00000000000000000000000000000000DeaDBeef 至少收到 0.5 WETH\n无到期时间\n可按同一价格分批成交"
+        }
+      }
+    },
+    {
+      "name": "UniswapX V3DutchOrder Permit2 witness (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TokenPermissions": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256"
+              }
+            ],
+            "PermitWitnessTransferFrom": [
+              {
+                "name": "permitted",
+                "type": "TokenPermissions"
+              },
+              {
+                "name": "spender",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "witness",
+                "type": "V3DutchOrder"
+              }
+            ],
+            "OrderInfo": [
+              {
+                "name": "reactor",
+                "type": "address"
+              },
+              {
+                "name": "swapper",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "additionalValidationContract",
+                "type": "address"
+              },
+              {
+                "name": "additionalValidationData",
+                "type": "bytes"
+              }
+            ],
+            "V3DutchOrder": [
+              {
+                "name": "info",
+                "type": "OrderInfo"
+              },
+              {
+                "name": "cosigner",
+                "type": "address"
+              },
+              {
+                "name": "startingBaseFee",
+                "type": "uint256"
+              },
+              {
+                "name": "baseInput",
+                "type": "V3DutchInput"
+              },
+              {
+                "name": "baseOutputs",
+                "type": "V3DutchOutput[]"
+              }
+            ],
+            "V3DutchInput": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "curve",
+                "type": "NonlinearDutchDecay"
+              },
+              {
+                "name": "maxAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "adjustmentPerGweiBaseFee",
+                "type": "uint256"
+              }
+            ],
+            "V3DutchOutput": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "curve",
+                "type": "NonlinearDutchDecay"
+              },
+              {
+                "name": "recipient",
+                "type": "address"
+              },
+              {
+                "name": "minAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "adjustmentPerGweiBaseFee",
+                "type": "uint256"
+              }
+            ],
+            "NonlinearDutchDecay": [
+              {
+                "name": "relativeBlocks",
+                "type": "uint256"
+              },
+              {
+                "name": "relativeAmounts",
+                "type": "int256[]"
+              }
+            ]
+          },
+          "primaryType": "PermitWitnessTransferFrom",
+          "domain": {
+            "name": "Permit2",
+            "chainId": 1,
+            "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+          },
+          "message": {
+            "permitted": {
+              "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+              "amount": "100"
+            },
+            "spender": "0x0000000015757c461808EA25Eb309638B62681cf",
+            "nonce": "0",
+            "deadline": "2000000000",
+            "witness": {
+              "info": {
+                "reactor": "0x0000000015757c461808EA25Eb309638B62681cf",
+                "swapper": "0x2222222222222222222222222222222222222222",
+                "nonce": "0",
+                "deadline": "2000000000",
+                "additionalValidationContract": "0x0000000000000000000000000000000000000000",
+                "additionalValidationData": "0x"
+              },
+              "cosigner": "0x00000000000000000000000000000000000BAd00",
+              "startingBaseFee": "0",
+              "baseInput": {
+                "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                "startAmount": "1",
+                "curve": {
+                  "relativeBlocks": "10",
+                  "relativeAmounts": [
+                    "0"
+                  ]
+                },
+                "maxAmount": "9",
+                "adjustmentPerGweiBaseFee": "0"
+              },
+              "baseOutputs": [
+                {
+                  "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                  "startAmount": "2000000",
+                  "curve": {
+                    "relativeBlocks": "10",
+                    "relativeAmounts": [
+                      "0"
+                    ]
+                  },
+                  "recipient": "0x2222222222222222222222222222222222222222",
+                  "minAmount": "1000000",
+                  "adjustmentPerGweiBaseFee": "0"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "App: Permit2\nNetwork: Ethereum\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 0.0000000000000001 WETH once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by 0x2222222222222222222222222222222222222222\nGive at most 0.000000000000000009 WETH\n0x2222222222222222222222222222222222222222 receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "应用：Permit2\n网络：Ethereum\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 0.0000000000000001 WETH 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 0.000000000000000009 WETH\n0x2222222222222222222222222222222222222222 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）"
+        }
+      }
+    },
+    {
+      "name": "Snapshot Vote (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              }
+            ],
+            "Vote": [
+              {
+                "name": "from",
+                "type": "string"
+              },
+              {
+                "name": "space",
+                "type": "string"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint64"
+              },
+              {
+                "name": "proposal",
+                "type": "string"
+              },
+              {
+                "name": "choice",
+                "type": "uint32"
+              },
+              {
+                "name": "reason",
+                "type": "string"
+              },
+              {
+                "name": "app",
+                "type": "string"
+              },
+              {
+                "name": "metadata",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Vote",
+          "domain": {
+            "name": "snapshot",
+            "version": "0.1.4"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "space": "example.eth",
+            "timestamp": "1700000000",
+            "proposal": "0xabababababababababababababababababababababababababababababababab",
+            "choice": "1",
+            "reason": "",
+            "app": "snapshot",
+            "metadata": "{}"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: snapshot\nNetwork: Ethereum\nType: Vote\nThe wallet cannot verify what this signature authorises\n· from = 0x2222222222222222222222222222222222222222\n· space = example.eth\n· timestamp = 1700000000\n· proposal = 0xabababababababababababababababababababababababababababababababab\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：snapshot\n网络：Ethereum\n类型：Vote\n钱包无法核实此签名授权的内容\n· from = 0x2222222222222222222222222222222222222222\n· space = example.eth\n· timestamp = 1700000000\n· proposal = 0xabababababababababababababababababababababababababababababababab\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}"
+        }
+      }
+    },
+    {
+      "name": "0x Exchange Proxy order shape (claim near miss)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "anything",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "ZeroEx",
+            "version": "1.0.0",
+            "chainId": 1,
+            "verifyingContract": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF"
+          },
+          "message": {
+            "anything": "1"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: ZeroEx\nNetwork: Ethereum\nVerifying contract 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· anything = 1"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：ZeroEx\n网络：Ethereum\n验证合约 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· anything = 1"
+        }
+      }
+    },
+    {
+      "name": "solana SPL Token Transfer (unchecked)",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010400000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9000000000000000000000000000000000000000000000000000000000000000001030302010009030500000000000000"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Solana\nThere may be other outflows\nSend 5 base units of the token in account So11111111111111111111111111111111111111112 to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 发送 5 个最小单位到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana SPL Token Burn",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "010002040000000000000000000000000000000000000000000000000000000000000001069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001040404040404040404040404040404040404040404040404040404040404040406ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9000000000000000000000000000000000000000000000000000000000000000001030301020009080500000000000000"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Solana\nThere may be other outflows\nBurn 5 base units of unverified token GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq from token account So11111111111111111111111111111111111111112; it is destroyed\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 销毁 5 个最小单位（未验证代币 GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq），永久消失\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana Stake Split",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010400000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202080808080808080808080808080808080808080808080808080808080808080806a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000000000000000000000000000000000000000000000000000000000000000000000103030201000c030000000700000000000000"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm staking",
+          "description": "Network: Solana\nSplit 0.000000007 SOL from stake account YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf into 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认质押",
+          "description": "网络：Solana\n从质押账户 YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf 拆分 0.000000007 SOL 到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana unknown program taking the signer",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100020500000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001034b048d53599f9694507e418864615ef2fff40429c2e8ac4b947c700000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a900000000000000000000000000000000000000000000000000000000000000000103040002010409000500000000000000"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana program-authority blind (13 writable accounts)",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010f000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202090909090909090909090909090909090909090909090909090909090909090903030303030303030303030303030303030303030303030303030303030303030a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a04040404040404040404040404040404040404040404040404040404040404040b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b05050505050505050505050505050505050505050505050505050505050505050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c06060606060606060606060606060606060606060606060606060606060606060d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d07070707070707070707070707070707070707070707070707070707070707070808080808080808080808080808080808080808080808080808080808080808034b048d53599f9694507e418864615ef2fff40429c2e8ac4b947c70000000000000000000000000000000000000000000000000000000000000000000000000010e0e0001020406080a0c0d030507090b09000500000000000000"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "program-authority",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
         }
       }
     },
@@ -3407,11 +4060,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n��������\n������������������"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n��������\n������������������"
         }
       }
     },

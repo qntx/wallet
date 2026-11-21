@@ -35,6 +35,7 @@ import type { SolanaWalletAccount } from "../src/connect/solana.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
+import { bombedStore, txRowPut } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -61,6 +62,10 @@ let processedHeight: unknown;
 let send502 = false;
 /** Index into sentWires the node refuses with a simulation error; undefined refuses none. */
 let refuseAt: number | undefined;
+/** When set, matching engine-store `put`s throw — a test-only persistence bomb. */
+const failPut: {
+  fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+} = { fail: undefined };
 
 const resetMock = (): void => {
   sentWires.length = 0;
@@ -70,6 +75,7 @@ const resetMock = (): void => {
   processedHeight = undefined;
   send502 = false;
   refuseAt = undefined;
+  failPut.fail = undefined;
 };
 
 const rpcReply = (method: string, params: unknown[]): unknown => {
@@ -175,7 +181,8 @@ async function rig() {
     now: () => Date.now(),
     logger: { warn: () => undefined },
     showCallsStatus: () => undefined,
-    openStore: async () => Promise.resolve(createMemoryEngineStore({ collections: backing })),
+    openStore: async () =>
+      Promise.resolve(bombedStore(createMemoryEngineStore({ collections: backing }), failPut)),
     rpc: { [SOL_NET]: ["https://solana.invalid"] },
   });
   const info = await wallet.wallets.importMnemonic({
@@ -621,6 +628,82 @@ describe("solana provider over a real kernel", () => {
       expect(submitted.map((tx) => tx.hash)).toStrictEqual([sig0]);
       expect(failed).toHaveLength(1);
       expect(requestStage(r)).toBe("submitted");
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a store failure on a broadcast batch item's submitted row never reaches the page", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      const first = await signAndSendInput(account);
+      const second = await signAndSendInput(account);
+
+      const batch = async (nth: number) => {
+        failPut.fail = txRowPut(['"state":"submitted"'], nth);
+        const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+          transactions: [first, second],
+          chains: ["solana:mainnet", "solana:mainnet"],
+        });
+        await approve();
+        const out = value(await settled) as { signatures: Uint8Array[] };
+        const sent = sentWires.map((w) =>
+          getSignatureFromTransaction(getTransactionDecoder().decode(w)),
+        );
+        expect(sent).toHaveLength(2);
+        expect(out.signatures).toStrictEqual(sent.map((sig) => base58.decode(sig)));
+        expect(requestStage(r)).toBe("submitted");
+      };
+
+      // A failed write on either item's `submitted` row: both sends resolve, nothing errors.
+      await batch(1);
+      resetMock();
+      await batch(2);
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a durable write failure stops the batch and names what went out, not a refusal", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      // Item 1's durable (pre-broadcast) write throws — item 1 never reaches the node.
+      failPut.fail = txRowPut(['"state":"signed"', '"hash":"'], 2);
+      const first = await signAndSendInput(account);
+      const second = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [first, second],
+        chains: ["solana:mainnet", "solana:mainnet"],
+      });
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      expect(sentWires).toHaveLength(1); // only item 0 ever left
+      const [sig0] = sentWires.map((w) =>
+        getSignatureFromTransaction(getTransactionDecoder().decode(w)),
+      );
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining("transaction 1 was not sent") },
+      });
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining(String(sig0)) },
+      });
+      expect(outcome).not.toMatchObject({
+        error: { message: expect.stringContaining("network refused") },
+      });
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.hash).toBe(sig0);
+      expect(tx?.state).toBe("submitted");
     } finally {
       resetMock();
       r.engine.unsubscribe();

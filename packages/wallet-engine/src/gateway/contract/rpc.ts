@@ -98,6 +98,17 @@ export const LOGS_BLOCK_RANGE_MAX = 500;
 export const LOGS_ADDRESS_MAX = 20;
 export const LOGS_TOPIC_ALTERNATIVES_MAX = 20;
 
+/** Eth_getProof storage keys: upstream time scales with them while the published price is flat. */
+export const RPC_PROOF_KEYS_MAX = 100;
+/** Eth_simulateV1 blockStateCalls: upstream time scales with blocks while the price is flat. */
+export const RPC_SIMULATE_BLOCKS_MAX = 16;
+/** Eth_simulateV1 calls across all blocks: upstream time scales with them, the price is flat. */
+export const RPC_SIMULATE_CALLS_MAX = 100;
+/** Eth_feeHistory blockCount: upstream time scales with it while the published price is flat. */
+export const FEE_HISTORY_BLOCKS_MAX = 1024;
+/** Eth_feeHistory rewardPercentiles: upstream time scales with them, the price is flat. */
+export const FEE_HISTORY_PERCENTILES_MAX = 100;
+
 const quantity = z.string().check(z.regex(/^0x[0-9a-fA-F]{1,64}$/));
 const hash32 = z.string().check(z.regex(/^0x[0-9a-fA-F]{64}$/));
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
@@ -186,6 +197,25 @@ export function logsFilterViolation(params: unknown): string | undefined {
     : undefined;
 }
 
+const simulateBlocks = z.array(z.looseObject({ calls: z.optional(z.array(z.unknown())) }));
+
+/** The eth_simulateV1 payload: loose except the bounds its flat price cannot cover. */
+const simulateInput = z.looseObject({}).check(
+  z.refine((input) => {
+    const parsed = z.safeParse(z.looseObject({ blockStateCalls: simulateBlocks }), input);
+    if (!parsed.success) {
+      // No blockStateCalls (or a shape we cannot read): no simulated work to bound.
+      return !("blockStateCalls" in input);
+    }
+    const { blockStateCalls } = parsed.data;
+    return (
+      blockStateCalls.length <= RPC_SIMULATE_BLOCKS_MAX &&
+      blockStateCalls.reduce((sum, block) => sum + (block.calls?.length ?? 0), 0) <=
+        RPC_SIMULATE_CALLS_MAX
+    );
+  }),
+);
+
 /** The params shape each allow-listed EVM method accepts — one entry per method, no wildcards. */
 const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_blobBaseFee: noParams,
@@ -195,9 +225,19 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_createAccessList: z.tuple([callTx, optional(blockParam)], z.unknown()),
   eth_estimateGas: z.tuple([callTx, optional(blockParam)], z.unknown()),
   eth_feeHistory: z.tuple([
-    z.union([quantity, z.int().check(z.nonnegative())]),
+    z.union([quantity, z.int().check(z.nonnegative())]).check(
+      z.refine((count) => {
+        try {
+          return BigInt(count) <= BigInt(FEE_HISTORY_BLOCKS_MAX);
+        } catch {
+          return true; // a malformed count is the union's own refusal, not this bound's
+        }
+      }),
+    ),
     tagOrNumber,
-    optional(z.union([z.array(z.number()), z.null()])),
+    optional(
+      z.union([z.array(z.number()).check(z.maxLength(FEE_HISTORY_PERCENTILES_MAX)), z.null()]),
+    ),
   ]),
   eth_gasPrice: noParams,
   eth_getBalance: z.tuple([evmAddress, optional(blockParam)]),
@@ -210,7 +250,11 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_getLogs: z
     .array(z.unknown())
     .check(z.refine((params) => logsFilterViolation(params) === undefined)),
-  eth_getProof: z.tuple([evmAddress, z.array(z.union([hash32, quantity])), blockParam]),
+  eth_getProof: z.tuple([
+    evmAddress,
+    z.array(z.union([hash32, quantity])).check(z.maxLength(RPC_PROOF_KEYS_MAX)),
+    blockParam,
+  ]),
   eth_getStorageAt: z.tuple([evmAddress, z.union([quantity, hash32]), optional(blockParam)]),
   eth_getTransactionByBlockHashAndIndex: z.tuple([hash32, quantity]),
   eth_getTransactionByBlockNumberAndIndex: z.tuple([tagOrNumber, quantity]),
@@ -219,7 +263,7 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_getTransactionReceipt: z.tuple([hash32]),
   eth_maxPriorityFeePerGas: noParams,
   eth_sendRawTransaction: z.tuple([hexData]),
-  eth_simulateV1: z.tuple([z.looseObject({}), optional(blockParam)]),
+  eth_simulateV1: z.tuple([simulateInput, optional(blockParam)]),
   net_version: noParams,
   web3_clientVersion: noParams,
 };
@@ -281,144 +325,6 @@ export const evmRpcRequest = bodySchema(
 export const solanaRpcRequest = bodySchema(
   z.union(SOLANA_RPC_METHODS.map((method) => callSchema(z.literal(method), SOLANA_PARAMS[method]))),
 );
-
-/**
- * Rate-limit units one call costs, by class — a request's price is the sum of its calls. The
- * classes follow Alchemy's compute units (alchemy.com/docs/reference/compute-unit-costs): point
- * reads are single indexed lookups (0–20 CU), heavy calls run the VM, build a proof or relay a
- * transaction (20–40 CU), and scans scale with chain contents the caller picks (eth_getLogs 60 CU —
- * 30.4 MB measured for 500 blocks of USDC logs; getBlockReceipts ~500 throughput CU — 0.84 MB for
- * one block's receipts).
- */
-export const RPC_COST_WEIGHTS = { point: 1, heavy: 3, scan: 10 } as const;
-export type RpcCostClass = keyof typeof RPC_COST_WEIGHTS;
-
-/** The cost class of every allow-listed method; the param-dependent ones list their base class. */
-export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, RpcCostClass>> = {
-  eth_blobBaseFee: "point",
-  eth_blockNumber: "point",
-  eth_call: "heavy",
-  eth_chainId: "point",
-  eth_createAccessList: "heavy",
-  eth_estimateGas: "heavy",
-  eth_feeHistory: "point",
-  eth_gasPrice: "point",
-  eth_getBalance: "point",
-  eth_getBlockByHash: "point",
-  eth_getBlockByNumber: "point",
-  eth_getBlockReceipts: "scan",
-  eth_getBlockTransactionCountByHash: "point",
-  eth_getBlockTransactionCountByNumber: "point",
-  eth_getCode: "point",
-  eth_getLogs: "scan",
-  eth_getProof: "heavy",
-  eth_getStorageAt: "point",
-  eth_getTransactionByBlockHashAndIndex: "point",
-  eth_getTransactionByBlockNumberAndIndex: "point",
-  eth_getTransactionByHash: "point",
-  eth_getTransactionCount: "point",
-  eth_getTransactionReceipt: "point",
-  eth_maxPriorityFeePerGas: "point",
-  eth_sendRawTransaction: "heavy",
-  eth_simulateV1: "heavy",
-  net_version: "point",
-  web3_clientVersion: "point",
-  getAccountInfo: "point",
-  getBalance: "point",
-  getBlockHeight: "point",
-  getBlockTime: "point",
-  getEpochInfo: "point",
-  getFeeForMessage: "point",
-  getGenesisHash: "point",
-  getLatestBlockhash: "point",
-  getMinimumBalanceForRentExemption: "point",
-  getMultipleAccounts: "point",
-  getRecentPrioritizationFees: "point",
-  getSignatureStatuses: "point",
-  getSignaturesForAddress: "heavy",
-  getSlot: "point",
-  getStakeMinimumDelegation: "point",
-  getTokenAccountBalance: "point",
-  getTokenAccountsByOwner: "point",
-  getTokenSupply: "point",
-  getTransaction: "heavy",
-  getVersion: "point",
-  getVoteAccounts: "scan",
-  isBlockhashValid: "point",
-  sendTransaction: "heavy",
-  simulateTransaction: "heavy",
-};
-
-const costClass = new Map<string, RpcCostClass>(Object.entries(RPC_METHOD_COST));
-
-type RpcCall = { readonly method: string; readonly params?: unknown };
-
-const param = (call: RpcCall, index: number): unknown => {
-  const params = z.safeParse(z.array(z.unknown()), call.params);
-  return params.success ? params.data[index] : undefined;
-};
-
-/** Array elements one unit of a per-element method pays for (accounts, signatures, proof keys). */
-export const RPC_ELEMENTS_PER_UNIT = 10;
-
-const lengthOf = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
-
-/** Started groups of {@link RPC_ELEMENTS_PER_UNIT} elements, at least one. */
-const elementUnits = (value: unknown): number =>
-  Math.max(1, Math.ceil(lengthOf(value) / RPC_ELEMENTS_PER_UNIT));
-
-const simulatedCalls = z.object({
-  blockStateCalls: z.array(z.looseObject({ calls: z.optional(z.array(z.unknown())) })),
-});
-
-/** The blocks or calls an `eth_simulateV1` runs, whichever is more, at least one. */
-const simulationUnits = (call: RpcCall): number => {
-  const parsed = z.safeParse(simulatedCalls, param(call, 0));
-  if (!parsed.success) {
-    return 1;
-  }
-  const { blockStateCalls } = parsed.data;
-  const calls = blockStateCalls.reduce((sum, block) => sum + (block.calls?.length ?? 0), 0);
-  return Math.max(1, blockStateCalls.length, calls);
-};
-
-/**
- * Rate-limit units one validated call costs, including its param-dependent upgrades: an array the
- * caller sizes is paid per {@link RPC_ELEMENTS_PER_UNIT} elements, a simulation per block or call.
- */
-export function rpcCallCost(call: RpcCall): number {
-  const second = param(call, 1);
-  const base = RPC_COST_WEIGHTS[costClass.get(call.method) ?? "point"];
-  if (call.method === "getMultipleAccounts" || call.method === "getSignatureStatuses") {
-    return base * elementUnits(param(call, 0));
-  }
-  if (call.method === "eth_getProof") {
-    return base * elementUnits(second);
-  }
-  if (call.method === "eth_simulateV1") {
-    return base * simulationUnits(call);
-  }
-  if (call.method === "eth_getBlockByHash" || call.method === "eth_getBlockByNumber") {
-    // `params[1] === true` returns full transactions — the answer grows with the block.
-    return RPC_COST_WEIGHTS[second === true ? "scan" : "point"];
-  }
-  if (call.method === "getTokenAccountsByOwner") {
-    // `{ programId }` enumerates every token account of the owner; `{ mint }` is one lookup.
-    return RPC_COST_WEIGHTS[
-      typeof second === "object" && second !== null && "programId" in second ? "scan" : "point"
-    ];
-  }
-  return base;
-}
-
-/** The units a validated single call or batch costs on each rate limiter. */
-export function rpcRequestCost(body: RpcCall | ReadonlyArray<RpcCall>): number {
-  let total = 0;
-  for (const call of "method" in body ? [body] : body) {
-    total += rpcCallCost(call);
-  }
-  return total;
-}
 
 const successResponse = z.object({
   jsonrpc: z.literal("2.0"),

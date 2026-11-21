@@ -114,8 +114,8 @@ export type EngineOptions = {
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
   /**
-   * Host endpoints per network (CAIP-2), ordered by preference, for all three chain families: EVM
-   * and Solana JSON-RPC URLs, and for Bitcoin the Esplora base URL.
+   * Host endpoints per network (CAIP-2), ordered by preference, per family: EVM and Solana JSON-RPC
+   * URLs, the Esplora base URL for Bitcoin, full-node HTTP base URLs for TRON.
    */
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /**
@@ -141,14 +141,50 @@ export type EngineOptions = {
 export type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
 
 /**
- * A controller as hosts hold it: its state, read-only, and the methods named in `K`. Lifecycle and
- * the wiring between controllers stay with the engine, and a method added to a controller is not
- * host API until it is listed here.
+ * Read-only view all the way down: primitives and functions pass through, `Uint8Array` and the
+ * other ArrayBuffer views stay as-is (they are runtime-frozen only as objects, and their contents
+ * are engine inputs anyway — the runtime freeze cannot cover them), arrays become ReadonlyArray,
+ * Map/Set their readonly twins, and every other object is mapped readonly recursively.
+ */
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends
+        | Uint8Array
+        | Uint8ClampedArray
+        | Int8Array
+        | Int16Array
+        | Int32Array
+        | Uint16Array
+        | Uint32Array
+        | Float16Array
+        | Float32Array
+        | Float64Array
+        | BigInt64Array
+        | BigUint64Array
+        | DataView
+    ? T
+    : T extends ReadonlyArray<infer E>
+      ? ReadonlyArray<DeepReadonly<E>>
+      : T extends ReadonlyMap<infer K, infer V>
+        ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
+        : T extends ReadonlySet<infer E>
+          ? ReadonlySet<DeepReadonly<E>>
+          : T extends Record<PropertyKey, unknown>
+            ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+            : T;
+
+/**
+ * A controller as hosts hold it: its state, deeply read-only, and the methods named in `K`.
+ * Lifecycle and the wiring between controllers stay with the engine, and a method added to a
+ * controller is not host API until it is listed here.
  */
 export type HostController<
   C extends Controller<Record<string, unknown>>,
   K extends Exclude<keyof C, "store">,
-> = Pick<C, "getState" | K> & { readonly store: ReadonlyStore<ReturnType<C["getState"]>> };
+> = Pick<C, Exclude<K, "getState">> & {
+  readonly getState: () => DeepReadonly<ReturnType<C["getState"]>>;
+  readonly store: ReadonlyStore<DeepReadonly<ReturnType<C["getState"]>>>;
+};
 
 export type WalletEngine = {
   readonly networks: HostController<
@@ -249,7 +285,7 @@ export type WalletEngine = {
   >;
   readonly watch: {
     readonly add: (input: {
-      readonly family: "evm" | "solana" | "bitcoin";
+      readonly family: "evm" | "solana" | "bitcoin" | "tron";
       readonly address: string;
       readonly name?: string;
     }) => Promise<WatchAccount>;
@@ -500,6 +536,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             [
               ["evm.bip44", "evm"],
               ["solana.bip44-change", "solana"],
+              ["tron.bip44", "tron"],
               ["btc.bip84", "bitcoin"],
               ["btc.bip86", "bitcoin"],
             ] as const
@@ -611,7 +648,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           kind: "solana.transactions" as const,
           send: true,
           signatures: batch.ids,
-          ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+          ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
         };
       }
       normalizeSolana(
@@ -654,7 +691,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids, refused } = await signDappPsbts(
+      const { signedPsbts, txids, stopped } = await signDappPsbts(
         chains(options.wallet),
         prepared,
         send,
@@ -666,7 +703,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         kind: "bitcoin.psbts" as const,
         signedPsbts,
         txids,
-        ...(refused === undefined ? {} : { refused }),
+        ...(stopped === undefined ? {} : { stopped }),
       };
     },
     bitcoinSign: async (account, network, request, verify) => {
@@ -776,18 +813,24 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   /** The group's address on the family's networks, or none when the group has no such account. */
   const groupAddresses = async (
     group: { readonly walletId: string; readonly groupIndex: number },
-    family: "evm" | "solana",
+    family: "evm" | "solana" | "tron",
   ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
     const enabled = networks.enabled(family);
     const [first] = enabled;
     if (first === undefined) {
       return [];
     }
+    const template =
+      family === "evm"
+        ? ("evm.bip44" as const)
+        : family === "solana"
+          ? ("solana.bip44-change" as const)
+          : ("tron.bip44" as const);
     try {
       // One derivation serves every network of the family: the address does not depend on it.
       const account = await chains(options.wallet).account({
         ...group,
-        template: family === "evm" ? "evm.bip44" : "solana.bip44-change",
+        template,
         network: first,
       });
       return "address" in account
@@ -847,6 +890,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     enabledNetworks: () => [
       ...networks.enabled("evm"),
       ...networks.enabled("solana"),
+      ...networks.enabled("tron"),
       ...networks.enabled("bitcoin"),
     ],
     nostrPubkey: async (ref) => nostr(options.wallet).signer(ref).getPublicKey(),
@@ -1030,16 +1074,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     prices,
     portfolio: {
       group: async (group) => {
-        const [evm, solana] = await Promise.all([
+        const [evm, solana, tron] = await Promise.all([
           groupAddresses(group, "evm"),
           groupAddresses(group, "solana"),
+          groupAddresses(group, "tron"),
         ]);
         const holdings = groupHoldings({
           balances: assets.getState().balances,
           spark: controller.getState().accounts,
           sparkNetwork: options.sparkNetwork,
           group,
-          addresses: [...evm, ...solana],
+          addresses: [...evm, ...solana, ...tron],
           bitcoin: networks.enabled("bitcoin"),
         });
         return valueHoldings(holdings, prices.getState(), options.now());

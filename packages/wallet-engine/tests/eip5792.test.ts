@@ -19,11 +19,14 @@ import { TransactionController } from "../src/transactions/controller.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { approval } from "./approval.ts";
 import {
+  bombedStore,
   bookDeps,
   idleNetworkDeps,
+  mapSize,
   simulateSolanaStub,
   simulateV1Result,
   tokensStub,
+  txRowPut,
 } from "./send-helpers.ts";
 
 const DELEGATOR = EVM_DELEGATOR.address;
@@ -120,7 +123,11 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
         });
   };
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
-  const openStore = async () => Promise.resolve(createMemoryEngineStore(backing));
+  const bomb: {
+    fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+  } = { fail: undefined };
+  const openStore = async () =>
+    Promise.resolve(bombedStore(createMemoryEngineStore(backing), bomb));
   const networks = new NetworkController({
     ...idleNetworkDeps,
     fetch: fetchImpl,
@@ -133,6 +140,7 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
         evm: "a".repeat(32),
         solana: "a".repeat(32),
         bitcoin: "a".repeat(32),
+        tron: "a".repeat(32),
         service: "a".repeat(32),
       },
     },
@@ -255,6 +263,7 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     }
   };
   return {
+    bomb,
     transactions,
     requests,
     connections,
@@ -623,7 +632,6 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
 });
 
 describe("dApp transaction signing classes", () => {
-  const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
   const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -652,7 +660,6 @@ describe("dApp transaction signing classes", () => {
     await w.start();
     await w.connect();
     const txs = [
-      { to: WETH, data: "0xd0e30db0", value: "0xde0b6b3a7640000" },
       { to: AAVE_V3, data: SUPPLY },
       { to: ROUTER, data: EXECUTE, value: "0x2386f26fc10000" },
     ];
@@ -690,5 +697,46 @@ describe("dApp transaction signing classes", () => {
     expect(w.requests.getState().requests[id]?.stage).toBe("awaiting-approval");
     w.requests.reject(id);
     await expect(done).rejects.toMatchObject({ code: 4001 });
+  });
+});
+
+describe("a post-broadcast store failure", () => {
+  it("wallet_sendCalls still answers when the call-batches write fails", async () => {
+    const w = world({ code: none });
+    await w.start();
+    await w.connect();
+    w.bomb.fail = (collection) => collection === "call-batches";
+    const sequential = w.handler.handle(SITE, {
+      method: "wallet_sendCalls",
+      params: [SEND_PARAMS],
+    });
+    await w.approveNext();
+    await w.approveNext();
+    const record = (await sequential) as { id: string };
+    expect(record.id).toBeTypeOf("string");
+    expect(w.signedRequests).toHaveLength(2);
+    // The batch lives in memory: status resolves even though the row never persisted.
+    const status = (await w.handler.handle(SITE, {
+      method: "wallet_getCallsStatus",
+      params: [record.id],
+    })) as { atomic: boolean; status: number };
+    expect(status.atomic).toBe(false);
+    expect(mapSize(w.backing.collections.get("call-batches"))).toBe(0);
+  });
+
+  it("eth_sendTransaction resolves its hash when the submitted write fails", async () => {
+    const w = world();
+    await w.start();
+    await w.connect();
+    w.bomb.fail = txRowPut(['"state":"submitted"']);
+    const done = w.handler.handle(SITE, {
+      method: "eth_sendTransaction",
+      params: [{ from: ADDR, chainId: 1, to: TARGET, data: "0x", value: "0x1" }],
+    });
+    await w.approveNext();
+    const hash = (await done) as string;
+    const [tracked] = Object.values(w.transactions.getState().txs);
+    expect(hash).toBe(tracked?.hash);
+    expect(tracked?.state).toBe("submitted");
   });
 });

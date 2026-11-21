@@ -22,11 +22,13 @@ import type { PublicClient } from "viem";
 
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { solanaTokenTable } from "@qntx/wallet-chains/solana";
+import { tronTokenTable, isTronAddress } from "@qntx/wallet-chains/tron";
 import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
 import { evmRpcHex } from "../chains/evm.ts";
+import { account, resources, reward } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
@@ -43,6 +45,16 @@ import type { MintFacts } from "./solana.ts";
 import { spamReasons, symbolOwners } from "./spam.ts";
 import type { SpamReason } from "./spam.ts";
 import { TokenLists } from "./token-lists.ts";
+import {
+  mapPool,
+  trc10Balances,
+  tronAccountView,
+  tronBalanceOf,
+  tronDiscoveredTokens,
+  tronTokenMeta,
+  tronTrc10Meta,
+} from "./tron.ts";
+import type { TronAccountView, TronTokenMeta } from "./tron.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
 
@@ -83,6 +95,8 @@ export type AccountBalances = {
   readonly sources?: Readonly<Partial<Record<BitcoinSourceKey, BitcoinTotals>>>;
   /** Bitcoin only — every UTXO seen, with the source that produced it and its spend protection. */
   readonly utxos?: ReadonlyArray<BitcoinUtxoView>;
+  /** TRON only — the stake/resource view of the account. */
+  readonly tron?: TronAccountView;
 };
 
 export type AssetsControllerState = {
@@ -127,6 +141,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
   private readonly meta = new Map<string, EvmTokenMetadata>();
   /** Mint facts per `network:mint` for this unlock — each mint is inspected at most once. */
   private readonly mints = new Map<string, MintFacts | "missing">();
+  private readonly tronMeta = new Map<string, TronTokenMeta | "missing">();
   /** State key → the held list tokens found on the last discovery scan, and when it ran. */
   private readonly discovered = new Map<
     string,
@@ -197,6 +212,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.visibility.clear();
     this.meta.clear();
     this.mints.clear();
+    this.tronMeta.clear();
     this.discovered.clear();
     this.tracked.clear();
     this.lists.clear();
@@ -257,6 +273,171 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   /**
+   * TRON: liquid TRX plus TRC-20/TRC-10 rows and the stake-resource view. TRC-20 reads are
+   * per-contract `triggerconstantcontract`s (no canonical Multicall — see assets/tron.ts);
+   * discovery comes from the TronGrid indexer path and only exists when the gateway serves the
+   * network, since the route is the only indexer source.
+   */
+  private async refreshTron(
+    owner: string,
+    network: string,
+    generation: number,
+  ): Promise<AccountBalances> {
+    const api = this.options.networks.tronApi(network);
+    const row = await account(api, owner);
+    if (row === undefined) {
+      // An account that does not exist on chain has no resources and no token rows either.
+      return this.record(
+        key(network, owner),
+        { native: "0", tokens: [] },
+        async () => this.refresh(owner, network),
+        generation,
+      );
+    }
+    const [res, rew] = await Promise.all([resources(api, owner), reward(api, owner)]);
+    const tron = tronAccountView(row, res, rew);
+    const native = BigInt(Math.trunc(row.balance ?? 0)).toString(10);
+
+    const table = tronTokenTable[network] ?? {};
+    const list = await this.lists.entries(network);
+    const owners = symbolOwners([...Object.entries(table), ...list]);
+    const builtin = new Map(
+      await mapPool(
+        Object.keys(table),
+        4,
+        async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
+      ),
+    );
+
+    const metaKey = (id: string): string => `${network}:${id}`;
+    const custom = (this.customTokens.get(network) ?? []).filter(
+      (contract) => table[contract] === undefined && isTronAddress(contract),
+    );
+    const customSet = new Set(custom);
+    const discovered =
+      this.options.gateway === undefined
+        ? new Map<string, bigint>()
+        : await tronDiscoveredTokens(api, owner).catch(() => new Map<string, bigint>());
+    const trc10 = trc10Balances(row);
+
+    // The metadata queue reads each contract/id once per unlock, capped per refresh.
+    const wanted = [
+      ...custom.filter((c) => !this.tronMeta.has(metaKey(c))),
+      ...[...discovered.keys()]
+        .filter(
+          (c) => table[c] === undefined && !customSet.has(c) && !this.tronMeta.has(metaKey(c)),
+        )
+        .sort(),
+      ...trc10
+        .map((t) => t.id)
+        .filter((id) => !this.tronMeta.has(metaKey(id)))
+        .sort(),
+    ].slice(0, INSPECT_PER_REFRESH);
+    await mapPool(wanted, 4, async (id) => {
+      const meta = isTronAddress(id)
+        ? await tronTokenMeta(api, owner, id)
+        : await tronTrc10Meta(api, id);
+      this.tronMeta.set(metaKey(id), meta ?? "missing");
+    });
+    const customBalances = new Map(
+      await mapPool(
+        custom.filter((c) => !discovered.has(c)),
+        4,
+        async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
+      ),
+    );
+    const meta = (id: string): TronTokenMeta | "missing" | undefined =>
+      this.tronMeta.get(metaKey(id));
+
+    const rows: TokenBalance[] = [];
+    for (const [contract, known] of Object.entries(table)) {
+      rows.push({
+        address: contract,
+        symbol: known.symbol,
+        ...(known.name === undefined ? {} : { name: known.name }),
+        decimals: known.decimals,
+        balance: (builtin.get(contract) ?? 0n).toString(10),
+        verified: true,
+        spam: [],
+        hidden: this.hiddenFor(network, contract, []),
+      });
+    }
+    for (const contract of custom) {
+      const read = meta(contract);
+      if (read === undefined || read === "missing") {
+        continue;
+      }
+      const balance = discovered.get(contract) ?? customBalances.get(contract) ?? 0n;
+      const spam = spamReasons({
+        address: contract,
+        symbol: read.symbol,
+        name: read.name,
+        owners,
+      });
+      rows.push({
+        address: contract,
+        symbol: read.symbol ?? "?",
+        ...(read.name === undefined ? {} : { name: read.name }),
+        decimals: read.decimals,
+        balance: balance.toString(10),
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, contract, spam),
+      });
+    }
+    for (const [contract, balance] of [...discovered.entries()].sort(([a], [b]) =>
+      a < b ? -1 : 1,
+    )) {
+      if (table[contract] !== undefined || customSet.has(contract)) {
+        continue;
+      }
+      const read = meta(contract);
+      if (read === undefined || read === "missing") {
+        continue;
+      }
+      const spam = spamReasons({
+        address: contract,
+        symbol: read.symbol,
+        name: read.name,
+        owners,
+      });
+      rows.push({
+        address: contract,
+        symbol: read.symbol ?? "?",
+        ...(read.name === undefined ? {} : { name: read.name }),
+        decimals: read.decimals,
+        balance: balance.toString(10),
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, contract, spam),
+      });
+    }
+    for (const { id, balance } of trc10) {
+      const read = meta(id);
+      if (read === undefined || read === "missing") {
+        continue;
+      }
+      const spam = spamReasons({ address: id, symbol: read.symbol, name: read.name, owners });
+      rows.push({
+        address: id,
+        symbol: read.symbol ?? "?",
+        ...(read.name === undefined ? {} : { name: read.name }),
+        decimals: read.decimals,
+        balance: balance.toString(10),
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, id, spam),
+      });
+    }
+    return this.record(
+      key(network, owner),
+      { native, tokens: rows, tron },
+      async () => this.refresh(owner, network),
+      generation,
+    );
+  }
+
+  /**
    * The visibility verdict of one token: explicit `hidden` wins, explicit `shown` keeps even a
    * flagged token, and anything else hides exactly when it carries a spam reason.
    */
@@ -271,6 +452,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       return this.refreshSolana(address, network, generation);
+    }
+    if (info.family === "tron") {
+      return this.refreshTron(address, network, generation);
     }
     if (info.family === "bitcoin") {
       return this.refreshBitcoinAddress(address, network, generation);
@@ -335,8 +519,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
   ): Promise<ReadonlyArray<TokenBalance>> {
     const info = this.options.networks.info(network);
     const table = evmTokenTable[String(info.chainId)] ?? {};
-    const tableKeys = Object.keys(table);
-    const tableByLower = new Map(tableKeys.map((k) => [k.toLowerCase(), k]));
+    // A native alias is the native balance's ERC-20 view — never a separate balance read.
+    const tableKeys = Object.keys(table).filter((a) => table[a]?.role !== "native-alias");
+    const tableByLower = new Map(Object.keys(table).map((k) => [k.toLowerCase(), k]));
     const custom = (this.customTokens.get(network) ?? []).filter(
       (a) => !tableByLower.has(a.toLowerCase()),
     );
@@ -368,10 +553,16 @@ export class AssetsController extends Controller<AssetsControllerState> {
       });
     }
 
-    await this.loadEvmMetadata(client, multicall3, network, [
-      ...custom.map((address) => ({ address, symbol: true })),
-      ...[...held.keys()].map((address) => ({ address, symbol: false })),
-    ]);
+    await this.loadEvmMetadata(
+      client,
+      multicall3,
+      network,
+      [
+        ...custom.map((address) => ({ address, symbol: true })),
+        ...[...held.keys()].map((address) => ({ address, symbol: false })),
+      ],
+      generation,
+    );
 
     const rows: TokenBalance[] = [];
     for (const [i, address] of tableKeys.entries()) {
@@ -463,6 +654,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     multicall3: string | undefined,
     network: string,
     wants: ReadonlyArray<{ readonly address: string; readonly symbol: boolean }>,
+    generation: number,
   ): Promise<void> {
     const missing = wants.filter(
       (want) => this.meta.get(`${network}:${want.address.toLowerCase()}`) === undefined,
@@ -471,6 +663,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     const read = await readEvmMetadata(client, multicall3, missing);
+    if (generation !== this.generation) {
+      return;
+    }
     for (const [i, want] of missing.entries()) {
       const got = read[i];
       if (got !== undefined && got.decimals !== undefined) {
@@ -543,8 +738,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const wanted = queue.slice(0, INSPECT_PER_REFRESH);
     if (wanted.length > 0) {
       const inspected = await inspectMints(rpc, wanted);
-      for (const [mint, facts] of inspected) {
-        this.mints.set(`${network}:${mint}`, facts);
+      if (generation === this.generation) {
+        for (const [mint, facts] of inspected) {
+          this.mints.set(`${network}:${mint}`, facts);
+        }
       }
     }
     const facts = (mint: string): MintFacts | "missing" | undefined =>
@@ -725,6 +922,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
    * verdict applies on the next refresh: a flag stays hidden until explicitly shown.
    */
   async setTokenHidden(network: string, address: string, hidden: boolean): Promise<void> {
+    if (this.engineStore === undefined) {
+      throw new Error("assets require an unlocked vault");
+    }
     const info = this.options.networks.info(network);
     let canonical: string;
     if (info.family === "evm") {
@@ -779,6 +979,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /** Reads the mint on-chain, marks unverified, persists; throws when the read fails. */
   async addToken(network: string, address: string): Promise<void> {
+    if (this.engineStore === undefined) {
+      throw new Error("assets require an unlocked vault");
+    }
+    const { generation } = this;
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       if ((solanaTokenTable[network] ?? {})[address] !== undefined) {
@@ -790,7 +994,23 @@ export class AssetsController extends Controller<AssetsControllerState> {
       if (facts === undefined || facts === "missing") {
         throw new TypeError(`${address} is not a readable SPL mint on ${network}`);
       }
+      if (generation !== this.generation) {
+        return;
+      }
       this.mints.set(`${network}:${address}`, facts);
+      await this.persistToken(network, address);
+      return;
+    }
+    if (info.family === "tron") {
+      if (!isTronAddress(address) || (tronTokenTable[network] ?? {})[address] !== undefined) {
+        return;
+      }
+      // The constant call's owner just has to be a valid address — use the contract itself.
+      const meta = await tronTokenMeta(this.options.networks.tronApi(network), address, address);
+      if (meta === undefined) {
+        throw new TypeError(`${address} is not a readable TRC-20 contract on ${network}`);
+      }
+      this.tronMeta.set(`${network}:${address}`, meta);
       await this.persistToken(network, address);
       return;
     }
@@ -799,6 +1019,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     const meta = await this.tokenMetadata(network, address);
+    if (generation !== this.generation) {
+      return;
+    }
     this.meta.set(`${network}:${address.toLowerCase()}`, meta);
     await this.persistToken(network, address);
   }

@@ -42,6 +42,7 @@ import {
   prepareSolanaSwap,
   submitDappSolana,
 } from "./solana.ts";
+import { pollTron, prepareTron, prepareTronApprove, prepareTronStake } from "./tron.ts";
 
 export type {
   AccountRef,
@@ -168,6 +169,19 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   );
 };
 
+type DurableNonceRecord = NonNullable<TrackedTransaction["durableNonce"]>;
+const isDurableNonceRecord = (v: unknown): v is DurableNonceRecord =>
+  isObject(v) &&
+  typeof v["value"] === "string" &&
+  v["value"] !== "" &&
+  (v["account"] === undefined || (typeof v["account"] === "string" && v["account"] !== ""));
+type TronRecord = NonNullable<TrackedTransaction["tron"]>;
+const isTronRecord = (v: unknown): v is TronRecord =>
+  isObject(v) &&
+  typeof v["expiration"] === "number" &&
+  Number.isSafeInteger(v["expiration"]) &&
+  typeof v["from"] === "string";
+
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
   isObject(v) &&
@@ -214,18 +228,20 @@ const decode = (
     block,
     final,
     lastValidBlockHeight,
+    durableNonce,
     replaces,
     parentId,
     raw: signedRaw,
     evm,
     btc,
+    tron,
     sparkDeposit,
     submittedAt,
     error,
   } = parsed;
   if (
     typeof id !== "string" ||
-    (family !== "evm" && family !== "solana" && family !== "bitcoin") ||
+    (family !== "evm" && family !== "solana" && family !== "bitcoin" && family !== "tron") ||
     typeof network !== "string" ||
     typeof account !== "string" ||
     !isTxState(state) ||
@@ -250,6 +266,7 @@ const decode = (
     ...(typeof lastValidBlockHeight === "number" && Number.isSafeInteger(lastValidBlockHeight)
       ? { lastValidBlockHeight }
       : {}),
+    ...(isDurableNonceRecord(durableNonce) ? { durableNonce } : {}),
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
     ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),
@@ -262,6 +279,14 @@ const decode = (
           return {};
         })()),
     ...(isBtcRecord(btc) ? { btc } : {}),
+    ...(isTronRecord(tron)
+      ? { tron }
+      : (() => {
+          if (tron !== undefined) {
+            warn(`dropping malformed tron build record on transaction ${id}`);
+          }
+          return {};
+        })()),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
     error: typeof error === "string" ? error : undefined,
@@ -275,7 +300,15 @@ export class TransactionController extends Controller<TransactionControllerState
   private evmRoute = createEvmRoute();
   private bitcoinRoute = createBitcoinRoute();
   private locked = true;
+  /**
+   * Bumped on every `lock`: a `RouteContext` captures it at creation, so an async result that
+   * outlives its session — a broadcast settling after lock→unlock — is recognized as stale and
+   * never writes into the new session's state or store, and never touches its timers.
+   */
+  private generation = 0;
   private readonly batches = new Map<string, BatchRecord>();
+  /** Ids whose last bookkeeping write failed; each `pollOnce` retries them. */
+  private readonly unsaved = new Set<string>();
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -347,7 +380,12 @@ export class TransactionController extends Controller<TransactionControllerState
       this.options.logger.warn(`call batch ${record.id} not persisted: vault locked`);
       return;
     }
-    await store.collection("call-batches").put(key, encodeBatch(record));
+    try {
+      await store.collection("call-batches").put(key, encodeBatch(record));
+    } catch (error) {
+      // Runs after the batch's transactions were broadcast — bookkeeping only.
+      this.options.logger.warn(`call batch ${record.id} record write failed`, error);
+    }
   }
 
   /** The bundle `origin` asked for, or `undefined` when it is not theirs (or is gone). */
@@ -362,10 +400,12 @@ export class TransactionController extends Controller<TransactionControllerState
 
   lock(): void {
     this.locked = true;
+    this.generation += 1;
     for (const stop of this.timers.values()) {
       stop();
     }
     this.timers.clear();
+    this.unsaved.clear();
     this.engineStore = undefined;
     this.evmRoute = createEvmRoute();
     this.bitcoinRoute.lock();
@@ -391,15 +431,50 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const updated: TrackedTransaction = { ...tx, ...next };
     this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: updated } }));
-    await this.persist(updated);
+    try {
+      await this.persist(updated);
+    } catch (error) {
+      /* A durable write must not fail silently — its caller has not broadcast yet. Anything
+         else is bookkeeping: keep the row in memory and let the next poll retry it. */
+      if (durable) {
+        throw error;
+      }
+      this.unsaved.add(tx.id);
+      this.options.logger.warn(
+        `transaction ${tx.id} (${updated.state}) not persisted; the next poll retries`,
+        error,
+      );
+    }
     return updated;
   }
 
   private routeCtx(): RouteContext {
+    const { generation } = this;
+    /* Stale means another session is live: while the vault is still locked there is no store to
+       reach anyway, and the locked path's own warnings stay accurate. */
+    const stale = (): boolean => generation !== this.generation && !this.locked;
     return {
       options: this.options,
-      transition: async (tx, next, durable) => this.transition(tx, next, durable),
-      track: (id, hash) => this.track(id, hash),
+      transition: async (tx, next, durable) => {
+        if (stale()) {
+          /* A durable write from a dead session must still throw — nothing was sent for it —
+             while a bookkeeping one merges in memory only, never into the live session. */
+          if (durable === true) {
+            throw new Error("transactions require an unlocked vault");
+          }
+          this.options.logger.warn(
+            `transaction ${tx.id}: an earlier session's transition was ignored`,
+          );
+          return { ...tx, ...next };
+        }
+        return this.transition(tx, next, durable);
+      },
+      track: (id, hash) => {
+        if (stale()) {
+          return;
+        }
+        this.track(id, hash);
+      },
       txs: () => this.getState().txs,
       newId: () => newId(this.options.random),
     };
@@ -423,6 +498,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const ctx = this.routeCtx();
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
+    }
+    if (info.family === "tron") {
+      return prepareTron(ctx, params);
     }
     if (info.family === "bitcoin") {
       return this.bitcoinRoute.prepare(ctx, params, requestId, sparkDeposit);
@@ -649,6 +727,31 @@ export class TransactionController extends Controller<TransactionControllerState
     return prepareSolanaStake(this.routeCtx(), input);
   }
 
+  /**
+   * Internal `tron-stake` requests: the java-tron actuator rules are checked against node reads,
+   * then the operation goes through the same build/sign/track tail as a send.
+   */
+  async prepareTronStake(
+    input: Extract<ChainRequestInput, { method: "tron-stake" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronStake(this.routeCtx(), input);
+  }
+
+  /** Internal `tron-approve` requests: TRC-20 `approve` (amount 0 revokes). */
+  async prepareTronApprove(
+    input: Extract<ChainRequestInput, { method: "tron-approve" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronApprove(this.routeCtx(), input);
+  }
+
   async prepareSolanaSwap(
     input: Extract<ChainRequestInput, { method: "solana-swap" }>,
     _requestId: string,
@@ -730,19 +833,38 @@ export class TransactionController extends Controller<TransactionControllerState
    * marking this replaced, a reload) means the row moved on and the next poll decides.
    */
   private async pollOnce(id: string): Promise<void> {
+    const { generation } = this;
     const tx = this.getState().txs[id];
     if (tx === undefined) {
       this.untrack(id);
       return;
     }
+    /* Rows whose bookkeeping write failed are retried before the next answer applies; a row
+       already gone means its fate was settled elsewhere. */
+    for (const unsavedId of this.unsaved) {
+      const row = this.getState().txs[unsavedId];
+      if (row === undefined) {
+        this.unsaved.delete(unsavedId);
+        continue;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one row at a time, in id order
+        await this.persist(row);
+        this.unsaved.delete(unsavedId);
+      } catch {
+        // Still failing — the row stays in memory and a later poll retries.
+      }
+    }
     const ctx = this.routeCtx();
     const answer =
       tx.family === "solana"
         ? await pollSolana(ctx, tx)
-        : tx.family === "bitcoin"
-          ? await this.bitcoinRoute.poll(ctx, tx)
-          : await this.evmRoute.poll(ctx, tx);
-    if (answer === undefined || this.locked) {
+        : tx.family === "tron"
+          ? await pollTron(ctx, tx)
+          : tx.family === "bitcoin"
+            ? await this.bitcoinRoute.poll(ctx, tx)
+            : await this.evmRoute.poll(ctx, tx);
+    if (answer === undefined || this.locked || generation !== this.generation) {
       return;
     }
     if (this.getState().txs[id] !== tx) {
@@ -754,6 +876,8 @@ export class TransactionController extends Controller<TransactionControllerState
         state: answer.state,
         block: answer.block,
         final: answer.final,
+        // A landed transaction carries no stuck note; an on-chain failure carries its reason.
+        error: answer.error,
       });
       if (firstInclusion) {
         this.settle(updated);
@@ -779,6 +903,10 @@ export class TransactionController extends Controller<TransactionControllerState
       );
       await this.reviveSiblings(updated);
       this.retrack(id, updated.hash ?? "");
+      return;
+    }
+    if (answer.kind === "waiting") {
+      await this.transition(tx, { error: answer.error });
       return;
     }
     this.untrack(id);

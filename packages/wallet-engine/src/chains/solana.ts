@@ -12,7 +12,10 @@ import {
 } from "@solana-program/stake";
 import {
   getCreateAccountWithSeedInstruction,
+  getNonceDecoder,
   getTransferSolInstruction,
+  NonceState,
+  SYSTEM_PROGRAM_ADDRESS,
 } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
@@ -25,8 +28,9 @@ import {
  * Compute-unit headroom is simulated-units x 1.1; the priority fee comes from
  * getRecentPrioritizationFees percentiles (p50/p75/p90) over the writable accounts. Broadcast is
  * sendTransaction(skipPreflight:false, maxRetries:0) re-sent every 2 s while the blockhash is live;
- * an expired lastValidBlockHeight without confirmation is `dropped`. A 1232-byte compiled message
- * is rejected before signing.
+ * an expired lastValidBlockHeight without confirmation is `dropped` only once `isBlockhashValid` on
+ * the same endpoint says the hash is dead — a bound read from a lagging endpoint is never enough. A
+ * 1232-byte compiled message is rejected before signing.
  */
 import {
   address,
@@ -202,6 +206,8 @@ const b64 = (bytes: Uint8Array): string => base64.encode(bytes);
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
+
+const arr = (v: unknown): unknown[] | undefined => (Array.isArray(v) ? v : undefined);
 
 const str = (v: unknown, fallback = "0"): string => {
   if (typeof v === "string") {
@@ -688,5 +694,71 @@ export class SolanaChainAdapter {
       throw new TypeError("getBlockHeight returned a malformed height");
     }
     return BigInt(result);
+  }
+
+  /**
+   * `getAccountInfo` at finalized → the nonce account's current value — the blockhash it stores
+   * when Initialized — plus the slot of the bank the answer came from. An absent or Uninitialized
+   * account means the nonce can never be used again (`value` undefined). An account not owned by
+   * the System program or with undecodable data throws: a malformed answer is unknown, never a
+   * drop.
+   */
+  async nonceValue(
+    rpc: SolanaRpc,
+    account: string,
+  ): Promise<{ readonly value: string | undefined; readonly slot: bigint | undefined }> {
+    const result = obj(
+      await this.rpc(rpc, "getAccountInfo", [
+        account,
+        { encoding: "base64", commitment: "finalized" },
+      ]),
+    );
+    const context = obj(result?.["context"])?.["slot"];
+    const slot =
+      typeof context === "number" || typeof context === "bigint" ? BigInt(context) : undefined;
+    const info = result?.["value"];
+    if (info === null) {
+      return { value: undefined, slot };
+    }
+    const value = obj(info);
+    if (value?.["owner"] !== SYSTEM_PROGRAM_ADDRESS) {
+      throw new TypeError("nonce account is not owned by the System program");
+    }
+    const data = arr(value["data"])?.[0];
+    if (typeof data !== "string") {
+      throw new TypeError("nonce account data is not decodable");
+    }
+    let nonce;
+    try {
+      nonce = getNonceDecoder().decode(base64.decode(data));
+    } catch {
+      throw new TypeError("nonce account data is not decodable");
+    }
+    return {
+      value: nonce.state === NonceState.Initialized ? nonce.blockhash : undefined,
+      slot,
+    };
+  }
+
+  /**
+   * `isBlockhashValid` at processed → whether the endpoint still accepts the blockhash, plus the
+   * slot of the bank the answer came from. A malformed answer throws — unknown, never a drop.
+   */
+  async blockhashValid(
+    rpc: SolanaRpc,
+    hash: string,
+  ): Promise<{ readonly valid: boolean; readonly slot: bigint | undefined }> {
+    const result = obj(
+      await this.rpc(rpc, "isBlockhashValid", [hash, { commitment: "processed" }]),
+    );
+    if (typeof result?.["value"] !== "boolean") {
+      throw new TypeError("isBlockhashValid returned a malformed answer");
+    }
+    const context = obj(result?.["context"])?.["slot"];
+    return {
+      valid: result["value"],
+      slot:
+        typeof context === "number" || typeof context === "bigint" ? BigInt(context) : undefined,
+    };
   }
 }

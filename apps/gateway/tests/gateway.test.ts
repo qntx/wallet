@@ -8,7 +8,7 @@ import {
   servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
-import { ipPrefix } from "../src/middleware/rate-limit.ts";
+import { ipKeys } from "../src/middleware/rate-limit.ts";
 import type { RateLimiter } from "../src/types.ts";
 import {
   DEVNET,
@@ -62,6 +62,7 @@ const maxCostLogsBatch = () =>
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("health and identity", () => {
@@ -114,7 +115,7 @@ describe("served networks", () => {
     const dflt = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({}).fetch,
-      limiters: { ip: allowAll, rpc, default: dflt },
+      limiters: { ip: allowAll, rpc, default: dflt, share: allowAll },
     });
     const anonymous = await app.request("/v1/networks");
     const identified = await app.request("/v1/networks", { headers: headers() });
@@ -127,7 +128,7 @@ describe("served networks", () => {
   it("answers 429 when the default limiter refuses", async () => {
     const app = gateway({
       fetch: fakeFetch({}).fetch,
-      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll, share: allowAll },
     });
     const res = await app.request("/v1/networks", { headers: headers() });
     expect(res.status).toBe(429);
@@ -517,7 +518,7 @@ describe("rpc forwarding", () => {
     },
   );
 
-  it.each([429, 500, 502, 503])(
+  it.each([500, 502, 503])(
     "upstream %i is a provider outage: failover, and the shared breaker opens after 5",
     async (status) => {
       const up = fakeFetch({
@@ -886,6 +887,48 @@ describe("esplora forwarding", () => {
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("30");
   });
+
+  // The streamed body outlives its attempt, so the route gives it a 30 s deadline of its own;
+  // the test controls that deadline instead of waiting it out (vi.spyOn, no fake timers: the
+  // upstream signal AbortSignal.timeout produces must be a real abortable signal).
+  it(
+    "aborts an upstream body still streaming past the attempt at its own deadline",
+    {
+      timeout: 5000,
+    },
+    async () => {
+      const deadline = new AbortController();
+      const deadlines: number[] = [];
+      vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        deadlines.push(ms);
+        return deadline.signal;
+      });
+      const up = fakeFetch({
+        "https://a.test/btc": (_call, signal) =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                signal.addEventListener("abort", () => {
+                  controller.error(new DOMException("aborted", "AbortError"));
+                });
+              },
+            }),
+            { status: 200, headers: { "content-type": "text/plain" } },
+          ),
+      });
+      const res = await gateway({ fetch: up.fetch }).request(`${base}/block-height/0`, {
+        headers: headers(),
+      });
+      expect(res.status).toBe(200);
+      expect(deadlines).toStrictEqual([30_000]);
+      const read = res.text().then(
+        () => "completed",
+        () => "aborted",
+      );
+      deadline.abort();
+      await expect(read).resolves.toBe("aborted");
+    },
+  );
 });
 
 describe("upstream response bounds", () => {
@@ -998,7 +1041,7 @@ describe("rate limiting", () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk("0x1") });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll, share: allowAll },
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(429);
@@ -1016,7 +1059,10 @@ describe("rate limiting", () => {
       "https://a.test/evm": () => rpcOk("0x1"),
       "https://a.test/btc": () => new Response("0"),
     });
-    const app = gateway({ fetch: up.fetch, limiters: { ip: allowAll, rpc, default: dflt } });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip: allowAll, rpc, default: dflt, share: allowAll },
+    });
     await app.request(`/v1/rpc/${SEPOLIA}`, {
       ...post(call("eth_chainId")),
       headers: headers({ "content-type": "application/json", "cf-connecting-ip": "203.0.113.77" }),
@@ -1026,7 +1072,8 @@ describe("rate limiting", () => {
     });
     expect(rpc.keys).toStrictEqual([
       `${CLIENT_ID}:203.0.113.0/24`,
-      `${CLIENT_ID}:2001:0db8:abcd::/48`,
+      // The per-install key uses the most specific IP key — the /64, not the /48.
+      `${CLIENT_ID}:2001:0db8:abcd:1234::/64`,
     ]);
     expect(dflt.keys).toHaveLength(0);
   });
@@ -1046,6 +1093,7 @@ describe("rate limiting", () => {
         },
         rpc: allowAll,
         default: allowAll,
+        share: allowAll,
       },
     });
     const statuses = [];
@@ -1074,13 +1122,16 @@ describe("rate limiting", () => {
           Array.from({ length: 20 }, (_v, i) => ({ jsonrpc: "2.0", id: i, result: [] })),
         ),
     });
-    const app = gateway({ fetch: up.fetch, limiters: { ip, rpc, default: allowAll } });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip, rpc, default: allowAll, share: allowAll },
+    });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
     expect(res.status).toBe(200);
     expect(up.callsTo("https://a.test")).toHaveLength(1);
-    // One unit up front, then the batch's 200 scan units minus the unit already paid.
-    expect(ip.deltas).toStrictEqual([1, 199]);
-    expect(rpc.deltas).toStrictEqual([1, 199]);
+    // One unit up front, then one more for each of the batch's 19 remaining calls.
+    expect(ip.deltas).toStrictEqual([1, 19]);
+    expect(rpc.deltas).toStrictEqual([1, 19]);
   });
 
   it("refuses the next request once a batch spends the window's units", async () => {
@@ -1092,7 +1143,7 @@ describe("rate limiting", () => {
     });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: countBefore(100), rpc: countBefore(100), default: allowAll },
+      limiters: { ip: countBefore(20), rpc: countBefore(20), default: allowAll, share: allowAll },
     });
     const first = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
     expect(first.status).toBe(200);
@@ -1109,7 +1160,7 @@ describe("rate limiting", () => {
     const rpc = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
-      limiters: { ip, rpc, default: allowAll },
+      limiters: { ip, rpc, default: allowAll, share: allowAll },
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(200);
@@ -1129,7 +1180,7 @@ describe("rate limiting", () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: refuseSecond, rpc: allowAll, default: allowAll },
+      limiters: { ip: refuseSecond, rpc: allowAll, default: allowAll, share: allowAll },
     });
     const res = await app.request(
       `/v1/rpc/${SEPOLIA}`,
@@ -1147,7 +1198,7 @@ describe("rate limiting", () => {
     const rpc = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({ "https://a.test/btc": () => new Response("0") }).fetch,
-      limiters: { ip: allowAll, rpc, default: allowAll },
+      limiters: { ip: allowAll, rpc, default: allowAll, share: allowAll },
     });
     const res = await app.request(`/v1/esplora/${SIGNET}/block-height/0`, {
       headers: headers(),
@@ -1158,18 +1209,111 @@ describe("rate limiting", () => {
 
   it("does not count health", async () => {
     const rpc = recordingLimiter();
-    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { ip: rpc, rpc, default: rpc } });
+    const app = gateway({
+      fetch: fakeFetch({}).fetch,
+      limiters: { ip: rpc, rpc, default: rpc, share: allowAll },
+    });
     await app.request("/v1/health");
     expect(rpc.keys).toHaveLength(0);
   });
 
-  it("derives /24 and /48 prefixes", () => {
-    expect(ipPrefix("198.51.100.200")).toBe("198.51.100.0/24");
-    expect(ipPrefix("2001:db8::1")).toBe("2001:0db8:0000::/48");
-    expect(ipPrefix("fe80::1:2:3:4")).toBe("fe80:0000:0000::/48");
-    expect(ipPrefix("2001:db8:1:2:3:4:5:6")).toBe("2001:0db8:0001::/48");
-    expect(ipPrefix(undefined)).toBe("unknown");
-    expect(ipPrefix("nonsense")).toBe("unknown");
+  it("derives /24 and IPv6 /64+/48 keys", () => {
+    expect(ipKeys("198.51.100.200")).toStrictEqual(["198.51.100.0/24"]);
+    expect(ipKeys("2001:db8::1")).toStrictEqual([
+      "2001:0db8:0000:0000::/64",
+      "2001:0db8:0000::/48",
+    ]);
+    expect(ipKeys("fe80::1:2:3:4")).toStrictEqual([
+      "fe80:0000:0000:0000::/64",
+      "fe80:0000:0000::/48",
+    ]);
+    expect(ipKeys("2001:db8:1:2:3:4:5:6")).toStrictEqual([
+      "2001:0db8:0001:0002::/64",
+      "2001:0db8:0001::/48",
+    ]);
+    expect(ipKeys(undefined)).toStrictEqual(["unknown"]);
+    expect(ipKeys("nonsense")).toStrictEqual(["unknown"]);
+  });
+});
+
+describe("IPv6 aggregation", () => {
+  const V64 = "2001:0db8:abcd:1234::/64";
+  const V48 = "2001:0db8:abcd::/48";
+  const v6Post = (ip: string) => ({
+    ...post(call("eth_chainId")),
+    headers: headers({
+      "content-type": "application/json",
+      "cf-connecting-ip": ip,
+      "x-client-id": "b".repeat(32),
+    }),
+  });
+
+  it("charges every key of an IPv6 address on the flood and share limiters", async () => {
+    const ip = recordingLimiter();
+    const rpc = recordingLimiter();
+    const share = recordingLimiter();
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc, default: allowAll, share },
+    });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post("2001:db8:abcd:1234::1"));
+    expect(res.status).toBe(200);
+    expect(ip.keys).toStrictEqual([V64, V48]);
+    expect(share.keys).toStrictEqual([`a:${V64}`, `a:${V48}`]);
+  });
+
+  it("counts two /64s separately but shares their /48 budget", async () => {
+    const ip = countBefore(100);
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    for (const ipAddr of ["2001:db8:abcd:1::1", "2001:db8:abcd:1::2", "2001:db8:abcd:2::1"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post(ipAddr));
+      expect(res.status).toBe(200);
+    }
+    expect(ip.counts.get("2001:0db8:abcd:0001::/64")).toBe(2);
+    expect(ip.counts.get("2001:0db8:abcd:0002::/64")).toBe(1);
+    expect(ip.counts.get("2001:0db8:abcd::/48")).toBe(3);
+  });
+
+  it("refuses the second /64 once the shared /48 flood budget is spent", async () => {
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip: countBefore(2), rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    const statuses: number[] = [];
+    for (const ipAddr of ["2001:db8:abcd:1::1", "2001:db8:abcd:2::1", "2001:db8:abcd:3::1"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post(ipAddr));
+      statuses.push(res.status);
+    }
+    expect(statuses).toStrictEqual([200, 200, 429]);
+  });
+
+  it("does not let client-id rotation escape the IPv6 keys", async () => {
+    const ip = countBefore(2);
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    const statuses: number[] = [];
+    for (const id of ["a", "b", "c"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, {
+        ...post(call("eth_chainId")),
+        headers: headers({
+          "content-type": "application/json",
+          "cf-connecting-ip": "2001:db8:abcd:1234::1",
+          "x-client-id": id.repeat(32),
+        }),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses).toStrictEqual([200, 200, 429]);
+    expect(ip.counts.get(V64)).toBe(2);
+    expect(ip.counts.get(V48)).toBe(2);
   });
 });
 
@@ -1333,7 +1477,7 @@ describe("upstream observability", () => {
     expect(lines.join("\n")).not.toContain("no credentials");
   });
 
-  it("logs timeout for an upstream that never answers", async () => {
+  it("logs the failed probe for an upstream that never answers", async () => {
     vi.useFakeTimers();
     const { lines, log } = capture();
     const up = fakeFetch({
@@ -1349,6 +1493,7 @@ describe("upstream observability", () => {
       `/v1/rpc/${SEPOLIA}`,
       post(call("eth_chainId")),
     );
+    // The attempt's 10 s timeout fires the probe; it too never answers and aborts at 3 s.
     await vi.advanceTimersByTimeAsync(10_000);
     const res = await pending;
     expect(res.status).toBe(200);
@@ -1357,7 +1502,7 @@ describe("upstream observability", () => {
         event: "upstream-failure",
         provider: "a",
         upstream: "https://a.test/evm",
-        reason: "timeout",
+        reason: "probe",
       },
     ]);
   });
@@ -1448,6 +1593,7 @@ describe("upstream observability", () => {
         ip: { limit: async () => Promise.reject(new RangeError("quota exploded")) },
         rpc: allowAll,
         default: allowAll,
+        share: allowAll,
       },
     }).request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(500);

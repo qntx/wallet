@@ -48,13 +48,20 @@ const stream = (options: {
   pages?: ReadonlyArray<unknown>;
   client: unknown;
   independent?: unknown;
+  /** When set, every gateway request answers this status with the `error` body. */
+  status?: number;
+  error?: unknown;
   requests?: Array<Record<string, unknown>>;
   onTruncated?: () => void;
+  onUnsupported?: () => void;
 }) => {
   const requests = options.requests ?? [];
   const queue = [...(options.pages ?? [options.page])];
   const fetch = (async (_input: unknown, init?: { body?: string }) => {
     requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (options.status !== undefined) {
+      return Promise.resolve(Response.json(options.error ?? {}, { status: options.status }));
+    }
     return Promise.resolve(Response.json(queue.shift()));
   }) as typeof globalThis.fetch;
   const s = evmHistoryStream(
@@ -70,6 +77,7 @@ const stream = (options: {
     OWNER,
     new Map(),
     options.onTruncated ?? (() => {}),
+    options.onUnsupported ?? (() => {}),
   );
   return { stream: s, requests };
 };
@@ -164,8 +172,11 @@ describe("evmHistoryStream verification", () => {
       items,
       "0xda98151f32d7fb8c8daad5849363590ca179c6511b3f7d7e6d613d50072b0533",
     );
-    expect(zero?.verified).toBe(true);
+    // A zero-value native claim is consistent with the tx but no movement exists for the ledger
+    // to bind — uncheckable, never verified, never a mismatch.
+    expect(zero?.verified).toBe(false);
     expect(zero?.flags).toContain("zero-value-transfer");
+    expect(zero?.flags).not.toContain("chain-mismatch");
 
     const mint = entryOf(
       items,
@@ -192,7 +203,7 @@ describe("evmHistoryStream verification", () => {
     expect(primaryCalls).toHaveLength(0);
   });
 
-  it("treats a contract-less token claim as uncheckable — skipped for changes, no mismatch", async () => {
+  it("a contract-less token claim is uncheckable and cannot claim the movement it likely means", async () => {
     const hash = "0x979e19a53feb2c15122009b523c48f66df025de6ff54db5290c567eac324f181";
     const { stream: s } = stream({
       network: "eip155:1",
@@ -202,8 +213,10 @@ describe("evmHistoryStream verification", () => {
     const { items } = await s.next();
     const e = entryOf(items, hash);
     expect(e?.changes).toStrictEqual([]);
+    // The claim carries no contract, so it binds no movement; the wallet-touching erc20 leg the
+    // chain actually moved then stands unclaimed — an omitted leg is a mismatch.
     expect(e?.verified).toBe(false);
-    expect(e?.flags).not.toContain("chain-mismatch");
+    expect(e?.flags).toContain("chain-mismatch");
   });
 
   it("leaves an internal claim unverified without flagging a mismatch", async () => {
@@ -338,6 +351,47 @@ describe("evmHistoryStream verification", () => {
     expect(requests[1]).toStrictEqual({ address: OWNER, cursor: "99", limit: 25 });
     expect(second.done).toBe(true);
     expect(truncated).toBe(2);
+  });
+});
+
+describe("evm history gateway coverage", () => {
+  it("a 404 'unsupported' ends the stream empty and fires onUnsupported", async () => {
+    const unsupported: string[] = [];
+    const { stream: s, requests } = stream({
+      network: "eip155:1",
+      status: 404,
+      error: { error: "unsupported" },
+      client: rpcClient("eip155:1", []),
+      onUnsupported: () => unsupported.push("eip155:1"),
+    });
+    await expect(s.next()).resolves.toStrictEqual({ items: [], done: true });
+    await expect(s.next()).resolves.toStrictEqual({ items: [], done: true });
+    expect(unsupported).toStrictEqual(["eip155:1"]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it.each([
+    ["unknown-network", { error: "unknown-network" }],
+    ["not-found", { error: "not-found" }],
+    ["a plain 404", { nope: true }],
+  ])("a 404 %s still throws like any non-2xx", async (_name, error) => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      status: 404,
+      error,
+      client: rpcClient("eip155:1", []),
+    });
+    await expect(s.next()).rejects.toThrow("status 404");
+  });
+
+  it("a 503 still throws like any non-2xx", async () => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      status: 503,
+      error: { error: "unavailable" },
+      client: rpcClient("eip155:1", []),
+    });
+    await expect(s.next()).rejects.toThrow("status 503");
   });
 });
 
@@ -600,6 +654,7 @@ describe("evm lookalike counterparties", () => {
       evm: ["0x9845636fd55f620d18a2c7fd3e4e6bd8e4de173d"],
       solana: [],
       bitcoin: [],
+      tron: [],
       spark: [],
     };
     const entries: HistoryEntry[] = [

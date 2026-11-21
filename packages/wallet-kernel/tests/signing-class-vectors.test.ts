@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { decodeSolana } from "@qntx/wallet-chains/solana";
 import { decodeTron } from "@qntx/wallet-chains/tron";
 
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
@@ -26,10 +27,14 @@ const vectors = JSON.parse(
     resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
     "utf8",
   ),
-) as { signers: { evm: string; tron: string }; cases: VectorCase[] };
+) as { signers: { evm: string; tron: string; solana: string }; cases: VectorCase[] };
 
 const request = (v: VectorCase): SignRequest => {
-  if (v.request.kind === "evm.personal-message" || v.request.kind === "tron.message") {
+  if (
+    v.request.kind === "evm.personal-message" ||
+    v.request.kind === "tron.message" ||
+    v.request.kind === "solana.transaction"
+  ) {
     return {
       ...v.request,
       message: hexToBytes(v.request.message.$bytes.replace(/^0x/, "")),
@@ -44,10 +49,14 @@ const request = (v: VectorCase): SignRequest => {
   return v.request;
 };
 
-const intentOf = (v: VectorCase): DisplayIntent =>
-  v.request.kind.startsWith("tron.")
-    ? decodeTron(request(v), vectors.signers.tron)
-    : decodeEvm(request(v), vectors.signers.evm);
+const intentOf = (v: VectorCase): DisplayIntent => {
+  const req = request(v);
+  return v.request.kind.startsWith("tron.")
+    ? decodeTron(req, vectors.signers.tron)
+    : v.request.kind.startsWith("solana.")
+      ? decodeSolana(req as SignRequest & { kind: "solana.transaction" }, vectors.signers.solana)
+      : decodeEvm(req, vectors.signers.evm);
+};
 
 describe("signing-classes vectors", () => {
   it.each(vectors.cases)("$name", (v) => {

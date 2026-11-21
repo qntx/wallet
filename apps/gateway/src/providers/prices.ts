@@ -16,7 +16,7 @@ import type {
 
 import { GatewayHttpError } from "../middleware/errors.ts";
 import type { PriceCache, ResolvedProvider } from "../types.ts";
-import type { Forwarder, Send, UpstreamResponse } from "./forward.ts";
+import type { Forwarder, Meter, Send, UpstreamResponse } from "./forward.ts";
 import { ProviderFailure, REFUSED_STATUSES, UNAVAILABLE_RETRY_AFTER_SECONDS } from "./forward.ts";
 import { priceTarget } from "./prices-assets.ts";
 import type { PriceTarget } from "./prices-assets.ts";
@@ -55,13 +55,12 @@ export type RawQuote = {
 
 /**
  * One price provider. `quote` answers for the assets it knows and omits the others; it throws on
- * any failure (a non-2xx status, a malformed body). `calls` is how many upstream calls `quote`
- * makes for `targets` — the request pays one rate-limit unit for each before they are sent.
+ * any failure (a non-2xx status, a malformed body). Every upstream call it makes is billed to the
+ * request's share of the provider's account by the forwarder before it is sent.
  */
 export type PriceSource = {
   readonly provider: ResolvedProvider;
   readonly serves: (currency: FiatCurrency) => boolean;
-  readonly calls: (targets: ReadonlyMap<string, PriceTarget>) => number;
   readonly quote: (
     send: Send,
     currency: FiatCurrency,
@@ -167,24 +166,32 @@ async function writeCached(deps: PriceDeps, key: string, entry: Entry, now: numb
 }
 
 /**
- * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced,
- * `charge` paying for each source's upstream calls before they are sent (a refusal is a 429). An
- * asset no provider knows is `missing`; it is cached as such only when every source that serves the
- * currency answered — a failed provider might know it. When no asset could be priced and a provider
- * failed, the request fails `503 unavailable` rather than claiming everything is missing. Returns
- * the response and the providers whose data it carries.
+ * Prices `request.assets`: assets no provider maps answer `unsupported` and are never sent upstream
+ * nor cached; the rest go cache first, then each source in order for whatever is still unpriced,
+ * every upstream call billed to the request's share of the source's account. A refused share charge
+ * makes that source unavailable — the request's own budget is spent, not the provider's — so
+ * answers already paid for are kept and the source's still-pending assets answer `missing` without
+ * being cached as such. When no asset could be priced and the only failures were refused charges
+ * the request rethrows the refusal; when a provider failed it answers `503 unavailable` rather than
+ * claiming everything is missing. An asset is cached as `missing` only when every source that
+ * serves the currency answered — a failed or uncharged source might know it. Returns the response
+ * and the providers whose data it carries.
  */
 export async function quotePrices(
   deps: PriceDeps,
   request: PricesRequest,
-  charge: (units: number) => Promise<void>,
+  meter: Meter,
 ): Promise<{ readonly response: PricesResponse; readonly providers: ReadonlyArray<string> }> {
   const { currency } = request;
   const now = deps.now();
   const known = new Map<string, PriceTarget>();
+  const unsupported = new Set<string>();
   for (const asset of request.assets) {
     const target = priceTarget(asset);
-    if (target !== undefined) {
+    if (target === undefined) {
+      // No provider maps it — never asked upstream, never cached: permanently unsupported.
+      unsupported.add(asset);
+    } else {
       known.set(asset, target);
     }
   }
@@ -202,17 +209,18 @@ export async function quotePrices(
 
   const fresh = new Map<string, Entry>();
   let failed = false;
+  let chargeRefused: GatewayHttpError | undefined;
   for (const source of deps.sources.filter((s) => s.serves(currency))) {
     const pending = new Map([...known].filter(([asset]) => !resolved.has(asset)));
     if (pending.size === 0) {
       break;
     }
-    // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-    await charge(source.calls(pending));
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-      const { value } = await deps.forwarder.run([source.provider], async (send) =>
-        source.quote(send, currency, pending),
+      const { value } = await deps.forwarder.run(
+        [source.provider],
+        async (send) => source.quote(send, currency, pending),
+        { meter },
       );
       for (const [asset, raw] of value) {
         const quote = pending.has(asset) ? normalizeQuote(asset, raw, now) : undefined;
@@ -226,11 +234,17 @@ export async function quotePrices(
       if (!(error instanceof GatewayHttpError)) {
         throw error;
       }
-      failed = true;
+      if (error.status === 429 || error.status === 413) {
+        // The request's own budget is spent, not the provider's: the source is
+        // unavailable, but nothing it could have answered may be cached missing.
+        chargeRefused ??= error;
+      } else {
+        failed = true;
+      }
     }
   }
 
-  if (!failed) {
+  if (!failed && chargeRefused === undefined) {
     for (const asset of known.keys()) {
       if (!resolved.has(asset)) {
         fresh.set(asset, { quote: null, provider: "" });
@@ -243,6 +257,9 @@ export async function quotePrices(
   });
   if (priced.length === 0 && failed) {
     throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
+  }
+  if (priced.length === 0 && chargeRefused !== undefined) {
+    throw chargeRefused;
   }
   await Promise.all(
     [...fresh].map(async ([asset, entry]) =>
@@ -262,7 +279,10 @@ export async function quotePrices(
     response: {
       currency,
       prices: priced,
-      missing: request.assets.filter((asset) => !pricedAssets.has(asset)),
+      missing: request.assets.filter(
+        (asset) => !unsupported.has(asset) && !pricedAssets.has(asset),
+      ),
+      unsupported: request.assets.filter((asset) => unsupported.has(asset)),
     },
     providers,
   };

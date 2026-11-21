@@ -72,6 +72,8 @@ const make = (options: {
   readonly solanaRpc?: { readonly call: (method: string, params: unknown[]) => Promise<unknown> };
   readonly solanaIndependent?: unknown;
   readonly evmIndependent?: "available" | "unavailable" | "not-needed";
+  /** The value the `eth_getTransactionByHash` answer carries; "0x0" when unset. */
+  readonly txValue?: string;
   readonly store?: EngineStore;
   readonly failAccounts?: boolean;
   /** Gateway requests carrying one of these `address`es hang until `respond()`. */
@@ -115,7 +117,9 @@ const make = (options: {
         if (method === "eth_getTransactionByHash") {
           const block = blockOf.get(params[0] as string);
           return Promise.resolve(
-            block === undefined ? null : { from: OTHER, to: OWNER, value: "0x0" },
+            block === undefined
+              ? null
+              : { from: OTHER, to: OWNER, value: options.txValue ?? "0x0" },
           );
         }
         const block = blockOf.get(params[0] as string);
@@ -168,7 +172,14 @@ const make = (options: {
       fetch: (async (_input: unknown, init?: { body?: string }) => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         requests.push(body);
-        const page = { truncated: false, ...(pages.shift() ?? { items: [], cursor: null }) };
+        const page: Record<string, unknown> = {
+          truncated: false,
+          ...(pages.shift() ?? { items: [], cursor: null }),
+        };
+        const { status } = page;
+        if (typeof status === "number") {
+          return Promise.resolve(Response.json({ error: page["error"] }, { status }));
+        }
         if (options.deferredAddresses?.includes(String(body["address"])) === true) {
           return new Promise<Response>((resolve) => {
             pending.push(() => {
@@ -456,7 +467,7 @@ describe("HistoryController", () => {
               to: OWNER,
               contract: null,
               tokenId: null,
-              amount: "0",
+              amount: "5",
               decimals: null,
               symbol: null,
               logIndex: null,
@@ -466,13 +477,13 @@ describe("HistoryController", () => {
       ],
       cursor: null,
     };
-    const trusted = make({ page: nativePage, evmIndependent: "available" });
+    const trusted = make({ page: nativePage, evmIndependent: "available", txValue: "0x5" });
     await trusted.controller.init();
     await trusted.controller.load(GROUP);
     expect(trusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(true);
     trusted.controller.lock();
 
-    const untrusted = make({ page: nativePage });
+    const untrusted = make({ page: nativePage, txValue: "0x5" });
     await untrusted.controller.init();
     await untrusted.controller.load(GROUP);
     expect(untrusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(false);
@@ -559,6 +570,25 @@ describe("HistoryController", () => {
     // A fresh load whose pages carry no gaps clears the marker.
     await controller.load(GROUP);
     expect(controller.getState().groups["w:0"]?.truncated).toStrictEqual([]);
+    controller.lock();
+  });
+
+  it("lists networks the gateway has no history for as unsupported — a clean load clears it", async () => {
+    const { controller } = make({
+      pages: [{ status: 404, error: "unsupported" }],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const group = controller.getState().groups["w:0"];
+    expect(group?.unsupported).toStrictEqual(["eip155:1"]);
+    expect(group?.entries).toStrictEqual([]);
+    expect(group?.hasMore).toBe(false);
+    // It is coverage, not a failure: nothing lands in errors.
+    expect(group?.errors).toStrictEqual({});
+
+    // The pages queue is empty: a fresh load gets a 200 empty page and clears the marker.
+    await controller.load(GROUP);
+    expect(controller.getState().groups["w:0"]?.unsupported).toStrictEqual([]);
     controller.lock();
   });
 

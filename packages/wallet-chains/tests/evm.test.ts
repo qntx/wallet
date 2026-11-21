@@ -25,6 +25,7 @@ import {
   verifiabilityEvm,
 } from "../src/evm/index.ts";
 import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
+import { evmTokenTable } from "../src/evm/tokens.ts";
 import type { EvmTokenTable } from "../src/evm/tokens.ts";
 import { ChainError } from "../src/index.ts";
 import type { EvmTransaction } from "../src/index.ts";
@@ -642,6 +643,30 @@ describe("approval and transfer decode", () => {
     const unlimited = decode(calldata(sig, [SPENDER, MAX_256]), TOKEN, {});
     expect(unlimited.approvals[0]).toMatchObject({ unlimited: true, verified: false });
     expect(unlimited.approvals[0]).toMatchObject({ amount: { amount: MAX_256.toString(10) } });
+  });
+
+  it("an approve on Celo's native alias is a listed token's approve", () => {
+    const alias = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+    const sig = "function approve(address spender, uint256 amount)";
+    const intent = decodeEvm(
+      txReq(
+        { type: "eip1559", to: alias, chainId: 42220, data: calldata(sig, [SPENDER, 5n]) },
+        "eip155:42220",
+      ) as never,
+      SIGNER,
+      evmTokenTable,
+    );
+    expect(intent).toMatchObject({ summary: "approve", verifiability: "partial" });
+    expect(intent.approvals).toStrictEqual([
+      {
+        kind: "allowance",
+        spender: SPENDER,
+        amount: { asset: alias, amount: "5", symbol: "CELO", decimals: 18 },
+        change: "set",
+        unlimited: false,
+        verified: true,
+      },
+    ]);
   });
 
   it("approve with trailing bytes is not canonical → opaque", () => {

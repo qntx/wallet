@@ -62,10 +62,26 @@ describe("assessRecipients", () => {
   it("compares EVM lookalikes without the 0x prefix and case", () => {
     expect(comparable("evm", "0xAbC")).toBe("abc");
     expect(comparable("solana", "AbC")).toBe("AbC");
+    expect(comparable("tron", "AbC")).toBe("AbC");
     const upper = LOOKALIKE.toUpperCase().replace("0X", "0x");
     expect(assessRecipients("evm", [upper], [KNOWN]).map((f) => f.code)).toContain(
       "address-poisoning",
     );
+  });
+
+  it("flags first-recipient and lookalike poisoning for tron recipients, case-sensitive", () => {
+    const known = "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb";
+    const lookalike = "TWd4aaaaaaaaaaaaaaaaaaaaaaaaaaaa5jwb";
+    expect(assessRecipients("tron", [lookalike], [known])).toStrictEqual([
+      { code: "address-poisoning", level: "danger" },
+      { code: "first-recipient", level: "warning" },
+    ]);
+    // base58 is case-sensitive: a case-folded twin is a different address, not a match
+    const folded = `TWD4${"a".repeat(27)}5jwb`;
+    expect(assessRecipients("tron", [folded], [known]).map((f) => f.code)).toStrictEqual([
+      "first-recipient",
+    ]);
+    expect(assessRecipients("tron", [known], [known])).toStrictEqual([]);
   });
 
   it("deduplicates across several recipients", () => {

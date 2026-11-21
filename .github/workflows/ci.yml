@@ -95,3 +95,28 @@ jobs:
           ENGINE_E2E_BITCOIN=1 bunx vitest run tests/bitcoin-e2e.test.ts --silent=false --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
+
+  tron-e2e:
+    runs-on: ubuntu-latest
+    services:
+      # TronBox Runtime Environment — the java-tron devnet; produces one block per transaction.
+      tre:
+        image: tronbox/tre:2.0.0
+        ports:
+          - 9090:9090
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-chains#build && bunx vp run @qntx/wallet-engine#build
+      - run: |
+          set -euo pipefail
+          for i in $(seq 1 120); do
+            curl -sf -X POST http://127.0.0.1:9090/wallet/getnowblock -o /dev/null && break
+            sleep 1
+          done
+          curl -sf -X POST http://127.0.0.1:9090/wallet/getnowblock -o /dev/null
+          ENGINE_E2E_TRON=1 bunx vitest run tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
+        working-directory: packages/wallet-engine

@@ -49,7 +49,10 @@ export type RiskFinding = {
     | "bitcoin-inscription-input"
     | "bitcoin-frozen-input"
     | "stake-authority"
-    | "blind-signing";
+    | "blind-signing"
+    | "contract-recipient"
+    | "token-contract-recipient"
+    | "token-recipient-empty";
   readonly level: "warning" | "danger";
 };
 

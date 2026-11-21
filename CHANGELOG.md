@@ -126,9 +126,8 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   enabled in the wallet.
 - `@qntx/wallet-engine/gateway/contract`: `prices` (`priceAssetId`, `nativeAssetId`,
   `tokenAssetId`, `fiatPrice`, `percentChange`, `FIAT_CURRENCIES`); `history`
-  (`POST /v1/history/:caip2`, `historyRequest` / `historyResponse`, `historyPath`); per-call RPC
-  pricing (`RPC_COST_WEIGHTS` `point` 1 / `heavy` 3 / `scan` 10, `RPC_METHOD_COST`, `rpcCallCost`,
-  `rpcRequestCost`); `RPC_BROADCAST_METHODS`, `containsBroadcast` and the `outcome-unknown` error;
+  (`POST /v1/history/:caip2`, `historyRequest` / `historyResponse`, `historyPath`);
+  `RPC_BROADCAST_METHODS`, `containsBroadcast` and the `outcome-unknown` error;
   an explicit params schema for every allow-listed EVM and Solana method; `jsonRpcRequestId`; the
   `eth_getLogs` bounds (`LOGS_*`, `logsFilterViolation`); Esplora `/scripthash/:h/txs/chain/:txid`.
 - `@qntx/gateway`: production environment (eight EVM mainnets and Solana through Alchemy then
@@ -264,6 +263,74 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   nktkas and Python SDK published signatures) and `vectors/chains/polymarket.json` (from
   `@polymarket/clob-client-v2` 1.2.1, checked against each exchange's on-chain `hashOrder`); new
   cases in `signing-classes.json`, `records.json` and `vault-manifest.json`.
+- `@qntx/wallet-engine/gateway/contract`: error codes `"too-costly"` (413 — one request costs more
+  than a client's whole share window; split it) and `"unsupported"` (404 — the gateway will never
+  serve this resource for this network or asset; do not retry), appended to `GATEWAY_ERRORS`.
+- `@qntx/wallet-engine/gateway/contract`: `pricesResponse.unsupported` — every requested asset is in
+  exactly one of `prices`, `missing` (no price now) and `unsupported` (no price coverage).
+- `@qntx/wallet-engine/gateway/contract`: parameter bounds `RPC_PROOF_KEYS_MAX` (100 `eth_getProof`
+  storage keys), `RPC_SIMULATE_BLOCKS_MAX` / `RPC_SIMULATE_CALLS_MAX` (16 / 100 for
+  `eth_simulateV1`), `FEE_HISTORY_BLOCKS_MAX` / `FEE_HISTORY_PERCENTILES_MAX` (1024 / 100); requests
+  over them are `400 invalid-request` before any upstream call.
+- `@qntx/wallet-engine`: `GroupHistory.unsupported` — the networks the gateway has no history for.
+- gateway: every upstream call is priced in its provider's published unit (Alchemy throughput CU,
+  dRPC CU, one credit per call elsewhere; `src/budget/costs.ts`) and charged first to the client's
+  share of that provider account (`SHARE_LIMITER`: one IP prefix gets at most 5 % of an account's
+  per-minute budget), then to a gateway-wide per-account budget held in the `PROVIDER_BUDGET`
+  Durable Object (`src/config/accounts.ts`). An exhausted budget fails over, then answers
+  `503 unavailable` with the earliest `Retry-After`, before the provider throttles.
+- `scripts/check-bundles.ts` (part of `bun run lint`): bundles every published entry point and
+  checks the modules it actually loads against the package boundaries.
+- `scripts/check-migration.ts`: compares the last release's API reports (from the registry) with
+  `api/` and fails when a removed export is missing from MIGRATION.md §13; run before a release.
+- Built-in EVM mainnets Ink, Fraxtal, Ronin, Scroll, BOB, opBNB, Arbitrum Nova, Taiko, Flare and Zora, and testnets Ink Sepolia, Fraxtal Hoodi, opBNB Testnet and Zora Sepolia. Each chain id is checked against the chain's documentation (or the OP superchain registry) and live endpoints; signing chain ids still come only from the built-in table.
+- Scroll fee model: the L1 data fee is read from the L1GasPriceOracle on the transaction serialized under a maximal signature and shown with the model's safety margin.
+- `GasPricing` (`"eip1559" | "legacy"`) on every EVM fee model: chains with no base fee or whose primary upstream lacks `eth_feeHistory` (opBNB, Fraxtal) build legacy transactions at `eth_gasPrice`.
+- EIP-7702 delegation on Ink.
+- Built-in Circle USDC on Ink.
+- Native-alias tokens (Celo CELO, Arc USDC, Stable USDT0 and their testnets) are in the built-in token table with `role: "native-alias"`: `transfer`/`approve` on them are described like any listed token, they are never counted as a second balance and token discovery never offers them.
+- Wrapped native tokens (`role: "wrapped-native"`) for 24 built-in networks; `deposit()` and `withdraw(uint256)` on them are decoded and described (native in, wrapped out and back).
+- Gateway: Alchemy + dRPC production routes for Ink, Fraxtal, Ronin, Scroll, BOB, opBNB and Zora; an Ankr upstream (`ANKR_API_KEY`, sent in the `x-api-key` header) as the second provider for networks Alchemy does not serve (Arbitrum Nova, Taiko, Flare); production and staging routes, prices, token lists and transfer history for the new networks where the providers serve them.
+- `@qntx/wallet-engine`: TRON (`tron:728126428`, Nile `tron:3448148188`; Shasta stays in the
+  table, unserved by the gateway). `EngineFamily` gains `"tron"`; `TRON_NETWORKS` in
+  `./gateway/contract`; host `rpc`
+  entries for a TRON network are full-node HTTP base URLs (`/wallet/*`, `/walletsolidity/*`).
+- `@qntx/wallet-engine`: TRX, TRC-10 and TRC-20 sends through the existing `send` request. The
+  transaction is built locally from the latest **solidified** block (`expiration` = now + 60 s);
+  no node-built transaction is ever signed; the reference block id and the fee-relevant chain
+  parameters must agree on the independent host endpoint or the send is refused; the kernel's
+  signature is verified before broadcast. `PendingRequest.tronFee` (`TronFeeQuote`): expected and
+  maximum fee, bandwidth (bytes, staked/free/burn, activation), energy (estimate incl. dynamic
+  penalty, available, burn, `fee_limit`) and warnings (`recipient-not-activated`,
+  `token-recipient-empty`). TRC-20 `fee_limit` = `min(⌈estimate × 1.5⌉, getMaxFeeLimit)`. A send
+  the TRX balance cannot cover is refused before approval. Risk findings `contract-recipient`,
+  `token-contract-recipient` and `token-recipient-empty`.
+- `@qntx/wallet-engine`: request methods `tron-stake` (Stake 2.0 freeze, unfreeze,
+  withdraw-expired, cancel-unfreeze, delegate (optional lock), undelegate, vote, claim rewards —
+  each pre-checked against the java-tron actuator rules) and `tron-approve` (TRC-20 allowance;
+  `amount: 0n` revokes). `AccountPermissionUpdate` is not offered.
+- `@qntx/wallet-engine`: TRON tracking — broadcast refusals classified from `Return.response_code`
+  (`DUP_TRANSACTION_ERROR` is held; busy/connection/unknown codes stay `submitted`); signed bytes
+  rebroadcast while unexpired; `dropped` only once a solidified block's timestamp is past
+  `expiration` and neither node knows the id; included ⇒ `confirmed`, solidified ⇒ `final`; an
+  on-chain failure (`OUT_OF_ENERGY`, `REVERT`, …) is `failed` with the reason and the burned fee in
+  `error`; a reorg before solidification returns it to `submitted`.
+- `@qntx/wallet-engine`: TRON balances — liquid TRX, built-in TRC-20s (`balanceOf`, no Multicall),
+  custom TRC-20s, TRC-10s from `assetV2` (unverified), indexer-discovered TRC-20s (display-only,
+  unverified, spam-flagged); `AccountBalances.tron` (`TronAccountView`): frozen, unfreezing,
+  delegated in/out, votes, claimable reward, bandwidth/energy/TRON-power limits and usage.
+- `@qntx/wallet-engine`: TRON history from the gateway indexer (TRX, TRC-10 and TRC-20 in/out),
+  `verified` only after the node confirms the transaction bytes (TRX/TRC-10) or every Transfer log
+  touching the account (TRC-20); zero-value, look-alike and impersonation flags.
+- `@qntx/wallet-engine`: TRON account discovery, watch-only TRON addresses, TRON address-book
+  entries, imported TRON keys on the send path.
+- `@qntx/wallet-engine/gateway/contract`: the TRON route contract (`tronBasePath`, the allow-listed
+  node and indexer paths with request/response schemas, `TRON_BROADCAST_PATH`);
+  prices for TRX (`slip44:195`) and TRC-20 (`tron:<ref>/trc20:<base58>`).
+- `@qntx/gateway`: `POST /v1/tron/:caip2/*` — allow-listed TRON full-node HTTP API (TronGrid then
+  Tatum on mainnet, TronGrid then NileEx on Nile) with schema-checked answers and broadcast
+  no-double-relay; TronGrid `/v1/accounts` indexer for history and discovery. New production
+  secrets `TRONGRID_API_KEY`, `TATUM_API_KEY`. CoinGecko/DefiLlama price rows for TRX and TRC-20.
 
 ### Changed
 
@@ -490,10 +557,6 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   lock.
 - `@qntx/wallet-engine`: relay metadata sync (`metaSync`) starts in the background at unlock; the
   request pipeline and transaction recovery no longer wait for the relays.
-- **BREAKING:** `@qntx/wallet-engine/gateway/contract`: `pricesRequestCost` and
-  `PRICE_ASSETS_PER_UNIT` are removed. The gateway charges a prices request one rate-limit unit
-  plus one per upstream call its cache misses fan out to (one per CoinGecko platform and for the
-  native coins, two for DefiLlama), before the calls are sent; a fully cached batch costs one unit.
 - **BREAKING:** `@qntx/wallet-engine/gateway/contract`: a history `cursor` above
   `HISTORY_CURSOR_MAX` (2^63 − 1) and quote amounts wider than uint256 (EVM swap,
   bridge) or u64 (Solana swap) are `400 invalid-request` before any upstream call.
@@ -552,6 +615,31 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - Multicall3 is per network; ZKsync Era and ZKsync Sepolia use 0xF9cda624FBC7e059355ce98a31693d299FACd963.
 
 - `@qntx/wallet-engine`: `NetworkInfo.family` is the new `EngineFamily` (`"evm" | "solana" | "bitcoin"`); TRON networks in the chain table are not served by the engine yet.
+- Messages: every valid UTF-8 message is `kind: "text"`. Joiners, direction marks, soft hyphens and variation selectors are ordinary text (emoji ZWJ sequences, Persian ZWNJ, Hebrew/Arabic marks). 32-byte text, text with hidden/reordering characters and text that encodes raw bytes are blind (`message-bytes`) but still shown, under a line naming the hazard. New export `messageTextHazard`; `hasHiddenCharacters` and `isEncodedBytes` replace `isReadableText`, `isUnsafeCodePoint` and `isHexRendering`.
+- `IntentWarning.kind` is the closed union `IntentWarningKind`.
+- Seaport orders show up to 8 offer/consideration items (`ORDER_ITEMS`, was `SEAPORT_ORDER_ITEMS` = 4).
+- Snapshot votes (snapshot.js Vote types) are a decoded family.
+- Solana: SPL `Transfer`, `Burn`/`BurnChecked` and Stake `Split` signed by the account are decoded.
+- **Breaking:** `SolanaSignResult.refused` / `BitcoinSignResult.refused` are replaced by
+  `stopped: { index, reason: "refused" | "not-sent", error }` (see MIGRATION).
+- `TrackedTransaction` gains `durableNonce?: { account: string | undefined; value: string }`.
+- `HostController` state types are `DeepReadonly`; new exported type `DeepReadonly`.
+- gateway: an upstream `429` is no longer an outage: it cools the whole provider account down for
+  `min(Retry-After, 30 s)` (5 s default) and fails over. An attempt timeout counts against the
+  breaker only when the provider's liveness probe (`eth_chainId`, `getHealth`, Esplora tip height,
+  CoinGecko `ping`) also fails. Nothing a client sends can open a breaker for other users.
+- gateway: IPv6 clients are charged on their `/64` and `/48` (IPv4 `/24`).
+- gateway: the flood limiters count requests and batch entries; cost lives in the share limiter.
+- gateway: history on a served network without a history provider answers `404 unsupported` (was
+  `503`); `GET /v1/tokens/:caip2` answers `404 unsupported` for a network no token source covers
+  and `503 unavailable` for a covered one whose list is not built yet (was `404` for both).
+- `@qntx/wallet-engine`: `PricesState.errors` values are `"unpriced" | "unsupported"`; an
+  unsupported asset drops its stored quote. Token lists back off on a bare `404` or a `503` and
+  store an empty list only for `unsupported` / `unknown-network`.
+- **BREAKING:** `FeeModel` variants carry a required `pricing: GasPricing`; the `op-stack` variant also carries `operatorFee` (false on pre-Isthmus oracles, which revert on `getOperatorFee`) and `tokenRatio`; a `scroll` variant is added. See MIGRATION.md.
+- The OP Stack and Scroll L1 data fee shown in `DisplayIntent.fee.l1Data` (and used for the `fee-exceeds-amount` check) is now an upper bound: the oracle estimate × 5/4, sized from 5,600+ real transactions where the charge never exceeded 1.14× the estimate read one block earlier. Displayed maximum fees on Base, OP Mainnet and the other OP Stack networks increase accordingly.
+- `@qntx/wallet-engine`: `GatewayScope` gains `"tron"` — TRON gateway traffic carries its own
+  per-session client id. `GatewayConfig` and `GatewayScope` are now exported from the package root.
 
 ### Removed
 
@@ -712,6 +800,62 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   transaction's nonce is held again, other included transactions' nonces stay consumed, and a
   speed-up or cancel of the reorged transaction is accepted.
 - gateway: a truncated history page is no longer indistinguishable from a complete one (#378).
+- Replace the CHANGELOG sentence at lines 309–311 of fd771da1 ("Text, sign-in messages, permits, Seaport orders, Safe transactions of decoded calls and every recognised transaction are never blind.") with: "Whether a request is blind follows the decoder rules in `packages/wallet/README.md`; blind text is still shown." The README was corrected in this lane.
+- EVM sends now fill a nonce freed by a refused or dropped transaction before signing anything
+  higher: `EvmNonces.next` answers the lowest free nonce at or above the chain count, a prepared
+  request sitting above a freed nonce is stale at approval, `reserve` refuses to sign above a gap,
+  and a transaction already broadcast above a gap carries an explanatory `error` note on its tracked
+  row until a send fills it.
+- A storage failure after a transaction's bytes may have left the device no longer fails the
+  request: the durable pre-broadcast record stays the source of truth, the row stays tracked in
+  memory and the write is retried on the next poll. `wallet_sendCalls` bookkeeping writes are
+  best-effort for the same reason.
+- dApp batch sends (Solana `signAndSendTransactions`, Bitcoin PSBT broadcast) report exactly which
+  transactions went out and distinguish "the network refused transaction k" from "transaction k
+  was not sent" (a local failure before its broadcast).
+- A broadcast settling after lock→unlock no longer writes into the new session's transactions or
+  re-arms its timers.
+- Solana durable-nonce transactions (first instruction `AdvanceNonceAccount`), from the wallet or a
+  dApp, are never dropped by block height; they end only when they land or when the nonce account
+  (read at `finalized`) no longer holds their nonce and a bank at least as fresh has no status
+  entry. A nonce account loaded from a lookup table is kept tracked until the transaction lands.
+- A Solana blockhash expiry is proven only when the polling endpoint's own `isBlockhashValid`
+  says the blockhash is dead — a bound read from a lagging endpoint at request time can no longer
+  drop a transaction that can still land.
+- EVM history verifies provider claims one-to-one against receipt logs: identical claims collapse,
+  ERC-1155 `TransferBatch` amounts are summed per id, and a native claim backed by no value
+  movement (zero value, failed tx) leaves the entry unverified.
+- Spark payments that throw after the commit call are no longer reported failed unless the Spark
+  operator's own listing shows no such transfer; otherwise they stay `unknown` (WebLN `-32010`).
+  Spark errors are categorized by class before message text (a 502 mentioning "rejected" is a
+  network failure).
+- Engine facade `getState()` snapshots are deeply frozen and typed `DeepReadonly`.
+- Meta sync and token metadata writes started before a lock no longer land in the next session;
+  `addToken`/`setTokenHidden` refuse while locked.
+- gateway: a price request whose later source charge is refused keeps and caches what the earlier
+  source already returned instead of answering `429`; CoinGecko keeps every platform that answered.
+- `@qntx/wallet`: the type-level guard that every bytes-carrying RPC param field is classified
+  secret or public now sees bytes in union members, nullable array elements, `ArrayBuffer`s and
+  `Map`/`Set` values.
+- `@qntx/wallet-native`: each lock/unlock no longer leaks the previous kernel runtime and its copy
+  of the kernel bytecode (the predecessor chain is released on teardown).
+- scripts: the source boundary checker no longer skips `.js`/`.cts` files, nested
+  `generated`/`dist`/`node_modules` directories or symlinks, and refuses `#imports`, tsconfig
+  `paths`, absolute specifiers, `require()` and `import.meta.glob` in library source.
+- Mantle and Mantle Sepolia showed an L1 data fee about 4,400 times too low: Mantle charges `getL1Fee × tokenRatio()` in MNT.
+- Speeding up or cancelling a legacy (type-0) EVM transaction re-signed it at the original, un-bumped gas price.
+
+### Security
+
+- `@qntx/wallet`: `chains(wallet).sign` refuses a kernel result whose kind differs from the request's for every request kind (a Solana request previously accepted any result kind unchecked).
+- `@qntx/wallet-chains`: an undecoded Solana program that receives the signer is described only with an exposure statement leading the prompt — it can move all SOL of the account and act with its authority on every listed writable account (the signer's ATAs for listed mints are named). Writable lookup-table accounts or more than 12 such accounts make the request blind with the new reason `program-authority`.
+- `@qntx/wallet-chains`: an undecoded typed-data document with any hash or raw-bytes leaf (non-empty `bytes`, `bytesN`, or a string encoding ≥ 32 bytes / > 40 hex digits) is blind `typed-data-commitment`; a readable decoy leaf no longer makes it described.
+- `@qntx/wallet-chains`: off-chain order protocols are claimed. 1inch LOP v4 orders without extensions/interactions, CoW Protocol GPv2 orders and UniswapX Exclusive/V2/V3/Priority witnesses (on reactors verified per chain) are decoded as orders showing the most given and the least received per recipient; any other 1inch, CoW, 0x v4, Blur, LooksRare v2, Bebop, Paraswap Augustus RFQ, Velora Delta, KyberSwap, OpenOcean or Odos document is blind `typed-data-variant`.
+- `@qntx/wallet-kernel`: every decoder warning reaches the prompt (`permit2-witness` and `stake-lockup` were dropped); typed-data field lines render as `· path = value` so field names cannot imitate kernel lines.
+- gateway: a few IP prefixes rotating client ids could spend the shared provider accounts, trigger
+  upstream 429s and open the breakers for every user; one request could cost more than any
+  limiter window. Fixed by the cost pricing, account budget, cost ceiling and throttle handling
+  above.
 
 ## [0.13.0] - 2026-11-09
 

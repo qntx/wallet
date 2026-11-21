@@ -9,6 +9,7 @@ import type { HistoryChange, HistoryEntry, HistoryFlag, HistoryStatus } from "./
 export type GroupAddresses = {
   evm?: string;
   solana?: string;
+  tron?: string;
   /** Every scanned own Bitcoin address — the set grows while the Bitcoin source runs. */
   readonly bitcoin: Set<string>;
 };
@@ -48,6 +49,9 @@ const belongs = (tx: TrackedTransaction, group: HistoryGroup, own: GroupAddresse
       return false;
     }
   }
+  if (tx.family === "tron") {
+    return own.tron !== undefined && tx.tron?.from === own.tron;
+  }
   // bitcoin
   return tx.btc?.inputs.some((input) => own.bitcoin.has(input.address)) === true;
 };
@@ -55,6 +59,7 @@ const belongs = (tx: TrackedTransaction, group: HistoryGroup, own: GroupAddresse
 const ownAddress = (own: GroupAddresses, address: string): boolean =>
   address.toLowerCase() === own.evm?.toLowerCase() ||
   address === own.solana ||
+  address === own.tron ||
   own.bitcoin.has(address);
 
 /**

@@ -37,6 +37,7 @@ describe.skipIf(!GATEWAY)("hosted gateway e2e", () => {
           evm: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
           solana: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
           bitcoin: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+          tron: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
           service: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
         },
       },

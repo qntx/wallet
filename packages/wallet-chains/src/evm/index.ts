@@ -22,7 +22,7 @@ export {
   decodeBatchExecute,
 } from "./delegation.ts";
 export { SAFE_MULTISEND_CALL_ONLY } from "./safe.ts";
-export { SEAPORT_ORDER_ITEMS } from "./seaport.ts";
+export { ORDER_ITEMS } from "./order.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { ALLOWANCE_HOLDER, ZEROX_CHAINS, isZeroExSettler, decodeZeroX } from "./zerox.ts";
 export { ACROSS_SPOKEPOOLS, ACROSS_WRAPPED_NATIVE, decodeAcross } from "./across.ts";

@@ -529,8 +529,37 @@ export class SparkController extends Controller<SparkControllerState> {
         });
         throw new SparkControllerError("unknown", error.message, error.cause, payment);
       }
-      ledger.resolve(record, { state: "failed", error: errorText(error) });
-      throw error;
+      if (record.kind === "token") {
+        /* The library's contract makes first-attempt failures definite: output selection and the
+           ownership/metadata checks precede the broadcast, and `broadcastPartialTokenTransaction`
+           converts its own uncertain failures to `SparkTokenBroadcastError`. */
+        if (
+          error instanceof SparkInputError ||
+          (error instanceof SparkRequestError && !(error instanceof SparkTokenBroadcastError))
+        ) {
+          ledger.resolve(record, { state: "failed", error: errorText(error) });
+          throw error;
+        }
+        /* Anything else — e.g. a `SparkError` after the commit response — may have committed; a
+           token record without its spent input ids cannot be reconciled, so it stays open as
+           unknown. */
+        const payment = ledger.resolve(record, { state: "unknown", error: errorText(error) });
+        throw new SparkControllerError("unknown", "token transfer outcome unknown", error, payment);
+      }
+      /* A sats commit error is not itself a verdict — the library throws the same classes before
+         and after the commit request, so only the operator's own listing decides. `check` probes
+         it now: an id absent from a complete listing means the coordinator holds no such transfer
+         and the error was pre-commit — failed; anything else stays open as unknown. */
+      const probe = await ledger.check(record);
+      if (probe === "absent") {
+        ledger.resolve(record, { state: "failed", error: errorText(error) });
+        throw error;
+      }
+      const payment = ledger.resolve(record, { state: "unknown", error: errorText(error) });
+      if (payment.state === "failed") {
+        throw error;
+      }
+      throw new SparkControllerError("unknown", "payment outcome unknown", error, payment);
     }
     if (settled !== undefined) {
       ledger.resolve(record, { state: "settled", ...settled(result) });

@@ -54,7 +54,7 @@ export const decodeJupiterIx = (
     const index = ix.accountIndices[i];
     return index === undefined ? undefined : resolveAccountIndex(parsed, index, lookups);
   };
-  const require = (i: number): string => account(i) ?? "";
+  const accountAt = (i: number): string => account(i) ?? "";
   const planWellFormed = (offset: number): boolean => {
     if (data.length < offset + 4) {
       return false;
@@ -82,13 +82,13 @@ export const decodeJupiterIx = (
     if (ix.accountIndices.length < 10 || !planWellFormed(30)) {
       return undefined;
     }
-    const optionalDest = require(7);
+    const optionalDest = accountAt(7);
     return withinSlippage({
-      authority: require(0),
-      sourceMint: require(3),
-      destinationMint: require(4),
-      destinationTokenProgram: require(6),
-      destinationAccount: optionalDest === JUPITER_PROGRAM ? require(2) : optionalDest,
+      authority: accountAt(0),
+      sourceMint: accountAt(3),
+      destinationMint: accountAt(4),
+      destinationTokenProgram: accountAt(6),
+      destinationAccount: optionalDest === JUPITER_PROGRAM ? accountAt(2) : optionalDest,
       ...scalars(8),
     });
   }
@@ -98,11 +98,11 @@ export const decodeJupiterIx = (
       return undefined;
     }
     return withinSlippage({
-      authority: require(1),
-      sourceMint: require(6),
-      destinationMint: require(7),
-      destinationTokenProgram: require(9),
-      destinationAccount: require(5),
+      authority: accountAt(1),
+      sourceMint: accountAt(6),
+      destinationMint: accountAt(7),
+      destinationTokenProgram: accountAt(9),
+      destinationAccount: accountAt(5),
       ...scalars(9),
     });
   }

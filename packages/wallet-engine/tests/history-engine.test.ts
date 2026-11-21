@@ -67,6 +67,7 @@ describe("WalletEngine.history", () => {
             stale: false,
             errors: {},
             truncated: [],
+            unsupported: [],
           },
         },
       });

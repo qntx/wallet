@@ -4,9 +4,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { historyResponse } from "@qntx/wallet-engine/gateway/contract";
 
-import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
+import type { GatewayNetwork } from "../src/types.ts";
 import {
   allowAll,
+  countBefore,
   expectContract,
   fakeFetch,
   gateway,
@@ -22,6 +23,8 @@ const ARB = "eip155:42161";
 const HYPE = "eip155:999";
 const ARC = "eip155:5042";
 const SONIC = "eip155:146";
+const INK = "eip155:57073";
+const RONIN = "eip155:2020";
 const SEPOLIA = "eip155:11155111";
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
@@ -31,6 +34,8 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
   { id: HYPE, providers: [{ id: "alchemy", url: "https://hype.alchemy.test/v2" }] },
   { id: ARC, providers: [{ id: "alchemy", url: "https://arc.alchemy.test/v2" }] },
   { id: SONIC, providers: [{ id: "alchemy", url: "https://sonic.alchemy.test/v2" }] },
+  { id: INK, providers: [{ id: "alchemy", url: "https://ink.alchemy.test/v2" }] },
+  { id: RONIN, providers: [{ id: "alchemy", url: "https://ronin.alchemy.test/v2" }] },
   { id: SEPOLIA, providers: [{ id: "other", url: "https://other.test" }] },
   { id: SOLANA, providers: [{ id: "alchemy", url: "https://sol.alchemy.test" }] },
 ];
@@ -41,6 +46,8 @@ const UPSTREAM: Readonly<Record<string, string>> = {
   [HYPE]: "https://hype.alchemy.test",
   [ARC]: "https://arc.alchemy.test",
   [SONIC]: "https://sonic.alchemy.test",
+  [INK]: "https://ink.alchemy.test",
+  [RONIN]: "https://ronin.alchemy.test",
 };
 
 type Fixture = { readonly response: unknown };
@@ -337,12 +344,37 @@ describe("history page", () => {
     }
   });
 
-  it("503s a served network outside the transfers set without an upstream call", async () => {
+  it("serves Ink transfers through its alchemy provider", async () => {
+    const up = upstream({});
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[INK]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(INK, { address: OWNER }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-gateway-providers")).toBe("alchemy-transfers");
+    expect(up.seen.length).toBeGreaterThan(0);
+  });
+
+  it("serves Ronin transfers through its alchemy provider", async () => {
+    const up = upstream({});
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[RONIN]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(RONIN, { address: OWNER }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-gateway-providers")).toBe("alchemy-transfers");
+    expect(up.seen.length).toBeGreaterThan(0);
+  });
+
+  it("404s unsupported for a served network with no history provider, without an upstream call", async () => {
     const fetch = fakeFetch({});
     const app = gateway({ fetch: fetch.fetch, networks: NETWORKS });
     const res = await app.request(...request(SONIC, { address: OWNER }));
-    expect(res.status).toBe(503);
-    await expect(res.json()).resolves.toMatchObject({ error: "unavailable" });
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toMatchObject({ error: "unsupported" });
+    expect(res.headers.get("retry-after")).toBeNull();
     expect(fetch.calls).toHaveLength(0);
   });
 
@@ -414,7 +446,8 @@ describe("history page", () => {
     const solana = await app.request(...request(SOLANA, { address: OWNER }));
     expect(solana.status).toBe(404);
     const sepolia = await app.request(...request(SEPOLIA, { address: OWNER }));
-    expect(sepolia.status).toBe(503);
+    expect(sepolia.status).toBe(404);
+    await expect(sepolia.json()).resolves.toMatchObject({ error: "unsupported" });
     const get = await app.request(`/v1/history/${ETH}`, { method: "GET", headers: headers() });
     expect(get.status).toBe(404);
   });
@@ -479,11 +512,8 @@ describe("history page", () => {
     expect(body.truncated).toBe(true);
   });
 
-  it("charges a drain before sending it: a refused charge never reaches the upstream", async () => {
-    // Every one-unit charge passes; the drain's two-unit charge is refused.
-    const small: RateLimiter = {
-      limit: async ({ delta = 1 }) => Promise.resolve({ success: delta <= 1 }),
-    };
+  it("a refused share charge never reaches the upstream drain calls", async () => {
+    // Two calls' deltas (3 share units per 120-CU transfers call) fit; the drain's do not.
     const keyed = {
       transfers: page(fixture("eth-to").response).transfers.slice(0, 1),
       pageKey: "k",
@@ -492,7 +522,7 @@ describe("history page", () => {
     const app = gateway({
       fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
       networks: NETWORKS,
-      limiters: { ip: small, rpc: small, default: small },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: countBefore(6) },
     });
     const res = await app.request(...request(ETH, { address: OWNER }));
     expect(res.status).toBe(429);
@@ -512,24 +542,26 @@ describe("history page", () => {
     const app = gateway({
       fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
       networks: NETWORKS,
-      limiters: { ip: allowAll, rpc: allowAll, default: limiter },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: limiter },
     });
     const res = await app.request(...request(ETH, { address: OWNER }));
     expect(res.status).toBe(200);
     expect(up.seen).toHaveLength(4);
-    expect(limiter.deltas).toStrictEqual([1, 1, 2]);
+    // Four `alchemy_getAssetTransfers` calls at 120 CU each, billed 3 share units a call.
+    expect(limiter.deltas).toStrictEqual([3, 3, 3, 3]);
+    expect(limiter.keys).toStrictEqual(Array.from({ length: 4 }, () => "alchemy:unknown"));
   });
 
-  it("charges two units for a plain page", async () => {
+  it("bills a plain page's two upstream calls by their compute cost", async () => {
     const limiter = recordingLimiter();
     const up = upstream({ to: () => ({ transfers: [] }), from: () => ({ transfers: [] }) });
     const app = gateway({
       fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
       networks: NETWORKS,
-      limiters: { ip: allowAll, rpc: allowAll, default: limiter },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: limiter },
     });
     const res = await app.request(...request(ETH, { address: OWNER }));
     expect(res.status).toBe(200);
-    expect(limiter.deltas).toStrictEqual([1, 1]);
+    expect(limiter.deltas).toStrictEqual([3, 3]);
   });
 });

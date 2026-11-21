@@ -267,6 +267,30 @@ export class SparkPaymentLedger {
     return next;
   }
 
+  /**
+   * Whether the operator lists this record's transfer, asked right after a commit call failed:
+   * `listed` also folds a final status into the record; `absent` only when a complete read past
+   * `submittedAt` does not carry it; an incomplete listing or a failed read answers `unknown`.
+   */
+  async check(record: SparkPaymentRecord): Promise<"listed" | "absent" | "unknown"> {
+    let page: { readonly found: ReadonlyMap<string, SparkPayment>; readonly complete: boolean };
+    try {
+      page = await findPayments(
+        this.options.client.transfers.history,
+        new Set([record.id]),
+        record.submittedAt,
+      );
+    } catch {
+      return "unknown";
+    }
+    const payment = page.found.get(record.id);
+    if (payment === undefined) {
+      return page.complete ? "absent" : "unknown";
+    }
+    this.observe([payment]);
+    return "listed";
+  }
+
   /** Resolves open sats records listed in a history page the controller already read. */
   observe(payments: ReadonlyArray<SparkPayment>): void {
     for (const payment of payments) {

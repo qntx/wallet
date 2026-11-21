@@ -56,6 +56,9 @@ const world = () => {
     /** The tip's absoluteSlot; `statusSlot` is the bank the status answer came from. */
     slot: 500,
     statusSlot: 500,
+    /** `isBlockhashValid` answers: false = the blockhash is dead; `validitySlot` is its bank. */
+    blockhashAlive: false,
+    validitySlot: undefined as number | undefined,
     /** Fired after the poll's first read — a transaction landing between the two reads. */
     landAfterFirstRead: undefined as undefined | (() => void),
   };
@@ -118,6 +121,11 @@ const world = () => {
         // A node answers with the transaction's own signature — the fee payer's, at bytes 1..65.
         return base58.encode(base64.decode(wire).slice(1, 65));
       }
+      case "isBlockhashValid":
+        return {
+          context: { slot: env.validitySlot ?? env.slot },
+          value: env.blockhashAlive,
+        };
       case "getSignatureStatuses": {
         const sigs = Array.isArray(params[0]) ? params[0] : [];
         return {
@@ -418,7 +426,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     expect(w.attempts).toHaveLength(before);
   });
 
-  it("the tip is read before the status so the expiry proof is never stale", async () => {
+  it("the tip and the blockhash validity are read before the status so the proof is never stale", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     w.setSendMode({ kind: "drop" });
@@ -430,9 +438,51 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     w.calls.length = 0;
     w.env.blockHeight = LVBH + 1;
     await timers.fire(POLL_MS);
-    const tipAndStatus = new Set(["getEpochInfo", "getSignatureStatuses"]);
-    const reads = w.calls.filter((call) => tipAndStatus.has(call));
-    expect(reads).toStrictEqual(["getEpochInfo", "getSignatureStatuses"]);
+    const proofReads = new Set(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
+    const reads = w.calls.filter((call) => proofReads.has(call));
+    expect(reads).toStrictEqual(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
+  });
+
+  it("a blockhash still valid on the endpoint is never dropped, whatever the stored bound", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+    const before = w.attempts.length;
+
+    // The wallet stamped this bound from a lagging endpoint — the true expiry is higher.
+    w.env.blockHeight = LVBH + 1;
+    w.env.blockhashAlive = true;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    // Still executable: the poll rebroadcasts the persisted wire.
+    expect(w.attempts.length).toBeGreaterThan(before);
+
+    // The blockhash dying on the same endpoint proves the drop — at a fresh enough bank.
+    w.env.blockhashAlive = false;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
+  });
+
+  it("a status bank behind the blockhash-validity read cannot prove a drop", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+
+    w.env.blockHeight = LVBH + 1;
+    w.env.validitySlot = 800;
+    w.env.statusSlot = 700;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+
+    w.env.statusSlot = 800;
+    await timers.fire(POLL_MS);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 });

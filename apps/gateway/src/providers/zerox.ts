@@ -3,8 +3,9 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
+import { requestCost } from "../budget/costs.ts";
 import type { ResolvedProvider } from "../types.ts";
-import type { Forwarder } from "./forward.ts";
+import type { Forwarder, Meter } from "./forward.ts";
 import { ProviderFailure } from "./forward.ts";
 
 export type ZeroExConfig = {
@@ -41,7 +42,8 @@ export const zeroExConfig = (env: {
 
 const ZEROX_API_BASE = "https://api.0x.org";
 
-const PROVIDER: ResolvedProvider = { id: "0x", url: ZEROX_API_BASE };
+/** The 0x quote endpoint's identity; the app resolves its billing account into this provider. */
+export const ZEROX_PROVIDER = { id: "0x", url: ZEROX_API_BASE } as const;
 
 /** 22x the largest quote response measured (a 46 kB Jupiter build). */
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -106,6 +108,8 @@ const CLIENT_ERROR: ReadonlySet<number> = new Set([400, 403, 422]);
 export async function zeroExQuote(
   forwarder: Forwarder,
   config: ZeroExConfig,
+  provider: ResolvedProvider,
+  meter: Meter,
   query: {
     readonly chainId: number;
     readonly sellToken: string;
@@ -126,60 +130,65 @@ export async function zeroExQuote(
     url.searchParams.set("swapFeeRecipient", config.fee.recipient);
     url.searchParams.set("swapFeeBps", String(config.fee.bps));
   }
-  const { value } = await forwarder.run([PROVIDER], async (send) => {
-    const http = await send({
-      url,
-      headers: { "0x-api-key": config.apiKey, "0x-version": "v2" },
-    });
-    const text = await http.text(MAX_RESPONSE_BYTES);
-    if (!http.ok) {
-      if (CLIENT_ERROR.has(http.status)) {
-        return { badRequest: true } as const;
+  const { value } = await forwarder.run(
+    [provider],
+    async (send) => {
+      const http = await send({
+        url,
+        headers: { "0x-api-key": config.apiKey, "0x-version": "v2" },
+        cost: requestCost(provider.costs),
+      });
+      const text = await http.text(MAX_RESPONSE_BYTES);
+      if (!http.ok) {
+        if (CLIENT_ERROR.has(http.status)) {
+          return { badRequest: true } as const;
+        }
+        throw new ProviderFailure(`status-${http.status}`, false);
       }
-      throw new ProviderFailure(`status-${http.status}`, false);
-    }
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      throw new ProviderFailure("malformed", false);
-    }
-    const res = parseWith(zeroExUpstreamResponse, body);
-    if (res === undefined) {
-      throw new ProviderFailure("malformed", false);
-    }
-    if (!res.liquidityAvailable) {
-      return { liquidity: false } satisfies SwapQuoteResponse;
-    }
-    const tx = res.transaction;
-    if (
-      tx === undefined ||
-      res.sellToken === undefined ||
-      res.buyToken === undefined ||
-      res.sellAmount === undefined ||
-      res.buyAmount === undefined ||
-      res.minBuyAmount === undefined ||
-      res.blockNumber === undefined
-    ) {
-      throw new ProviderFailure("malformed", false);
-    }
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new ProviderFailure("malformed", false);
+      }
+      const res = parseWith(zeroExUpstreamResponse, body);
+      if (res === undefined) {
+        throw new ProviderFailure("malformed", false);
+      }
+      if (!res.liquidityAvailable) {
+        return { liquidity: false } satisfies SwapQuoteResponse;
+      }
+      const tx = res.transaction;
+      if (
+        tx === undefined ||
+        res.sellToken === undefined ||
+        res.buyToken === undefined ||
+        res.sellAmount === undefined ||
+        res.buyAmount === undefined ||
+        res.minBuyAmount === undefined ||
+        res.blockNumber === undefined
+      ) {
+        throw new ProviderFailure("malformed", false);
+      }
 
-    return {
-      liquidity: true,
-      provider: "0x",
-      sellToken: res.sellToken,
-      buyToken: res.buyToken,
-      sellAmount: res.sellAmount,
-      buyAmount: res.buyAmount,
-      minBuyAmount: res.minBuyAmount,
-      allowanceTarget: res.allowanceTarget ?? null,
-      transaction: { to: tx.to, data: tx.data, value: tx.value, gas: tx.gas },
-      fees: {
-        integrator: upstreamFeeOf(res.fees?.integratorFee ?? undefined) ?? null,
-        zeroEx: upstreamFeeOf(res.fees?.zeroExFee ?? undefined) ?? null,
-      },
-      blockNumber: res.blockNumber,
-    } satisfies SwapQuoteResponse;
-  });
+      return {
+        liquidity: true,
+        provider: "0x",
+        sellToken: res.sellToken,
+        buyToken: res.buyToken,
+        sellAmount: res.sellAmount,
+        buyAmount: res.buyAmount,
+        minBuyAmount: res.minBuyAmount,
+        allowanceTarget: res.allowanceTarget ?? null,
+        transaction: { to: tx.to, data: tx.data, value: tx.value, gas: tx.gas },
+        fees: {
+          integrator: upstreamFeeOf(res.fees?.integratorFee ?? undefined) ?? null,
+          zeroEx: upstreamFeeOf(res.fees?.zeroExFee ?? undefined) ?? null,
+        },
+        blockNumber: res.blockNumber,
+      } satisfies SwapQuoteResponse;
+    },
+    { meter },
+  );
   return value;
 }

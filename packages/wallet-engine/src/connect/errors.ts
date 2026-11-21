@@ -43,15 +43,26 @@ export const paymentPending = (message: string): ProviderError =>
   new ProviderError(PAYMENT_PENDING_CODE, message);
 
 /**
- * A batch send that stopped at `refused.index` (never the first: a first refusal fails the request
- * instead): the message names the refused input and its error, and lists the ids already submitted
- * so the page does not resubmit them.
+ * A batch send that stopped at `stopped.index` (never the first: a first failure fails the request
+ * instead). `reason` is `"refused"` only when the node itself rejected those bytes — the stopped
+ * input and everything after it never went out — while anything else means a local failure kept it
+ * from being sent at all. The message lists the ids already submitted so the page does not resubmit
+ * them.
  */
-export const broadcastRefused = (
-  refused: { readonly index: number; readonly error: string },
+export const batchStopped = (
+  stopped: {
+    readonly index: number;
+    readonly reason: "refused" | "not-sent";
+    readonly error: string;
+  },
   submitted: ReadonlyArray<string>,
-): ProviderError =>
-  internalError(
-    `the network refused transaction ${String(refused.index)}: ${refused.error} — already ` +
+): ProviderError => {
+  const head =
+    stopped.reason === "refused"
+      ? `the network refused transaction ${String(stopped.index)}`
+      : `transaction ${String(stopped.index)} was not sent`;
+  return internalError(
+    `${head}: ${stopped.error} — it and every later transaction were not sent; already ` +
       `submitted, do not resubmit: ${submitted.join(", ")}`,
   );
+};

@@ -8,14 +8,14 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { DisplayIntent } from "@qntx/wallet-chains";
+import type { DisplayIntent, IntentWarningKind, OffchainOrder } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import { buildTronRawData, decodeTron } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../src/errors.ts";
-import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
+import { CATALOGS, chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
 import { backupCredentialName, corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
@@ -491,11 +491,11 @@ describe("chain prompts", () => {
       description: "Message:\nhello",
     });
     const hostile = `pay \u202Ebob\n\n\n${"x".repeat(400)}\nhidden`;
-    /* A bidi override makes the message blind: warning first, then the sanitised excerpt. */
+    /* A bidi override makes the message blind: hazard line first, then the sanitised excerpt. */
     const hostilePrompt = messagePromptIntent({ kind: "text", text: hostile });
     expect(hostilePrompt.blind).toBe("message-bytes");
     expect(chainPrompt("zh-Hans", hostilePrompt).description).toBe(
-      `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\npay \uFFFDbob\n${"x".repeat(
+      `文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n消息：\npay \uFFFDbob\n${"x".repeat(
         312,
       )}\n… 还有 94 个字符未显示`,
     );
@@ -993,11 +993,11 @@ describe("chain prompts via the real decoders", () => {
     const program = base58.encode(unknown);
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认转账",
-      description: `网络：Solana\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
+      description: `网络：Solana\n程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
     });
   });
 
@@ -1259,7 +1259,7 @@ describe("solana stake", () => {
         approvals: [],
         fee: undefined,
         verifiability: "partial" as const,
-        warnings: [{ kind: "platform-fee", message: "50 bps" }],
+        warnings: [{ kind: "platform-fee" as const, message: "50 bps" }],
       };
       expect(chainPrompt("zh-Hans", intent).description).toContain("Jupiter 收取平台费 50 bps");
       expect(chainPrompt("en", intent).description).toContain("Jupiter platform fee: 50 bps");
@@ -1397,7 +1397,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     });
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm signature",
-      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\nmaker: ${SIGNER}`,
+      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\n· maker = ${SIGNER}`,
     });
   });
 
@@ -1420,15 +1420,15 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       title: "Confirm blind signing",
       description:
         `Network: Ethereum\nVerifying contract ${safe}\nType: SafeMessage\n` +
-        `It signs only hashes or raw bytes; the wallet cannot see what they commit to\n` +
-        `The wallet cannot verify what this signature authorises\nmessage: ${hash}`,
+        `It signs a hash or raw bytes; the wallet cannot see what they commit to\n` +
+        `The wallet cannot verify what this signature authorises\n· message = ${hash}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
       description:
         `网络：Ethereum\n验证合约 ${safe}\n类型：SafeMessage\n` +
-        `只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
-        `钱包无法核实此签名授权的内容\nmessage：${hash}`,
+        `它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
+        `钱包无法核实此签名授权的内容\n· message = ${hash}`,
     });
   });
 
@@ -1663,7 +1663,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
   it("every Seaport item kind renders its token, id or criteria and the zone", () => {
     fc.assert(
       fc.property(
-        fc.array(seaportItem, { minLength: 1, maxLength: 6 }),
+        fc.array(seaportItem, { minLength: 1, maxLength: 9 }),
         fc.array(seaportItem, { maxLength: 2 }),
         fc.oneof(fc.constant(ZERO_EVM_ADDR), seaportAddress),
         (offer, extra, zone) => {
@@ -1678,8 +1678,8 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
           const { description } = chainPrompt("en", typedIntent({ seaport }));
           const lines = description.split("\n");
           const gives = lines.filter((l) => l.startsWith("Give "));
-          expect(gives).toHaveLength(Math.min(offer.length, 4));
-          for (const [i, it] of offer.slice(0, 4).entries()) {
+          expect(gives).toHaveLength(Math.min(offer.length, 8));
+          for (const [i, it] of offer.slice(0, 8).entries()) {
             expectGiveLine(gives[i], it);
           }
           const last = lines.at(-1);
@@ -1928,9 +1928,154 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "Type: OrderComponents",
         "Give 0x3333333333333333333333333333333333333333 #7",
         `${SIGNER} receives 1 ETH → 0.5 ETH`,
-        ...[1, 2, 3].map(() => `${TO} receives 0.000000000000000001 ETH`),
-        "… 1 more items not shown",
+        ...[1, 2, 3, 4].map(() => `${TO} receives 0.000000000000000001 ETH`),
         `Zone ${TO} can restrict or cancel this order`,
+      ].join("\n"),
+    );
+  });
+
+  /* A recognised off-chain order: the document's approvals come first, then the order's
+     header, give, receives and bound lines — without the "other outflows" caveat. */
+  const orderAmount = {
+    asset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    amount: "1500000",
+    decimals: 6,
+    symbol: "USDC",
+  };
+  const orderIntent = (
+    order: OffchainOrder,
+    message: Record<string, unknown>,
+    approvals: PromptIntent["approvals"] = [],
+  ): PromptIntent => ({
+    summary: "swap",
+    outflows: [],
+    approvals,
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    message: {
+      kind: "typed-data",
+      data: {},
+      order,
+      ...message,
+    } as PromptIntent["message"] & { kind: "typed-data" },
+  });
+
+  it("a UniswapX order follows the take-once permit line", () => {
+    const intent = orderIntent(
+      {
+        protocol: "uniswapx",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: SIGNER, amount: eth("500000000000000000") }],
+        expiry: 1_700_000_000,
+        partialFill: true,
+        exclusiveFiller: TO,
+      },
+      {
+        primaryType: "PermitWitnessTransferFrom",
+        domain: {
+          name: "Permit2",
+          chainId: 1,
+          verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        },
+      },
+      [
+        {
+          kind: "allowance",
+          spender: SPENDER,
+          amount: orderAmount,
+          change: "transfer",
+          unlimited: false,
+          expiration: 0,
+          via: "permit2",
+          verified: false,
+        },
+      ],
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      [
+        "App: Permit2",
+        "Network: Ethereum",
+        "Verifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "Type: PermitWitnessTransferFrom",
+        `Allow ${SPENDER} to take 1.5 USDC once via Permit2`,
+        `UniswapX order by ${SIGNER}`,
+        "Give at most 1.5 USDC",
+        `${SIGNER} receives at least 0.5 ETH`,
+        "Valid until 2023-11-14 22:13 (UTC)",
+        "Can be filled in parts at the same rate",
+        `${TO} has the exclusive right to fill it first`,
+      ].join("\n"),
+    );
+  });
+
+  it("a 1inch order with an allowed sender and no expiry shows both bounds", () => {
+    const intent = orderIntent(
+      {
+        protocol: "1inch",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: TO, amount: eth("500000000000000000") }],
+        partialFill: false,
+        allowedSender: "0x00000000000000000001",
+      },
+      {
+        primaryType: "Order",
+        domain: {
+          name: "1inch Aggregation Router",
+          version: "6",
+          chainId: 1,
+          verifyingContract: SPENDER,
+        },
+      },
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      [
+        "App: 1inch Aggregation Router",
+        "Network: Ethereum",
+        `Verifying contract ${SPENDER}`,
+        "Type: Order",
+        `1inch order by ${SIGNER}`,
+        "Give at most 1.5 USDC",
+        `${TO} receives at least 0.5 ETH`,
+        "No expiry",
+        "Only a taker whose address ends in 0x00000000000000000001 can fill it",
+      ].join("\n"),
+    );
+  });
+
+  it("a CoW order renders the same bounds in Chinese", () => {
+    const intent = orderIntent(
+      {
+        protocol: "cow",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: TO, amount: eth("500000000000000000") }],
+        expiry: 1_700_000_000,
+        partialFill: true,
+      },
+      {
+        primaryType: "Order",
+        domain: {
+          name: "Gnosis Protocol",
+          version: "v2",
+          chainId: 1,
+          verifyingContract: SPENDER,
+        },
+      },
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      [
+        "应用：Gnosis Protocol",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：Order",
+        `CoW Protocol 订单，挂单方 ${SIGNER}`,
+        "最多付出 1.5 USDC",
+        `${TO} 至少收到 0.5 ETH`,
+        "有效期至 2023-11-14 22:13（UTC）",
+        "可按同一价格分批成交",
       ].join("\n"),
     );
   });
@@ -1966,7 +2111,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       chainPrompt("zh-Hans", typedIntent({ fields: [{ path: "maker", value: SIGNER }] }))
         .description,
     ).toBe(
-      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n钱包无法核实此签名授权的内容\nmaker：${SIGNER}`,
+      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n钱包无法核实此签名授权的内容\n· maker = ${SIGNER}`,
     );
     expect(chainPrompt("zh-Hans", typedIntent({ seaport: order })).description).toBe(
       [
@@ -1976,8 +2121,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "类型：OrderComponents",
         "付出 0x3333333333333333333333333333333333333333 #7",
         `${SIGNER} 收到 1 ETH → 0.5 ETH`,
-        ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
-        "… 还有 1 项未显示",
+        ...[1, 2, 3, 4].map(() => `${TO} 收到 0.000000000000000001 ETH`),
         `区域合约 ${TO} 可限制或取消此订单`,
       ].join("\n"),
     );
@@ -2149,7 +2293,7 @@ describe("near-miss blind prompts", () => {
         "Type: TransferWithAuthorization\n" +
         "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
         "The wallet cannot verify what this signature authorises\n" +
-        `from: ${SIGNER}\nto: ${OTHER}\nvalue: 1`,
+        `· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
@@ -2160,7 +2304,7 @@ describe("near-miss blind prompts", () => {
         "类型：TransferWithAuthorization\n" +
         "钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n" +
         "钱包无法核实此签名授权的内容\n" +
-        `from：${SIGNER}\nto：${OTHER}\nvalue：1`,
+        `· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1`,
     });
   });
 
@@ -2241,7 +2385,7 @@ describe("near-miss blind prompts", () => {
       message: {
         offerer: SIGNER,
         zone: "0x0000000000000000000000000000000000000000",
-        offer: Array.from({ length: 5 }, () => item),
+        offer: Array.from({ length: 9 }, () => item),
         consideration: [{ ...item, startAmount: "0", endAmount: "0", recipient: SIGNER }],
         orderType: 0,
         startTime: "1700000000",
@@ -2280,16 +2424,8 @@ describe("near-miss blind prompts", () => {
       1,
       2,
       0,
+      1,
       9,
-      3,
-      5,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
     ]);
     const req = normalizeSolana(
       {
@@ -2335,17 +2471,55 @@ describe("blind text prompts", () => {
       SIGNER,
     );
 
-  it("hex-rendered text shows its excerpt under the blind warning, in both locales", () => {
+  it("hex-rendered text shows its excerpt under the encoded-bytes hazard, in both locales", () => {
     const text = `0x${"ab".repeat(32)}`;
     const intent = personal(text);
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n${text}`,
+      description: `This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n${text}`,
+      description: `文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n${text}`,
+    });
+  });
+
+  it("a 32-byte text shows under the digest-length hazard, in both locales", () => {
+    const text = "Sign in to app.example.org #4821";
+    const intent = personal(text);
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n${text}`,
+    });
+  });
+
+  it("text with a bidi override shows under the hidden-characters hazard, sanitised", () => {
+    const intent = personal("pay \u202Ebob");
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\nMessage:\npay �bob",
+    });
+  });
+
+  it("a Persian ZWNJ login is ordinary text, not blind", () => {
+    const text = "برای ورود به حساب کاربری می\u200Cخواهم امضا کنم";
+    const intent = personal(text);
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm signature",
+      description: `Message:\n${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认签名",
+      description: `消息：\n${text}`,
     });
   });
 });
@@ -2842,5 +3016,208 @@ describe("polymarket prompts", () => {
       title: "确认盲签",
       description: `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n此类型数据过大，无法完整显示`,
     });
+  });
+});
+
+describe("decoder warnings reach the prompt", () => {
+  const WITNESS_SPENDER = "0x1111111254EEB25477B68fb85Ed929f73A960582";
+
+  const txIntent = (warnings: PromptIntent["warnings"]): PromptIntent => ({
+    summary: "swap",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "partial",
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    family: "solana",
+    ...(warnings === undefined ? {} : { warnings }),
+  });
+
+  const typedIntent = (warnings: PromptIntent["warnings"]): PromptIntent => ({
+    summary: "approve",
+    outflows: [],
+    approvals: [
+      {
+        kind: "allowance",
+        spender: WITNESS_SPENDER,
+        amount: { asset: USDC, amount: "1000000", decimals: 6, symbol: "USDC" },
+        change: "set",
+        unlimited: false,
+        verified: true,
+      },
+    ],
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    family: "evm",
+    message: { kind: "typed-data", primaryType: "Permit", domain: {}, data: {} },
+    ...(warnings === undefined ? {} : { warnings }),
+  });
+
+  it("every catalog warning renders in a transaction prompt, in order, in both locales", () => {
+    const kinds = Object.keys(CATALOGS.en.warnings) as IntentWarningKind[];
+    expect(kinds.length).toBeGreaterThan(0);
+    for (const kind of kinds) {
+      for (const locale of ["en", "zh-Hans"] as const) {
+        const prompt = chainPrompt(locale, txIntent([{ kind, message: "50 bps" }]));
+        const lines = prompt.description.split("\n");
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
+      }
+    }
+    /* Two warnings keep their order. */
+    const ordered = chainPrompt(
+      "en",
+      txIntent([
+        { kind: "platform-fee", message: "50 bps" },
+        { kind: "sighash-single-anyonecanpay", message: "m" },
+      ]),
+    ).description;
+    const feeLine = CATALOGS.en.warnings["platform-fee"]("50 bps");
+    const sighashLine = CATALOGS.en.warnings["sighash-single-anyonecanpay"]("m");
+    expect(ordered.indexOf(feeLine)).toBeGreaterThan(-1);
+    expect(ordered.indexOf(feeLine)).toBeLessThan(ordered.indexOf(sighashLine));
+  });
+
+  it("every catalog warning renders after the content lines of a typed-data prompt", () => {
+    const kinds = Object.keys(CATALOGS.en.warnings) as IntentWarningKind[];
+    for (const kind of kinds) {
+      for (const locale of ["en", "zh-Hans"] as const) {
+        const prompt = chainPrompt(locale, typedIntent([{ kind, message: "50 bps" }]));
+        const lines = prompt.description.split("\n");
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
+      }
+    }
+  });
+
+  it("a Permit2 witness order prompts the witness warning", () => {
+    const REACTOR = "0x00000000000000000000000000000000C0FFEE01";
+    const doc = {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        PermitWitnessTransferFrom: [
+          { name: "permitted", type: "TokenPermissions" },
+          { name: "spender", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "witness", type: "ExclusiveDutchOrder" },
+        ],
+        TokenPermissions: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+        ExclusiveDutchOrder: [
+          { name: "info", type: "OrderInfo" },
+          { name: "decayStartTime", type: "uint256" },
+          { name: "decayEndTime", type: "uint256" },
+          { name: "exclusiveFiller", type: "address" },
+          { name: "exclusivityOverrideBps", type: "uint256" },
+          { name: "inputToken", type: "address" },
+          { name: "inputStartAmount", type: "uint256" },
+          { name: "inputEndAmount", type: "uint256" },
+          { name: "outputs", type: "DutchOutput[]" },
+        ],
+        OrderInfo: [
+          { name: "reactor", type: "address" },
+          { name: "swapper", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "additionalValidationContract", type: "address" },
+          { name: "additionalValidationData", type: "bytes" },
+        ],
+        DutchOutput: [
+          { name: "token", type: "address" },
+          { name: "startAmount", type: "uint256" },
+          { name: "endAmount", type: "uint256" },
+          { name: "recipient", type: "address" },
+        ],
+      },
+      primaryType: "PermitWitnessTransferFrom",
+      domain: {
+        name: "Permit2",
+        chainId: 1,
+        verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      },
+      message: {
+        permitted: { token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", amount: "1000000000" },
+        spender: REACTOR,
+        nonce: "1",
+        deadline: "2000000000",
+        witness: {
+          info: {
+            reactor: REACTOR,
+            swapper: "0x52908400098527886E0F7030069857D2E4169EE7",
+            nonce: "1",
+            deadline: "2000000000",
+            additionalValidationContract: "0x0000000000000000000000000000000000000000",
+            additionalValidationData: "0x",
+          },
+          decayStartTime: "0",
+          decayEndTime: "0",
+          exclusiveFiller: "0x00000000000000000000000000000000DeaDBeef",
+          exclusivityOverrideBps: "0",
+          inputToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          inputStartAmount: "1000000000",
+          inputEndAmount: "1000000000",
+          outputs: [
+            {
+              token: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+              startAmount: "1",
+              endAmount: "1",
+              recipient: "0x00000000000000000000000000000000DeaDBeef",
+            },
+          ],
+        },
+      },
+    };
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
+        typedData: JSON.stringify(doc),
+      },
+      "0x52908400098527886E0F7030069857D2E4169EE7",
+    );
+    expect(intent.warnings.map((w) => w.kind)).toStrictEqual(["permit2-witness"]);
+    expect(chainPrompt("en", intent).description).toContain(
+      "This permit carries further terms (a witness)",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toContain("此许可附带附加条款（witness）");
+  });
+});
+
+describe("typed field lines cannot imitate kernel lines", () => {
+  const fieldIntent = (path: string, value: string): PromptIntent => ({
+    summary: "message",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    family: "evm",
+    message: {
+      kind: "typed-data",
+      primaryType: "Order",
+      domain: { chainId: 1 },
+      data: {},
+      fields: [{ path, value }],
+    },
+  });
+
+  it("a field named like a kernel line shows as a dotted field line, in both locales", () => {
+    const en = chainPrompt("en", fieldIntent("Network", "Sepolia (testnet, no value)"));
+    /* Only the kernel's own network line may start with the heading. */
+    expect(en.description.split("\n").filter((line) => line.startsWith("Network:"))).toHaveLength(
+      1,
+    );
+    expect(en.description).toContain("\n· Network = Sepolia (testnet, no value)");
+
+    const zh = chainPrompt("zh-Hans", fieldIntent("网络", "Sepolia (testnet)"));
+    expect(zh.description.split("\n").filter((line) => line.startsWith("网络："))).toHaveLength(1);
+    expect(zh.description).toContain("\n· 网络 = Sepolia (testnet)");
   });
 });

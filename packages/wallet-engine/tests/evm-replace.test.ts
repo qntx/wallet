@@ -44,6 +44,13 @@ const evm1559 = (request: Request) => {
   }
   return tx;
 };
+const evmLegacy = (request: Request) => {
+  const tx = evmTx(request);
+  if (tx.type !== "legacy") {
+    throw new Error("expected legacy");
+  }
+  return tx;
+};
 const recordEvmSign =
   (seen: Array<{ nonce: number; maxFeePerGas: string; maxPriorityFeePerGas: string }>) =>
   async ({ request }: { request: Request; verify: Parameters<Sign>[0]["verify"] }) => {
@@ -217,6 +224,40 @@ describe("TransactionController.replace", () => {
     const bumpedFee = oldFee * 11n;
     expect(newFee * 10n).toBeGreaterThanOrEqual(bumpedFee);
     expect(newFee * 10n).toBeLessThan(bumpedFee + oldFee + 10n);
+  });
+
+  it("speed-up of a legacy-priced transaction re-signs at the bumped gasPrice", async () => {
+    const seen: Array<{ type: string; gasPrice: string }> = [];
+    const sign: Sign = async ({ request }) => {
+      const tx = evmLegacy(request);
+      seen.push({ type: tx.type, gasPrice: tx.gasPrice });
+      return Promise.resolve(fakeSignedEvm(request));
+    };
+    const ctl = new TransactionController({
+      wallet: {} as Wallet,
+      networks: new NetworkController({
+        ...idleNetworkDeps,
+        fetch: rpcFetch({ eth_feeHistory: null, eth_gasPrice: "0xa" }),
+        rpc: { "eip155:1": ["http://fake.local"] },
+        openStore: async () => Promise.resolve(memoryStore()),
+        logger,
+      }),
+      openStore: async () => Promise.resolve(memoryStore()),
+      random: (n) => new Uint8Array(n).fill(1),
+      setTimer: () => () => {},
+      now: () => 1000,
+      logger,
+      pollMs: 1,
+      chains: apis(sign),
+    });
+    await ctl.init();
+    const original = await send(ctl, SEND);
+    expect(original.state).toBe("submitted");
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
+    expect(bumped.state).toBe("submitted");
+    expect(seen).toHaveLength(2);
+    expect(seen[0]?.gasPrice).toBe("0xa");
+    expect(seen[1]?.gasPrice).toBe("0xb");
   });
 
   it("cancel rebuilds as a 0-value transfer to self with gas 21000", async () => {

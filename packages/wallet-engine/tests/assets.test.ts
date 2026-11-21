@@ -31,6 +31,7 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 // chainId 1 built-ins, in table order — every refresh on this network tracks them.
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as `0x${string}`;
 
 const balOf = encodeFunctionData({
   abi: ERC20_ABI,
@@ -51,7 +52,7 @@ const AGG = (callData: `0x${string}`): string =>
   encodeFunctionData({
     abi: MULTICALL3_ABI,
     functionName: "aggregate3",
-    args: [[USDC, USDT, TOKEN].map((target) => ({ target, allowFailure: true, callData }))],
+    args: [[USDC, USDT, WETH, TOKEN].map((target) => ({ target, allowFailure: true, callData }))],
   });
 
 const SYMBOL_CALL = encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" });
@@ -135,6 +136,7 @@ describe("AssetsController", () => {
             result: [
               { success: true, returnData: enc(5n) as `0x${string}` },
               { success: true, returnData: enc(7n) as `0x${string}` },
+              { success: true, returnData: enc(11n) as `0x${string}` },
               { success: true, returnData: enc(5n) as `0x${string}` },
             ],
           }),
@@ -173,9 +175,9 @@ describe("AssetsController", () => {
     const s = assets.getState().balances[`eip155:1:${OWNER}`];
     expect(s?.native).toBe("1000000000000000000");
     // built-ins read through the same aggregate3; the added token stays last, unverified
-    expect(s?.tokens).toHaveLength(3);
+    expect(s?.tokens).toHaveLength(4);
     expect(s?.tokens[0]?.verified).toBe(true);
-    const tst = s?.tokens[2];
+    const tst = s?.tokens[3];
     expect(tst?.address).toBe(TOKEN);
     expect(tst?.balance).toBe("5");
     expect(tst?.symbol).toBe("TST");
@@ -329,6 +331,7 @@ describe("AssetsController token tracking", () => {
       }),
     });
     const ctl = controller(c);
+    await ctl.init();
     expect(ctl.isTracked("eip155:1", USDC)).toBe(true);
     expect(ctl.isTracked("eip155:1", USDC.toLowerCase())).toBe(true);
     expect(ctl.isTracked("eip155:1", TOKEN)).toBe(false);

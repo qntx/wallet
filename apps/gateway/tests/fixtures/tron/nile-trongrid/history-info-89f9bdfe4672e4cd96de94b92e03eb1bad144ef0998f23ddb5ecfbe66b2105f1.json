@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "body": {
+    "id": "89f9bdfe4672e4cd96de94b92e03eb1bad144ef0998f23ddb5ecfbe66b2105f1",
+    "fee": 267000,
+    "blockNumber": 56105130,
+    "blockTimeStamp": 1744622244000,
+    "contractResult": [""],
+    "receipt": {
+      "net_fee": 267000
+    }
+  }
+}

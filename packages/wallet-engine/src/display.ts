@@ -1,7 +1,11 @@
-import { isUnsafeCodePoint } from "@qntx/wallet-chains";
+import { hasHiddenCharacters } from "@qntx/wallet-chains";
 
 export const TOKEN_SYMBOL_MAX = 32;
 export const TOKEN_DECIMALS_MAX = 36;
+
+/** The characters contract text may not carry: hidden ones, controls, and invisible marks. */
+const UNSAFE_TEXT =
+  /[\p{Cc}\p{Zl}\p{Zp}]|\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|[\u{E0000}-\u{E007F}]/u;
 
 /**
  * Untrusted contract text (a token symbol) as safe-to-show text: trimmed, non-empty, at most `max`
@@ -9,10 +13,13 @@ export const TOKEN_DECIMALS_MAX = 36;
  */
 export function safeDisplayText(raw: string, max: number): string | undefined {
   const text = raw.trim();
+  if (hasHiddenCharacters(text) || UNSAFE_TEXT.test(text)) {
+    return undefined;
+  }
   let count = 0;
-  for (const char of text) {
+  for (const _char of text) {
     count += 1;
-    if (count > max || isUnsafeCodePoint(char.codePointAt(0) ?? 0)) {
+    if (count > max) {
       return undefined;
     }
   }

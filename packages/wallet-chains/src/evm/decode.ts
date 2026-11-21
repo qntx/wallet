@@ -22,20 +22,25 @@ import { MAX_UINT160, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { recognizeApp } from "./apps.ts";
 import type { AppRecognition } from "./apps.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
+import { recognizeOneinch } from "./oneinch.ts";
+import { ORDER_ITEMS } from "./order.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
 import type { SafeRecognition } from "./safe.ts";
-import { SEAPORT_ORDER_ITEMS, recognizeSeaport } from "./seaport.ts";
+import { recognizeSeaport } from "./seaport.ts";
+import { recognizeSnapshot } from "./snapshot.ts";
 import { decodeTokenCall } from "./token-call.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
 import { domainChainId, parseTypedData, typedDataFields } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
+import { decodeWrappedNative } from "./wrapped-native.ts";
 import { decodeZeroX } from "./zerox.ts";
 
 const PERMIT2_APPROVE = AbiFunction.from(
@@ -194,6 +199,19 @@ const protocolIntent = (
       staking: lido.staking,
       fee,
       verifiability: "partial",
+    };
+  }
+
+  const wrapped = decodeWrappedNative(chainId, call, signer, table);
+  if (wrapped !== undefined) {
+    return {
+      ...base,
+      summary: "swap",
+      outflows: wrapped.outflows,
+      approvals: [],
+      minimumReceived: wrapped.minimumReceived,
+      fee,
+      verifiability: "full",
     };
   }
 
@@ -453,15 +471,14 @@ const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
 /**
  * The blind reason for a typed-data request, if any. Shown content is never truncated — an order
  * with more items than the prompt lists, or a document over the leaf budget, would silently
- * authorise what it hides, so it blinds the request instead.
+ * authorise what it hides, so it blinds the request instead. `unclaimed` is the blind the caller
+ * computed for a document no recognised family decoded.
  */
 const typedDataBlind = (
   safe: SafeRecognition | undefined,
   seaport: SeaportOrder | undefined,
   app: AppRecognition | undefined,
-  unclaimed: boolean,
-  nearMiss: BlindReason | undefined,
-  shown: NonNullable<ReturnType<typeof typedDataFields>> | undefined,
+  unclaimed: BlindReason | undefined,
 ): BlindReason | undefined => {
   if (safe !== undefined) {
     return (
@@ -470,21 +487,14 @@ const typedDataBlind = (
     );
   }
   if (seaport !== undefined) {
-    return seaport.offer.length > SEAPORT_ORDER_ITEMS ||
-      seaport.consideration.length > SEAPORT_ORDER_ITEMS
+    return seaport.offer.length > ORDER_ITEMS || seaport.consideration.length > ORDER_ITEMS
       ? "typed-data-oversize"
       : undefined;
   }
   if (app !== undefined) {
     return app.blind;
   }
-  if (!unclaimed || nearMiss !== undefined) {
-    return nearMiss;
-  }
-  if (shown === undefined) {
-    return "typed-data-oversize";
-  }
-  return shown.commitment ? "typed-data-commitment" : undefined;
+  return unclaimed;
 };
 
 /** What the signer can guarantee about this request (WD-065). */
@@ -530,7 +540,7 @@ export const decodeEvm = (
   const { json } = parseTypedData(request.typedData);
   assertNoExecutionGrant(json.domain, signer);
   const chainId = networkChainId(request.network);
-  const permit = recognizePermit(json, chainId, table);
+  const permit = recognizePermit(json, chainId, table, signer);
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
@@ -556,32 +566,63 @@ export const decodeEvm = (
           }),
         )
       : undefined;
+  const order =
+    permit === undefined
+      ? seaport === undefined && safe === undefined && app === undefined
+        ? (recognizeCow(json, chainId, signer, table) ?? recognizeOneinch(json, chainId, table))
+        : undefined
+      : permit.order;
+  const snapshot =
+    permit === undefined &&
+    seaport === undefined &&
+    safe === undefined &&
+    app === undefined &&
+    order === undefined &&
+    recognizeSnapshot(json);
   const unclaimed =
-    permit === undefined && seaport === undefined && safe === undefined && app === undefined;
+    permit === undefined &&
+    seaport === undefined &&
+    safe === undefined &&
+    app === undefined &&
+    order === undefined &&
+    !snapshot;
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
-  const shown = unclaimed ? typedDataFields(json) : undefined;
+  /* A recognised vote shows its leaves like an unclaimed document — the family names `proposal`,
+     so an encoded-bytes string there is no commitment. */
+  const shown = unclaimed || snapshot ? typedDataFields(json) : undefined;
   const fields = shown?.fields;
-  const blind = typedDataBlind(safe, seaport, app, unclaimed, nearMiss, shown);
+  const unclaimedBlind =
+    nearMiss ??
+    (unclaimed || snapshot
+      ? shown === undefined
+        ? "typed-data-oversize"
+        : unclaimed && shown.hasCommitment
+          ? "typed-data-commitment"
+          : undefined
+      : undefined);
+  const blind = permit?.blind ?? typedDataBlind(safe, seaport, app, unclaimedBlind);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
     domain: displayDomain(json.domain),
     data: json.message,
     ...(seaport === undefined ? {} : { seaport }),
+    ...(order === undefined ? {} : { order }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
     ...(app === undefined ? {} : app.content),
     ...(fields === undefined ? {} : { fields }),
+    ...(permit?.fields === undefined ? {} : { fields: permit.fields }),
   };
   const summary =
-    seaport === undefined
-      ? safe === undefined
+    order !== undefined || seaport !== undefined
+      ? "swap"
+      : safe === undefined
         ? permit === undefined
           ? (app?.summary ?? "message")
           : "approve"
         : safe.multisend
           ? "batch"
-          : (safe.safe.calls[0]?.summary ?? "contract-call")
-      : "swap";
+          : (safe.safe.calls[0]?.summary ?? "contract-call");
   return withNativeAmountMeta(
     {
       family: "evm",
@@ -592,7 +633,8 @@ export const decodeEvm = (
       fee: undefined,
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
-      verifiability: app?.verifiability ?? (permit === undefined ? "opaque" : "partial"),
+      verifiability:
+        app?.verifiability ?? (permit === undefined && order === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),
     },
     request.network,
