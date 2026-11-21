@@ -410,11 +410,26 @@ describe("GET /v1/tokens/:caip2", () => {
     await expect(res.text()).resolves.toBe("");
   });
 
-  it("404s for a served network with no list and for an unserved family", async () => {
+  it("503s a covered network whose build has not landed yet, with Retry-After", async () => {
     const { app } = seeded();
     const missing = await app.request(`/v1/tokens/${SEPOLIA}`, { headers: headers() });
-    expect(missing.status).toBe(404);
-    await expect(missing.json()).resolves.toMatchObject({ error: "not-found" });
+    expect(missing.status).toBe(503);
+    await expect(missing.json()).resolves.toMatchObject({ error: "unavailable" });
+    expect(Number(missing.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  it("404s unsupported for a served network no token source covers", async () => {
+    const { store } = seeded();
+    const app = gateway({
+      fetch: fakeFetch({}).fetch,
+      tokens: store,
+      tokenNetworks: new Set([DEVNET]),
+    });
+    const res = await app.request(`/v1/tokens/${SEPOLIA}`, { headers: headers() });
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toMatchObject({ error: "unsupported" });
+    const covered = await app.request(`/v1/tokens/${DEVNET}`, { headers: headers() });
+    expect(covered.status).toBe(503);
     const unserved = await app.request(`/v1/tokens/${SIGNET}`, { headers: headers() });
     expect(unserved.status).toBe(404);
     await expect(unserved.json()).resolves.toMatchObject({ error: "unknown-network" });

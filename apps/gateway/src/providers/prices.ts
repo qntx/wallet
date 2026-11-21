@@ -166,15 +166,16 @@ async function writeCached(deps: PriceDeps, key: string, entry: Entry, now: numb
 }
 
 /**
- * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced,
- * every upstream call billed to the request's share of the source's account before it is sent. A
- * refused share charge makes that source unavailable — the request's own budget is spent, not the
- * provider's — so answers already paid for are kept and the source's still-pending assets answer
- * `missing` without being cached as such. When no asset could be priced and the only failures were
- * refused charges the request rethrows the refusal; when a provider failed it answers `503
- * unavailable` rather than claiming everything is missing. An asset is cached as `missing` only
- * when every source that serves the currency answered — a failed or uncharged source might know it.
- * Returns the response and the providers whose data it carries.
+ * Prices `request.assets`: assets no provider maps answer `unsupported` and are never sent upstream
+ * nor cached; the rest go cache first, then each source in order for whatever is still unpriced,
+ * every upstream call billed to the request's share of the source's account. A refused share charge
+ * makes that source unavailable — the request's own budget is spent, not the provider's — so
+ * answers already paid for are kept and the source's still-pending assets answer `missing` without
+ * being cached as such. When no asset could be priced and the only failures were refused charges
+ * the request rethrows the refusal; when a provider failed it answers `503 unavailable` rather than
+ * claiming everything is missing. An asset is cached as `missing` only when every source that
+ * serves the currency answered — a failed or uncharged source might know it. Returns the response
+ * and the providers whose data it carries.
  */
 export async function quotePrices(
   deps: PriceDeps,
@@ -184,9 +185,13 @@ export async function quotePrices(
   const { currency } = request;
   const now = deps.now();
   const known = new Map<string, PriceTarget>();
+  const unsupported = new Set<string>();
   for (const asset of request.assets) {
     const target = priceTarget(asset);
-    if (target !== undefined) {
+    if (target === undefined) {
+      // No provider maps it — never asked upstream, never cached: permanently unsupported.
+      unsupported.add(asset);
+    } else {
       known.set(asset, target);
     }
   }
@@ -274,7 +279,10 @@ export async function quotePrices(
     response: {
       currency,
       prices: priced,
-      missing: request.assets.filter((asset) => !pricedAssets.has(asset)),
+      missing: request.assets.filter(
+        (asset) => !unsupported.has(asset) && !pricedAssets.has(asset),
+      ),
+      unsupported: request.assets.filter((asset) => unsupported.has(asset)),
     },
     providers,
   };

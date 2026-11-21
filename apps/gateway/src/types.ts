@@ -87,6 +87,11 @@ export type GatewayOptions = {
   /** Published token lists the scheduled build writes and `GET /v1/tokens` serves. */
   readonly tokens: TokenListStore;
   /**
+   * Networks a configured token-list source covers. A served network outside the set is permanently
+   * `unsupported`; inside it an absent stored list is temporary (`503`).
+   */
+  readonly tokenNetworks: ReadonlySet<string>;
+  /**
    * Provider accounts by auth name. A configured provider naming an `auth` absent here fails
    * construction — a keyed endpoint is never called unauthenticated.
    */

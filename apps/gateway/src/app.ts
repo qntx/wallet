@@ -88,7 +88,10 @@ export function createGateway(
     }),
   );
   app.route("/", riskRoutes(options.risk));
-  app.route("/", tokensRoutes({ served, store: options.tokens }));
+  app.route(
+    "/",
+    tokensRoutes({ served, store: options.tokens, tokenNetworks: options.tokenNetworks }),
+  );
   app.route(
     "/",
     pricesRoutes({

@@ -338,12 +338,13 @@ describe("history page", () => {
     }
   });
 
-  it("503s a served network outside the transfers set without an upstream call", async () => {
+  it("404s unsupported for a served network with no history provider, without an upstream call", async () => {
     const fetch = fakeFetch({});
     const app = gateway({ fetch: fetch.fetch, networks: NETWORKS });
     const res = await app.request(...request(SONIC, { address: OWNER }));
-    expect(res.status).toBe(503);
-    await expect(res.json()).resolves.toMatchObject({ error: "unavailable" });
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toMatchObject({ error: "unsupported" });
+    expect(res.headers.get("retry-after")).toBeNull();
     expect(fetch.calls).toHaveLength(0);
   });
 
@@ -415,7 +416,8 @@ describe("history page", () => {
     const solana = await app.request(...request(SOLANA, { address: OWNER }));
     expect(solana.status).toBe(404);
     const sepolia = await app.request(...request(SEPOLIA, { address: OWNER }));
-    expect(sepolia.status).toBe(503);
+    expect(sepolia.status).toBe(404);
+    await expect(sepolia.json()).resolves.toMatchObject({ error: "unsupported" });
     const get = await app.request(`/v1/history/${ETH}`, { method: "GET", headers: headers() });
     expect(get.status).toBe(404);
   });

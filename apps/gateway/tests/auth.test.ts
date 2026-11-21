@@ -50,6 +50,7 @@ describe("upstream auth", () => {
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
       prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
@@ -84,6 +85,7 @@ describe("upstream auth", () => {
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
       prices,
       auth: {
         alchemy: async () => {
@@ -131,6 +133,7 @@ describe("upstream auth", () => {
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
+      tokenNetworks: new Set(),
       prices,
       auth: { alchemy: authDown, blockstream: authDown },
     });
@@ -171,6 +174,8 @@ describe("upstream auth", () => {
         corsOrigins: [],
         risk,
         tokens: memoryRiskStore(),
+        tokenNetworks: new Set(),
+        tokenNetworks: new Set(),
         prices,
         auth: {},
       }),

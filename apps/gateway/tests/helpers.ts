@@ -214,6 +214,7 @@ export function gateway(options: {
   readonly networks?: ReadonlyArray<GatewayNetwork>;
   readonly risk?: RiskStore;
   readonly tokens?: TokenListStore;
+  readonly tokenNetworks?: ReadonlySet<string>;
   readonly limiters?: Limiters;
   readonly accounts?: Readonly<Record<string, Account>>;
   readonly budget?: ProviderBudget;
@@ -238,6 +239,8 @@ export function gateway(options: {
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     tokens: options.tokens ?? memoryRiskStore(),
+    tokenNetworks:
+      options.tokenNetworks ?? new Set((options.networks ?? NETWORKS).map((n) => n.id)),
     auth: options.auth ?? {},
     prices: options.prices ?? { cache: memoryPriceCache() },
     ...(options.now === undefined ? {} : { now: options.now }),

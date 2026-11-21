@@ -14,7 +14,6 @@ import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import type { RateLimitVariables } from "../middleware/rate-limit.ts";
 import type { Forwarder } from "../providers/forward.ts";
-import { UNAVAILABLE_RETRY_AFTER_SECONDS } from "../providers/forward.ts";
 import { alchemyHistoryPage, historyProviders } from "../providers/history-alchemy.ts";
 
 /** The request is a JSON body of `{address, cursor?, limit?}` — a few hundred bytes. */
@@ -45,8 +44,9 @@ export function historyRoutes({
     async (c) => {
       const network = c.get("network");
       const providers = historyProviders(network);
+      // No configured history provider for this network: permanent, not a provider outage.
       if (providers.length === 0) {
-        throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
+        throw new GatewayHttpError(404, "unsupported");
       }
       const body = c.req.valid("json");
       const { value, providerId } = await alchemyHistoryPage(

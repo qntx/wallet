@@ -433,7 +433,7 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
     ]);
   });
 
-  it("answers missing for assets no provider maps, without calling one", async () => {
+  it("answers unsupported for assets no provider maps, without calling one", async () => {
     const upstream = fakeFetch({});
     const res = await app(upstream).request(
       prices.path,
@@ -445,7 +445,8 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
     await expect(body(res)).resolves.toStrictEqual({
       currency: "usd",
       prices: [],
-      missing: [
+      missing: [],
+      unsupported: [
         "eip155:11155111/slip44:60",
         "eip155:11155111/erc20:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
       ],

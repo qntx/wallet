@@ -4,6 +4,8 @@ import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
 import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
 import { zeroExConfig } from "./providers/zerox.ts";
 import type { RiskStore } from "./risk/phishing.ts";
+import { tokenListSources } from "./tokens/sources.ts";
+import type { TokenListUpstream } from "./tokens/sources.ts";
 import type { GatewayOptions, PriceCache } from "./types.ts";
 
 /**
@@ -18,6 +20,13 @@ type OptionalEnv = {
 };
 
 export type WorkerEnv = (Cloudflare.StagingEnv | Cloudflare.ProductionEnv) & OptionalEnv;
+
+/**
+ * The configured token-list sources — one call shared by `gatewayFor` (which networks the route can
+ * ever serve) and `scheduled` (what the hourly build fetches), so they cannot drift apart.
+ */
+export const tokenSourcesFor = (env: WorkerEnv): ReadonlyArray<TokenListUpstream> =>
+  tokenListSources({ coingecko: env.COINGECKO_API_KEY, jupiter: env.JUPITER_API_KEY });
 
 export const riskStoreOf = (kv: KVNamespace): RiskStore => ({
   get: async (key) => (await kv.get(key)) ?? undefined,
@@ -61,6 +70,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
       .filter((origin) => origin !== ""),
     risk: riskStoreOf(env.RISK),
     tokens: riskStoreOf(env.RISK),
+    tokenNetworks: new Set(tokenSourcesFor(env).flatMap((source) => source.networks)),
     ...(zeroEx === undefined ? {} : { zeroEx }),
   };
   const cache = priceCacheOf(() => caches.default);

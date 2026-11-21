@@ -127,11 +127,16 @@ export const pricesRequest = z.object({
   ),
 });
 
-/** Every requested asset is in exactly one of `prices` (priced) or `missing` (no price known). */
+/**
+ * Every requested asset is in exactly one of `prices` (priced), `missing` (the providers had no
+ * price now — a later request may find one) or `unsupported` (the gateway has no price coverage for
+ * it at all — do not retry).
+ */
 export const pricesResponse = z.object({
   currency: fiatCurrency,
   prices: z.array(priceQuote).check(z.maxLength(MAX_PRICE_ASSETS)),
   missing: z.array(priceAssetId).check(z.maxLength(MAX_PRICE_ASSETS)),
+  unsupported: z.array(priceAssetId).check(z.maxLength(MAX_PRICE_ASSETS)),
 });
 
 /**
