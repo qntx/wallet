@@ -42,6 +42,8 @@ export const NATIVE_COINS: Readonly<Record<string, string>> = {
   "eip155:4326/slip44:60": "ethereum",
   "eip155:8217/slip44:8217": "kaia",
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501": "solana",
+  // https://api.coingecko.com/api/v3/coins/list — the TRX coin id.
+  "tron:728126428/slip44:195": "tron",
   "bip122:000000000019d6689c085ae165831e93/slip44:0": "bitcoin",
 };
 
@@ -81,6 +83,8 @@ export const TOKEN_PLATFORMS: Readonly<
   "eip155:8217": { coingecko: "klay-token", defillama: "kaia" },
   "eip155:33139": { coingecko: "apechain", defillama: "apechain" },
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": { coingecko: "solana", defillama: "solana" },
+  // https://api.coingecko.com/api/v3/asset_platforms — id "tron"; DefiLlama keys tokens "tron:<base58>".
+  "tron:728126428": { coingecko: "tron", defillama: "tron" },
 };
 
 /** The provider addresses of a contract-valid asset id, or `undefined` when no provider prices it. */
