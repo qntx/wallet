@@ -1,11 +1,11 @@
 /**
- * `@qntx/wallet-engine/apps` — the apps composition core the main engine entry never loads: a
- * host that enables app trading imports this entry next to `createWalletEngine`, so hosts that do
- * not pay nothing. Platform-neutral like the rest of src: every I/O dependency (fetch, timers,
- * clock) is injected.
+ * `@qntx/wallet-engine/apps` — the apps composition core the main engine entry never loads: a host
+ * that enables app trading imports this entry next to `createWalletEngine`, so hosts that do not
+ * pay nothing. Platform-neutral like the rest of src: every I/O dependency (fetch, timers, clock)
+ * is injected.
  *
- * `createApps` builds the `AppsController` (enablement state, terms acknowledgement, lifecycle
- * on the wallet's lock state) over the app definitions the host lists — providers come from the
+ * `createApps` builds the `AppsController` (enablement state, terms acknowledgement, lifecycle on
+ * the wallet's lock state) over the app definitions the host lists — providers come from the
  * `apps/hyperliquid` and `apps/polymarket` sub-entries, so a host bundles only the apps it uses.
  */
 export { createApps } from "./controller.ts";

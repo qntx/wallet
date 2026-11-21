@@ -1,14 +1,14 @@
 /**
- * The L2 client — every authenticated CLOB request HMACs its headers in the engine over the
- * group's stored credentials (design.md §返工): `timestamp` floors the injected clock to
- * seconds and the body string sent is exactly the body string signed. A missing record, a
- * stored `owner` that no longer equals the group's `evm.bip44` signer, or a locked vault fails
- * the request before anything leaves the process — `not-enabled`/`unlock-required` respectively.
+ * The L2 client — every authenticated CLOB request HMACs its headers in the engine over the group's
+ * stored credentials (design.md §返工): `timestamp` floors the injected clock to seconds and the body
+ * string sent is exactly the body string signed. A missing record, a stored `owner` that no longer
+ * equals the group's `evm.bip44` signer, or a locked vault fails the request before anything leaves
+ * the process — `not-enabled`/`unlock-required` respectively.
  *
  * Clock gate: the CLOB validates `POLY_TIMESTAMP` against an undocumented tolerance, so a device
  * clock far off can only produce refused requests — before the first L2 request of a session and
- * every ten minutes the client checks the `/time` skew and fails `clock-skew` early, which beats
- * an opaque 401.
+ * every ten minutes the client checks the `/time` skew and fails `clock-skew` early, which beats an
+ * opaque 401.
  *
  * Error hygiene: a hostile server can echo the credentials it issued back inside an error body —
  * every error the http call throws is scrubbed of the apiKey/secret/passphrase before it escapes
@@ -95,8 +95,8 @@ export function l2Headers(
 
 /**
  * A hostile CLOB can reflect the issued credentials back inside an error — the thrown error is
- * re-derived with every occurrence of the three values in the message/body/cause chain replaced
- * or dropped, preserving category and status. Errors free of them pass through untouched.
+ * re-derived with every occurrence of the three values in the message/body/cause chain replaced or
+ * dropped, preserving category and status. Errors free of them pass through untouched.
  */
 const scrub = (error: unknown, credentials: PolymarketCredentials): unknown => {
   const secrets = [credentials.apiKey, credentials.secret, credentials.passphrase].filter(
@@ -106,7 +106,7 @@ const scrub = (error: unknown, credentials: PolymarketCredentials): unknown => {
   let cause: unknown = error;
   while (cause instanceof Error) {
     texts.push(cause.message);
-    cause = cause.cause;
+    ({ cause } = cause);
   }
   if (error instanceof PolymarketError && error.body !== undefined) {
     texts.push(JSON.stringify(error.body));
@@ -199,6 +199,6 @@ export function createPolymarketL2(options: {
         throw scrub(error, credentials);
       }
     },
-    credentials: (group) => options.credentials.get(group),
+    credentials: async (group) => options.credentials.get(group),
   };
 }

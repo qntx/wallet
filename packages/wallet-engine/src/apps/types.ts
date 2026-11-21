@@ -157,10 +157,10 @@ export type AppProvider = {
 };
 
 /**
- * What `createApps` hands every app definition's `create` — the host-injected I/O plus a lazy
- * read of the controller's state. The controller only exists after every `create` ran, so
- * `state` is a thunk: gates (the Hyperliquid builder gate, the Polymarket availability gate) read
- * it per call, never at construction.
+ * What `createApps` hands every app definition's `create` — the host-injected I/O plus a lazy read
+ * of the controller's state. The controller only exists after every `create` ran, so `state` is a
+ * thunk: gates (the Hyperliquid builder gate, the Polymarket availability gate) read it per call,
+ * never at construction.
  */
 export type AppContext = {
   readonly wallet: Wallet;
@@ -178,9 +178,9 @@ export type AppContext = {
 };
 
 /**
- * The app's per-group records in the session EngineStore — keys
- * `${walletId}/${groupIndex}/${name}` inside collection `apps.<id>`. Every method throws
- * `EngineStoreError("closed")` while no session store is open (the controller closes it on lock).
+ * The app's per-group records in the session EngineStore — keys `${walletId}/${groupIndex}/${name}`
+ * inside collection `apps.<id>`. Every method throws `EngineStoreError("closed")` while no session
+ * store is open (the controller closes it on lock).
  */
 export type AppStorage = {
   readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
@@ -205,8 +205,8 @@ export type AppInstance<Api> = {
 };
 
 /**
- * One app, declared: `createApps` calls `create` with the shared context and registers the
- * instance under `id` — a duplicate `id` throws.
+ * One app, declared: `createApps` calls `create` with the shared context and registers the instance
+ * under `id` — a duplicate `id` throws.
  */
 export type AppDefinition<Id extends AppId, Api> = {
   readonly id: Id;

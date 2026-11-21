@@ -16,16 +16,16 @@
  *
  * Account views stream the authenticated user channel
  * `wss://ws-subscriptions-clob.polymarket.com/ws/user` over a per-view `createAppSocketCore`
- * socket: the stored credentials are read once at view start, live only in the view closure and
- * are dropped on stop/close/lock; the first frame is the auth message
+ * socket: the stored credentials are read once at view start, live only in the view closure and are
+ * dropped on stop/close/lock; the first frame is the auth message
  * `{"auth":{"apiKey","secret","passphrase"},"type":"user"}` (asyncapi user.json), then a REST
  * snapshot (locate + openOrders + positions + trades) turns the view `live`/`stream`. `order`
  * events upsert (or remove on `CANCELLATION`/non-`LIVE` status) and `trade` events schedule a
  * debounced REST re-read of trades + positions. A disconnect marks the view `stale` — data kept —
  * and falls back to a 10 s REST poll (`source: "poll"`); a reconnect re-sends the auth frame,
- * re-runs the snapshot and returns to `live`/`stream`. `unlock-required`/`not-enabled` and a
- * wallet lock stop the view and close its socket. Frames are parsed against bounded schemas and
- * malformed ones dropped with a content-free log — an echoed auth frame would carry the secret.
+ * re-runs the snapshot and returns to `live`/`stream`. `unlock-required`/`not-enabled` and a wallet
+ * lock stop the view and close its socket. Frames are parsed against bounded schemas and malformed
+ * ones dropped with a content-free log — an echoed auth frame would carry the secret.
  */
 import type * as z from "zod/mini";
 
@@ -33,9 +33,8 @@ import type { Wallet } from "@qntx/wallet";
 
 import type { EngineLogger } from "../../events.ts";
 import type { SetTimer } from "../../timer.ts";
-import type { AppSocket } from "../socket.ts";
+import type { AppSocket, AppSocketCore } from "../socket.ts";
 import { createAppSocketCore } from "../socket.ts";
-import type { AppSocketCore } from "../socket.ts";
 import type { AppGroup } from "../types.ts";
 import type {
   PolymarketAccountReads,
@@ -127,6 +126,20 @@ const sortLevels = (
 const initialFrame = (ids: ReadonlyArray<string>): string =>
   `{"assets_ids":${JSON.stringify(ids)},"type":"market","custom_feature_enabled":true}`;
 
+const fatal = (error: unknown): error is PolymarketError =>
+  error instanceof PolymarketError &&
+  (error.category === "unlock-required" || error.category === "not-enabled");
+
+const authFrame = (credentials: PolymarketCredentials): string =>
+  JSON.stringify({
+    auth: {
+      apiKey: credentials.apiKey,
+      secret: credentials.secret,
+      passphrase: credentials.passphrase,
+    },
+    type: "user",
+  });
+
 const updateFrame = (operation: "subscribe" | "unsubscribe", ids: ReadonlyArray<string>): string =>
   `{"operation":"${operation}","assets_ids":${JSON.stringify(ids)}}`;
 
@@ -134,8 +147,8 @@ export type PolymarketLive = {
   /** The order book for one outcome asset (CLOB token id). */
   readonly book: (assetId: string) => PolymarketLiveView<PolymarketMarketData>;
   /**
-   * Orders + positions + trades for the group over the user channel — one authenticated socket
-   * per view with a REST poll fallback while disconnected. Stops on lock or a
+   * Orders + positions + trades for the group over the user channel — one authenticated socket per
+   * view with a REST poll fallback while disconnected. Stops on lock or a
    * `unlock-required`/`not-enabled` error.
    */
   readonly account: (group: AppGroup) => PolymarketLiveView<PolymarketAccountLiveData>;
@@ -457,20 +470,6 @@ export function createPolymarketLive(options: {
     });
   };
 
-  const fatal = (error: unknown): error is PolymarketError =>
-    error instanceof PolymarketError &&
-    (error.category === "unlock-required" || error.category === "not-enabled");
-
-  const authFrame = (credentials: PolymarketCredentials): string =>
-    JSON.stringify({
-      auth: {
-        apiKey: credentials.apiKey,
-        secret: credentials.secret,
-        passphrase: credentials.passphrase,
-      },
-      type: "user",
-    });
-
   const account = (group: AppGroup): PolymarketLiveView<PolymarketAccountLiveData> => {
     followLock();
     /* The credentials the auth frame needs — read once at start, dropped on every exit path. */
@@ -534,7 +533,7 @@ export function createPolymarketLive(options: {
     };
 
     const applyOrder = (event: z.infer<typeof wsUserOrderEvent>): void => {
-      const data = view.state.data;
+      const { data } = view.state;
       if (data === undefined) {
         return;
       }
@@ -553,7 +552,7 @@ export function createPolymarketLive(options: {
         return;
       }
       /* An upsert needs every column a PolymarketOrder carries — anything else is malformed. */
-      const createdAt = event.created_at === undefined ? NaN : Number(event.created_at);
+      const createdAt = event.created_at === undefined ? Number.NaN : Number(event.created_at);
       if (
         event.market === undefined ||
         event.asset_id === undefined ||
@@ -613,7 +612,7 @@ export function createPolymarketLive(options: {
               options.account.positions(wallet, {}),
               options.account.trades(group, {}),
             ]);
-            const data = view.state.data;
+            const { data } = view.state;
             if (view.closed || data === undefined) {
               return;
             }

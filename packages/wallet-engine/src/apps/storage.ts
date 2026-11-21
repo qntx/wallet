@@ -10,9 +10,12 @@ import type { EngineCollection, EngineStore } from "../store/port.ts";
 import type { AppGroup, AppId, AppStorage } from "./types.ts";
 
 /**
- * `store` resolves the currently open session store — `createApps` tracks the facade it hands
- * the controller; tests bind a memory store directly.
+ * `store` resolves the currently open session store — `createApps` tracks the facade it hands the
+ * controller; tests bind a memory store directly.
  */
+const key = (group: AppGroup, name: string): string =>
+  `${group.walletId}/${group.groupIndex}/${name}`;
+
 export function createAppStorage(id: AppId, store: () => EngineStore | undefined): AppStorage {
   const collection = (): EngineCollection => {
     const session = store();
@@ -21,12 +24,10 @@ export function createAppStorage(id: AppId, store: () => EngineStore | undefined
     }
     return session.collection(`apps.${id}`);
   };
-  const key = (group: AppGroup, name: string): string =>
-    `${group.walletId}/${group.groupIndex}/${name}`;
   return {
-    get: (group, name) => collection().get(key(group, name)),
-    put: (group, name, bytes) => collection().put(key(group, name), bytes),
-    delete: (group, name) => collection().delete(key(group, name)),
+    get: async (group, name) => collection().get(key(group, name)),
+    put: async (group, name, bytes) => collection().put(key(group, name), bytes),
+    delete: async (group, name) => collection().delete(key(group, name)),
     groups: async () => {
       const seen = new Map<string, AppGroup>();
       for (const stored of await collection().list()) {

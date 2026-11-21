@@ -18,11 +18,11 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 
 import { createApps } from "../src/apps/index.ts";
-import { polymarket as polymarketApp } from "../src/apps/polymarket/index.ts";
 import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
+import { polymarket as polymarketApp } from "../src/apps/polymarket/index.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
-import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppSocket } from "../src/apps/socket.ts";
+import { createAppStorage } from "../src/apps/storage.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";

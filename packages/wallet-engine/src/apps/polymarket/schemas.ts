@@ -543,8 +543,8 @@ export const wsMarketResolvedEvent = z.looseObject({
 /* ---- User-channel WebSocket events (asyncapi user.json) ---- */
 
 /**
- * `order` — a placement/update/cancellation for the authenticated user. The spec requires only
- * `id` + `type`; every field the upsert needs is optional here and checked by the caller.
+ * `order` — a placement/update/cancellation for the authenticated user. The spec requires only `id` +
+ * `type`; every field the upsert needs is optional here and checked by the caller.
  * `owner`/`order_owner` carry the API key — parsed, never copied into view data.
  */
 export const wsUserOrderEvent = z.looseObject({
@@ -566,10 +566,7 @@ export const wsUserOrderEvent = z.looseObject({
   owner: z.optional(z.string().check(z.maxLength(64))),
   order_owner: z.optional(z.string().check(z.maxLength(64))),
   associate_trades: z.optional(
-    z.union([
-      z.array(z.string().check(z.maxLength(128))).check(z.maxLength(64)),
-      z.null(),
-    ]),
+    z.union([z.array(z.string().check(z.maxLength(128))).check(z.maxLength(64)), z.null()]),
   ),
   timestamp: wsTimestamp,
 });

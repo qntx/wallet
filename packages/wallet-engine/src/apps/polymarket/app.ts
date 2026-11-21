@@ -1,8 +1,8 @@
 /**
- * The Polymarket app definition: `polymarket(config)` validates the builder code synchronously
- * and returns the `AppDefinition` `createApps` builds over the shared `AppContext` — the
- * credential store scoped to `context.storage`, the provider and the enable state machine wired
- * exactly as the monolithic composition built them.
+ * The Polymarket app definition: `polymarket(config)` validates the builder code synchronously and
+ * returns the `AppDefinition` `createApps` builds over the shared `AppContext` — the credential
+ * store scoped to `context.storage`, the provider and the enable state machine wired exactly as the
+ * monolithic composition built them.
  */
 import type { AppContext, AppDefinition } from "../types.ts";
 import { createPolymarketCredentials } from "./credentials.ts";
@@ -13,8 +13,8 @@ import type { PolymarketBuilder, PolymarketProvider } from "./provider.ts";
 export type AppsPolymarketConfig = {
   /**
    * The host's Remote Builder Signing oracle — its server holds the builder secret and HMACs
-   * relayer submissions (design.md 不变量 9). `code` is the bytes32 builder code written into
-   * orders; absent means the zero code.
+   * relayer submissions (design.md 不变量 9). `code` is the bytes32 builder code written into orders;
+   * absent means the zero code.
    */
   readonly builder?: PolymarketBuilder;
 };

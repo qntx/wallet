@@ -2,8 +2,8 @@
  * `@qntx/wallet-engine/apps/polymarket` — the Polymarket app: `polymarket(config)` returns the
  * definition `createApps` lists, and this entry carries the provider's whole surface
  * (market/account reads, kernel-described order signing, live book/account views, pUSD funding
- * through the request pipeline and the host's builder-signed relayer). A host that never imports
- * it bundles none of it.
+ * through the request pipeline and the host's builder-signed relayer). A host that never imports it
+ * bundles none of it.
  */
 export { polymarket } from "./app.ts";
 export type { AppsPolymarketConfig } from "./app.ts";

@@ -2,12 +2,11 @@
  * `live.book` streams the market channel over the shared socket core — heartbeat `PING`/`PONG`,
  * dynamic `{"operation":...}` frames (documented in asyncapi.json), a fresh `book` snapshot per
  * (re)connect, deltas only on top of a snapshot, `stale` on every disconnect — and `live.account`
- * streams the authenticated user channel: the stored credentials go out as the first frame, a
- * REST snapshot turns the view `live`/`stream`, `order` events upsert or remove, `trade` events
- * debounce into one trades+positions re-read, a disconnect falls back to a `stale` REST poll and
- * a reconnect returns to `stream`. Lock, missing credentials and hostile frames behave as the
- * module contract says. The recorded `ws-market.json` and the doc-example `ws-user.json` frames
- * replay end to end.
+ * streams the authenticated user channel: the stored credentials go out as the first frame, a REST
+ * snapshot turns the view `live`/`stream`, `order` events upsert or remove, `trade` events debounce
+ * into one trades+positions re-read, a disconnect falls back to a `stale` REST poll and a reconnect
+ * returns to `stream`. Lock, missing credentials and hostile frames behave as the module contract
+ * says. The recorded `ws-market.json` and the doc-example `ws-user.json` frames replay end to end.
  */
 import { readFileSync } from "node:fs";
 
@@ -15,13 +14,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 
-import type { PolymarketAccountReads } from "../src/apps/polymarket/account.ts";
-import type { PolymarketOrder } from "../src/apps/polymarket/account.ts";
+import type { PolymarketAccountReads, PolymarketOrder } from "../src/apps/polymarket/account.ts";
+import { USER_WS_URL } from "../src/apps/polymarket/constants.ts";
 import type {
   PolymarketCredentials,
   PolymarketCredentialStore,
 } from "../src/apps/polymarket/credentials.ts";
-import { USER_WS_URL } from "../src/apps/polymarket/constants.ts";
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import { createPolymarketLive } from "../src/apps/polymarket/live.ts";
 import type { AppSocket } from "../src/apps/socket.ts";
@@ -174,20 +172,19 @@ const accountStub = (): PolymarketAccountReads =>
   }) as unknown as PolymarketAccountReads;
 
 let credsGet: () => Promise<PolymarketCredentials | undefined>;
-const credentialsStub = (): PolymarketCredentialStore =>
-  ({
-    get: () => credsGet(),
-    put: async () => {
-      await Promise.resolve();
-    },
-    delete: async () => {
-      await Promise.resolve();
-    },
-    groups: async () => {
-      await Promise.resolve();
-      return [];
-    },
-  }) as unknown as PolymarketCredentialStore;
+const credentialsStub = (): PolymarketCredentialStore => ({
+  get: async () => credsGet(),
+  put: async () => {
+    await Promise.resolve();
+  },
+  delete: async () => {
+    await Promise.resolve();
+  },
+  groups: async () => {
+    await Promise.resolve();
+    return [];
+  },
+});
 
 /* The account poll awaits locate → two reads — a handful of microtask turns settles it. */
 const flush = async (): Promise<void> => {
@@ -469,7 +466,7 @@ describe("polymarket live account views", () => {
     expect(sockets).toHaveLength(1);
     expect(lastUrl).toBe(USER_WS_URL);
     sockets[0]!.opened();
-    expect(JSON.parse(sockets[0]!.sent[0] ?? "null")).toStrictEqual(authBody());
+    expect(JSON.parse(String(sockets[0]!.sent[0]))).toStrictEqual(authBody());
   });
 
   it("snapshots orders, positions and trades, then reports live over the stream", async () => {
@@ -583,7 +580,7 @@ describe("polymarket live account views", () => {
     await timers.fire(500);
     expect(sockets).toHaveLength(2);
     sockets[1]!.opened();
-    expect(JSON.parse(sockets[1]!.sent[0] ?? "null")).toStrictEqual(authBody());
+    expect(JSON.parse(String(sockets[1]!.sent[0]))).toStrictEqual(authBody());
     await flush();
     expect(view.getState().status).toBe("live");
     expect(view.getState().data?.source).toBe("stream");
@@ -686,7 +683,7 @@ describe("polymarket live account views", () => {
     /* The only legit event carries the API key in `owner` — it must never reach view data. */
     sockets[0]!.recv(JSON.stringify({ ...FRAMES[0], owner: CREDS.apiKey }));
     /* An echoed auth frame parses as JSON but matches no event — dropped, content-free. */
-    sockets[0]!.recv(sockets[0]!.sent[0] ?? "");
+    sockets[0]!.recv(String(sockets[0]!.sent[0]));
     const state = view.getState();
     expect(state.status).toBe("live");
     expect(state.data?.openOrders.map((o) => o.id)).toStrictEqual([BASE_ORDER.id, PLACEMENT_ID]);

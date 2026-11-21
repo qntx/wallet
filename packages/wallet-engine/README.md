@@ -352,8 +352,7 @@ const apps = createApps({
       // The host's Remote Builder Signing oracle — see "Builder signing" below.
       builder: {
         code: "0x…", // optional attribution written into orders; absent = zero code
-        sign: async ({ method, path, body }) =>
-          postToYourBuilderEndpoint({ method, path, body }),
+        sign: async ({ method, path, body }) => postToYourBuilderEndpoint({ method, path, body }),
       },
     }),
   ],

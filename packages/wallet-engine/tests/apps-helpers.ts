@@ -14,11 +14,11 @@ import { chains } from "@qntx/wallet/chains";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
 
-import { createApps } from "../src/apps/index.ts";
-import type { AppsController } from "../src/apps/index.ts";
 import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
 import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
 import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
+import { createApps } from "../src/apps/index.ts";
+import type { AppsController } from "../src/apps/index.ts";
 import { polymarket as polymarketApp } from "../src/apps/polymarket/app.ts";
 import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
 import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
@@ -482,9 +482,8 @@ export const world = async (
   const credentials = createPolymarketCredentials({
     /* The vault flag gates the session like the real close — deterministic under a lock that
        has resolved but whose transition is still queued. */
-    storage: createAppStorage(
-      "polymarket",
-      () => (wallet.getSnapshot().vault === "unlocked" ? session : undefined),
+    storage: createAppStorage("polymarket", () =>
+      wallet.getSnapshot().vault === "unlocked" ? session : undefined,
     ),
     logger,
   });
@@ -594,12 +593,14 @@ export const world = async (
 };
 
 /**
- * A credential store over `store` — the getter models the engine's session, so a test that
- * returns `undefined` while the vault is locked gets `unlock-required` from every method.
+ * A credential store over `store` — the getter models the engine's session, so a test that returns
+ * `undefined` while the vault is locked gets `unlock-required` from every method.
  */
+const QUIET_LOGGER: EngineLogger = { warn: () => undefined };
+
 export const credentialsStore = (
   store: () => EngineStore | undefined,
-  logger: EngineLogger = { warn: () => undefined },
+  logger: EngineLogger = QUIET_LOGGER,
 ): PolymarketCredentialStore =>
   createPolymarketCredentials({ storage: createAppStorage("polymarket", store), logger });
 

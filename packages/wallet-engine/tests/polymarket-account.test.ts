@@ -196,7 +196,7 @@ const session = (): EngineStore | undefined =>
   wallet.getSnapshot().vault === "unlocked" ? backing : undefined;
 const credentials = credentialsStore(session);
 const signerOf = async (g: AppGroup): Promise<`0x${string}`> =>
-  await Promise.resolve(accountAt(g.groupIndex).address);
+  Promise.resolve(accountAt(g.groupIndex).address);
 
 beforeAll(async () => {
   ({ wallet, walletId } = await nodeWallet());

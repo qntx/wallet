@@ -1,9 +1,9 @@
 /**
  * `createApps` — the app-enablement composition: the host lists the app definitions it wants
  * (`apps: [hyperliquid({…}), polymarket({…})]`), each built over one shared `AppContext`; an
- * `AppsController` persists each group's terms flag and last-enabled agent through lock/unlock;
- * and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
- * `wallet.subscribe`) drives every app's `unlock`/`lock`/`close` hooks.
+ * `AppsController` persists each group's terms flag and last-enabled agent through lock/unlock; and
+ * the serialized lock lifecycle from engine.ts (`transition`/`schedule` on `wallet.subscribe`)
+ * drives every app's `unlock`/`lock`/`close` hooks.
  */
 import type { Wallet } from "@qntx/wallet";
 
@@ -473,8 +473,8 @@ export class AppsController extends Controller<AppsState> {
  * The apps composition: runs each listed definition's `create` over one shared `AppContext`,
  * registers its provider under its id (a duplicate id throws), and drives the controller's
  * lifecycle off the wallet's lock state — the same `transition`/`schedule` chain engine.ts
- * serializes on `wallet.subscribe`. The returned surface mirrors the listed definitions: only
- * their apis appear next to `controller`/`destroy`.
+ * serializes on `wallet.subscribe`. The returned surface mirrors the listed definitions: only their
+ * apis appear next to `controller`/`destroy`.
  */
 export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, unknown>>>(
   options: CreateAppsOptions & { readonly apps: A },
@@ -490,7 +490,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     sessionStore = store;
     return {
       collection: (name) => store.collection(name),
-      close: () => {
+      close: async () => {
         if (sessionStore === store) {
           sessionStore = undefined;
         }
@@ -532,11 +532,10 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     if (store === undefined) {
       return;
     }
-    const live = new Set(
-      options.wallet.getSnapshot().wallets.map((entry) => entry.walletId),
-    );
+    const live = new Set(options.wallet.getSnapshot().wallets.map((entry) => entry.walletId));
     for (const definition of options.apps) {
       const collection = store.collection(`apps.${definition.id}`);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- collections list and delete sequentially.
       for (const key of await collection.list()) {
         const slash = key.indexOf("/");
         if (!live.has(slash === -1 ? key : key.slice(0, slash))) {

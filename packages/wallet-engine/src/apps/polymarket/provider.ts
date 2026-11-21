@@ -1,9 +1,9 @@
 /**
  * The Polymarket provider facade — unauthenticated market reads, account reads scoped to the
- * located wallet, L2-authenticated reads HMAC'd in the engine over the group's stored
- * credentials, order placement through a kernel-described `TypedDataSign` approval, live
- * book/account views over the injected socket, and pUSD funding through the request pipeline and
- * the builder-signed relayer.
+ * located wallet, L2-authenticated reads HMAC'd in the engine over the group's stored credentials,
+ * order placement through a kernel-described `TypedDataSign` approval, live book/account views over
+ * the injected socket, and pUSD funding through the request pipeline and the builder-signed
+ * relayer.
  */
 import type { Wallet } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";

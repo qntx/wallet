@@ -1,7 +1,7 @@
 /**
- * The group's CLOB L2 credentials in the apps store — `{owner, apiKey, secret, passphrase}`
- * under the `eip155:137` record name (Polymarket trades on Polygon only), encrypted with the
- * session data key like every engine record (design.md §返工). A locked vault throws
+ * The group's CLOB L2 credentials in the apps store — `{owner, apiKey, secret, passphrase}` under
+ * the `eip155:137` record name (Polymarket trades on Polygon only), encrypted with the session data
+ * key like every engine record (design.md §返工). A locked vault throws
  * `PolymarketError("unlock-required")`; a record that is not strict JSON with exactly those four
  * keys and valid field formats reads as absent, with one content-free warning — the enable flow
  * then re-derives rather than trusting it. The record's `owner` is the `evm.bip44` signer that
@@ -63,9 +63,7 @@ export function decodeSecret(secret: string): Uint8Array | undefined {
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
   try {
     const bytes = base64.decode(padded);
-    return bytes.length >= SECRET_MIN_BYTES && bytes.length <= SECRET_MAX_BYTES
-      ? bytes
-      : undefined;
+    return bytes.length >= SECRET_MIN_BYTES && bytes.length <= SECRET_MAX_BYTES ? bytes : undefined;
   } catch {
     return undefined;
   }
@@ -115,22 +113,22 @@ const parse = (raw: Uint8Array): PolymarketCredentials | undefined => {
   };
 };
 
+/* A closed session store means a locked vault — map it once for every method. */
+const read = async <T>(run: () => Promise<T>): Promise<T> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof EngineStoreError && error.code === "closed") {
+      throw new PolymarketError("unlock-required", "the vault is locked", { cause: error });
+    }
+    throw error;
+  }
+};
+
 export function createPolymarketCredentials(options: {
   readonly storage: AppStorage;
   readonly logger: EngineLogger;
 }): PolymarketCredentialStore {
-  /* A closed session store means a locked vault — map it once for every method. */
-  const read = async <T>(run: () => Promise<T>): Promise<T> => {
-    try {
-      return await run();
-    } catch (error) {
-      if (error instanceof EngineStoreError && error.code === "closed") {
-        throw new PolymarketError("unlock-required", "the vault is locked", { cause: error });
-      }
-      throw error;
-    }
-  };
-
   return {
     get: async (group) => {
       const raw = await read(async () => options.storage.get(group, NAME));

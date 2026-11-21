@@ -9,10 +9,7 @@ import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qnt
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { AppGroup, AppsController, AppSocket } from "@qntx/wallet-engine/apps";
 import { createApps } from "@qntx/wallet-engine/apps";
-import type {
-  PolymarketBuilder,
-  PolymarketProvider,
-} from "@qntx/wallet-engine/apps/polymarket";
+import type { PolymarketBuilder, PolymarketProvider } from "@qntx/wallet-engine/apps/polymarket";
 import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
 const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));

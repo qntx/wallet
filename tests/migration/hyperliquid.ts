@@ -9,10 +9,7 @@ import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qnt
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { AppsController, AppSocket } from "@qntx/wallet-engine/apps";
 import { createApps } from "@qntx/wallet-engine/apps";
-import type {
-  HyperliquidGroup,
-  HyperliquidProvider,
-} from "@qntx/wallet-engine/apps/hyperliquid";
+import type { HyperliquidGroup, HyperliquidProvider } from "@qntx/wallet-engine/apps/hyperliquid";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { chains } from "@qntx/wallet/chains";
 

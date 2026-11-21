@@ -1,9 +1,9 @@
 /**
  * `@qntx/wallet-engine/apps/hyperliquid` — the Hyperliquid app: `hyperliquid(config)` returns the
  * definition `createApps` lists, and this entry carries the provider's whole surface (market and
- * account reads, pure quote previews, L1 `trade` signed by the wallet's enabled agent,
- * user-signed `transfer`/`fund` through the request pipeline, WebSocket live views). A host that
- * never imports it bundles none of it — not even the `@nktkas/hyperliquid` SDK.
+ * account reads, pure quote previews, L1 `trade` signed by the wallet's enabled agent, user-signed
+ * `transfer`/`fund` through the request pipeline, WebSocket live views). A host that never imports
+ * it bundles none of it — not even the `@nktkas/hyperliquid` SDK.
  */
 export { hyperliquid } from "./app.ts";
 export type { AppsBuilderConfig, AppsHyperliquidConfig } from "./app.ts";

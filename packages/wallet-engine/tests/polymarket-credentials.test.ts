@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 /**
  * The engine-side credential store and L2 client: `l2Headers` is checked byte-for-byte against
  * every case of vectors/chains/polymarket-l2.json (the @polymarket/clob-client-v2 oracle), field
- * validation refuses out-of-bounds records before anything is written, a malformed stored row
- * reads as absent with a content-free warning, a closed session maps to `unlock-required`, and a
- * hostile server that echoes the credentials back inside an error sees them scrubbed.
+ * validation refuses out-of-bounds records before anything is written, a malformed stored row reads
+ * as absent with a content-free warning, a closed session maps to `unlock-required`, and a hostile
+ * server that echoes the credentials back inside an error sees them scrubbed.
  */
 import { describe, expect, it } from "vite-plus/test";
 import * as z from "zod/mini";
@@ -43,6 +43,20 @@ const VECTORS = JSON.parse(
     body?: string;
     headers: Record<string, string>;
   }>;
+};
+
+const vectorInput = (c: (typeof VECTORS.cases)[number]): Parameters<typeof l2Headers>[1] => ({
+  method: c.method,
+  path: c.path,
+  ...(c.body === undefined ? {} : { body: c.body }),
+  timestamp: c.timestamp,
+});
+
+const asPolymarketError = (thrown: unknown): PolymarketError => {
+  if (!(thrown instanceof PolymarketError)) {
+    throw new TypeError("expected a PolymarketError");
+  }
+  return thrown;
 };
 
 const warns: string[] = [];
@@ -83,20 +97,13 @@ const http = (
 };
 
 describe("polymarket l2Headers — fixed vectors", () => {
-  for (const c of VECTORS.cases) {
-    it(`matches the oracle — ${c.name}`, () => {
-      const headers = l2Headers(
-        { owner: VECTORS.account, apiKey: c.apiKey, secret: c.secret, passphrase: c.passphrase },
-        {
-          method: c.method,
-          path: c.path,
-          ...(c.body === undefined ? {} : { body: c.body }),
-          timestamp: c.timestamp,
-        },
-      );
-      expect({ ...headers }).toStrictEqual(c.headers);
-    });
-  }
+  it.each(VECTORS.cases)("matches the oracle — $name", (c) => {
+    const headers = l2Headers(
+      { owner: VECTORS.account, apiKey: c.apiKey, secret: c.secret, passphrase: c.passphrase },
+      vectorInput(c),
+    );
+    expect({ ...headers }).toStrictEqual(c.headers);
+  });
 });
 
 describe("polymarket credential store", () => {
@@ -119,7 +126,6 @@ describe("polymarket credential store", () => {
     const memory = createMemoryEngineStore();
     const credentials = store(() => memory);
     /* The table widens `owner` to string — the rows exist precisely to be refused at runtime. */
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const record = { owner: OWNER, ...value } as PolymarketCredentials;
     await expect(credentials.put(GROUP, record)).rejects.toMatchObject({
       category: "malformed",
@@ -138,7 +144,7 @@ describe("polymarket credential store", () => {
     const credentials = store(() => memory);
     const before = warns.length;
     await expect(credentials.get(GROUP)).resolves.toBeUndefined();
-    expect(warns.length).toBe(before + 1);
+    expect(warns).toHaveLength(before + 1);
     expect(warns.at(-1)).not.toContain("x");
     expect(warns.at(-1)).not.toContain(OWNER);
   });
@@ -154,7 +160,7 @@ describe("polymarket credential store", () => {
     const credentials = store(() => memory);
     const before = warns.length;
     await expect(credentials.get(GROUP)).resolves.toBeUndefined();
-    expect(warns.length).toBe(before + 1);
+    expect(warns).toHaveLength(before + 1);
   });
 
   it("a closed session maps every method to unlock-required", async () => {
@@ -162,9 +168,9 @@ describe("polymarket credential store", () => {
     await expect(credentials.get(GROUP)).rejects.toMatchObject({
       category: "unlock-required",
     });
-    await expect(
-      credentials.put(GROUP, { owner: OWNER, ...API }),
-    ).rejects.toMatchObject({ category: "unlock-required" });
+    await expect(credentials.put(GROUP, { owner: OWNER, ...API })).rejects.toMatchObject({
+      category: "unlock-required",
+    });
     await expect(credentials.delete(GROUP)).rejects.toMatchObject({
       category: "unlock-required",
     });
@@ -275,18 +281,16 @@ describe("polymarket l2 — request order", () => {
         },
         (error: unknown) => error,
       );
-    if (!(thrown instanceof PolymarketError)) {
-      throw new Error("expected a PolymarketError");
-    }
-    expect(thrown.category).toBe("unavailable");
-    expect(thrown.status).toBe(500);
-    expect(thrown.body).toBeUndefined();
-    expect(thrown.cause).toBeUndefined();
-    const haystack = `${thrown.message} ${String(thrown)}`;
+    const error = asPolymarketError(thrown);
+    expect(error.category).toBe("unavailable");
+    expect(error.status).toBe(500);
+    expect(error.body).toBeUndefined();
+    expect(error.cause).toBeUndefined();
+    const haystack = `${error.message} ${String(error)}`;
     for (const secret of [API.apiKey, API.secret, API.passphrase]) {
       expect(haystack).not.toContain(secret);
     }
-    expect(thrown.message).toContain("[redacted]");
+    expect(error.message).toContain("[redacted]");
   });
 
   it.each([
@@ -337,12 +341,10 @@ describe("polymarket l2 — request order", () => {
           },
           (thrownError: unknown) => thrownError,
         );
-      if (!(thrown instanceof PolymarketError)) {
-        throw new Error("expected a PolymarketError");
-      }
-      expect(thrown.body).toBeUndefined();
-      expect(thrown.cause).toBeUndefined();
-      const haystack = `${thrown.message} ${String(thrown)}`;
+      const scrubbed = asPolymarketError(thrown);
+      expect(scrubbed.body).toBeUndefined();
+      expect(scrubbed.cause).toBeUndefined();
+      const haystack = `${scrubbed.message} ${String(scrubbed)}`;
       for (const secret of [API.apiKey, API.secret, API.passphrase]) {
         expect(haystack).not.toContain(secret);
       }

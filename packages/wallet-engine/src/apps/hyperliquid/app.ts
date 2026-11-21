@@ -1,9 +1,9 @@
 /**
  * The Hyperliquid app definition: `hyperliquid(config)` validates the config synchronously and
  * returns the `AppDefinition` `createApps` builds over the shared `AppContext` — the socket,
- * provider and enable state machine wired exactly as the monolithic composition built them,
- * with the lifecycle hooks (`unlock` = agents refresh, `lock` = agents reset, `close` = shared
- * socket close) that keep the controller's lock semantics byte-for-byte.
+ * provider and enable state machine wired exactly as the monolithic composition built them, with
+ * the lifecycle hooks (`unlock` = agents refresh, `lock` = agents reset, `close` = shared socket
+ * close) that keep the controller's lock semantics byte-for-byte.
  */
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
@@ -72,8 +72,8 @@ export function hyperliquid(
           if (builder === undefined) {
             return undefined;
           }
-          const state = context.state()?.groups[`${group.walletId}/${group.groupIndex}`]
-            ?.hyperliquid;
+          const state =
+            context.state()?.groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
           return state?.builder === "approved" ? builder : undefined;
         },
       });

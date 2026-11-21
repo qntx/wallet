@@ -1024,7 +1024,7 @@ describe("credential records", () => {
     const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
     deployBeacon(w);
     await importCreds(w);
-    const pm = w.pm;
+    const { pm } = w;
     if (pm === undefined) {
       throw new Error("the world has no polymarket provider");
     }
@@ -1082,7 +1082,7 @@ describe("secret hygiene", () => {
   it("credentials stay out of state, logs and errors across enable, place, cancel and disable", async () => {
     const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
     deployBeacon(w);
-    const pm = w.pm;
+    const { pm } = w;
     if (pm === undefined) {
       throw new Error("the world has no polymarket provider");
     }

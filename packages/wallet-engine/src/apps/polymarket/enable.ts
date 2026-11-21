@@ -1,13 +1,13 @@
 /**
  * The Polymarket `AppProvider`: locate → deploy → credentials → approvals → verify as one resumable
- * state machine (design.md §启用状态机). Facts live in the apps store's credential records, the
- * relayer (`/deployed`) and the Data API (`/v2/approvals`); the engine persists only the terms
- * flag. Every step writes through the flow so a lock or crash resumes — each step is idempotent
- * and re-derives its precondition from the facts rather than trusting the recorded step.
+ * state machine (design.md §启用状态机). Facts live in the apps store's credential records, the relayer
+ * (`/deployed`) and the Data API (`/v2/approvals`); the engine persists only the terms flag. Every
+ * step writes through the flow so a lock or crash resumes — each step is idempotent and re-derives
+ * its precondition from the facts rather than trusting the recorded step.
  *
- * Secret hygiene: the `POST /auth/api-key` answer's `secret` is stored through the credential
- * store inside the credentials step and goes out of scope with it — it never reaches controller
- * state, the logger, or an error.
+ * Secret hygiene: the `POST /auth/api-key` answer's `secret` is stored through the credential store
+ * inside the credentials step and goes out of scope with it — it never reaches controller state,
+ * the logger, or an error.
  */
 
 import { toHex } from "viem";
@@ -18,7 +18,6 @@ import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppProvider } from "../types.ts";
 import type { PolymarketAccountReads } from "./account.ts";
-import type { PolymarketCredentialStore } from "./credentials.ts";
 import {
   CONDITIONAL_TOKENS,
   CLOB_HOST,
@@ -29,6 +28,7 @@ import {
   POSITION_MANAGER,
   PUSD,
 } from "./constants.ts";
+import type { PolymarketCredentialStore } from "./credentials.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketErrorCategory } from "./errors.ts";
 import { createPolymarketHttp } from "./http.ts";
