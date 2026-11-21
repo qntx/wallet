@@ -140,6 +140,54 @@ The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of th
 key, authenticates every value it reads back (a row that fails authentication reads as absent),
 and rebuilds a database keyed by another data key empty.
 
+## TRON
+
+The engine serves TRON mainnet (`tron:728126428`) and the Shasta (`tron:2494104990`) and Nile
+(`tron:3448148188`) testnets: TRX, TRC-10 and TRC-20 sends, staking operations, TRC-20
+approvals, balances and resources, fiat prices, and history.
+
+Host `rpc` entries are full-node HTTP base URLs — the engine appends the `/wallet/*` and
+`/walletsolidity/*` paths itself and reads both heads on the same base:
+
+```ts
+createWalletEngine({
+  // …
+  rpc: {
+    "tron:728126428": ["https://api.trongrid.io"],
+    "tron:3448148188": ["https://nile.trongrid.io"],
+  },
+});
+```
+
+When the gateway serves the network it is tried first (route `POST /v1/tron/:caip2/*`, an
+allow-list of node-API paths plus the TronGrid indexer feeds); every decisive read is still
+cross-checked against a second provider before anything is built or signed, and a
+`reads-unverified` flag marks a prepare whose cross-check could not run.
+
+Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
+TRC-10 decimal id or a TRC-20 `T…` address; `tron-stake` carries one action — `freeze`,
+`unfreeze`, `withdraw-expired`, `cancel-unfreeze`, `delegate` (with an optional `lockBlocks`),
+`undelegate`, `vote` or `claim-rewards` — checked against the java-tron actuator rules before
+signing; `tron-approve` builds the TRC-20 `approve` call (amount `0n` revokes). A pending request
+carries `tronFee`, a `TronFeeQuote` with the expected and maximum burn, the bandwidth source
+(`staked`/`free`/`burn`/`activation-staked`/`activation-fee`), energy details for contract
+calls, the activation charge for a first send to an absent account, and warnings
+(`recipient-not-activated`, `token-recipient-empty`).
+
+Tracking follows the chain's own rule: the signed bytes bind to the solidified head and stay
+`submitted` — rebroadcast as needed — until the solidified node reports them (solidified
+inclusion is `final`, a failed receipt is `failed`) or its timestamp passes the transaction's
+`expiration`, which is `dropped`. Broadcast answers the node does not classify are never
+guessed: only a definite refusal fails a request.
+
+History is display-only indexer data: the gateway's TronGrid feeds, verified entry by entry on
+the node (the raw data hash must equal the txid and every claimed leg must decode to the claim)
+— an entry the node contradicts is flagged `chain-mismatch`, one it cannot prove stays
+unverified.
+
+Not offered: `AccountPermissionUpdate` (multi-sig/permission changes), transaction memos, and a
+dApp provider — there is no `engine.tronWallet` like `eip1193`/`solanaWallet`.
+
 ## React Native hosts
 
 The engine runs on the RN main runtime (Hermes) with no polyfills. Verified on 2026-11-02 in an

@@ -114,8 +114,8 @@ export type EngineOptions = {
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
   /**
-   * Host endpoints per network (CAIP-2), ordered by preference, for all three chain families: EVM
-   * and Solana JSON-RPC URLs, and for Bitcoin the Esplora base URL.
+   * Host endpoints per network (CAIP-2), ordered by preference, per family: EVM and Solana JSON-RPC
+   * URLs, the Esplora base URL for Bitcoin, full-node HTTP base URLs for TRON.
    */
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /**
