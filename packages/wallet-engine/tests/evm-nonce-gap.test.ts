@@ -137,6 +137,8 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
   let tag = 0;
   /** Armed per test: the first `hold` sendRawTransaction calls wait on this gate. */
   let sendGate: { promise: Promise<void>; open: () => void; hold: number } | undefined;
+  /** Armed per test: the poll's eth_getTransactionReceipt read waits on this gate. */
+  let pollGate: { promise: Promise<void>; open: () => void; awaited: boolean } | undefined;
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -158,6 +160,10 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
       if (node.dropSend) {
         return Promise.reject(new TypeError("fetch failed"));
       }
+    }
+    if (body.method === "eth_getTransactionReceipt" && pollGate !== undefined) {
+      pollGate.awaited = true;
+      await pollGate.promise;
     }
     const reply = ((): { result: unknown } | { error: { code: number; message: string } } => {
       try {
@@ -292,6 +298,26 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
     },
     releaseSendGate: () => {
       sendGate?.open();
+    },
+    /** The poll's next eth_getTransactionReceipt read waits until `releasePollGate`. */
+    armPollGate: () => {
+      let open!: () => void;
+      pollGate = {
+        promise: new Promise<void>((resolve) => {
+          open = resolve;
+        }),
+        open,
+        awaited: false,
+      };
+    },
+    releasePollGate: () => {
+      pollGate?.open();
+      pollGate = undefined;
+    },
+    pollGateAwaited: () => pollGate?.awaited === true,
+    /** Removes a row from the shared backing — the in-memory copy then has no durable twin. */
+    forgetTx: (id: string) => {
+      backing.collections.get("transactions")?.delete(id);
     },
   };
 };
@@ -598,6 +624,42 @@ describe("a stale session's late answer cannot write", () => {
     // …but the dead session rewrites nothing: the row stays dropped and no poll re-arms.
     expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
     expect((await w.persistedTx(a?.id ?? ""))?.["state"]).toBe("dropped");
+    expect(timers.armed(POLL_MS)).toBe(0);
+  });
+
+  it("an in-flight poll answered after unlock writes nothing into the new session", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const node = w.primary;
+
+    const a = await send(ctl, SEND);
+    const hash = a.hash ?? "";
+    expect(timers.armed(POLL_MS)).toBe(1);
+
+    // The poll's receipt read is in flight when the session ends.
+    w.armPollGate();
+    const fired = timers.fire(POLL_MS);
+    await until(() => (w.pollGateAwaited() ? true : undefined), "the poll's receipt read");
+
+    ctl.lock();
+    /* With no store row to reload, the in-memory row keeps its identity across init — the case
+       a failed bookkeeping write (`unsaved`) leaves behind. The row-identity check alone would
+       not drop the answer that lands next; the session generation does. */
+    w.forgetTx(a.id);
+    await ctl.init();
+    expect(ctl.getState().txs[a.id]).toBe(a);
+
+    node.receipts.set(hash, {
+      status: "0x1",
+      blockNumber: "0x1",
+      blockHash: `0x${"11".repeat(32)}`,
+    });
+    w.releasePollGate();
+    await fired;
+
+    // The old session's `included` applies nowhere: state, store and timers are untouched.
+    expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
+    expect(await w.persistedTx(a.id)).toBeUndefined();
     expect(timers.armed(POLL_MS)).toBe(0);
   });
 });
