@@ -10,6 +10,7 @@
  * - Data-key: purpose, createdAt
  * - Imported key: family, address, createdAt
  * - HL agent: walletId, groupIndex, owner, network, name, validUntil, createdAt
+ * - PM creds: walletId, groupIndex, owner, apiKey, createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
@@ -57,6 +58,14 @@ function textOf(kind: string, input: Input): string {
         network: i["network"],
         name: i["name"],
         validUntil: i["validUntil"],
+        createdAt: i["createdAt"],
+      });
+    case "pm-creds":
+      return JSON.stringify({
+        walletId: i["walletId"],
+        groupIndex: i["groupIndex"],
+        owner: i["owner"],
+        apiKey: i["apiKey"],
         createdAt: i["createdAt"],
       });
     case "nostr-derived":
@@ -189,6 +198,17 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       network: "Mainnet",
       name: "bot-1",
       validUntil: CREATED_AT + 180 * 86_400_000,
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "pm-creds",
+    kind: "pm-creds",
+    input: {
+      walletId: WALLET_ID,
+      groupIndex: 0,
+      owner: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      apiKey: "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
       createdAt: CREATED_AT,
     },
   },

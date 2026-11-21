@@ -42,6 +42,34 @@ export const APPS_METHODS: {
     }, {
         readonly signature: Uint8Array;
     }>;
+    readonly "polymarket.importCredentials": MethodSpec<{
+        readonly owner: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+        };
+        readonly apiKey: string;
+        readonly secret: string;
+        readonly passphrase: string;
+    }, {
+        readonly owner: string;
+    }>;
+    readonly "polymarket.listCredentials": MethodSpec<NullValue, ReadonlyArray<PolymarketCredentialsInfo>>;
+    readonly "polymarket.deleteCredentials": MethodSpec<{
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, NullValue>;
+    readonly "polymarket.signL2": MethodSpec<{
+        readonly owner: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+        };
+        readonly method: PolymarketL2Method;
+        readonly path: string;
+        readonly body?: string;
+        readonly timestamp: number;
+    }, {
+        readonly headers: PolymarketL2Headers;
+    }>;
 };
 
 // @public (undocumented)
@@ -885,6 +913,27 @@ type OptionalKeys<S extends Shape> = { readonly [K in keyof S as S[K] extends Op
 
 // @public (undocumented)
 export type ParamsOf<M extends MethodName> = ReturnType<(typeof METHODS)[M]["params"]>;
+
+// @public (undocumented)
+export type PolymarketCredentialsInfo = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly owner: string;
+    readonly apiKey: string;
+    readonly createdAt: number;
+};
+
+// @public
+export type PolymarketL2Headers = {
+    readonly POLY_ADDRESS: string;
+    readonly POLY_SIGNATURE: string;
+    readonly POLY_TIMESTAMP: string;
+    readonly POLY_API_KEY: string;
+    readonly POLY_PASSPHRASE: string;
+};
+
+// @public (undocumented)
+export type PolymarketL2Method = "GET" | "POST" | "DELETE";
 
 // @public (undocumented)
 export type PrepareClaimRequest = {

@@ -9,6 +9,7 @@ const config: UserConfig = defineConfig({
       host: "src/host.ts",
       hyperliquid: "src/hyperliquid/index.ts",
       nostr: "src/nostr/index.ts",
+      polymarket: "src/polymarket/index.ts",
       spark: "src/spark/index.ts",
       protocol: "src/protocol/index.ts",
       types: "src/types.ts",

@@ -94,6 +94,18 @@
       "text": "{\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"network\":\"Mainnet\",\"name\":\"bot-1\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
     },
     {
+      "name": "pm-creds",
+      "kind": "pm-creds",
+      "input": {
+        "walletId": "0011223344556677",
+        "groupIndex": 0,
+        "owner": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        "apiKey": "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"apiKey\":\"7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "nostr-derived",
       "kind": "nostr-derived",
       "input": {

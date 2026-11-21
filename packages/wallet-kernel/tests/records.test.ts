@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { nobleBackend } from "@qntx/nostr";
 
+import { encodeCredentialsHeader, parseCredentialsHeader } from "../src/modules/apps/pm-record.ts";
 import { encodeAgentHeader, parseAgentHeader } from "../src/modules/apps/record.ts";
 import {
   encodeNostrKeyHeader,
@@ -58,6 +59,12 @@ describe("record and factor header vectors", () => {
     const parsed = parseAgentHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeAgentHeader(parsed)).toBe(vector.text);
+  });
+
+  it.each(byKind("pm-creds"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseCredentialsHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeCredentialsHeader(parsed)).toBe(vector.text);
   });
 
   it.each(byKind("nostr-derived"))("$name encodes and parses byte-for-byte", (vector) => {

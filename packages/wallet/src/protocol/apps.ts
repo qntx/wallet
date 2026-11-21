@@ -1,7 +1,10 @@
 /**
- * The apps module's method table: Hyperliquid L1 agent keys (design.md §协议, research.md §H2). An
- * agent is a secp256k1 key the kernel generates, stores under the vault, and uses to sign
- * Hyperliquid L1 actions (the phantom-agent `Agent` typed data) on behalf of one HD account.
+ * The apps module's method table: Hyperliquid L1 agent keys and Polymarket CLOB L2 credentials
+ * (design.md §协议, research.md §H2, apps-polymarket design.md §内核). An agent is a secp256k1 key the
+ * kernel generates, stores under the vault, and uses to sign Hyperliquid L1 actions (the
+ * phantom-agent `Agent` typed data) on behalf of one HD account; a `pm-creds` record seals one CLOB
+ * credential set per HD group so the L2 HMAC is computed inside the kernel and the api secret never
+ * reaches the main runtime after import.
  *
  * `hyperliquidL1Action` is the strict wire validator for the ten allow-listed action schemas
  * (research H2-T). It is exported for the kernel's signL1 handler, not used in `params`: a
@@ -217,6 +220,58 @@ const agentInfo: Validator<HyperliquidAgentInfo> = obj({
   createdAt: safeTime,
 });
 
+export type PolymarketCredentialsInfo = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  /** EIP-55 address of the HD account at m/44'/60'/0'/0/groupIndex the credentials act for. */
+  readonly owner: string;
+  /** The lowercase UUID the CLOB issued with this credential set. */
+  readonly apiKey: string;
+  readonly createdAt: number;
+};
+
+export type PolymarketL2Method = "GET" | "POST" | "DELETE";
+
+/** The five headers an L2 request sends — the signature is all the secret ever produces. */
+export type PolymarketL2Headers = {
+  readonly POLY_ADDRESS: string;
+  readonly POLY_SIGNATURE: string;
+  readonly POLY_TIMESTAMP: string;
+  readonly POLY_API_KEY: string;
+  readonly POLY_PASSPHRASE: string;
+};
+
+const apiKey = str(
+  36,
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+);
+const lowerApiKey = str(36, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+/* Standard or url-safe base64, padding optional; decodability to 16–64 bytes is a domain check in
+   the kernel's handler so it answers invalid-input, not the params layer's integrity. */
+const l2Secret = str(128, /^[A-Za-z0-9+/=_-]+$/);
+const l2Passphrase = str(128, /^[\u0021-\u007E]{1,128}$/);
+const l2Method: Validator<PolymarketL2Method> = union(
+  literal("GET"),
+  literal("POST"),
+  literal("DELETE"),
+);
+
+const credentialsInfo: Validator<PolymarketCredentialsInfo> = obj({
+  walletId,
+  groupIndex,
+  owner: evmAddress,
+  apiKey: lowerApiKey,
+  createdAt: safeTime,
+});
+
+const l2Headers: Validator<PolymarketL2Headers> = obj({
+  POLY_ADDRESS: evmAddress,
+  POLY_SIGNATURE: str(44, /^[A-Za-z0-9_-]{43}=$/),
+  POLY_TIMESTAMP: str(16, /^[0-9]+$/),
+  POLY_API_KEY: lowerApiKey,
+  POLY_PASSPHRASE: l2Passphrase,
+});
+
 export const APPS_METHODS: {
   readonly "hyperliquid.createAgent": MethodSpec<
     {
@@ -238,6 +293,33 @@ export const APPS_METHODS: {
       readonly expiresAfter?: number;
     },
     { readonly signature: Uint8Array }
+  >;
+  readonly "polymarket.importCredentials": MethodSpec<
+    {
+      readonly owner: { readonly walletId: string; readonly groupIndex: number };
+      readonly apiKey: string;
+      readonly secret: string;
+      readonly passphrase: string;
+    },
+    { readonly owner: string }
+  >;
+  readonly "polymarket.listCredentials": MethodSpec<
+    NullValue,
+    ReadonlyArray<PolymarketCredentialsInfo>
+  >;
+  readonly "polymarket.deleteCredentials": MethodSpec<
+    { readonly walletId: string; readonly groupIndex: number },
+    NullValue
+  >;
+  readonly "polymarket.signL2": MethodSpec<
+    {
+      readonly owner: { readonly walletId: string; readonly groupIndex: number };
+      readonly method: PolymarketL2Method;
+      readonly path: string;
+      readonly body?: string;
+      readonly timestamp: number;
+    },
+    { readonly headers: PolymarketL2Headers }
   >;
 } = {
   "hyperliquid.createAgent": {
@@ -279,5 +361,42 @@ export const APPS_METHODS: {
       expiresAfter: opt(safeTime),
     }),
     result: obj({ signature: bytes(65, 65) }),
+  },
+  "polymarket.importCredentials": {
+    session: true,
+    presence: true,
+    params: obj({
+      owner: obj({ walletId, groupIndex }),
+      apiKey,
+      secret: l2Secret,
+      passphrase: l2Passphrase,
+    }),
+    result: obj({ owner: evmAddress }),
+  },
+  "polymarket.listCredentials": {
+    session: true,
+    presence: false,
+    params: nullValue,
+    result: arr(credentialsInfo, 64),
+  },
+  "polymarket.deleteCredentials": {
+    session: true,
+    presence: true,
+    params: obj({ walletId, groupIndex }),
+    result: nullValue,
+  },
+  "polymarket.signL2": {
+    session: true,
+    /* Deliberately not presence-bearing, like signL1: a compromised main runtime must not be able
+       to keep the vault unlocked forever by issuing requests (design.md §不变量 2). */
+    presence: false,
+    params: obj({
+      owner: obj({ walletId, groupIndex }),
+      method: l2Method,
+      path: str(200),
+      body: opt(str(65_536)),
+      timestamp: safeTime,
+    }),
+    result: obj({ headers: l2Headers }),
   },
 };
