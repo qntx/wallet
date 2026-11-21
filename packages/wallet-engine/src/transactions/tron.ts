@@ -1042,10 +1042,45 @@ export const pollTron = async (
   /* A transaction neither node knows is dropped only once the solidified head is past its
      expiration — until then it may still land, so the signed bytes are rebroadcast. */
   if (expiration !== undefined && head.timestamp > expiration) {
-    return { kind: "ended", state: "dropped" };
+    const independent = ctx.options.networks.independentTronApi(tx.network);
+    if (independent.kind !== "available") {
+      return { kind: "ended", state: "dropped" };
+    }
+    /* A second node's word is required when one is configured: it must see a solidified head past
+       expiration too and know the transaction on neither its solidity nor its full node. Any
+       dissent or read failure means "not dropped" — the rebroadcast path continues. */
+    if (await independentlyDropped(independent.client, tx.hash, expiration)) {
+      return { kind: "ended", state: "dropped" };
+    }
   }
   if (tx.raw !== undefined) {
     await broadcastHex(api, tx.raw).catch(() => "");
   }
   return undefined;
+};
+
+/**
+ * Second-node drop proof, same read order as the primary's: solidified head past expiration, then
+ * no solidified info, then no full-node info. Every failure reads as "not proven".
+ */
+const independentlyDropped = async (
+  api: TronApi,
+  hash: string,
+  expiration: number,
+): Promise<boolean> => {
+  try {
+    const head = await solidHead(api);
+    if (head.timestamp <= expiration) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, true)) !== undefined) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, false)) !== undefined) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 };

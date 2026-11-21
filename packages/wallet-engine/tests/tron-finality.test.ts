@@ -100,9 +100,14 @@ const landingApi = (e: Env): TronApi => {
   };
 };
 
-const ctx = (e: Env): RouteContext => ({
+const NOT_NEEDED = { kind: "not-needed" };
+
+const ctx = (e: Env, independent: unknown = NOT_NEEDED): RouteContext => ({
   options: {
-    networks: { tronApi: () => apiOf(e) } as never,
+    networks: {
+      tronApi: () => apiOf(e),
+      independentTronApi: () => independent,
+    } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
     random: (n: number) => new Uint8Array(n),
@@ -286,6 +291,47 @@ describe("pollTron", () => {
     const e = env();
     const answer = await pollTron(ctx(e), tx({ raw: undefined }));
     expect(answer).toBeUndefined();
+    expect(e.broadcasts).toHaveLength(0);
+  });
+
+  it("drops only when the independent API's solid head is past expiration and it knows nothing", async () => {
+    const e = env({ solidTime: 1_060_001 });
+    const ie = env({ solidTime: 1_060_001 });
+    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
+    expect(e.broadcasts).toHaveLength(0);
+  });
+
+  it("a lagging independent head keeps the transaction submitted", async () => {
+    const e = env({ solidTime: 1_060_001 });
+    const ie = env({ solidTime: 1_060_000 }); // not yet past expiration
+    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    expect(answer).toBeUndefined();
+    expect(e.broadcasts).toStrictEqual([RAW]);
+  });
+
+  it("an independent node that knows the transaction keeps it submitted", async () => {
+    const e = env({ solidTime: 1_060_001 });
+    const ie = env({ solidTime: 1_060_001, solidInfo: info() });
+    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    expect(answer).toBeUndefined();
+    expect(e.broadcasts).toStrictEqual([RAW]);
+  });
+
+  it("an independent read failure keeps the transaction submitted", async () => {
+    const e = env({ solidTime: 1_060_001 });
+    const broken: TronApi = {
+      post: async () => Promise.reject(new Error("endpoint down")),
+    };
+    const answer = await pollTron(ctx(e, { kind: "available", client: broken }), tx());
+    expect(answer).toBeUndefined();
+    expect(e.broadcasts).toStrictEqual([RAW]);
+  });
+
+  it("an unavailable independent API preserves the primary-only proof", async () => {
+    const e = env({ solidTime: 1_060_001 });
+    const answer = await pollTron(ctx(e, { kind: "unavailable" }), tx());
+    expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
     expect(e.broadcasts).toHaveLength(0);
   });
 });
