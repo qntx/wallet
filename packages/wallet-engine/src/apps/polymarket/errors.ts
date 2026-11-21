@@ -30,10 +30,31 @@ export type PolymarketErrorCategory =
 
 export class PolymarketError extends Error {
   readonly category: PolymarketErrorCategory;
+  /**
+   * The HTTP status — set on `unavailable` only. Callers distinguish a definitive 4xx (the request
+   * never ran as asked) from a 5xx/timeout (the outcome is unknown).
+   */
+  readonly status?: number;
+  /** The server's parsed JSON error body when it was an object — `unavailable` only. */
+  readonly body?: Readonly<Record<string, unknown>>;
 
-  constructor(category: PolymarketErrorCategory, message: string, cause?: unknown) {
-    super(message, { cause });
+  constructor(
+    category: PolymarketErrorCategory,
+    message: string,
+    options?: {
+      readonly cause?: unknown;
+      readonly status?: number;
+      readonly body?: Readonly<Record<string, unknown>>;
+    },
+  ) {
+    super(message, { cause: options?.cause });
     this.name = "PolymarketError";
     this.category = category;
+    if (options?.status !== undefined) {
+      this.status = options.status;
+    }
+    if (options?.body !== undefined) {
+      this.body = options.body;
+    }
   }
 }

@@ -4,9 +4,9 @@
  * later layers HMAC it, so the client never re-serializes.
  *
  * Mapping: a fetch that throws is `network`, a deadline miss `timeout`, a non-2xx `unavailable`
- * (status + the server's `error` string when it carries one), a non-JSON or schema-failing body
- * `malformed`. The caller's own `signal` abort maps to `network` — only an injected-timer abort is
- * a timeout.
+ * (the error carries the HTTP `status`, the server's parsed JSON error body when it was an object,
+ * and its `error` string in the message when it carries one), a non-JSON or schema-failing body
+ * `malformed`. The injected-timer abort is the only deadline.
  */
 import * as z from "zod/mini";
 
@@ -59,15 +59,17 @@ const buildUrl = (request: PolymarketHttpRequest): string => {
   return url.toString();
 };
 
-/** The server's `error` string when the body is a JSON object that carries one. */
-const errorText = async (response: Response): Promise<string | undefined> => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The server's parsed error body when it is a JSON object — a non-JSON body carries none. */
+const errorBody = async (
+  response: Response,
+): Promise<Readonly<Record<string, unknown>> | undefined> => {
   try {
     const body: unknown = await response.json();
-    if (typeof body === "object" && body !== null && "error" in body) {
-      const { error } = body;
-      if (typeof error === "string") {
-        return error.slice(0, 200);
-      }
+    if (isRecord(body)) {
+      return body;
     }
   } catch {
     /* A non-JSON error body carries no detail. */
@@ -92,29 +94,32 @@ export function createPolymarketHttp(options: PolymarketHttpOptions): Polymarket
         signal: bound.signal,
       });
       if (!response.ok) {
-        const detail = await errorText(response);
+        const body = await errorBody(response);
+        const detail = body?.["error"];
         throw new PolymarketError(
           "unavailable",
-          `${input.method} ${input.path} answered ${response.status}${detail === undefined ? "" : `: ${detail}`}`,
+          `${input.method} ${input.path} answered ${response.status}${
+            typeof detail === "string" ? `: ${detail.slice(0, 200)}` : ""
+          }`,
+          {
+            status: response.status,
+            ...(body === undefined ? {} : { body }),
+          },
         );
       }
       let body: unknown;
       try {
         body = await response.json();
       } catch (error) {
-        throw new PolymarketError(
-          "malformed",
-          `${input.method} ${input.path} answered non-JSON`,
-          error,
-        );
+        throw new PolymarketError("malformed", `${input.method} ${input.path} answered non-JSON`, {
+          cause: error,
+        });
       }
       const parsed = z.safeParse(schema, body);
       if (!parsed.success) {
-        throw new PolymarketError(
-          "malformed",
-          `${input.method} ${input.path} failed its schema`,
-          parsed.error,
-        );
+        throw new PolymarketError("malformed", `${input.method} ${input.path} failed its schema`, {
+          cause: parsed.error,
+        });
       }
       return parsed.data;
     } catch (error) {
@@ -122,12 +127,14 @@ export function createPolymarketHttp(options: PolymarketHttpOptions): Polymarket
         throw error;
       }
       if (bound.signal.aborted) {
-        throw new PolymarketError("timeout", `${input.method} ${input.path} timed out`, error);
+        throw new PolymarketError("timeout", `${input.method} ${input.path} timed out`, {
+          cause: error,
+        });
       }
       throw new PolymarketError(
         "network",
         `${input.method} ${input.path} failed: ${error instanceof Error ? error.message : String(error)}`,
-        error,
+        { cause: error },
       );
     } finally {
       bound.cancel();
