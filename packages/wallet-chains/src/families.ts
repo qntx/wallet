@@ -27,6 +27,12 @@ export type FamilyClaim =
       readonly surface: "evm.typed-data";
       readonly verifyingContract: "token-table" | "permit2" | "seaport";
     }
+  /* An order protocol's domain name or any of its verifying contracts (either claims it). */
+  | {
+      readonly surface: "evm.typed-data";
+      readonly domainName: string;
+      readonly contracts: ReadonlyArray<string>;
+    }
   | { readonly surface: "solana.instruction"; readonly program: keyof typeof PROGRAM_IDS };
 
 export type RecognisedFamily = {
@@ -116,6 +122,216 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
   {
     family: "Seaport",
     claim: { surface: "evm.typed-data", verifyingContract: "seaport" },
+    nearMiss: "typed-data-variant",
+  },
+  /* 1inch Limit Order Protocol orders at the Aggregation Router v6 (verified eip712Domain per
+     chain in vectors/chains/order-protocols.json) or the v5 router (code only — claim-only). */
+  {
+    family: "1inch",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "1inch Aggregation Router",
+      contracts: [
+        "0x111111125421cA6dc452d289314280a0f8842A65",
+        "0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
+        "0x1111111254EEB25477B68fb85Ed929f73A960582",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Standalone 1inch LOP v2 deployments, DOMAIN_SEPARATOR probed in
+     vectors/chains/order-protocols.json; addresses from the erc7730 registry at 3d332d5f
+     (https://github.com/LedgerHQ/clear-signing-erc7730-registry/blob/3d332d5fb832b78e4745ee6c7046a0c2ea100426/registry/1inch/eip712-1inch-limit-order.json). */
+  {
+    family: "1inch LOP",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "1inch Limit Order Protocol",
+      contracts: [
+        "0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
+        "0x11431a89893025D2a48dCA4EddC396f8C8117187",
+        "0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
+        "0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
+        "0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* CoW GPv2 orders on the settlement contract (networks.json in cowprotocol/contracts at
+     ea0c36591b6da73b9ba4e2e2107897080c7f9b68; probed in vectors/chains/order-protocols.json). */
+  {
+    family: "CoW",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Gnosis Protocol",
+      contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Snapshot `Vote` documents under the snapshot 0.1.4 domain (snapshot.js
+     src/sign/{index,types}.ts). */
+  {
+    family: "Snapshot",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "snapshot",
+      primaryType: /^Vote$/,
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* 0x v4 Exchange Proxy limit/RFQ/OTC orders (FixinEIP712.sol domain "ZeroEx"/1.0.0; probed
+     in vectors/chains/order-protocols.json). */
+  {
+    family: "0x",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "ZeroEx",
+      contracts: [
+        "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+        "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Blur: v1 Blur Exchange (on-chain NAME()/VERSION(); code-423n4/2022-10-blur
+     BlurExchange.sol:57-58), Marketplace 3 and Blend claimed by address only (Etherscan tags). */
+  {
+    family: "Blur",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Blur Exchange",
+      contracts: [
+        "0x000000000000Ad05Ccc4F10045630fb830B95127",
+        "0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
+        "0x29469395eAf6f95920E59F858042f0e28D98a20B",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* LooksRare v2 (on-chain DOMAIN_SEPARATOR match — vectors/chains/order-protocols.json). */
+  {
+    family: "LooksRare",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "LooksRareProtocol",
+      contracts: ["0x0000000000E655fAe4d56241588680F86E3b2377"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Bebop RFQ and Bebop JAM (deployments and domains probed on-chain in
+     vectors/chains/order-protocols.json). */
+  {
+    family: "Bebop",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "BebopSettlement",
+      contracts: ["0xbbbbbBB520d69a9775E85b458C58c648259FAD5F"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "Bebop",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "JamSettlement",
+      contracts: ["0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Paraswap Augustus RFQ (erc7730 registry at 3d332d5f
+     https://github.com/LedgerHQ/clear-signing-erc7730-registry/blob/3d332d5fb832b78e4745ee6c7046a0c2ea100426/registry/paraswap/eip712-paraswap.json;
+     code present — vectors/chains/order-protocols.json). */
+  {
+    family: "Paraswap",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "AUGUSTUS RFQ",
+      contracts: [
+        "0xe92b586627ccA7a83dC919cc7127196d70f55a06",
+        "0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
+        "0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
+        "0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Velora Delta v2 (on-chain match; erc7730 registry/paraswap/eip712-Velora-DeltaV2.json). */
+  {
+    family: "Velora Delta",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Portikus",
+      contracts: ["0x0000000000bbF5c5Fd284e657F01Bd000933C96D"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* KyberSwap limit orders (on-chain separators — vectors/chains/order-protocols.json). */
+  {
+    family: "KyberSwap",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Kyber Limit Order Protocol",
+      contracts: ["0x227B0c196eA8db17A665EA6824D972A64202E936"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "KyberSwap",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Kyber DSLO Protocol",
+      contracts: ["0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* OpenOcean limit order v2 (contracts/LimitOrderProtocol.sol in
+     openocean-finance/limit-order-protocol-v2 at 747ed8ea309ace67ceaa1b3d1a1a03b8331a1719 —
+     https://github.com/openocean-finance/limit-order-protocol-v2/blob/747ed8ea309ace67ceaa1b3d1a1a03b8331a1719/contracts/LimitOrderProtocol.sol;
+     probed in vectors/chains/order-protocols.json; the HyperEVM README address has no code and is
+     not claimed). */
+  {
+    family: "OpenOcean",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "openocean Limit Order Protocol",
+      contracts: [
+        "0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
+        "0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+        "0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
+        "0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
+        "0xB45373129B4220160b92bd2320869f44d48eCd01",
+        "0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
+        "0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
+        "0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
+        "0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
+        "0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
+        "0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
+        "0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74",
+      ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Odos limit order v2 routers (on-chain eip712Domain — vectors/chains/order-protocols.json;
+     github.com/odos-xyz/odos-limit-orders README). */
+  {
+    family: "Odos",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "OdosLimitOrderRouter",
+      contracts: [
+        "0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
+        "0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
+        "0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
+        "0x93052961c75c92Fd5d6362655936C239EF2D5336",
+        "0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
+        "0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
+        "0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
+        "0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
+        "0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
+        "0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
+        "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069",
+      ],
+    },
     nearMiss: "typed-data-variant",
   },
   /* Transfer, CreateAccount, CreateAccountWithSeed and AdvanceNonceAccount of the System program. */

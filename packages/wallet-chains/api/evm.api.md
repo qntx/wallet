@@ -88,6 +88,7 @@ type AssetFlow = {
     readonly amount: AssetAmount;
     readonly verified: boolean;
     readonly burn?: true;
+    readonly tokenAccount?: string;
     readonly name?: string;
 };
 
@@ -95,7 +96,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "tron-contract" | "tron-field" | "tron-permission-update";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
 
 // @public (undocumented)
 export const canonicalHex: (value: bigint) => string;
@@ -171,6 +172,7 @@ type DisplayIntent = {
         readonly symbol?: string;
     };
     readonly programs?: ReadonlyArray<string>;
+    readonly programAuthority?: ReadonlyArray<ProgramAuthority>;
     readonly tron?: {
         readonly contractType: string;
         readonly expiration: number;
@@ -334,9 +336,12 @@ type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "messag
 
 // @public (undocumented)
 type IntentWarning = {
-    readonly kind: string;
+    readonly kind: IntentWarningKind;
     readonly message: string;
 };
+
+// @public
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension";
 
 // @public (undocumented)
 export const isCanonicalHex: (value: string) => boolean;
@@ -379,6 +384,7 @@ type MessageContent = {
     readonly domain: TypedDataDomain;
     readonly data: Readonly<Record<string, unknown>>;
     readonly seaport?: SeaportOrder;
+    readonly order?: OffchainOrder;
     readonly safe?: SafeTransaction;
     readonly hyperliquid?: HyperliquidAction;
     readonly polymarket?: PolymarketContent;
@@ -393,6 +399,24 @@ export const normalizeEvm: (request: unknown) => SignRequest;
 
 // @public
 export const normalizeEvmTransaction: (tx: unknown) => EvmTransaction;
+
+// @public
+type OffchainOrder = {
+    readonly protocol: "1inch" | "uniswapx" | "cow";
+    readonly maker: string;
+    readonly give: AssetAmount;
+    readonly receive: ReadonlyArray<{
+        readonly recipient: string;
+        readonly amount: AssetAmount;
+    }>;
+    readonly expiry?: number;
+    readonly partialFill: boolean;
+    readonly allowedSender?: string;
+    readonly exclusiveFiller?: string;
+};
+
+// @public
+export const ORDER_ITEMS = 8;
 
 // @public (undocumented)
 type ParsedTypedData = {
@@ -440,6 +464,19 @@ type PolymarketContent = {
 };
 
 // @public
+type ProgramAuthority = {
+    readonly program: string;
+    readonly sol: boolean;
+    readonly accounts: ReadonlyArray<{
+        readonly address: string;
+        readonly token?: {
+            readonly mint: string;
+            readonly symbol: string;
+        };
+    }>;
+};
+
+// @public
 export const recoverEvmSigner: (request: Extract<SignRequest, {
     network: string;
 }>, result: {
@@ -465,9 +502,6 @@ type SafeTransaction = {
         readonly amount: AssetAmount;
     };
 };
-
-// @public
-export const SEAPORT_ORDER_ITEMS = 4;
 
 // @public
 type SeaportItem = {
@@ -595,6 +629,13 @@ type StakeAction = {
     readonly to: string;
     readonly lamports: string;
 } |
+/** Stake `Split`: `lamports` of `account` move to the new stake account `to`. */
+    {
+    readonly kind: "split";
+    readonly account: string;
+    readonly to: string;
+    readonly lamports: string;
+} |
 /** Lido `submit` on Ethereum mainnet: ETH in, approximately `receive` stETH back. */
     {
     readonly kind: "lido-submit";
@@ -692,7 +733,7 @@ type TypedDataField = {
 // @public
 export const typedDataFields: (json: TypedDataInput) => {
     readonly fields: ReadonlyArray<TypedDataLeaf>;
-    readonly commitment: boolean;
+    readonly hasCommitment: boolean;
 } | undefined;
 
 // @public

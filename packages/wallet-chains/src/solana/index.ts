@@ -10,14 +10,14 @@ export {
   isSolanaAddress,
   solanaAddressFromPublicKey,
 } from "./ids.ts";
-export { decodeSolana, verifiabilitySolana } from "./decode.ts";
+export { PROGRAM_AUTHORITY_ACCOUNTS, decodeSolana, verifiabilitySolana } from "./decode.ts";
 export { EXT, parseMintExtensions, netAfterTransferFee } from "./token2022.ts";
 export type { MintExtensionSummary } from "./token2022.ts";
 export { SOLANA_NATIVE_ASSET } from "./assets.ts";
 export { associatedTokenAddress } from "./ata.ts";
 export { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 export { JUPITER_PROGRAM, WSOL_MINT } from "./jupiter.ts";
-export { mayBeTransactionMessage, parseCompiledMessage } from "./message.ts";
+export { isWritableIndex, mayBeTransactionMessage, parseCompiledMessage } from "./message.ts";
 export type { LookupReference, ParsedSolanaMessage } from "./message.ts";
 export { addSolanaSignature, decodeSolanaTransaction } from "./transaction.ts";
 export type { SolanaTransactionForSigner } from "./transaction.ts";

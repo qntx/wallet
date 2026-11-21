@@ -57,6 +57,7 @@ export type AssetFlow = {
     readonly amount: AssetAmount;
     readonly verified: boolean;
     readonly burn?: true;
+    readonly tokenAccount?: string;
     readonly name?: string;
 };
 
@@ -64,7 +65,7 @@ export type AssetFlow = {
 export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "tron-contract" | "tron-field" | "tron-permission-update";
+export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
 
 // @public (undocumented)
 export class ChainError extends Error {
@@ -128,6 +129,7 @@ export type DisplayIntent = {
         readonly symbol?: string;
     };
     readonly programs?: ReadonlyArray<string>;
+    readonly programAuthority?: ReadonlyArray<ProgramAuthority>;
     readonly tron?: {
         readonly contractType: string;
         readonly expiration: number;
@@ -189,6 +191,9 @@ type EvmTransactionBase = {
 };
 
 // @public
+export const hasHiddenCharacters: (text: string) => boolean;
+
+// @public
 export type HyperliquidAction = {
     readonly kind: "usd-send" | "withdraw";
     readonly chain: HyperliquidChain;
@@ -245,21 +250,18 @@ export type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | 
 
 // @public (undocumented)
 export type IntentWarning = {
-    readonly kind: string;
+    readonly kind: IntentWarningKind;
     readonly message: string;
 };
+
+// @public
+export type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension";
 
 // @public
 export const isBlindIntent: (intent: Pick<DisplayIntent, "blind">) => boolean;
 
 // @public
-export const isHexRendering: (text: string) => boolean;
-
-// @public
-export const isReadableText: (text: string) => boolean;
-
-// @public
-export const isUnsafeCodePoint: (codePoint: number) => boolean;
+export const isEncodedBytes: (text: string) => boolean;
 
 // @public
 export const messageBlindReason: (message: MessageContent) => BlindReason | undefined;
@@ -278,6 +280,7 @@ export type MessageContent = {
     readonly domain: TypedDataDomain;
     readonly data: Readonly<Record<string, unknown>>;
     readonly seaport?: SeaportOrder;
+    readonly order?: OffchainOrder;
     readonly safe?: SafeTransaction;
     readonly hyperliquid?: HyperliquidAction;
     readonly polymarket?: PolymarketContent;
@@ -286,6 +289,27 @@ export type MessageContent = {
 
 // @public
 export const messageContent: (bytes: Uint8Array, family: "evm" | "solana" | "tron") => MessageContent;
+
+// @public (undocumented)
+export type MessageTextHazard = "digest-length" | "hidden-characters" | "encoded-bytes";
+
+// @public
+export const messageTextHazard: (text: string) => MessageTextHazard | undefined;
+
+// @public
+export type OffchainOrder = {
+    readonly protocol: "1inch" | "uniswapx" | "cow";
+    readonly maker: string;
+    readonly give: AssetAmount;
+    readonly receive: ReadonlyArray<{
+        readonly recipient: string;
+        readonly amount: AssetAmount;
+    }>;
+    readonly expiry?: number;
+    readonly partialFill: boolean;
+    readonly allowedSender?: string;
+    readonly exclusiveFiller?: string;
+};
 
 // @public
 export function parseSignIn(text: string, family: "evm" | "solana" | "tron"): SignInParse | undefined;
@@ -322,6 +346,19 @@ export type PolymarketContent = {
     readonly nonce: string;
     readonly deadline: number;
     readonly calls: ReadonlyArray<DisplayIntent>;
+};
+
+// @public
+export type ProgramAuthority = {
+    readonly program: string;
+    readonly sol: boolean;
+    readonly accounts: ReadonlyArray<{
+        readonly address: string;
+        readonly token?: {
+            readonly mint: string;
+            readonly symbol: string;
+        };
+    }>;
 };
 
 // @public
@@ -462,6 +499,13 @@ export type StakeAction = {
     readonly account: string;
 } | {
     readonly kind: "withdraw";
+    readonly account: string;
+    readonly to: string;
+    readonly lamports: string;
+} |
+/** Stake `Split`: `lamports` of `account` move to the new stake account `to`. */
+    {
+    readonly kind: "split";
     readonly account: string;
     readonly to: string;
     readonly lamports: string;

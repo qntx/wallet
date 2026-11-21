@@ -1123,7 +1123,8 @@ export class RequestController extends Controller<RequestControllerState> {
         display: prepared.intent,
         checks: collectChecks([
           isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
-          message?.kind === "typed-data" && message.fields !== undefined
+          message?.kind === "typed-data" &&
+          (message.fields !== undefined || message.order !== undefined)
             ? "decode-partial"
             : undefined,
           ...prepared.checks,

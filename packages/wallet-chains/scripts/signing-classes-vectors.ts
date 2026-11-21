@@ -1,10 +1,13 @@
 /// <reference types="node" />
 /**
- * Regenerates vectors/chains/signing-classes.json: everyday EVM dApp requests, every TRON
- * transaction vector from vectors/chains/tron.json, three TRON messages, and the blind reason codes
- * with their expected `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans.
- * Calldata is built with viem; TRON raw bytes are read from tron.json; the expected class and
- * prompt text are literals written by hand.
+ * Regenerates vectors/chains/signing-classes.json: everyday EVM dApp requests, the claimed
+ * order-protocol documents (CoW, 1inch, UniswapX via a Permit2 witness, Snapshot, a claim near
+ * miss), synthetic Solana legacy messages (SPL Transfer/Burn, Stake Split, an unknown program
+ * taking the signer, program-authority blind), every TRON transaction vector from
+ * vectors/chains/tron.json, three TRON messages, and the blind reason codes with their expected
+ * `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans. Calldata is built with
+ * viem; Solana messages are compiled with @solana/kit like the tests; TRON raw bytes are read from
+ * tron.json; the expected class and prompt text are literals written by hand.
  *
  * SignRequest fields that cannot live in JSON: `typedData` is the parsed document (consumers pass
  * JSON.stringify of it) and `message` is `{"$bytes": hex}` (consumers decode to Uint8Array).
@@ -14,7 +17,19 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { address } from "@solana/addresses";
+import { AccountRole, createNoopSigner } from "@solana/kit";
+import {
+  appendTransactionMessageInstruction,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/transaction-messages";
 import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
+
+import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
 const TRON_SIGNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
@@ -69,6 +84,80 @@ const tronMessage = (hex: string) => ({
   network: "tron:728126428",
   account: tronAccount,
   message: { $bytes: hex },
+});
+
+/* Solana fixtures: the same legacy-message compiler the solana tests use — the fee payer signs,
+   the blockhash is the all-1s address. Addresses are test literals. */
+const SOL_SIGNER = "11111111111111111111111111111112";
+const SOL_BLOCKHASH = "11111111111111111111111111111111";
+const SOL_ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "solana" };
+const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const SOL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SOL_STAKE_PROG = "Stake11111111111111111111111111111111111111";
+const SOL_DRAINER = "Dra1ner111111111111111111111111111111111111";
+const SOL_DEST = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
+const SOL_SRC = "So11111111111111111111111111111111111111112";
+const SOL_MINT = "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq";
+const SOL_STAKE_ACCT = "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf";
+
+type SolAccount = {
+  readonly address: ReturnType<typeof address>;
+  readonly role: AccountRole;
+  readonly signer?: unknown;
+};
+const solIx = (program: string, accounts: ReadonlyArray<SolAccount>, data: Uint8Array) => ({
+  programAddress: address(program),
+  accounts,
+  data,
+});
+const solRo = (a: string) => ({ address: address(a), role: AccountRole.READONLY });
+const solW = (a: string) => ({ address: address(a), role: AccountRole.WRITABLE });
+const solSgn = (a: string) => ({
+  address: address(a),
+  role: AccountRole.READONLY_SIGNER,
+  signer: createNoopSigner(address(a)),
+});
+const solU64 = (n: bigint): Uint8Array => {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setBigUint64(0, n, true);
+  return b;
+};
+const solU32 = (n: number): Uint8Array => {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, n, true);
+  return b;
+};
+const solCat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
+  const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+};
+
+const solMessage = (instructions: ReadonlyArray<ReturnType<typeof solIx>>): string => {
+  let message = setTransactionMessageLifetimeUsingBlockhash(
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the kit lifetime param is branded
+    { blockhash: address(SOL_BLOCKHASH), lastValidBlockHeight: 1000n } as never,
+    setTransactionMessageFeePayer(
+      address(SOL_SIGNER),
+      createTransactionMessage({ version: "legacy" }),
+    ),
+  );
+  for (const ix of instructions) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- kit's opaque generics
+    message = appendTransactionMessageInstruction(ix as never, message as never);
+  }
+  const bytes = getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message));
+  return Buffer.from(bytes).toString("hex");
+};
+const solanaTx = (messageHex: string) => ({
+  kind: "solana.transaction",
+  network: SOL_MAINNET,
+  account: SOL_ACCOUNT,
+  message: { $bytes: messageHex },
 });
 
 /** TRON transaction vectors: expected class and prompts are literals, raw bytes from tron.json. */
@@ -150,9 +239,8 @@ const blindBytes = "The wallet cannot show what this signs. Sign only if you ful
 const blindBytesZh = "钱包无法显示签署的内容。仅在完全信任该应用时签署。";
 const typedCaveat = "The wallet cannot verify what this signature authorises";
 const typedCaveatZh = "钱包无法核实此签名授权的内容";
-const typedCommitment =
-  "It signs only hashes or raw bytes; the wallet cannot see what they commit to";
-const typedCommitmentZh = "只签署哈希或原始字节；钱包无法看到它们所承诺的内容";
+const typedCommitment = "It signs a hash or raw bytes; the wallet cannot see what they commit to";
+const typedCommitmentZh = "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容";
 const typedVariant =
   "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets";
 const typedVariantZh = "钱包认识这类签名，但不认识这种形式；它可能授权转移资产";
@@ -186,7 +274,6 @@ const PM_FEE_AT_MATCH_ZH = "交易手续费由 Polymarket 在撮合时设定；�
 const PM_SIGNER = getAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 const PM_ZERO32 = `0x${"0".repeat(64)}`;
 const pmLeaves = (
-  colon: string,
   salt: string,
   tokenId: string,
   makerAmount: string,
@@ -194,50 +281,34 @@ const pmLeaves = (
   timestamp: string,
 ): string =>
   [
-    `salt${colon}${salt}`,
-    `maker${colon}${PM_SIGNER}`,
-    `signer${colon}${PM_SIGNER}`,
-    `tokenId${colon}${tokenId}`,
-    `makerAmount${colon}${makerAmount}`,
-    `takerAmount${colon}${takerAmount}`,
-    `side${colon}0`,
-    `signatureType${colon}0`,
-    `timestamp${colon}${timestamp}`,
-    `metadata${colon}${PM_ZERO32}`,
-    `builder${colon}${PM_ZERO32}`,
+    `· salt = ${salt}`,
+    `· maker = ${PM_SIGNER}`,
+    `· signer = ${PM_SIGNER}`,
+    `· tokenId = ${tokenId}`,
+    `· makerAmount = ${makerAmount}`,
+    `· takerAmount = ${takerAmount}`,
+    `· side = 0`,
+    `· signatureType = 0`,
+    `· timestamp = ${timestamp}`,
+    `· metadata = ${PM_ZERO32}`,
+    `· builder = ${PM_ZERO32}`,
   ].join("\n");
 const PM_ORDER_LEAVES_1 = pmLeaves(
-  ": ",
   "746666666340",
   PM_TOKEN_ID,
   "50000000",
   "100000000",
   "1777777777000",
 );
-const PM_ORDER_LEAVES_1_ZH = pmLeaves(
-  "：",
-  "746666666340",
-  PM_TOKEN_ID,
-  "50000000",
-  "100000000",
-  "1777777777000",
-);
+const PM_ORDER_LEAVES_1_ZH = PM_ORDER_LEAVES_1;
 const PM_ORDER_LEAVES_2 = pmLeaves(
-  ": ",
   "800000080650",
   PM_TOKEN_ID_2,
   "40000000",
   "80000000",
   "1777777957000",
 );
-const PM_ORDER_LEAVES_2_ZH = pmLeaves(
-  "：",
-  "800000080650",
-  PM_TOKEN_ID_2,
-  "40000000",
-  "80000000",
-  "1777777957000",
-);
+const PM_ORDER_LEAVES_2_ZH = PM_ORDER_LEAVES_2;
 
 const p = (title: string, titleZh: string, en: string, zh: string) => ({
   en: { title, description: en },
@@ -259,11 +330,9 @@ const bigDoc = (n: number) => ({
   message: Object.fromEntries(leaves(n).map((f) => [f.name, "1"])),
 });
 const fields16 = leaves(16)
-  .map((f) => `${f.name}: 1`)
+  .map((f) => `· ${f.name} = 1`)
   .join("\n");
-const fields16Zh = leaves(16)
-  .map((f) => `${f.name}：1`)
-  .join("\n");
+const fields16Zh = fields16;
 
 const hash32 = `0x${"ab".repeat(32)}`;
 const bytes100 = "cd".repeat(100);
@@ -396,13 +465,14 @@ const cases: VectorCase[] = [
         buyTokenBalance: "erc20",
       },
     }),
-    verifiability: "opaque",
+    /* The CoW family decoder claims the document; appData stays hidden as part of the order. */
+    verifiability: "partial",
     blind: null,
     prompt: p(
-      "Confirm signature",
-      "确认签名",
-      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCaveat}\nsellToken: ${USDC}\nbuyToken: ${WETH}\nreceiver: ${SIGNER}\nsellAmount: 1000000\nbuyAmount: 1\nvalidTo: 2000000000\nappData: 0x${"00".repeat(32)}\nfeeAmount: 0\nkind: sell\npartiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20`,
-      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCaveatZh}\nsellToken：${USDC}\nbuyToken：${WETH}\nreceiver：${SIGNER}\nsellAmount：1000000\nbuyAmount：1\nvalidTo：2000000000\nappData：0x${"00".repeat(32)}\nfeeAmount：0\nkind：sell\npartiallyFillable：false\nsellTokenBalance：erc20\nbuyTokenBalance：erc20`,
+      "Confirm swap",
+      "确认兑换",
+      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by ${SIGNER}\nGive at most 1 USDC\n${SIGNER} receives at least 1 base units of unverified token ${WETH}\nValid until 2033-05-18 03:33 (UTC)`,
+      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${SIGNER} 至少收到 1 个最小单位（未验证代币 ${WETH}）\n有效期至 2033-05-18 03:33（UTC）`,
     ),
   },
   {
@@ -521,8 +591,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm signature",
       "确认签名",
-      `App: Ether Mail\n${net}\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\n${typedCaveat}\nfrom.name: Cow\nfrom.wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name: Bob\nto.wallet: 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents: Hello, Bob!`,
-      `应用：Ether Mail\n${netZh}\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n${typedCaveatZh}\nfrom.name：Cow\nfrom.wallet：0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name：Bob\nto.wallet：0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents：Hello, Bob!`,
+      `App: Ether Mail\n${net}\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\n${typedCaveat}\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!`,
+      `应用：Ether Mail\n${netZh}\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n${typedCaveatZh}\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!`,
     ),
   },
   {
@@ -601,8 +671,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${net}\nVerifying contract ${SAFE}\nType: SafeMessage\n${typedCommitment}\n${typedCaveat}\nmessage: ${hash32}`,
-      `${netZh}\n验证合约 ${SAFE}\n类型：SafeMessage\n${typedCommitmentZh}\n${typedCaveatZh}\nmessage：${hash32}`,
+      `${net}\nVerifying contract ${SAFE}\nType: SafeMessage\n${typedCommitment}\n${typedCaveat}\n· message = ${hash32}`,
+      `${netZh}\n验证合约 ${SAFE}\n类型：SafeMessage\n${typedCommitmentZh}\n${typedCaveatZh}\n· message = ${hash32}`,
     ),
   },
   {
@@ -640,12 +710,12 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\nfrom: ${SIGNER}\nto: ${OTHER}\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: ${hash32}`,
-      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\nfrom：${SIGNER}\nto：${OTHER}\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：${hash32}`,
+      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
     ),
   },
   {
-    name: "Seaport OrderComponents, five offers (over the prompt limit)",
+    name: "Seaport OrderComponents, nine offers (over the prompt limit)",
     request: typedData({
       types: {
         EIP712Domain: [
@@ -675,7 +745,7 @@ const cases: VectorCase[] = [
       message: {
         offerer: SIGNER,
         zone: "0x0000000000000000000000000000000000000000",
-        offer: Array.from({ length: 5 }, () => seaportNativeItem),
+        offer: Array.from({ length: 9 }, () => seaportNativeItem),
         consideration: [
           { ...seaportNativeItem, startAmount: "0", endAmount: "0", recipient: SIGNER },
         ],
@@ -693,8 +763,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: Seaport\n${net}\nVerifying contract ${SEAPORT_16}\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n${SIGNER} receives 0 ETH`,
-      `应用：Seaport\n${netZh}\n验证合约 ${SEAPORT_16}\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n${SIGNER} 收到 0 ETH`,
+      `App: Seaport\n${net}\nVerifying contract ${SEAPORT_16}\nType: OrderComponents\n${"Give 1 ETH\n".repeat(8)}… 1 more items not shown\n${SIGNER} receives 0 ETH`,
+      `应用：Seaport\n${netZh}\n验证合约 ${SEAPORT_16}\n类型：OrderComponents\n${"付出 1 ETH\n".repeat(8)}… 还有 1 项未显示\n${SIGNER} 收到 0 ETH`,
     ),
   },
   {
@@ -705,8 +775,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${blindBytes}\nData 0x${GROUND_DIGEST}`,
-      `${blindBytesZh}\n数据 0x${GROUND_DIGEST}`,
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
+      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
     ),
   },
   {
@@ -719,8 +789,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${blindBytes}\nMessage:\n${hexText}`,
-      `${blindBytesZh}\n消息：\n${hexText}`,
+      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab",
+      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab",
     ),
   },
   /* Hyperliquid: documents come from vectors/chains/hyperliquid.json (oracles: nktkas 0.33.3 and
@@ -769,8 +839,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum Sepolia\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Testnet\nsigners: ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce: 1700000001600`,
-      `${HL_APP_ZH}\n网络：Arbitrum Sepolia\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Testnet\nsigners：["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce：1700000001600`,
+      `${HL_APP_EN}\nNetwork: Arbitrum Sepolia\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Testnet\n· signers = ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\n· nonce = 1700000001600`,
+      `${HL_APP_ZH}\n网络：Arbitrum Sepolia\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Testnet\n· signers = ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\n· nonce = 1700000001600`,
     ),
   },
   {
@@ -781,8 +851,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000`,
-      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000`,
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000`,
     ),
   },
   {
@@ -793,8 +863,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000`,
-      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000`,
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000`,
     ),
   },
   {
@@ -805,8 +875,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
-      `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+      `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+      `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
     ),
   },
   /* Polymarket: documents come from vectors/chains/polymarket.json (oracle: clob-client-v2
@@ -936,8 +1006,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\n${typedVariant}\n${typedCaveat}\naddress: ${SIGNER}\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket`,
-      `应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n${typedVariantZh}\n${typedCaveatZh}\naddress：${SIGNER}\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket`,
+      `App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\n${typedVariant}\n${typedCaveat}\n· address = ${SIGNER}\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket`,
+      `应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n${typedVariantZh}\n${typedCaveatZh}\n· address = ${SIGNER}\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket`,
     ),
   },
   {
@@ -950,6 +1020,337 @@ const cases: VectorCase[] = [
       "确认盲签",
       `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\n${caveat}\nRuns this account's own code with full authority\nCall contract ${PM_WALLET}, function 0x095ea7b3`,
       `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n${caveatZh}\n以本账户的全部权限执行其自身代码\n调用合约 ${PM_WALLET}，函数 0x095ea7b3`,
+    ),
+  },
+  {
+    name: "1inch LOP v4 Order at Aggregation Router v6 (EIP-712)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Order: [
+          { name: "salt", type: "uint256" },
+          { name: "maker", type: "address" },
+          { name: "receiver", type: "address" },
+          { name: "makerAsset", type: "address" },
+          { name: "takerAsset", type: "address" },
+          { name: "makingAmount", type: "uint256" },
+          { name: "takingAmount", type: "uint256" },
+          { name: "makerTraits", type: "uint256" },
+        ],
+      },
+      primaryType: "Order",
+      domain: {
+        name: "1inch Aggregation Router",
+        version: "6",
+        chainId: 1,
+        verifyingContract: "0x111111125421cA6dc452d289314280a0f8842A65",
+      },
+      message: {
+        salt: "0",
+        maker: SIGNER,
+        receiver: TO,
+        makerAsset: USDC,
+        takerAsset: WETH,
+        makingAmount: "1000000",
+        takingAmount: "500000000000000000",
+        makerTraits: "0",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm swap",
+      "确认兑换",
+      `App: 1inch Aggregation Router\n${net}\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by ${SIGNER}\nGive at most 1 USDC\n${TO} receives at least 500000000000000000 base units of unverified token ${WETH}\nNo expiry\nCan be filled in parts at the same rate`,
+      `应用：1inch Aggregation Router\n${netZh}\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${TO} 至少收到 500000000000000000 个最小单位（未验证代币 ${WETH}）\n无到期时间\n可按同一价格分批成交`,
+    ),
+  },
+  {
+    name: "UniswapX V3DutchOrder Permit2 witness (EIP-712)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        TokenPermissions: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+        PermitWitnessTransferFrom: [
+          { name: "permitted", type: "TokenPermissions" },
+          { name: "spender", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "witness", type: "V3DutchOrder" },
+        ],
+        OrderInfo: [
+          { name: "reactor", type: "address" },
+          { name: "swapper", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "additionalValidationContract", type: "address" },
+          { name: "additionalValidationData", type: "bytes" },
+        ],
+        V3DutchOrder: [
+          { name: "info", type: "OrderInfo" },
+          { name: "cosigner", type: "address" },
+          { name: "startingBaseFee", type: "uint256" },
+          { name: "baseInput", type: "V3DutchInput" },
+          { name: "baseOutputs", type: "V3DutchOutput[]" },
+        ],
+        V3DutchInput: [
+          { name: "token", type: "address" },
+          { name: "startAmount", type: "uint256" },
+          { name: "curve", type: "NonlinearDutchDecay" },
+          { name: "maxAmount", type: "uint256" },
+          { name: "adjustmentPerGweiBaseFee", type: "uint256" },
+        ],
+        V3DutchOutput: [
+          { name: "token", type: "address" },
+          { name: "startAmount", type: "uint256" },
+          { name: "curve", type: "NonlinearDutchDecay" },
+          { name: "recipient", type: "address" },
+          { name: "minAmount", type: "uint256" },
+          { name: "adjustmentPerGweiBaseFee", type: "uint256" },
+        ],
+        NonlinearDutchDecay: [
+          { name: "relativeBlocks", type: "uint256" },
+          { name: "relativeAmounts", type: "int256[]" },
+        ],
+      },
+      primaryType: "PermitWitnessTransferFrom",
+      domain: {
+        name: "Permit2",
+        chainId: 1,
+        verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      },
+      message: {
+        permitted: { token: WETH, amount: "100" },
+        spender: "0x0000000015757c461808EA25Eb309638B62681cf",
+        nonce: "0",
+        deadline: "2000000000",
+        witness: {
+          info: {
+            reactor: "0x0000000015757c461808EA25Eb309638B62681cf",
+            swapper: SIGNER,
+            nonce: "0",
+            deadline: "2000000000",
+            additionalValidationContract: "0x0000000000000000000000000000000000000000",
+            additionalValidationData: "0x",
+          },
+          cosigner: OTHER,
+          startingBaseFee: "0",
+          baseInput: {
+            token: WETH,
+            startAmount: "1",
+            curve: { relativeBlocks: "10", relativeAmounts: ["0"] },
+            maxAmount: "9",
+            adjustmentPerGweiBaseFee: "0",
+          },
+          baseOutputs: [
+            {
+              token: USDC,
+              startAmount: "2000000",
+              curve: { relativeBlocks: "10", relativeAmounts: ["0"] },
+              recipient: SIGNER,
+              minAmount: "1000000",
+              adjustmentPerGweiBaseFee: "0",
+            },
+          ],
+        },
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm swap",
+      "确认兑换",
+      `App: Permit2\n${net}\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 100 base units of unverified token ${WETH} once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by ${SIGNER}\nGive at most 9 base units of unverified token ${WETH}\n${SIGNER} receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)`,
+      `应用：Permit2\n${netZh}\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 100 个最小单位（未验证代币 ${WETH}） 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 ${SIGNER}\n最多付出 9 个最小单位（未验证代币 ${WETH}）\n${SIGNER} 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）`,
+    ),
+  },
+  {
+    name: "Snapshot Vote (EIP-712)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        Vote: [
+          { name: "from", type: "string" },
+          { name: "space", type: "string" },
+          { name: "timestamp", type: "uint64" },
+          { name: "proposal", type: "string" },
+          { name: "choice", type: "uint32" },
+          { name: "reason", type: "string" },
+          { name: "app", type: "string" },
+          { name: "metadata", type: "string" },
+        ],
+      },
+      primaryType: "Vote",
+      domain: { name: "snapshot", version: "0.1.4" },
+      message: {
+        from: SIGNER,
+        space: "example.eth",
+        timestamp: "1700000000",
+        proposal: hash32,
+        choice: "1",
+        reason: "",
+        app: "snapshot",
+        metadata: "{}",
+      },
+    }),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      `App: snapshot\n${net}\nType: Vote\n${typedCaveat}\n· from = ${SIGNER}\n· space = example.eth\n· timestamp = 1700000000\n· proposal = ${hash32}\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}`,
+      `应用：snapshot\n${netZh}\n类型：Vote\n${typedCaveatZh}\n· from = ${SIGNER}\n· space = example.eth\n· timestamp = 1700000000\n· proposal = ${hash32}\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}`,
+    ),
+  },
+  {
+    name: "0x Exchange Proxy order shape (claim near miss)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Order: [{ name: "anything", type: "uint256" }],
+      },
+      primaryType: "Order",
+      domain: {
+        name: "ZeroEx",
+        version: "1.0.0",
+        chainId: 1,
+        verifyingContract: "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+      },
+      message: { anything: "1" },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: ZeroEx\n${net}\nVerifying contract 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\nType: Order\n${typedVariant}\n${typedCaveat}\n· anything = 1`,
+      `应用：ZeroEx\n${netZh}\n验证合约 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\n类型：Order\n${typedVariantZh}\n${typedCaveatZh}\n· anything = 1`,
+    ),
+  },
+  {
+    name: "solana SPL Token Transfer (unchecked)",
+    request: solanaTx(
+      solMessage([
+        solIx(
+          SOL_TOKEN,
+          [solW(SOL_SRC), solW(SOL_DEST), solSgn(SOL_SIGNER)],
+          solCat(new Uint8Array([3]), solU64(5n)),
+        ),
+      ]),
+    ),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `Network: Solana\nThere may be other outflows\nSend 5 base units of the token in account ${SOL_SRC} to ${SOL_DEST}\nMax fee 0.000005 SOL`,
+      `网络：Solana\n可能还有其他转出\n从代币账户 ${SOL_SRC} 发送 5 个最小单位到 ${SOL_DEST}\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
+    name: "solana SPL Token Burn",
+    request: solanaTx(
+      solMessage([
+        solIx(
+          SOL_TOKEN,
+          [solW(SOL_SRC), solRo(SOL_MINT), solSgn(SOL_SIGNER)],
+          solCat(new Uint8Array([8]), solU64(5n)),
+        ),
+      ]),
+    ),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `Network: Solana\nThere may be other outflows\nBurn 5 base units of unverified token ${SOL_MINT} from token account ${SOL_SRC}; it is destroyed\nMax fee 0.000005 SOL`,
+      `网络：Solana\n可能还有其他转出\n从代币账户 ${SOL_SRC} 销毁 5 个最小单位（未验证代币 ${SOL_MINT}），永久消失\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
+    name: "solana Stake Split",
+    request: solanaTx(
+      solMessage([
+        solIx(
+          SOL_STAKE_PROG,
+          [solW(SOL_STAKE_ACCT), solW(SOL_DEST), solSgn(SOL_SIGNER)],
+          solCat(solU32(3), solU64(7n)),
+        ),
+      ]),
+    ),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm staking",
+      "确认质押",
+      `Network: Solana\nSplit 0.000000007 SOL from stake account ${SOL_STAKE_ACCT} into ${SOL_DEST}\nMax fee 0.000005 SOL`,
+      `网络：Solana\n从质押账户 ${SOL_STAKE_ACCT} 拆分 0.000000007 SOL 到 ${SOL_DEST}\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
+    name: "solana unknown program taking the signer",
+    request: solanaTx(
+      solMessage([
+        solIx(
+          SOL_DRAINER,
+          [solSgn(SOL_SIGNER), solW(SOL_SRC), solW(SOL_DEST), solRo(SOL_TOKEN)],
+          solCat(new Uint8Array([0]), solU64(5n)),
+        ),
+      ]),
+    ),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p(
+      "Confirm contract call",
+      "确认合约调用",
+      `Network: Solana\nProgram ${SOL_DRAINER} receives this account's signature: it can move ALL SOL in this account\nProgram ${SOL_DRAINER} can act with this account's authority on: ${SOL_SRC} (may be yours); ${SOL_DEST} (may be yours)\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
+      `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名：可以转走本账户的全部 SOL\n程序 ${SOL_DRAINER} 可以以本账户的权限操作：${SOL_SRC}（可能属于你）；${SOL_DEST}（可能属于你）\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
+    name: "solana program-authority blind (13 writable accounts)",
+    request: solanaTx(
+      solMessage([
+        solIx(
+          SOL_DRAINER,
+          [
+            solSgn(SOL_SIGNER),
+            /* One over PROGRAM_AUTHORITY_ACCOUNTS — the wallet cannot list what it can reach. */
+            ...Array.from({ length: 13 }, (_, i) =>
+              solW(solanaAddressFromPublicKey(new Uint8Array(32).fill(i + 1))),
+            ),
+          ],
+          solCat(new Uint8Array([0]), solU64(5n)),
+        ),
+      ]),
+    ),
+    verifiability: "opaque",
+    blind: "program-authority",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `Network: Solana\nProgram ${SOL_DRAINER} receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
+      `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
     ),
   },
 ];
@@ -1338,12 +1739,12 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm blind signing",
         description:
-          "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
       },
     },
   },
@@ -1396,6 +1797,6 @@ function utf8(text: string): Uint8Array {
 
 writeFileSync(
   resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
-  `${JSON.stringify({ signers: { evm: SIGNER, tron: TRON_SIGNER }, cases }, null, 2)}\n`,
+  `${JSON.stringify({ signers: { evm: SIGNER, tron: TRON_SIGNER, solana: SOL_SIGNER }, cases }, null, 2)}\n`,
 );
 console.log(`wrote ${cases.length} cases`);

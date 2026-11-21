@@ -264,6 +264,18 @@ export const withNativeAmountMeta = (
                     })),
                   },
                 }),
+            ...(i.message.order === undefined
+              ? {}
+              : {
+                  order: {
+                    ...i.message.order,
+                    give: amount(i.message.order.give),
+                    receive: i.message.order.receive.map((leg) => ({
+                      ...leg,
+                      amount: amount(leg.amount),
+                    })),
+                  },
+                }),
             ...(i.message.safe === undefined
               ? {}
               : {

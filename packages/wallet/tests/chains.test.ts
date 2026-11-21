@@ -1,4 +1,6 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
@@ -13,10 +15,11 @@ import { verifyEvent } from "@qntx/nostr";
 import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { signEvmPersonalMessage, signEvmTransaction } from "@qntx/wallet-chains/evm/sign";
+import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 import { signTronMessage, signTronTransaction } from "@qntx/wallet-chains/tron/sign";
 
 import { chains } from "../src/chains/index.ts";
-import type { ChainSignRequest } from "../src/protocol/chains.ts";
+import type { ChainSignRequest, ChainTemplate } from "../src/protocol/chains.ts";
 import type { ProtocolValue } from "../src/protocol/index.ts";
 import { connectKernel } from "../src/wallet.ts";
 import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort, walletError } from "./host.test.ts";
@@ -740,6 +743,188 @@ describe("chains(wallet)", () => {
       await expect(chains(wallet).sign(tronParams("tron.transaction"))).rejects.toSatisfy(
         (e) => walletError(e).code === "integrity",
       );
+    });
+  });
+
+  describe("result kind check", () => {
+    const kindConnect = async (result: ProtocolValue, account: ProtocolValue) => {
+      const kernel = new FakeKernel(unlockedStatus());
+      kernel.handlers.set("chain.sign", () => ({ ok: result }));
+      kernel.handlers.set("wallet.accounts", () => ({ ok: account }));
+      const wallet = await connectKernel({
+        verifyEvent,
+        spawn: () => {
+          const port = new ScriptedPort(kernel);
+          kernel.attach(port);
+          return port;
+        },
+        factors: "software",
+        passkey: PASSKEY,
+        ceremony: undefined,
+        setTimer: (ms, fn) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+      });
+      return wallet;
+    };
+
+    const hd = (template: ChainTemplate) =>
+      ({
+        kind: "hd" as const,
+        walletId: "0a".repeat(8),
+        groupIndex: 0,
+        template,
+      }) as const;
+
+    const evmTx: ChainSignRequest = {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: hd("evm.bip44"),
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: "0x",
+        to: ADDRESS,
+        accessList: [],
+        maxFeePerGas: "0x4a817c800",
+        maxPriorityFeePerGas: "0x3b9aca00",
+      },
+    };
+
+    const solanaSig = { kind: "solana.message", signature: new Uint8Array(64) };
+    const cases: ReadonlyArray<{
+      readonly name: string;
+      readonly request: ChainSignRequest;
+      readonly result: ProtocolValue;
+    }> = [
+      { name: "evm.transaction", request: evmTx, result: solanaSig },
+      {
+        name: "evm.personal-message",
+        request: {
+          kind: "evm.personal-message",
+          network: "eip155:1",
+          account: hd("evm.bip44"),
+          message: MESSAGE,
+        },
+        result: solanaSig,
+      },
+      {
+        name: "evm.typed-data",
+        request: {
+          kind: "evm.typed-data",
+          network: "eip155:1",
+          account: hd("evm.bip44"),
+          typedData: "{}",
+        },
+        result: solanaSig,
+      },
+      {
+        name: "solana.transaction",
+        request: {
+          kind: "solana.transaction",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          account: hd("solana.bip44-change"),
+          message: MESSAGE,
+        },
+        result: { kind: "evm.personal-message", signature: new Uint8Array(65) },
+      },
+      {
+        name: "solana.message",
+        request: {
+          kind: "solana.message",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          account: hd("solana.bip44-change"),
+          message: MESSAGE,
+          format: "raw",
+        },
+        result: { kind: "evm.personal-message", signature: new Uint8Array(65) },
+      },
+      {
+        name: "tron.transaction",
+        request: {
+          kind: "tron.transaction",
+          network: "tron:728126428",
+          account: hd("tron.bip44"),
+          rawData: utf8ToBytes("raw"),
+        },
+        result: solanaSig,
+      },
+      {
+        name: "tron.message",
+        request: {
+          kind: "tron.message",
+          network: "tron:728126428",
+          account: hd("tron.bip44"),
+          message: MESSAGE,
+        },
+        result: solanaSig,
+      },
+      {
+        name: "bitcoin.message",
+        request: {
+          kind: "bitcoin.message",
+          network: BTC_NETWORK,
+          account: hd("btc.bip84"),
+          address: bitcoinAddressFromXpub(BTC_XPUB, "btc.bip84", BTC_NETWORK, 0, 0),
+          message: "hello",
+          format: "bip322-simple",
+          change: 0,
+          index: 0,
+        },
+        result: solanaSig,
+      },
+      {
+        name: "bitcoin.psbt",
+        request: {
+          kind: "bitcoin.psbt",
+          network: BTC_NETWORK,
+          account: btcAccount(),
+          psbt: btcPsbt(),
+          sign: [{ index: 0, template: "btc.bip84" }],
+        },
+        result: { kind: "bitcoin.message", signature: "AAAA" },
+      },
+    ];
+
+    it.each(cases)(
+      "a $name request refuses a result of a different kind with integrity",
+      async ({ request, result }) => {
+        const wallet = await kindConnect(result, {
+          template: "evm.bip44",
+          network: "eip155:1",
+          address: ADDRESS,
+        });
+        await expect(
+          chains(wallet).sign({ request, verify: { kind: "password", password: "test password" } }),
+        ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+      },
+    );
+
+    it("a solana transaction request refuses a solana message signature it would verify", async () => {
+      const privateKey = new Uint8Array(32).fill(5);
+      const wallet = await kindConnect(
+        { kind: "solana.message", signature: signSolanaMessage(MESSAGE, privateKey) },
+        {
+          template: "solana.bip44-change",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          address: base58.encode(ed25519.getPublicKey(privateKey)),
+        },
+      );
+      await expect(
+        chains(wallet).sign({
+          request: {
+            kind: "solana.transaction",
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            account: hd("solana.bip44-change"),
+            message: MESSAGE,
+          },
+          verify: { kind: "password", password: "test password" },
+        }),
+      ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
     });
   });
 });

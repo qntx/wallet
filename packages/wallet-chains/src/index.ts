@@ -6,11 +6,11 @@
  * zero), token amounts are decimal strings of the smallest unit.
  */
 
-import { isHexRendering, isReadableText } from "./display.ts";
+import { hasHiddenCharacters, isEncodedBytes } from "./display.ts";
 import { parseSignIn } from "./sign-in.ts";
 import type { SignInParse } from "./sign-in.ts";
 
-export { displayExcerpt, isHexRendering, isReadableText, isUnsafeCodePoint } from "./display.ts";
+export { displayExcerpt, hasHiddenCharacters, isEncodedBytes } from "./display.ts";
 export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
@@ -154,11 +154,11 @@ export type Verifiability = "full" | "partial" | "opaque";
 
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
-  // message content that is not readable text: non-UTF-8 bytes, a message of exactly 32 bytes
-  // (digest length), text with an unsafe code point other than TAB/LF/CR, or text that is the hex
-  // rendering of ≥ 32 bytes
+  // message content that is not readable text: non-UTF-8 bytes, or text with a hazard —
+  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering
   | "message-bytes"
-  | "typed-data-commitment" // typed data whose every leaf is a commitment (a hash or opaque bytes)
+  // unclaimed typed data carrying a hash or raw-bytes leaf the signature does not name
+  | "typed-data-commitment"
   // typed data a recognised family claims, in a shape the decoder does not recognise
   | "typed-data-variant"
   // typed data that cannot be shown in full: an unrecognised document over the leaf budget, or a
@@ -171,6 +171,10 @@ export type BlindReason =
   // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
   // Token) that the signer takes part in
   | "core-instruction"
+  // an undecoded program outside the family table receives the signer, and the accounts it can act
+  // on cannot be listed — writable addresses loaded from lookup tables, or more than
+  // PROGRAM_AUTHORITY_ACCOUNTS
+  | "program-authority"
   // a TRON contract type the wallet does not describe (unsupported or unknown enum value)
   | "tron-contract"
   // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range
@@ -210,6 +214,11 @@ export type AssetFlow = {
    * 10,000-byte script limit): `amount` is destroyed and `to` is the script hex.
    */
   readonly burn?: true;
+  /**
+   * A Solana unchecked `Transfer` — the instruction names no mint: the asset is whatever token the
+   * SPL account holds, `amount.asset` is that account and the amount is in its base units.
+   */
+  readonly tokenAccount?: string;
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -284,6 +293,13 @@ export type StakeAction =
       readonly to: string;
       readonly lamports: string;
     }
+  /** Stake `Split`: `lamports` of `account` move to the new stake account `to`. */
+  | {
+      readonly kind: "split";
+      readonly account: string;
+      readonly to: string;
+      readonly lamports: string;
+    }
   /** Lido `submit` on Ethereum mainnet: ETH in, approximately `receive` stETH back. */
   | { readonly kind: "lido-submit"; readonly amount: AssetAmount; readonly receive: AssetAmount }
   /** Lido withdrawal request on Ethereum mainnet; `owner` gets the claim NFT. */
@@ -325,8 +341,18 @@ export type StakeAction =
       readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: string }>;
     };
 
+/** The closed set of warnings the prompt knows how to render. */
+export type IntentWarningKind =
+  | "platform-fee"
+  | "stake-lockup"
+  | "sighash-single-anyonecanpay"
+  | "permit2-witness"
+  | "delegation-replaced"
+  | "token-2022-transfer-fee"
+  | "token-2022-extension";
+
 export type IntentWarning = {
-  readonly kind: string;
+  readonly kind: IntentWarningKind;
   readonly message: string;
 };
 
@@ -349,6 +375,25 @@ export type SeaportOrder = {
   readonly endTime: number | undefined;
   readonly offer: ReadonlyArray<SeaportItem>;
   readonly consideration: ReadonlyArray<SeaportItem & { readonly recipient: string }>;
+};
+
+/** A recognised off-chain order: what it can take from the maker and the least each recipient gets. */
+export type OffchainOrder = {
+  readonly protocol: "1inch" | "uniswapx" | "cow";
+  /** Whose funds the order spends (EIP-55). */
+  readonly maker: string;
+  /** The most the order can take from the maker. */
+  readonly give: AssetAmount;
+  /** The least each recipient receives when the order fills in full. */
+  readonly receive: ReadonlyArray<{ readonly recipient: string; readonly amount: AssetAmount }>;
+  /** Unix seconds after which it cannot fill; absent when it never expires. */
+  readonly expiry?: number;
+  /** It may fill in parts at the same rate. */
+  readonly partialFill: boolean;
+  /** 1inch: only a taker whose address ends with these 10 bytes (`0x` + 20 hex) may fill. */
+  readonly allowedSender?: string;
+  /** UniswapX: the filler with exclusive rights before decay starts. */
+  readonly exclusiveFiller?: string;
 };
 
 /** A recognized Safe `SafeTx` message. */
@@ -526,6 +571,8 @@ export type MessageContent =
       readonly data: Readonly<Record<string, unknown>>;
       /** A recognized Seaport order; only the exact `OrderComponents` shape populates it. */
       readonly seaport?: SeaportOrder;
+      /** A recognised off-chain order (1inch LOP, UniswapX permit-witness, CoW GPv2). */
+      readonly order?: OffchainOrder;
       /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
       readonly safe?: SafeTransaction;
       /** A recognized Hyperliquid user-signed action under the `HyperliquidSignTransaction` domain. */
@@ -541,6 +588,7 @@ export type MessageContent =
     };
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8Encode = new TextEncoder();
 
 const bytesContent = (bytes: Uint8Array): MessageContent => ({
   kind: "bytes",
@@ -548,11 +596,9 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
 });
 
 /**
- * Strict UTF-8 readable text with any sign-in recognition for `family`, else the raw bytes as hex.
- * A message of exactly 32 bytes is bytes, not text: Safe's eth_sign path (`v > 30`) and EIP-191
- * digest verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message
- * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
- * in 7×10⁷ keccak outputs are; grindable in minutes).
+ * Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex — every
+ * valid UTF-8 input is text, including 32-byte and hidden-character texts (`messageTextHazard` says
+ * which of those is blind); only a message that fails UTF-8 decoding is bytes.
  */
 export const messageContent = (
   bytes: Uint8Array,
@@ -562,9 +608,6 @@ export const messageContent = (
   try {
     text = utf8.decode(bytes);
   } catch {
-    return bytesContent(bytes);
-  }
-  if (bytes.length === 32 || !isReadableText(text)) {
     return bytesContent(bytes);
   }
   const signIn = parseSignIn(text, family);
@@ -634,6 +677,11 @@ export type DisplayIntent = {
    * first-appearance order; present iff non-empty (so iff a Solana transaction is `opaque`).
    */
   readonly programs?: ReadonlyArray<string>;
+  /**
+   * Solana only: the undecoded programs outside the family table that receive the signer — what
+   * each can move with its authority; present iff non-empty.
+   */
+  readonly programAuthority?: ReadonlyArray<ProgramAuthority>;
   /** TRON transaction fields the prompt shows on every request. */
   readonly tron?: {
     readonly contractType: string;
@@ -665,22 +713,56 @@ export type DisplayIntent = {
 export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
   intent.blind !== undefined;
 
+export type MessageTextHazard = "digest-length" | "hidden-characters" | "encoded-bytes";
+
 /**
- * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its UTF-8
- * length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it holds an
- * unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of ≥ 32 bytes: the
- * owner sees the rendering, not the bytes it encodes. Checking the content again here gives callers
- * that build `{ kind: "text" }` themselves the same verdict.
+ * Why text `text` cannot be read as what the signature authorises, in precedence order: a UTF-8
+ * length of exactly 32 bytes is a digest — Safe's eth_sign path (`v > 30`) and EIP-191 digest
+ * verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message has that
+ * preimage, so no display can tell a 32-byte text from a digest that happens to be UTF-8; a
+ * deceptive code point means what the owner reads is not what was signed; and an encoded-bytes
+ * rendering shows the encoding, not the bytes it encodes.
+ */
+export const messageTextHazard = (text: string): MessageTextHazard | undefined => {
+  if (utf8Encode.encode(text).length === 32) {
+    return "digest-length";
+  }
+  if (hasHiddenCharacters(text)) {
+    return "hidden-characters";
+  }
+  if (isEncodedBytes(text)) {
+    return "encoded-bytes";
+  }
+  return undefined;
+};
+
+/**
+ * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when it
+ * carries a `messageTextHazard`. Checking the content again here gives callers that build `{ kind:
+ * "text" }` themselves the same verdict.
  */
 export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
   message.kind === "bytes"
     ? "message-bytes"
-    : message.kind === "text" &&
-        (new TextEncoder().encode(message.text).length === 32 ||
-          !isReadableText(message.text) ||
-          isHexRendering(message.text))
+    : message.kind === "text" && messageTextHazard(message.text) !== undefined
       ? "message-bytes"
       : undefined;
+
+/**
+ * An undecoded Solana program outside the family table that receives the signer, and the writable
+ * accounts it can reach with that signature.
+ */
+export type ProgramAuthority = {
+  readonly program: string;
+  /** The signer is writable in the message: the program can move all of its SOL. */
+  readonly sol: boolean;
+  /** The instruction's writable accounts other than the signer, first-appearance order. */
+  readonly accounts: ReadonlyArray<{
+    readonly address: string;
+    /** Set when the account is provably the signer's ATA (Token or Token-2022) for a listed mint. */
+    readonly token?: { readonly mint: string; readonly symbol: string };
+  }>;
+};
 
 export type ChainErrorCode =
   | "unknown-field"

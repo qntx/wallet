@@ -1,6 +1,6 @@
 /**
  * Recognition of Polymarket typed-data documents (docs https://docs.polymarket.com,
- * refs/clob-client-v2, on-chain checks in evidence/polygon-onchain.txt):
+ * github.com/Polymarket/clob-client, on-chain checks in vectors/chains/polymarket.json):
  *
  * - `Order` under the shared "Polymarket CTF Exchange" domain — a CLOB order on one of the
  *   allow-listed exchanges. EOA orders require maker == signer == the signing account; proxy and
@@ -73,7 +73,7 @@ export type PolymarketRecognition = {
 /* Exchange allow-list: an order is recognised only when (verifyingContract, chainId, version)
    match one row exactly. Sources: docs resources/contracts.md; clob-client-v2 src/config.ts
    (contractConfig + CTF_EXCHANGE_V2/V3_DOMAIN_VERSION); outcome contracts from on-chain
-   eip712Domain()/getCollateral()/getCtf() checked 2026-11-20 (evidence/polygon-onchain.txt).
+   eip712Domain()/getCollateral()/getCtf() checked 2026-11-20 (vectors/chains/polymarket.json).
    No Amoy ExchangeV3 row: its PositionManager is unverified there, so Amoy v3 orders stay blind. */
 const EXCHANGES: ReadonlyArray<{
   readonly chainId: number;
@@ -120,7 +120,7 @@ const EXCHANGES: ReadonlyArray<{
 ];
 
 /* Collateral on both chains (clob-client-v2 src/config.ts collateral; on-chain getCollateral()
-   and symbol()/decimals(), evidence/polygon-onchain.txt). */
+   and symbol()/decimals(), vectors/chains/polymarket.json). */
 const PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
 const DECIMALS = 6; // collateral and conditional tokens alike (config.ts)
 

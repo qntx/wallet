@@ -8,10 +8,11 @@
  */
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+import { hasHiddenCharacters } from "../display.ts";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
-import { ChainError, isReadableText, messageBlindReason, messageContent } from "../index.ts";
+import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -108,7 +109,7 @@ const memoDisplay = (
   | { readonly kind: "bytes"; readonly hex: string } => {
   try {
     const text = utf8.decode(memo);
-    if (isReadableText(text)) {
+    if (!hasHiddenCharacters(text)) {
       return { kind: "text", text };
     }
   } catch {

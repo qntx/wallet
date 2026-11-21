@@ -294,9 +294,15 @@ describe("blind signing policy", () => {
       ]),
     ]);
 
+  /* A Transfer whose authority is a multisig account (4+ accounts) stays undecoded — the
+     signer-signed core-program near miss is blind. */
   const tokenTransferIx = (): Uint8Array =>
-    solMessage([SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN], 1, [
-      { program: 3, accounts: [1, 2, 0], data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]) },
+    solMessage([SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN, new Uint8Array(32).fill(0x55)], 1, [
+      {
+        program: 3,
+        accounts: [1, 2, 4, 0],
+        data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]),
+      },
     ]);
   const setAuthorityIx = (): Uint8Array =>
     solMessage([SOL_PAYER, SOL_SRC, SOL_TOKEN], 1, [
@@ -369,7 +375,8 @@ describe("blind signing policy", () => {
         }),
       () => ({
         title: "Confirm blind signing",
-        description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79`,
+        description:
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
       }),
     ],
     [
@@ -442,7 +449,7 @@ describe("blind signing policy", () => {
           message: {
             offerer: address,
             zone: "0x0000000000000000000000000000000000000000",
-            offer: Array.from({ length: 5 }, () => ({
+            offer: Array.from({ length: 9 }, () => ({
               itemType: 0,
               token: "0x0000000000000000000000000000000000000000",
               identifierOrCriteria: "0",
@@ -475,7 +482,7 @@ describe("blind signing policy", () => {
           "Network: Ethereum\n" +
           "Verifying contract 0x0000000000000068F116a894984e2DB1123eB395\n" +
           "Type: OrderComponents\n" +
-          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
+          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
           "… 1 more items not shown\n" +
           `${address} receives 5 USDC`,
       }),
@@ -499,9 +506,9 @@ describe("blind signing policy", () => {
         title: "Confirm blind signing",
         description:
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeMessage\n` +
-          "It signs only hashes or raw bytes; the wallet cannot see what they commit to\n" +
+          "It signs a hash or raw bytes; the wallet cannot see what they commit to\n" +
           `The wallet cannot verify what this signature authorises\n` +
-          `message: 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
+          `· message = 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
       }),
     ],
     [
@@ -570,8 +577,8 @@ describe("blind signing policy", () => {
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeTx\n` +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `to: ${OTHER}\nvalue: 0\ndata: 0x\noperation: 0\nsafeTxGas: 0\ndataGas: 0\ngasPrice: 0\n` +
-          `gasToken: ${ZERO}\nrefundReceiver: ${ZERO}\nnonce: 7`,
+          `· to = ${OTHER}\n· value = 0\n· data = 0x\n· operation = 0\n· safeTxGas = 0\n· dataGas = 0\n· gasPrice = 0\n` +
+          `· gasToken = ${ZERO}\n· refundReceiver = ${ZERO}\n· nonce = 7`,
       }),
     ],
     [
@@ -602,7 +609,7 @@ describe("blind signing policy", () => {
           "Type: TransferWithAuthorization\n" +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `from: 0x2222222222222222222222222222222222222222\nto: ${OTHER}\nvalue: 1`,
+          `· from = 0x2222222222222222222222222222222222222222\n· to = ${OTHER}\n· value = 1`,
       }),
     ],
     [
@@ -760,13 +767,13 @@ describe("described dApp requests on a fresh vault", () => {
     const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
     expect(errCode(response)).toBeUndefined();
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
-      title: "Confirm signature",
+      title: "Confirm swap",
       description:
         `App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n` +
-        `The wallet cannot verify what this signature authorises\n` +
-        `sellToken: ${USDC}\nbuyToken: ${WETH}\nreceiver: ${address}\nsellAmount: 1000000\nbuyAmount: 1\n` +
-        `validTo: 2000000000\nappData: 0x${"00".repeat(32)}\nfeeAmount: 0\nkind: sell\n` +
-        `partiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20`,
+        `CoW Protocol order by ${address}\n` +
+        `Give at most 1 USDC\n` +
+        `${address} receives at least 1 base units of unverified token ${WETH}\n` +
+        `Valid until 2033-05-18 03:33 (UTC)`,
     });
     const signature = `0x${bytesToHex(bytesField(ok(response), "signature"))}`;
     const recovered = recoverTypedSignature({
@@ -839,7 +846,7 @@ describe("described dApp requests on a fresh vault", () => {
     const program = base58.encode(unknown);
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(verifySolanaSignature(message, bytesField(ok(response), "signature"), SOL_ADDRESS)).toBe(
       true,

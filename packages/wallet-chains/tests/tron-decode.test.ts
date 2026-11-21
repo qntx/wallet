@@ -1046,7 +1046,7 @@ describe("tron.message", () => {
 
   it("a 32-byte message is message-bytes", () => {
     const i = decodeTron(messageRequest(new Uint8Array(32).fill(0x61)), OWNER);
-    expect(i.message?.kind).toBe("bytes");
+    expect(i.message?.kind).toBe("text");
     expect(i.blind).toBe("message-bytes");
   });
 

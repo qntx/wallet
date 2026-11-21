@@ -1,6 +1,6 @@
 import * as TypedData from "ox/TypedData";
 
-import { displayExcerpt, isHexRendering } from "../display.ts";
+import { displayExcerpt, isEncodedBytes } from "../display.ts";
 import { ChainError } from "../index.ts";
 import type { TypedDataLeaf } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
@@ -236,33 +236,36 @@ const leafValue = (type: string, value: unknown): string | undefined => {
 };
 
 /**
- * Whether the atomic leaf of `type` holding `value` is a commitment: `bytes`/`bytesN` always is —
- * the signature commits to raw bytes the owner cannot read — as is a `string` that is just the hex
- * rendering of ≥ 32 bytes. An empty-array leaf ("[]") is not (it carries nothing).
+ * Whether the atomic leaf of `type` holding `value` is a commitment: `bytesN` always is — the
+ * signature commits to raw bytes the owner cannot read — as is a non-empty `bytes` or a `string`
+ * that is just an encoded-bytes rendering of ≥ 32 bytes. `"0x"` and an empty-array leaf ("[]")
+ * carry nothing and are not.
  */
 const isCommitmentLeaf = (type: string, value: unknown): boolean =>
-  type === "bytes" ||
+  (type === "bytes" && value !== "0x") ||
   FIXED_BYTES.test(type) ||
-  (type === "string" && typeof value === "string" && isHexRendering(value));
+  (type === "string" && typeof value === "string" && isEncodedBytes(value));
 
 /**
  * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
- * declaration order, arrays element by element), as display lines, and whether every leaf is a
+ * declaration order, arrays element by element), as display lines, and whether any leaf is a
  * commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
- * shown exactly as it is encoded. A document with no leaves is a vacuous commitment.
+ * shown exactly as it is encoded.
  */
 export const typedDataFields = (
   json: TypedDataInput,
-): { readonly fields: ReadonlyArray<TypedDataLeaf>; readonly commitment: boolean } | undefined => {
+):
+  | { readonly fields: ReadonlyArray<TypedDataLeaf>; readonly hasCommitment: boolean }
+  | undefined => {
   const leaves: TypedDataLeaf[] = [];
-  let commitment = true;
+  let hasCommitment = false;
   const push = (path: string, value: string, commits: boolean): boolean => {
     const excerpt = displayExcerpt(path, 1, TYPED_FIELD_CODE_POINTS);
     if (excerpt.omitted !== 0) {
       return false;
     }
     leaves.push({ path: excerpt.lines[0] ?? "", value });
-    commitment = commitment && commits;
+    hasCommitment = hasCommitment || commits;
     return leaves.length <= TYPED_FIELD_BUDGET;
   };
   const walk = (type: string, value: unknown, path: string): boolean => {
@@ -287,7 +290,7 @@ export const typedDataFields = (
     const leaf = leafValue(type, value);
     return leaf !== undefined && push(path, leaf, isCommitmentLeaf(type, value));
   };
-  return walk(json.primaryType, json.message, "") ? { fields: leaves, commitment } : undefined;
+  return walk(json.primaryType, json.message, "") ? { fields: leaves, hasCommitment } : undefined;
 };
 
 /**

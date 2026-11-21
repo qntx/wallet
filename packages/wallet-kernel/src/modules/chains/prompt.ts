@@ -9,7 +9,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
  * excerpt.
  */
-import { displayExcerpt, messageBlindReason } from "@qntx/wallet-chains";
+import { displayExcerpt, messageBlindReason, messageTextHazard } from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -17,16 +17,19 @@ import type {
   DisplayIntent,
   HyperliquidAction,
   IntentSummary,
+  IntentWarningKind,
   MessageContent,
+  MessageTextHazard,
   SafeTransaction,
   PolymarketContent,
+  OffchainOrder,
   SeaportOrder,
   SignInParse,
   StakeAction,
   TronPermission,
   TronResource,
 } from "@qntx/wallet-chains";
-import { SEAPORT_ORDER_ITEMS } from "@qntx/wallet-chains/evm";
+import { ORDER_ITEMS } from "@qntx/wallet-chains/evm";
 import { networkMeta } from "@qntx/wallet-chains/networks";
 import { tronContractType } from "@qntx/wallet-chains/tron";
 
@@ -50,6 +53,7 @@ export type PromptIntent = Pick<
   | "calls"
   | "blind"
   | "programs"
+  | "programAuthority"
   | "tron"
 > & {
   /** Decoders always set it; a message without a chain of its own omits it. */
@@ -84,6 +88,7 @@ type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
   readonly blindTitle: string;
   readonly blindBytes: string;
+  readonly textHazard: Readonly<Record<MessageTextHazard, string>>;
   readonly bytesData: (hex: string) => string;
   readonly bytesLength: (bytes: number) => string;
   readonly otherOutflows: string;
@@ -91,6 +96,11 @@ type Catalog = {
   readonly externalInputs: string;
   readonly solanaPrograms: (ids: string) => string;
   readonly solanaProgramsWarning: string;
+  readonly programAuthority: (program: string, sol: boolean) => string;
+  readonly programAuthorityAccounts: (program: string, items: ReadonlyArray<string>) => string;
+  readonly programAuthorityYours: (symbol: string, address: string) => string;
+  readonly programAuthorityMaybeYours: (address: string) => string;
+  readonly programAuthorityUnbounded: (program: string) => string;
   readonly tokenFunction: (symbol: string, address: string) => string;
   readonly accountCode: string;
   readonly callContract: (address: string, selector: string) => string;
@@ -116,11 +126,21 @@ type Catalog = {
   readonly tokenInSet: (token: string, root: string) => string;
   readonly zoneRestriction: (zone: string) => string;
   readonly moreItems: (count: number) => string;
+  readonly orderHeader: (name: string, maker: string) => string;
+  readonly orderGiveAtMost: (amount: string) => string;
+  readonly orderReceiveAtLeast: (recipient: string, amount: string) => string;
+  readonly orderExpiry: (date: string) => string;
+  readonly orderNoExpiry: string;
+  readonly orderPartialFill: string;
+  readonly orderAllowedSender: (suffix: string) => string;
+  readonly orderExclusiveFiller: (filler: string) => string;
   readonly safeTransaction: (safe: string, nonce: string) => string;
   readonly safeDelegatecall: (target: string) => string;
   readonly safeRefund: (receiver: string | undefined, amount: string, price: string) => string;
   readonly send: (amount: string, to: string) => string;
+  readonly sendTokenAccount: (amount: string, tokenAccount: string, to: string) => string;
   readonly burn: (amount: string) => string;
+  readonly burnTokenAccount: (amount: string, account: string) => string;
   readonly allow: (spender: string, amount: string) => string;
   readonly unlimited: (asset: string) => string;
   readonly revoke: (spender: string, asset: string) => string;
@@ -138,7 +158,6 @@ type Catalog = {
   readonly networkLine: (label: string) => string;
   readonly unknownEvmChain: (chainId: number) => string;
   readonly unverifiedToken: (amount: string, asset: string) => string;
-  readonly sighashSingle: string;
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
   readonly stakeLines: (action: StakeAction, sol: (lamports: string) => string) => string[];
@@ -161,7 +180,7 @@ type Catalog = {
   readonly tronFeeLimit: (fee: string) => string;
   readonly tronBandwidthFee: string;
   readonly tronResource: Readonly<Record<TronResource, string>>;
-  readonly platformFee: (message: string) => string;
+  readonly warnings: Readonly<Record<IntentWarningKind, (message: string) => string>>;
   readonly bridgeLine: (
     network: string,
     amount: string,
@@ -231,6 +250,12 @@ const zh: Catalog = {
   },
   blindTitle: "确认盲签",
   blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
+  textHazard: {
+    "digest-length": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容",
+    "hidden-characters":
+      "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同",
+    "encoded-bytes": "文本是原始字节的编码；钱包无法看到它们授权的内容",
+  },
   bytesData: (hex) => `数据 ${hex}`,
   bytesLength: (bytes) => `${bytes} 字节`,
   otherOutflows: "可能还有其他转出",
@@ -238,6 +263,16 @@ const zh: Catalog = {
   externalInputs: "包含其他签名者的输入；无法核实手续费",
   solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
   solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+  programAuthority: (program, sol) =>
+    sol
+      ? `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL`
+      : `程序 ${program} 获得本账户的签名`,
+  programAuthorityAccounts: (program, items) =>
+    `程序 ${program} 可以以本账户的权限操作：${items.join("；")}`,
+  programAuthorityYours: (symbol, address) => `你的 ${symbol} 账户 ${address}`,
+  programAuthorityMaybeYours: (address) => `${address}（可能属于你）`,
+  programAuthorityUnbounded: (program) =>
+    `程序 ${program} 获得本账户的签名，并可操作钱包无法列出的账户`,
   tokenFunction: (symbol, address) => `代币 ${symbol} ${address} 的未知函数，可能转走该代币`,
   accountCode: "以本账户的全部权限执行其自身代码",
   callContract: (address, selector) => `调用合约 ${address}，函数 ${selector}`,
@@ -253,8 +288,8 @@ const zh: Catalog = {
   typedContract: (address) => `验证合约 ${address}`,
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
-  typedField: (path, value) => `${path}：${value}`,
-  typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
+  typedField: (path, value) => `· ${path} = ${value}`,
+  typedCommitment: "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容",
   typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
   orderGive: (amount) => `付出 ${amount}`,
@@ -263,12 +298,23 @@ const zh: Catalog = {
   tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
   zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
   moreItems: (count) => `… 还有 ${count} 项未显示`,
+  orderHeader: (name, maker) => `${name} 订单，挂单方 ${maker}`,
+  orderGiveAtMost: (amount) => `最多付出 ${amount}`,
+  orderReceiveAtLeast: (recipient, amount) => `${recipient} 至少收到 ${amount}`,
+  orderExpiry: (date) => `有效期至 ${date}（UTC）`,
+  orderNoExpiry: "无到期时间",
+  orderPartialFill: "可按同一价格分批成交",
+  orderAllowedSender: (suffix) => `只有地址以 ${suffix} 结尾的吃单方可以成交`,
+  orderExclusiveFiller: (filler) => `${filler} 拥有优先成交的独占权`,
   safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
   safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
   safeRefund: (receiver, amount, price) =>
     `向 ${receiver ?? "执行者"} 支付 gas 退款：最多 ${amount}，另按每单位 gas ${price} 支付调用开销`,
   send: (amount, to) => `发送 ${amount} 到 ${to}`,
+  sendTokenAccount: (amount, tokenAccount, to) =>
+    `从代币账户 ${tokenAccount} 发送 ${amount} 个最小单位到 ${to}`,
   burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
+  burnTokenAccount: (amount, account) => `从代币账户 ${account} 销毁 ${amount}，永久消失`,
   allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
   unlimited: (asset) => `全部 ${asset}`,
   revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
@@ -286,8 +332,15 @@ const zh: Catalog = {
   networkLine: (label) => `网络：${label}`,
   unknownEvmChain: (chainId) => `EVM 链 ${chainId}`,
   unverifiedToken: (amount, asset) => `${amount} 个最小单位（未验证代币 ${asset}）`,
-  sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
-  platformFee: (message) => `Jupiter 收取平台费 ${message}`,
+  warnings: {
+    "platform-fee": (message) => `Jupiter 收取平台费 ${message}`,
+    "stake-lockup": () => "该质押账户已锁定：锁定期结束前资金无法转出",
+    "sighash-single-anyonecanpay": () => "已签输入只绑定同序号输出，交易其余部分可被改动",
+    "permit2-witness": () => "此许可附带附加条款（witness）",
+    "delegation-replaced": (message) => message,
+    "token-2022-transfer-fee": (message) => message,
+    "token-2022-extension": (message) => message,
+  },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
   delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -354,6 +407,9 @@ const zh: Catalog = {
     }
     if (a.kind === "withdraw") {
       return [`从 ${a.account} 提取 ${sol(a.lamports)} 到 ${a.to}`];
+    }
+    if (a.kind === "split") {
+      return [`从质押账户 ${a.account} 拆分 ${sol(a.lamports)} 到 ${a.to}`];
     }
     if (a.kind === "lido-submit") {
       return [
@@ -438,6 +494,13 @@ const en: Catalog = {
   },
   blindTitle: "Confirm blind signing",
   blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
+  textHazard: {
+    "digest-length":
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to",
+    "hidden-characters":
+      "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed",
+    "encoded-bytes": "This text encodes raw bytes; the wallet cannot see what they authorise",
+  },
   bytesData: (hex) => `Data ${hex}`,
   bytesLength: (bytes) => `${bytes} bytes`,
   otherOutflows: "There may be other outflows",
@@ -445,6 +508,16 @@ const en: Catalog = {
   externalInputs: "Includes inputs from other signers; the fee cannot be verified",
   solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
   solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+  programAuthority: (program, sol) =>
+    sol
+      ? `Program ${program} receives this account's signature: it can move ALL SOL in this account`
+      : `Program ${program} receives this account's signature`,
+  programAuthorityAccounts: (program, items) =>
+    `Program ${program} can act with this account's authority on: ${items.join("; ")}`,
+  programAuthorityYours: (symbol, address) => `your ${symbol} account ${address}`,
+  programAuthorityMaybeYours: (address) => `${address} (may be yours)`,
+  programAuthorityUnbounded: (program) =>
+    `Program ${program} receives this account's signature and can reach accounts the wallet cannot list`,
   tokenFunction: (symbol, address) =>
     `An unrecognised function of token ${symbol} ${address} can move this token`,
   accountCode: "Runs this account's own code with full authority",
@@ -461,8 +534,8 @@ const en: Catalog = {
   typedContract: (address) => `Verifying contract ${address}`,
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
-  typedField: (path, value) => `${path}: ${value}`,
-  typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
+  typedField: (path, value) => `· ${path} = ${value}`,
+  typedCommitment: "It signs a hash or raw bytes; the wallet cannot see what they commit to",
   typedVariant:
     "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
   typedOversize: "This typed data is too large to show in full",
@@ -472,13 +545,25 @@ const en: Catalog = {
   tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
   zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
   moreItems: (count) => `… ${count} more items not shown`,
+  orderHeader: (name, maker) => `${name} order by ${maker}`,
+  orderGiveAtMost: (amount) => `Give at most ${amount}`,
+  orderReceiveAtLeast: (recipient, amount) => `${recipient} receives at least ${amount}`,
+  orderExpiry: (date) => `Valid until ${date} (UTC)`,
+  orderNoExpiry: "No expiry",
+  orderPartialFill: "Can be filled in parts at the same rate",
+  orderAllowedSender: (suffix) => `Only a taker whose address ends in ${suffix} can fill it`,
+  orderExclusiveFiller: (filler) => `${filler} has the exclusive right to fill it first`,
   safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
   safeDelegatecall: (target) =>
     `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
   safeRefund: (receiver, amount, price) =>
     `Pays ${receiver ?? "whoever executes it"} a gas refund of up to ${amount}, plus ${price} per gas of call overhead`,
   send: (amount, to) => `Send ${amount} to ${to}`,
+  sendTokenAccount: (amount, tokenAccount, to) =>
+    `Send ${amount} base units of the token in account ${tokenAccount} to ${to}`,
   burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
+  burnTokenAccount: (amount, account) =>
+    `Burn ${amount} from token account ${account}; it is destroyed`,
   allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
   unlimited: (asset) => `unlimited ${asset}`,
   revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
@@ -496,9 +581,17 @@ const en: Catalog = {
   networkLine: (label) => `Network: ${label}`,
   unknownEvmChain: (chainId) => `EVM chain ${chainId}`,
   unverifiedToken: (amount, asset) => `${amount} base units of unverified token ${asset}`,
-  sighashSingle:
-    "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
-  platformFee: (message) => `Jupiter platform fee: ${message}`,
+  warnings: {
+    "platform-fee": (message) => `Jupiter platform fee: ${message}`,
+    "stake-lockup": () =>
+      "The stake account is locked: its funds cannot move until the lockup expires",
+    "sighash-single-anyonecanpay": () =>
+      "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+    "permit2-witness": () => "This permit carries further terms (a witness)",
+    "delegation-replaced": (message) => message,
+    "token-2022-transfer-fee": (message) => message,
+    "token-2022-extension": (message) => message,
+  },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
   delegateTo: (name, version) =>
@@ -576,6 +669,9 @@ const en: Catalog = {
     if (a.kind === "withdraw") {
       return [`Withdraw ${sol(a.lamports)} from ${a.account} to ${a.to}`];
     }
+    if (a.kind === "split") {
+      return [`Split ${sol(a.lamports)} from stake account ${a.account} into ${a.to}`];
+    }
     if (a.kind === "lido-submit") {
       return [
         `Stake ${formatAmount(en, a.amount)} with Lido, receive about ${formatAmount(en, a.receive)}`,
@@ -648,7 +744,7 @@ const en: Catalog = {
   tronResource: { bandwidth: "Bandwidth", energy: "Energy", "tron-power": "TRON Power" },
 };
 
-const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
+export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
 
 /**
  * `0.05 ETH` with known decimals (symbol, else the asset id); an amount with no decimals and no
@@ -805,7 +901,24 @@ function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<st
   return lines;
 }
 
-/** What the decoded content does: contracts run, delegation, outflows, receipts, approvals. */
+/** What each signer-taking undecoded program can reach; unbounded reaches read as blind lines. */
+const programAuthorityLines = (catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> =>
+  (intent.programAuthority ?? []).flatMap((entry) => {
+    if (intent.blind === "program-authority") {
+      return [catalog.programAuthorityUnbounded(entry.program)];
+    }
+    const items = entry.accounts.map((a) =>
+      a.token === undefined
+        ? catalog.programAuthorityMaybeYours(a.address)
+        : catalog.programAuthorityYours(a.token.symbol, a.address),
+    );
+    const lines = [catalog.programAuthority(entry.program, entry.sol)];
+    if (items.length > 0) {
+      lines.push(catalog.programAuthorityAccounts(entry.program, items));
+    }
+    return lines;
+  });
+
 function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> {
   const sol = (lamports: string): string =>
     `${formatUnits(lamports, 9)} ${networkMeta(intent.network ?? "")?.symbol ?? "SOL"}`;
@@ -837,9 +950,13 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ...delegation,
     ...contractLines(catalog, intent),
     ...intent.outflows.map((flow) =>
-      flow.burn === true
-        ? catalog.burn(formatAmount(catalog, flow.amount))
-        : catalog.send(formatAmount(catalog, flow.amount), flow.to),
+      flow.tokenAccount === undefined
+        ? flow.burn === true && intent.family === "solana"
+          ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
+          : flow.burn === true
+            ? catalog.burn(formatAmount(catalog, flow.amount))
+            : catalog.send(formatAmount(catalog, flow.amount), flow.to)
+        : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to),
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
@@ -909,6 +1026,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         ? []
         : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))]),
       ...network,
+      ...programAuthorityLines(catalog, intent),
       ...caveat,
       ...effectLines(catalog, intent),
       ...permissions,
@@ -924,15 +1042,16 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         : intent.fee === undefined
           ? catalog.feeUnknown
           : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
-      ...warnings
-        .filter((w) => w.kind === "platform-fee")
-        .map((w) => catalog.platformFee(w.message)),
-      ...(warnings.some((w) => w.kind === "sighash-single-anyonecanpay")
-        ? [catalog.sighashSingle]
-        : []),
+      ...warningLines(catalog, warnings),
     ]),
   };
 }
+
+/** Every decoder warning line, in the order the decoder raised them. */
+const warningLines = (
+  catalog: Catalog,
+  warnings: PromptIntent["warnings"],
+): ReadonlyArray<string> => (warnings ?? []).map((w) => catalog.warnings[w.kind](w.message));
 
 function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<string> {
   if (signIn.status === "malformed") {
@@ -980,11 +1099,8 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
     return start === end ? start : `${start} → ${end}`;
   };
   const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-    lines.length > SEAPORT_ORDER_ITEMS
-      ? [
-          ...lines.slice(0, SEAPORT_ORDER_ITEMS),
-          catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS),
-        ]
+    lines.length > ORDER_ITEMS
+      ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)]
       : lines;
   return [
     ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),
@@ -992,6 +1108,31 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
       order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item))),
     ),
     ...(order.zone === ZERO_ADDRESS ? [] : [catalog.zoneRestriction(order.zone)]),
+  ];
+}
+
+const ORDER_PROTOCOL_NAME: Readonly<Record<OffchainOrder["protocol"], string>> = {
+  "1inch": "1inch",
+  uniswapx: "UniswapX",
+  cow: "CoW Protocol",
+};
+
+/** The lines of a recognised off-chain order: header, the most it gives, the least each gets. */
+function offchainOrderLines(catalog: Catalog, order: OffchainOrder): ReadonlyArray<string> {
+  return [
+    catalog.orderHeader(ORDER_PROTOCOL_NAME[order.protocol], order.maker),
+    catalog.orderGiveAtMost(formatAmount(catalog, order.give)),
+    ...order.receive.map((leg) =>
+      catalog.orderReceiveAtLeast(leg.recipient, formatAmount(catalog, leg.amount)),
+    ),
+    order.expiry === undefined
+      ? catalog.orderNoExpiry
+      : catalog.orderExpiry(utcDateTime(order.expiry)),
+    ...(order.partialFill ? [catalog.orderPartialFill] : []),
+    ...(order.allowedSender === undefined ? [] : [catalog.orderAllowedSender(order.allowedSender)]),
+    ...(order.exclusiveFiller === undefined
+      ? []
+      : [catalog.orderExclusiveFiller(order.exclusiveFiller)]),
   ];
 }
 
@@ -1021,6 +1162,12 @@ function typedContentLines(
   intent: PromptIntent,
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
+  if (message.order !== undefined) {
+    return [
+      ...intent.approvals.map((change) => approvalLine(catalog, change)),
+      ...offchainOrderLines(catalog, message.order),
+    ];
+  }
   if (message.seaport !== undefined) {
     return orderLines(catalog, message.seaport);
   }
@@ -1028,7 +1175,13 @@ function typedContentLines(
     return safeLines(catalog, message.safe);
   }
   if (intent.approvals.length > 0) {
-    return [catalog.otherOutflows, ...effectLines(catalog, intent)];
+    return [
+      catalog.otherOutflows,
+      ...effectLines(catalog, intent),
+      ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
+      ...(intent.blind === "typed-data-oversize" ? [catalog.typedOversize] : []),
+      ...(message.fields ?? []).map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+    ];
   }
   if (message.fields !== undefined) {
     return [
@@ -1233,6 +1386,7 @@ function typedDataLines(
     ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
     catalog.typedType(field(message.primaryType)),
     ...typedContentLines(catalog, intent, message),
+    ...warningLines(catalog, intent.warnings),
   ];
 }
 
@@ -1271,16 +1425,19 @@ function messagePrompt(
       description: joinLines(signInLines(catalog, message.signIn)),
     };
   }
+  const hazard = intent.blind === undefined ? undefined : messageTextHazard(message.text);
   return {
     title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
-      /* Blind text still shows its sanitised excerpt under the warning — never a sign-in
+      /* Blind text still shows its sanitised excerpt under the hazard line — never a sign-in
          rendering, whose chrome would present the request as legitimate. */
       ...(intent.blind === undefined
         ? message.signIn === undefined
           ? []
           : signInLines(catalog, message.signIn)
-        : [catalog.blindBytes]),
+        : hazard === undefined
+          ? []
+          : [catalog.textHazard[hazard]]),
       ...textLines(catalog, message.text),
     ]),
   };
