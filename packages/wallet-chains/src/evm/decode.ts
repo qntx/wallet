@@ -27,6 +27,7 @@ import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
+import { recognizeOneinch } from "./oneinch.ts";
 import { ORDER_ITEMS } from "./order.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
@@ -551,23 +552,25 @@ export const decodeEvm = (
           }),
         )
       : undefined;
-  const cow =
-    permit === undefined && seaport === undefined && safe === undefined && app === undefined
-      ? recognizeCow(json, chainId, signer, table)
-      : undefined;
+  const order =
+    permit === undefined
+      ? seaport === undefined && safe === undefined && app === undefined
+        ? (recognizeCow(json, chainId, signer, table) ?? recognizeOneinch(json, chainId, table))
+        : undefined
+      : permit.order;
   const snapshot =
     permit === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
-    cow === undefined &&
+    order === undefined &&
     recognizeSnapshot(json);
   const unclaimed =
     permit === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
-    cow === undefined &&
+    order === undefined &&
     !snapshot;
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
   /* A recognised vote shows its leaves like an unclaimed document — the family names `proposal`,
@@ -583,7 +586,6 @@ export const decodeEvm = (
           ? "typed-data-commitment"
           : undefined
       : undefined);
-  const order = cow ?? permit?.order;
   const blind = permit?.blind ?? typedDataBlind(safe, seaport, app, unclaimedBlind);
   const message: MessageContent = {
     kind: "typed-data",
@@ -618,7 +620,7 @@ export const decodeEvm = (
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
       verifiability:
-        app?.verifiability ?? (permit === undefined && cow === undefined ? "opaque" : "partial"),
+        app?.verifiability ?? (permit === undefined && order === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),
     },
     request.network,
