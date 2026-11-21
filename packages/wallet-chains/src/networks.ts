@@ -5,8 +5,8 @@ import type { AssetAmount, DisplayIntent } from "./index.ts";
  * chain TVL order), the eight original testnets, the newer testnets in the same order as their
  * mainnets, then the four Bitcoin networks, the two Solana clusters and the three TRON networks.
  * Each chain id was checked against the chain's official documentation (source URL per entry) and a
- * live eth_chainId probe (2026-11-20). Signing-time identifiers always come from this table, never
- * from an RPC endpoint.
+ * live eth_chainId probe (2026-11-20, additions 2026-11-21). Signing-time identifiers always come
+ * from this table, never from an RPC endpoint.
  */
 
 export type NetworkMeta = {
@@ -71,6 +71,11 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(4326, "MegaETH", "ETH", false), // https://docs.megaeth.com/user-guide/connect
   evm(8217, "Kaia", "KAIA", false), // https://docs.kaia.io/references/public-en/
   evm(33139, "ApeChain", "APE", false), // https://docs.apechain.com/metamask
+  evm(57073, "Ink", "ETH", false), // https://docs.inkonchain.com/general/network-information
+  evm(252, "Fraxtal", "FRAX", false), // https://docs.frax.com/fraxtal/network/network-information
+  evm(60808, "BOB", "ETH", false), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
+  evm(204, "opBNB", "BNB", false), // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/
+  evm(7777777, "Zora", "ETH", false), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
   evm(11155111, "Sepolia", "ETH", true), // https://ethereum.org/en/developers/docs/networks/
   evm(84532, "Base Sepolia", "ETH", true), // https://docs.base.org/docs/network-information
   evm(421614, "Arbitrum Sepolia", "ETH", true), // https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info
@@ -93,6 +98,10 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(300, "ZKsync Sepolia", "ETH", true), // https://docs.zksync.io/zksync-network/zksync-era/network-details
   evm(1946, "Soneium Minato", "ETH", true), // https://docs.soneium.org/docs/builders/overview
   evm(33111, "ApeChain Curtis", "APE", true), // https://docs.apechain.com/metamask
+  evm(763373, "Ink Sepolia", "ETH", true), // https://docs.inkonchain.com/general/network-information
+  evm(2523, "Fraxtal Hoodi", "FRAX", true), // https://docs.frax.com/fraxtal/network/network-information
+  evm(5611, "opBNB Testnet", "tBNB", true), // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/
+  evm(999999999, "Zora Sepolia", "ETH", true), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
 ];
 
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta> = Object.freeze([

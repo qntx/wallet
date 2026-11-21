@@ -49,8 +49,8 @@ describe("network registry", () => {
         .map((n) => n.chainId)
         .toSorted((a, b) => a - b),
     ).toStrictEqual([
-      10, 130, 196, 480, 1301, 1868, 1946, 1952, 4326, 5000, 5003, 8453, 42220, 84532, 747474,
-      11142220, 11155420,
+      10, 130, 196, 204, 252, 480, 1301, 1868, 1946, 1952, 2523, 4326, 5000, 5003, 5611, 8453,
+      42220, 57073, 60808, 84532, 747474, 763373, 7777777, 11142220, 11155420, 999999999,
     ]);
   });
 
@@ -62,6 +62,23 @@ describe("network registry", () => {
     expect(opStack.filter((n) => n.feeModel.tokenRatio).map((n) => n.id)).toStrictEqual([
       "eip155:5000",
       "eip155:5003",
+    ]);
+  });
+
+  it("prices legacy exactly on Fraxtal and opBNB", () => {
+    expect(NETWORKS.filter((n) => n.feeModel?.pricing === "legacy").map((n) => n.id)).toStrictEqual(
+      ["eip155:252", "eip155:204", "eip155:5611"],
+    );
+  });
+
+  it("skips the operator fee exactly on the opBNB chains", () => {
+    const opStack = NETWORKS.filter(
+      (n): n is NetworkInfo & { readonly feeModel: Extract<FeeModel, { kind: "op-stack" }> } =>
+        n.feeModel?.kind === "op-stack",
+    );
+    expect(opStack.filter((n) => !n.feeModel.operatorFee).map((n) => n.id)).toStrictEqual([
+      "eip155:204",
+      "eip155:5611",
     ]);
   });
 
@@ -115,8 +132,8 @@ describe("network registry", () => {
         .map(Number)
         .toSorted((a, b) => a - b),
     ).toStrictEqual([
-      1, 10, 56, 97, 100, 137, 143, 4663, 5000, 8453, 9745, 42161, 42220, 59144, 80002, 84532,
-      421614, 11155111, 11155420,
+      1, 10, 56, 97, 100, 137, 143, 4663, 5000, 8453, 9745, 42161, 42220, 57073, 59144, 80002,
+      84532, 421614, 11155111, 11155420,
     ]);
   });
 

@@ -185,6 +185,79 @@
           "description": "网络：Robinhood Chain Testnet\n发送 1 ETH 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
         }
       }
+    },
+    {
+      "name": "opBNB native BNB transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:204",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "legacy",
+          "chainId": 204,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "gasPrice": "0x3b9aca00",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: opBNB\nSend 1 BNB to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 BNB"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：opBNB\n发送 1 BNB 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 BNB"
+        }
+      }
+    },
+    {
+      "name": "Ink USDC transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:57073",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 57073,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xa9059cbb00000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000f4240",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x2D270e6886d130D724215A266106e6832161EAEd"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Ink\nSend 1 USDC to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Ink\n发送 1 USDC 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
     }
   ]
 }

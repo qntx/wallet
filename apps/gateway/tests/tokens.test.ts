@@ -208,8 +208,8 @@ describe("buildTokenLists", () => {
     const solana = stored(store, SOLANA_MAINNET);
     expect(solana?.tokens.length).toBe(2);
     expect(stored(store, "eip155:999")?.tokens.length).toBe(4);
-    // uniswap's 15 networks (most empty in the excerpt) + coingecko + jupiter.
-    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(17);
+    // uniswap's 17 networks (most empty in the excerpt) + coingecko + jupiter.
+    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(19);
   });
 
   it("normalizes case and whitespace and drops entries failing the schema", async () => {

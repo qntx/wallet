@@ -49,12 +49,12 @@ export type NetworkInfo = Omit<NetworkMeta, "family"> & {
 /**
  * Keccak256 of the EIP7702StatelessDeleGator v1.3.0 runtime code per chain (keccak256 of
  * eth_getCode at the delegator, cross-checked on two endpoints; existing entries 2026-11-08,
- * additions 2026-11-20). Differs per chain because OpenZeppelin's EIP712 stores the chain id and
+ * additions 2026-11-20/21). Differs per chain because OpenZeppelin's EIP712 stores the chain id and
  * the domain separator as immutables. A chain is listed only when the delegator is deployed AND a
  * mined type-0x4 transaction proved EIP-7702 active: HyperEVM (999/998) has no deployment;
  * Avalanche C-Chain (43114/43113) has not activated 7702; Arc, Cronos, MegaETH, Sonic, ZKsync Era,
- * Katana, Unichain, Berachain and Sei deploy the delegator but no mined 7702 transaction was found,
- * so they are absent; all new testnets are absent.
+ * Katana, Unichain, Berachain, Sei, Fraxtal, BOB, opBNB and Zora deploy the delegator but no mined
+ * 7702 transaction was found, so they are absent; all new testnets are absent.
  */
 export const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
   1: "0x0b77e469f5603ed1e9ff0e7ee56238b61a8cf7cb3185b33e53e2eeaad50109ab",
@@ -76,6 +76,7 @@ export const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
   11155420: "0x9d71e8749e123ade3310cbab813a837f7b2ffff8608aeddb0619a78f64a95663",
   80002: "0xddc1c1b0583d57f3937d04c7bdacfaecb699d8aa27ee00040ab2c7b656ed239b",
   97: "0x27d0d3e53805ac152f306986e91511b7c6c6804cba0dbe0e1420d19905e682e6",
+  57073: "0x12f3f13485a8204b5b724d4207a13db6449db49c5911dda4e6d04801d8d9a0c2",
 };
 
 // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (most entries below).
@@ -135,6 +136,27 @@ export const EVM_FACTS: Readonly<
   4326: { multicall3: MULTICALL3, feeModel: OP_STACK },
   8217: { multicall3: MULTICALL3, feeModel: EXECUTION },
   33139: { multicall3: MULTICALL3, feeModel: EXECUTION },
+  57073: { multicall3: MULTICALL3, feeModel: OP_STACK },
+  252: {
+    multicall3: MULTICALL3,
+    feeModel: {
+      kind: "op-stack",
+      pricing: "legacy",
+      operatorFee: true,
+      tokenRatio: false,
+    },
+  },
+  60808: { multicall3: MULTICALL3, feeModel: OP_STACK },
+  204: {
+    multicall3: MULTICALL3,
+    feeModel: {
+      kind: "op-stack",
+      pricing: "legacy",
+      operatorFee: false,
+      tokenRatio: false,
+    },
+  },
+  7777777: { multicall3: MULTICALL3, feeModel: OP_STACK },
   11155111: { multicall3: MULTICALL3, feeModel: EXECUTION },
   84532: { multicall3: MULTICALL3, feeModel: OP_STACK },
   421614: { multicall3: MULTICALL3, feeModel: EXECUTION },
@@ -165,6 +187,18 @@ export const EVM_FACTS: Readonly<
   300: { multicall3: MULTICALL3_ZKSYNC, feeModel: EXECUTION },
   1946: { multicall3: MULTICALL3, feeModel: OP_STACK },
   33111: { multicall3: MULTICALL3, feeModel: EXECUTION },
+  763373: { multicall3: MULTICALL3, feeModel: OP_STACK },
+  2523: { multicall3: MULTICALL3, feeModel: OP_STACK },
+  5611: {
+    multicall3: MULTICALL3,
+    feeModel: {
+      kind: "op-stack",
+      pricing: "legacy",
+      operatorFee: false,
+      tokenRatio: false,
+    },
+  },
+  999999999: { multicall3: MULTICALL3, feeModel: OP_STACK },
 };
 
 export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(

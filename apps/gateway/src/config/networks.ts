@@ -226,6 +226,46 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   {
+    // Ink Sepolia — chain id 763373
+    id: "eip155:763373",
+    providers: [
+      // https://docs.inkonchain.com/general/network-information — official Sepolia RPC
+      { id: "ink", url: "https://rpc-gel-sepolia.inkonchain.com" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://ink-sepolia.drpc.org" },
+    ],
+  },
+  {
+    // Fraxtal Hoodi — chain id 2523
+    id: "eip155:2523",
+    providers: [
+      // https://docs.frax.com/fraxtal/network/network-information — official testnet RPC
+      { id: "frax", url: "https://rpc.testnet.frax.com" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://fraxtal-testnet.drpc.org" },
+    ],
+  },
+  {
+    // opBNB Testnet — chain id 5611
+    id: "eip155:5611",
+    providers: [
+      // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/ — official testnet RPC
+      { id: "bnbchain", url: "https://opbnb-testnet-rpc.bnbchain.org" },
+      // https://www.publicnode.com/ — opBNB testnet public endpoint
+      { id: "publicnode", url: "https://opbnb-testnet-rpc.publicnode.com" },
+    ],
+  },
+  {
+    // Zora Sepolia — chain id 999999999
+    id: "eip155:999999999",
+    providers: [
+      // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json — official Sepolia RPC
+      { id: "zora", url: "https://sepolia.rpc.zora.energy" },
+      // https://drpc.org/ — keyless public endpoint
+      { id: "drpc", url: "https://zora-sepolia.drpc.org" },
+    ],
+  },
+  {
     // Solana devnet
     id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     providers: [
@@ -511,6 +551,46 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     providers: [
       { id: "alchemy", url: "https://apechain-mainnet.g.alchemy.com/v2", auth: "alchemy" },
       { id: "drpc", url: "https://lb.drpc.live/apechain", auth: "drpc" },
+    ],
+  },
+  {
+    // Ink — chain id 57073
+    id: "eip155:57073",
+    providers: [
+      { id: "alchemy", url: "https://ink-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/ink", auth: "drpc" },
+    ],
+  },
+  {
+    // Fraxtal — chain id 252
+    id: "eip155:252",
+    providers: [
+      { id: "alchemy", url: "https://frax-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/fraxtal", auth: "drpc" },
+    ],
+  },
+  {
+    // BOB — chain id 60808
+    id: "eip155:60808",
+    providers: [
+      { id: "alchemy", url: "https://bob-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/bob", auth: "drpc" },
+    ],
+  },
+  {
+    // opBNB — chain id 204
+    id: "eip155:204",
+    providers: [
+      { id: "alchemy", url: "https://opbnb-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/opbnb", auth: "drpc" },
+    ],
+  },
+  {
+    // Zora — chain id 7777777
+    id: "eip155:7777777",
+    providers: [
+      { id: "alchemy", url: "https://zora-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/zora", auth: "drpc" },
     ],
   },
   {

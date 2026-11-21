@@ -28,13 +28,13 @@ const DRAIN_MAX_COUNT = "0x3e8";
  */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /**
- * Chains where Alchemy's `alchemy_getAssetTransfers` answers, probed live 2026-11-20 with the
+ * Chains where Alchemy's `alchemy_getAssetTransfers` answers, probed live 2026-11-20/21 with the
  * public demo key; networks that answered "EAPIs not enabled" or "Unsupported method" are absent —
  * their history route replies 503 `unavailable` without an upstream call.
  */
 const TRANSFERS_CHAINS: ReadonlySet<number> = new Set([
   1, 8453, 42161, 10, 137, 56, 999, 43114, 4663, 143, 5042, 100, 80094, 480, 130, 59144, 42220, 324,
-  1868, 33139,
+  1868, 33139, 57073, 7777777,
 ]);
 /** Chains where Alchemy accepts the `internal` transfer category. */
 const INTERNAL_CATEGORY_CHAINS: ReadonlySet<number> = new Set([1, 137, 8453, 5042]);

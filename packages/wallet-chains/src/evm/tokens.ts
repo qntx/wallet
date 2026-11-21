@@ -13,11 +13,11 @@ export type EvmToken = {
 export type EvmTokenTable = Readonly<Record<string, Readonly<Record<string, EvmToken>>>>;
 
 // Circle USDC (native issuance, 6 decimals), from
-// https://developers.circle.com/stablecoins/usdc-contract-addresses (reviewed 2026-11-20). BNB
+// https://developers.circle.com/stablecoins/usdc-contract-addresses (reviewed 2026-11-20/21). BNB
 // Chain has no Circle-issued USDC (the Binance-pegged token is a different issuer), so it is
 // absent. Arc's USDC at 0x3600…0000 is the native coin's ERC-20 view — listing it would double
-// count the native balance — and the other chains on Circle's list (Ink, Scroll, …) are not
-// built-in networks.
+// count the native balance — and the other chains on Circle's list (Scroll, …) are not built-in
+// networks.
 const USDC: EvmToken = Object.freeze({ symbol: "USDC", decimals: 6, name: "USD Coin" });
 
 // Tether USDT (6 decimals), from https://tether.to/en/supported-protocols/ (reviewed 2026-11-20):
@@ -56,6 +56,7 @@ export const evmTokenTable: EvmTokenTable = Object.freeze({
     "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC,
     "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT,
   }),
+  "57073": Object.freeze({ "0x2D270e6886d130D724215A266106e6832161EAEd": USDC }),
   "59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC }),
 });
 
