@@ -32,10 +32,11 @@ export const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 
 /**
  * A failed attempt that is never a provider outage: a refusal (401/403, `refused`), a 429 (the
- * account parks itself and the walk fails over), a spent budget, a parked account, a timeout the
- * provider disproved by answering its probe, a malformed body, an upstream JSON-RPC error, or a
- * status the attempt does not serve. The breaker never counts these — every one is an answer a
- * client can provoke with its own input, or a wait the provider announced itself.
+ * account parks itself and the walk fails over), a spent budget, a share-limit refusal (`share`), a
+ * parked account, a timeout the provider disproved by answering its probe, a malformed body, an
+ * upstream JSON-RPC error, or a status the attempt does not serve. The breaker never counts these —
+ * every one is an answer a client can provoke with its own input, or a wait the provider announced
+ * itself.
  */
 // oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
 export class ProviderFailure extends Error {
@@ -43,13 +44,24 @@ export class ProviderFailure extends Error {
   readonly refused: boolean;
   /** How long the caller should wait, when the failure is a spent budget or a cool-down. */
   readonly retryAfterSeconds: number | undefined;
+  /**
+   * Set when the refusal came from the request's own share of this provider's account — a
+   * provider-local refusal the walk can move past, surfaced only when every provider fails so.
+   */
+  readonly share: "rate-limited" | "too-costly" | undefined;
 
-  constructor(reason: string, refused: boolean, retryAfterSeconds?: number) {
+  constructor(
+    reason: string,
+    refused: boolean,
+    retryAfterSeconds?: number,
+    share?: "rate-limited" | "too-costly",
+  ) {
     super(reason);
     this.name = "ProviderFailure";
     this.reason = reason;
     this.refused = refused;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.share = share;
   }
 }
 
@@ -97,12 +109,22 @@ export type Send = (request: UpstreamRequest) => Promise<UpstreamResponse>;
 
 export type Forwarded<T> = { readonly value: T; readonly providerId: string };
 
+/** The share limiter's answer for one call: admitted, or refused with its reason and wait. */
+export type MeterDecision =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly reason: "rate-limited" | "too-costly";
+      readonly retryAfterSeconds?: number;
+    };
+
 /**
  * Bills `units` of `account`'s own metering unit to the client's share of that account, before the
- * call it pays for is sent. Throws a `GatewayHttpError` (429/413) when the request's share is spent
- * — that error ends the walk unmetered-by-the-breaker, never a provider outage.
+ * call it pays for is sent. A refusal is provider-local — another provider's account may still
+ * admit the client — so it returns a decision rather than throwing; the forwarder surfaces the
+ * refusal only when every provider refuses the same way.
  */
-export type Meter = (account: string, units: number) => Promise<void>;
+export type Meter = (account: string, units: number) => Promise<MeterDecision>;
 
 export type ForwardOptions = {
   /** Required: every upstream call passes its share charge first. */
@@ -121,11 +143,12 @@ export type Forwarder = {
    * Runs `attempt` against each provider in order, skipping any whose breaker is open or whose
    * account is cooling down; `attempt` reaches its provider only through `send`. A returned value
    * ends the walk; a failed attempt cancels its other in-flight calls. An outage or a
-   * {@link ProviderFailure} moves on to the next provider; a `GatewayHttpError` or a
-   * {@link ResponseTooLarge} is the request's own answer (a 400 for the latter) and ends the walk.
-   * When every provider fails the caller gets a 503 with the shortest announced wait. Only outages
-   * count against the shared breaker — and a timeout only becomes one when the provider's probe
-   * also fails.
+   * {@link ProviderFailure} moves on to the next provider — a share-limit refusal included, because
+   * nothing was sent — while a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
+   * answer (a 400 for the latter) and ends the walk. When every provider failed by a share refusal
+   * the caller gets its own refusal back (429/413); any other mix gets a 503 with the shortest
+   * announced wait. Only outages count against the shared breaker — and a timeout only becomes one
+   * when the provider's probe also fails.
    */
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
@@ -166,6 +189,7 @@ const parseRetryAfter = (header: string | null): number | undefined =>
 /** Probes never touch the client share: they answer for the provider, not for the request. */
 const probeMeter: Meter = async () => {
   await Promise.resolve();
+  return { ok: true };
 };
 
 /** Per-isolate account cool-down state the forwarder consults before metering. */
@@ -192,8 +216,16 @@ const sendTo =
       throw new ProviderFailure("cooling-down", true, cooled);
     }
     // The client pays its share of the provider account before the call exists: a refused
-    // charge is the request's own 429/413 and nothing is sent.
-    await meter(provider.account, request.cost);
+    // charge sends nothing, so it is safe to fail over — provider-local, never an outage.
+    const charge = await meter(provider.account, request.cost);
+    if (!charge.ok) {
+      throw new ProviderFailure(
+        `share-${charge.reason}`,
+        true,
+        charge.retryAfterSeconds,
+        charge.reason,
+      );
+    }
     if (request.cost > 0) {
       // Then the account's shared quota: a refusal fails over — never a breaker outage, and the
       // account's known wait time reaches the client when every provider is out of budget.
@@ -379,6 +411,13 @@ export function createForwarder(
       // The shortest announced wait among budget refusals and cool-downs: when every provider
       // failed it replaces the fixed 30 s `Retry-After` on the 503.
       let retryAfter = UNAVAILABLE_RETRY_AFTER_SECONDS;
+      // Share refusals are provider-local: the client gets its own refusal back only when every
+      // provider failed by one — 429 when any refusal was a spent share, 413 when every one was
+      // an oversized charge. Any other failure in the mix keeps the 503.
+      let shareRefusals = 0;
+      let sawShareRateLimited = false;
+      let shareRetryAfter = Number.POSITIVE_INFINITY;
+      let sawOtherFailure = false;
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
         if (provider === undefined) {
@@ -388,6 +427,12 @@ export function createForwarder(
               providers: providers.map((p) => p.id),
             }),
           );
+          if (shareRefusals > 0 && !sawOtherFailure) {
+            if (sawShareRateLimited) {
+              throw new GatewayHttpError(429, "rate-limited", Math.max(1, shareRetryAfter));
+            }
+            throw new GatewayHttpError(413, "too-costly");
+          }
           throw new GatewayHttpError(503, "unavailable", Math.max(1, retryAfter));
         }
         try {
@@ -446,6 +491,18 @@ export function createForwarder(
           }
           if (failure instanceof ProviderFailure && failure.retryAfterSeconds !== undefined) {
             retryAfter = Math.min(retryAfter, failure.retryAfterSeconds);
+          }
+          if (failure instanceof ProviderFailure && failure.share !== undefined) {
+            shareRefusals += 1;
+            if (failure.share === "rate-limited") {
+              sawShareRateLimited = true;
+              shareRetryAfter = Math.min(
+                shareRetryAfter,
+                failure.retryAfterSeconds ?? UNAVAILABLE_RETRY_AFTER_SECONDS,
+              );
+            }
+          } else {
+            sawOtherFailure = true;
           }
           return from(index + 1);
         }

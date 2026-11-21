@@ -78,9 +78,10 @@ export type RateLimitVariables = {
   charge: (units: number) => Promise<void>;
   /**
    * Bills `units` of a provider account's own cost unit to this request's share of that account
-   * (`account:` + each IP key on the share limiter; all are charged and all must succeed). Throws
-   * `429 rate-limited` when the share is spent and `413 too-costly` when one delta exceeds the
-   * whole client window — before any limiter call.
+   * (`account:` + each IP key on the share limiter; all are charged and all must succeed). Refuses
+   * `rate-limited` when the share is spent and `too-costly` when one delta exceeds the whole client
+   * window — before any limiter call. A refusal is provider-local: the forwarder decides whether
+   * another provider can still serve the request.
    */
   meter: Meter;
 };
@@ -124,7 +125,7 @@ export const rateLimit =
     };
     const meter: Meter = async (account, units) => {
       if (units <= 0) {
-        return;
+        return { ok: true };
       }
       const found = accounts[account];
       if (found === undefined) {
@@ -134,15 +135,20 @@ export const rateLimit =
       // One IP buys at most clientShare of the account's minute-scale budget.
       const delta = shareDelta(found, units);
       if (delta > SHARE_LIMIT) {
-        throw new GatewayHttpError(413, "too-costly");
+        return { ok: false, reason: "too-costly" };
       }
       for (const key of keys) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- every key must be charged in order
         const result = await limiters.share.limit({ key: `${account}:${key}`, delta });
         if (!result.success) {
-          throw new GatewayHttpError(429, "rate-limited", SHARE_RETRY_AFTER_SECONDS);
+          return {
+            ok: false,
+            reason: "rate-limited",
+            retryAfterSeconds: SHARE_RETRY_AFTER_SECONDS,
+          };
         }
       }
+      return { ok: true };
     };
     await charge(1);
     c.set("charge", charge);
