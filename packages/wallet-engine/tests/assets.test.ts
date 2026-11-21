@@ -329,6 +329,7 @@ describe("AssetsController token tracking", () => {
       }),
     });
     const ctl = controller(c);
+    await ctl.init();
     expect(ctl.isTracked("eip155:1", USDC)).toBe(true);
     expect(ctl.isTracked("eip155:1", USDC.toLowerCase())).toBe(true);
     expect(ctl.isTracked("eip155:1", TOKEN)).toBe(false);
