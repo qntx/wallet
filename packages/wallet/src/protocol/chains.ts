@@ -196,6 +196,13 @@ export type ChainSignRequest =
       readonly network: string;
       readonly account: AccountRef;
       readonly message: Uint8Array;
+    }
+  | {
+      readonly kind: "tron.typed-data";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** The canonical TIP-712 document, as JSON text. */
+      readonly typedData: string;
     };
 
 export type ChainSignResult =
@@ -205,7 +212,7 @@ export type ChainSignResult =
   | { readonly kind: "bitcoin.psbt"; readonly signedPsbt: Uint8Array }
   | { readonly kind: "bitcoin.message"; readonly signature: string }
   | {
-      readonly kind: "tron.transaction" | "tron.message";
+      readonly kind: "tron.transaction" | "tron.message" | "tron.typed-data";
       readonly signature: Uint8Array;
     };
 
@@ -317,6 +324,12 @@ const signRequest: Validator<ChainSignRequest> = union(
     account: accountRef,
     message: bytes(1, 65536),
   }),
+  obj({
+    kind: literal("tron.typed-data"),
+    network: caip2,
+    account: accountRef,
+    typedData: str(1048576),
+  }),
 );
 
 const signResult: Validator<ChainSignResult> = union(
@@ -332,7 +345,7 @@ const signResult: Validator<ChainSignResult> = union(
   obj({ kind: literal("bitcoin.psbt"), signedPsbt: bytes(1, 131072) }),
   obj({ kind: literal("bitcoin.message"), signature: str(512) }),
   obj({
-    kind: union(literal("tron.transaction"), literal("tron.message")),
+    kind: union(literal("tron.transaction"), literal("tron.message"), literal("tron.typed-data")),
     signature: bytes(65, 65),
   }),
 );

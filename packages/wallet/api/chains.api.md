@@ -149,6 +149,11 @@ export type ChainSignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly message: Uint8Array;
+} | {
+    readonly kind: "tron.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
 };
 
 // @public (undocumented)
@@ -168,7 +173,7 @@ export type ChainSignResult = {
     readonly kind: "bitcoin.message";
     readonly signature: string;
 } | {
-    readonly kind: "tron.transaction" | "tron.message";
+    readonly kind: "tron.transaction" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
