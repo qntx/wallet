@@ -41,7 +41,7 @@
     "@noble/hashes": "2.4.0",
     "@polymarket/clob-client-v2": "1.2.1",
     "@qntx/oxfmt": "1.1.1",
-    "@qntx/oxlint": "1.1.1",
+    "@qntx/oxlint": "2.0.0",
     "@qntx/tsconfig": "1.0.1",
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
