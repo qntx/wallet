@@ -4,7 +4,6 @@ import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 
-import { evmRpcHex } from "../../chains/evm.ts";
 import type { EvmFeeTier } from "../../chains/evm.ts";
 import type { EngineLogger } from "../../events.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
@@ -175,8 +174,11 @@ const SEL_BURN_LIMIT = "0xa56ec632";
 const SEL_ALLOWANCE = "0xdd62ed3e";
 
 const ethCallWord = async (client: PublicClient, to: string, data: string): Promise<string> => {
-  const result = await evmRpcHex(client, "eth_call", [{ to, data }, "latest"]);
-  if (!/^0x[0-9a-fA-F]{64}$/.test(result)) {
+  const result: unknown = await client.transport.request({
+    method: "eth_call",
+    params: [{ to, data }, "latest"],
+  });
+  if (typeof result !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(result)) {
     throw new HyperliquidError("unavailable", "the CCTP chain read answered malformed");
   }
   return result;
