@@ -45,7 +45,6 @@ import type { TransactionController } from "../transactions/controller.ts";
 import type {
   AccountRef,
   ChainRequestInput,
-  ChainRequestMethod,
   DisplayIntent,
   PrepareParams,
   SendParams,
@@ -67,6 +66,7 @@ import {
   impersonatesBuiltIn,
   mergeRisk,
   originRisk,
+  verifyRisk,
 } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
@@ -75,24 +75,41 @@ import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 import { nextStage } from "./stage.ts";
 import type { RequestEvent, RequestStage } from "./stage.ts";
+import {
+  InvalidTokenError,
+  OriginBusyError,
+  RequestEndedError,
+  SignInOriginError,
+  dappUrl,
+} from "./types.ts";
 import type {
   BitcoinAccount,
   BitcoinGroup,
   BitcoinPsbtInput,
-  BrowserOrigin,
+  ChainRequestMethod,
+  DappOrigin,
   PreparedBitcoinPsbt,
   RequestMethod,
   RequestOrigin,
   SolanaAccount,
 } from "./types.ts";
 
+export {
+  InvalidTokenError,
+  OriginBusyError,
+  RequestEndedError,
+  SignInOriginError,
+} from "./types.ts";
 export type {
   BitcoinAccount,
   BitcoinGroup,
   BrowserOrigin,
+  DappOrigin,
   RequestMethod,
   RequestOrigin,
   SolanaAccount,
+  WalletConnectOrigin,
+  WalletConnectVerify,
 } from "./types.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
@@ -102,7 +119,7 @@ export type { SignatureResult } from "../transactions/route.ts";
 export type { SparkDisplay, SparkResult } from "../payments/action.ts";
 
 /** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
-export type PayInput = { readonly method: "pay"; readonly origin?: BrowserOrigin } & PayParams;
+export type PayInput = { readonly method: "pay"; readonly origin?: DappOrigin } & PayParams;
 
 /** A prepared zap; its invoice was fetched by `engine.zaps.prepare` and is paid as-is. */
 export type ZapInput = {
@@ -119,7 +136,7 @@ export type ZapInput = {
 export type EvmSignInput = {
   readonly method: "evm-sign";
   /** A page asking for the signature; absent means the wallet itself. */
-  readonly origin?: BrowserOrigin;
+  readonly origin?: DappOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
@@ -153,7 +170,7 @@ export type SparkExitInput = {
  */
 export type NostrSignInput = {
   readonly method: "nostr-sign";
-  readonly origin: BrowserOrigin;
+  readonly origin: DappOrigin;
   /** The active identity — the signer the page's pubkey must match. */
   readonly ref: NostrKeyRef;
   readonly event: UnsignedEvent;
@@ -166,7 +183,7 @@ export type NostrSignInput = {
  */
 export type WeblnInvoiceInput = {
   readonly method: "webln-invoice";
-  readonly origin: BrowserOrigin;
+  readonly origin: DappOrigin;
   readonly ref: SparkAccountRef;
   readonly amountSats: number;
   readonly memo?: string;
@@ -178,7 +195,7 @@ export type WeblnInvoiceInput = {
  */
 export type WatchAssetInput = {
   readonly method: "watch-asset";
-  readonly origin: BrowserOrigin;
+  readonly origin: DappOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly address: string;
@@ -190,7 +207,7 @@ export type WatchAssetInput = {
  */
 export type SolanaSignInput = {
   readonly method: "solana-sign";
-  readonly origin: BrowserOrigin;
+  readonly origin: DappOrigin;
   readonly account: SolanaAccount;
   readonly network: string;
   readonly request:
@@ -215,14 +232,14 @@ export type SolanaSignInput = {
 export type BitcoinSignInput =
   | {
       readonly method: "bitcoin-sign";
-      readonly origin: BrowserOrigin;
+      readonly origin: DappOrigin;
       readonly account: BitcoinAccount;
       readonly network: string;
       readonly request: { readonly kind: "message"; readonly message: string };
     }
   | {
       readonly method: "bitcoin-sign";
-      readonly origin: BrowserOrigin;
+      readonly origin: DappOrigin;
       readonly account: BitcoinGroup;
       readonly network: string;
       readonly request: {
@@ -338,22 +355,6 @@ export type LightningInvoiceDisplay = {
   readonly memo?: string;
 };
 
-/** A token the page asked to watch whose on-chain metadata cannot be shown; the dApp's bad input. */
-export class InvalidTokenError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "InvalidTokenError";
-  }
-}
-
-/** A Sign-In with X message for another domain than the page that asked for the signature. */
-export class SignInOriginError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SignInOriginError";
-  }
-}
-
 const BLIND_SIGNING_DISABLED_MESSAGE = "blind signing is turned off for this vault";
 
 /** `approve` refused a blind request for a vault whose owner has not allowed blind signing. */
@@ -436,24 +437,6 @@ function assertAcknowledged(
 ): void {
   if (!acknowledges(request, acknowledged)) {
     throw new AcknowledgementRequiredError(requiredAcknowledgement(request));
-  }
-}
-
-/** A request that ended without a result: `stage` says how, `message` is the failure if any. */
-export class RequestEndedError extends Error {
-  readonly stage: "rejected" | "failed" | "expired" | "invalidated";
-  constructor(stage: RequestEndedError["stage"], message: string | undefined) {
-    super(message ?? `request ${stage}`);
-    this.name = "RequestEndedError";
-    this.stage = stage;
-  }
-}
-
-/** The origin already has a request in flight; a dApp gets one at a time. */
-export class OriginBusyError extends Error {
-  constructor(origin: string) {
-    super(`${origin} already has an unfinished request`);
-    this.name = "OriginBusyError";
   }
 }
 
@@ -671,7 +654,7 @@ type Entry = {
   readonly resimulation?: Resimulation;
 };
 
-const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
+const originKey = (origin: DappOrigin): string => `origin:${origin.origin}`;
 
 /** A message request's content: its UTF-8 text with any sign-in parse, else the raw bytes. */
 const messageContent = (message: Uint8Array, signIn: SignInParse | undefined): MessageContent => {
@@ -756,8 +739,8 @@ const withSimulation = (
   };
 };
 
-/** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
-const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
+/** The input's dApp origin, when it carries one. */
+const dappOriginOf = (input: RequestInput): DappOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
 /** Terminal events and the stage and sign-log outcome each maps to. */
@@ -785,7 +768,7 @@ const endedStage = (request: PendingRequest | undefined): RequestEndedError["sta
 
 /** A `prepare` still building: invalidation voids it so it never reaches the state. */
 type Preparing = {
-  readonly origin: BrowserOrigin | undefined;
+  readonly origin: DappOrigin | undefined;
   voided: boolean;
 };
 
@@ -856,7 +839,7 @@ export class RequestController extends Controller<RequestControllerState> {
     for (const [id, request] of Object.entries(this.getState().requests)) {
       if (
         nextStage(request.stage, "invalidate") !== undefined &&
-        request.origin.kind === "browser" &&
+        request.origin.kind !== "internal" &&
         request.origin.origin === origin
       ) {
         this.end(id, "invalidate");
@@ -881,16 +864,16 @@ export class RequestController extends Controller<RequestControllerState> {
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
     const target = "txId" in input ? input.txId : undefined;
-    const browserOrigin = browserOriginOf(input);
+    const origin = dappOriginOf(input);
     const originStatus =
-      browserOrigin === undefined ? "clear" : this.options.phishing.check(browserOrigin.origin);
+      origin === undefined ? "clear" : this.options.phishing.check(dappUrl(origin));
     if (originStatus === "blocked") {
       throw new Error(PHISHING_BLOCKED_MESSAGE);
     }
-    if (browserOrigin !== undefined) {
-      const key = originKey(browserOrigin);
+    if (origin !== undefined) {
+      const key = originKey(origin);
       if (this.targets.has(key)) {
-        throw new OriginBusyError(browserOrigin.origin);
+        throw new OriginBusyError(origin.origin);
       }
       this.targets.set(key, id);
     }
@@ -900,7 +883,7 @@ export class RequestController extends Controller<RequestControllerState> {
       }
       this.targets.set(target, id);
     }
-    const preparing: Preparing = { origin: browserOrigin, voided: false };
+    const preparing: Preparing = { origin, voided: false };
     this.preparing.set(id, preparing);
     let built: Built;
     try {
@@ -921,9 +904,13 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     const { checks } = built;
     const createdAt = this.options.now();
+    const originFindings =
+      origin?.kind === "walletconnect"
+        ? [...originRisk(originStatus), ...verifyRisk(origin.verify)]
+        : originRisk(originStatus);
     const request: PendingRequest = {
       id,
-      origin: browserOrigin ?? { kind: "internal" },
+      origin: origin ?? { kind: "internal" },
       method: input.method,
       account: built.account,
       network: built.network,
@@ -932,7 +919,7 @@ export class RequestController extends Controller<RequestControllerState> {
       display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
-      risk: mergeRisk(built.risk, originRisk(originStatus)),
+      risk: mergeRisk(built.risk, originFindings),
       ...(built.simulation === undefined
         ? {}
         : { simulation: built.simulation, simulatedAt: createdAt }),
@@ -950,7 +937,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ? undefined
         : {
             ...built.resimulation,
-            risk: mergeRisk(built.resimulation.risk, originRisk(originStatus)),
+            risk: mergeRisk(built.resimulation.risk, originFindings),
           };
     this.entries.set(id, {
       prepared: built.run,
@@ -1485,8 +1472,8 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(`request ${id} expired`);
     }
     if (
-      request.origin.kind === "browser" &&
-      this.options.phishing.check(request.origin.origin) === "blocked"
+      request.origin.kind !== "internal" &&
+      this.options.phishing.check(dappUrl(request.origin)) === "blocked"
     ) {
       this.end(id, "fail", PHISHING_BLOCKED_MESSAGE);
       throw new Error(PHISHING_BLOCKED_MESSAGE);
@@ -1819,7 +1806,7 @@ export class RequestController extends Controller<RequestControllerState> {
   /** Risk of a Sign-In with X message; a message for another domain throws `SignInOriginError`. */
   private signInRisk(
     signIn: SignInParse | undefined,
-    origin: BrowserOrigin,
+    origin: DappOrigin,
     signer: string,
     family: "evm" | "solana",
   ): ReadonlyArray<RiskFinding> {
@@ -1828,7 +1815,7 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     const assessed = assessSignIn({
       signIn,
-      origin: origin.origin,
+      origin: dappUrl(origin),
       signer,
       family,
       now: this.options.now(),

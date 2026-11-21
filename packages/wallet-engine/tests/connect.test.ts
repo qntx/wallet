@@ -413,7 +413,7 @@ describe("connection sessions", () => {
     });
     r.connections.lock();
     await expect(second).resolves.toBe(4001);
-    expect(r.connections.getState()).toStrictEqual({ sessions: {}, pending: {} });
+    expect(r.connections.getState()).toStrictEqual({ sessions: {}, pending: {}, ready: false });
     await r.destroy();
   });
 

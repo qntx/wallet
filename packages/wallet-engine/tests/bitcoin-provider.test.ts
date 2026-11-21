@@ -497,11 +497,16 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
         "bitcoin:signAndSendTransaction",
       );
       await approve();
-      const done = (await settled) as { value: Array<{ txId: string }> };
-      // The handler returns the locally computed txid of the signed bytes it broadcast.
-      expect(done).toStrictEqual({
-        value: [{ txId: Transaction.fromRaw(hex.decode(postedWire())).id }],
-      });
+      const done = (await settled) as {
+        value: Array<{ txId: string; signedPsbt: Uint8Array }>;
+      };
+      // The handler returns the locally computed txid of the signed bytes it broadcast, with the
+      // signed PSBT of the same transaction.
+      const [sent] = done.value;
+      const finalized = Transaction.fromPSBT(firstSigned(done));
+      finalized.finalize();
+      expect(finalized.id).toBe(sent?.txId);
+      expect(sent?.txId).toBe(Transaction.fromRaw(hex.decode(postedWire())).id);
       await until(() => true);
       expect(request?.method).toBe("bitcoin-sign");
     } finally {
@@ -605,10 +610,17 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
           "bitcoin:signAndSendTransaction",
         );
         await approve();
-        const done = (await settled) as { value: Array<{ txId: string }> };
+        const done = (await settled) as {
+          value: Array<{ txId: string; signedPsbt: Uint8Array }>;
+        };
         const txids = broadcasts.map((body) => Transaction.fromRaw(hex.decode(body)).id);
         expect(txids).toHaveLength(2);
-        expect(done.value).toStrictEqual(txids.map((txId) => ({ txId })));
+        expect(done.value.map((entry) => entry.txId)).toStrictEqual(txids);
+        for (const [index, entry] of done.value.entries()) {
+          const finalized = Transaction.fromPSBT(entry.signedPsbt);
+          finalized.finalize();
+          expect(finalized.id).toBe(txids[index]);
+        }
       };
       await batch(1);
       resetBroadcastMock();

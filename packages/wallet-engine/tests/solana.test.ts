@@ -124,7 +124,7 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       },
       touch: async () => Promise.resolve(),
       revoke: async () => Promise.resolve(),
-      getState: () => ({ sessions: sessionsState as never, pending: {} }),
+      getState: () => ({ sessions: sessionsState as never, pending: {}, ready: true }),
       store: {
         subscribe: (listener: (state: { sessions: unknown }) => void) => {
           sessionListeners.push(listener);
@@ -369,7 +369,7 @@ describe("SolanaWalletHandler", () => {
         request: async () => Promise.resolve({} as never),
         touch: async () => Promise.resolve(),
         revoke: async () => Promise.resolve(),
-        getState: () => ({ sessions: {}, pending: {} }),
+        getState: () => ({ sessions: {}, pending: {}, ready: true }),
         store: { subscribe: () => () => undefined } as never,
       },
       requests: {

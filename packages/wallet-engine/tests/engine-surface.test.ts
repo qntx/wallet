@@ -96,10 +96,11 @@ describe("engine surface", () => {
     expectTypeOf<WalletEngine["connections"]>().toHaveProperty("checkOrigin");
   });
 
-  it("dApp-side connection steps run only inside the provider handlers", () => {
+  it("the provider handlers and the WalletConnect entry drive their connection steps", () => {
     expectTypeOf<WalletEngine["connections"]>().not.toHaveProperty("request");
-    expectTypeOf<WalletEngine["connections"]>().not.toHaveProperty("authorize");
-    expectTypeOf<WalletEngine["connections"]>().not.toHaveProperty("touch");
+    expectTypeOf<WalletEngine["connections"]>().toHaveProperty("establishWalletConnect");
+    expectTypeOf<WalletEngine["connections"]>().toHaveProperty("authorize");
+    expectTypeOf<WalletEngine["connections"]>().toHaveProperty("touch");
     expectTypeOf<WalletEngine["connections"]>().toHaveProperty("approveConnection");
   });
 

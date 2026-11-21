@@ -246,6 +246,9 @@ export type WalletEngine = {
     | "setActiveIdentity"
     | "nostrPolicy"
     | "lightningPolicy"
+    | "establishWalletConnect"
+    | "authorize"
+    | "touch"
   >;
   readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
   readonly nip07: Pick<Nip07Handler, "handle">;

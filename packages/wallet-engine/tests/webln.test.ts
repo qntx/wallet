@@ -27,7 +27,7 @@ function rig(options: {
   const preparedInputs: unknown[] = [];
   const handler = new WeblnHandler({
     connections: {
-      checkOrigin: (origin) => ({ kind: "browser", origin }),
+      checkOrigin: (origin) => (typeof origin === "string" ? { kind: "browser", origin } : origin),
       authorize: () => {
         if (options.authorized === false) {
           throw unauthorized("test unauthorized");

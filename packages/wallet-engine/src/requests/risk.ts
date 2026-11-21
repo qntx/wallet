@@ -13,6 +13,7 @@ import type { PhishingStatus } from "../phishing/status.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import { sameAsset } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
+import type { WalletConnectVerify } from "./types.ts";
 
 /**
  * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
@@ -52,7 +53,9 @@ export type RiskFinding = {
     | "blind-signing"
     | "contract-recipient"
     | "token-contract-recipient"
-    | "token-recipient-empty";
+    | "token-recipient-empty"
+    | "verify-mismatch"
+    | "verify-threat";
   readonly level: "warning" | "danger";
 };
 
@@ -65,6 +68,21 @@ export function originRisk(status: PhishingStatus): ReadonlyArray<RiskFinding> {
     return [{ code: "phishing-origin", level: "danger" }];
   }
   return status === "unchecked" ? [{ code: "phishing-unchecked", level: "warning" }] : [];
+}
+
+/**
+ * A WalletConnect peer's Verify verdict: a flagged domain or a domain mismatch is a danger; an
+ * unverifiable one is neutral.
+ */
+export function verifyRisk(verify: WalletConnectVerify): ReadonlyArray<RiskFinding> {
+  const found: RiskFinding[] = [];
+  if (verify.isScam) {
+    found.push({ code: "verify-threat", level: "danger" });
+  }
+  if (verify.validation === "INVALID") {
+    found.push({ code: "verify-mismatch", level: "danger" });
+  }
+  return found;
 }
 
 /** `findings` plus `extra`, deduplicated by code, `danger` first. */

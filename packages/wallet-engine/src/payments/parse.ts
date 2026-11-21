@@ -39,6 +39,11 @@ export type PaymentRequest = {
 };
 
 export type PaymentParse =
+  | {
+      /** A WalletConnect pairing URI; the host passes it to the walletconnect entry's `pair`. */
+      readonly kind: "walletconnect";
+      readonly uri: string;
+    }
   | { readonly kind: "request"; readonly request: PaymentRequest }
   | { readonly kind: "lnurl"; readonly url: string; readonly address?: string }
   | {
@@ -307,6 +312,9 @@ const BIP21_KNOWN_REQ_PARAMS = new Set(["req-amount", "req-label", "req-message"
 export function parsePayment(input: string, options: ParseOptions): PaymentParse {
   try {
     const text = input.trim();
+    if (/^wc:[0-9a-f]{64}@2\?/i.test(text)) {
+      return { kind: "walletconnect", uri: text };
+    }
     if (/^nostr\+walletconnect:/i.test(text)) {
       return { kind: "unsupported", format: "nostr-wallet-connect" };
     }

@@ -1,19 +1,28 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
 
-import { ChainError } from "@qntx/wallet-chains";
-
 import { BITCOIN_NETWORKS } from "../networks/registry.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type {
   BitcoinAccount,
   BitcoinPsbtInput,
   BitcoinSigHash,
-  BrowserOrigin,
+  WalletConnectOrigin,
 } from "../requests/types.ts";
-import type { BitcoinPurpose, ConnectionController, ConnectionSession } from "./controller.ts";
+import type {
+  BitcoinPurpose,
+  ConnectionController,
+  ConnectionOrigin,
+  ConnectionSession,
+} from "./controller.ts";
 import { BITCOIN_METHODS, BITCOIN_PURPOSES, sessionAccounts } from "./controller.ts";
-import { ProviderError, batchStopped, invalidParams } from "./errors.ts";
+import {
+  ProviderError,
+  batchStopped,
+  internalError,
+  invalidParams,
+  toProviderError,
+} from "./errors.ts";
 import { SessionEvents } from "./subscription.ts";
 import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
@@ -25,10 +34,18 @@ import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 export type BitcoinRequest = {
   readonly method: string;
   readonly params?: unknown;
+  /**
+   * The CAIP-2 network the call targets — a WalletConnect request names it; the in-app-browser
+   * bridge never sets it (the page has no say), so its calls use the wallet's default network.
+   */
+  readonly network?: string;
 };
 
 export type BitcoinHandler = {
-  readonly handle: (origin: string, request: BitcoinRequest) => Promise<unknown>;
+  readonly handle: (
+    origin: string | WalletConnectOrigin,
+    request: BitcoinRequest,
+  ) => Promise<unknown>;
   readonly subscribe: (listener: (event: BitcoinEvent) => void) => () => void;
 };
 
@@ -128,38 +145,38 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     return this.events.subscribe(listener);
   }
 
-  async handle(origin: string, request: BitcoinRequest): Promise<unknown> {
-    const checked = this.options.connections.checkOrigin(origin);
+  async handle(origin: string | WalletConnectOrigin, request: BitcoinRequest): Promise<unknown> {
+    const caller = this.options.connections.checkOrigin(origin);
     if (request.method === "bitcoin:connect") {
-      return this.connect(checked, request);
+      return this.connect(caller, request);
     }
     if (request.method === "standard:disconnect") {
-      await this.options.connections.revoke(origin);
+      await this.options.connections.revoke(caller.origin);
       return {};
     }
     if (request.method === "bitcoin:signMessage") {
-      return this.signMessage(checked, request);
+      return this.signMessage(caller, request);
     }
     if (request.method === "bitcoin:signTransaction") {
-      return this.signTransactions(checked, request, false);
+      return this.signTransactions(caller, request, false);
     }
     if (request.method === "bitcoin:signAndSendTransaction") {
-      return this.signTransactions(checked, request, true);
+      return this.signTransactions(caller, request, true);
     }
     throw invalidParams(`unsupported bitcoin method ${request.method}`);
   }
 
   private async connect(
-    checked: BrowserOrigin,
+    caller: ConnectionOrigin,
     request: BitcoinRequest,
   ): Promise<{ accounts: ReadonlyArray<BitcoinWalletAccount> }> {
     const purposes = purposesOf(request.params);
-    const network = this.options.bitcoinNetwork();
-    let binding = this.options.connections.sessionAccounts(checked.origin, network);
+    const network = request.network ?? this.options.bitcoinNetwork();
+    let binding = this.options.connections.sessionAccounts(caller.origin, network);
     await (binding === undefined
-      ? this.options.connections.request(checked.origin, { kind: "connect", namespace: "bip122" })
-      : this.options.connections.touch(checked.origin));
-    binding = this.options.connections.sessionAccounts(checked.origin, network);
+      ? this.options.connections.request(caller.origin, { kind: "connect", namespace: "bip122" })
+      : this.options.connections.touch(caller.origin));
+    binding = this.options.connections.sessionAccounts(caller.origin, network);
     if (binding === undefined) {
       throw new ProviderError(4100, "the wallet is not connected");
     }
@@ -200,10 +217,10 @@ export class BitcoinWalletHandler implements BitcoinHandler {
    * (witness item count, then each item length-prefixed) — the kernel's `smp` + base64 string
    * decoded to bytes, which is what MetaMask's Bitcoin Wallet Standard wallet hands out.
    */
-  private async signMessage(checked: BrowserOrigin, request: BitcoinRequest): Promise<unknown> {
-    const network = this.options.bitcoinNetwork();
-    this.options.connections.authorize(checked.origin, network, "bitcoin:signMessage");
-    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+  private async signMessage(caller: ConnectionOrigin, request: BitcoinRequest): Promise<unknown> {
+    const network = request.network ?? this.options.bitcoinNetwork();
+    this.options.connections.authorize(caller.origin, network, "bitcoin:signMessage");
+    const binding = this.options.connections.sessionAccounts(caller.origin, network);
     if (binding === undefined) {
       throw new ProviderError(4100, "no bitcoin account for this origin");
     }
@@ -219,14 +236,19 @@ export class BitcoinWalletHandler implements BitcoinHandler {
       throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
     }
     const account: BitcoinAccount = { ...binding.group, address, template: TEMPLATES[purpose] };
-    const pending = await this.options.requests.prepare({
-      method: "bitcoin-sign",
-      origin: checked,
-      account,
-      network,
-      request: { kind: "message", message: text },
-    });
-    const outcome = await this.options.requests.outcome(pending.id);
+    let outcome: Awaited<ReturnType<BitcoinRequests["outcome"]>>;
+    try {
+      const pending = await this.options.requests.prepare({
+        method: "bitcoin-sign",
+        origin: caller,
+        account,
+        network,
+        request: { kind: "message", message: text },
+      });
+      outcome = await this.options.requests.outcome(pending.id);
+    } catch (error) {
+      throw toProviderError(error);
+    }
     if (!("kind" in outcome) || outcome.kind !== "bitcoin.message") {
       throw new ProviderError(-32603, "the bitcoin-sign request settled unexpectedly");
     }
@@ -245,13 +267,13 @@ export class BitcoinWalletHandler implements BitcoinHandler {
    * carries its account's template — and `chain`, when given, must be the session's network.
    */
   private async signTransactions(
-    checked: BrowserOrigin,
+    caller: ConnectionOrigin,
     request: BitcoinRequest,
     send: boolean,
   ): Promise<unknown> {
-    const network = this.options.bitcoinNetwork();
-    this.options.connections.authorize(checked.origin, network, request.method);
-    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    const network = request.network ?? this.options.bitcoinNetwork();
+    this.options.connections.authorize(caller.origin, network, request.method);
+    const binding = this.options.connections.sessionAccounts(caller.origin, network);
     if (binding === undefined) {
       throw new ProviderError(4100, "no bitcoin account for this origin");
     }
@@ -279,7 +301,7 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     try {
       const pending = await this.options.requests.prepare({
         method: "bitcoin-sign",
-        origin: checked,
+        origin: caller,
         account: binding.group,
         network,
         request: {
@@ -299,7 +321,7 @@ export class BitcoinWalletHandler implements BitcoinHandler {
       });
       outcome = await this.options.requests.outcome(pending.id);
     } catch (error) {
-      throw error instanceof ChainError ? invalidParams(error.message) : error;
+      throw toProviderError(error);
     }
     if (!("kind" in outcome) || outcome.kind !== "bitcoin.psbts") {
       throw new ProviderError(-32603, "the bitcoin-sign request settled unexpectedly");
@@ -308,7 +330,13 @@ export class BitcoinWalletHandler implements BitcoinHandler {
       throw batchStopped(outcome.stopped, outcome.txids);
     }
     return send
-      ? outcome.txids.map((txId) => ({ txId }))
+      ? outcome.txids.map((txId, index) => {
+          const signedPsbt = outcome.signedPsbts[index];
+          if (signedPsbt === undefined) {
+            throw internalError("a broadcast transaction has no signed PSBT");
+          }
+          return { txId, signedPsbt };
+        })
       : outcome.signedPsbts.map((signedPsbt) => ({ signedPsbt }));
   }
 
