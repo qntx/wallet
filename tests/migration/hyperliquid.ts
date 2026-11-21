@@ -213,19 +213,29 @@ export async function fundAndWithdraw(
   }
   /* The CCTP deposit burns USDC on Arbitrum's TokenMessengerV2 — Circle's forwarder mints it
      on HyperEVM into the Hyperliquid account. It must clear the Circle fee the provider reads
-     from Iris and the on-chain per-message burn limit; an exact-amount approve request is
-     opened first only when the allowance is short. */
-  const deposit = await hl.fund.deposit(group, {
+     from Iris and the on-chain per-message burn limit. When the messenger's USDC allowance is
+     short the call returns `approval-required` with only the exact-amount approve request — the
+     burn call cannot be prepared while the approval is unmined, so the host approves it and calls
+     `deposit` again; the re-read allowance then covers the amount and the `deposit` variant
+     carries the burn request. */
+  const first = await hl.fund.deposit(group, {
     amount: 20_000_000n, // 20 USDC
     fee: "normal",
     dex: hl.fund.depositInfo.dex, // "perps" by default — "spot" funds the spot account.
   });
-  if (deposit.approval !== undefined) {
-    await engine.requests.approve(deposit.approval.requestId, "evm-sign", { verify });
-    await deposit.approval.outcome;
+  if (first.kind === "approval-required") {
+    await engine.requests.approve(first.approval.requestId, "evm-sign", { verify });
+    await first.approval.outcome;
   }
-  await engine.requests.approve(deposit.deposit.requestId, "evm-sign", { verify });
-  await deposit.deposit.outcome;
+  const result = await hl.fund.deposit(group, {
+    amount: 20_000_000n,
+    fee: "normal",
+    dex: hl.fund.depositInfo.dex,
+  });
+  if (result.kind === "deposit") {
+    await engine.requests.approve(result.deposit.requestId, "evm-sign", { verify });
+    await result.deposit.outcome;
+  }
 }
 
 export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps";

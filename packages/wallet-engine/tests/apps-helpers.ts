@@ -225,6 +225,21 @@ const arbRpc = async (init: RequestInit | undefined, hl: HlState): Promise<Respo
       : callData.startsWith("0xdd62ed3e")
         ? word(hl.arb?.allowance ?? 0n)
         : `0x${"00".repeat(32)}`;
+  /* On a real chain depositForBurnWithHook reverts while the approve is unmined — mirror that:
+     estimateGas answers an execution-reverted error whenever the allowance is below the amount
+     encoded in the call's first argument. */
+  const estimateResult =
+    callData.startsWith("0x779b432d") &&
+    (hl.arb?.allowance ?? 0n) < BigInt(`0x${callData.slice(10, 74)}`)
+      ? undefined
+      : "0x5208";
+  if (estimateResult === undefined) {
+    return Response.json({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: 3, message: "execution reverted" },
+    });
+  }
   const result =
     body["method"] === "eth_chainId"
       ? "0x66eee"
@@ -235,7 +250,8 @@ const arbRpc = async (init: RequestInit | undefined, hl: HlState): Promise<Respo
           : body["method"] === "eth_getTransactionCount"
             ? "0x0"
             : body["method"] === "eth_estimateGas"
-              ? "0x5208"
+              ? estimateResult
+          
               : body["method"] === "eth_feeHistory"
                 ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
                 : "0x0";

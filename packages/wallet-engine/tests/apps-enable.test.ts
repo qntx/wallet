@@ -300,14 +300,29 @@ describe("apps hyperliquid enablement on the node host", () => {
       w.provider.fund.deposit(w.group, { amount: 200_000n, fee: "normal" }),
     ).rejects.toMatchObject({ category: "invalid-input" });
     expect(w.requests.getState().requests).toStrictEqual({});
+    /* allowance defaults to 0 — the first call opens only the approve: on a real chain the
+       burn's estimateGas reverts while the approval is unmined (the world reverts it), so the
+       deposit request must not be prepared. */
+    const first = await w.provider.fund.deposit(w.group, {
+      amount: 5_000_000n,
+      fee: "normal",
+    });
+    expect(first.kind).toBe("approval-required");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const approval = first.kind === "approval-required" ? first.approval : undefined;
+    expect(approval).toBeDefined();
+    const methods = Object.values(w.requests.getState().requests).map((r) => r.method);
+    expect(methods).toStrictEqual(["evm-approve"]);
+    /* The approval mines — the second call's re-read allowance covers it and only the burn opens. */
+    w.hl.arb = { allowance: 10_000_000n };
     const result = await w.provider.fund.deposit(w.group, {
       amount: 5_000_000n,
       fee: "normal",
     });
-    /* allowance defaults to 0 — an approve pending action exists alongside the deposit; the
-       deposit's intent is the decoded depositForBurnWithHook on the testnet TokenMessengerV2. */
-    expect(result.approval).toBeDefined();
-    const deposit = w.requests.getState().requests[result.deposit.requestId];
+    expect(result.kind).toBe("deposit");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const depositId = result.kind === "deposit" ? result.deposit.requestId : "";
+    const deposit = w.requests.getState().requests[depositId];
     expect(deposit).toBeDefined();
     const { display } = deposit as {
       display?: {
@@ -337,8 +352,10 @@ describe("apps hyperliquid enablement on the node host", () => {
       amount: 5_000_000n,
       fee: "normal",
     });
-    expect(result.approval).toBeUndefined();
-    expect(w.requests.getState().requests[result.deposit.requestId]).toBeDefined();
+    expect(result.kind).toBe("deposit");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const depositId = result.kind === "deposit" ? result.deposit.requestId : "";
+    expect(w.requests.getState().requests[depositId]).toBeDefined();
     await w.destroy();
     const low = await world(29, { hl: { arb: { burnLimit: 4_000_000n } } });
     await low.apps.acknowledgeTerms(low.group, "hyperliquid");
@@ -406,6 +423,8 @@ describe("apps hyperliquid enablement on the node host", () => {
     /* minimumFee 10 bps on 6 USDC adds 6000 base units to the 0.2 USDC flat fee. */
     const w = await world(33, {
       hl: {
+        /* An allowance over the 6 USDC amount keeps the second (deposit) request open. */
+        arb: { allowance: 10_000_000n },
         iris: {
           status: 200,
           body: [
@@ -423,7 +442,9 @@ describe("apps hyperliquid enablement on the node host", () => {
       amount: 6_000_000n,
       fee: "normal",
     });
-    const deposit = w.requests.getState().requests[result.deposit.requestId];
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const depositId = result.kind === "deposit" ? result.deposit.requestId : "";
+    const deposit = w.requests.getState().requests[depositId];
     const { display } = deposit as {
       display?: { hyperliquidDeposit?: { maxFee?: { amount?: string } } };
     };

@@ -134,7 +134,7 @@ export type HyperliquidDepositInfo = {
   readonly network: string;
   /** The Hyperliquid CCTP destination domain. */
   readonly destinationDomain: number;
-  /** The confirmed-finality threshold the deposit requests (instant, ~30 s). */
+  /** The confirmed-finality threshold the deposit requests (Circle's Fast Transfer 1000). */
   readonly minFinalityThreshold: number;
   /** The hook's dex selector for the account the deposit funds. */
   readonly dex: "perps" | "spot";
@@ -188,13 +188,22 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 const word = (v: string): string => v.slice(2).toLowerCase().padStart(64, "0");
 
-/** Both request outcomes of a CCTP deposit — the approve only exists when the allowance was short. */
-export type HyperliquidDeposit = {
-  /** The exact-amount USDC approve for the TokenMessengerV2 — absent when allowance sufficed. */
-  readonly approval: HyperliquidPendingAction | undefined;
-  /** The `depositForBurnWithHook` transaction. */
-  readonly deposit: HyperliquidPendingAction;
-};
+/** The two-call CCTP deposit flow. When the messenger's USDC allowance is short, only the
+   exact-amount approve opens — the deposit call cannot be prepared yet (`eth_estimateGas` would
+   revert on-chain while the approval is unmined), so the host approves it and calls `deposit`
+   again once the approval confirmed; the re-read allowance then covers the amount and only the
+   burn request opens. */
+export type HyperliquidDeposit =
+  | {
+      readonly kind: "approval-required";
+      /** The exact-amount USDC approve for the TokenMessengerV2. */
+      readonly approval: HyperliquidPendingAction;
+    }
+  | {
+      readonly kind: "deposit";
+      /** The `depositForBurnWithHook` transaction. */
+      readonly deposit: HyperliquidPendingAction;
+    };
 
 /** What the Iris forward-fee endpoint contributes: flat fee + the burn's bps minimum. */
 const fetchMaxFee = async (
@@ -492,34 +501,40 @@ export function createHyperliquidProvider(
           })(),
         });
         /* An exact-amount approve only when the allowance is short — the pipeline itself
-           refuses an overwrite of a nonzero allowance, so the read must come first. */
+           refuses an overwrite of a nonzero allowance, so the read must come first. The deposit
+           request is not prepared here: its estimateGas reverts on a real chain while the
+           approval is unmined. The host calls `deposit` again after the approval confirmed. */
         const allowance = await readAllowance(client, route.usdc, owner, route.tokenMessenger);
-        const approval =
-          allowance >= amount
-            ? undefined
-            : track(
-                await requests.prepare({
-                  method: "evm-approve",
-                  account,
-                  network: route.network,
-                  token: route.usdc,
-                  spender: route.tokenMessenger,
-                  amount,
-                  fee,
-                }),
-              );
-        const deposit = track(
-          await requests.prepare({
-            method: "evm-cctp",
-            account,
-            network: route.network,
-            amount,
-            dex: dex ?? route.dex,
-            maxFee,
-            fee,
-          }),
-        );
-        return { approval, deposit };
+        if (allowance < amount) {
+          return {
+            kind: "approval-required",
+            approval: track(
+              await requests.prepare({
+                method: "evm-approve",
+                account,
+                network: route.network,
+                token: route.usdc,
+                spender: route.tokenMessenger,
+                amount,
+                fee,
+              }),
+            ),
+          };
+        }
+        return {
+          kind: "deposit",
+          deposit: track(
+            await requests.prepare({
+              method: "evm-cctp",
+              account,
+              network: route.network,
+              amount,
+              dex: dex ?? route.dex,
+              maxFee,
+              fee,
+            }),
+          ),
+        };
       },
     },
   };

@@ -785,6 +785,18 @@ describe("declined builder", () => {
     return () => asks;
   };
 
+  /* The next request the flow opens, delivered as an event: prepare resolves the id the moment
+     the request exists — no timing-bounded poll of the group state. */
+  const nextRequest = async (w: World): Promise<string> =>
+    new Promise((resolve) => {
+      const prepare = w.requests.prepare.bind(w.requests);
+      w.requests.prepare = async (input) => {
+        const pending = await prepare(input);
+        resolve(pending.id);
+        return pending;
+      };
+    });
+
   it("renew after a decline opens no builder request and stays declined", async () => {
     const w = await world(45, { builder: BUILDER });
     withMeta(w);
@@ -794,11 +806,12 @@ describe("declined builder", () => {
     expect(w.state()?.builder).toBe("declined");
     const builderAsks = countBuilderAsks(w);
 
+    const asked = nextRequest(w);
     const renewing = w.apps.renew(w.group, "hyperliquid");
-    await until(() => w.state()?.requestId !== undefined);
+    const renewRequest = await asked;
     // The renew still needs the agent approval — only the builder ask is skipped.
-    expect(hlKind(w, requestId(w))).toBe("approve-agent");
-    await w.approve(requestId(w));
+    expect(hlKind(w, renewRequest)).toBe("approve-agent");
+    await w.approve(renewRequest);
     await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
     await renewing;
     expect(w.state()?.builder).toBe("declined");
@@ -818,10 +831,11 @@ describe("declined builder", () => {
     expect(w.state()?.status).toBe("disabled");
     const builderAsks = countBuilderAsks(w);
 
+    const asked = nextRequest(w);
     const reenabling = w.apps.enable(w.group, "hyperliquid");
-    await until(() => w.state()?.requestId !== undefined);
-    expect(hlKind(w, requestId(w))).toBe("approve-agent");
-    await w.approve(requestId(w));
+    const reenableRequest = await asked;
+    expect(hlKind(w, reenableRequest)).toBe("approve-agent");
+    await w.approve(reenableRequest);
     await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
     await reenabling;
     expect(w.state()?.builder).toBe("declined");

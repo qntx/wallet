@@ -798,7 +798,10 @@ export type HyperliquidClock = {
 
 // @public
 type HyperliquidDeposit = {
-    readonly approval: HyperliquidPendingAction | undefined;
+    readonly kind: "approval-required";
+    readonly approval: HyperliquidPendingAction;
+} | {
+    readonly kind: "deposit";
     readonly deposit: HyperliquidPendingAction;
 };
 

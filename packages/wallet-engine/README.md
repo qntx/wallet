@@ -290,9 +290,12 @@ visible but marked, never as live.
 `depositForBurnWithHook` on Arbitrum's TokenMessengerV2 that Circle's CctpForwarder mints on
 HyperEVM into the Hyperliquid account (destination domain 19, confirmed finality;
 `HYPERLIQUID_DEPOSIT` has the contracts per network and `dex` defaults to `"perps"`). The
-provider reads the Circle forward fee from Iris, refuses a deposit the fee would consume or
-that exceeds the on-chain per-message burn limit, and opens an exact-amount USDC approve
-request first only when the allowance is short — the result's `approval` is then present.
+provider reads the Circle forward fee from Iris and refuses a deposit the fee would consume or
+that exceeds the on-chain per-message burn limit. It is a two-call flow: when the messenger's
+USDC allowance is short the result is `approval-required` carrying only an exact-amount approve
+request (the burn call cannot be prepared while the approval is unmined — its `eth_estimateGas`
+reverts); the host approves it and calls `deposit` again, and the re-read allowance then yields
+the `deposit` variant carrying the burn request.
 `transfer.{toPerp,toSpot}` move USDC between the owner's spot and perp accounts, `usdSend`/
 `spotSend` send to another address and `withdraw` sends USDC back to the owner's Arbitrum
 address. Every one opens an approval request: the returned `HyperliquidPendingAction` carries
