@@ -66,7 +66,7 @@ const evmBody = (
     mapChainError(error);
   }
   if (intentOnly) {
-    return { prompt: intent };
+    return { prompt: intent, signer };
   }
   if (request.kind === "evm.transaction") {
     return {

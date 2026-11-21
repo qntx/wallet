@@ -1,0 +1,1687 @@
+{
+  "privateKey": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  "cases": [
+    {
+      "name": "CTF Exchange buy (EOA)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "746666666340",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "50000000",
+          "takerAmount": "100000000",
+          "timestamp": "1777777777000",
+          "side": 0,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0xfa7e5cc2bcab1dee4930d98aac9e9f531b803ffdf8d4610d652fdb5e3edd94f2",
+      "signature": "0x86dffc91c8a05e66e559227950947734e284ec4930f50cbc4d61cf3d5b5735d3353e21f25d2d793bb8bec2dd8dd061a8711909464505f285123a21e1852ed3341c",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "50000000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "100000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654991",
+        "hash": "0xfa7e5cc2bcab1dee4930d98aac9e9f531b803ffdf8d4610d652fdb5e3edd94f2"
+      }
+    },
+    {
+      "name": "CTF Exchange sell (EOA)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "764444469910",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "makerAmount": "100000000",
+          "takerAmount": "50000000",
+          "timestamp": "1777777837000",
+          "side": 1,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0xd1f34a482c386d7a189fb8bb5b46e3c4b35da9b97b9bd6e7d05999372a89a55f",
+      "signature": "0x84bd270aa0a70cca26a53d90109e2d9c5996795bdab5a2a0a5eb317823271668665383c89a10b6bfb97e22bbc8bb79a2e64ebbd626895036e9ffa41f9da5f4611b",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "sell",
+        "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "amount": "100000000"
+        },
+        "receive": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "50000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654991",
+        "hash": "0xd1f34a482c386d7a189fb8bb5b46e3c4b35da9b97b9bd6e7d05999372a89a55f"
+      }
+    },
+    {
+      "name": "Neg Risk CTF Exchange buy (EOA)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xe2222d279d744050d28e00520010520000310F59"
+        },
+        "message": {
+          "salt": "782222274680",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "26000000",
+          "takerAmount": "40000000",
+          "timestamp": "1777777897000",
+          "side": 0,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x243af3711a5c5cee3d9403947f51451cb5885628117d38ad3fa5d32480e73d83",
+      "signature": "0xd5b211fe357e7b59601b9c0d788b827d28b88c81197881002d9035d3685ffbff3e6c18bb05e484908d8f980ab8e5fd7dc991cfcc146166c832aee8fd743cd74b1c",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xe2222d279d744050d28e00520010520000310F59",
+          "name": "Neg Risk CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "26000000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "40000000"
+        },
+        "price": {
+          "amount": "650000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654991",
+        "hash": "0x243af3711a5c5cee3d9403947f51451cb5885628117d38ad3fa5d32480e73d83"
+      }
+    },
+    {
+      "name": "Exchange V3 buy (EOA)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "3",
+          "chainId": 137,
+          "verifyingContract": "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"
+        },
+        "message": {
+          "salt": "800000080650",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "makerAmount": "40000000",
+          "takerAmount": "80000000",
+          "timestamp": "1777777957000",
+          "side": 0,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0xddf6a6102780e504a71e8d0dcf3faef36cb6b1aa1f7ba505bc02aa5403f0669e",
+      "signature": "0xef39398451160fb612ead7495c21baa49961fa4b4818fe2ff06d9e0f82a3ffdd0f08ec3f550a3bffa4e63e12d95896cfad1e7fab11a867ee6a57be0bdcc6b7a31b",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa",
+          "name": "Exchange V3",
+          "version": "3"
+        },
+        "side": "buy",
+        "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "40000000"
+        },
+        "receive": {
+          "asset": "0x006F54F7f9A22e0000CC2AB60031000000ae9fEF",
+          "decimals": 6,
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "amount": "80000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654991",
+        "hash": "0xddf6a6102780e504a71e8d0dcf3faef36cb6b1aa1f7ba505bc02aa5403f0669e"
+      }
+    },
+    {
+      "name": "Exchange V3 sell (EOA)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "3",
+          "chainId": 137,
+          "verifyingContract": "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"
+        },
+        "message": {
+          "salt": "817777887820",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "60000000",
+          "takerAmount": "45000000",
+          "timestamp": "1777778017000",
+          "side": 1,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0xc2e0ecd48bd380e91bb1f58b7cfb1198be9242163c006fa78708b59192637859",
+      "signature": "0xc6e478c8a042e2a138fe3dac9f2f737cb1ac26bff155466f27bc770fdebf56701c911323befef6b50134f8b9ee2da490c28fabfeac7ef63e2e95e70b628ddd081b",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa",
+          "name": "Exchange V3",
+          "version": "3"
+        },
+        "side": "sell",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0x006F54F7f9A22e0000CC2AB60031000000ae9fEF",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "60000000"
+        },
+        "receive": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "45000000"
+        },
+        "price": {
+          "amount": "750000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654992",
+        "hash": "0xc2e0ecd48bd380e91bb1f58b7cfb1198be9242163c006fa78708b59192637859"
+      }
+    },
+    {
+      "name": "proxy-wallet buy",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "835555696190",
+          "maker": "0x1000000000000000000000000000000000000001",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "makerAmount": "12500000",
+          "takerAmount": "25000000",
+          "timestamp": "1777778077000",
+          "side": 0,
+          "signatureType": 1,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x938a24f4f399fe24fb3abf35eb9679c78a5ca2739dac0bb301b1343dc775e205",
+      "signature": "0x52ca5a04be410583d93903984e2738500804a438de670d09a4a46c0cc9f0228020b7167053f49e0860d13a495afdd827d9cd14a82d4069f43a6232e4ac02f9ed1b",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+        "maker": "0x1000000000000000000000000000000000000001",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "proxy",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "12500000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "amount": "25000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654992",
+        "hash": "0x938a24f4f399fe24fb3abf35eb9679c78a5ca2739dac0bb301b1343dc775e205"
+      }
+    },
+    {
+      "name": "Safe buy",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "853333505760",
+          "maker": "0x2000000000000000000000000000000000000002",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "12500000",
+          "takerAmount": "25000000",
+          "timestamp": "1777778137000",
+          "side": 0,
+          "signatureType": 2,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x99acffaa0b3b56d84c0725f8d569eb50a2fd14a2de3e915868602bd730e7e920",
+      "signature": "0x50e9314fc6d9321e8a18daa6d54c27cc5b95f38b85f8804922827cc6954894050f5bed5b7b55ef9ab2b54d5d72255aad77fa482f351f655ae22152a32b3714f21c",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0x2000000000000000000000000000000000000002",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "safe",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "12500000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "25000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654992",
+        "hash": "0x99acffaa0b3b56d84c0725f8d569eb50a2fd14a2de3e915868602bd730e7e920"
+      }
+    },
+    {
+      "name": "deposit-wallet buy (POLY_1271)",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "TypedDataSign": [
+            {
+              "name": "contents",
+              "type": "Order"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            },
+            {
+              "name": "salt",
+              "type": "bytes32"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "TypedDataSign",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "contents": {
+            "salt": "871111316530",
+            "maker": "0x3000000000000000000000000000000000000003",
+            "signer": "0x3000000000000000000000000000000000000003",
+            "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+            "makerAmount": "25000000",
+            "takerAmount": "50000000",
+            "timestamp": "1777778197000",
+            "side": 0,
+            "signatureType": 3,
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "name": "DepositWallet",
+          "version": "1",
+          "chainId": 137,
+          "verifyingContract": "0x3000000000000000000000000000000000000003",
+          "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x261fb87171ab56d0a6f50a8d4e29272ae36e70be66233fbab5bd12ec6c9ddfc1",
+      "signature": "0x212a45534487524fba0181b1f66f0ce02c927b8d053dfea2274a3bc5ed14d3d83b0ab39523f7fabb25aafbb4db8edb21cd0444c95ea867b6b709f1f0b6f3e28b1c3264e159346253e26a64e00b69032db0e7d32f94628de3e6eecb50304d7af3d2b06fa44412122f9a9877fd8eb80cd16cf23e990cc4bc5396e21c92cef7959b9d4f726465722875696e743235362073616c742c61646472657373206d616b65722c61646472657373207369676e65722c75696e7432353620746f6b656e49642c75696e74323536206d616b6572416d6f756e742c75696e743235362074616b6572416d6f756e742c75696e743820736964652c75696e7438207369676e6174757265547970652c75696e743235362074696d657374616d702c62797465733332206d657461646174612c62797465733332206275696c6465722900ba",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+        "maker": "0x3000000000000000000000000000000000000003",
+        "signer": "0x3000000000000000000000000000000000000003",
+        "wallet": "deposit-wallet",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "25000000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "amount": "50000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "97654992",
+        "hash": "0x2279a3a7dfc58d701d9d2dee3dd230fc59e075483fda842cd67c9b995d65db04"
+      }
+    },
+    {
+      "name": "Amoy CTF Exchange buy",
+      "network": "eip155:80002",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 80002,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "888889128500",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "5000000",
+          "takerAmount": "10000000",
+          "timestamp": "1777778257000",
+          "side": 0,
+          "signatureType": 0,
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x8a40262dba7cea52ef93acd8a4fd982a01a8749ef6d7b190fea73e2b5c82e96a",
+      "signature": "0xc9027df317122956d594bf2e97c11379090e7fa22535a043cdf694f4353e17067d16f01256e0c8cb8eb8a874e428e3ddb5ffad82cffac90bdf337725398e74131c",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "5000000"
+        },
+        "receive": {
+          "asset": "0x69308FB512518e39F9b16112fA8d994F4e2Bf8bB",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "10000000"
+        },
+        "price": {
+          "amount": "500000",
+          "exact": true
+        }
+      },
+      "onchain": {
+        "block": "53365223",
+        "hash": "0x8a40262dba7cea52ef93acd8a4fd982a01a8749ef6d7b190fea73e2b5c82e96a"
+      }
+    },
+    {
+      "name": "builder-code order",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "906666941670",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "makerAmount": "20000000",
+          "takerAmount": "50000000",
+          "timestamp": "1777778317000",
+          "side": 0,
+          "signatureType": 0,
+          "metadata": "0x6d65746164617461000000000000000000000000000000000000000000000000",
+          "builder": "0x6275696c64657200000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0xcc07fcea258e4d227398e97a3c0b4d0d0544f207a602613ccd8029ecfc29b804",
+      "signature": "0x82b25a937758f4ec6d460ff5d91ddac1d61b7930278cc1bf4e04b47f59cccd8379e363cba82a9e167e10ab0d03c30796d28b5e1dff95abf51fb28516539239491c",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "20000000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+          "amount": "50000000"
+        },
+        "price": {
+          "amount": "400000",
+          "exact": true
+        },
+        "builder": "0x6275696c64657200000000000000000000000000000000000000000000000000",
+        "metadata": "0x6d65746164617461000000000000000000000000000000000000000000000000"
+      },
+      "onchain": {
+        "block": "97654993",
+        "hash": "0xcc07fcea258e4d227398e97a3c0b4d0d0544f207a602613ccd8029ecfc29b804"
+      }
+    },
+    {
+      "name": "non-exact price order",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Order": [
+            {
+              "name": "salt",
+              "type": "uint256"
+            },
+            {
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "name": "signer",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "makerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "takerAmount",
+              "type": "uint256"
+            },
+            {
+              "name": "side",
+              "type": "uint8"
+            },
+            {
+              "name": "signatureType",
+              "type": "uint8"
+            },
+            {
+              "name": "timestamp",
+              "type": "uint256"
+            },
+            {
+              "name": "metadata",
+              "type": "bytes32"
+            },
+            {
+              "name": "builder",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Polymarket CTF Exchange",
+          "version": "2",
+          "chainId": 137,
+          "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+        },
+        "message": {
+          "salt": "777777",
+          "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "makerAmount": "1000000",
+          "takerAmount": "3000001",
+          "side": 0,
+          "signatureType": 0,
+          "timestamp": "1777777777",
+          "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "digest": "0x37c782827497705c396e6d52601bd2908c0ee6306ac2b8203f54485c758ccf1d",
+      "signature": "0x9fc9364932c305a7cbd7a4b797a9d0766cfc0fbced6c3fc422aa06630c5844e92ec48d4c0d2b051aa9d6e9705b81f1b3e2196918c73323a56c5fb4b5a79f15cf1b",
+      "expected": {
+        "kind": "order",
+        "exchange": {
+          "address": "0xE111180000d2663C0091e4f400237545B87B996B",
+          "name": "CTF Exchange",
+          "version": "2"
+        },
+        "side": "buy",
+        "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "wallet": "account",
+        "give": {
+          "asset": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+          "decimals": 6,
+          "symbol": "pUSD",
+          "amount": "1000000"
+        },
+        "receive": {
+          "asset": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+          "decimals": 6,
+          "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+          "amount": "3000001"
+        },
+        "price": {
+          "amount": "333333",
+          "exact": false
+        }
+      },
+      "onchain": {
+        "block": "97654993",
+        "hash": "0x37c782827497705c396e6d52601bd2908c0ee6306ac2b8203f54485c758ccf1d"
+      }
+    },
+    {
+      "name": "ClobAuth (Amoy)",
+      "network": "eip155:80002",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            }
+          ],
+          "ClobAuth": [
+            {
+              "name": "address",
+              "type": "address"
+            },
+            {
+              "name": "timestamp",
+              "type": "string"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "message",
+              "type": "string"
+            }
+          ]
+        },
+        "primaryType": "ClobAuth",
+        "domain": {
+          "name": "ClobAuthDomain",
+          "version": "1",
+          "chainId": 80002
+        },
+        "message": {
+          "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "timestamp": "10000000",
+          "nonce": 23,
+          "message": "This message attests that I control the given wallet"
+        }
+      },
+      "digest": "0x8f442df8073c9cf2e36d7b20ca9d64d1a9352e982cc82a293b7de2df57920610",
+      "signature": "0xf62319a987514da40e57e2f4d7529f7bac38f0355bd88bb5adbb3768d80de6c1682518e0af677d5260366425f4361e7b70c25ae232aff0ab2331e2b164a1aedc1b",
+      "expected": {
+        "kind": "auth",
+        "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "timestamp": 10000000,
+        "nonce": "23"
+      }
+    },
+    {
+      "name": "batch: pUSD approve + CTF setApprovalForAll",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Batch": [
+            {
+              "name": "wallet",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            },
+            {
+              "name": "calls",
+              "type": "Call[]"
+            }
+          ],
+          "Call": [
+            {
+              "name": "target",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            }
+          ]
+        },
+        "primaryType": "Batch",
+        "domain": {
+          "name": "DepositWallet",
+          "version": "1",
+          "chainId": 137,
+          "verifyingContract": "0x3000000000000000000000000000000000000003"
+        },
+        "message": {
+          "wallet": "0x3000000000000000000000000000000000000003",
+          "nonce": 7,
+          "deadline": 1800000000,
+          "calls": [
+            {
+              "target": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+              "value": 0,
+              "data": "0x095ea7b3000000000000000000000000E111180000d2663C0091e4f400237545B87B996B00000000000000000000000000000000000000000000000000000000017d7840"
+            },
+            {
+              "target": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+              "value": 0,
+              "data": "0xa22cb465000000000000000000000000E111180000d2663C0091e4f400237545B87B996B0000000000000000000000000000000000000000000000000000000000000001"
+            }
+          ]
+        }
+      },
+      "digest": "0xece1345219651ef83da4102550b5dbf953df58cac48cd7df27e1a719f9098a05",
+      "signature": "0xd4569bab4ce9ba89455949878b56841e3cd6feb1cabf0e2fe39712115107820055fe0d13f51823e4029da20fb45684995fa5970b65dc7a91b8328699127ed35d1b",
+      "expected": {
+        "kind": "batch",
+        "wallet": "0x3000000000000000000000000000000000000003",
+        "nonce": "7",
+        "deadline": 1800000000,
+        "calls": [
+          {
+            "summary": "approve"
+          },
+          {
+            "summary": "approve"
+          }
+        ]
+      }
+    },
+    {
+      "name": "batch: call to the wallet itself",
+      "network": "eip155:137",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Batch": [
+            {
+              "name": "wallet",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            },
+            {
+              "name": "calls",
+              "type": "Call[]"
+            }
+          ],
+          "Call": [
+            {
+              "name": "target",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "data",
+              "type": "bytes"
+            }
+          ]
+        },
+        "primaryType": "Batch",
+        "domain": {
+          "name": "DepositWallet",
+          "version": "1",
+          "chainId": 137,
+          "verifyingContract": "0x3000000000000000000000000000000000000003"
+        },
+        "message": {
+          "wallet": "0x3000000000000000000000000000000000000003",
+          "nonce": 7,
+          "deadline": 1800000000,
+          "calls": [
+            {
+              "target": "0x3000000000000000000000000000000000000003",
+              "value": 0,
+              "data": "0x095ea7b3000000000000000000000000E111180000d2663C0091e4f400237545B87B996B00000000000000000000000000000000000000000000000000000000017d7840"
+            }
+          ]
+        }
+      },
+      "digest": "0x1c0eb249b5fc987d4ad496ce0e322042d3879163d7b1fb0040eaede3bb2b2c58",
+      "signature": "0x97096ab325e4954923d0cd2ef0705330deea0dd928d8914e2d2a2a2d9473d53f56bf6b87084bd0c1c420f9e796e96754258520bd5ab862d6c42b7db6ca54506c1b",
+      "expected": {
+        "kind": "batch",
+        "wallet": "0x3000000000000000000000000000000000000003",
+        "nonce": "7",
+        "deadline": 1800000000,
+        "calls": [
+          {
+            "summary": "contract-call",
+            "blind": "account-code"
+          }
+        ]
+      },
+      "blind": "account-code"
+    }
+  ]
+}

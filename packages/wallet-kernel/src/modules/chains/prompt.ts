@@ -15,9 +15,11 @@ import type {
   AssetAmount,
   ChainFamily,
   DisplayIntent,
+  HyperliquidAction,
   IntentSummary,
   MessageContent,
   SafeTransaction,
+  PolymarketContent,
   SeaportOrder,
   SignInParse,
   StakeAction,
@@ -55,6 +57,8 @@ export type PromptIntent = Pick<
   readonly family?: ChainFamily;
   readonly warnings?: DisplayIntent["warnings"];
   readonly staking?: DisplayIntent["staking"];
+  /** Set only by the chain.sign approve-agent binding: whether this vault holds the agent key. */
+  readonly agentHeld?: boolean;
 };
 
 /** The prompt intent of an off-chain message: it moves no value and pays no fee. */
@@ -167,6 +171,50 @@ type Catalog = {
   ) => string;
   readonly stakeAuthority: (account: string, role: string, authority: string) => string;
   readonly stakeRole: Readonly<Record<"staker" | "withdrawer", string>>;
+  readonly hlChain: Readonly<Record<"Mainnet" | "Testnet", string>>;
+  readonly hlUsdSend: (amount: string, destination: string) => string;
+  readonly hlWithdraw: (amount: string, destination: string) => string;
+  readonly hlWithdrawFee: string;
+  readonly hlSpotSend: (amount: string, token: string, destination: string) => string;
+  readonly hlTokenId: string;
+  readonly hlClassTransfer: (amount: string, toPerp: boolean) => string;
+  readonly hlDex: (dex: string) => string;
+  readonly hlSendAsset: (
+    amount: string,
+    token: string,
+    sourceDex: string,
+    destination: string,
+    destinationDex: string,
+  ) => string;
+  readonly hlSubAccount: (address: string) => string;
+  readonly hlStakeDeposit: (hype: string) => string;
+  readonly hlStakeWithdraw: (hype: string) => string;
+  readonly hlDelegate: (hype: string, validator: string) => string;
+  readonly hlUndelegate: (hype: string, validator: string) => string;
+  readonly hlApproveAgent: (agent: string, name: string | undefined) => string;
+  readonly hlAgentExpiry: (date: string) => string;
+  readonly hlAgentNoExpiry: string;
+  readonly hlAgentHeld: string;
+  readonly hlAgentNotHeld: string;
+  readonly hlAgentPowers: string;
+  readonly hlBuilderFee: (builder: string, rate: string) => string;
+  readonly pmOrderTitle: string;
+  readonly pmExchange: (name: string, address: string) => string;
+  readonly pmProxyFunds: (maker: string) => string;
+  readonly pmSafeFunds: (maker: string) => string;
+  readonly pmDepositFunds: (maker: string) => string;
+  readonly pmBuyShares: (shares: string, tokenId: string) => string;
+  readonly pmPayMax: (pusd: string, price: string) => string;
+  readonly pmSellShares: (shares: string, tokenId: string) => string;
+  readonly pmReceiveMin: (pusd: string, price: string) => string;
+  readonly pmFeeSetAtMatch: string;
+  readonly pmBuilder: (hex: string) => string;
+  readonly pmMetadata: (hex: string) => string;
+  readonly pmAuthFor: (address: string) => string;
+  readonly pmAuthTime: (date: string) => string;
+  readonly pmAuthNonce: (nonce: string) => string;
+  readonly pmAuthScope: string;
+  readonly pmBatchHeader: (wallet: string, nonce: string, deadline: string) => string;
 };
 
 const zh: Catalog = {
@@ -247,6 +295,53 @@ const zh: Catalog = {
   stakeRole: { staker: "质押", withdrawer: "提取" },
   stakeAuthority: (account, role, authority) =>
     `将质押账户 ${account} 的${role}权限交给 ${authority}`,
+  hlChain: { Mainnet: "Hyperliquid 主网", Testnet: "Hyperliquid 测试网" },
+  hlUsdSend: (amount, destination) => `在 Hyperliquid 上发送 ${amount} USDC 到 ${destination}`,
+  hlWithdraw: (amount, destination) => `经 Hyperliquid 跨链桥提现 ${amount} USDC 到 ${destination}`,
+  hlWithdrawFee: "Hyperliquid 会收取提现手续费",
+  hlSpotSend: (amount, token, destination) =>
+    `在 Hyperliquid 上发送 ${amount} 代币 ${token} 到 ${destination}`,
+  hlTokenId: "钱包无法核实代币名称，请核对其 id",
+  hlClassTransfer: (amount, toPerp) =>
+    toPerp
+      ? `将 ${amount} USDC 从 Hyperliquid 现货账户转入永续账户`
+      : `将 ${amount} USDC 从 Hyperliquid 永续账户转入现货账户`,
+  hlDex: (dex) => (dex === "" ? "永续账户" : dex === "spot" ? "现货账户" : `DEX ${dex}`),
+  hlSendAsset: (amount, token, sourceDex, destination, destinationDex) =>
+    `发送 ${amount} 代币 ${token}：从${sourceDex}到 ${destination} 的${destinationDex}`,
+  hlSubAccount: (address) => `来自子账户 ${address}`,
+  hlStakeDeposit: (hype) => `将 ${hype} HYPE 从现货账户转入质押账户`,
+  hlStakeWithdraw: (hype) =>
+    `将 ${hype} HYPE 从质押账户转回现货账户，经 Hyperliquid 的 7 天解除质押队列后到账`,
+  hlDelegate: (hype, validator) => `将 ${hype} HYPE 委托给验证者 ${validator}`,
+  hlUndelegate: (hype, validator) => `从验证者 ${validator} 取消委托 ${hype} HYPE`,
+  hlApproveAgent: (agent, name) =>
+    name === undefined ? `授权代理 ${agent}（未命名）` : `授权代理 ${agent}，名称“${name}”`,
+  hlAgentExpiry: (date) => `有效期至 ${date}（UTC）`,
+  hlAgentNoExpiry: "名称中没有有效期：适用 Hyperliquid 的默认期限",
+  hlAgentHeld: "代理密钥由本钱包持有",
+  hlAgentNotHeld: "代理密钥不在本钱包中：持有者可以替此账户交易",
+  hlAgentPowers:
+    "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。",
+  hlBuilderFee: (builder, rate) => `允许 builder ${builder} 对每笔订单收取最多 ${rate} 的费用`,
+  pmOrderTitle: "确认订单",
+  pmExchange: (name, address) => `Polymarket ${name} ${address}`,
+  pmProxyFunds: (maker) => `资金来自你的 Polymarket 代理钱包 ${maker}`,
+  pmSafeFunds: (maker) => `资金来自你的 Polymarket Safe ${maker}`,
+  pmDepositFunds: (maker) => `资金来自存款钱包 ${maker}；只有其所有者的签名才能使此订单生效`,
+  pmBuyShares: (shares, tokenId) => `买入至少 ${shares} 份结果代币 ${tokenId}`,
+  pmPayMax: (pusd, price) => `最多支付 ${pusd} pUSD（价格 ${price} pUSD/份）`,
+  pmSellShares: (shares, tokenId) => `卖出 ${shares} 份结果代币 ${tokenId}`,
+  pmReceiveMin: (pusd, price) => `扣费前至少收到 ${pusd} pUSD（价格 ${price} pUSD/份）`,
+  pmFeeSetAtMatch: "交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额",
+  pmBuilder: (hex) => `Builder 代码 ${hex}`,
+  pmMetadata: (hex) => `订单元数据 ${hex}`,
+  pmAuthFor: (address) => `为 ${address} 创建或派生 Polymarket API 凭证`,
+  pmAuthTime: (date) => `时间 ${date}（UTC）`,
+  pmAuthNonce: (nonce) => `凭证序号 ${nonce}`,
+  pmAuthScope: "凭证用于验证撤单等账户请求；每笔订单仍需你的签名",
+  pmBatchHeader: (wallet, nonce, deadline) =>
+    `Polymarket 存款钱包 ${wallet} 的第 ${nonce} 批调用，有效期至 ${deadline}（UTC）`,
   stakeLines: (a, sol) => {
     if (a.kind === "create") {
       return [`创建质押账户 ${a.account}，存入 ${sol(a.lamports)}`];
@@ -412,6 +507,62 @@ const en: Catalog = {
   stakeRole: { staker: "staker", withdrawer: "withdrawer" },
   stakeAuthority: (account, role, authority) =>
     `Give ${authority} the ${role} authority over stake account ${account}`,
+  hlChain: { Mainnet: "Hyperliquid Mainnet", Testnet: "Hyperliquid Testnet" },
+  hlUsdSend: (amount, destination) => `Send ${amount} USDC to ${destination} on Hyperliquid`,
+  hlWithdraw: (amount, destination) =>
+    `Withdraw ${amount} USDC from Hyperliquid to ${destination} through the Hyperliquid bridge`,
+  hlWithdrawFee: "Hyperliquid charges a withdrawal fee",
+  hlSpotSend: (amount, token, destination) =>
+    `Send ${amount} of token ${token} to ${destination} on Hyperliquid`,
+  hlTokenId: "The wallet cannot verify the token's name; check its id",
+  hlClassTransfer: (amount, toPerp) =>
+    toPerp
+      ? `Move ${amount} USDC from your Hyperliquid spot balance to perps`
+      : `Move ${amount} USDC from your Hyperliquid perps balance to spot`,
+  hlDex: (dex) => (dex === "" ? "perps" : dex === "spot" ? "spot" : `DEX ${dex}`),
+  hlSendAsset: (amount, token, sourceDex, destination, destinationDex) =>
+    `Send ${amount} of token ${token} from ${sourceDex} to ${destinationDex} of ${destination}`,
+  hlSubAccount: (address) => `From sub-account ${address}`,
+  hlStakeDeposit: (hype) => `Move ${hype} HYPE from your spot balance into staking`,
+  hlStakeWithdraw: (hype) =>
+    `Move ${hype} HYPE from staking to your spot balance; it arrives after Hyperliquid's 7-day unstaking queue`,
+  hlDelegate: (hype, validator) => `Delegate ${hype} HYPE to validator ${validator}`,
+  hlUndelegate: (hype, validator) => `Undelegate ${hype} HYPE from validator ${validator}`,
+  hlApproveAgent: (agent, name) =>
+    name === undefined
+      ? `Approve agent ${agent} (unnamed)`
+      : `Approve agent ${agent} named "${name}"`,
+  hlAgentExpiry: (date) => `Valid until ${date} (UTC)`,
+  hlAgentNoExpiry: "No expiry in the name: Hyperliquid's default applies",
+  hlAgentHeld: "The agent key is held by this wallet",
+  hlAgentNotHeld:
+    "The agent key is not held by this wallet: whoever holds it can trade this account",
+  hlAgentPowers:
+    "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.",
+  hlBuilderFee: (builder, rate) =>
+    `Allow builder ${builder} to charge up to ${rate} of each order's value`,
+  pmOrderTitle: "Confirm order",
+  pmExchange: (name, address) => `Polymarket ${name} ${address}`,
+  pmProxyFunds: (maker) => `Funds from your Polymarket proxy wallet ${maker}`,
+  pmSafeFunds: (maker) => `Funds from your Polymarket Safe ${maker}`,
+  pmDepositFunds: (maker) =>
+    `Funds from deposit wallet ${maker}; only its owner's signature makes this order valid`,
+  pmBuyShares: (shares, tokenId) => `Buy at least ${shares} shares of outcome token ${tokenId}`,
+  pmPayMax: (pusd, price) => `Pay at most ${pusd} pUSD (price ${price} pUSD per share)`,
+  pmSellShares: (shares, tokenId) => `Sell ${shares} shares of outcome token ${tokenId}`,
+  pmReceiveMin: (pusd, price) =>
+    `Receive at least ${pusd} pUSD before fees (price ${price} pUSD per share)`,
+  pmFeeSetAtMatch:
+    "Polymarket sets the trading fee when the order is matched; this signature does not cap it",
+  pmBuilder: (hex) => `Builder code ${hex}`,
+  pmMetadata: (hex) => `Order metadata ${hex}`,
+  pmAuthFor: (address) => `Create or derive Polymarket API credentials for ${address}`,
+  pmAuthTime: (date) => `Time ${date} (UTC)`,
+  pmAuthNonce: (nonce) => `Credential nonce ${nonce}`,
+  pmAuthScope:
+    "The credentials authenticate account requests such as cancelling orders; every order still needs your signature",
+  pmBatchHeader: (wallet, nonce, deadline) =>
+    `Polymarket deposit wallet ${wallet}, batch ${nonce}, valid until ${deadline} (UTC)`,
   stakeLines: (a, sol) => {
     if (a.kind === "create") {
       return [`Create stake account ${a.account} with ${sol(a.lamports)}`];
@@ -899,12 +1050,182 @@ function typedContentLines(
   );
 }
 
+/** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
+const hype = (wei: string): string => formatUnits(wei, 8);
+
+/**
+ * The lines of a recognized Hyperliquid user-signed action; requester text is sanitised. The switch
+ * is exhaustive over the action union; a trailing return is unreachable code (TS7027).
+ */
+// oxlint-disable-next-line typescript/consistent-return
+function hyperliquidLines(
+  catalog: Catalog,
+  action: HyperliquidAction,
+  agentHeld?: boolean,
+): ReadonlyArray<string> {
+  switch (action.kind) {
+    case "usd-send":
+      return [catalog.hlUsdSend(action.amount, action.destination)];
+    case "withdraw":
+      return [catalog.hlWithdraw(action.amount, action.destination), catalog.hlWithdrawFee];
+    case "spot-send":
+      return [
+        catalog.hlSpotSend(action.amount, field(action.token), action.destination),
+        catalog.hlTokenId,
+      ];
+    case "usd-class-transfer":
+      return [catalog.hlClassTransfer(action.amount, action.toPerp)];
+    case "send-asset":
+      return [
+        catalog.hlSendAsset(
+          action.amount,
+          field(action.token),
+          catalog.hlDex(field(action.sourceDex)),
+          action.destination,
+          catalog.hlDex(field(action.destinationDex)),
+        ),
+        ...(action.fromSubAccount === undefined
+          ? []
+          : [catalog.hlSubAccount(action.fromSubAccount)]),
+        catalog.hlTokenId,
+      ];
+    case "staking-deposit":
+      return [catalog.hlStakeDeposit(hype(action.wei))];
+    case "staking-withdraw":
+      return [catalog.hlStakeWithdraw(hype(action.wei))];
+    case "token-delegate":
+      return [
+        action.undelegate
+          ? catalog.hlUndelegate(hype(action.wei), action.validator)
+          : catalog.hlDelegate(hype(action.wei), action.validator),
+      ];
+    case "approve-agent":
+      return [
+        catalog.hlApproveAgent(action.agent, action.name === "" ? undefined : field(action.name)),
+        ...(agentHeld === undefined
+          ? []
+          : [agentHeld ? catalog.hlAgentHeld : catalog.hlAgentNotHeld]),
+        action.validUntil === undefined
+          ? catalog.hlAgentNoExpiry
+          : catalog.hlAgentExpiry(utcDateTime(Math.floor(action.validUntil / 1000))),
+        catalog.hlAgentPowers,
+      ];
+    case "approve-builder-fee":
+      return [catalog.hlBuilderFee(action.builder, action.maxFeeRate)];
+  }
+}
+
+/** Shares and pUSD are both 6-decimal (clob-client-v2 config.ts). */
+const pmUnits = (amount: string): string => formatUnits(amount, 6);
+
+/** PUSD per share; `≈ ` marks a price that does not divide exactly. */
+const pmPrice = (price: { amount: string; exact: boolean }): string =>
+  `${price.exact ? "" : "≈ "}${formatUnits(price.amount, 6)}`;
+
+function polymarketOrderLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  order: Extract<PolymarketContent, { kind: "order" }>,
+): ReadonlyArray<string> {
+  const buy = order.side === "buy";
+  const shares = pmUnits(buy ? order.receive.amount : order.give.amount);
+  const pusd = pmUnits(buy ? order.give.amount : order.receive.amount);
+  const price = pmPrice(order.price);
+  return [
+    catalog.pmExchange(order.exchange.name, order.exchange.address),
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    ...(order.wallet === "proxy"
+      ? [catalog.pmProxyFunds(order.maker)]
+      : order.wallet === "safe"
+        ? [catalog.pmSafeFunds(order.maker)]
+        : order.wallet === "deposit-wallet"
+          ? [catalog.pmDepositFunds(order.maker)]
+          : []),
+    buy ? catalog.pmBuyShares(shares, order.tokenId) : catalog.pmSellShares(shares, order.tokenId),
+    buy ? catalog.pmPayMax(pusd, price) : catalog.pmReceiveMin(pusd, price),
+    catalog.pmFeeSetAtMatch,
+    ...(order.builder === undefined ? [] : [catalog.pmBuilder(order.builder)]),
+    ...(order.metadata === undefined ? [] : [catalog.pmMetadata(order.metadata)]),
+  ];
+}
+
+function polymarketAuthLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  auth: Extract<PolymarketContent, { kind: "auth" }>,
+): ReadonlyArray<string> {
+  return [
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    catalog.pmAuthFor(auth.address),
+    catalog.pmAuthTime(utcDateTime(auth.timestamp)),
+    catalog.pmAuthNonce(auth.nonce),
+    catalog.pmAuthScope,
+  ];
+}
+
+/** A deposit-wallet batch shows every decoded call, like a Safe's — never truncated. */
+function polymarketBatchLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  batch: Extract<PolymarketContent, { kind: "batch" }>,
+): ReadonlyArray<string> {
+  return [
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    catalog.pmBatchHeader(batch.wallet, batch.nonce, utcDateTime(batch.deadline)),
+    ...(batch.calls.length === 0
+      ? [catalog.typedOversize]
+      : batch.calls.flatMap((call) => [
+          ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
+          ...effectLines(catalog, call),
+        ])),
+  ];
+}
+
+/**
+ * The lines of a recognized Polymarket document; replaces the App/Network/Contract/Type lines. The
+ * switch is exhaustive over the content union; a trailing return is unreachable (TS7027).
+ */
+// oxlint-disable-next-line typescript/consistent-return
+function polymarketLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  content: PolymarketContent,
+): ReadonlyArray<string> {
+  switch (content.kind) {
+    case "order":
+      return polymarketOrderLines(catalog, intent, content);
+    case "auth":
+      return polymarketAuthLines(catalog, intent, content);
+    case "batch":
+      return polymarketBatchLines(catalog, intent, content);
+  }
+}
+
 function typedDataLines(
   catalog: Catalog,
   intent: PromptIntent,
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
   const { name, chainId, verifyingContract } = message.domain;
+  if (message.hyperliquid !== undefined) {
+    /* The domain's chain id is only the wallet's signing chain; the environment the action
+       targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
+    return [
+      catalog.hlChain[message.hyperliquid.chain],
+      ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
+    ];
+  }
+  /* A Polymarket document is its own description — before the generic branches, because a
+     deposit-wallet batch also carries approvals and outflows. */
+  if (message.polymarket !== undefined) {
+    return polymarketLines(catalog, intent, message.polymarket);
+  }
   const network = chainId === undefined ? intent.network : `eip155:${chainId}`;
   return [
     ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
@@ -931,8 +1252,16 @@ function messagePrompt(
     };
   }
   if (message.kind === "typed-data") {
+    const title =
+      intent.blind === undefined
+        ? message.polymarket?.kind === "order"
+          ? catalog.pmOrderTitle
+          : message.polymarket?.kind === "auth"
+            ? catalog.signInTitle
+            : catalog.titles[intent.summary]
+        : catalog.blindTitle;
     return {
-      title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
+      title,
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }

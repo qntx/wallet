@@ -8,7 +8,10 @@ import type { ChainSignResult, ParamsOf } from "@qntx/wallet/protocol";
 import { KernelError } from "../../errors.ts";
 import type { PromptIntent } from "./prompt.ts";
 
-export type ExecuteResult = ChainSignResult | { readonly prompt: PromptIntent };
+/** The prepare pass also exposes the signing address — the approve-agent binding checks it. */
+export type ExecuteResult =
+  | ChainSignResult
+  | { readonly prompt: PromptIntent; readonly signer?: string };
 export type SignRequest = ParamsOf<"chain.sign">["request"];
 export type EvmKeySource =
   | { readonly kind: "hd"; readonly account: HdAccount; readonly seed: Uint8Array }

@@ -1255,6 +1255,1495 @@
       }
     },
     {
+      "name": "Hyperliquid usdSend (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "2.5",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Hyperliquid Mainnet\nSend 2.5 USDC to 0x5E9EE1089755C3435139848e47e6635505D5a13A on Hyperliquid"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "Hyperliquid 主网\n在 Hyperliquid 上发送 2.5 USDC 到 0x5E9EE1089755C3435139848e47e6635505D5a13A"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid approveAgent with valid_until (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:421614",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:ApproveAgent": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "agentAddress",
+                "type": "address"
+              },
+              {
+                "name": "agentName",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:ApproveAgent",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 421614,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "approveAgent",
+            "signatureChainId": "0x66eee",
+            "hyperliquidChain": "Testnet",
+            "agentAddress": "0x1234567890abcdef1234567890abcdef12345678",
+            "agentName": "bot-2 valid_until 1798765432000",
+            "nonce": 1700000001400
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Hyperliquid Testnet\nApprove agent 0x1234567890AbcdEF1234567890aBcdef12345678 named \"bot-2\"\nValid until 2027-01-01 01:03 (UTC)\nThe agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts."
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "Hyperliquid 测试网\n授权代理 0x1234567890AbcdEF1234567890aBcdef12345678，名称“bot-2”\n有效期至 2027-01-01 01:03（UTC）\n该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid cDeposit (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:CDeposit": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "wei",
+                "type": "uint64"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:CDeposit",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "cDeposit",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "wei": 150000000,
+            "nonce": 1700000001000
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm staking",
+          "description": "Hyperliquid Mainnet\nMove 1.5 HYPE from your spot balance into staking"
+        },
+        "zh-Hans": {
+          "title": "确认质押",
+          "description": "Hyperliquid 主网\n将 1.5 HYPE 从现货账户转入质押账户"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid convertToMultiSigUser (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:421614",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:ConvertToMultiSigUser": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "signers",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:ConvertToMultiSigUser",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 421614,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "convertToMultiSigUser",
+            "signatureChainId": "0x66eee",
+            "hyperliquidChain": "Testnet",
+            "signers": "[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]",
+            "nonce": 1700000001600
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Testnet\nsigners: [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce: 1700000001600"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Testnet\nsigners：[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce：1700000001600"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid usdSend with an extra type (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ],
+            "Extra": [
+              {
+                "name": "a",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "2.5",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid usdSend with exponent amount (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "1e3",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid L1 phantom agent (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1337",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Agent": [
+              {
+                "name": "source",
+                "type": "string"
+              },
+              {
+                "name": "connectionId",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Agent",
+          "domain": {
+            "name": "Exchange",
+            "version": "1",
+            "chainId": 1337,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "source": "a",
+            "connectionId": "0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-commitment",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+        }
+      }
+    },
+    {
+      "name": "Polymarket CTF Exchange buy (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "signer",
+                "type": "address"
+              },
+              {
+                "name": "tokenId",
+                "type": "uint256"
+              },
+              {
+                "name": "makerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "side",
+                "type": "uint8"
+              },
+              {
+                "name": "signatureType",
+                "type": "uint8"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "name": "metadata",
+                "type": "bytes32"
+              },
+              {
+                "name": "builder",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Polymarket CTF Exchange",
+            "version": "2",
+            "chainId": 137,
+            "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+          },
+          "message": {
+            "salt": "746666666340",
+            "maker": "0x2222222222222222222222222222222222222222",
+            "signer": "0x2222222222222222222222222222222222222222",
+            "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+            "makerAmount": "50000000",
+            "takerAmount": "100000000",
+            "timestamp": "1777777777000",
+            "side": 0,
+            "signatureType": 0,
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm order",
+          "description": "Polymarket CTF Exchange 0xE111180000d2663C0091e4f400237545B87B996B\nNetwork: Polygon\nBuy at least 100 shares of outcome token 21742633143463906290569050155826241533067272736897614950488156847949938836455\nPay at most 50 pUSD (price 0.5 pUSD per share)\nPolymarket sets the trading fee when the order is matched; this signature does not cap it"
+        },
+        "zh-Hans": {
+          "title": "确认订单",
+          "description": "Polymarket CTF Exchange 0xE111180000d2663C0091e4f400237545B87B996B\n网络：Polygon\n买入至少 100 份结果代币 21742633143463906290569050155826241533067272736897614950488156847949938836455\n最多支付 50 pUSD（价格 0.5 pUSD/份）\n交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额"
+        }
+      }
+    },
+    {
+      "name": "Polymarket deposit-wallet order (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TypedDataSign": [
+              {
+                "name": "contents",
+                "type": "Order"
+              },
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              },
+              {
+                "name": "salt",
+                "type": "bytes32"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "signer",
+                "type": "address"
+              },
+              {
+                "name": "tokenId",
+                "type": "uint256"
+              },
+              {
+                "name": "makerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "side",
+                "type": "uint8"
+              },
+              {
+                "name": "signatureType",
+                "type": "uint8"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "name": "metadata",
+                "type": "bytes32"
+              },
+              {
+                "name": "builder",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "TypedDataSign",
+          "domain": {
+            "name": "Polymarket CTF Exchange",
+            "version": "2",
+            "chainId": 137,
+            "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+          },
+          "message": {
+            "contents": {
+              "salt": "871111316530",
+              "maker": "0x3000000000000000000000000000000000000003",
+              "signer": "0x3000000000000000000000000000000000000003",
+              "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+              "makerAmount": "25000000",
+              "takerAmount": "50000000",
+              "timestamp": "1777778197000",
+              "side": 0,
+              "signatureType": 3,
+              "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "name": "DepositWallet",
+            "version": "1",
+            "chainId": 137,
+            "verifyingContract": "0x3000000000000000000000000000000000000003",
+            "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm order",
+          "description": "Polymarket CTF Exchange 0xE111180000d2663C0091e4f400237545B87B996B\nNetwork: Polygon\nFunds from deposit wallet 0x3000000000000000000000000000000000000003; only its owner's signature makes this order valid\nBuy at least 50 shares of outcome token 6048711698446802097821302547443908381638681757684206197981905346932645477957\nPay at most 25 pUSD (price 0.5 pUSD per share)\nPolymarket sets the trading fee when the order is matched; this signature does not cap it"
+        },
+        "zh-Hans": {
+          "title": "确认订单",
+          "description": "Polymarket CTF Exchange 0xE111180000d2663C0091e4f400237545B87B996B\n网络：Polygon\n资金来自存款钱包 0x3000000000000000000000000000000000000003；只有其所有者的签名才能使此订单生效\n买入至少 50 份结果代币 6048711698446802097821302547443908381638681757684206197981905346932645477957\n最多支付 25 pUSD（价格 0.5 pUSD/份）\n交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额"
+        }
+      }
+    },
+    {
+      "name": "Polymarket CLOB auth (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:80002",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              }
+            ],
+            "ClobAuth": [
+              {
+                "name": "address",
+                "type": "address"
+              },
+              {
+                "name": "timestamp",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "message",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "ClobAuth",
+          "domain": {
+            "name": "ClobAuthDomain",
+            "version": "1",
+            "chainId": 80002
+          },
+          "message": {
+            "address": "0x2222222222222222222222222222222222222222",
+            "timestamp": "10000000",
+            "nonce": 23,
+            "message": "This message attests that I control the given wallet"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm sign-in",
+          "description": "Network: Polygon Amoy\nCreate or derive Polymarket API credentials for 0x2222222222222222222222222222222222222222\nTime 1970-04-26 17:46 (UTC)\nCredential nonce 23\nThe credentials authenticate account requests such as cancelling orders; every order still needs your signature"
+        },
+        "zh-Hans": {
+          "title": "确认登录",
+          "description": "网络：Polygon Amoy\n为 0x2222222222222222222222222222222222222222 创建或派生 Polymarket API 凭证\n时间 1970-04-26 17:46（UTC）\n凭证序号 23\n凭证用于验证撤单等账户请求；每笔订单仍需你的签名"
+        }
+      }
+    },
+    {
+      "name": "Polymarket deposit-wallet batch approvals (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Batch": [
+              {
+                "name": "wallet",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "calls",
+                "type": "Call[]"
+              }
+            ],
+            "Call": [
+              {
+                "name": "target",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "data",
+                "type": "bytes"
+              }
+            ]
+          },
+          "primaryType": "Batch",
+          "domain": {
+            "name": "DepositWallet",
+            "version": "1",
+            "chainId": 137,
+            "verifyingContract": "0x3000000000000000000000000000000000000003"
+          },
+          "message": {
+            "wallet": "0x3000000000000000000000000000000000000003",
+            "nonce": 7,
+            "deadline": 1800000000,
+            "calls": [
+              {
+                "target": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+                "value": 0,
+                "data": "0x095ea7b3000000000000000000000000E111180000d2663C0091e4f400237545B87B996B00000000000000000000000000000000000000000000000000000000017d7840"
+              },
+              {
+                "target": "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
+                "value": 0,
+                "data": "0xa22cb465000000000000000000000000E111180000d2663C0091e4f400237545B87B996B0000000000000000000000000000000000000000000000000000000000000001"
+              }
+            ]
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm batch",
+          "description": "Network: Polygon\nPolymarket deposit wallet 0x3000000000000000000000000000000000000003, batch 7, valid until 2027-01-15 08:00 (UTC)\nAllow 0xE111180000d2663C0091e4f400237545B87B996B to spend 25000000 base units of unverified token 0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB\nAllow 0xE111180000d2663C0091e4f400237545B87B996B to transfer all tokens of 0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+        },
+        "zh-Hans": {
+          "title": "确认批量交易",
+          "description": "网络：Polygon\nPolymarket 存款钱包 0x3000000000000000000000000000000000000003 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n授权 0xE111180000d2663C0091e4f400237545B87B996B 使用 25000000 个最小单位（未验证代币 0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB）\n授权 0xE111180000d2663C0091e4f400237545B87B996B 转走 0x4D97DCd97eC945f40cF65F87097ACe5EA0476045 的全部代币"
+        }
+      }
+    },
+    {
+      "name": "Polymarket order signed for another account (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "signer",
+                "type": "address"
+              },
+              {
+                "name": "tokenId",
+                "type": "uint256"
+              },
+              {
+                "name": "makerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "side",
+                "type": "uint8"
+              },
+              {
+                "name": "signatureType",
+                "type": "uint8"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "name": "metadata",
+                "type": "bytes32"
+              },
+              {
+                "name": "builder",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Polymarket CTF Exchange",
+            "version": "2",
+            "chainId": 137,
+            "verifyingContract": "0xE111180000d2663C0091e4f400237545B87B996B"
+          },
+          "message": {
+            "salt": "746666666340",
+            "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+            "makerAmount": "50000000",
+            "takerAmount": "100000000",
+            "timestamp": "1777777777000",
+            "side": 0,
+            "signatureType": 0,
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xE111180000d2663C0091e4f400237545B87B996B\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xE111180000d2663C0091e4f400237545B87B996B\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "name": "Polymarket order on an unknown exchange (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "signer",
+                "type": "address"
+              },
+              {
+                "name": "tokenId",
+                "type": "uint256"
+              },
+              {
+                "name": "makerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "side",
+                "type": "uint8"
+              },
+              {
+                "name": "signatureType",
+                "type": "uint8"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "name": "metadata",
+                "type": "bytes32"
+              },
+              {
+                "name": "builder",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Polymarket CTF Exchange",
+            "version": "2",
+            "chainId": 137,
+            "verifyingContract": "0x00000000000000000000000000000000c0ffee00"
+          },
+          "message": {
+            "salt": "746666666340",
+            "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "tokenId": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+            "makerAmount": "50000000",
+            "takerAmount": "100000000",
+            "timestamp": "1777777777000",
+            "side": 0,
+            "signatureType": 0,
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0x00000000000000000000000000000000C0FfeE00\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0x00000000000000000000000000000000C0FfeE00\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "name": "Polymarket Exchange V3 address at version 2 (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "signer",
+                "type": "address"
+              },
+              {
+                "name": "tokenId",
+                "type": "uint256"
+              },
+              {
+                "name": "makerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takerAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "side",
+                "type": "uint8"
+              },
+              {
+                "name": "signatureType",
+                "type": "uint8"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "name": "metadata",
+                "type": "bytes32"
+              },
+              {
+                "name": "builder",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Polymarket CTF Exchange",
+            "version": "2",
+            "chainId": 137,
+            "verifyingContract": "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"
+          },
+          "message": {
+            "salt": "800000080650",
+            "maker": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "tokenId": "6048711698446802097821302547443908381638681757684206197981905346932645477957",
+            "makerAmount": "40000000",
+            "takerAmount": "80000000",
+            "timestamp": "1777777957000",
+            "side": 0,
+            "signatureType": 0,
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 800000080650\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount: 40000000\ntakerAmount: 80000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777957000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：800000080650\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount：40000000\ntakerAmount：80000000\nside：0\nsignatureType：0\ntimestamp：1777777957000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "name": "Polymarket CLOB auth with a different message (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:80002",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              }
+            ],
+            "ClobAuth": [
+              {
+                "name": "address",
+                "type": "address"
+              },
+              {
+                "name": "timestamp",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "message",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "ClobAuth",
+          "domain": {
+            "name": "ClobAuthDomain",
+            "version": "1",
+            "chainId": 80002
+          },
+          "message": {
+            "address": "0x2222222222222222222222222222222222222222",
+            "timestamp": "10000000",
+            "nonce": 23,
+            "message": "Sign in to Polymarket"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\naddress: 0x2222222222222222222222222222222222222222\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\naddress：0x2222222222222222222222222222222222222222\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket"
+        }
+      }
+    },
+    {
+      "name": "Polymarket batch calling the wallet itself (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:137",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Batch": [
+              {
+                "name": "wallet",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "calls",
+                "type": "Call[]"
+              }
+            ],
+            "Call": [
+              {
+                "name": "target",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "data",
+                "type": "bytes"
+              }
+            ]
+          },
+          "primaryType": "Batch",
+          "domain": {
+            "name": "DepositWallet",
+            "version": "1",
+            "chainId": 137,
+            "verifyingContract": "0x3000000000000000000000000000000000000003"
+          },
+          "message": {
+            "wallet": "0x3000000000000000000000000000000000000003",
+            "nonce": 7,
+            "deadline": 1800000000,
+            "calls": [
+              {
+                "target": "0x3000000000000000000000000000000000000003",
+                "value": 0,
+                "data": "0x095ea7b3000000000000000000000000E111180000d2663C0091e4f400237545B87B996B00000000000000000000000000000000000000000000000000000000017d7840"
+              }
+            ]
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "account-code",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Polygon\nPolymarket deposit wallet 0x3000000000000000000000000000000000000003, batch 7, valid until 2027-01-15 08:00 (UTC)\nThe wallet cannot verify what this call does\nRuns this account's own code with full authority\nCall contract 0x3000000000000000000000000000000000000003, function 0x095ea7b3"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Polygon\nPolymarket 存款钱包 0x3000000000000000000000000000000000000003 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n钱包无法核实此调用会做什么\n以本账户的全部权限执行其自身代码\n调用合约 0x3000000000000000000000000000000000000003，函数 0x095ea7b3"
+        }
+      }
+    },
+    {
       "name": "tron trx-transfer",
       "request": {
         "kind": "tron.transaction",

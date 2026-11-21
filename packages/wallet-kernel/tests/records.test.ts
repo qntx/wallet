@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { nobleBackend } from "@qntx/nostr";
 
+import { encodeAgentHeader, parseAgentHeader } from "../src/modules/apps/record.ts";
 import {
   encodeNostrKeyHeader,
   encodeSyncKeyHeader,
@@ -51,6 +52,12 @@ describe("record and factor header vectors", () => {
     const parsed = parseKeyHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
+  });
+
+  it.each(byKind("hl-agent"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseAgentHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeAgentHeader(parsed)).toBe(vector.text);
   });
 
   it.each(byKind("nostr-derived"))("$name encodes and parses byte-for-byte", (vector) => {

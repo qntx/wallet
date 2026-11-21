@@ -42,6 +42,12 @@ export const typedDataNearMiss = (
     if (claim.surface !== "evm.typed-data") {
       return false;
     }
+    if ("domainName" in claim) {
+      return (
+        json.domain["name"] === claim.domainName &&
+        (claim.primaryType === undefined || claim.primaryType.test(json.primaryType))
+      );
+    }
     if ("primaryType" in claim) {
       return claim.primaryType.test(json.primaryType);
     }
