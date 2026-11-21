@@ -103,6 +103,7 @@ const cases = [
   },
   native(130, "Unichain", "ETH"),
   native(324, "ZKsync Era", "ETH"),
+  native(2020, "Ronin", "RON"),
   native(534352, "Scroll", "ETH"),
   native(167000, "Taiko", "ETH"),
   native(46630, "Robinhood Chain Testnet", "ETH"),

@@ -150,6 +150,43 @@
       }
     },
     {
+      "name": "Ronin native RON transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:2020",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 2020,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Ronin\nSend 1 RON to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 RON"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Ronin\n发送 1 RON 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 RON"
+        }
+      }
+    },
+    {
       "name": "Scroll native ETH transfer",
       "request": {
         "kind": "evm.transaction",

@@ -571,6 +571,14 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   {
+    // Ronin — chain id 2020
+    id: "eip155:2020",
+    providers: [
+      { id: "alchemy", url: "https://ronin-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/ronin", auth: "drpc" },
+    ],
+  },
+  {
     // Scroll — chain id 534352
     id: "eip155:534352",
     providers: [

@@ -89,6 +89,7 @@ export const TOKEN_PLATFORMS: Readonly<
   "eip155:33139": { coingecko: "apechain", defillama: "apechain" },
   "eip155:57073": { coingecko: "ink", defillama: "ink" },
   "eip155:252": { coingecko: "fraxtal", defillama: "fraxtal" },
+  "eip155:2020": { coingecko: "ronin", defillama: "ronin" },
   "eip155:534352": { coingecko: "scroll", defillama: "scroll" },
   "eip155:204": { coingecko: "opbnb", defillama: "op_bnb" },
   "eip155:42170": { coingecko: "arbitrum-nova", defillama: "arbitrum_nova" },

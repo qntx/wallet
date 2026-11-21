@@ -73,6 +73,7 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(33139, "ApeChain", "APE", false), // https://docs.apechain.com/metamask
   evm(57073, "Ink", "ETH", false), // https://docs.inkonchain.com/general/network-information
   evm(252, "Fraxtal", "FRAX", false), // https://docs.frax.com/fraxtal/network/network-information
+  evm(2020, "Ronin", "RON", false), // https://docs.roninchain.com/developers/network
   evm(534352, "Scroll", "ETH", false), // https://docs.scroll.io/en/developers/
   evm(60808, "BOB", "ETH", false), // https://github.com/ethereum-optimism/superchain-registry/blob/main/chainList.json
   evm(204, "opBNB", "BNB", false), // https://docs.bnbchain.org/bnb-opbnb/get-started/network-info/

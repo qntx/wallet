@@ -23,6 +23,7 @@ const HYPE = "eip155:999";
 const ARC = "eip155:5042";
 const SONIC = "eip155:146";
 const INK = "eip155:57073";
+const RONIN = "eip155:2020";
 const SEPOLIA = "eip155:11155111";
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
@@ -33,6 +34,7 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
   { id: ARC, providers: [{ id: "alchemy", url: "https://arc.alchemy.test/v2" }] },
   { id: SONIC, providers: [{ id: "alchemy", url: "https://sonic.alchemy.test/v2" }] },
   { id: INK, providers: [{ id: "alchemy", url: "https://ink.alchemy.test/v2" }] },
+  { id: RONIN, providers: [{ id: "alchemy", url: "https://ronin.alchemy.test/v2" }] },
   { id: SEPOLIA, providers: [{ id: "other", url: "https://other.test" }] },
   { id: SOLANA, providers: [{ id: "alchemy", url: "https://sol.alchemy.test" }] },
 ];
@@ -44,6 +46,7 @@ const UPSTREAM: Readonly<Record<string, string>> = {
   [ARC]: "https://arc.alchemy.test",
   [SONIC]: "https://sonic.alchemy.test",
   [INK]: "https://ink.alchemy.test",
+  [RONIN]: "https://ronin.alchemy.test",
 };
 
 type Fixture = { readonly response: unknown };
@@ -347,6 +350,18 @@ describe("history page", () => {
       networks: NETWORKS,
     });
     const res = await app.request(...request(INK, { address: OWNER }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-gateway-providers")).toBe("alchemy-transfers");
+    expect(up.seen.length).toBeGreaterThan(0);
+  });
+
+  it("serves Ronin transfers through its alchemy provider", async () => {
+    const up = upstream({});
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[RONIN]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(RONIN, { address: OWNER }));
     expect(res.status).toBe(200);
     expect(res.headers.get("x-gateway-providers")).toBe("alchemy-transfers");
     expect(up.seen.length).toBeGreaterThan(0);
