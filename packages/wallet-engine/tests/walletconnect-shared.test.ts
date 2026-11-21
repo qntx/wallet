@@ -581,6 +581,16 @@ describe("the request pipeline over a WalletConnect origin", () => {
     await expect(requests.prepare(wcSend(peer()))).rejects.toThrow(PHISHING_BLOCKED_MESSAGE);
   });
 
+  it("a peer that lands on the phishing list between prepare and approve fails the approve", async () => {
+    let status: PhishingStatus = "clear";
+    const { requests } = await pipeline(() => status);
+    const request = await requests.prepare(wcSend(peer()));
+    status = "blocked";
+    await expect(requests.approve(request.id, "send", approval(request, VERIFY))).rejects.toThrow(
+      PHISHING_BLOCKED_MESSAGE,
+    );
+  });
+
   it.each<[string, WalletConnectVerify, ReadonlyArray<{ code: string; level: string }>]>([
     [
       "INVALID validation",

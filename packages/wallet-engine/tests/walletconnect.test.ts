@@ -660,6 +660,35 @@ describe("walletconnect proposals", () => {
     },
   );
 
+  it("refuses a grant that omits a required network", { timeout: 120_000 }, async () => {
+    walletConnectRelay.reset();
+    const r = await rig();
+    const client = await dapp();
+    // Required namespaces only reach the wire via a raw propose — connect() folds them into
+    // optionalNamespaces — so this proposal is published by hand like the refusal cases above.
+    await proposed(r, client);
+    const [real] = Object.values(r.kit.getPendingSessionProposals());
+    if (real === undefined) {
+      throw new Error("no real proposal");
+    }
+    const { pairingTopic, proposer } = real;
+    const rawId = 9_100_000;
+    await sendRawProposal(
+      client,
+      pairingTopic,
+      rawId,
+      proposer,
+      { eip155: eip155Namespace([EVM1]) },
+      { eip155: eip155Namespace([SEPOLIA]) },
+    );
+    await until(() => r.wc.getState().proposals[rawId] !== undefined);
+    await expect(r.wc.approve(rawId, { networks: [SEPOLIA] })).rejects.toMatchObject({
+      code: "invalid-grant",
+    });
+    expect(Object.keys(r.kit.getActiveSessions())).toHaveLength(0);
+    await r.wc.dispose();
+  });
+
   it(
     "holds a proposal that arrives while locked and judges it after unlock",
     { timeout: 120_000 },
@@ -986,6 +1015,62 @@ describe("walletconnect session expiry, restart and deletion", () => {
   );
 
   it(
+    "answers 4100 for an expired request without ever dispatching it",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client);
+      const from = getAddress(accountOf(session, EVM1));
+      const message = `0x${Buffer.from("expired valid", "utf8").toString("hex")}`;
+      // Same trick as the bogus-params case above, but this request would succeed if it were
+      // dispatched — the expiry guard alone must keep it out of the pipeline.
+      const expiryTimestamp = Math.floor(Date.now() / 1000) + 360;
+      r.setNow((expiryTimestamp + 60) * 1000);
+      const id = 424_243;
+      await sendRaw(
+        client,
+        live.topic,
+        id,
+        "personal_sign",
+        [message, from],
+        EVM1,
+        expiryTimestamp,
+      );
+      const response = await responseFor(client, live.topic, id);
+      expect(response.error).toMatchObject({ code: 4100 });
+      expect(awaiting(r)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "answers 4100 for a request on a wire session the engine no longer knows",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client);
+      const from = getAddress(accountOf(session, EVM1));
+      const message = `0x${Buffer.from("orphan", "utf8").toString("hex")}`;
+      // Hold the relay-side session alive while the controller session is revoked — a host that
+      // rolled its engine store back would look exactly like this.
+      const realDisconnect = r.kit.disconnectSession.bind(r.kit);
+      r.kit.disconnectSession = async () => new Promise<never>(() => undefined);
+      await r.engine.connections.revoke(walletConnectKey(live.topic));
+      expect(sessionOf(r, live.topic)).toBeUndefined();
+      const id = 424_244;
+      await sendRaw(client, live.topic, id, "personal_sign", [message, from], EVM1);
+      const response = await responseFor(client, live.topic, id);
+      expect(response.error).toMatchObject({ code: 4100 });
+      r.kit.disconnectSession = realDisconnect;
+      await r.wc.dispose();
+    },
+  );
+
+  it(
     "ends an in-flight request on session_request_expire and never answers it",
     { timeout: 120_000 },
     async () => {
@@ -1096,6 +1181,79 @@ describe("walletconnect session expiry, restart and deletion", () => {
       expect(r.core.pairing.getPairings().every((pairing) => !pairing.active)).toBe(true);
       // No repoint ever advertised another wallet's account for this session.
       expect(events.some((e) => e.name === "accountsChanged")).toBe(false);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "does not disconnect a wire session whose settle is still in flight",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const first = await established(r, client);
+      const { proposal, approval } = await proposed(r, client);
+      // Hold the settle between wire approval and persistence: the session exists on the relay
+      // but has no controller record yet.
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+      const realApprove = r.kit.approveSession.bind(r.kit);
+      r.kit.approveSession = async (params: Parameters<typeof r.kit.approveSession>[0]) => {
+        const session = await realApprove(params);
+        await gate;
+        return session;
+      };
+      const approving = r.wc.approve(proposal.id, { networks: [...proposal.networks] });
+      await until(() => Object.keys(r.kit.getActiveSessions()).length === 2);
+      const newTopic = Object.keys(r.kit.getActiveSessions()).find(
+        (topic) => topic !== first.live.topic,
+      );
+      if (newTopic === undefined) {
+        throw new Error("the in-flight session never reached the relay");
+      }
+      // A reconcile triggered while the settle is held must leave the in-flight session alone
+      // rather than treat it as a wire orphan — session_expire schedules one directly.
+      r.kit.engine.signClient.events.emit("session_expire", { topic: "f".repeat(64) });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      release();
+      await approving;
+      const live = await approval();
+      expect(live.topic).toBe(newTopic);
+      expect(Object.keys(r.kit.getActiveSessions())).toContain(newTopic);
+      expect(sessionOf(r, newTopic)).toBeDefined();
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "does not retry disconnecting a deleted wallet's session that stayed on the wire",
+    { timeout: 150_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { live } = await established(r, client);
+      // The delete-time disconnect fails once; any later attempt would succeed.
+      let failed = false;
+      const realDisconnect = r.kit.disconnectSession.bind(r.kit);
+      r.kit.disconnectSession = async (params: Parameters<typeof r.kit.disconnectSession>[0]) => {
+        if (!failed) {
+          failed = true;
+          return Promise.reject(new Error("relay down"));
+        }
+        return realDisconnect(params);
+      };
+      await r.wallet.wallets.delete(r.walletId, PW);
+      await until(() => sessionOf(r, live.topic) === undefined);
+      expect(Object.keys(r.kit.getActiveSessions())).toContain(live.topic);
+      // A reconcile triggered afterwards must leave the gone topic alone — the deletion already
+      // ran its own teardown and a retry would race a session it no longer owns.
+      r.kit.engine.signClient.events.emit("session_expire", { topic: "f".repeat(64) });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(Object.keys(r.kit.getActiveSessions())).toContain(live.topic);
       await r.wc.dispose();
     },
   );
@@ -1358,6 +1516,28 @@ describe("walletconnect one-click auth", () => {
         expect(awaiting(r)).toHaveLength(0);
       }
       expect(Object.keys(r.engine.connections.getState().sessions)).toHaveLength(0);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "refuses a foreign auth domain before it ever reaches the signing pipeline",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      // The domain is checked against the peer's host up front — reaching the pipeline would
+      // only produce the generic "signature request did not complete" refusal instead.
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        domain: "other.example",
+      });
+      await r.wc.pair(uri);
+      await expect(settled).resolves.toMatchObject({
+        error: expect.stringContaining("the auth domain is not the peer's host"),
+      });
+      expect(awaiting(r)).toHaveLength(0);
       await r.wc.dispose();
     },
   );

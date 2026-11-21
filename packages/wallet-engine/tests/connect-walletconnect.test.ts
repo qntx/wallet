@@ -231,6 +231,26 @@ describe("establishWalletConnect", () => {
     expect(reopened.checkOrigin(origin)).toBe(origin);
   });
 
+  it("drops a persisted session whose walletconnect origin key does not match its topic", async () => {
+    const r = rig();
+    await r.connections.init();
+    const session = await r.connections.establishWalletConnect(
+      { [MAINNET]: SCOPE },
+      settle(peer()),
+    );
+    const store = await r.connectionOptions.openStore();
+    const corrupted = {
+      ...session,
+      origin: { ...session.origin, origin: walletConnectKey(OTHER_TOPIC) },
+    };
+    await store
+      .collection("connections")
+      .put(session.id, new TextEncoder().encode(JSON.stringify(corrupted)));
+    const reopened = new ConnectionController(r.connectionOptions);
+    await reopened.init();
+    expect(reopened.getState().sessions).toStrictEqual({});
+  });
+
   it("persists nothing when settle throws, and the error propagates", async () => {
     const r = rig();
     await r.connections.init();

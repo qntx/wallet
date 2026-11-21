@@ -521,6 +521,19 @@ const solTx = (feePayer: string): Uint8Array => {
   return new Uint8Array(getTransactionEncoder().encode(compileTransaction(withIx)));
 };
 
+/** An unsigned wire tx a foreign key pays for — `signer` is only a co-signing transfer source. */
+const foreignPayerTx = (signer: string): Uint8Array => {
+  const message = setTransactionMessageLifetimeUsingBlockhash(
+    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    setTransactionMessageFeePayer(address(DEST), createTransactionMessage({ version: "legacy" })),
+  );
+  const withIx = appendTransactionMessageInstruction(
+    transferIx(signer, DEST, 1000n),
+    message as never,
+  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(withIx)));
+};
+
 /** A PSBT spending one prevout of `from` (a wallet address) to `to`, as a dApp builds it. */
 const dappPsbt = (opts: {
   from: string;
@@ -637,6 +650,43 @@ describe("walletconnect solana", () => {
         "solana_signTransaction",
         {
           transaction: base64.encode(tx),
+          pubkey: account,
+        },
+        SOL_MAIN,
+      );
+      await sign.approve("solana-sign");
+      const result = value(await sign.settled) as { signature: string; transaction: string };
+      const decoded = getTransactionDecoder().decode(base64.decode(result.transaction));
+      const ours = decoded.signatures[address(account)];
+      expect(ours === null || ours === undefined).toBe(false);
+      expect(base58.encode(new Uint8Array(ours ?? []))).toBe(result.signature);
+      expect(
+        verifySolanaSignature(
+          new Uint8Array(decoded.messageBytes),
+          new Uint8Array(ours ?? []),
+          account,
+        ),
+      ).toBe(true);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "returns the session account's slot signature when a foreign key is the fee payer",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client, solanaNamespaces([SOL_MAIN]));
+      const account = accountOf(session, SOL_MAIN);
+      const sign = await call(
+        r,
+        client,
+        live,
+        "solana_signTransaction",
+        {
+          transaction: base64.encode(foreignPayerTx(account)),
           pubkey: account,
         },
         SOL_MAIN,
