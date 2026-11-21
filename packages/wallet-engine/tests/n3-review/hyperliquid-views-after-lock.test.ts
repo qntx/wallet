@@ -1,8 +1,8 @@
 /**
  * User views follow the vault: `watchLock` registers every view it wraps and closes them all on
- * lock, while `close()` only flips the status — it keeps `data`. So after a lock the wallet's
- * fills are still readable (stale), a user view opened while locked is shut before it ever goes
- * live, and a market view — never registered — streams straight through the lock.
+ * lock, while `close()` only flips the status — it keeps `data`. So after a lock the wallet's fills
+ * are still readable (stale), a user view opened while locked is shut before it ever goes live, and
+ * a market view — never registered — streams straight through the lock.
  */
 import { describe, expect, it } from "vite-plus/test";
 
@@ -45,7 +45,7 @@ const OWNER = "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd";
 const GROUP = { walletId: "w1", groupIndex: 0 };
 
 const rig = () => {
-  let time = 0;
+  const time = 0;
   const queue: Array<{ at: number; fn: () => void; cancelled: boolean }> = [];
   const sockets: FakeSocket[] = [];
   const http: Record<string, () => unknown> = {};
@@ -192,6 +192,7 @@ describe("hyperliquid views across a vault lock", () => {
     s.open();
     for (const [index, view] of views.entries()) {
       confirm(s, s.frames("subscribe")[index]);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirmations
       await tick();
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential closes
       await view.close();

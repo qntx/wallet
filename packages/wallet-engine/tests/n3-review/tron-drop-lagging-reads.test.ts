@@ -205,7 +205,10 @@ const world = () => {
   return { env, independentPosts, boot };
 };
 
-const polls = async (timers: Awaited<ReturnType<ReturnType<typeof world>["boot"]>>["timers"], n = 1) => {
+const polls = async (
+  timers: Awaited<ReturnType<ReturnType<typeof world>["boot"]>>["timers"],
+  n = 1,
+) => {
   for (let i = 0; i < n; i += 1) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- each poll re-arms the next
     await timers.fire(POLL_MS);
@@ -218,7 +221,8 @@ describe("a TRON poll whose primary endpoint lags behind", () => {
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     expect(tx.state).toBe("submitted");
-    const { hash } = tx;
+    expect(tx.hash).toMatch(/^[0-9a-f]{64}$/);
+    const hash = String(tx.hash);
 
     // The send's cross-check asked the host about the ref block, params and recipient — the
     // poll must not ask it anything.
@@ -227,17 +231,15 @@ describe("a TRON poll whose primary endpoint lags behind", () => {
     // A backend behind the block: the solid head moved past expiration but neither info read
     // shows the transaction — while the independent endpoint already has it in block 90.
     w.env.solidTime = 1_060_001;
-    w.env.independentInfo.set(hash ?? "", INFO);
+    w.env.independentInfo.set(hash, INFO);
     await polls(timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
-    expect(
-      w.independentPosts.filter((p) => p.includes("gettransactioninfobyid")),
-    ).toHaveLength(0);
+    expect(w.independentPosts.filter((p) => p.includes("gettransactioninfobyid"))).toHaveLength(0);
 
     // The transaction was in a block all along — the primary catches up — but an ended row is
     // untracked: it stays dropped and nothing polls it again.
-    w.env.fullInfo.set(hash ?? "", INFO);
-    w.env.solidInfo.set(hash ?? "", INFO);
+    w.env.fullInfo.set(hash, INFO);
+    w.env.solidInfo.set(hash, INFO);
     expect(timers.armed(POLL_MS)).toBe(0);
     await polls(timers, 2);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");

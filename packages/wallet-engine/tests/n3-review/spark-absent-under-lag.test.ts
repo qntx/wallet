@@ -1,9 +1,9 @@
 /**
  * Right after a sats commit throws a definite error, the ledger probes the operator's listing once:
  * a complete page without the transfer id means "the coordinator holds no such transfer" and the
- * record fails immediately — the thirty-minute absence bound applies only to the periodic pass.
- * A listing that was merely lagging (the commit landed, the id turns up completed a call later)
- * still resolves `failed`, and a final record is never reconciled back.
+ * record fails immediately — the thirty-minute absence bound applies only to the periodic pass. A
+ * listing that was merely lagging (the commit landed, the id turns up completed a call later) still
+ * resolves `failed`, and a final record is never reconciled back.
  */
 import { describe, expect, it } from "vite-plus/test";
 
@@ -136,14 +136,11 @@ describe("a sats commit error probed against a lagging operator listing", () => 
     let now = NOW;
     // The listing lags the commit: the first scan is complete and empty, later scans carry the
     // transfer the coordinator had already accepted.
-    let listed = false;
+    const listing = { payments: [] as SparkPayment[] };
     const r = rig({
       script: { send: [new SparkInputError("the committed id is unknown")] },
       now: () => now,
-      scan: async () =>
-        Promise.resolve(
-          listed ? { payments: [payment(TID, "completed")] } : { payments: [] },
-        ),
+      scan: async () => Promise.resolve(listing),
     });
     await r.c.init();
 
@@ -169,7 +166,7 @@ describe("a sats commit error probed against a lagging operator listing", () => 
 
     // The id turns up completed — the operator did accept it — but nothing reconciles a final
     // record: no scan runs again and the row stays failed.
-    listed = true;
+    listing.payments = [payment(TID, "completed")];
     now += RECONCILE_MAX_MS + 1;
     await r.timers.fire();
     expect(r.scans()).toBe(probed);

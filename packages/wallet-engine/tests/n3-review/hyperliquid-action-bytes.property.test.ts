@@ -16,11 +16,13 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 
+import type { HyperliquidGroup } from "../../src/apps/hyperliquid/agents.ts";
 import { createHyperliquidProvider } from "../../src/apps/hyperliquid/provider.ts";
 import type {
   HyperliquidProvider,
   HyperliquidProviderInternals,
 } from "../../src/apps/hyperliquid/provider.ts";
+import type { HyperliquidTrade } from "../../src/apps/hyperliquid/trade.ts";
 
 const KERNEL_URL = new URL("../../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -57,6 +59,7 @@ type Posted = { readonly endpoint: "info" | "exchange"; readonly body: Record<st
 
 const serve = (posted: Posted[]) => {
   const fetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    await Promise.resolve();
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     const endpoint = String(url).endsWith("/exchange") ? "exchange" : "info";
     posted.push({ endpoint, body });
@@ -203,9 +206,9 @@ const triggerSpec = fc.oneof(
   fc.record({ triggerPx: priceArb, price: priceArb }),
   fc.record({ triggerPx: priceArb, market: fc.constant(false), price: priceArb }),
 );
-const triggerOrder = fc.tuple(fc.constantFrom("tp" as const, "sl" as const), triggerSpec).map(
-  ([tpsl, spec]) => ({ kind: "trigger" as const, tpsl, ...spec }),
-);
+const triggerOrder = fc
+  .tuple(fc.constantFrom("tp" as const, "sl" as const), triggerSpec)
+  .map(([tpsl, spec]) => ({ kind: "trigger" as const, tpsl, ...spec }));
 const orderArb = fc.oneof(limitOrder, marketOrder, triggerOrder);
 
 type TriggerSpec = {
@@ -219,13 +222,12 @@ type Order =
   | { readonly kind: "market"; readonly slippageBps: number }
   | ({ readonly kind: "trigger"; readonly tpsl: "tp" | "sl" } & TriggerSpec);
 
-/** Notional must clear the venue's 10-quote minimum or the order is refused before signing; a
-    market trigger wires ~0.9x its triggerPx, so price-ish fields are kept at 11.2x headroom. */
+/**
+ * Notional must clear the venue's 10-quote minimum or the order is refused before signing; a market
+ * trigger wires ~0.9x its triggerPx, so price-ish fields are kept at 11.2x headroom.
+ */
 const legClears = (spec: Order | TriggerSpec, size: string): boolean =>
-  [
-    "price" in spec ? spec.price : undefined,
-    "triggerPx" in spec ? spec.triggerPx : undefined,
-  ]
+  ["price" in spec ? spec.price : undefined, "triggerPx" in spec ? spec.triggerPx : undefined]
     .filter((p): p is string => p !== undefined)
     .every((p) => Number(p) * Number(size) >= 11.2);
 
@@ -383,6 +385,86 @@ const callArb = fc.oneof(
   }),
 );
 
+/** Executes one generated call through the public trade API. */
+const runCall = async (
+  trade: HyperliquidTrade,
+  group: HyperliquidGroup,
+  call: Call,
+): Promise<void> => {
+  switch (call.m) {
+    case "place":
+      await trade.place(group, {
+        coin: call.coin,
+        side: call.side,
+        size: call.size,
+        ...(call.reduceOnly === undefined ? {} : { reduceOnly: call.reduceOnly }),
+        order: call.order,
+        ...(call.takeProfit === undefined ? {} : { takeProfit: call.takeProfit }),
+        ...(call.stopLoss === undefined ? {} : { stopLoss: call.stopLoss }),
+        ...(call.positionTpsl === undefined ? {} : { positionTpsl: call.positionTpsl }),
+      });
+      return;
+    case "modify":
+    case "batchModify": {
+      const items: ModifyItem[] = call.items.map((i) => ({
+        oid: i.oid,
+        coin: i.coin,
+        side: i.side,
+        size: i.size,
+        ...(i.reduceOnly === undefined ? {} : { reduceOnly: i.reduceOnly }),
+        order: i.order,
+      }));
+      if (call.m === "modify") {
+        const [item] = items;
+        if (item === undefined) {
+          return;
+        }
+        await trade.modify(group, item);
+      } else {
+        await trade.batchModify(group, items);
+      }
+      return;
+    }
+    case "cancel":
+      await trade.cancel(group, [...call.items]);
+      return;
+    case "cancelByCloid":
+      await trade.cancelByCloid(group, [...call.items]);
+      return;
+    case "cancelAll":
+      await trade.cancelAll(group);
+      return;
+    case "scheduleCancel":
+      await trade.scheduleCancel(group, call.time);
+      return;
+    case "twap":
+      await trade.twap(group, {
+        coin: call.coin,
+        side: call.side,
+        size: call.size,
+        minutes: call.minutes,
+        randomize: call.randomize,
+        ...(call.reduceOnly === undefined ? {} : { reduceOnly: call.reduceOnly }),
+      });
+      return;
+    case "twapCancel":
+      await trade.twapCancel(group, { coin: call.coin, twapId: call.twapId });
+      return;
+    case "setLeverage":
+      await trade.setLeverage(group, {
+        coin: call.coin,
+        leverage: call.leverage,
+        marginMode: call.marginMode,
+      });
+      return;
+    case "adjustMargin":
+      await trade.adjustMargin(group, { coin: call.coin, amount: call.amount });
+      return;
+    case "close":
+      await trade.close(group, { coin: call.coin, slippageBps: call.slippageBps });
+  }
+};
+
 describe("every signed action body recovers to the agent", () => {
   it(
     "generated trade calls post bodies whose signatures verify against the L1 hash",
@@ -413,92 +495,7 @@ describe("every signed action body recovers to the agent", () => {
       await fc.assert(
         fc.asyncProperty(callArb as fc.Arbitrary<Call>, async (call) => {
           const before = posted.length;
-          switch (call.m) {
-            case "place":
-              await provider.trade.place(group, {
-                coin: call.coin,
-                side: call.side,
-                size: call.size,
-                ...(call.reduceOnly === undefined ? {} : { reduceOnly: call.reduceOnly }),
-                order: call.order,
-                ...(call.takeProfit === undefined ? {} : { takeProfit: call.takeProfit }),
-                ...(call.stopLoss === undefined ? {} : { stopLoss: call.stopLoss }),
-                ...(call.positionTpsl === undefined
-                  ? {}
-                  : { positionTpsl: call.positionTpsl }),
-              });
-              break;
-            case "modify":
-            case "batchModify": {
-              const items: ModifyItem[] = call.items.map((i) => ({
-                oid: i.oid,
-                coin: i.coin,
-                side: i.side,
-                size: i.size,
-                ...(i.reduceOnly === undefined ? {} : { reduceOnly: i.reduceOnly }),
-                order: i.order,
-              }));
-              if (call.m === "modify") {
-                const [item] = items;
-                if (item === undefined) {
-                  return;
-                }
-                await provider.trade.modify(group, item);
-              } else {
-                await provider.trade.batchModify(group, items);
-              }
-              break;
-            }
-            case "cancel":
-              await provider.trade.cancel(group, [...call.items]);
-              break;
-            case "cancelByCloid":
-              await provider.trade.cancelByCloid(group, [...call.items]);
-              break;
-            case "cancelAll":
-              await provider.trade.cancelAll(group);
-              break;
-            case "scheduleCancel":
-              await provider.trade.scheduleCancel(group, call.time);
-              break;
-            case "twap":
-              await provider.trade.twap(group, {
-                coin: call.coin,
-                side: call.side,
-                size: call.size,
-                minutes: call.minutes,
-                randomize: call.randomize,
-                ...(call.reduceOnly === undefined
-                  ? {}
-                  : { reduceOnly: call.reduceOnly }),
-              });
-              break;
-            case "twapCancel":
-              await provider.trade.twapCancel(group, {
-                coin: call.coin,
-                twapId: call.twapId,
-              });
-              break;
-            case "setLeverage":
-              await provider.trade.setLeverage(group, {
-                coin: call.coin,
-                leverage: call.leverage,
-                marginMode: call.marginMode,
-              });
-              break;
-            case "adjustMargin":
-              await provider.trade.adjustMargin(group, {
-                coin: call.coin,
-                amount: call.amount,
-              });
-              break;
-            case "close":
-              await provider.trade.close(group, {
-                coin: call.coin,
-                slippageBps: call.slippageBps,
-              });
-              break;
-          }
+          await runCall(provider.trade, group, call);
           const posts = posted.slice(before).filter((p) => p.endpoint === "exchange");
           expect(posts.length).toBeGreaterThan(0);
           for (const post of posts) {

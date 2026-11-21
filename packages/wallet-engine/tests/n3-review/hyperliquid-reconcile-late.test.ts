@@ -1,8 +1,8 @@
 /**
- * An /exchange POST that times out is reconciled by polling `orderStatus` by cloid until the
- * signed action's expiry plus slack. A fill that lands one beat after the last poll cannot be
- * reported: the call already returned `not-placed`, and nothing walks the outcome back once the
- * endpoint starts answering the order exists.
+ * An /exchange POST that times out is reconciled by polling `orderStatus` by cloid until the signed
+ * action's expiry plus slack. A fill that lands one beat after the last poll cannot be reported:
+ * the call already returned `not-placed`, and nothing walks the outcome back once the endpoint
+ * starts answering the order exists.
  */
 import { readFileSync } from "node:fs";
 
@@ -127,10 +127,10 @@ const serve = (
           : body["type"] === "spotMetaAndAssetCtxs"
             ? fixture("spotMetaAndAssetCtxs").response
             : body["type"] === "allMids"
-            ? MIDS
-            : body["type"] === "orderStatus"
-              ? { status: "unknownOid" }
-              : {}
+              ? MIDS
+              : body["type"] === "orderStatus"
+                ? { status: "unknownOid" }
+                : {}
         : override;
     return Response.json(response, { headers });
   };
@@ -207,6 +207,23 @@ const ORDER = {
   order: { kind: "limit" as const, price: "58000" },
 };
 
+/** OrderStatus answers filled once the flag flips — the endpoint catching up after the call. */
+const filledOrderStatus =
+  (orderExists: () => boolean) =>
+  (body: Record<string, unknown>): unknown => {
+    if (body["type"] !== "orderStatus" || !orderExists()) {
+      return undefined;
+    }
+    return {
+      status: "order",
+      order: {
+        order: { oid: 424242, origSz: "0.05", sz: "0", limitPx: "58000" },
+        status: "filled",
+        statusTimestamp: NOW + 30_000,
+      },
+    };
+  };
+
 describe("an /exchange timeout whose cloid fills just past the reconcile deadline", () => {
   it("returns not-placed — the endpoint proving the fill answers only after the call returned", async () => {
     const posted: Posted[] = [];
@@ -216,17 +233,7 @@ describe("an /exchange timeout whose cloid fills just past the reconcile deadlin
     const { provider, wallet, walletId } = await rig(posted, timers, {
       // Never answers: the transport's own deadline fires the abort.
       exchange: async () => new Promise<never>(() => {}),
-      info: (body) =>
-        body["type"] === "orderStatus" && orderExists
-          ? {
-              status: "order",
-              order: {
-                order: { oid: 424242, origSz: "0.05", sz: "0", limitPx: "58000" },
-                status: "filled",
-                statusTimestamp: NOW + 30_000,
-              },
-            }
-          : undefined,
+      info: filledOrderStatus(() => orderExists),
     });
     const agentAddress = await hyperliquid(wallet).createAgent({
       owner: { walletId, groupIndex: 0 },
@@ -248,10 +255,7 @@ describe("an /exchange timeout whose cloid fills just past the reconcile deadlin
     // already-returned outcome is never corrected.
     orderExists = true;
     const late = await provider.account.orderStatus({ user: MASTER, oid: CLOID });
-    expect(late.status).toBe("order");
-    if (late.status === "order") {
-      expect(late.order.status).toBe("filled");
-    }
+    expect(late).toMatchObject({ status: "order", order: { status: "filled" } });
     expect(result.outcomes).toStrictEqual([{ kind: "not-placed", cloid: CLOID }]);
   });
 });

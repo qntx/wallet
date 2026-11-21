@@ -1,9 +1,9 @@
 /**
  * A refused broadcast ends the send as `failed` for the caller — but the transition that records
- * the failure is not durable. When it cannot land — the vault locked while the answer was still
- * in flight, or the store write threw — the durable record keeps its pre-broadcast `signed` row
- * with hash and raw, and the next session reads that as a broadcast whose outcome never
- * settled: `submitted` again, tracked, and the very bytes the node refused are reposted.
+ * the failure is not durable. When it cannot land — the vault locked while the answer was still in
+ * flight, or the store write threw — the durable record keeps its pre-broadcast `signed` row with
+ * hash and raw, and the next session reads that as a broadcast whose outcome never settled:
+ * `submitted` again, tracked, and the very bytes the node refused are reposted.
  */
 import { keccak256 } from "viem";
 import type { Hex } from "viem";
@@ -17,6 +17,7 @@ import { EsploraError } from "../../src/chains/bitcoin.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
+import type { TrackedTransaction } from "../../src/transactions/route.ts";
 import {
   bombedStore,
   fakeSignedEvm,
@@ -34,7 +35,6 @@ import {
   POLL_MS as BTC_POLL_MS,
 } from "../support/btc-world.ts";
 import { manualTimers } from "../support/timers.ts";
-import type { TrackedTransaction } from "../../src/transactions/route.ts";
 
 const POLL_MS = 4000;
 const GATEWAY = "https://gateway.test";
@@ -322,7 +322,7 @@ describe("a refused send whose failed row never reaches the store", () => {
     await expect(sendA).rejects.toThrow(/insufficient funds/);
     const a = mustTx(Object.values(first.ctl.getState().txs)[0]);
     // The failed row's hash and raw were cleared in memory — the store keeps them.
-    const raw = node.sent[0];
+    const [raw] = node.sent;
     const hash = keccak256(raw as Hex);
     expect(a.state).toBe("failed");
     await expect(w.persistedTx(a.id)).resolves.toMatchObject({ state: "signed", hash, raw });
@@ -375,7 +375,7 @@ describe("a refused bitcoin send whose failed row never reaches the store", () =
     const stored = await persistedBtcTx(first.backing, a.id);
     const txid = stored?.["hash"];
     expect(stored).toMatchObject({ state: "signed" });
-    expect(typeof txid).toBe("string");
+    expect(txid).toBeTypeOf("string");
     // Refused and untracked: no poll ever retries the bombed `failed` write.
     expect(first.timers.armed(BTC_POLL_MS)).toBe(0);
     await flush();

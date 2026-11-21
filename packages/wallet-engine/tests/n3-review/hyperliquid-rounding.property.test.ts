@@ -1,8 +1,8 @@
 /**
  * Hyperliquid price rounding, checked against an independent oracle. A wire price is valid for
  * (market, szDecimals) iff it is a whole number, or it carries at most 5 significant figures and at
- * most `6 − szDecimals` (perp) / `8 − szDecimals` (spot, floored at 0) fractional digits. The oracle
- * below is implemented from the venue rule directly — bigint digits, no production helpers.
+ * most `6 − szDecimals` (perp) / `8 − szDecimals` (spot, floored at 0) fractional digits. The
+ * oracle below is implemented from the venue rule directly — bigint digits, no production helpers.
  *
  * What it shows: a buy limit's down-round skips the integer floor — 1000010.001 lands on 1000000
  * even though the integer 1000010 is a valid wire price strictly closer to the input (the sell
@@ -102,6 +102,72 @@ const gapArb: fc.Arbitrary<string> = fc
 
 const priceArb = fc.oneof(generalArb, gapArb);
 
+/** One generated input through `limitPrice` both ways; returns the integer-gap hits seen. */
+const limitPriceCheck = (price: string, market: HyperliquidMarket, szDecimals: number): number => {
+  let integerGaps = 0;
+  const input = parse(price);
+  const dec = maxDecimals(market, szDecimals);
+  for (const side of ["buy", "sell"] as const) {
+    let result: string;
+    try {
+      result = limitPrice(price, side, szDecimals, market);
+    } catch {
+      return integerGaps; // "rounds to 0" — a refusal, not a rounding
+    }
+    const out = parse(result);
+    expect(valid(out, market, szDecimals)).toBe(true);
+    for (const k of GRID_SCALES(dec)) {
+      const step = side === "buy" ? 1n : -1n;
+      const tighter = stepAt(out, k, step);
+      const between =
+        side === "buy"
+          ? compare(out, tighter) < 0 && compare(tighter, input) <= 0
+          : compare(tighter, out) < 0 && compare(tighter, input) >= 0;
+      const fits = tighter.units > 0n && valid(tighter, market, szDecimals) && between;
+      if (!fits) {
+        continue;
+      }
+      // A tighter valid price exists between out and the input. For sells that is a direct
+      // violation; for buys the only slack the rounding leaves is a whole number.
+      expect(side === "buy" && canonical(tighter).scale === 0).toBe(true);
+      integerGaps += 1;
+    }
+    if (side === "buy") {
+      expect(compare(out, input)).toBeLessThanOrEqual(0);
+    } else {
+      expect(compare(out, input)).toBeGreaterThanOrEqual(0);
+    }
+  }
+  return integerGaps;
+};
+
+/** One generated input through `slippagePrice` both ways against the exact bps bound. */
+const slippageCheck = (
+  reference: string,
+  market: HyperliquidMarket,
+  szDecimals: number,
+  bps: number,
+): void => {
+  const ref = parse(reference);
+  for (const side of ["buy", "sell"] as const) {
+    const factor = BigInt(side === "buy" ? 10_000 + bps : 10_000 - bps);
+    const bound: Dec = { units: ref.units * factor, scale: ref.scale + 4 };
+    let result: string;
+    try {
+      result = slippagePrice(reference, side, bps, szDecimals, market);
+    } catch {
+      return; // out-of-range bps or rounds to 0 — a refusal
+    }
+    const out = parse(result);
+    expect(valid(out, market, szDecimals)).toBe(true);
+    if (side === "buy") {
+      expect(compare(out, bound)).toBeLessThanOrEqual(0);
+    } else {
+      expect(compare(out, bound)).toBeGreaterThanOrEqual(0);
+    }
+  }
+};
+
 describe("Hyperliquid price rounding", () => {
   it("a buy limit ignores the integer floor — the tighter valid integer is skipped", () => {
     // The shrunk property counterexample: 1000010 is integer-valid and ≤ the input, yet the
@@ -119,39 +185,7 @@ describe("Hyperliquid price rounding", () => {
     let integerGapSeen = 0;
     fc.assert(
       fc.property(priceArb, marketArb, szArb, (price, market, szDecimals) => {
-        const input = parse(price);
-        const dec = maxDecimals(market, szDecimals);
-        for (const side of ["buy", "sell"] as const) {
-          let result: string;
-          try {
-            result = limitPrice(price, side, szDecimals, market);
-          } catch {
-            return; // "rounds to 0" — a refusal, not a rounding
-          }
-          const out = parse(result);
-          expect(valid(out, market, szDecimals)).toBe(true);
-          for (const k of GRID_SCALES(dec)) {
-            const step = side === "buy" ? 1n : -1n;
-            const tighter = stepAt(out, k, step);
-            const between =
-              side === "buy"
-                ? compare(out, tighter) < 0 && compare(tighter, input) <= 0
-                : compare(tighter, out) < 0 && compare(tighter, input) >= 0;
-            const fits = tighter.units > 0n && valid(tighter, market, szDecimals) && between;
-            if (!fits) {
-              continue;
-            }
-            // A tighter valid price exists between out and the input. For sells that is a direct
-            // violation; for buys the only slack the rounding leaves is a whole number.
-            expect(side === "buy" && canonical(tighter).scale === 0).toBe(true);
-            integerGapSeen += 1;
-          }
-          if (side === "buy") {
-            expect(compare(out, input)).toBeLessThanOrEqual(0);
-          } else {
-            expect(compare(out, input)).toBeGreaterThanOrEqual(0);
-          }
-        }
+        integerGapSeen += limitPriceCheck(price, market, szDecimals);
       }),
       { numRuns: 200 },
     );
@@ -160,6 +194,7 @@ describe("Hyperliquid price rounding", () => {
   });
 
   it("slippagePrice stays inside the exact basis-point bound", () => {
+    let runs = 0;
     fc.assert(
       fc.property(
         priceArb,
@@ -167,27 +202,12 @@ describe("Hyperliquid price rounding", () => {
         szArb,
         fc.integer({ min: 1, max: 9999 }),
         (reference, market, szDecimals, bps) => {
-          const ref = parse(reference);
-          for (const side of ["buy", "sell"] as const) {
-            const factor = BigInt(side === "buy" ? 10_000 + bps : 10_000 - bps);
-            const bound: Dec = { units: ref.units * factor, scale: ref.scale + 4 };
-            let result: string;
-            try {
-              result = slippagePrice(reference, side, bps, szDecimals, market);
-            } catch {
-              return; // out-of-range bps or rounds to 0 — a refusal
-            }
-            const out = parse(result);
-            expect(valid(out, market, szDecimals)).toBe(true);
-            if (side === "buy") {
-              expect(compare(out, bound)).toBeLessThanOrEqual(0);
-            } else {
-              expect(compare(out, bound)).toBeGreaterThanOrEqual(0);
-            }
-          }
+          slippageCheck(reference, market, szDecimals, bps);
+          runs += 1;
         },
       ),
       { numRuns: 200 },
     );
+    expect(runs).toBe(200);
   });
 });

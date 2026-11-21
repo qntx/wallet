@@ -1,8 +1,8 @@
 /**
- * A transaction the endpoint never learns of is rebroadcast on backoff for UNKNOWN_DROP_MS and
- * then ends `dropped`: untracked, settled, its nonce freed — and never polled again. If the
- * bytes had in fact landed (the answer was only lost in transit) nothing ever looks at the row
- * again: it displays dropped while a later send at the freed or the next nonce goes out.
+ * A transaction the endpoint never learns of is rebroadcast on backoff for UNKNOWN_DROP_MS and then
+ * ends `dropped`: untracked, settled, its nonce freed — and never polled again. If the bytes had in
+ * fact landed (the answer was only lost in transit) nothing ever looks at the row again: it
+ * displays dropped while a later send at the freed or the next nonce goes out.
  */
 import { hexToBytes, isHex, keccak256, serializeTransaction } from "viem";
 import type { Hex } from "viem";
@@ -52,7 +52,7 @@ type Node = {
   sent: string[];
   /** Every eth_getTransactionReceipt lookup, by hash — "was this transaction re-checked". */
   receiptReads: string[];
-  /** sendRawTransaction's fetch rejects: the bytes never reach the node. */
+  /** SendRawTransaction's fetch rejects: the bytes never reach the node. */
   dropSend: boolean;
 };
 

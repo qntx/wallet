@@ -172,7 +172,11 @@ describe("TRON history claims the indexer's legs without binding them to the nod
         ],
       },
     };
-    const info: Row = { blockNumber: 87_000_001, blockTimeStamp: 1000, receipt: { result: "SUCCESS" } };
+    const info: Row = {
+      blockNumber: 87_000_001,
+      blockTimeStamp: 1000,
+      receipt: { result: "SUCCESS" },
+    };
     const s = stream({
       tx: [page([row], "f1"), page([row])],
       api: nodeApi({ [txid]: { tx: body, info } }),
