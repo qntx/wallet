@@ -9,6 +9,7 @@ const config: UserConfig = defineConfig({
         index: "src/index.ts",
         connect: "src/connect/index.ts",
         "gateway-contract": "src/gateway/contract/index.ts",
+        apps: "src/apps/index.ts",
       },
       tsconfig: "tsconfig.src.json",
       deps: { onlyBundle: [] },

@@ -1,0 +1,9 @@
+{
+  "request": {
+    "type": "orderStatus",
+    "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6",
+    "oid": 9999999999999
+  },
+  "fetchedAt": 1795253705953,
+  "response": { "status": "unknownOid" }
+}

@@ -1,0 +1,33 @@
+{
+  "request": {
+    "type": "orderStatus",
+    "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec",
+    "oid": 612427547066
+  },
+  "fetchedAt": 1795253701671,
+  "response": {
+    "status": "order",
+    "order": {
+      "order": {
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "52143.0",
+        "sz": "0.0",
+        "oid": 612427547066,
+        "timestamp": 1795253682244,
+        "triggerCondition": "Triggered",
+        "isTrigger": false,
+        "triggerPx": "0.0",
+        "children": [],
+        "isPositionTpsl": false,
+        "reduceOnly": true,
+        "orderType": "Stop Market",
+        "origSz": "0.02036",
+        "tif": "Gtc",
+        "cloid": "0x0220002801000006cff54f44cd4fe482"
+      },
+      "status": "filled",
+      "statusTimestamp": 1795253682244
+    }
+  }
+}

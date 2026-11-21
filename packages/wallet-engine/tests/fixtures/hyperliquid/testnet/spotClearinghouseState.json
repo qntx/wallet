@@ -1,0 +1,13 @@
+{
+  "request": {
+    "type": "spotClearinghouseState",
+    "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6"
+  },
+  "fetchedAt": 1795253705953,
+  "response": {
+    "balances": [
+      { "coin": "USDC", "token": 0, "total": "9.95671", "hold": "0.0", "entryNtl": "0.0" }
+    ],
+    "tokenToAvailableAfterMaintenance": [[0, "9.95671"]]
+  }
+}

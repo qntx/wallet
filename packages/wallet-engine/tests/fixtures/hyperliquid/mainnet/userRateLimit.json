@@ -1,0 +1,10 @@
+{
+  "request": { "type": "userRateLimit", "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec" },
+  "fetchedAt": 1795253701671,
+  "response": {
+    "cumVlm": "14137.38",
+    "nRequestsUsed": 149,
+    "nRequestsCap": 24137,
+    "nRequestsSurplus": 0
+  }
+}

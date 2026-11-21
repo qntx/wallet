@@ -1,11 +1,11 @@
+import { assetValue, formatDecimal, parseDecimal, sumDecimals } from "../decimal.ts";
+import type { Decimal } from "../decimal.ts";
 /**
  * Fiat valuation of holdings, exact: values are bigint fixed-point (see `decimal.ts`), the total is
  * their exact sum. Display-only — nothing that builds, approves or signs may read it.
  */
 import type { FiatCurrency } from "../gateway/contract/index.ts";
 import type { PricesState } from "./controller.ts";
-import { assetValue, formatDecimal, parseDecimal, sumDecimals } from "./decimal.ts";
-import type { Decimal } from "./decimal.ts";
 import type { Holding } from "./holdings.ts";
 
 /** A quote older than this (by the provider's own `updatedAt`) is shown as stale. */

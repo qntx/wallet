@@ -37,6 +37,11 @@
       "types": "./dist/connect.d.mts",
       "import": "./dist/connect.mjs",
       "default": "./dist/connect.mjs"
+    },
+    "./apps": {
+      "types": "./dist/apps.d.mts",
+      "import": "./dist/apps.mjs",
+      "default": "./dist/apps.mjs"
     }
   },
   "publishConfig": {
@@ -44,7 +49,7 @@
   },
   "scripts": {
     "build": "vp run @qntx/wallet-worker#build && vp pack",
-    "test": "vp test",
+    "test": "vp test && bun scripts/size-check.ts",
     "test:coverage": "vp test --coverage",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json && tsc --noEmit -p src/connect/inject/tsconfig.json",
@@ -53,6 +58,7 @@
     "test:browser": "playwright test --config tests/browser/playwright.config.ts"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "0.33.3",
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/siwx": "0.8.0",

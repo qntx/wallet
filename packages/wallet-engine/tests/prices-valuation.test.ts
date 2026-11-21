@@ -5,8 +5,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AccountBalances } from "../src/assets/controller.ts";
+import { assetValue, formatDecimal, parseDecimal, sumDecimals } from "../src/decimal.ts";
 import { nativeAssetId, tokenAssetId } from "../src/gateway/contract/index.ts";
-import { assetValue, formatDecimal, parseDecimal, sumDecimals } from "../src/prices/decimal.ts";
 import {
   balanceHoldings,
   groupHoldings,

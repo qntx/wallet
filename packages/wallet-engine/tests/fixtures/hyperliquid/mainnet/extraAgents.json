@@ -1,0 +1,11 @@
+{
+  "request": { "type": "extraAgents", "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec" },
+  "fetchedAt": 1795253701671,
+  "response": [
+    {
+      "name": "agent_1",
+      "address": "0x596024443f4b749d3c3aa44842f0fc2091c6d4d2",
+      "validUntil": 1798375040482
+    }
+  ]
+}
