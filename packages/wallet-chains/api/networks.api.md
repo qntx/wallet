@@ -45,11 +45,12 @@ type AssetFlow = {
     readonly amount: AssetAmount;
     readonly verified: boolean;
     readonly burn?: true;
+    readonly tokenAccount?: string;
     readonly name?: string;
 };
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "tron-contract" | "tron-field" | "tron-permission-update";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
 
 // @public (undocumented)
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta>;
@@ -97,6 +98,7 @@ type DisplayIntent = {
         readonly symbol?: string;
     };
     readonly programs?: ReadonlyArray<string>;
+    readonly programAuthority?: ReadonlyArray<ProgramAuthority>;
     readonly tron?: {
         readonly contractType: string;
         readonly expiration: number;
@@ -174,9 +176,12 @@ type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "messag
 
 // @public (undocumented)
 type IntentWarning = {
-    readonly kind: string;
+    readonly kind: IntentWarningKind;
     readonly message: string;
 };
+
+// @public
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension";
 
 // @public
 type MessageContent = {
@@ -192,6 +197,7 @@ type MessageContent = {
     readonly domain: TypedDataDomain;
     readonly data: Readonly<Record<string, unknown>>;
     readonly seaport?: SeaportOrder;
+    readonly order?: OffchainOrder;
     readonly safe?: SafeTransaction;
     readonly hyperliquid?: HyperliquidAction;
     readonly polymarket?: PolymarketContent;
@@ -212,6 +218,21 @@ export type NetworkMeta = {
 
 // @public (undocumented)
 export const networkMeta: (id: string) => NetworkMeta | undefined;
+
+// @public
+type OffchainOrder = {
+    readonly protocol: "1inch" | "uniswapx" | "cow";
+    readonly maker: string;
+    readonly give: AssetAmount;
+    readonly receive: ReadonlyArray<{
+        readonly recipient: string;
+        readonly amount: AssetAmount;
+    }>;
+    readonly expiry?: number;
+    readonly partialFill: boolean;
+    readonly allowedSender?: string;
+    readonly exclusiveFiller?: string;
+};
 
 // @public
 type PolymarketContent = {
@@ -245,6 +266,19 @@ type PolymarketContent = {
     readonly nonce: string;
     readonly deadline: number;
     readonly calls: ReadonlyArray<DisplayIntent>;
+};
+
+// @public
+type ProgramAuthority = {
+    readonly program: string;
+    readonly sol: boolean;
+    readonly accounts: ReadonlyArray<{
+        readonly address: string;
+        readonly token?: {
+            readonly mint: string;
+            readonly symbol: string;
+        };
+    }>;
 };
 
 // @public
@@ -320,6 +354,13 @@ type StakeAction = {
     readonly account: string;
 } | {
     readonly kind: "withdraw";
+    readonly account: string;
+    readonly to: string;
+    readonly lamports: string;
+} |
+/** Stake `Split`: `lamports` of `account` move to the new stake account `to`. */
+    {
+    readonly kind: "split";
     readonly account: string;
     readonly to: string;
     readonly lamports: string;
