@@ -49,6 +49,7 @@ const PARAMS = {
   getMaxFeeLimit: 5_000_000_000,
   getCreateNewAccountBandwidthRate: 4,
   getMaxCreateAccountTxSize: 5000,
+  getMemoFee: 1_000_000,
 };
 
 type Backing = { collections: Map<string, Map<string, Uint8Array>> };
@@ -68,6 +69,8 @@ const world = () => {
     fullInfo: new Map<string, Record<string, unknown>>(),
     /** Gettransactionbyid-known ids. */
     known: new Set<string>(),
+    /** Getblockbynum answers by height, either node. */
+    blockIds: new Map<number, string>([[100, SOLID_ID]]),
   };
   let broadcastMode:
     | { kind: "ok" }
@@ -87,6 +90,16 @@ const world = () => {
           blockID: "cd".repeat(32),
           block_header: { raw_data: { number: env.fullHead, timestamp: 910_000 } },
         };
+      case "/wallet/getblockbynum":
+      case "/walletsolidity/getblockbynum": {
+        const id = env.blockIds.get(Number(body["num"]));
+        return id === undefined
+          ? {}
+          : {
+              blockID: id,
+              block_header: { raw_data: { number: body["num"], timestamp: 900_000 } },
+            };
+      }
       case "/wallet/getchainparameters":
         return {
           chainParameter: Object.entries(PARAMS).map(([key, value]) => ({ key, value })),
@@ -246,6 +259,14 @@ describe("a TRON broadcast", () => {
     expect(tx.hash).toBeUndefined();
     expect(tx.raw).toBeUndefined();
     expect(tx.error).toMatch(/bad sig|CONTRACT_VALIDATE_ERROR/);
+  });
+
+  it("a memo on a non-TRON send is refused at the dispatcher", async () => {
+    const w = world();
+    const { ctl } = await w.boot();
+    await expect(send(ctl, { ...SEND, network: "eip155:1", memo: "hi" })).rejects.toThrow(
+      "memo is only supported on TRON",
+    );
   });
 
   it("DUP_TRANSACTION_ERROR is held — the send tracks the id as submitted", async () => {

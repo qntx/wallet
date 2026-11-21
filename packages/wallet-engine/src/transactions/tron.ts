@@ -8,6 +8,8 @@ import { ChainError } from "@qntx/wallet-chains";
 import {
   buildTronRawData,
   decodeTron,
+  decodeTronContract,
+  decodeTronRawData,
   trc20ApproveContract,
   encodeTronTransaction,
   isTronAddress,
@@ -15,6 +17,7 @@ import {
   trc20TransferContract,
   tronAddressFromHex,
   tronAddressToEvm,
+  tronMemoBytes,
   tronTokenTable,
   tronTransactionId,
   verifyTronTransactionSignature,
@@ -44,7 +47,13 @@ import {
   tronFeeLimit,
   tronFeeQuote,
 } from "../chains/tron.ts";
-import type { TronApi, TronChainParams, TronHead, TronResources } from "../chains/tron.ts";
+import type {
+  TronApi,
+  TronCallOutcome,
+  TronChainParams,
+  TronHead,
+  TronResources,
+} from "../chains/tron.ts";
 import type { TronAccount } from "../gateway/contract/index.ts";
 import type { Independent } from "../networks/controller.ts";
 import { collectChecks, feesDiffer } from "../requests/checks.ts";
@@ -52,7 +61,7 @@ import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 import { submitSigned } from "./broadcast.ts";
-import { includedPoll, newId, accountAddressOf, failTx } from "./route.ts";
+import { includedPoll, newId, accountAddressOf, errorMessage, failTx } from "./route.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -67,8 +76,8 @@ import type {
 
 /** `expiration` is this far ahead of the build timestamp — both read the engine's own clock. */
 const TRON_TTL_MS = 60_000;
-/** A prepared transaction whose expiry is nearer than this can no longer be signed safely. */
-const TRON_STALE_MS = 5000;
+/** A prepared transaction whose expiry is nearer than this is rebuilt before it is signed. */
+const TRON_STALE_MS = 20_000;
 /** Keccak256("Transfer(address,address,uint256)") — the TRC-20 Transfer event topic. */
 const TRANSFER_TOPIC = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 /** `balanceOf(address)` selector; the address argument is ABI-padded to 32 bytes. */
@@ -103,7 +112,8 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
   a.createNewAccountFeeInSystemContract === b.createNewAccountFeeInSystemContract &&
   a.maxFeeLimit === b.maxFeeLimit &&
   a.createNewAccountBandwidthRate === b.createNewAccountBandwidthRate &&
-  a.maxCreateAccountTxSize === b.maxCreateAccountTxSize;
+  a.maxCreateAccountTxSize === b.maxCreateAccountTxSize &&
+  a.memoFee === b.memoFee;
 
 /**
  * The independent-endpoint cross-check (invariant 2): the reference block id and the fee-model
@@ -113,7 +123,7 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
  */
 const crossCheckTron = async (
   independent: Independent<TronApi>,
-  head: TronHead,
+  head: Pick<TronHead, "number" | "id">,
   params: TronChainParams,
   extra?: (api: TronApi) => Promise<void>,
 ): Promise<"reads-unverified" | undefined> => {
@@ -231,12 +241,23 @@ const failureMessage = (info: {
   return `${reason} — burned ${burned}`;
 };
 
+/** The intent with its `tron.expiration` removed — the one field a rebuild legitimately changes. */
+const intentWithoutExpiration = (i: ReturnType<typeof decodeTron>): string => {
+  const { tron, ...rest } = i;
+  if (tron === undefined) {
+    return JSON.stringify(rest);
+  }
+  const { expiration: _expiration, ...tronRest } = tron;
+  return JSON.stringify({ ...rest, tron: tronRest });
+};
+
 export const prepareTron = async (
   ctx: RouteContext,
   params: PrepareParams,
 ): Promise<PreparedRequest> => {
   const { account: ref, network, to, amount } = params;
   const token = classify(params.token);
+  const memo = params.memo === undefined ? undefined : tronMemoBytes(params.memo);
   const api = ctx.options.networks.tronApi(network);
   const independent = ctx.options.networks.independentTronApi(network);
   const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
@@ -384,6 +405,7 @@ export const prepareTron = async (
     resources: res,
     balance: BigInt(Math.trunc(fromRow.balance ?? 0)),
     outflow: token.kind === "trx" ? amount : 0n,
+    ...(memo === undefined ? {} : { memo }),
     ...(estimate === undefined ? {} : { estimate }),
     ...(activates ? { activates: true } : {}),
     ...(theirs === 0n ? { tokenRecipientEmpty: true } : {}),
@@ -404,7 +426,9 @@ export const prepareTron = async (
         flow === undefined ||
         flow.to !== to ||
         flow.amount.amount !== amount.toString(10) ||
-        flow.amount.asset !== wantAsset
+        flow.amount.asset !== wantAsset ||
+        (memo !== undefined &&
+          (intent.tron?.memo?.kind !== "text" || intent.tron.memo.text !== params.memo))
       ) {
         throw new ChainError(
           "invalid-request",
@@ -429,6 +453,8 @@ type TronFinish = {
   readonly balance: bigint;
   /** Liquid TRX the operation locks or sends — checked against `balance` together with fees. */
   readonly outflow: bigint;
+  /** The memo's wire bytes — goes into `raw_data.data` and the quote's flat fee. */
+  readonly memo?: Uint8Array;
   readonly estimate?: { readonly used: number; readonly penalty: number };
   readonly activates?: boolean;
   readonly tokenRecipientEmpty?: boolean;
@@ -457,21 +483,28 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
       ? undefined
       : tronFeeLimit(estimate.used, params0.energyFee, params0.maxFeeLimit);
   const now = ctx.options.now();
-  const header = {
-    refBlock: { number: head.number, id: head.id },
-    timestamp: now,
-    expiration: now + TRON_TTL_MS,
+  const buildHeader = (refHead: Pick<TronHead, "number" | "id">, at: number) => ({
+    refBlock: { number: refHead.number, id: refHead.id },
+    timestamp: at,
+    expiration: at + TRON_TTL_MS,
     ...(feeLimit === undefined ? {} : { feeLimit }),
-  };
-  const rawData = buildTronRawData(header, contract);
-  const quote = tronFeeQuote({
-    rawDataLength: rawData.length,
-    params: params0,
-    resources: res,
-    ...(input.activates === true ? { activates: true } : {}),
-    ...(estimate === undefined ? {} : { energy: estimate }),
-    ...(input.tokenRecipientEmpty === true ? { tokenRecipientEmpty: true } : {}),
+    ...(input.memo === undefined ? {} : { memo: input.memo }),
   });
+  const quoteFor = (raw: Uint8Array) =>
+    tronFeeQuote({
+      rawDataLength: raw.length,
+      params: params0,
+      resources: res,
+      ...(input.activates === true ? { activates: true } : {}),
+      ...(estimate === undefined ? {} : { energy: estimate }),
+      ...(input.tokenRecipientEmpty === true ? { tokenRecipientEmpty: true } : {}),
+      ...(input.memo === undefined ? {} : { memo: true }),
+    });
+  const decodeAt = (raw: Uint8Array): ReturnType<typeof decodeTron> =>
+    decodeTron({ kind: "tron.transaction", network, account: ref, rawData: raw }, from);
+  const header = buildHeader(head, now);
+  const rawData = buildTronRawData(header, contract);
+  const quote = quoteFor(rawData);
   if (input.balance < input.outflow + BigInt(quote.expected)) {
     throw new ChainError(
       "invalid-request",
@@ -496,6 +529,46 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
   const id = newId(ctx.options.random);
   const { simulation } = input;
   const { resimulate } = input;
+  // The build `submit` signs — replaced in place by `rebuild` when the original goes stale.
+  let current = { header, rawData, quote, intent };
+
+  /**
+   * `staleReason`'s rebuild (design §4.3): the original contract and `fee_limit` on a fresh
+   * solidified head. Returns `undefined` when the rebuild happened — the request stays signable —
+   * or the failure reason that ends it.
+   */
+  const rebuild = async (): Promise<string | undefined> => {
+    const fresh = await solidHead(api);
+    const independent = ctx.options.networks.independentTronApi(network);
+    if (independent.kind === "available") {
+      let otherId: string | undefined;
+      try {
+        otherId = await blockId(independent.client, fresh.number, false);
+      } catch {
+        otherId = undefined;
+      }
+      if (otherId !== undefined && otherId !== fresh.id) {
+        return "the endpoints disagree on the reference block";
+      }
+    }
+    const header2 = buildHeader(fresh, ctx.options.now());
+    const rebuilt = buildTronRawData(header2, contract);
+    const quote2 = quoteFor(rebuilt);
+    if (BigInt(quote2.max) > BigInt(current.quote.max)) {
+      return "fees changed — start over";
+    }
+    const intent2 = decodeAt(rebuilt);
+    if (intentWithoutExpiration(intent2) !== intentWithoutExpiration(current.intent)) {
+      return "the rebuilt transaction no longer matches the approved intent";
+    }
+    try {
+      input.assertIntent(intent2);
+    } catch (error) {
+      return errorMessage(error);
+    }
+    current = { header: header2, rawData: rebuilt, quote: quote2, intent: intent2 };
+    return undefined;
+  };
 
   const submit = async (
     verify: SendParams["verify"],
@@ -508,21 +581,24 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
       account: ref.kind === "hd" ? ref.walletId : ref.keyId,
       hash: undefined,
       state: "draft",
-      intent,
+      intent: current.intent,
       nonce: 0,
-      tron: { expiration: header.expiration, from },
+      tron: { expiration: current.header.expiration, from },
       submittedAt: ctx.options.now(),
       error: undefined,
     };
     tx = await ctx.transition(tx, {});
     let signed: Uint8Array;
     try {
-      const result = await apis.sign({ request, verify });
+      const result = await apis.sign({
+        request: { ...request, rawData: current.rawData },
+        verify,
+      });
       tx = await ctx.transition(tx, { state: "signed" });
       if (result.kind !== "tron.transaction" || !(result.signature instanceof Uint8Array)) {
         throw new Error("unexpected tron sign result");
       }
-      if (!verifyTronTransactionSignature(rawData, result.signature, from)) {
+      if (!verifyTronTransactionSignature(current.rawData, result.signature, from)) {
         throw new ChainError(
           "invalid-request",
           "the kernel's signature does not verify against the sender",
@@ -535,14 +611,15 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
       throw error;
     }
     return submitSigned(ctx, tx, {
-      id: bytesToHex(tronTransactionId(rawData)),
-      raw: bytesToHex(encodeTronTransaction(rawData, [signed])),
-      record: { tron: { expiration: header.expiration, from } },
+      id: bytesToHex(tronTransactionId(current.rawData)),
+      raw: bytesToHex(encodeTronTransaction(current.rawData, [signed])),
+      record: { tron: { expiration: current.header.expiration, from } },
       hold: () => undefined,
       release: () => undefined,
-      send: async () => broadcastHex(api, bytesToHex(encodeTronTransaction(rawData, [signed]))),
+      send: async () =>
+        broadcastHex(api, bytesToHex(encodeTronTransaction(current.rawData, [signed]))),
       verdict: tronBroadcastVerdict,
-      known: async () => transactionKnown(api, bytesToHex(tronTransactionId(rawData))),
+      known: async () => transactionKnown(api, bytesToHex(tronTransactionId(current.rawData))),
     });
   };
 
@@ -557,10 +634,13 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
     ...(risk.length === 0 ? {} : { risk }),
     tronFee: quote,
     staleReason: async () => {
-      await Promise.resolve();
-      return ctx.options.now() >= header.expiration - TRON_STALE_MS
-        ? "transaction expired — start over"
-        : undefined;
+      if (
+        ctx.options.now() < current.header.expiration - TRON_STALE_MS &&
+        (await blockId(api, current.header.refBlock.number, true)) === current.header.refBlock.id
+      ) {
+        return undefined;
+      }
+      return rebuild();
     },
     submit,
     release: () => undefined,
@@ -976,6 +1056,357 @@ export const prepareTronApprove = async (
         );
       }
     },
+  });
+};
+
+/** `raw_data.expiration` may be at most this far ahead — java-tron Constant.java. */
+const MAXIMUM_TIME_UNTIL_EXPIRATION = 24 * 60 * 60 * 1000;
+/** A dApp-built transaction needs at least this much validity left to be signed. */
+const TRON_DAPP_MIN_REMAINING_MS = 20_000;
+
+/**
+ * TRC-20 Transfer logs in a dApp call — every contract's logs that move tokens to or from `owner`,
+ * each flagged `verified` only when its emitting contract is in the token table.
+ */
+const dappTrc20Changes = (
+  logs: ReadonlyArray<{
+    address?: string | undefined;
+    topics?: string[] | undefined;
+    data?: string | undefined;
+  }>,
+  owner: string,
+  network: string,
+): SimulationOutcome => {
+  const changes: AssetChange[] = [];
+  for (const log of logs) {
+    const [topic0] = log.topics ?? [];
+    const contract = tronLogAddress(log.address);
+    if (topic0 !== TRANSFER_TOPIC || contract === undefined) {
+      continue;
+    }
+    const logFrom = topicAddress(log.topics?.[1]);
+    const logTo = topicAddress(log.topics?.[2]);
+    const data = log.data ?? "";
+    const amount = /^[0-9a-fA-F]{64}$/.test(data) ? BigInt(`0x${data}`) : 0n;
+    const verified = lookupTronToken(tronTokenTable, network, contract) !== undefined;
+    const entry = (who: string, sign: bigint): void => {
+      if (who === owner && amount !== 0n) {
+        changes.push({
+          asset: contract,
+          amount: (sign * amount).toString(10),
+          ...(verified ? { verified: true } : { verified: false }),
+        });
+      }
+    };
+    if (logFrom !== undefined && logTo !== undefined) {
+      entry(logFrom, -1n);
+      entry(logTo, 1n);
+    }
+  }
+  return { status: "success", changes };
+};
+
+/**
+ * A dApp-built transaction: the wallet never re-encodes the `raw_data` — the bytes the dApp sent
+ * are the bytes the kernel signs. Validation decodes them, models the one contract, bounds
+ * expiration, and proves the reference block is still on this chain before quoting fees and
+ * simulating.
+ */
+export const prepareDappTron = async (
+  ctx: RouteContext,
+  ref: AccountRef,
+  network: string,
+  rawData: Uint8Array,
+): Promise<PreparedRequest> => {
+  const api = ctx.options.networks.tronApi(network);
+  const independent = ctx.options.networks.independentTronApi(network);
+  const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
+  const risk: RiskFinding[] = [];
+  const flags: Array<RequestCheckCode | undefined> = [
+    independent.kind === "unavailable" ? "reads-unverified" : undefined,
+  ];
+
+  const raw = decodeTronRawData(rawData);
+  const modeled = decodeTronContract(raw.contract.typeId, raw.contract.value);
+  if (modeled === undefined) {
+    throw new ChainError(
+      "invalid-request",
+      `contract type ${raw.contract.typeId.toString(10)} is not modeled`,
+    );
+  }
+  const { contract } = modeled;
+  if (contract.owner !== from) {
+    throw new ChainError("invalid-request", "the transaction's owner is not the signing account");
+  }
+  if (raw.contract.permissionId !== 0) {
+    throw new ChainError("invalid-request", "Permission_id must be 0");
+  }
+  const now0 = ctx.options.now();
+  if (raw.expiration > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new ChainError("invalid-request", "the transaction's expiration is out of range");
+  }
+  const expiration = Number(raw.expiration);
+  if (expiration <= now0) {
+    throw new ChainError("invalid-request", "the transaction already expired");
+  }
+  if (expiration > now0 + MAXIMUM_TIME_UNTIL_EXPIRATION) {
+    throw new ChainError(
+      "invalid-request",
+      "the transaction's expiration is more than 24 hours ahead",
+    );
+  }
+  if (expiration < now0 + TRON_DAPP_MIN_REMAINING_MS) {
+    throw new ChainError(
+      "invalid-request",
+      "the transaction expires in less than 20 s — the dApp must build it again",
+    );
+  }
+
+  // TaPoS: ref_block_bytes are the reference block number's low 16 bits; the number is recovered
+  // against the full-node head, then that block's id must contain ref_block_hash in bytes 8–16.
+  const headFull = await headNumber(api);
+  const refLow16 = (raw.refBlockBytes[0] ?? 0) * 256 + (raw.refBlockBytes[1] ?? 0);
+  const refNumber = headFull - ((((headFull - refLow16) % 65536) + 65536) % 65536);
+  const refIdAt = async (): Promise<string | undefined> => {
+    const solid = await solidHead(api);
+    return blockId(api, refNumber, refNumber <= solid.number);
+  };
+  const refId = await refIdAt();
+  if (refId === undefined || refId.slice(16, 32) !== bytesToHex(raw.refBlockHash)) {
+    throw new ChainError(
+      "invalid-request",
+      "the transaction references a block that is not on this chain",
+    );
+  }
+
+  const params0 = await chainParams(api);
+  const fromRow = await account(api, from);
+  const res = await resources(api, from);
+
+  let activates = false;
+  let call: TronCallOutcome | undefined;
+  if (contract.type === "TransferContract" || contract.type === "TransferAssetContract") {
+    const toRow = await account(api, contract.to);
+    activates = toRow === undefined;
+    if (toRow?.type === "Contract") {
+      risk.push({ code: "contract-recipient", level: "warning" });
+    }
+  }
+  const trigger = contract.type === "TriggerSmartContract" ? contract : undefined;
+  if (trigger !== undefined) {
+    call = await constantCall(api, {
+      owner: from,
+      contract: trigger.contract,
+      data: trigger.data,
+      ...(trigger.callValue > 0n ? { callValue: Number(trigger.callValue) } : {}),
+    });
+  }
+  let estimate =
+    call === undefined ? undefined : { used: call.energyUsed, penalty: call.energyPenalty };
+  const extra = async (independentApi: TronApi): Promise<void> => {
+    if (contract.type === "TransferContract" || contract.type === "TransferAssetContract") {
+      const other = await account(independentApi, contract.to);
+      if ((other === undefined) !== activates) {
+        throw new ChainError("invalid-request", "the endpoints disagree on the recipient account");
+      }
+    }
+    if (call !== undefined && estimate !== undefined && trigger !== undefined) {
+      const otherCall = await constantCall(independentApi, {
+        owner: from,
+        contract: trigger.contract,
+        data: trigger.data,
+        ...(trigger.callValue > 0n ? { callValue: Number(trigger.callValue) } : {}),
+      });
+      if (otherCall.ok !== call.ok) {
+        flags.push("reads-unverified");
+      } else if (otherCall.ok && call.ok) {
+        if (
+          feesDiffer(BigInt(Math.trunc(otherCall.energyUsed)), BigInt(Math.trunc(estimate.used)))
+        ) {
+          flags.push("fee-mismatch");
+        }
+        estimate = {
+          used: Math.max(estimate.used, otherCall.energyUsed),
+          penalty: Math.max(estimate.penalty, otherCall.energyPenalty),
+        };
+      }
+    }
+  };
+  const flag = await crossCheckTron(independent, { number: refNumber, id: refId }, params0, extra);
+  if (flag !== undefined) {
+    flags.push(flag);
+  }
+
+  const request: Extract<SignParams["request"], { kind: "tron.transaction" }> = {
+    kind: "tron.transaction",
+    network,
+    account: ref,
+    rawData,
+  };
+  const intent = decodeTron(request, from);
+  let outflow = 0n;
+  for (const flow of intent.outflows) {
+    if (flow.amount.asset === "sun") {
+      outflow += BigInt(flow.amount.amount);
+    }
+  }
+  for (const stake of intent.staking ?? []) {
+    if (
+      (stake.kind === "tron-freeze" || stake.kind === "tron-delegate") &&
+      stake.amount.asset === "sun"
+    ) {
+      outflow += BigInt(stake.amount.amount);
+    }
+  }
+  const quote = tronFeeQuote({
+    rawDataLength: rawData.length,
+    params: params0,
+    resources: res,
+    ...(activates ? { activates: true } : {}),
+    ...(estimate === undefined ? {} : { energy: estimate }),
+    ...(raw.feeLimit === undefined ? {} : { feeLimit: raw.feeLimit }),
+    ...(raw.memo === undefined ? {} : { memo: true }),
+  });
+  const balance = BigInt(Math.trunc(fromRow?.balance ?? 0));
+  if (balance < outflow + BigInt(quote.expected)) {
+    throw new ChainError(
+      "invalid-request",
+      `balance ${balance.toString(10)} does not cover the operation plus ${quote.expected} sun of fees`,
+    );
+  }
+  if (quote.warnings.includes("fee-limit-below-estimate")) {
+    risk.push({ code: "fee-limit-below-estimate", level: "warning" });
+  }
+  if (quote.warnings.includes("token-recipient-empty")) {
+    risk.push({ code: "token-recipient-empty", level: "warning" });
+  }
+  const simulation =
+    call === undefined
+      ? undefined
+      : call.ok
+        ? dappTrc20Changes(call.logs, from, network)
+        : {
+            status: "reverted" as const,
+            error: call.message ?? "the constant call reverted",
+          };
+  const id = newId(ctx.options.random);
+  const txid = bytesToHex(tronTransactionId(rawData));
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+
+  const submit = async (
+    verify: SignParams["verify"],
+    commit: () => void,
+  ): Promise<TrackedTransaction> => {
+    let tx: TrackedTransaction = {
+      id,
+      family: "tron",
+      network,
+      account: ref.kind === "hd" ? ref.walletId : ref.keyId,
+      hash: undefined,
+      state: "draft",
+      intent,
+      nonce: 0,
+      tron: { expiration, from },
+      submittedAt: ctx.options.now(),
+      error: undefined,
+    };
+    tx = await ctx.transition(tx, {});
+    let signature: Uint8Array;
+    try {
+      const result = await apis.sign({ request, verify });
+      tx = await ctx.transition(tx, { state: "signed" });
+      if (result.kind !== "tron.transaction" || !(result.signature instanceof Uint8Array)) {
+        throw new Error("unexpected tron sign result");
+      }
+      if (!verifyTronTransactionSignature(rawData, result.signature, from)) {
+        throw new ChainError(
+          "invalid-request",
+          "the kernel's signature does not verify against the sender",
+        );
+      }
+      ({ signature } = result);
+      commit();
+    } catch (error) {
+      await failTx(ctx, tx, error);
+      throw error;
+    }
+    // The dApp broadcasts; the wallet only observes. Persisted dappSignature lets a later
+    // submitDappTron pair the signed bytes the dApp sends back with this entry.
+    const tracked = await ctx.transition(tx, {
+      state: "submitted",
+      hash: txid,
+      tron: { expiration, from, dappSignature: bytesToHex(signature) },
+      submittedAt: ctx.options.now(),
+    });
+    ctx.track(id, txid);
+    return tracked;
+  };
+
+  return {
+    txId: id,
+    account: ref,
+    network,
+    intent,
+    checks: collectChecks(flags),
+    ...(simulation === undefined ? {} : { simulation }),
+    ...(risk.length === 0 ? {} : { risk }),
+    tronFee: quote,
+    staleReason: async () => {
+      if (ctx.options.now() >= expiration - TRON_DAPP_MIN_REMAINING_MS) {
+        return "the transaction expires in less than 20 s — the dApp must build it again";
+      }
+      return (await refIdAt()) === refId
+        ? undefined
+        : "the transaction's reference block left the chain";
+    },
+    submit,
+    release: () => undefined,
+  };
+};
+
+const dappUnsigned = (): ChainError =>
+  new ChainError("invalid-request", "this transaction was not signed by this wallet");
+
+/**
+ * The dApp sent the wallet-signed transaction back for broadcast (`wallet/sign` → broadcast path).
+ * The entry found by txid must be an observed dApp entry whose stored signature matches the bytes
+ * offered; the signature must verify against the recorded sender. An entry that already carries its
+ * signed `raw` was broadcast before — return it unchanged.
+ */
+export const submitDappTron = async (
+  ctx: RouteContext,
+  input: { readonly network: string; readonly rawData: Uint8Array; readonly signature: Uint8Array },
+): Promise<TrackedTransaction> => {
+  const { network, rawData, signature } = input;
+  const api = ctx.options.networks.tronApi(network);
+  const txid = bytesToHex(tronTransactionId(rawData));
+  const sigHex = bytesToHex(signature);
+  const entry = Object.values(ctx.txs()).find(
+    (t) =>
+      t.family === "tron" &&
+      t.network === network &&
+      t.hash === txid &&
+      t.tron?.dappSignature === sigHex,
+  );
+  const owner = entry?.tron?.from;
+  if (
+    entry === undefined ||
+    owner === undefined ||
+    !verifyTronTransactionSignature(rawData, signature, owner)
+  ) {
+    throw dappUnsigned();
+  }
+  if (entry.raw !== undefined) {
+    return entry;
+  }
+  return submitSigned(ctx, entry, {
+    id: txid,
+    raw: bytesToHex(encodeTronTransaction(rawData, [signature])),
+    hold: () => undefined,
+    release: () => undefined,
+    send: async () => broadcastHex(api, bytesToHex(encodeTronTransaction(rawData, [signature]))),
+    verdict: tronBroadcastVerdict,
+    known: async () => transactionKnown(api, txid),
   });
 };
 

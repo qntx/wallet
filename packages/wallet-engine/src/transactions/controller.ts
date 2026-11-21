@@ -4,7 +4,9 @@
  * password, cancelled presence) never broadcasts.
  */
 import type { SignRequest } from "@qntx/wallet-chains";
+import { ChainError } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
+import { decodeTron, normalizeTron } from "@qntx/wallet-chains/tron";
 import { chains } from "@qntx/wallet/chains";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
@@ -42,7 +44,14 @@ import {
   prepareSolanaSwap,
   submitDappSolana,
 } from "./solana.ts";
-import { pollTron, prepareTron, prepareTronApprove, prepareTronStake } from "./tron.ts";
+import {
+  pollTron,
+  prepareDappTron,
+  prepareTron,
+  prepareTronApprove,
+  prepareTronStake,
+  submitDappTron,
+} from "./tron.ts";
 
 export type {
   AccountRef,
@@ -180,7 +189,9 @@ const isTronRecord = (v: unknown): v is TronRecord =>
   isObject(v) &&
   typeof v["expiration"] === "number" &&
   Number.isSafeInteger(v["expiration"]) &&
-  typeof v["from"] === "string";
+  typeof v["from"] === "string" &&
+  (v["dappSignature"] === undefined ||
+    (typeof v["dappSignature"] === "string" && /^[0-9a-f]{128}$/.test(v["dappSignature"])));
 
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
@@ -496,6 +507,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const { network } = params;
     const info = this.options.networks.info(network);
     const ctx = this.routeCtx();
+    if (params.memo !== undefined && info.family !== "tron") {
+      throw new ChainError("invalid-request", "memo is only supported on TRON");
+    }
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
     }
@@ -651,6 +665,67 @@ export class TransactionController extends Controller<TransactionControllerState
         return { kind, signature: result.signature };
       },
     };
+  }
+
+  /**
+   * Internal entry for a dApp's TRON request: the transaction bytes are validated, proven fresh and
+   * quoted but never re-encoded — the kernel signs exactly the bytes the dApp sent. Messages and
+   * typed data decode and sign like the EVM path.
+   */
+  async prepareDappTron(
+    account: AccountRef,
+    request: SignRequest,
+  ): Promise<PreparedRequest | PreparedMessage> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    const normalized = normalizeTron(request);
+    if (normalized.kind === "tron.transaction") {
+      return prepareDappTron(this.routeCtx(), account, normalized.network, normalized.rawData);
+    }
+    if (normalized.kind !== "tron.message" && normalized.kind !== "tron.typed-data") {
+      throw new Error(`unsupported dApp request ${normalized.kind}`);
+    }
+    const { kind, network } = normalized;
+    const apis = this.options.chains ?? chains(this.options.wallet);
+    const signer = await accountAddressOf(this.routeCtx(), account, "tron.bip44", network);
+    return {
+      account,
+      network,
+      signer,
+      intent: decodeTron(normalized, signer),
+      checks: [],
+      staleReason: () => undefined,
+      release: () => undefined,
+      submit: async (verify: SendParams["verify"]) => {
+        const result = await apis.sign({
+          request:
+            normalized.kind === "tron.message"
+              ? { kind: normalized.kind, network, account, message: normalized.message }
+              : { kind: normalized.kind, network, account, typedData: normalized.typedData },
+          verify,
+        });
+        if (result.kind !== kind || !("signature" in result)) {
+          throw new Error("unexpected sign result");
+        }
+        return { kind, signature: result.signature };
+      },
+    };
+  }
+
+  /**
+   * Internal entry for the dApp broadcast path (`wallet/sign` then the dApp sends the signed
+   * transaction back): pairs the signature with the observed entry and broadcasts — once.
+   */
+  async submitDappTron(
+    network: string,
+    rawData: Uint8Array,
+    signature: Uint8Array,
+  ): Promise<TrackedTransaction> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return submitDappTron(this.routeCtx(), { network, rawData, signature });
   }
 
   /**
