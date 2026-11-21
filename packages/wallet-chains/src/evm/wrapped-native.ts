@@ -43,10 +43,15 @@ const argUint = (args: ReadonlyArray<unknown>, index: number): bigint => {
   return value;
 };
 
+/**
+ * `caller` is the account the call runs as — msg.sender at `call.to`: the signer for a
+ * transaction or batch call, the Safe or deposit wallet for an inner call. Minted or
+ * withdrawn assets go to it.
+ */
 export const decodeWrappedNative = (
   chainId: number,
   call: { readonly to: string | undefined; readonly value: bigint; readonly data: string },
-  signer: string,
+  caller: string,
   table: EvmTokenTable,
 ):
   | {
@@ -70,7 +75,7 @@ export const decodeWrappedNative = (
       ],
       minimumReceived: [
         {
-          to: signer,
+          to: caller,
           amount: {
             asset: call.to,
             amount: call.value.toString(10),
@@ -101,7 +106,7 @@ export const decodeWrappedNative = (
       },
     ],
     minimumReceived: [
-      { to: signer, amount: { asset: EVM_NATIVE_ASSET, amount: wad.toString(10) } },
+      { to: caller, amount: { asset: EVM_NATIVE_ASSET, amount: wad.toString(10) } },
     ],
   };
 };

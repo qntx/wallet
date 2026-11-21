@@ -83,7 +83,10 @@ const domainType = (domain: Record<string, unknown>) =>
 const doc = (message: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
   const domain = { verifyingContract: SAFE, chainId: 1, ...overrides };
   return {
-    types: { EIP712Domain: domainType(domain), SafeTx: SAFE_TX_FIELDS },
+    types: {
+      EIP712Domain: domainType(domain),
+      SafeTx: SAFE_TX_FIELDS.map((field) => ({ ...field })),
+    },
     primaryType: "SafeTx",
     domain,
     message,
@@ -460,5 +463,76 @@ describe("decodeEvm: Safe transactions", () => {
     extra.types.SafeTx.push({ name: "extra", type: "uint256" });
     expect(safeOf(renamed)).toBeUndefined();
     expect(safeOf(extra)).toBeUndefined();
+  });
+});
+
+describe("decodeEvm: Safe inner-call recipients", () => {
+  const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+  const LIDO_QUEUE = "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1";
+  const DEPOSIT = AbiFunction.from("function deposit() payable");
+  const WITHDRAW = AbiFunction.from("function withdraw(uint256 wad)");
+  const REQUEST = AbiFunction.from(
+    "function requestWithdrawals(uint256[] amounts, address owner)",
+  );
+
+  it("a WETH deposit credits the wrapped coin to the Safe, not the signer", () => {
+    const call = safeOf(
+      doc(
+        safeTx({
+          to: WETH,
+          value: "1000000000000000000",
+          data: AbiFunction.getSelector(DEPOSIT),
+        }),
+      ),
+    )?.calls[0];
+    expect(call?.summary).toBe("swap");
+    expect(call?.verifiability).toBe("full");
+    expect(call?.minimumReceived?.[0]?.to).toBe(SAFE);
+  });
+
+  it("a WETH withdraw credits the coin to the Safe, not the signer", () => {
+    const call = safeOf(
+      doc(
+        safeTx({
+          to: WETH,
+          data: AbiFunction.encodeData(WITHDRAW, [1_000_000_000_000_000_000n]),
+        }),
+      ),
+    )?.calls[0];
+    const received = call?.minimumReceived?.[0];
+    expect(received?.to).toBe(SAFE);
+    expect(received?.amount.asset).toBe("native");
+  });
+
+  it("a zero-owner Lido withdrawal request resolves to the Safe and pays nothing out", () => {
+    const call = safeOf(
+      doc(
+        safeTx({
+          to: LIDO_QUEUE,
+          data: AbiFunction.encodeData(REQUEST, [
+            [1_000_000_000_000_000_000n],
+            ZERO_ADDR as `0x${string}`,
+          ]),
+        }),
+      ),
+    )?.calls[0];
+    expect(call?.staking?.[0]).toMatchObject({ kind: "lido-request", owner: SAFE });
+    expect(call?.outflows).toStrictEqual([]);
+  });
+
+  it("a Lido withdrawal owned by another address pays that address", () => {
+    const call = safeOf(
+      doc(
+        safeTx({
+          to: LIDO_QUEUE,
+          data: AbiFunction.encodeData(REQUEST, [
+            [1_000_000_000_000_000_000n],
+            SIGNER as `0x${string}`,
+          ]),
+        }),
+      ),
+    )?.calls[0];
+    expect(call?.staking?.[0]).toMatchObject({ kind: "lido-request", owner: SIGNER });
+    expect(call?.outflows[0]?.to).toBe(SIGNER);
   });
 });

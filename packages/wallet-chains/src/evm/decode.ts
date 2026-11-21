@@ -159,7 +159,7 @@ type CallContext = {
 /** A call into a protocol the decoder models in full, native value included. */
 const protocolIntent = (
   call: EvmCall,
-  { network, fee, table, signer }: CallContext,
+  { network, fee, table, signer, self }: CallContext,
 ): DisplayIntent | undefined => {
   const chainId = networkChainId(network);
   const base = { family: "evm" as const, network, approvals: [], warnings: [] };
@@ -213,7 +213,7 @@ const protocolIntent = (
     };
   }
 
-  const lido = decodeLido(chainId, call, signer, table);
+  const lido = decodeLido(chainId, call, self, table);
   if (lido !== undefined) {
     return {
       ...base,
@@ -225,7 +225,7 @@ const protocolIntent = (
     };
   }
 
-  const wrapped = decodeWrappedNative(chainId, call, signer, table);
+  const wrapped = decodeWrappedNative(chainId, call, self, table);
   if (wrapped !== undefined) {
     return {
       ...base,

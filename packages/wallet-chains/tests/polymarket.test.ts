@@ -153,6 +153,27 @@ describe("polymarket vectors", () => {
   });
 });
 
+describe("polymarket batch inner-call recipients", () => {
+  const WPOL = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+
+  it("a wrapped-native deposit credits the wallet, not the signing EOA", () => {
+    const d = clone(doc("batch: pUSD approve + CTF setApprovalForAll").typedData);
+    const wallet = must(d.message["wallet"], "wallet");
+    d.message["calls"] = [
+      {
+        target: WPOL,
+        value: "1000000000000000000",
+        data: "0xd0e30db0",
+      },
+    ];
+    const calls = batchCalls(
+      decodeEvm(request(d, "eip155:137"), OTHER).message,
+    ) as ReadonlyArray<DisplayIntent>;
+    expect(calls[0]?.summary).toBe("swap");
+    expect(calls[0]?.minimumReceived?.[0]?.to).toBe(wallet);
+  });
+});
+
 describe("polymarket order near misses", () => {
   const nearMisses: ReadonlyArray<{ name: string; mutate: (d: Doc) => Doc }> = [
     {
