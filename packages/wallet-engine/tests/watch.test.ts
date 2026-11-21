@@ -14,6 +14,7 @@ const logger = {
 const EVM = "0x1234567890abcdef1234567890abcdef12345678";
 const SOL = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const BTC = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
+const TRON = "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb";
 
 const stubbedAssets = (): AssetsController => {
   const c = {
@@ -65,9 +66,12 @@ describe("WatchController", () => {
     expect(w.getState().accounts[a.id]?.name).toBe("main");
     const b = await w.add({ family: "solana", address: SOL });
     const c = await w.add({ family: "bitcoin", address: BTC });
-    expect(w.list()).toHaveLength(3);
+    const d = await w.add({ family: "tron", address: TRON });
+    expect(d.address).toBe(TRON); // base58 stored verbatim — no case folding
+    expect(w.list()).toHaveLength(4);
     await w.remove(b.id);
     await w.remove(c.id);
+    await w.remove(d.id);
     expect(w.list()).toHaveLength(1);
   });
 
@@ -75,6 +79,10 @@ describe("WatchController", () => {
     ["evm", "not-an-address"],
     ["solana", `0x${"ab".repeat(20)}`],
     ["bitcoin", "not-bitcoin"],
+    ["tron", "not-tron"],
+    ["tron", `0x${"ab".repeat(20)}`],
+    // a case-folded tron address fails base58check — it is malformed, not normalised
+    ["tron", "twd4wrz9wn84f5x1hzhl4dhvk738ns5jwb"],
   ] as const)("rejects a malformed %s address", async (family, address) => {
     const w = world();
     await expect(w.add({ family, address })).rejects.toThrow(`not a valid ${family} address`);

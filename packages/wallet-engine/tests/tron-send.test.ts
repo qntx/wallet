@@ -209,6 +209,7 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
 const ctx = (
   w: World & { api: TronApi },
   now: () => number = () => 1_000_000,
+  wallet: RouteContext["options"]["wallet"] = {} as never,
 ): { ctx: RouteContext; transitions: TrackedTransaction[] } => {
   const transitions: TrackedTransaction[] = [];
   return {
@@ -218,7 +219,7 @@ const ctx = (
           tronApi: () => w.api,
           independentTronApi: () => w.independent,
         } as never,
-        wallet: {} as never,
+        wallet,
         openStore: async () => Promise.resolve({} as never),
         random: (n: number) => new Uint8Array(n).fill(0x55),
         setTimer: () => () => {},
@@ -264,9 +265,10 @@ const params = (
     readonly token?: string | undefined;
     readonly to?: string | undefined;
     readonly amount?: bigint | undefined;
+    readonly account?: AccountRef | undefined;
   } = {},
 ): PrepareParams => ({
-  account: ACCOUNT,
+  account: over.account ?? ACCOUNT,
   network: NET,
   to: over.to ?? TO,
   amount: over.amount ?? 1_000_000n,
@@ -625,5 +627,24 @@ describe("prepareTron", () => {
     const prepared = await prepareTron(bad, params());
     await expect(prepared.submit(VERIFY, () => undefined)).rejects.toThrow(/does not verify/);
     expect(w.posts.some((p) => p.path === "/wallet/broadcasthex")).toBe(false);
+  });
+
+  it("an imported tron key ref resolves its stored address through keys.list", async () => {
+    const w = world();
+    const keyId = "dd".repeat(8);
+    const wallet = {
+      keys: {
+        list: async () => Promise.resolve([{ keyId, family: "tron", address: FROM, createdAt: 1 }]),
+      },
+    } as never;
+    const prepared = await prepareTron(
+      ctx(w, undefined, wallet).ctx,
+      params({ account: { kind: "imported", keyId, family: "tron" } }),
+    );
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.tron?.from).toBe(FROM);
+    expect(w.signCalls.map((c) => (c.request as { account?: unknown }).account)).toStrictEqual([
+      { kind: "imported", keyId, family: "tron" },
+    ]);
   });
 });

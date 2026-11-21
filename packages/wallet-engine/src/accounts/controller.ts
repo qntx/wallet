@@ -3,10 +3,13 @@ import { isAddress } from "viem";
 import type { SparkNetwork } from "@qntx/spark";
 import type { KeyInfo, Wallet } from "@qntx/wallet";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { isTronAddress } from "@qntx/wallet-chains/tron";
 import { chains } from "@qntx/wallet/chains";
 
 import { scanChain } from "../chains/bitcoin-scan.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
+import { account as tronAccount } from "../chains/tron.ts";
+import type { TronApi } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { MetaDocGroup, MetaDocTree } from "../meta/doc.ts";
@@ -54,7 +57,8 @@ type DiscoveryNetworks = {
     readonly call: (method: string, params: unknown[]) => Promise<unknown>;
   };
   readonly esplora: (network: string) => Esplora;
-  readonly enabled: (family: "evm" | "solana" | "bitcoin") => ReadonlyArray<string>;
+  readonly tronApi: (network: string) => TronApi;
+  readonly enabled: (family: "evm" | "solana" | "bitcoin" | "tron") => ReadonlyArray<string>;
 };
 
 export type AccountTreeControllerOptions = {
@@ -793,6 +797,27 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         );
         return seen.some(Boolean);
       };
+      const tron = async (): Promise<boolean> => {
+        if (nets === undefined) {
+          return false;
+        }
+        const seen = await Promise.all(
+          nets.enabled("tron").map(async (network) => {
+            const acct = await apis.account({
+              walletId,
+              groupIndex,
+              template: "tron.bip44",
+              network,
+            });
+            const address = "address" in acct ? addressOf(acct.address) : undefined;
+            if (address === undefined || !isTronAddress(address)) {
+              return false;
+            }
+            return (await tronAccount(nets.tronApi(network), address)) !== undefined;
+          }),
+        );
+        return seen.some(Boolean);
+      };
       const spark = async (): Promise<boolean> => {
         const ref = {
           walletId,
@@ -808,6 +833,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         check("evm", evm),
         check("solana", solana),
         check("bitcoin", bitcoin),
+        check("tron", tron),
       ]);
       const usedMap = Object.fromEntries(results.map(([k, v]) => [k, v.used]));
       const errorMap = Object.fromEntries(
