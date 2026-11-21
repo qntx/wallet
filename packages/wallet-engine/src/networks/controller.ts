@@ -11,6 +11,8 @@ import type { CcipRequestParameters, Hex, PublicClient } from "viem";
  */
 import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
+import { tronCaller } from "../chains/tron.ts";
+import type { TronApi } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
@@ -21,6 +23,7 @@ import {
   networksPath,
   rpcPath,
   servedNetworksResponse,
+  tronBasePath,
 } from "../gateway/contract/index.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -321,8 +324,13 @@ export class NetworkController extends Controller<NetworkControllerState> {
       return [...custom, ...host];
     }
     if (this.gatewayBase !== undefined && this.gatewayServed.has(network)) {
+      const family = networkById(network)?.family;
       const path =
-        networkById(network)?.family === "bitcoin" ? esploraBasePath(network) : rpcPath(network);
+        family === "bitcoin"
+          ? esploraBasePath(network)
+          : family === "tron"
+            ? tronBasePath(network)
+            : rpcPath(network);
       return [`${this.gatewayBase}${path}`, ...host];
     }
     return host;
@@ -410,6 +418,11 @@ export class NetworkController extends Controller<NetworkControllerState> {
     return this.independent(network, (hosts) => solanaCaller(hosts, this.options.fetch));
   }
 
+  /** Host-endpoint TRON client for cross-checking pre-signing reads; never sends the install id. */
+  independentTronApi(network: string): Independent<TronApi> {
+    return this.independent(network, (hosts) => tronCaller(hosts, this.options.fetch));
+  }
+
   independentEsplora(network: string): Independent<Esplora> {
     return this.independent(network, (hosts) =>
       esploraClient(hosts, this.options.fetch, {
@@ -420,7 +433,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
   }
 
   /** Networks with at least one configured endpoint or served by the gateway, by family. */
-  enabled(family: "evm" | "solana" | "bitcoin"): ReadonlyArray<string> {
+  enabled(family: "evm" | "solana" | "bitcoin" | "tron"): ReadonlyArray<string> {
     const ids = new Set([
       ...Object.keys(this.options.rpc),
       ...Object.keys(this.getState().customRpc),
@@ -439,6 +452,15 @@ export class NetworkController extends Controller<NetworkControllerState> {
       throw new Error(`no rpc endpoint for ${network}`);
     }
     return solanaCaller(urls, this.gatewayFetch);
+  }
+
+  /** TRON node API over the ordered endpoint list — plain POSTs fail over like Solana's. */
+  tronApi(network: string): TronApi {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no rpc endpoint for ${network}`);
+    }
+    return tronCaller(urls, this.gatewayFetch);
   }
 
   /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */
@@ -468,6 +490,23 @@ export class NetworkController extends Controller<NetworkControllerState> {
         const genesis = text.trim();
         if (genesis !== info.genesisHash) {
           throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
+        }
+        return;
+      }
+      if (info.family === "tron") {
+        // TRON has no chain-id call; block 0's id is the chain's genesis hash.
+        const res = await this.options.fetch(`${url.replace(/\/$/, "")}/wallet/getblockbynum`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ num: 0 }),
+          signal: bound.signal,
+        });
+        const body: unknown = await res.json();
+        const blockId = isObject(body) ? body["blockID"] : undefined;
+        if (blockId !== info.genesisHash) {
+          throw new Error(
+            `${url} reports genesis ${String(blockId)}, expected ${info.genesisHash ?? ""}`,
+          );
         }
         return;
       }

@@ -30,7 +30,7 @@ export const NAME_MAX = 32;
 export const NOTE_MAX = 120;
 
 const isFamily = (v: unknown): v is AddressFamily =>
-  v === "evm" || v === "solana" || v === "bitcoin" || v === "spark";
+  v === "evm" || v === "solana" || v === "bitcoin" || v === "tron" || v === "spark";
 const ENTRY_KEYS: ReadonlySet<string> = new Set([
   "id",
   "name",

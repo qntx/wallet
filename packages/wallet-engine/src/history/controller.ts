@@ -20,6 +20,7 @@ import { compose, OrderedMerge } from "./merge.ts";
 import type { Stream } from "./merge.ts";
 import { solanaHistoryStream } from "./solana.ts";
 import { sparkHistoryStream, sparkRecordEntries, sparkRecordsChanged } from "./spark.ts";
+import { tronHistoryStream } from "./tron.ts";
 import type { HistoryEntry } from "./types.ts";
 
 const PAGE = 25;
@@ -53,7 +54,9 @@ export type HistoryControllerOptions = {
     | "independentClient"
     | "independentSolanaRpc"
     | "independentEsplora"
+    | "independentTronApi"
     | "solanaRpc"
+    | "tronApi"
     | "esplora"
   >;
   readonly chains: {
@@ -289,6 +292,7 @@ export class HistoryController extends Controller<HistoryState> {
       evm: new Set(),
       solana: new Set(),
       bitcoin: new Set(),
+      tron: new Set(),
       spark: new Set(),
     };
     for (const record of Object.values(this.options.addressBook.store.getState().entries)) {
@@ -309,6 +313,9 @@ export class HistoryController extends Controller<HistoryState> {
     if (own.solana !== undefined) {
       by["solana"].add(own.solana);
     }
+    if (own.tron !== undefined) {
+      by["tron"].add(own.tron);
+    }
     for (const address of own.bitcoin) {
       by["bitcoin"].add(address);
     }
@@ -316,6 +323,7 @@ export class HistoryController extends Controller<HistoryState> {
       evm: [...by["evm"]],
       solana: [...by["solana"]],
       bitcoin: [...by["bitcoin"]],
+      tron: [...by["tron"]],
       spark: [...by["spark"]],
     };
   }
@@ -369,7 +377,8 @@ export class HistoryController extends Controller<HistoryState> {
   private async resolveOwn(group: HistoryGroup, own: GroupAddresses): Promise<void> {
     const [evmNetwork] = this.options.networks.enabled("evm");
     const [solanaNetwork] = this.options.networks.enabled("solana");
-    const [evmAccount, solanaAccount] = await Promise.all([
+    const [tronNetwork] = this.options.networks.enabled("tron");
+    const [evmAccount, solanaAccount, tronAccount] = await Promise.all([
       evmNetwork === undefined
         ? undefined
         : this.options.chains.account({ ...group, template: "evm.bip44", network: evmNetwork }),
@@ -380,12 +389,22 @@ export class HistoryController extends Controller<HistoryState> {
             template: "solana.bip44-change",
             network: solanaNetwork,
           }),
+      tronNetwork === undefined
+        ? undefined
+        : this.options.chains.account({
+            ...group,
+            template: "tron.bip44",
+            network: tronNetwork,
+          }),
     ]);
     if (evmAccount?.address !== undefined) {
       own.evm = evmAccount.address;
     }
     if (solanaAccount?.address !== undefined) {
       own.solana = solanaAccount.address;
+    }
+    if (tronAccount?.address !== undefined) {
+      own.tron = tronAccount.address;
     }
   }
 
@@ -433,6 +452,26 @@ export class HistoryController extends Controller<HistoryState> {
             },
             (id, error) => {
               runtime.errors[id] = errorMessage(error);
+            },
+          ),
+        );
+      }
+    }
+    if (gateway !== undefined && own.tron !== undefined) {
+      for (const network of networks.enabled("tron")) {
+        // The indexer feeds are gateway-only; a custom-endpoint network is skipped like EVM.
+        if (networks.independentTronApi(network).kind === "not-needed") {
+          continue;
+        }
+        const address = own.tron;
+        streams.push(
+          tronHistoryStream(
+            { gateway, networks, setTimer: this.options.setTimer },
+            network,
+            address,
+            cached,
+            () => {
+              runtime.truncated.add(network);
             },
           ),
         );

@@ -11,10 +11,12 @@ import { chains } from "@qntx/wallet/chains";
 
 import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
+import type { TronFeeQuote } from "../chains/tron.ts";
 import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import type { RiskFinding } from "../requests/risk.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AcrossBridgeQuote } from "../swaps/bridge.ts";
@@ -57,6 +59,8 @@ export type TxPoll =
       readonly state: "confirmed" | "failed";
       readonly block: TxBlock;
       readonly final: boolean;
+      /** An on-chain failure's reason (receipt result plus burned fee), persisted on the row. */
+      readonly error?: string;
     }
   | { readonly kind: "reorged" }
   | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" }
@@ -77,13 +81,14 @@ export const includedPoll = (
   state: "confirmed" | "failed",
   block: TxBlock,
   final: boolean,
+  error?: string,
 ): TxPoll | undefined =>
   tx.state === state &&
   tx.final === final &&
   tx.block?.height === block.height &&
   tx.block.hash?.toLowerCase() === block.hash?.toLowerCase()
     ? undefined
-    : { kind: "included", state, block, final };
+    : { kind: "included", state, block, final, ...(error === undefined ? {} : { error }) };
 
 /** A bitcoin transaction that funds the wallet's own Spark account; it is claimed once confirmed. */
 export type SparkDepositTag = {
@@ -95,7 +100,7 @@ export type SparkDepositTag = {
 
 export type TrackedTransaction = {
   readonly id: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly network: string;
   /** The signer's identity label — `walletId` for HD accounts, `keyId` for imported keys. */
   readonly account: string;
@@ -122,6 +127,11 @@ export type TrackedTransaction = {
    * transaction is never dropped — only resolved by landing.
    */
   readonly durableNonce?: { readonly account: string | undefined; readonly value: string };
+  /**
+   * TRON build record — `raw_data.expiration` bounds drop proofs (past it the network can never
+   * include the transaction); `from` is the sender, for group membership like `evm.from`.
+   */
+  readonly tron?: { readonly expiration: number; readonly from: string };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */
@@ -195,7 +205,9 @@ export type ChainRequestMethod =
   | "solana-core-send"
   | "evm-lido"
   | "solana-stake"
-  | "solana-swap";
+  | "solana-swap"
+  | "tron-stake"
+  | "tron-approve";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
@@ -296,6 +308,47 @@ export type ChainRequestInput =
             readonly lamports: bigint;
           };
       readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "tron-stake";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly action:
+        | {
+            readonly kind: "freeze" | "unfreeze";
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+          }
+        | { readonly kind: "withdraw-expired" }
+        | { readonly kind: "cancel-unfreeze" }
+        | {
+            readonly kind: "delegate";
+            readonly receiver: string;
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+            /** Lock the delegation for this many blocks (1..getMaxDelegateLockPeriod). */
+            readonly lockBlocks?: number;
+          }
+        | {
+            readonly kind: "undelegate";
+            readonly receiver: string;
+            readonly amount: bigint;
+            readonly resource: "bandwidth" | "energy";
+          }
+        | {
+            readonly kind: "vote";
+            readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: bigint }>;
+          }
+        | { readonly kind: "claim-rewards" };
+    }
+  | {
+      readonly method: "tron-approve";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly token: string;
+      readonly spender: string;
+      /** The new allowance in token units; 0 revokes. */
+      readonly amount: bigint;
     };
 
 /** At most this many calls per batch — one approval stays reviewable. */
@@ -335,6 +388,10 @@ export type PreparedRequest = {
   readonly target?: string;
   readonly intent: DisplayIntent;
   readonly checks: ReadonlyArray<RequestCheckCode>;
+  /** Findings a route can only see on-chain (contract recipient, empty token balance). */
+  readonly risk?: ReadonlyArray<RiskFinding>;
+  /** The TRON fee quote — the intent's fee field carries only `fee_limit`. */
+  readonly tronFee?: TronFeeQuote;
   /** Absent when the request is not simulated (replacements, Bitcoin). */
   readonly simulation?: SimulationOutcome;
   /** Re-runs the same simulated call at approval; absent when there is nothing to re-run. */
@@ -417,7 +474,11 @@ export const accountAddress = (account: Readonly<Record<string, unknown>>): stri
 
 export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
 
-const TEMPLATE_FAMILY = { "evm.bip44": "evm", "solana.bip44-change": "solana" } as const;
+const TEMPLATE_FAMILY = {
+  "evm.bip44": "evm",
+  "solana.bip44-change": "solana",
+  "tron.bip44": "tron",
+} as const;
 
 /**
  * The signer address for a send/sign account ref: HD refs derive through the chains proxy; an

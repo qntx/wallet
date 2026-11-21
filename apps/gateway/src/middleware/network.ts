@@ -13,7 +13,7 @@ import type {
 } from "../types.ts";
 import { GatewayHttpError } from "./errors.ts";
 
-export type Family = "evm" | "solana" | "bitcoin";
+export type Family = "evm" | "solana" | "bitcoin" | "tron";
 
 export type ResolvedNetwork = Omit<GatewayNetwork, "providers"> & {
   readonly family: Family;

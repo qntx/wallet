@@ -26,12 +26,14 @@ type Rig = {
   readonly evmNonce: Record<number, number>;
   readonly solSigs: Set<number>;
   readonly btcUsed: Set<number>;
+  readonly tronUsed: Set<number>;
   readonly sparkUsed: Set<number>;
   readonly failOn: Set<string>;
   readonly calls: string[];
   evmGroup: number;
   solGroup: number;
   btcGroup: number;
+  tronGroup: number;
 };
 
 const rig = (over: Partial<Rig> = {}): Rig => {
@@ -41,12 +43,14 @@ const rig = (over: Partial<Rig> = {}): Rig => {
     evmNonce: { ...over.evmNonce },
     solSigs: over.solSigs === undefined ? new Set() : new Set(over.solSigs),
     btcUsed: over.btcUsed === undefined ? new Set() : new Set(over.btcUsed),
+    tronUsed: over.tronUsed === undefined ? new Set() : new Set(over.tronUsed),
     sparkUsed: over.sparkUsed === undefined ? new Set() : new Set(over.sparkUsed),
     failOn: over.failOn === undefined ? new Set() : new Set(over.failOn),
     calls: [],
     evmGroup: -1,
     solGroup: -1,
     btcGroup: -1,
+    tronGroup: -1,
   };
   const spark = {
     store: { subscribe: () => () => {} },
@@ -66,12 +70,18 @@ const rig = (over: Partial<Rig> = {}): Rig => {
         r.evmGroup = p.groupIndex;
       } else if (p.template === "solana.bip44-change") {
         r.solGroup = p.groupIndex;
+      } else if (p.template === "tron.bip44") {
+        r.tronGroup = p.groupIndex;
       } else {
         r.btcGroup = p.groupIndex;
       }
       return Promise.resolve({
         address:
-          p.template === "evm.bip44" ? "0x9858EfFD232B4033E47d90003D41EC34EcaEda94" : "bc1qabc",
+          p.template === "evm.bip44"
+            ? "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+            : p.template === "tron.bip44"
+              ? "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb"
+              : "bc1qabc",
         xpub: HD.publicExtendedKey,
       });
     },
@@ -86,6 +96,9 @@ const rig = (over: Partial<Rig> = {}): Rig => {
       }
       if (family === "bitcoin") {
         return ["bip122:000000000019d6689c085ae165831e93"];
+      }
+      if (family === "tron") {
+        return ["tron:728126428"];
       }
       return [];
     },
@@ -114,6 +127,20 @@ const rig = (over: Partial<Rig> = {}): Rig => {
         return Promise.resolve(r.btcUsed.has(r.btcGroup) ? [{ txid: "aa" }] : []);
       },
       post: async () => Promise.resolve(""),
+    }),
+    tronApi: () => ({
+      post: async (path: string) => {
+        if (path === "/wallet/getaccount") {
+          r.calls.push("tron");
+          if (r.failOn.has("tron")) {
+            throw new Error("tron node down");
+          }
+          return Promise.resolve(
+            r.tronUsed.has(r.tronGroup) ? { address: "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb" } : {},
+          );
+        }
+        return Promise.reject(new Error(`unmocked ${path}`));
+      },
     }),
   };
   const ctl = new AccountTreeController({
@@ -173,12 +200,19 @@ describe("account discovery", () => {
       const r = rig();
       await init(r);
       await r.ctl.discoverGroups(W);
-      expect([...new Set(r.calls)].toSorted()).toStrictEqual(["bitcoin", "evm", "solana", "spark"]);
+      expect([...new Set(r.calls)].toSorted()).toStrictEqual([
+        "bitcoin",
+        "evm",
+        "solana",
+        "spark",
+        "tron",
+      ]);
       expect(r.ctl.getState().groups[W]?.[0]?.used).toStrictEqual({
         bitcoin: false,
         evm: false,
         solana: false,
         spark: false,
+        tron: false,
       });
     },
   );
@@ -191,6 +225,20 @@ describe("account discovery", () => {
     expect(g1?.used?.["spark"]).toBe(true);
     expect(g1?.used?.["solana"]).toBe(true);
   });
+
+  it(
+    "derives and probes the tron.bip44 account — an existing vault needs no state",
+    { timeout: 30_000 },
+    async () => {
+      const r = rig({ tronUsed: new Set([1]) });
+      await init(r);
+      const found = await r.ctl.discoverGroups(W);
+      expect(found).toStrictEqual([0, 1]);
+      const g1 = r.ctl.getState().groups[W]?.find((g) => g.index === 1);
+      expect(g1?.used?.["tron"]).toBe(true);
+      expect(r.tronGroup).toBeGreaterThanOrEqual(1); // tron.bip44 was derived, not read from state
+    },
+  );
 
   it(
     "surfaces a failing family on the group instead of marking it unused",

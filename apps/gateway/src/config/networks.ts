@@ -295,6 +295,16 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
       { id: "emzy", url: "https://mempool.emzy.de/testnet4/api" },
     ],
   },
+  {
+    // TRON Nile — https://developers.tron.network/docs/networks
+    id: "tron:3448148188",
+    providers: [
+      // https://developers.tron.network/docs/networks — TronGrid Nile, keyless
+      { id: "trongrid", url: "https://nile.trongrid.io" },
+      // https://nileex.io — Nile public node, keyless
+      { id: "nileex", url: "https://api.nileex.io" },
+    ],
+  },
 ];
 
 /**
@@ -654,6 +664,17 @@ export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
         url: "https://enterprise.blockstream.info/api",
         auth: "blockstream",
       },
+    ],
+  },
+  {
+    // TRON mainnet — https://developers.tron.network/docs/networks
+    id: "tron:728126428",
+    providers: [
+      // https://www.trongrid.io — key in the TRON-PRO-API-KEY header
+      { id: "trongrid", url: "https://api.trongrid.io", auth: "trongrid" },
+      // https://docs.tatum.io/reference/rpc-tron-restapi — node API base, key in the x-api-key
+      // header
+      { id: "tatum", url: "https://tron-mainnet.gateway.tatum.io", auth: "tatum" },
     ],
   },
 ];

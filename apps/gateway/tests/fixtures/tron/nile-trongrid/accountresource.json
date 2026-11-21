@@ -1,0 +1,22 @@
+{
+  "status": 200,
+  "body": {
+    "freeNetLimit": 600,
+    "assetNetUsed": [
+      {
+        "key": "1000026",
+        "value": 0
+      }
+    ],
+    "assetNetLimit": [
+      {
+        "key": "1000026",
+        "value": 100
+      }
+    ],
+    "TotalNetLimit": 43200000000,
+    "TotalNetWeight": 68454290331,
+    "TotalEnergyLimit": 180000000000,
+    "TotalEnergyWeight": 2451896577
+  }
+}

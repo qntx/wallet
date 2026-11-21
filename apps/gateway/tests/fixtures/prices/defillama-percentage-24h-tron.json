@@ -1,0 +1,6 @@
+{
+  "url": "https://coins.llama.fi/percentage/coingecko:tron,tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t?period=24h",
+  "fetchedAt": "2026-11-21T10:27:40Z",
+  "status": 200,
+  "body": "{\"coins\":{\"coingecko:tron\":-1.5752655434108365,\"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\":-0.03490255244371809}}"
+}

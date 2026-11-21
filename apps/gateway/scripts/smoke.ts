@@ -127,6 +127,18 @@ for (const { caip2, family } of plan) {
         throw new Error(`genesis ${body.result ?? body.error?.message ?? r.status}`);
       }
     });
+  } else if (family === "tron") {
+    await check(`${caip2} getchainparameters`, async () => {
+      const r = await post(`/v1/tron/${caip2}/wallet/getchainparameters`, {});
+      const body = (await r.json()) as { chainParameter?: ReadonlyArray<unknown> };
+      if (
+        r.status !== 200 ||
+        !Array.isArray(body.chainParameter) ||
+        body.chainParameter.length === 0
+      ) {
+        throw new Error(`status ${r.status}`);
+      }
+    });
   } else {
     await check(`${caip2} block-height/0`, async () => {
       const r = await get(`/v1/esplora/${caip2}/block-height/0`);

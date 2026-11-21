@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "body": {
+    "id": "1b7b79631b02ef55676a106f72ead3c0ac2102878eb0c79d46ba020b62b0299e",
+    "blockNumber": 56105108,
+    "blockTimeStamp": 1744622175000,
+    "contractResult": [""],
+    "receipt": {
+      "net_usage": 267
+    }
+  }
+}

@@ -114,8 +114,8 @@ export type EngineOptions = {
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
   /**
-   * Host endpoints per network (CAIP-2), ordered by preference, for all three chain families: EVM
-   * and Solana JSON-RPC URLs, and for Bitcoin the Esplora base URL.
+   * Host endpoints per network (CAIP-2), ordered by preference, per family: EVM and Solana JSON-RPC
+   * URLs, the Esplora base URL for Bitcoin, full-node HTTP base URLs for TRON.
    */
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /**
@@ -285,7 +285,7 @@ export type WalletEngine = {
   >;
   readonly watch: {
     readonly add: (input: {
-      readonly family: "evm" | "solana" | "bitcoin";
+      readonly family: "evm" | "solana" | "bitcoin" | "tron";
       readonly address: string;
       readonly name?: string;
     }) => Promise<WatchAccount>;
@@ -536,6 +536,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             [
               ["evm.bip44", "evm"],
               ["solana.bip44-change", "solana"],
+              ["tron.bip44", "tron"],
               ["btc.bip84", "bitcoin"],
               ["btc.bip86", "bitcoin"],
             ] as const
@@ -812,18 +813,24 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   /** The group's address on the family's networks, or none when the group has no such account. */
   const groupAddresses = async (
     group: { readonly walletId: string; readonly groupIndex: number },
-    family: "evm" | "solana",
+    family: "evm" | "solana" | "tron",
   ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
     const enabled = networks.enabled(family);
     const [first] = enabled;
     if (first === undefined) {
       return [];
     }
+    const template =
+      family === "evm"
+        ? ("evm.bip44" as const)
+        : family === "solana"
+          ? ("solana.bip44-change" as const)
+          : ("tron.bip44" as const);
     try {
       // One derivation serves every network of the family: the address does not depend on it.
       const account = await chains(options.wallet).account({
         ...group,
-        template: family === "evm" ? "evm.bip44" : "solana.bip44-change",
+        template,
         network: first,
       });
       return "address" in account
@@ -883,6 +890,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     enabledNetworks: () => [
       ...networks.enabled("evm"),
       ...networks.enabled("solana"),
+      ...networks.enabled("tron"),
       ...networks.enabled("bitcoin"),
     ],
     nostrPubkey: async (ref) => nostr(options.wallet).signer(ref).getPublicKey(),
@@ -1066,16 +1074,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     prices,
     portfolio: {
       group: async (group) => {
-        const [evm, solana] = await Promise.all([
+        const [evm, solana, tron] = await Promise.all([
           groupAddresses(group, "evm"),
           groupAddresses(group, "solana"),
+          groupAddresses(group, "tron"),
         ]);
         const holdings = groupHoldings({
           balances: assets.getState().balances,
           spark: controller.getState().accounts,
           sparkNetwork: options.sparkNetwork,
           group,
-          addresses: [...evm, ...solana],
+          addresses: [...evm, ...solana, ...tron],
           bitcoin: networks.enabled("bitcoin"),
         });
         return valueHoldings(holdings, prices.getState(), options.now());

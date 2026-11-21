@@ -10,6 +10,7 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 | `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                     |
 | ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                 |
 | `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                              |
+| `POST /v1/tron/:caip2/*`         | TRON node API: an allow-list of `/wallet/*` and `/walletsolidity/*` paths plus the TronGrid `/v1/accounts` indexer feeds (TronGrid providers only); request bodies are schema-checked, `broadcasthex` follows the broadcast rule below |
 | `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                  |
 | `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it |
 | `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                       |
@@ -49,7 +50,7 @@ int64, a quote amount wider than the chain's amount type). `tests/breaker.test.t
 registered route and holds each one to this accounting.
 
 A request that relays a signed transaction (`eth_sendRawTransaction`, Solana `sendTransaction`,
-Esplora `POST /tx`) fails over only when the failed attempt provably never reached the provider —
+Esplora `POST /tx`, TRON `/wallet/broadcasthex`) fails over only when the failed attempt provably never reached the provider —
 an open breaker, a 401/403/429 refusal, or a rejected auth lookup. Any other failure (timeout,
 transport error, 5xx, malformed body) is ambiguous: the provider may have relayed the transaction,
 so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
@@ -85,6 +86,9 @@ away. A spent account refuses with its own wait time; the request fails over —
 outage — and when every provider is spent or cooling, the 503 `unavailable` carries the shortest
 announced wait. Operator note: the budgets in `src/config/accounts.ts` assume the provider plans
 listed in each row's comment — review them when a plan changes.
+
+TRON providers are request-priced like Esplora: every allow-listed `/v1/tron` path is one bounded
+upstream call billed one request credit on the provider's account (`trongrid`, `tatum`).
 
 ## Prices
 
@@ -191,7 +195,7 @@ After changing `wrangler.jsonc`, regenerate the committed runtime types:
 ## Deploy staging
 
 Staging serves testnets only (every built-in EVM testnet, Solana devnet, Bitcoin signet and
-testnet4) through keyless public endpoints — two per network, listed in `src/config/networks.ts`, at `https://wallet-gateway-staging.qntx.org`.
+testnet4, and TRON Nile through TronGrid Nile and NileEx) through keyless public endpoints — two per network, listed in `src/config/networks.ts`, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
 bunx wrangler login                     # once; the staging account (env.staging.account_id)
@@ -205,14 +209,16 @@ Roll back with `bunx wrangler rollback --env staging`.
 Production serves mainnets only at `https://gateway.meowl.xyz` on account
 `9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): every built-in EVM mainnet (the order and the list are
 `src/config/networks.ts`; a test keeps it equal to the engine registry) plus Solana — through Alchemy first and
-dRPC second where Alchemy serves the chain, dRPC then Ankr otherwise (provider accounts must have every one of these networks enabled) (keys in request headers, never URLs — `Authorization: Bearer`, `Drpc-Key` and `x-api-key`), and
+dRPC second where Alchemy serves the chain, dRPC then Ankr otherwise (provider accounts must have every one of these networks enabled) (keys in request headers, never URLs — `Authorization: Bearer`, `Drpc-Key` and `x-api-key`),
+TRON mainnet through TronGrid first and Tatum second (`TRON-PRO-API-KEY` and `x-api-key`
+headers), and
 Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
 isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
 
 Required secrets — set them **before** the first deploy, `wrangler deploy` refuses otherwise:
 
 ```bash
-for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY ANKR_API_KEY BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET COINGECKO_API_KEY; do
+for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY ANKR_API_KEY BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET COINGECKO_API_KEY TRONGRID_API_KEY TATUM_API_KEY; do
   bunx wrangler secret put "$NAME" --env production
 done
 ```

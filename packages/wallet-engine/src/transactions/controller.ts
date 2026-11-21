@@ -42,6 +42,7 @@ import {
   prepareSolanaSwap,
   submitDappSolana,
 } from "./solana.ts";
+import { pollTron, prepareTron, prepareTronApprove, prepareTronStake } from "./tron.ts";
 
 export type {
   AccountRef,
@@ -174,6 +175,12 @@ const isDurableNonceRecord = (v: unknown): v is DurableNonceRecord =>
   typeof v["value"] === "string" &&
   v["value"] !== "" &&
   (v["account"] === undefined || (typeof v["account"] === "string" && v["account"] !== ""));
+type TronRecord = NonNullable<TrackedTransaction["tron"]>;
+const isTronRecord = (v: unknown): v is TronRecord =>
+  isObject(v) &&
+  typeof v["expiration"] === "number" &&
+  Number.isSafeInteger(v["expiration"]) &&
+  typeof v["from"] === "string";
 
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
@@ -227,13 +234,14 @@ const decode = (
     raw: signedRaw,
     evm,
     btc,
+    tron,
     sparkDeposit,
     submittedAt,
     error,
   } = parsed;
   if (
     typeof id !== "string" ||
-    (family !== "evm" && family !== "solana" && family !== "bitcoin") ||
+    (family !== "evm" && family !== "solana" && family !== "bitcoin" && family !== "tron") ||
     typeof network !== "string" ||
     typeof account !== "string" ||
     !isTxState(state) ||
@@ -271,6 +279,14 @@ const decode = (
           return {};
         })()),
     ...(isBtcRecord(btc) ? { btc } : {}),
+    ...(isTronRecord(tron)
+      ? { tron }
+      : (() => {
+          if (tron !== undefined) {
+            warn(`dropping malformed tron build record on transaction ${id}`);
+          }
+          return {};
+        })()),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
     error: typeof error === "string" ? error : undefined,
@@ -482,6 +498,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const ctx = this.routeCtx();
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
+    }
+    if (info.family === "tron") {
+      return prepareTron(ctx, params);
     }
     if (info.family === "bitcoin") {
       return this.bitcoinRoute.prepare(ctx, params, requestId, sparkDeposit);
@@ -708,6 +727,31 @@ export class TransactionController extends Controller<TransactionControllerState
     return prepareSolanaStake(this.routeCtx(), input);
   }
 
+  /**
+   * Internal `tron-stake` requests: the java-tron actuator rules are checked against node reads,
+   * then the operation goes through the same build/sign/track tail as a send.
+   */
+  async prepareTronStake(
+    input: Extract<ChainRequestInput, { method: "tron-stake" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronStake(this.routeCtx(), input);
+  }
+
+  /** Internal `tron-approve` requests: TRC-20 `approve` (amount 0 revokes). */
+  async prepareTronApprove(
+    input: Extract<ChainRequestInput, { method: "tron-approve" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareTronApprove(this.routeCtx(), input);
+  }
+
   async prepareSolanaSwap(
     input: Extract<ChainRequestInput, { method: "solana-swap" }>,
     _requestId: string,
@@ -815,9 +859,11 @@ export class TransactionController extends Controller<TransactionControllerState
     const answer =
       tx.family === "solana"
         ? await pollSolana(ctx, tx)
-        : tx.family === "bitcoin"
-          ? await this.bitcoinRoute.poll(ctx, tx)
-          : await this.evmRoute.poll(ctx, tx);
+        : tx.family === "tron"
+          ? await pollTron(ctx, tx)
+          : tx.family === "bitcoin"
+            ? await this.bitcoinRoute.poll(ctx, tx)
+            : await this.evmRoute.poll(ctx, tx);
     if (answer === undefined || this.locked || generation !== this.generation) {
       return;
     }
@@ -830,8 +876,8 @@ export class TransactionController extends Controller<TransactionControllerState
         state: answer.state,
         block: answer.block,
         final: answer.final,
-        // A landed transaction carries no stuck note.
-        error: undefined,
+        // A landed transaction carries no stuck note; an on-chain failure carries its reason.
+        error: answer.error,
       });
       if (firstInclusion) {
         this.settle(updated);

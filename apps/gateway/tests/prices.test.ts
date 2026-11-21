@@ -27,14 +27,18 @@ import type { PriceDeps, PriceSource, RawQuote } from "../src/providers/prices.t
 import type { RateLimiter } from "../src/types.ts";
 import cgRateLimited from "./fixtures/prices/coingecko-rate-limited-429.json" with { type: "json" };
 import cgEur from "./fixtures/prices/coingecko-simple-price-eur.json" with { type: "json" };
+import cgTron from "./fixtures/prices/coingecko-simple-price-tron.json" with { type: "json" };
 import cgSimple from "./fixtures/prices/coingecko-simple-price.json" with { type: "json" };
 import cgEthereum from "./fixtures/prices/coingecko-token-price-ethereum.json" with { type: "json" };
 import cgHyperevm from "./fixtures/prices/coingecko-token-price-hyperevm.json" with { type: "json" };
 import cgLimit400 from "./fixtures/prices/coingecko-token-price-limit-400.json" with { type: "json" };
 import cgSolana from "./fixtures/prices/coingecko-token-price-solana.json" with { type: "json" };
+import cgTronToken from "./fixtures/prices/coingecko-token-price-tron.json" with { type: "json" };
 import cgUnknown from "./fixtures/prices/coingecko-token-price-unknown.json" with { type: "json" };
+import llamaTronPercent from "./fixtures/prices/defillama-percentage-24h-tron.json" with { type: "json" };
 import llamaPercent from "./fixtures/prices/defillama-percentage-24h.json" with { type: "json" };
 import llamaChains from "./fixtures/prices/defillama-prices-current-chains.json" with { type: "json" };
+import llamaTron from "./fixtures/prices/defillama-prices-current-tron.json" with { type: "json" };
 import llamaCurrent from "./fixtures/prices/defillama-prices-current.json" with { type: "json" };
 import {
   fakeFetch,
@@ -82,6 +86,10 @@ const USDC_HYPEREVM = asset(
   tokenAssetId("eip155:999", "0xb88339CB7199b77E23DB6E890353E22632Ba630f"),
 );
 const USDC_SOL = asset(tokenAssetId(SOL, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"));
+const TRX_NATIVE = asset(nativeAssetId("tron:728126428"));
+const USDT_TRON = asset(tokenAssetId("tron:728126428", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"));
+/** Just after the TRON fixtures were recorded (their `last_updated_at` run 1795256847–1795256852). */
+const TRON_NOW = 1_795_257_000_000;
 const DEAD = asset(tokenAssetId(ETH, "0x000000000000000000000000000000000000dEaD"));
 
 const CG_SIMPLE = `${COINGECKO_API}/simple/price`;
@@ -453,6 +461,50 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
     });
     expect(upstream.calls).toHaveLength(0);
   });
+
+  it("prices TRX and USDT-TRON, keeping the base58 contract case (recorded)", async () => {
+    const upstream = fakeFetch(
+      primary({ [CG_SIMPLE]: replay(cgTron), [cgToken("tron")]: replay(cgTronToken) }),
+    );
+    const res = await app(upstream, {}, () => TRON_NOW).request(
+      prices.path,
+      request([TRX_NATIVE, USDT_TRON]),
+    );
+    expect(res.status).toBe(200);
+    const { prices: quoted, missing } = await body(res);
+    expect(missing).toStrictEqual([]);
+    expect(quoted).toStrictEqual([
+      {
+        asset: TRX_NATIVE,
+        price: literal(cgTron, "tron", "usd"),
+        change24h: plainDecimal(Number(literal(cgTron, "tron", "usd_24h_change")), 8),
+        updatedAt: Number(literal(cgTron, "tron", "last_updated_at")) * 1000,
+      },
+      {
+        asset: USDT_TRON,
+        price: literal(cgTronToken, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "usd"),
+        change24h: plainDecimal(
+          Number(literal(cgTronToken, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "usd_24h_change")),
+          8,
+        ),
+        updatedAt:
+          Number(literal(cgTronToken, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "last_updated_at")) *
+          1000,
+      },
+    ]);
+    // The base58 address reaches the provider unlowercased — its answer keys the same string.
+    expect(
+      upstream
+        .callsTo(COINGECKO_API)
+        .map((c) => c.url)
+        .toSorted(),
+    ).toStrictEqual(
+      [
+        `${CG_SIMPLE}?ids=tron&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
+        `${cgToken("tron")}?contract_addresses=TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
+      ].toSorted(),
+    );
+  });
 });
 
 describe("POST /v1/prices failover", () => {
@@ -510,6 +562,47 @@ describe("POST /v1/prices failover", () => {
     expect(missing).toStrictEqual([]);
     expect(quoted.map((q) => q.change24h)).toStrictEqual(quoted.map(() => null));
     expect(quoted.every((q) => q.price.startsWith("0.999"))).toBe(true);
+  });
+
+  it("maps TRX to coingecko:tron and its token to tron:<base58> (recorded)", async () => {
+    const upstream = fakeFetch({
+      [LLAMA_CURRENT]: replay(llamaTron),
+      [LLAMA_PERCENT]: replay(llamaTronPercent),
+    });
+    const res = await app(upstream, { coingecko: false }, () => TRON_NOW).request(
+      prices.path,
+      request([TRX_NATIVE, USDT_TRON]),
+    );
+    const { prices: quoted, missing } = await body(res);
+    expect(missing).toStrictEqual([]);
+    expect(quoted).toStrictEqual([
+      {
+        asset: TRX_NATIVE,
+        price: literal(llamaTron, "coingecko:tron", "price"),
+        change24h: plainDecimal(
+          Number(/"coingecko:tron":(-?[0-9.e+-]+)/.exec(llamaTronPercent.body)?.[1]),
+          8,
+        ),
+        updatedAt: Number(literal(llamaTron, "coingecko:tron", "timestamp")) * 1000,
+      },
+      {
+        asset: USDT_TRON,
+        price: literal(llamaTron, "tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "price"),
+        change24h: plainDecimal(
+          Number(
+            /"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t":(-?[0-9.e+-]+)/.exec(
+              llamaTronPercent.body,
+            )?.[1],
+          ),
+          8,
+        ),
+        updatedAt:
+          Number(literal(llamaTron, "tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "timestamp")) * 1000,
+      },
+    ]);
+    expect(upstream.callsTo(LLAMA_CURRENT)[0]?.url).toBe(
+      `${LLAMA_CURRENT}coingecko:tron,tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`,
+    );
   });
 
   it("drops a DefiLlama price below its confidence floor", async () => {

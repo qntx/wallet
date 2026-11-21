@@ -11,6 +11,7 @@ const EVM = "0x52908400098527886E0F7030069857D2E4169EE7";
 const SOLANA = "11111111111111111111111111111111";
 const BTC_MAIN = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 const BTC_TEST = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+const TRON = "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb";
 const SPARK = encodeSparkAddress({
   network: "regtest",
   identityPublicKey: secp256k1.getPublicKey(new Uint8Array(32).fill(9), true),
@@ -70,8 +71,9 @@ describe("AddressBookController", () => {
       controller.add({ name: "main", family: "bitcoin", address: BTC_MAIN }),
       controller.add({ name: "test", family: "bitcoin", address: BTC_TEST }),
       controller.add({ name: "spark", family: "spark", address: SPARK }),
+      controller.add({ name: "tron", family: "tron", address: TRON }),
     ]);
-    expect(entries.map((e) => e.address)).toStrictEqual([SOLANA, BTC_MAIN, BTC_TEST, SPARK]);
+    expect(entries.map((e) => e.address)).toStrictEqual([SOLANA, BTC_MAIN, BTC_TEST, SPARK, TRON]);
   });
 
   it.each([
@@ -81,6 +83,8 @@ describe("AddressBookController", () => {
     ["bitcoin", EVM],
     ["bitcoin", "bc1qinvalid"],
     ["spark", BTC_MAIN],
+    ["tron", EVM],
+    ["tron", "twd4wrz9wn84f5x1hzhl4dhvk738ns5jwb"], // case-folded base58 fails the checksum
   ] as const)("rejects an invalid %s address %s", async (family, address) => {
     const { controller } = book();
     await controller.init();

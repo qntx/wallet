@@ -47,7 +47,7 @@ export function ipKeys(ip: string | undefined): readonly [string, ...string[]] {
   return [`${normalized.slice(0, 4).join(":")}::/64`, `${normalized.slice(0, 3).join(":")}::/48`];
 }
 
-const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/"];
+const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/", "/v1/tron/"];
 
 export type RateLimitVariables = {
   /**

@@ -64,6 +64,7 @@ export const NATIVE_SLIP44: Readonly<Record<string, number>> = {
   "eip155:167000": 60,
   "eip155:7777777": 60,
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": 501,
+  "tron:728126428": 195,
   "bip122:000000000019d6689c085ae165831e93": 0,
 };
 
@@ -77,7 +78,7 @@ export const priceAssetId = z
   .string()
   .check(
     z.regex(
-      /^(?:[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}\/slip44:(?:0|[1-9][0-9]{0,9})|eip155:[1-9][0-9]{0,9}\/erc20:0x[0-9a-f]{40}|solana:[1-9A-HJ-NP-Za-km-z]{32}\/token:[1-9A-HJ-NP-Za-km-z]{32,44})$/,
+      /^(?:[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}\/slip44:(?:0|[1-9][0-9]{0,9})|eip155:[1-9][0-9]{0,9}\/erc20:0x[0-9a-f]{40}|solana:[1-9A-HJ-NP-Za-km-z]{32}\/token:[1-9A-HJ-NP-Za-km-z]{32,44}|tron:728126428\/trc20:T[1-9A-HJ-NP-Za-km-z]{33})$/,
     ),
   );
 
@@ -97,7 +98,9 @@ export const tokenAssetId = (network: string, address: string): string | undefin
   }
   const id = network.startsWith("eip155:")
     ? `${network}/erc20:${address.toLowerCase()}`
-    : `${network}/token:${address}`;
+    : network.startsWith("tron:")
+      ? `${network}/trc20:${address}`
+      : `${network}/token:${address}`;
   return z.safeParse(priceAssetId, id).success ? id : undefined;
 };
 

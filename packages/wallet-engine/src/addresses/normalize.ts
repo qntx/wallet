@@ -4,8 +4,9 @@ import { decodeSparkAddress, encodeSparkAddress } from "@qntx/spark";
 import { BITCOIN_NETWORKS } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, isEvmAddress } from "@qntx/wallet-chains/evm";
 import { isSolanaAddress } from "@qntx/wallet-chains/solana";
+import { isTronAddress } from "@qntx/wallet-chains/tron";
 
-export type AddressFamily = "evm" | "solana" | "bitcoin" | "spark";
+export type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 
 /**
  * The canonical form of `address` for its family — EIP-55 for EVM, the re-encoded form for bitcoin
@@ -19,6 +20,10 @@ export function normalizeAddress(family: AddressFamily, address: string): string
     }
     if (family === "solana") {
       return isSolanaAddress(address) ? address : undefined;
+    }
+    // TRON base58check is case-sensitive — valid addresses are accepted verbatim, never folded.
+    if (family === "tron") {
+      return isTronAddress(address) ? address : undefined;
     }
     if (family === "spark") {
       const decoded = decodeSparkAddress(address);

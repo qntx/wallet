@@ -2,6 +2,7 @@ import { Address } from "@scure/btc-signer";
 
 import { checksumEvmAddress, isEvmAddress } from "@qntx/wallet-chains/evm";
 import { isSolanaAddress } from "@qntx/wallet-chains/solana";
+import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { Controller } from "../controller.ts";
 import { readJson } from "../store/json.ts";
@@ -13,7 +14,7 @@ import type { EngineCollection, EngineStore } from "../store/port.ts";
  */
 export type WatchAccount = {
   readonly id: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly address: string;
   readonly name?: string;
   readonly createdAt: number;
@@ -52,6 +53,10 @@ const normalise = (family: WatchAccount["family"], address: string): string | un
   if (family === "solana") {
     return isSolanaAddress(address) ? address : undefined;
   }
+  // TRON base58check is case-sensitive — a valid address is accepted verbatim, never folded.
+  if (family === "tron") {
+    return isTronAddress(address) ? address : undefined;
+  }
   return decodeBtcAddress(address) ? address : undefined;
 };
 
@@ -63,7 +68,7 @@ const isWatchRecord = (v: unknown): v is WatchAccount => {
   const name: unknown = Reflect.get(v, "name");
   return (
     typeof Reflect.get(v, "id") === "string" &&
-    (family === "evm" || family === "solana" || family === "bitcoin") &&
+    (family === "evm" || family === "solana" || family === "bitcoin" || family === "tron") &&
     typeof Reflect.get(v, "address") === "string" &&
     isNonNegativeInt(Reflect.get(v, "createdAt")) &&
     (name === undefined || typeof name === "string")

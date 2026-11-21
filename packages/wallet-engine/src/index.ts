@@ -52,6 +52,7 @@ export { PRICE_STALE_MS } from "./prices/valuation.ts";
 export type { PriceView, Valuation, ValuedHolding } from "./prices/valuation.ts";
 export type { FiatCurrency } from "./gateway/contract/prices.ts";
 export { FIAT_CURRENCIES } from "./gateway/contract/prices.ts";
+export type { GatewayConfig, GatewayScope } from "./gateway/client.ts";
 export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
 export { AddressBookError } from "./addresses/errors.ts";
@@ -127,6 +128,8 @@ export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transac
 export type { TxBlock } from "./transactions/route.ts";
 export type { EvmFeeTier } from "./chains/evm.ts";
 export type { SolanaFeeTier } from "./chains/solana.ts";
+export type { TronFeeQuote } from "./chains/tron.ts";
+export type { TronAccountView } from "./assets/tron.ts";
 export type { BitcoinPsbtInput, BitcoinSigHash, SolanaAccount } from "./requests/types.ts";
 export type { SignInFields } from "./connect/siws.ts";
 export type {

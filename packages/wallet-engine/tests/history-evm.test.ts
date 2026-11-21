@@ -654,6 +654,7 @@ describe("evm lookalike counterparties", () => {
       evm: ["0x9845636fd55f620d18a2c7fd3e4e6bd8e4de173d"],
       solana: [],
       bitcoin: [],
+      tron: [],
       spark: [],
     };
     const entries: HistoryEntry[] = [

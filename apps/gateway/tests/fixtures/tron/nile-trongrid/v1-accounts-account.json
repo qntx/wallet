@@ -1,0 +1,148 @@
+{
+  "status": 200,
+  "body": {
+    "data": [
+      {
+        "owner_permission": {
+          "keys": [
+            {
+              "address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+              "weight": 1
+            }
+          ],
+          "threshold": 1,
+          "permission_name": "owner"
+        },
+        "account_resource": {
+          "energy_window_optimized": true,
+          "latest_consume_time_for_energy": 1791334404000,
+          "energy_window_size": 28800000
+        },
+        "active_permission": [
+          {
+            "operations": "7fff1fc0033e0b00000000000000000000000000000000000000000000000000",
+            "keys": [
+              {
+                "address": "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+                "weight": 1
+              }
+            ],
+            "threshold": 1,
+            "id": 2,
+            "type": "Active",
+            "permission_name": "active"
+          }
+        ],
+        "address": "41e28b3cfd4e0e909077821478e9fcb86b84be786e",
+        "create_time": 1586426514000,
+        "latest_consume_time": 1710400752000,
+        "free_asset_net_usageV2": [
+          {
+            "value": 0,
+            "key": "1000026"
+          }
+        ],
+        "assetV2": [
+          {
+            "value": 10057228013,
+            "key": "1000026"
+          }
+        ],
+        "frozenV2": [
+          {},
+          {
+            "type": "ENERGY"
+          },
+          {
+            "type": "TRON_POWER"
+          }
+        ],
+        "balance": 2237007010,
+        "trc20": [
+          {
+            "TW3q1Kk8ZCBmKdRUzYoRHyHs5pnXnAA2S3": "100000000"
+          },
+          {
+            "TEzAaNzpxLQigQjAjNbs3Mp5xGy8Cpnkh3": "1000000000000"
+          },
+          {
+            "THhXFu3oz4UqdonETKjLsHjiyGYVsoqVZF": "10007291400"
+          },
+          {
+            "TJqk3ChKSjmpoNm3gaqSEatNsueD37NGDK": "1"
+          },
+          {
+            "TLBaRhANQoJFTqre9Nf1mjuwNWjCJeYqUL": "100000000000000000000"
+          },
+          {
+            "TWJnick3fWfbBkUUZdZZmhJjTh8stCSpUN": "500000000"
+          },
+          {
+            "TB5FhVnH8e995id5HMY7AvboSRrorL63nN": "1"
+          },
+          {
+            "TLVCoEifnjLyriVqbYdyvdUyJH9w96TMwW": "2"
+          },
+          {
+            "TCFqWWQ4nVAE4ctmhEbFWU1fKEf7xa18DX": "8686868686868686868"
+          },
+          {
+            "THNzBJTfSf1Aziuk2SyeLYBUsENqN1E2RX": "9048491370"
+          },
+          {
+            "TVCVLGUgxKNoJwdp38DVCZJjQSot2aCzLa": "9040861890"
+          },
+          {
+            "TQr2j9cmeB5qhNEwFinewE78VzjRCw7TGc": "15000000"
+          },
+          {
+            "TDTE7b9dR9hf6K29sB9tz1eR3f6bUtuDEd": "90000000"
+          },
+          {
+            "TU2T8vpHZhCNY8fXGVaHyeZrKm8s6HEXWe": "160000"
+          },
+          {
+            "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf": "147945501"
+          },
+          {
+            "THiCx3udSXTm4kgWBGcL789wGsabu4ATxf": "1000000"
+          },
+          {
+            "TGHZqokxCppDpZS4g58UZ1j37uDCSx9oin": "100000000"
+          },
+          {
+            "TNs5sR2xnBpLXB3Q5y2TYemAgHLX65ACxn": "10000000"
+          },
+          {
+            "TBWmwfchWFCcyASCytK2NAhHbWGwaJStLo": "2"
+          },
+          {
+            "TKuEp89H6obULuqutNXU2tPQzj4PANmGso": "100000000"
+          },
+          {
+            "TX8xzd7AvvENDYWrtA2PndKUWgvf36EUKp": "12000004000000000000"
+          },
+          {
+            "TSAsC68DD9nvAJzchrHcdDwM2W5ebf2m7r": "8686868686868686868"
+          },
+          {
+            "TFzUzCK4Pop5Z5q2bTM1nxSb4MB5ZJ1tWs": "90000000"
+          },
+          {
+            "TYKeu4ov6fLN8tJ7JpopmVfUoSCm7KRESu": "1509460000"
+          },
+          {
+            "TEMVynQpntMqkPxP6wXTW2K7e4sM3cRmWz": "100000000"
+          }
+        ],
+        "net_window_size": 28800000,
+        "net_window_optimized": true
+      }
+    ],
+    "success": true,
+    "meta": {
+      "at": 1795254039214,
+      "page_size": 1
+    }
+  }
+}

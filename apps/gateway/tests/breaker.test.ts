@@ -31,6 +31,7 @@ import {
 import type { Upstream, UpstreamCall } from "./helpers.ts";
 
 const ETH = "eip155:1";
+const NILE = "tron:3448148188";
 const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const ALCHEMY = "https://alchemy.test/eth";
 
@@ -50,6 +51,13 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
   { id: ETH, providers: [{ id: "alchemy", url: ALCHEMY }] },
+  {
+    id: NILE,
+    providers: [
+      { id: "trongrid", url: "https://a.test/tron" },
+      { id: "b", url: "https://b.test/tron" },
+    ],
+  },
 ];
 
 const TAKER = "0x8f3796aa4dB3f47E0fE0D19f9c3c96a51aD5f0F8";
@@ -120,6 +128,10 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
   [`POST ${prices.path}`]: {
     request: [prices.path, post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
     upstreams: [COINGECKO_API, DEFILLAMA_API],
+  },
+  "POST /v1/tron/:caip2/*": {
+    request: [`/v1/tron/${NILE}/wallet/getchainparameters`, post({})],
+    upstreams: ["https://a.test/tron", "https://b.test/tron"],
   },
 };
 
