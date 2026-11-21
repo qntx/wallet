@@ -52,20 +52,34 @@ double-broadcast it.
 
 ## Rate limiting
 
-Two kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
+Three kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
 bindings counting requests per 10 s window (values in `wrangler.jsonc`) — answer `429 rate-limited`:
-the client IP prefix first, then `x-client-id` + prefix on either the RPC limiter (transport
-routes) or the default one. Every request pays one unit up front; an RPC batch pays one more unit
-for each of its remaining calls.
+every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet rotation inside a /48
+cannot hide and one /64 is not billed for its neighbours), then `x-client-id` + the most specific
+key on either the RPC limiter (transport routes) or the default one. Every request pays one unit up
+front; an RPC batch pays one more unit for each of its remaining calls.
 
 The **share limiter** (`SHARE_LIMITER`, 1000 units per 60 s) bills every upstream call at the
 provider's own price — compute units on Alchemy and dRPC (`src/budget/costs.ts` lists a row for
 every allow-listed method, plus `alchemy_getAssetTransfers`), one credit per call on request-priced
-endpoints. Before `send` fires, the forwarder charges `ceil(units × 20,000 / perMinute)` on the
-`account:ip-prefix` key, so one IP prefix buys at most 5 % of each account's tightest per-minute
-budget window (`src/config/accounts.ts` sets those budgets and their derivations). A refused charge
-never reaches the upstream — the request gets `429 rate-limited` — and a single delta over the
-whole 1000-unit window is `413 too-costly` without touching the limiter.
+endpoints. Before `send` fires, the forwarder charges
+`ceil(units × SHARE_LIMIT / (SHARE_OF_ACCOUNT × perMinute))` on every `account:` + IP key, so one
+IP buys at most `SHARE_OF_ACCOUNT` (5 %) of each account's tightest per-minute budget window
+(`src/config/accounts.ts` sets those budgets and their derivations). A refused charge never reaches
+the upstream — the request gets `429 rate-limited` — and a single delta over the whole 1000-unit
+window is `413 too-costly` without touching the limiter.
+
+The **account budget** (`PROVIDER_BUDGET`, one Durable Object per provider account) is the global
+bound the share limiter cannot express: the Workers rate-limit binding counts per Cloudflare
+location, so only a Durable Object can hold one account's worldwide quota (the binding
+documentation's "Strict limits" section prescribes exactly this). Each object keeps a multi-window
+token bucket in its SQLite storage; each isolate holds a one-second adaptive lease from it (sized
+by what it actually spent, capped at 1 % of the account's tightest window) so the object sees
+seconds, not requests — a Durable Object's ~1,000 rps soft limit and its round trip are amortised
+away. A spent account refuses with its own wait time; the request fails over — never a breaker
+outage — and when every provider is spent or cooling, the 503 `unavailable` carries the shortest
+announced wait. Operator note: the budgets in `src/config/accounts.ts` assume the provider plans
+listed in each row's comment — review them when a plan changes.
 
 ## Prices
 
