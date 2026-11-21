@@ -31,7 +31,10 @@ export type EvmRequest = Extract<
 >;
 export type BitcoinRequest = Extract<SignRequest, { kind: "bitcoin.psbt" | "bitcoin.message" }>;
 export type SolanaRequest = Extract<SignRequest, { kind: "solana.transaction" | "solana.message" }>;
-export type TronRequest = Extract<SignRequest, { kind: "tron.transaction" | "tron.message" }>;
+export type TronRequest = Extract<
+  SignRequest,
+  { kind: "tron.transaction" | "tron.message" | "tron.typed-data" }
+>;
 export type TronKeySource = EvmKeySource;
 
 export const BTC_PURPOSE: Readonly<Record<string, number>> = {

@@ -1379,7 +1379,14 @@ function typedDataLines(
   if (message.polymarket !== undefined) {
     return polymarketLines(catalog, intent, message.polymarket);
   }
-  const network = chainId === undefined ? intent.network : `eip155:${chainId}`;
+  /* For TRON the domain chainId is the network's CAIP-2 reference — already checked against
+     `intent.network` at normalize — so the network line is the network itself, not eip155. */
+  const network =
+    intent.family === "tron"
+      ? intent.network
+      : chainId === undefined
+        ? intent.network
+        : `eip155:${chainId}`;
   return [
     ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
     ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),

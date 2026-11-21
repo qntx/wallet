@@ -235,7 +235,11 @@ const hdPass = (
     ) {
       return executeEvm(request, source, intentOnly);
     }
-    if (request.kind === "tron.transaction" || request.kind === "tron.message") {
+    if (
+      request.kind === "tron.transaction" ||
+      request.kind === "tron.message" ||
+      request.kind === "tron.typed-data"
+    ) {
       return executeTron(request, source, intentOnly);
     }
     return executeSolana(request, source, intentOnly);
@@ -261,7 +265,10 @@ const importedPass = (
     request.kind === "evm.personal-message" ||
     request.kind === "evm.typed-data";
   const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
-  const isTron = request.kind === "tron.transaction" || request.kind === "tron.message";
+  const isTron =
+    request.kind === "tron.transaction" ||
+    request.kind === "tron.message" ||
+    request.kind === "tron.typed-data";
   if (!isEvm && !isSolana && !isTron) {
     throw new KernelError("unsupported", "imported accounts are not supported on bitcoin");
   }
@@ -288,7 +295,11 @@ const importedPass = (
     if (request.kind === "solana.transaction" || request.kind === "solana.message") {
       return executeSolana(request, source, intentOnly);
     }
-    if (request.kind === "tron.transaction" || request.kind === "tron.message") {
+    if (
+      request.kind === "tron.transaction" ||
+      request.kind === "tron.message" ||
+      request.kind === "tron.typed-data"
+    ) {
       return executeTron(request, source, intentOnly);
     }
     throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
