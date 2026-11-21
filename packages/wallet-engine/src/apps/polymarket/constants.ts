@@ -18,6 +18,9 @@ export const RELAYER_HOST = "https://relayer-v2.polymarket.com";
 /** Market-channel WebSocket (`/ws/market`) — book/price/trade events. */
 export const MARKET_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
+/** User-channel WebSocket (`/ws/user`) — authenticated order/trade events (asyncapi user.json). */
+export const USER_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user";
+
 /* ----------------------------------------------------- account derivation --- */
 
 /**

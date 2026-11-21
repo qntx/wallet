@@ -144,6 +144,7 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
   });
   const live = createPolymarketLive({
     account,
+    credentials: options.credentials,
     socket: options.socket,
     setTimer: options.setTimer,
     now: options.now,

@@ -14,10 +14,18 @@
  * `stale` — data is kept, never presented as live — and a reconnect resubscribes all ids and waits
  * for a fresh `book` before `live` again.
  *
- * Account views poll `openOrders` + `positions` every 10 s on the injected timer. The CLOB's
- * authenticated user channel would put the raw API secret on the wire — authenticated views poll
- * instead of streaming (research.md §4). A failed poll keeps the last data as `stale` and keeps
- * polling; `unlock-required`/`not-enabled` and a wallet lock stop the view entirely.
+ * Account views stream the authenticated user channel
+ * `wss://ws-subscriptions-clob.polymarket.com/ws/user` over a per-view `createAppSocketCore`
+ * socket: the stored credentials are read once at view start, live only in the view closure and
+ * are dropped on stop/close/lock; the first frame is the auth message
+ * `{"auth":{"apiKey","secret","passphrase"},"type":"user"}` (asyncapi user.json), then a REST
+ * snapshot (locate + openOrders + positions + trades) turns the view `live`/`stream`. `order`
+ * events upsert (or remove on `CANCELLATION`/non-`LIVE` status) and `trade` events schedule a
+ * debounced REST re-read of trades + positions. A disconnect marks the view `stale` — data kept —
+ * and falls back to a 10 s REST poll (`source: "poll"`); a reconnect re-sends the auth frame,
+ * re-runs the snapshot and returns to `live`/`stream`. `unlock-required`/`not-enabled` and a
+ * wallet lock stop the view and close its socket. Frames are parsed against bounded schemas and
+ * malformed ones dropped with a content-free log — an echoed auth frame would carry the secret.
  */
 import type * as z from "zod/mini";
 
@@ -27,9 +35,16 @@ import type { EngineLogger } from "../../events.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppSocket } from "../socket.ts";
 import { createAppSocketCore } from "../socket.ts";
+import type { AppSocketCore } from "../socket.ts";
 import type { AppGroup } from "../types.ts";
-import type { PolymarketAccountReads, PolymarketOrder, PolymarketPosition } from "./account.ts";
-import { MARKET_WS_URL } from "./constants.ts";
+import type {
+  PolymarketAccountReads,
+  PolymarketOrder,
+  PolymarketPosition,
+  PolymarketTrade,
+} from "./account.ts";
+import { MARKET_WS_URL, USER_WS_URL } from "./constants.ts";
+import type { PolymarketCredentials, PolymarketCredentialStore } from "./credentials.ts";
 import { PolymarketError } from "./errors.ts";
 import {
   wsBestBidAskEvent,
@@ -38,11 +53,16 @@ import {
   wsMarketResolvedEvent,
   wsPriceChangeEvent,
   wsTickSizeChangeEvent,
+  wsUserOrderEvent,
+  wsUserTradeEvent,
 } from "./schemas.ts";
 
 const PING_MS = 10_000;
 const PONG_TIMEOUT_MS = 5000;
 const ACCOUNT_POLL_MS = 10_000;
+const TRADE_REFRESH_MS = 1000;
+/** A single frame carries at most this many events — anything bigger is dropped whole. */
+const MAX_FRAME_EVENTS = 256;
 
 /** What a live view reports — `data` is kept while `stale`, never while absent. */
 export type PolymarketLiveState<T> = {
@@ -90,6 +110,9 @@ export type PolymarketAccountLiveData = {
   readonly wallet: `0x${string}`;
   readonly openOrders: ReadonlyArray<PolymarketOrder>;
   readonly positions: ReadonlyArray<PolymarketPosition>;
+  readonly trades: ReadonlyArray<PolymarketTrade>;
+  /** Whether the data flows from the user socket or the REST fallback poll. */
+  readonly source: "stream" | "poll";
 };
 
 const sortLevels = (
@@ -111,8 +134,9 @@ export type PolymarketLive = {
   /** The order book for one outcome asset (CLOB token id). */
   readonly book: (assetId: string) => PolymarketLiveView<PolymarketMarketData>;
   /**
-   * Open orders + positions for the group — polled (the user channel would put the API secret on
-   * the wire). Stops on lock or a `unlock-required`/`not-enabled` error.
+   * Orders + positions + trades for the group over the user channel — one authenticated socket
+   * per view with a REST poll fallback while disconnected. Stops on lock or a
+   * `unlock-required`/`not-enabled` error.
    */
   readonly account: (group: AppGroup) => PolymarketLiveView<PolymarketAccountLiveData>;
 };
@@ -125,6 +149,8 @@ type MarketView = {
 
 export function createPolymarketLive(options: {
   readonly account: PolymarketAccountReads;
+  /** The group's stored CLOB credentials — read once per account view, then held in its closure. */
+  readonly credentials: PolymarketCredentialStore;
   readonly socket: (url: string) => AppSocket;
   readonly setTimer: SetTimer;
   readonly now: () => number;
@@ -412,27 +438,10 @@ export function createPolymarketLive(options: {
   type AccountView = {
     state: PolymarketLiveState<PolymarketAccountLiveData>;
     listeners: Set<(state: PolymarketLiveState<PolymarketAccountLiveData>) => void>;
-    cancel: (() => void) | undefined;
     closed: boolean;
+    stop: (error: string | undefined) => void;
   };
   const accountViews = new Set<AccountView>();
-
-  const stopAccountView = (view: AccountView, error: string | undefined): void => {
-    if (view.closed) {
-      return;
-    }
-    view.closed = true;
-    view.cancel?.();
-    accountViews.delete(view);
-    if (accountViews.size === 0) {
-      unsubscribeWallet?.();
-      unsubscribeWallet = undefined;
-    }
-    view.state = { ...view.state, status: "stale", error };
-    for (const listener of view.listeners) {
-      listener(view.state);
-    }
-  };
 
   /* Lock-following is subscribed lazily on the first account view — a provider built for reads
      only (or with a read-only wallet) never touches `wallet.subscribe`. */
@@ -442,19 +451,64 @@ export function createPolymarketLive(options: {
       if (options.wallet.getSnapshot().vault !== "unlocked") {
         // oxlint-disable-next-line unicorn/prefer-spread -- the loop removes views from the set; a snapshot is required.
         for (const view of Array.from(accountViews)) {
-          stopAccountView(view, "unlock-required");
+          view.stop("unlock-required");
         }
       }
     });
   };
 
+  const fatal = (error: unknown): error is PolymarketError =>
+    error instanceof PolymarketError &&
+    (error.category === "unlock-required" || error.category === "not-enabled");
+
+  const authFrame = (credentials: PolymarketCredentials): string =>
+    JSON.stringify({
+      auth: {
+        apiKey: credentials.apiKey,
+        secret: credentials.secret,
+        passphrase: credentials.passphrase,
+      },
+      type: "user",
+    });
+
   const account = (group: AppGroup): PolymarketLiveView<PolymarketAccountLiveData> => {
     followLock();
+    /* The credentials the auth frame needs — read once at start, dropped on every exit path. */
+    let credentials: PolymarketCredentials | undefined;
+    let core: AppSocketCore | undefined;
+    /* Frames that arrive while a snapshot runs replay after it — apply is idempotent. */
+    let snapshotting = false;
+    const queued: string[] = [];
+    let pollCancel: (() => void) | undefined;
+    let tradeCancel: (() => void) | undefined;
+
     const view: AccountView = {
       listeners: new Set(),
-      cancel: undefined,
       closed: false,
       state: { status: "connecting", error: undefined, updatedAt: undefined, data: undefined },
+      stop: (error) => {
+        if (view.closed) {
+          return;
+        }
+        view.closed = true;
+        credentials = undefined;
+        queued.length = 0;
+        pollCancel?.();
+        pollCancel = undefined;
+        tradeCancel?.();
+        tradeCancel = undefined;
+        core?.close();
+        core = undefined;
+        accountViews.delete(view);
+        if (accountViews.size === 0) {
+          unsubscribeWallet?.();
+          unsubscribeWallet = undefined;
+        }
+        view.state = { ...view.state, status: "stale", error };
+        for (const listener of view.listeners) {
+          listener(view.state);
+        }
+      },
     };
     const emit = (next: PolymarketLiveState<PolymarketAccountLiveData>): void => {
       view.state = next;
@@ -462,44 +516,293 @@ export function createPolymarketLive(options: {
         listener(next);
       }
     };
-    const poll = async (): Promise<void> => {
-      if (view.closed) {
+
+    /* The REST reads the stream snapshot and the fallback poll share. */
+    const snapshot = async (): Promise<Omit<PolymarketAccountLiveData, "source">> => {
+      const located = await options.account.locate(group);
+      const [orders, positions, trades] = await Promise.all([
+        options.account.openOrders(group, {}),
+        options.account.positions(located.wallet, {}),
+        options.account.trades(group, {}),
+      ]);
+      return {
+        wallet: located.wallet,
+        openOrders: orders.items,
+        positions: positions.items,
+        trades: trades.items,
+      };
+    };
+
+    const applyOrder = (event: z.infer<typeof wsUserOrderEvent>): void => {
+      const data = view.state.data;
+      if (data === undefined) {
         return;
       }
+      if (
+        event.type === "CANCELLATION" ||
+        (event.status !== undefined && event.status !== "LIVE")
+      ) {
+        emit({
+          ...view.state,
+          updatedAt: options.now(),
+          data: {
+            ...data,
+            openOrders: data.openOrders.filter((order) => order.id !== event.id),
+          },
+        });
+        return;
+      }
+      /* An upsert needs every column a PolymarketOrder carries — anything else is malformed. */
+      const createdAt = event.created_at === undefined ? NaN : Number(event.created_at);
+      if (
+        event.market === undefined ||
+        event.asset_id === undefined ||
+        event.side === undefined ||
+        event.original_size === undefined ||
+        event.size_matched === undefined ||
+        event.price === undefined ||
+        event.order_type === undefined ||
+        event.expiration === undefined ||
+        event.maker_address === undefined ||
+        !Number.isFinite(createdAt)
+      ) {
+        malformed += 1;
+        options.logger.warn("apps.polymarket.live: dropped an unmappable order event");
+        return;
+      }
+      const order: PolymarketOrder = {
+        id: event.id,
+        status: event.status ?? "LIVE",
+        conditionId: event.market,
+        assetId: event.asset_id,
+        side: event.side,
+        price: event.price,
+        originalSize: event.original_size,
+        sizeMatched: event.size_matched,
+        ...(event.outcome === undefined || event.outcome === null
+          ? {}
+          : { outcome: event.outcome }),
+        orderType: event.order_type,
+        expiration: event.expiration,
+        createdAt,
+        makerAddress: event.maker_address,
+      };
+      const index = data.openOrders.findIndex((existing) => existing.id === order.id);
+      const openOrders =
+        index === -1
+          ? [...data.openOrders, order]
+          : data.openOrders.map((existing, at) => (at === index ? order : existing));
+      emit({ ...view.state, updatedAt: options.now(), data: { ...data, openOrders } });
+    };
+
+    /* A trade event schedules one debounced re-read of what it changes: fills move size_matched
+       (order events cover that) while positions and the trade tape only live in REST. */
+    const scheduleTradeRead = (): void => {
+      if (tradeCancel !== undefined || view.closed) {
+        return;
+      }
+      tradeCancel = options.setTimer(TRADE_REFRESH_MS, () => {
+        tradeCancel = undefined;
+        void (async () => {
+          const wallet = view.state.data?.wallet;
+          if (wallet === undefined || view.closed) {
+            return;
+          }
+          try {
+            const [positions, trades] = await Promise.all([
+              options.account.positions(wallet, {}),
+              options.account.trades(group, {}),
+            ]);
+            const data = view.state.data;
+            if (view.closed || data === undefined) {
+              return;
+            }
+            emit({
+              ...view.state,
+              updatedAt: options.now(),
+              data: { ...data, positions: positions.items, trades: trades.items },
+            });
+          } catch (error) {
+            if (view.closed) {
+              return;
+            }
+            if (fatal(error)) {
+              view.stop(error.category);
+            }
+            /* Any other failure keeps the data with no status change. */
+          }
+        })();
+      });
+    };
+
+    const applyFrame = (raw: string): void => {
+      let parsed: unknown;
       try {
-        const located = await options.account.locate(group);
-        const [orders, positions] = await Promise.all([
-          options.account.openOrders(group, {}),
-          options.account.positions(located.wallet, {}),
-        ]);
+        parsed = JSON.parse(raw);
+      } catch {
+        malformed += 1;
+        /* Never log frame content — an echoed auth frame would carry the secret. */
+        options.logger.warn("apps.polymarket.live: dropped a malformed user frame");
+        return;
+      }
+      const events = Array.isArray(parsed) ? parsed : [parsed];
+      if (events.length > MAX_FRAME_EVENTS) {
+        malformed += 1;
+        options.logger.warn("apps.polymarket.live: dropped an oversized user frame");
+        return;
+      }
+      for (const event of events) {
+        const order = wsUserOrderEvent.safeParse(event);
+        if (order.success) {
+          applyOrder(order.data);
+          continue;
+        }
+        const trade = wsUserTradeEvent.safeParse(event);
+        if (trade.success) {
+          scheduleTradeRead();
+          continue;
+        }
+        malformed += 1;
+        options.logger.warn("apps.polymarket.live: dropped an unparsed user event");
+      }
+    };
+
+    const startPoll = (): void => {
+      if (pollCancel !== undefined || view.closed) {
+        return;
+      }
+      const tick = async (): Promise<void> => {
+        pollCancel = undefined;
+        try {
+          const data = await snapshot();
+          if (view.closed) {
+            return;
+          }
+          emit({
+            ...view.state,
+            updatedAt: options.now(),
+            data: { ...data, source: "poll" },
+          });
+        } catch (error) {
+          if (view.closed) {
+            return;
+          }
+          if (fatal(error)) {
+            view.stop(error.category);
+            return;
+          }
+          /* A failed poll keeps the last data as stale. */
+        }
+        if (!view.closed) {
+          pollCancel = options.setTimer(ACCOUNT_POLL_MS, () => void tick());
+        }
+      };
+      pollCancel = options.setTimer(ACCOUNT_POLL_MS, () => void tick());
+    };
+
+    const runSnapshot = async (): Promise<void> => {
+      snapshotting = true;
+      let degraded = false;
+      try {
+        const data = await snapshot();
         if (view.closed) {
           return;
         }
+        pollCancel?.();
+        pollCancel = undefined;
         emit({
           status: "live",
           error: undefined,
           updatedAt: options.now(),
-          data: { wallet: located.wallet, openOrders: orders.items, positions: positions.items },
+          data: { ...data, source: "stream" },
         });
       } catch (error) {
         if (view.closed) {
           return;
         }
-        if (
-          error instanceof PolymarketError &&
-          (error.category === "unlock-required" || error.category === "not-enabled")
-        ) {
-          stopAccountView(view, error.category);
+        if (fatal(error)) {
+          view.stop(error.category);
           return;
         }
+        degraded = true;
         emit({ ...view.state, status: "stale", error: undefined });
+      } finally {
+        snapshotting = false;
+        for (const raw of queued.splice(0)) {
+          if (!view.closed) {
+            applyFrame(raw);
+          }
+        }
       }
-      if (!view.closed) {
-        view.cancel = options.setTimer(ACCOUNT_POLL_MS, () => void poll());
+      if (degraded && !view.closed) {
+        startPoll();
       }
     };
+
+    const onUserMessage = (raw: string): void => {
+      if (view.closed) {
+        return;
+      }
+      if (snapshotting) {
+        /* The replay capacity is generous — a flood beyond it is dropped whole. */
+        if (queued.length < MAX_FRAME_EVENTS) {
+          queued.push(raw);
+        }
+        return;
+      }
+      applyFrame(raw);
+    };
+
+    void (async () => {
+      try {
+        credentials = await options.credentials.get(group);
+      } catch (error) {
+        view.stop(error instanceof PolymarketError ? error.category : "unavailable");
+        return;
+      }
+      if (view.closed) {
+        return;
+      }
+      if (credentials === undefined) {
+        view.stop("not-enabled");
+        return;
+      }
+      const next = createAppSocketCore({
+        url: USER_WS_URL,
+        socket: options.socket,
+        setTimer: options.setTimer,
+        random: options.random,
+        heartbeat: {
+          intervalMs: PING_MS,
+          pongTimeoutMs: PONG_TIMEOUT_MS,
+          ping: "PING",
+          isPong: (raw) => raw === "PONG",
+        },
+        onOpen: () => {
+          if (credentials !== undefined) {
+            next.send(authFrame(credentials));
+          }
+          void runSnapshot();
+        },
+        onMessage: onUserMessage,
+      });
+      next.onStatus((status) => {
+        if (view.closed) {
+          return;
+        }
+        if (status === "closed" && !next.closedByUser()) {
+          /* The stream is down — keep the data, mark stale and fall back to REST polling. */
+          emit({ ...view.state, status: "stale" });
+          startPoll();
+        } else if (status === "connecting") {
+          emit({ ...view.state, status: "connecting" });
+        }
+      });
+      core = next;
+      next.connect();
+    })();
+
     accountViews.add(view);
-    void poll();
     return {
       getState: () => view.state,
       subscribe: (listener) => {
@@ -509,7 +812,7 @@ export function createPolymarketLive(options: {
         };
       },
       close: async () => {
-        stopAccountView(view, view.state.error);
+        view.stop(view.state.error);
         await Promise.resolve();
       },
     };

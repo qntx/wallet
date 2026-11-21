@@ -539,3 +539,43 @@ export const wsMarketResolvedEvent = z.looseObject({
   winning_outcome: z.string().check(z.maxLength(200)),
   timestamp: wsTimestamp,
 });
+
+/* ---- User-channel WebSocket events (asyncapi user.json) ---- */
+
+/**
+ * `order` — a placement/update/cancellation for the authenticated user. The spec requires only
+ * `id` + `type`; every field the upsert needs is optional here and checked by the caller.
+ * `owner`/`order_owner` carry the API key — parsed, never copied into view data.
+ */
+export const wsUserOrderEvent = z.looseObject({
+  event_type: z.literal("order"),
+  id: z.string().check(z.maxLength(128)),
+  type: z.enum(["PLACEMENT", "UPDATE", "CANCELLATION"]),
+  status: z.optional(z.string().check(z.maxLength(32))),
+  market: z.optional(z.string().check(z.maxLength(80))),
+  asset_id: z.optional(z.string().check(z.maxLength(80))),
+  side: z.optional(z.string().check(z.maxLength(8))),
+  original_size: z.optional(z.string().check(z.maxLength(64))),
+  size_matched: z.optional(z.string().check(z.maxLength(64))),
+  price: z.optional(z.string().check(z.maxLength(32))),
+  outcome: z.optional(textOrNull),
+  order_type: z.optional(z.string().check(z.maxLength(8))),
+  expiration: z.optional(z.string().check(z.maxLength(32))),
+  created_at: z.optional(z.string().check(z.maxLength(32))),
+  maker_address: z.optional(z.string().check(z.maxLength(64))),
+  owner: z.optional(z.string().check(z.maxLength(64))),
+  order_owner: z.optional(z.string().check(z.maxLength(64))),
+  associate_trades: z.optional(
+    z.union([
+      z.array(z.string().check(z.maxLength(128))).check(z.maxLength(64)),
+      z.null(),
+    ]),
+  ),
+  timestamp: wsTimestamp,
+});
+
+/** `trade` — a match for the authenticated user; only its arrival matters (debounced re-read). */
+export const wsUserTradeEvent = z.looseObject({
+  event_type: z.literal("trade"),
+  type: z.literal("TRADE"),
+});
