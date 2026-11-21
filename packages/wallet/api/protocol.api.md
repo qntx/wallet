@@ -13,7 +13,7 @@ type AccountRef = {
 } | {
     readonly kind: "imported";
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
 
 // @public (undocumented)
@@ -73,7 +73,7 @@ export const backupHeader: Validator<BackupHeaderWire>;
 // @public (undocumented)
 type BackupHeaderKey = {
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
 
 // @public (undocumented)
@@ -131,6 +131,10 @@ export type ChainAccount = {
     readonly address: string;
 } | {
     readonly template: "solana.bip44-change";
+    readonly network: string;
+    readonly address: string;
+} | {
+    readonly template: "tron.bip44";
     readonly network: string;
     readonly address: string;
 } | {
@@ -214,6 +218,16 @@ type ChainSignRequest = {
     readonly format: "bip322-simple" | "legacy";
     readonly change: 0 | 1;
     readonly index: number;
+} | {
+    readonly kind: "tron.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly rawData: Uint8Array;
+} | {
+    readonly kind: "tron.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
 };
 
 // @public (undocumented)
@@ -232,10 +246,13 @@ export type ChainSignResult = {
 } | {
     readonly kind: "bitcoin.message";
     readonly signature: string;
+} | {
+    readonly kind: "tron.transaction" | "tron.message";
+    readonly signature: Uint8Array;
 };
 
 // @public (undocumented)
-export type ChainTemplate = "evm.bip44" | "solana.bip44-change" | "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+export type ChainTemplate = "evm.bip44" | "solana.bip44-change" | "tron.bip44" | "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public (undocumented)
 export const CORE_METHODS: {
@@ -324,17 +341,17 @@ export const CORE_METHODS: {
         readonly purpose: string;
     }, Uint8Array>;
     readonly "keys.import": MethodSpec<{
-        readonly family: "evm" | "solana" | "bitcoin";
+        readonly family: "evm" | "solana" | "bitcoin" | "tron";
         readonly secret: Uint8Array;
     }, {
         readonly keyId: string;
-        readonly family: "evm" | "solana" | "bitcoin";
+        readonly family: "evm" | "solana" | "bitcoin" | "tron";
         readonly address: string;
         readonly createdAt: number;
     }>;
     readonly "keys.list": MethodSpec<NullValue, ReadonlyArray<{
         readonly keyId: string;
-        readonly family: "evm" | "solana" | "bitcoin";
+        readonly family: "evm" | "solana" | "bitcoin" | "tron";
         readonly address: string;
         readonly createdAt: number;
     }>>;
@@ -582,7 +599,7 @@ export const kernelEvent: Validator<KernelEvent>;
 // @public
 type KeyInfo = {
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly address: string;
     readonly createdAt: number;
 };

@@ -14,6 +14,10 @@ import {
 } from "@qntx/wallet-chains/bitcoin";
 import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import {
+  verifyTronMessageSignature,
+  verifyTronTransactionSignature,
+} from "@qntx/wallet-chains/tron";
 
 import { integrity } from "../channel.ts";
 import { internalsOf } from "../internal.ts";
@@ -152,6 +156,18 @@ const checkSigner = (
     !verifySolanaSignature(request.message, result.signature, account.address)
   ) {
     throw integrity("signature does not verify for the account");
+  }
+  if (request.kind === "tron.transaction" || request.kind === "tron.message") {
+    if (result.kind !== request.kind) {
+      throw integrity("result kind does not match the request");
+    }
+    const verified =
+      request.kind === "tron.transaction"
+        ? verifyTronTransactionSignature(request.rawData, result.signature, account.address)
+        : verifyTronMessageSignature(request.message, result.signature, account.address);
+    if (!verified) {
+      throw integrity("signature does not verify for the account");
+    }
   }
 };
 

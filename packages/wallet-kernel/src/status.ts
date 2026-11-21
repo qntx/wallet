@@ -68,7 +68,7 @@ export function statusContents(
   keys: ReadonlyArray<NostrKeyInfo>;
   importedKeys: ReadonlyArray<{
     keyId: string;
-    family: "evm" | "solana" | "bitcoin";
+    family: "evm" | "solana" | "bitcoin" | "tron";
     address: string;
     createdAt: number;
   }>;
@@ -80,7 +80,7 @@ export function statusContents(
   const wallets: WalletInfo[] = [];
   const importedKeys: Array<{
     keyId: string;
-    family: "evm" | "solana" | "bitcoin";
+    family: "evm" | "solana" | "bitcoin" | "tron";
     address: string;
     createdAt: number;
   }> = [];

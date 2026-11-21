@@ -934,6 +934,9 @@ export type EngineCollection = {
 export type EngineErrorCode = "closed" | "invalid-input";
 
 // @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
+
+// @public
 export type EngineLogger = {
     readonly warn: (message: string, error?: unknown) => void;
 };
@@ -1355,7 +1358,8 @@ export type NetworkControllerState = {
 };
 
 // @public (undocumented)
-export type NetworkInfo = NetworkMeta & {
+export type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
     readonly multicall3?: string;
     readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;

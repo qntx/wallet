@@ -3,7 +3,7 @@
  * index, derived from the wallet's entropy record once per session and then served from a cache of
  * public data only. No records: seed and every node are wiped in `finally` on every path.
  * `chain.sign` prepares, verifies and signs through the per-family executors in `./evm.ts`,
- * `./bitcoin.ts` and `./solana.ts`.
+ * `./bitcoin.ts`, `./solana.ts` and `./tron.ts`.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
@@ -13,6 +13,7 @@ import { isBlindIntent } from "@qntx/wallet-chains";
 import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
+import { TRON_NETWORKS, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type {
   ChainAccount,
   ChainTemplate,
@@ -37,6 +38,7 @@ import type { PromptIntent } from "./prompt.ts";
 import type { ExecuteResult, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { executeSolana } from "./solana.ts";
+import { executeTron } from "./tron.ts";
 
 export type ChainsModule = {
   readonly vault: VaultHooks;
@@ -52,6 +54,9 @@ const checkNetwork = (template: string, network: string): void => {
   }
   if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) {
     throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
+  }
+  if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) {
+    throw new KernelError("invalid-input", `unknown tron network ${network}`);
   }
 };
 
@@ -86,6 +91,18 @@ const accountFor = (
     } finally {
       wipe(child.privateKey);
       wipe(root.privateKey);
+    }
+  }
+  if (template === "tron.bip44") {
+    const child = master.derive(`m/44'/195'/0'/0/${groupIndex}`);
+    try {
+      const pub = child.publicKey;
+      if (pub === null) {
+        throw new KernelError("integrity", "no public key at account path");
+      }
+      return { template, network, address: tronAddressFromPublicKey(pub) };
+    } finally {
+      child.wipePrivateData();
     }
   }
   const purpose = BTC_PURPOSE[template];
@@ -165,6 +182,13 @@ const assertSignable = (
 /** One pass over the request with its signing secret, which exists only for the call. */
 type SignPass = (intentOnly: boolean) => ExecuteResult | Promise<ExecuteResult>;
 
+const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
+  evm: ["evm.bip44"],
+  solana: ["solana.bip44-change"],
+  tron: ["tron.bip44"],
+  bitcoin: ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"],
+};
+
 /** The HD pass: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
 const hdPass = (
   ctx: Parameters<Handler<"chain.sign">>[0],
@@ -181,12 +205,7 @@ const hdPass = (
     }
   } else {
     const [family] = request.kind.split(".", 1);
-    const expected =
-      family === "evm"
-        ? ["evm.bip44"]
-        : family === "solana"
-          ? ["solana.bip44-change"]
-          : ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"];
+    const expected = TEMPLATES_BY_FAMILY[family ?? ""] ?? [];
     if (!("template" in account) || !expected.includes(account.template)) {
       throw new KernelError("invalid-input", "account template does not match the request family");
     }
@@ -215,6 +234,9 @@ const hdPass = (
     ) {
       return executeEvm(request, source, intentOnly);
     }
+    if (request.kind === "tron.transaction" || request.kind === "tron.message") {
+      return executeTron(request, source, intentOnly);
+    }
     return executeSolana(request, source, intentOnly);
   };
   return async (intentOnly) =>
@@ -238,7 +260,8 @@ const importedPass = (
     request.kind === "evm.personal-message" ||
     request.kind === "evm.typed-data";
   const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
-  if (!isEvm && !isSolana) {
+  const isTron = request.kind === "tron.transaction" || request.kind === "tron.message";
+  if (!isEvm && !isSolana && !isTron) {
     throw new KernelError("unsupported", "imported accounts are not supported on bitcoin");
   }
   const record = ctx.image.records.find(
@@ -248,7 +271,8 @@ const importedPass = (
     throw new KernelError("not-found", "no such imported key");
   }
   const header = parseKeyHeader(record.header);
-  if (header.family !== (isEvm ? "evm" : "solana")) {
+  const expectedFamily = isEvm ? "evm" : isTron ? "tron" : "solana";
+  if (header.family !== expectedFamily) {
     throw new KernelError("invalid-input", "the key's family does not match the request");
   }
   const execute = (secret: Uint8Array, intentOnly: boolean): ExecuteResult => {
@@ -262,6 +286,9 @@ const importedPass = (
     }
     if (request.kind === "solana.transaction" || request.kind === "solana.message") {
       return executeSolana(request, source, intentOnly);
+    }
+    if (request.kind === "tron.transaction" || request.kind === "tron.message") {
+      return executeTron(request, source, intentOnly);
     }
     throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
   };

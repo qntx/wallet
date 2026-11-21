@@ -2,7 +2,7 @@
  * Built-in EVM network registry: the chain table lives in @qntx/wallet-chains/networks; this module
  * layers the engine-only fields the signing paths need on top of it (Multicall3, fee model,
  * EIP-7702 delegator code hash). Signing-time chainId always comes from the table, never from an
- * RPC endpoint.
+ * RPC endpoint. TRON networks in the chain table are not served by the engine yet.
  */
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 import type { NetworkMeta } from "@qntx/wallet-chains/networks";
@@ -14,7 +14,11 @@ export type FeeModel =
   /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
   | { readonly kind: "op-stack" };
 
-export type NetworkInfo = NetworkMeta & {
+/** The chain families this registry serves. */
+export type EngineFamily = "evm" | "solana" | "bitcoin";
+
+export type NetworkInfo = Omit<NetworkMeta, "family"> & {
+  readonly family: EngineFamily;
   readonly multicall3?: string;
   /** How the chain prices costs beyond execution gas; every EVM entry sets it. */
   readonly feeModel?: FeeModel;
@@ -119,8 +123,10 @@ export const EVM_FACTS: Readonly<
   33111: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
 };
 
-export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.flatMap((meta) => {
-  const facts = meta.family === "evm" ? EVM_FACTS[meta.chainId] : undefined;
+export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
+  (n): n is NetworkMeta & { readonly family: "evm" } => n.family === "evm",
+).flatMap((meta) => {
+  const facts = EVM_FACTS[meta.chainId];
   if (facts === undefined) {
     return [];
   }
@@ -135,11 +141,11 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.flatMap((m
 });
 
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "bitcoin",
+  (n): n is NetworkMeta & { readonly family: "bitcoin" } => n.family === "bitcoin",
 );
 
 export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "solana",
+  (n): n is NetworkMeta & { readonly family: "solana" } => n.family === "solana",
 );
 
 export const networkById = (id: string): NetworkInfo | undefined =>

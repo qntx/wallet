@@ -614,6 +614,9 @@ type EngineCollection = {
 };
 
 // @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
+
+// @public
 type EngineLogger = {
     readonly warn: (message: string, error?: unknown) => void;
 };
@@ -748,7 +751,8 @@ type NetworkControllerState = {
 };
 
 // @public (undocumented)
-type NetworkInfo = NetworkMeta & {
+type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
     readonly multicall3?: string;
     readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;

@@ -100,14 +100,14 @@ type InitialFactor = {
 // @public
 type KeyInfo = {
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly address: string;
     readonly createdAt: number;
 };
 
 // @public
 type KeysApi = {
-    readonly import: (family: "evm" | "solana" | "bitcoin", secret: string | Uint8Array) => Promise<KeyInfo>;
+    readonly import: (family: "evm" | "solana" | "bitcoin" | "tron", secret: string | Uint8Array) => Promise<KeyInfo>;
     readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
     readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
     readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;

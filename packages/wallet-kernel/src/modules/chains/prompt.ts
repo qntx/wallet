@@ -1,3 +1,5 @@
+import { hexToBytes } from "@noble/hashes/utils.js";
+
 /**
  * The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
  * request (WD-065). A transaction lists every fact the signed bytes prove — outflows, approvals,
@@ -19,9 +21,12 @@ import type {
   SeaportOrder,
   SignInParse,
   StakeAction,
+  TronPermission,
+  TronResource,
 } from "@qntx/wallet-chains";
 import { SEAPORT_ORDER_ITEMS } from "@qntx/wallet-chains/evm";
 import { networkMeta } from "@qntx/wallet-chains/networks";
+import { tronContractType } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
@@ -43,6 +48,7 @@ export type PromptIntent = Pick<
   | "calls"
   | "blind"
   | "programs"
+  | "tron"
 > & {
   /** Decoders always set it; a message without a chain of its own omits it. */
   readonly network?: string;
@@ -131,7 +137,26 @@ type Catalog = {
   readonly sighashSingle: string;
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
-  readonly stakeLine: (action: StakeAction, sol: (lamports: string) => string) => string;
+  readonly stakeLines: (action: StakeAction, sol: (lamports: string) => string) => string[];
+  readonly tronTakeover: (addresses: ReadonlyArray<string>) => string;
+  readonly tronContract: (name: string) => string;
+  readonly tronField: string;
+  readonly tronPermissionKind: Readonly<Record<"owner" | "witness" | "active", string>>;
+  readonly tronPermission: (
+    kind: string,
+    name: string,
+    threshold: string,
+    keys: ReadonlyArray<{ readonly address: string; readonly weight: string }>,
+    operations?: ReadonlyArray<string>,
+  ) => string;
+  readonly tronPermissionId: (id: number) => string;
+  readonly tronMemoHeading: string;
+  readonly tronMemoData: (hex: string) => string;
+  readonly tronMemoLength: (n: number) => string;
+  readonly tronExpires: (datetime: string) => string;
+  readonly tronFeeLimit: (fee: string) => string;
+  readonly tronBandwidthFee: string;
+  readonly tronResource: Readonly<Record<TronResource, string>>;
   readonly platformFee: (message: string) => string;
   readonly bridgeLine: (
     network: string,
@@ -222,20 +247,86 @@ const zh: Catalog = {
   stakeRole: { staker: "质押", withdrawer: "提取" },
   stakeAuthority: (account, role, authority) =>
     `将质押账户 ${account} 的${role}权限交给 ${authority}`,
-  stakeLine: (a, sol) =>
-    a.kind === "create"
-      ? `创建质押账户 ${a.account}，存入 ${sol(a.lamports)}`
-      : a.kind === "delegate"
-        ? `委托质押账户 ${a.account} 给验证者 ${a.validator}`
-        : a.kind === "deactivate"
-          ? `解除质押 ${a.account}`
-          : a.kind === "withdraw"
-            ? `从 ${a.account} 提取 ${sol(a.lamports)} 到 ${a.to}`
-            : a.kind === "lido-submit"
-              ? `通过 Lido 质押 ${formatAmount(zh, a.amount)}，收到约 ${formatAmount(zh, a.receive)}`
-              : a.kind === "lido-request"
-                ? `申请提取 ${formatAmount(zh, a.amount)}，提款凭证归 ${a.owner}`
-                : `领取 Lido 提款 ${a.requestIds.join(", ")}`,
+  stakeLines: (a, sol) => {
+    if (a.kind === "create") {
+      return [`创建质押账户 ${a.account}，存入 ${sol(a.lamports)}`];
+    }
+    if (a.kind === "delegate") {
+      return [`委托质押账户 ${a.account} 给验证者 ${a.validator}`];
+    }
+    if (a.kind === "deactivate") {
+      return [`解除质押 ${a.account}`];
+    }
+    if (a.kind === "withdraw") {
+      return [`从 ${a.account} 提取 ${sol(a.lamports)} 到 ${a.to}`];
+    }
+    if (a.kind === "lido-submit") {
+      return [
+        `通过 Lido 质押 ${formatAmount(zh, a.amount)}，收到约 ${formatAmount(zh, a.receive)}`,
+      ];
+    }
+    if (a.kind === "lido-request") {
+      return [`申请提取 ${formatAmount(zh, a.amount)}，提款凭证归 ${a.owner}`];
+    }
+    if (a.kind === "lido-claim") {
+      return [`领取 Lido 提款 ${a.requestIds.join(", ")}`];
+    }
+    if (a.kind === "tron-freeze") {
+      return [`质押 ${formatAmount(zh, a.amount)} 获取${zh.tronResource[a.resource]}`];
+    }
+    if (a.kind === "tron-unfreeze") {
+      return [
+        `解除质押${zh.tronResource[a.resource]}的 ${formatAmount(zh, a.amount)}，等待期结束后可提取`,
+      ];
+    }
+    if (a.kind === "tron-delegate") {
+      const lock =
+        a.lock === undefined
+          ? ""
+          : a.lock.blocks === "0"
+            ? "，锁定默认的 86400 个区块（约 72 小时）"
+            : `，锁定 ${a.lock.blocks} 个区块（约 ${(BigInt(a.lock.blocks) * 3n) / 3600n} 小时）`;
+      return [
+        `将 ${formatAmount(zh, a.amount)} 质押产生的${zh.tronResource[a.resource]}代理给 ${a.receiver}${lock}`,
+      ];
+    }
+    if (a.kind === "tron-undelegate") {
+      return [
+        `收回代理给 ${a.receiver} 的 ${formatAmount(zh, a.amount)} 质押所产生的${zh.tronResource[a.resource]}`,
+      ];
+    }
+    if (a.kind === "tron-withdraw-unfrozen") {
+      return ["提取所有等待期已结束的解除质押 TRX"];
+    }
+    if (a.kind === "tron-cancel-unfreeze") {
+      return ["取消所有未完成的解除质押（重新质押），并提取已到期的部分"];
+    }
+    if (a.kind === "tron-claim-rewards") {
+      return ["领取投票奖励到本账户"];
+    }
+    if (a.kind === "tron-vote") {
+      return [
+        "以下列投票替换本账户当前的全部投票：",
+        ...a.votes.map((vote) => `为超级代表 ${vote.witness} 投 ${vote.count} 票`),
+      ];
+    }
+    throw new KernelError("integrity", "unreachable stake action");
+  },
+  tronTakeover: (addresses) =>
+    `账户接管：此交易把本账户的控制权交给 ${addresses.join("、")}，持有这些密钥的人可以转走全部资产。`,
+  tronContract: (name) => `钱包不支持 TRON 合约类型 ${name}，无法显示它的作用`,
+  tronField: "交易含有钱包无法显示的字段",
+  tronPermissionKind: { owner: "所有者", witness: "见证人", active: "活跃" },
+  tronPermission: (kind, name, threshold, keys, operations) =>
+    `${kind}权限「${name}」：阈值 ${threshold}；密钥 ${keys.map((k) => `${k.address}（权重 ${k.weight}）`).join("、")}${operations === undefined ? "" : operations.length === 0 ? "；不允许任何交易" : `；允许 ${operations.join("、")}`}`,
+  tronPermissionId: (id) => `以本账户的权限 ${id} 签署`,
+  tronMemoHeading: "备注：",
+  tronMemoData: (hex) => `备注数据 ${hex}`,
+  tronMemoLength: (n) => `备注 ${n} 字节`,
+  tronExpires: (datetime) => `${datetime}（UTC）后失效`,
+  tronFeeLimit: (fee) => `能量费上限 ${fee}；另可能扣除带宽费`,
+  tronBandwidthFee: "可能扣除带宽费或账户激活费",
+  tronResource: { bandwidth: "带宽", energy: "能量", "tron-power": "TRON Power" },
 };
 
 const en: Catalog = {
@@ -321,20 +412,89 @@ const en: Catalog = {
   stakeRole: { staker: "staker", withdrawer: "withdrawer" },
   stakeAuthority: (account, role, authority) =>
     `Give ${authority} the ${role} authority over stake account ${account}`,
-  stakeLine: (a, sol) =>
-    a.kind === "create"
-      ? `Create stake account ${a.account} with ${sol(a.lamports)}`
-      : a.kind === "delegate"
-        ? `Delegate stake account ${a.account} to validator ${a.validator}`
-        : a.kind === "deactivate"
-          ? `Deactivate stake ${a.account}`
-          : a.kind === "withdraw"
-            ? `Withdraw ${sol(a.lamports)} from ${a.account} to ${a.to}`
-            : a.kind === "lido-submit"
-              ? `Stake ${formatAmount(en, a.amount)} with Lido, receive about ${formatAmount(en, a.receive)}`
-              : a.kind === "lido-request"
-                ? `Request withdrawal of ${formatAmount(en, a.amount)}; the claim NFT goes to ${a.owner}`
-                : `Claim Lido withdrawals ${a.requestIds.join(", ")}`,
+  stakeLines: (a, sol) => {
+    if (a.kind === "create") {
+      return [`Create stake account ${a.account} with ${sol(a.lamports)}`];
+    }
+    if (a.kind === "delegate") {
+      return [`Delegate stake account ${a.account} to validator ${a.validator}`];
+    }
+    if (a.kind === "deactivate") {
+      return [`Deactivate stake ${a.account}`];
+    }
+    if (a.kind === "withdraw") {
+      return [`Withdraw ${sol(a.lamports)} from ${a.account} to ${a.to}`];
+    }
+    if (a.kind === "lido-submit") {
+      return [
+        `Stake ${formatAmount(en, a.amount)} with Lido, receive about ${formatAmount(en, a.receive)}`,
+      ];
+    }
+    if (a.kind === "lido-request") {
+      return [
+        `Request withdrawal of ${formatAmount(en, a.amount)}; the claim NFT goes to ${a.owner}`,
+      ];
+    }
+    if (a.kind === "lido-claim") {
+      return [`Claim Lido withdrawals ${a.requestIds.join(", ")}`];
+    }
+    if (a.kind === "tron-freeze") {
+      return [`Stake ${formatAmount(en, a.amount)} for ${en.tronResource[a.resource]}`];
+    }
+    if (a.kind === "tron-unfreeze") {
+      return [
+        `Unstake ${formatAmount(en, a.amount)} of ${en.tronResource[a.resource]}; it can be withdrawn after the network's waiting period`,
+      ];
+    }
+    if (a.kind === "tron-delegate") {
+      const lock =
+        a.lock === undefined
+          ? ""
+          : a.lock.blocks === "0"
+            ? ", locked for the default 86400 blocks (about 72 h)"
+            : `, locked for ${a.lock.blocks} blocks (about ${(BigInt(a.lock.blocks) * 3n) / 3600n} h)`;
+      return [
+        `Delegate the ${en.tronResource[a.resource]} of ${formatAmount(en, a.amount)} staked to ${a.receiver}${lock}`,
+      ];
+    }
+    if (a.kind === "tron-undelegate") {
+      return [
+        `Reclaim the ${en.tronResource[a.resource]} of ${formatAmount(en, a.amount)} staked from ${a.receiver}`,
+      ];
+    }
+    if (a.kind === "tron-withdraw-unfrozen") {
+      return ["Withdraw all unstaked TRX whose waiting period has ended"];
+    }
+    if (a.kind === "tron-cancel-unfreeze") {
+      return ["Cancel all pending unstakes, re-staking them, and withdraw those already expired"];
+    }
+    if (a.kind === "tron-claim-rewards") {
+      return ["Claim voting rewards to this account"];
+    }
+    if (a.kind === "tron-vote") {
+      return [
+        "Replace all current votes of this account with:",
+        ...a.votes.map((vote) => `${vote.count} votes for super representative ${vote.witness}`),
+      ];
+    }
+    throw new KernelError("integrity", "unreachable stake action");
+  },
+  tronTakeover: (addresses) =>
+    `Account takeover: this gives control of this account to ${addresses.join(", ")}. Whoever holds these keys can move all of its assets.`,
+  tronContract: (name) =>
+    `The wallet does not support the TRON contract ${name} and cannot show what it does`,
+  tronField: "This transaction carries fields the wallet cannot show",
+  tronPermissionKind: { owner: "Owner", witness: "Witness", active: "Active" },
+  tronPermission: (kind, name, threshold, keys, operations) =>
+    `${kind} permission "${name}": threshold ${threshold}; keys ${keys.map((k) => `${k.address} (weight ${k.weight})`).join(", ")}${operations === undefined ? "" : operations.length === 0 ? "; allows no transactions" : `; allows ${operations.join(", ")}`}`,
+  tronPermissionId: (id) => `Signs under permission ${id} of this account`,
+  tronMemoHeading: "Memo:",
+  tronMemoData: (hex) => `Memo data ${hex}`,
+  tronMemoLength: (n) => `Memo of ${n} bytes`,
+  tronExpires: (datetime) => `Expires ${datetime} (UTC)`,
+  tronFeeLimit: (fee) => `Max fee ${fee} for energy; bandwidth fees may be charged in addition`,
+  tronBandwidthFee: "Bandwidth or account-activation fees may be charged",
+  tronResource: { bandwidth: "Bandwidth", energy: "Energy", "tron-power": "TRON Power" },
 };
 
 const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -426,6 +586,48 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
 /** One requester-chosen value on a single line. */
 const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
 
+/** The "… N more" trailing line when a text memo exceeds the excerpt budget, else none. */
+const displayOmitted = (catalog: Catalog, text: string): ReadonlyArray<string> => {
+  const { omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+  return omitted === 0 ? [] : [catalog.omitted(omitted)];
+};
+
+/** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
+function tronOperationNames(operations: string): ReadonlyArray<string> {
+  const bytes = hexToBytes(operations.replace(/^0x/i, ""));
+  const names: string[] = [];
+  for (let i = 0; i < 256; i += 1) {
+    // oxlint-disable-next-line no-bitwise -- the operations bitmap is bit-indexed by contract id
+    if (((bytes[i >> 3] ?? 0) & (1 << (i & 7))) !== 0) {
+      names.push(tronContractType(i)?.name ?? `ContractType ${i}`);
+    }
+  }
+  return names;
+}
+
+const tronPermissionLine = (catalog: Catalog, permission: TronPermission): string =>
+  catalog.tronPermission(
+    catalog.tronPermissionKind[permission.type],
+    field(permission.name),
+    permission.threshold,
+    permission.keys,
+    permission.operations === undefined ? undefined : tronOperationNames(permission.operations),
+  );
+
+/** Every distinct key address across owner, witness and active permissions, in that order. */
+function tronNewKeyAddresses(update: {
+  owner: TronPermission;
+  witness?: TronPermission;
+  actives: ReadonlyArray<TronPermission>;
+}): ReadonlyArray<string> {
+  const all = [
+    update.owner,
+    ...(update.witness === undefined ? [] : [update.witness]),
+    ...update.actives,
+  ];
+  return [...new Set(all.flatMap((p) => p.keys.map((k) => k.address)))];
+}
+
 /**
  * The contracts an unverifiable transaction runs: its own, or each opaque call of a batch. A blind
  * call leads with why it is blind; the call line itself follows either way.
@@ -488,49 +690,89 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
         ? catalog.burn(formatAmount(catalog, flow.amount))
         : catalog.send(formatAmount(catalog, flow.amount), flow.to),
     ),
-    ...(intent.staking ?? []).map((action) => catalog.stakeLine(action, sol)),
+    ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
   ];
 }
 
 function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystorePrompt {
+  const { tron } = intent;
   const network =
     intent.network === undefined
       ? []
       : [catalog.networkLine(networkLabel(catalog, intent.network))];
   const caveat =
-    intent.blind === undefined
-      ? intent.verifiability === "opaque"
-        ? intent.family === "solana"
-          ? [
-              catalog.solanaPrograms((intent.programs ?? []).join(", ")),
-              catalog.solanaProgramsWarning,
-            ]
-          : intent.family === "bitcoin"
-            ? [catalog.externalInputs]
-            : [catalog.unverifiedEffects]
-        : intent.verifiability === "partial"
-          ? [catalog.otherOutflows]
-          : []
-      : /* A blind Solana transaction still names the programs it cannot decode — the blind title
-           carries the refusal reason, the program list is what the signature reaches. */
-        intent.family === "solana" && intent.verifiability === "opaque"
-        ? [
-            catalog.solanaPrograms((intent.programs ?? []).join(", ")),
-            catalog.solanaProgramsWarning,
-          ]
-        : [];
+    intent.blind === "tron-contract" && tron !== undefined
+      ? [catalog.tronContract(tron.contractType)]
+      : intent.blind === "tron-field"
+        ? [catalog.tronField]
+        : intent.blind === undefined
+          ? intent.verifiability === "opaque"
+            ? intent.family === "solana"
+              ? [
+                  catalog.solanaPrograms((intent.programs ?? []).join(", ")),
+                  catalog.solanaProgramsWarning,
+                ]
+              : intent.family === "bitcoin"
+                ? [catalog.externalInputs]
+                : [catalog.unverifiedEffects]
+            : intent.verifiability === "partial"
+              ? [catalog.otherOutflows]
+              : []
+          : /* A blind Solana transaction still names the programs it cannot decode — the blind
+               title carries the refusal reason, the program list is what the signature reaches. */
+            intent.family === "solana" && intent.verifiability === "opaque"
+            ? [
+                catalog.solanaPrograms((intent.programs ?? []).join(", ")),
+                catalog.solanaProgramsWarning,
+              ]
+            : [];
   const warnings = intent.warnings ?? [];
+  const permissions =
+    tron?.permissionUpdate === undefined
+      ? []
+      : [
+          tronPermissionLine(catalog, tron.permissionUpdate.owner),
+          ...(tron.permissionUpdate.witness === undefined
+            ? []
+            : [tronPermissionLine(catalog, tron.permissionUpdate.witness)]),
+          ...tron.permissionUpdate.actives.map((p) => tronPermissionLine(catalog, p)),
+        ];
+  const memo =
+    tron?.memo === undefined
+      ? []
+      : tron.memo.kind === "text"
+        ? [
+            catalog.tronMemoHeading,
+            ...displayExcerpt(tron.memo.text, MESSAGE_LINES, MESSAGE_CODE_POINTS).lines,
+            ...displayOmitted(catalog, tron.memo.text),
+          ]
+        : tron.memo.hex.length - "0x".length <= 128
+          ? [catalog.tronMemoData(tron.memo.hex)]
+          : [catalog.tronMemoLength((tron.memo.hex.length - "0x".length) / 2)];
   return {
     title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
     description: joinLines([
+      ...(tron?.permissionUpdate === undefined
+        ? []
+        : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))]),
       ...network,
       ...caveat,
       ...effectLines(catalog, intent),
-      intent.fee === undefined
-        ? catalog.feeUnknown
-        : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
+      ...permissions,
+      ...(tron?.permissionId === undefined ? [] : [catalog.tronPermissionId(tron.permissionId)]),
+      ...memo,
+      ...(tron === undefined
+        ? []
+        : [catalog.tronExpires(utcDateTime(Math.floor(tron.expiration / 1000)))]),
+      intent.family === "tron"
+        ? intent.fee === undefined
+          ? catalog.tronBandwidthFee
+          : catalog.tronFeeLimit(formatAmount(catalog, intent.fee.max))
+        : intent.fee === undefined
+          ? catalog.feeUnknown
+          : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
       ...warnings
         .filter((w) => w.kind === "platform-fee")
         .map((w) => catalog.platformFee(w.message)),

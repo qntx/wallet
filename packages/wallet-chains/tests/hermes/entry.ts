@@ -12,10 +12,12 @@ import {
   signEvmPersonalMessage,
   signEvmTypedData,
 } from "@qntx/wallet-chains/evm/sign";
+import { signTronMessage, signTronTransaction } from "@qntx/wallet-chains/tron/sign";
 
 import { normalizeBitcoin } from "../../src/bitcoin/index.ts";
 import { signBitcoinPsbt, signBitcoinMessage } from "../../src/bitcoin/sign.ts";
 import { signSolanaMessage } from "../../src/solana/sign.ts";
+import { tronAddressFromPublicKey } from "../../src/tron/index.ts";
 
 declare function print(s: string): void;
 
@@ -175,6 +177,41 @@ function main(): void {
   );
   if (!msgSig.startsWith("smp")) {
     throw new Error("bip322 sign mismatch");
+  }
+  /* vectors/chains/tron.json transactions "trx-transfer" and "trc20-transfer" plus the
+     "hello-world" message — tronweb signatures for the same anvil key as the EVM rows. */
+  const TRON_TRANSACTIONS = [
+    {
+      name: "trx-transfer",
+      rawData:
+        "0x0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541f39fd6e51aad88f6f4ce6ab8827279cfffb922661215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d7080d0eab6b733",
+      expected:
+        "0xa83bcf24577a8277f8cb1f023f68831afb538b110e9784dc1a54fed0e318b8f95f3894c2c0bd3c1ef89092d91dbfb8d4d4c34a02c900c50add1caa86c0b8c80f1c",
+    },
+    {
+      name: "trc20-transfer",
+      rawData:
+        "0x0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb0000000000000000000000005cd0fb0ab3ce40f3051414c604b27756e69e43db00000000000000000000000000000000000000000000000000000000009896807080d0eab6b73390018087a70e",
+      expected:
+        "0x73a32ce15fbbb48cf145e9fa7ca2f282783123f4a96bac70c724fbd5404f88445a0727b9f05012cc8a5aad735b0fe0d9a86be00b51ae424e5d46b2660248390a1c",
+    },
+  ];
+  for (const v of TRON_TRANSACTIONS) {
+    if (bytesToHex(signTronTransaction(hexToBytes(v.rawData), key)) !== v.expected) {
+      throw new Error(`tron tx ${v.name} mismatch`);
+    }
+  }
+  if (
+    bytesToHex(signTronMessage(hexToBytes("0x68656c6c6f20776f726c64"), key)) !==
+    "0x89ece090b6e9319ced9ade7329598e86a64852805111ce97871a4cf154b9f048506440d8b6128b37cd0353704ba7ef1748f9ab222cbd51ef46cebd27601697ef1b"
+  ) {
+    throw new Error("tron message mismatch");
+  }
+  if (
+    tronAddressFromPublicKey(secp256k1.getPublicKey(key, true)) !==
+    "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG"
+  ) {
+    throw new Error("tron address mismatch");
   }
   print("HERMES_CHAINS_OK");
 }

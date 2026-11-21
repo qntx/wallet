@@ -248,6 +248,22 @@ describe("every secret field travels on the transfer list", () => {
     await Promise.all(calls);
   });
 
+  it("keys.import posts a bare-hex TRON secret and rejects malformed ones", async () => {
+    const { wallet, port } = await connect(uninitializedStatus());
+    const call = wallet.keys.import("tron", "ab".repeat(32)).catch(() => undefined);
+    await expectSecretsPosted(port, ["keys.import"]);
+    await call;
+    await Promise.all(
+      [`0x${"ab".repeat(32)}`, "zz".repeat(32), "ab".repeat(31)].map(async (secret) =>
+        expect(wallet.keys.import("tron", secret)).rejects.toThrow(
+          expect.objectContaining({ code: "invalid-input" }),
+        ),
+      ),
+    );
+    expect(port.records).toHaveLength(1);
+    await wallet.destroy();
+  });
+
   it("wallet.createWithPasskey / restoreWithPasskey carry the PRF output", async () => {
     const { wallet, port } = await connect(uninitializedStatus(), RecordingPort, ceremony);
     const calls = [

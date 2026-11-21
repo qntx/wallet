@@ -18,7 +18,7 @@ export const allowanceChange = (
   chainId: number,
   table: EvmTokenTable,
   extra: { readonly expiration?: number; readonly via?: "permit2" | "allowance-holder" } = {},
-): ApprovalChange => {
+): Extract<ApprovalChange, { readonly kind: "allowance" }> => {
   const known = lookupEvmToken(table, chainId, token);
   return {
     kind: "allowance",

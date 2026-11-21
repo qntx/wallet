@@ -64,7 +64,7 @@ export type AssetFlow = {
 export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction";
+export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "tron-contract" | "tron-field" | "tron-permission-update";
 
 // @public (undocumented)
 export class ChainError extends Error {
@@ -77,7 +77,7 @@ export class ChainError extends Error {
 export type ChainErrorCode = "unknown-field" | "chain-id-mismatch" | "invalid-quantity" | "invalid-address" | "invalid-typed-data" | "invalid-request" | "unsupported";
 
 // @public (undocumented)
-export type ChainFamily = "evm" | "solana" | "bitcoin";
+export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 // @public (undocumented)
 export type DisplayExcerpt = {
@@ -128,6 +128,23 @@ export type DisplayIntent = {
         readonly symbol?: string;
     };
     readonly programs?: ReadonlyArray<string>;
+    readonly tron?: {
+        readonly contractType: string;
+        readonly expiration: number;
+        readonly permissionId?: number;
+        readonly memo?: {
+            readonly kind: "text";
+            readonly text: string;
+        } | {
+            readonly kind: "bytes";
+            readonly hex: string;
+        };
+        readonly permissionUpdate?: {
+            readonly owner: TronPermission;
+            readonly witness?: TronPermission;
+            readonly actives: ReadonlyArray<TronPermission>;
+        };
+    };
     readonly blind?: BlindReason;
 };
 
@@ -214,10 +231,10 @@ export type MessageContent = {
 };
 
 // @public
-export const messageContent: (bytes: Uint8Array, family: "evm" | "solana") => MessageContent;
+export const messageContent: (bytes: Uint8Array, family: "evm" | "solana" | "tron") => MessageContent;
 
 // @public
-export function parseSignIn(text: string, family: "evm" | "solana"): SignInParse | undefined;
+export function parseSignIn(text: string, family: "evm" | "solana" | "tron"): SignInParse | undefined;
 
 // @public
 export type SafeTransaction = {
@@ -331,6 +348,16 @@ export type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly typedData: string;
+} | {
+    readonly kind: "tron.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly rawData: Uint8Array;
+} | {
+    readonly kind: "tron.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
 };
 
 // @public
@@ -368,7 +395,61 @@ export type StakeAction = {
     {
     readonly kind: "lido-claim";
     readonly requestIds: ReadonlyArray<string>;
+} |
+/** FreezeBalanceV2 / UnfreezeBalanceV2. */
+    {
+    readonly kind: "tron-freeze" | "tron-unfreeze";
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+} |
+/** DelegateResourceContract; `lock` present only when the lock flag is set. */
+    {
+    readonly kind: "tron-delegate";
+    readonly receiver: string;
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+    readonly lock?: {
+        readonly blocks: string;
+    };
+} |
+/** UnDelegateResourceContract. */
+    {
+    readonly kind: "tron-undelegate";
+    readonly receiver: string;
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+} | {
+    readonly kind: "tron-withdraw-unfrozen";
+} | {
+    readonly kind: "tron-cancel-unfreeze";
+} |
+/** WithdrawBalanceContract — claims the SR-voting reward balance. */
+    {
+    readonly kind: "tron-claim-rewards";
+} | {
+    readonly kind: "tron-vote";
+    readonly votes: ReadonlyArray<{
+        readonly witness: string;
+        readonly count: string;
+    }>;
 };
+
+// @public
+export type TronPermission = {
+    readonly type: "owner" | "witness" | "active";
+    readonly id: number;
+    readonly name: string;
+    readonly threshold: string;
+    readonly parentId: number;
+    readonly operations?: string;
+    readonly keys: ReadonlyArray<{
+        readonly address: string;
+        readonly weight: string;
+    }>;
+};
+
+// @public
+export type TronResource = "bandwidth" | "energy" | "tron-power";
 
 // @public
 export type TypedDataDomain = {

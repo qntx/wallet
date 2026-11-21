@@ -196,7 +196,7 @@ export type NativeAutoLockPolicy = Extract<AutoLockPolicy, { readonly platform: 
 /** Public info for an imported private key — the record id, family and address. */
 export type KeyInfo = {
   readonly keyId: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly address: string;
   readonly createdAt: number;
 };
@@ -205,10 +205,10 @@ export type KeyInfo = {
 export type KeysApi = {
   /**
    * `secret` is the family's canonical encoding: `0x`-prefixed 64-hex or 32 bytes for EVM; base58
-   * or raw bytes for a Solana 32-byte seed or 64-byte keypair.
+   * or raw bytes for a Solana 32-byte seed or 64-byte keypair; bare 64-hex or 32 bytes for TRON.
    */
   readonly import: (
-    family: "evm" | "solana" | "bitcoin",
+    family: "evm" | "solana" | "bitcoin" | "tron",
     secret: string | Uint8Array,
   ) => Promise<KeyInfo>;
   readonly list: () => Promise<ReadonlyArray<KeyInfo>>;

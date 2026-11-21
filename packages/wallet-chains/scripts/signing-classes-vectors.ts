@@ -1,20 +1,23 @@
 /// <reference types="node" />
 /**
- * Regenerates vectors/chains/signing-classes.json: everyday dApp requests and the six blind reason
- * codes with their expected `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans.
- * Calldata is built with viem; the expected class and prompt text are literals written by hand.
+ * Regenerates vectors/chains/signing-classes.json: everyday EVM dApp requests, every TRON
+ * transaction vector from vectors/chains/tron.json, three TRON messages, and the blind reason codes
+ * with their expected `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans.
+ * Calldata is built with viem; TRON raw bytes are read from tron.json; the expected class and
+ * prompt text are literals written by hand.
  *
  * SignRequest fields that cannot live in JSON: `typedData` is the parsed document (consumers pass
  * JSON.stringify of it) and `message` is `{"$bytes": hex}` (consumers decode to Uint8Array).
  *
  * Run from the repo root: bun packages/wallet-chains/scripts/signing-classes-vectors.ts
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
+const TRON_SIGNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
@@ -53,6 +56,26 @@ const personal = (hex: string) => ({
   account,
   message: { $bytes: hex },
 });
+
+const tronAccount = { kind: "hd", walletId: "w", groupIndex: 0, template: "tron.bip44" };
+const tronTx = (rawDataHex: string) => ({
+  kind: "tron.transaction",
+  network: "tron:728126428",
+  account: tronAccount,
+  rawData: { $bytes: rawDataHex },
+});
+const tronMessage = (hex: string) => ({
+  kind: "tron.message",
+  network: "tron:728126428",
+  account: tronAccount,
+  message: { $bytes: hex },
+});
+
+/** TRON transaction vectors: expected class and prompts are literals, raw bytes from tron.json. */
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the generated vector file has a fixed shape
+const TRON_VECTORS = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/tron.json"), "utf8"),
+) as { transactions: Array<{ name: string; rawDataHex: string }> };
 
 const net = "Network: Ethereum";
 const netZh = "网络：Ethereum";
@@ -121,7 +144,15 @@ const seaportNativeItem = {
   endAmount: "1000000000000000000",
 };
 
-const cases = [
+type VectorCase = {
+  readonly name: string;
+  readonly request: unknown;
+  readonly verifiability: string;
+  readonly blind: unknown;
+  readonly prompt: unknown;
+};
+
+const cases: VectorCase[] = [
   {
     name: "WETH9 deposit() (wrap 1 ETH)",
     request: tx({
@@ -551,12 +582,448 @@ const cases = [
   },
 ];
 
+const TRON_TX_EXPECTED: Readonly<
+  Record<
+    string,
+    { readonly verifiability: string; readonly blind: unknown; readonly prompt: unknown }
+  >
+> = {
+  "trx-transfer": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nSend 1 TRX to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n发送 1 TRX 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "trx-transfer-memo": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\ntron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\ntron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "trx-transfer-permission-2": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nSend 3 TRX to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nSigns under permission 2 of this account\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n发送 3 TRX 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n以本账户的权限 2 签署\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "trc20-transfer": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nSend 10 USDT to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n发送 10 USDT 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trc20-transfer-self": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nSend 0.000001 USDT to TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n发送 0.000001 USDT 到 TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trc20-approve": {
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm approval",
+        description:
+          "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend 5 USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认授权",
+        description:
+          "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 5 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trc20-approve-unlimited": {
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm approval",
+        description:
+          "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend unlimited USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认授权",
+        description:
+          "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trc10-transfer": {
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm transfer",
+        description:
+          "Network: TRON\nThere may be other outflows\nSend 500 base units of unverified token trc10:1002000 to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认转账",
+        description:
+          "网络：TRON\n可能还有其他转出\n发送 500 个最小单位（未验证代币 trc10:1002000） 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "freeze-v2-energy": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nStake 2 TRX for Energy\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n质押 2 TRX 获取能量\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "freeze-v2-bandwidth": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nStake 3 TRX for Bandwidth\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n质押 3 TRX 获取带宽\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "unfreeze-v2-energy": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nUnstake 1 TRX of Energy; it can be withdrawn after the network's waiting period\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n解除质押能量的 1 TRX，等待期结束后可提取\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "delegate-energy": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nDelegate the Energy of 4 TRX staked to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n将 4 TRX 质押产生的能量代理给 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "delegate-bandwidth-locked": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nDelegate the Bandwidth of 5 TRX staked to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3, locked for 28800 blocks (about 24 h)\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n将 5 TRX 质押产生的带宽代理给 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3，锁定 28800 个区块（约 24 小时）\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "undelegate-energy": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nReclaim the Energy of 2 TRX staked from TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n收回代理给 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC 的 2 TRX 质押所产生的能量\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "withdraw-expire-unfreeze": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nWithdraw all unstaked TRX whose waiting period has ended\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n提取所有等待期已结束的解除质押 TRX\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "cancel-all-unfreeze-v2": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nCancel all pending unstakes, re-staking them, and withdraw those already expired\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n取消所有未完成的解除质押（重新质押），并提取已到期的部分\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "vote-witness": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nReplace all current votes of this account with:\n3 votes for super representative TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n7 votes for super representative THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n以下列投票替换本账户当前的全部投票：\n为超级代表 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC 投 3 票\n为超级代表 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 投 7 票\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "withdraw-balance": {
+    verifiability: "full",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm staking",
+        description:
+          "Network: TRON\nClaim voting rewards to this account\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认质押",
+        description:
+          "网络：TRON\n领取投票奖励到本账户\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "account-permission-update": {
+    verifiability: "partial",
+    blind: "tron-permission-update",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          'Account takeover: this gives control of this account to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC. Whoever holds these keys can move all of its assets.\nNetwork: TRON\nOwner permission "owner": threshold 1; keys TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 (weight 1)\nActive permission "active0": threshold 2; keys TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG (weight 1), TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC (weight 1); allows TransferContract, TriggerSmartContract\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged',
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "账户接管：此交易把本账户的控制权交给 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6、TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC，持有这些密钥的人可以转走全部资产。\n网络：TRON\n所有者权限「owner」：阈值 1；密钥 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6（权重 1）\n活跃权限「active0」：阈值 2；密钥 TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG（权重 1）、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC（权重 1）；允许 TransferContract、TriggerSmartContract\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+  "trigger-call-value": {
+    verifiability: "opaque",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm contract call",
+        description:
+          "Network: TRON\nThe wallet cannot verify what this call does\nCall contract TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, function 0x2fbebd38\nSend 1 TRX to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认合约调用",
+        description:
+          "网络：TRON\n钱包无法核实此调用会做什么\n调用合约 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6，函数 0x2fbebd38\n发送 1 TRX 到 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trigger-token-unknown-selector": {
+    verifiability: "opaque",
+    blind: "token-function",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "Network: TRON\nAn unrecognised function of token USDT TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t can move this token\nCall contract TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, function 0xcc872b66\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "网络：TRON\n代币 USDT TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t 的未知函数，可能转走该代币\n调用合约 TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t，函数 0xcc872b66\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "unsupported-account-update": {
+    verifiability: "opaque",
+    blind: "tron-contract",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "Network: TRON\nThe wallet does not support the TRON contract AccountUpdateContract and cannot show what it does\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "网络：TRON\n钱包不支持 TRON 合约类型 AccountUpdateContract，无法显示它的作用\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+      },
+    },
+  },
+};
+
+const TRON_MSG_CASES = {
+  "tron message text": {
+    verifiability: "opaque",
+    blind: null,
+    messageHex: "7369676e207468697320666f72206d65",
+    prompt: {
+      en: {
+        title: "Confirm signature",
+        description: "Message:\nsign this for me",
+      },
+      "zh-Hans": {
+        title: "确认签名",
+        description: "消息：\nsign this for me",
+      },
+    },
+  },
+  "tron message 32 bytes": {
+    verifiability: "opaque",
+    blind: "message-bytes",
+    messageHex: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      },
+    },
+  },
+  "tron message sign-in": {
+    verifiability: "opaque",
+    blind: null,
+    messageHex:
+      "6578616d706c652e636f6d2077616e747320796f7520746f207369676e20696e207769746820796f757220457468657265756d206163636f756e743a0a5455455a53644b736f4448514d655a77696874646f42694e34367a786847575964480a0a5552493a2068747470733a2f2f6578616d706c652e636f6d0a56657273696f6e3a20310a436861696e2049443a20310a4e6f6e63653a206162633132330a4973737565642041743a20323032342d30312d30315430303a30303a30305a",
+    prompt: {
+      en: {
+        title: "Confirm signature",
+        description:
+          "This looks like a sign-in request but is not a valid one\nMessage:\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 31 more characters not shown",
+      },
+      "zh-Hans": {
+        title: "确认签名",
+        description:
+          "内容像登录请求，但格式不合规\n消息：\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 还有 31 个字符未显示",
+      },
+    },
+  },
+};
+
+for (const vector of TRON_VECTORS.transactions) {
+  const expected = TRON_TX_EXPECTED[vector.name];
+  if (expected === undefined) {
+    throw new Error(`no expected signing class for TRON vector ${vector.name}`);
+  }
+  cases.push({
+    name: `tron ${vector.name}`,
+    request: tronTx(vector.rawDataHex),
+    verifiability: expected.verifiability,
+    blind: expected.blind,
+    prompt: expected.prompt,
+  });
+}
+for (const [name, row] of Object.entries(TRON_MSG_CASES)) {
+  cases.push({
+    name: `tron ${name}`,
+    request: tronMessage(row.messageHex),
+    verifiability: row.verifiability,
+    blind: row.blind,
+    prompt: row.prompt,
+  });
+}
+
 function utf8(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
 writeFileSync(
   resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
-  `${JSON.stringify({ signer: SIGNER, cases }, null, 2)}\n`,
+  `${JSON.stringify({ signers: { evm: SIGNER, tron: TRON_SIGNER }, cases }, null, 2)}\n`,
 );
 console.log(`wrote ${cases.length} cases`);

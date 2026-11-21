@@ -15,7 +15,7 @@ export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
 
-export type ChainFamily = "evm" | "solana" | "bitcoin";
+export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 export type AccountRef =
   | {
@@ -90,6 +90,19 @@ export type SignRequest =
       readonly network: string;
       readonly account: AccountRef;
       readonly typedData: string;
+    }
+  | {
+      readonly kind: "tron.transaction";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** `Transaction.raw` wire bytes — the only thing a TRON signature authorises. */
+      readonly rawData: Uint8Array;
+    }
+  | {
+      readonly kind: "tron.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly message: Uint8Array;
     };
 
 export type EvmAccessListEntry = {
@@ -157,7 +170,13 @@ export type BlindReason =
   | "safe-refund-unbounded" // a SafeTx with gasPrice > 0: the refund total depends on executor gas
   // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
   // Token) that the signer takes part in
-  | "core-instruction";
+  | "core-instruction"
+  // a TRON contract type the wallet does not describe (unsupported or unknown enum value)
+  | "tron-contract"
+  // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range
+  | "tron-field"
+  // a TRON permission update: decoded in full, but it hands account control to other keys
+  | "tron-permission-update";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -239,6 +258,21 @@ export type ApprovalChange =
       readonly verified: false;
     };
 
+/** The TRON resource a freeze/delegate acts on (ResourceCode 0/1/2). */
+export type TronResource = "bandwidth" | "energy" | "tron-power";
+
+/** A decoded TRON account permission; `operations` is the 32-byte bitmap hex, actives only. */
+export type TronPermission = {
+  readonly type: "owner" | "witness" | "active";
+  readonly id: number;
+  readonly name: string;
+  /** Decimal string. */
+  readonly threshold: string;
+  readonly parentId: number;
+  readonly operations?: string;
+  readonly keys: ReadonlyArray<{ readonly address: string; readonly weight: string }>;
+};
+
 /** One staking operation shown on the signing surface. */
 export type StakeAction =
   | { readonly kind: "create"; readonly account: string; readonly lamports: string }
@@ -260,7 +294,36 @@ export type StakeAction =
       readonly owner: string;
     }
   /** Lido claim of finalised withdrawal requests on Ethereum mainnet (ETH to the caller). */
-  | { readonly kind: "lido-claim"; readonly requestIds: ReadonlyArray<string> };
+  | { readonly kind: "lido-claim"; readonly requestIds: ReadonlyArray<string> }
+  /** FreezeBalanceV2 / UnfreezeBalanceV2. */
+  | {
+      readonly kind: "tron-freeze" | "tron-unfreeze";
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+    }
+  /** DelegateResourceContract; `lock` present only when the lock flag is set. */
+  | {
+      readonly kind: "tron-delegate";
+      readonly receiver: string;
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+      readonly lock?: { readonly blocks: string };
+    }
+  /** UnDelegateResourceContract. */
+  | {
+      readonly kind: "tron-undelegate";
+      readonly receiver: string;
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+    }
+  | { readonly kind: "tron-withdraw-unfrozen" }
+  | { readonly kind: "tron-cancel-unfreeze" }
+  /** WithdrawBalanceContract — claims the SR-voting reward balance. */
+  | { readonly kind: "tron-claim-rewards" }
+  | {
+      readonly kind: "tron-vote";
+      readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: string }>;
+    };
 
 export type IntentWarning = {
   readonly kind: string;
@@ -360,7 +423,10 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
  * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
  * in 7×10⁷ keccak outputs are; grindable in minutes).
  */
-export const messageContent = (bytes: Uint8Array, family: "evm" | "solana"): MessageContent => {
+export const messageContent = (
+  bytes: Uint8Array,
+  family: "evm" | "solana" | "tron",
+): MessageContent => {
   let text: string;
   try {
     text = utf8.decode(bytes);
@@ -437,6 +503,23 @@ export type DisplayIntent = {
    * first-appearance order; present iff non-empty (so iff a Solana transaction is `opaque`).
    */
   readonly programs?: ReadonlyArray<string>;
+  /** TRON transaction fields the prompt shows on every request. */
+  readonly tron?: {
+    readonly contractType: string;
+    /** Unix ms. */
+    readonly expiration: number;
+    /** Present only when the contract's Permission_id is non-zero. */
+    readonly permissionId?: number;
+    readonly memo?:
+      | { readonly kind: "text"; readonly text: string }
+      | { readonly kind: "bytes"; readonly hex: string };
+    /** Full permission content of an AccountPermissionUpdateContract. */
+    readonly permissionUpdate?: {
+      readonly owner: TronPermission;
+      readonly witness?: TronPermission;
+      readonly actives: ReadonlyArray<TronPermission>;
+    };
+  };
   /** Why the request is blind — the signer can neither show it nor bound what it authorises. */
   readonly blind?: BlindReason;
 };

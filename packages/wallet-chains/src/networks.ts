@@ -3,15 +3,16 @@ import type { AssetAmount, DisplayIntent } from "./index.ts";
 /**
  * Built-in network registry: the eight original EVM mainnets, the newer EVM mainnets (DefiLlama
  * chain TVL order), the eight original testnets, the newer testnets in the same order as their
- * mainnets, then the four Bitcoin networks and the two Solana clusters. Each chain id was checked
- * against the chain's official documentation (source URL per entry) and a live eth_chainId probe
- * (2026-11-20). Signing-time identifiers always come from this table, never from an RPC endpoint.
+ * mainnets, then the four Bitcoin networks, the two Solana clusters and the three TRON networks.
+ * Each chain id was checked against the chain's official documentation (source URL per entry) and a
+ * live eth_chainId probe (2026-11-20). Signing-time identifiers always come from this table, never
+ * from an RPC endpoint.
  */
 
 export type NetworkMeta = {
   readonly id: string; // CAIP-2
   /** CAIP-2 family — `solana:<ref>` networks are validated against genesis-hash, not chainId. */
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly name: string;
   readonly symbol: string;
   readonly decimals: number;
@@ -156,6 +157,43 @@ export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta> = Object.freeze([
     testnet: true,
     family: "solana",
     genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  },
+  // https://github.com/ChainAgnostic/namespaces/blob/main/tron/caip2.md — decimal CAIP-2 reference
+  // = genesis-block-id last 4 bytes (TIP-474); genesis block 0 via
+  // POST https://api.trongrid.io/wallet/getblockbynum {"num":0}
+  {
+    id: "tron:728126428",
+    family: "tron",
+    name: "TRON",
+    symbol: "TRX",
+    decimals: 6,
+    testnet: false,
+    chainId: 728126428,
+    genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc",
+  },
+  // https://github.com/ChainAgnostic/namespaces/blob/main/tron/caip2.md — genesis block 0 via
+  // POST https://api.shasta.trongrid.io/wallet/getblockbynum {"num":0}
+  {
+    id: "tron:2494104990",
+    family: "tron",
+    name: "TRON Shasta",
+    symbol: "TRX",
+    decimals: 6,
+    testnet: true,
+    chainId: 2494104990,
+    genesisHash: "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e",
+  },
+  // https://github.com/ChainAgnostic/namespaces/blob/main/tron/caip2.md — genesis block 0 via
+  // POST https://nile.trongrid.io/wallet/getblockbynum {"num":0}
+  {
+    id: "tron:3448148188",
+    family: "tron",
+    name: "TRON Nile",
+    symbol: "TRX",
+    decimals: 6,
+    testnet: true,
+    chainId: 3448148188,
+    genesisHash: "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc",
   },
 ]);
 
