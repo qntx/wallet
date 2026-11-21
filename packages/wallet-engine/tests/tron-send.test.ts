@@ -11,6 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "@qntx/wallet-chains";
 import {
+  decodeTronRawData,
   tronAddressFromPublicKey,
   tronAddressToBytes,
   tronAddressToHex,
@@ -54,6 +55,7 @@ const PARAMS = {
   getMaxFeeLimit: 5_000_000_000,
   getCreateNewAccountBandwidthRate: 4,
   getMaxCreateAccountTxSize: 5000,
+  getMemoFee: 1_000_000,
 };
 const CHAIN_PARAMETERS = {
   chainParameter: Object.entries(PARAMS).map(([key, value]) => ({ key, value })),
@@ -69,6 +71,8 @@ const RESOURCES = {
 const TRANSFER_TOPIC = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const topicOf = (address: string): string => `${"0".repeat(22)}${tronAddressToHex(address)}`;
 const u256 = (n: bigint): string => n.toString(16).padStart(64, "0");
+const bytesToHexOf = (b: Uint8Array): string =>
+  [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 // `triggerconstantcontract` with visible:true emits the 20-byte body base58check-encoded — not
 // the `41…` form `raw_data` fields carry.
 const base58check = createBase58check(sha256);
@@ -266,6 +270,7 @@ const params = (
     readonly to?: string | undefined;
     readonly amount?: bigint | undefined;
     readonly account?: AccountRef | undefined;
+    readonly memo?: string | undefined;
   } = {},
 ): PrepareParams => ({
   account: over.account ?? ACCOUNT,
@@ -274,6 +279,7 @@ const params = (
   amount: over.amount ?? 1_000_000n,
   fee: "normal",
   ...(over.token === undefined ? {} : { token: over.token }),
+  ...(over.memo === undefined ? {} : { memo: over.memo }),
 });
 
 const submit = async (w: World & { api: TronApi }, p = params()): Promise<TrackedTransaction> => {
@@ -374,6 +380,24 @@ describe("prepareTron", () => {
     expect(hex.startsWith(`0a0200642208${"ab".repeat(8)}`)).toBe(true);
   });
 
+  it("a memo lands in raw_data, shows in the intent and costs the flat fee", async () => {
+    const w = world();
+    const prepared = await prepareTron(ctx(w).ctx, params({ memo: "hello tron" }));
+    expect(prepared.intent.tron?.memo).toStrictEqual({ kind: "text", text: "hello tron" });
+    expect(prepared.tronFee?.memo).toBe("1000000");
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).toBe("submitted");
+    const raw = decodeTronRawData(signedRawData(w));
+    expect(new TextDecoder().decode(raw.memo)).toBe("hello tron");
+  });
+
+  it("refuses a memo the memo rules reject", async () => {
+    const w = world();
+    await expect(prepareTron(ctx(w).ctx, params({ memo: "a\nb" }))).rejects.toBeInstanceOf(
+      ChainError,
+    );
+  });
+
   it("refuses a self TRX transfer", async () => {
     const w = world();
     await expect(prepareTron(ctx(w).ctx, params({ to: FROM }))).rejects.toBeInstanceOf(ChainError);
@@ -421,16 +445,16 @@ describe("prepareTron", () => {
     expect(prepared.intent.tron?.contractType).toBe("TransferAssetContract");
   });
 
-  it("fractional node balances truncate instead of throwing", async () => {
+  it("fractional node balances are malformed, never truncated", async () => {
     const w = world();
     w.accounts.set(FROM, {
       address: FROM,
       balance: 100_000_000.9,
       assetV2: [{ key: TRC10, value: 50_000.9 }],
     });
-    const prepared = await prepareTron(ctx(w).ctx, params({ token: TRC10, amount: 1000n }));
-    const tx = await prepared.submit(VERIFY, () => undefined);
-    expect(tx.state).not.toBe("failed");
+    await expect(prepareTron(ctx(w).ctx, params({ token: TRC10, amount: 1000n }))).rejects.toThrow(
+      /malformed/,
+    );
   });
 
   it("refuses a TRC-10 send over the assetV2 balance", async () => {
@@ -552,6 +576,26 @@ describe("prepareTron", () => {
     await expect(prepareTron(ctx(w).ctx, params())).rejects.toThrow(/chain parameters/);
   });
 
+  it("refuses when the endpoints disagree on the memo fee alone", async () => {
+    const w = world({
+      independent: {
+        kind: "available",
+        client: independentApi({
+          account: {},
+          params: {
+            chainParameter: Object.entries({ ...PARAMS, getMemoFee: 2_000_000 }).map(
+              ([key, value]) => ({
+                key,
+                value,
+              }),
+            ),
+          },
+        }),
+      },
+    });
+    await expect(prepareTron(ctx(w).ctx, params())).rejects.toThrow(/chain parameters/);
+  });
+
   it("flags reads-unverified when the independent endpoint throws", async () => {
     const w = world({
       independent: {
@@ -598,13 +642,52 @@ describe("prepareTron", () => {
     expect(prepared.tronFee?.bandwidth.source).toBe("activation-fee");
   });
 
-  it("staleReason fires at expiration minus five seconds", async () => {
+  it("does not rebuild while more than 20 seconds remain", async () => {
     const w = world();
     const clock = { now: 1_000_000 };
     const prepared = await prepareTron(ctx(w, () => clock.now).ctx, params());
+    clock.now = 1_039_000; // expiration was 1_060_000 — 21 s remain
     await expect(prepared.staleReason()).resolves.toBeUndefined();
-    clock.now = 1_055_000; // expiration was 1_060_000 — within the last five seconds
-    await expect(prepared.staleReason()).resolves.toBe("transaction expired — start over");
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.tron?.expiration).toBe(1_060_000);
+    expect(Number(decodeTronRawData(signedRawData(w)).expiration)).toBe(1_060_000);
+  });
+
+  it("rebuilds on a fresh reference block when under 20 seconds remain", async () => {
+    const w = world();
+    const clock = { now: 1_000_000 };
+    const prepared = await prepareTron(ctx(w, () => clock.now).ctx, params());
+    clock.now = 1_041_000; // 19 s remain — the original build is too close to expiry
+    await expect(prepared.staleReason()).resolves.toBeUndefined();
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    const signed = decodeTronRawData(signedRawData(w));
+    expect(Number(signed.expiration)).toBe(1_101_000);
+    expect(tx.tron?.expiration).toBe(1_101_000);
+    expect(bytesToHexOf(signed.refBlockHash)).toBe(SOLID_ID.slice(16, 32));
+  });
+
+  it("rebuilds when the reference block left the solid chain", async () => {
+    const w = world();
+    const clock = { now: 1_000_000 };
+    const prepared = await prepareTron(ctx(w, () => clock.now).ctx, params());
+    w.blockIds.set(100, "dd".repeat(32));
+    clock.now = 1_020_000; // still comfortably valid — the reorg alone forces the rebuild
+    await expect(prepared.staleReason()).resolves.toBeUndefined();
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(Number(decodeTronRawData(signedRawData(w)).expiration)).toBe(1_080_000);
+    expect(tx.tron?.expiration).toBe(1_080_000);
+  });
+
+  it("fails when the rebuilt quote ceiling grows", async () => {
+    const w = world();
+    // No free bandwidth: every extra raw_data byte costs fee, so a longer expiration varint
+    // raises the rebuilt quote's max.
+    const noFree = { freeNetLimit: 600, freeNetUsed: 600 };
+    const w2 = { ...w, api: overrideApi(w.api, "/wallet/getaccountresource", noFree) };
+    const clock = { now: 2_036_000 };
+    const prepared = await prepareTron(ctx(w2, () => clock.now).ctx, params());
+    clock.now = 2_077_000; // expiration 2_096_000 has 19 s left; the rebuild's is past 2^21
+    await expect(prepared.staleReason()).resolves.toBe("fees changed — start over");
   });
 
   it("resimulate re-runs the constant call", async () => {

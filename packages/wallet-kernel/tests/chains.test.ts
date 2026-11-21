@@ -88,6 +88,13 @@ function strField(value: ProtocolValue, key: string): string {
   return v;
 }
 
+const tronTypedDataVectors = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../../vectors/chains/tron-typed-data.json"), "utf8"),
+) as {
+  signer: string;
+  cases: Array<{ name: string; typedData: string; signature: string }>;
+};
+
 const tronVectors = JSON.parse(
   readFileSync(join(import.meta.dirname, "../../../vectors/chains/tron.json"), "utf8"),
 ) as {
@@ -1476,6 +1483,51 @@ describe("chain.sign tron", () => {
     expect(verifyTronTransactionSignature(rawData, bytesField(impRes, "signature"), address)).toBe(
       true,
     );
+  });
+
+  it("signs the TIP-712 typed-data vectors byte-for-byte with an imported key", async () => {
+    const { h, session } = await setup();
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    for (const vector of tronTypedDataVectors.cases) {
+      const res = ok(
+        // oxlint-disable-next-line no-await-in-loop -- signatures are asserted one vector at a time
+        await callSign(h, session, {
+          kind: "tron.typed-data",
+          network: NETWORK,
+          account,
+          typedData: vector.typedData,
+        }),
+      );
+      expect(`0x${Buffer.from(bytesField(res, "signature")).toString("hex")}`).toBe(
+        vector.signature,
+      );
+    }
+  });
+
+  it("refuses malformed typed data and a chainId mismatch", async () => {
+    const { h, session } = await setup();
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    const doc = tronTypedDataVectors.cases[0]?.typedData;
+    expect(
+      errCode(
+        await callSign(h, session, {
+          kind: "tron.typed-data",
+          network: NETWORK,
+          account,
+          typedData: `${doc} null`,
+        }),
+      ),
+    ).toBe("invalid-input");
+    expect(
+      errCode(
+        await callSign(h, session, {
+          kind: "tron.typed-data",
+          network: "tron:2494104990",
+          account,
+          typedData: doc,
+        }),
+      ),
+    ).toBe("invalid-input");
   });
 
   it("refuses a transaction whose owner differs from the account", async () => {

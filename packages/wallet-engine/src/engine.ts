@@ -37,6 +37,7 @@ import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
+import { TronWalletHandler } from "./connect/tron.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
@@ -236,22 +237,28 @@ export type WalletEngine = {
     | "session"
     | "pending"
     | "sessionAccounts"
+    | "previewAccounts"
     | "nostrIdentity"
     | "isEnabled"
     | "approveConnection"
     | "rejectConnection"
     | "revoke"
     | "setCurrentNetwork"
+    | "setTronNetwork"
     | "activeIdentity"
     | "setActiveIdentity"
     | "nostrPolicy"
     | "lightningPolicy"
+    | "establishWalletConnect"
+    | "authorize"
+    | "touch"
   >;
   readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
   readonly nip07: Pick<Nip07Handler, "handle">;
   readonly webln: Pick<WeblnHandler, "handle">;
   readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
   readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
+  readonly tronWallet: Pick<TronWalletHandler, "handle" | "subscribe">;
   /** The phishing list: lifecycle is independent of the lock state. */
   readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
   /** Read and receive surface; every payment goes through `requests`. */
@@ -259,6 +266,7 @@ export type WalletEngine = {
     SparkController,
     | "history"
     | "accountBalance"
+    | "archivePayment"
     | "receiveAddress"
     | "createInvoice"
     | "newDepositAddress"
@@ -883,6 +891,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       return account.address;
     },
+    tronAddress: async (group, network) => {
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: "tron.bip44",
+        network,
+      });
+      if (!("address" in account)) {
+        throw new Error("no TRON address for the group");
+      }
+      return account.address;
+    },
     bitcoinAddress: async (group, network, purpose) => {
       const { address } = await bitcoinAccount(group, network, purpose);
       return address;
@@ -960,6 +979,20 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       const mainnet = BITCOIN_CHAIN_IDS["bitcoin:mainnet"] ?? "";
       return enabled.includes(mainnet) ? mainnet : (enabled[0] ?? mainnet);
     },
+  });
+
+  const tronWallet = new TronWalletHandler({
+    connections,
+    requests,
+    transactions,
+    tronNetworks: () => networks.enabled("tron"),
+    tronNetwork: () => {
+      const enabled = networks.enabled("tron");
+      return enabled.includes("tron:728126428")
+        ? "tron:728126428"
+        : (enabled[0] ?? "tron:728126428");
+    },
+    isTracked: (network, address) => assets.isTracked(network, address),
   });
 
   // The transition chain: every status change queues behind the previous one, so a late lock
@@ -1115,6 +1148,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     webln,
     solanaWallet,
     bitcoinWallet,
+    tronWallet,
     spark: controller,
     accounts,
     metaSync,

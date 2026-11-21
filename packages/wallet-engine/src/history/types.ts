@@ -7,7 +7,9 @@ export type HistoryFlag =
   | "token-impersonation"
   | "suspicious-token-symbol"
   | "lookalike-counterparty"
-  | "chain-mismatch";
+  | "chain-mismatch"
+  /** The outcome is genuinely unknown and no evidence can still arrive — user-archived. */
+  | "unresolved";
 
 export type HistoryChange = {
   readonly direction: "in" | "out";

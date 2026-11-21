@@ -309,6 +309,16 @@ describe("parsePayment", () => {
     expect(result).toStrictEqual({ kind: "unsupported", format: "nostr-wallet-connect" });
   });
 
+  it("recognises a WalletConnect v2 pairing URI", () => {
+    const uri = `wc:${"ab".repeat(32)}@2?relay-protocol=irn&symKey=${"cd".repeat(32)}`;
+    expect(parsePayment(uri, MAINNET)).toStrictEqual({ kind: "walletconnect", uri });
+  });
+
+  it("a v1 wc: URI keeps its old verdict", () => {
+    const uri = `wc:${"ab".repeat(32)}@1?bridge=https%3A%2F%2Fbridge.example&key=${"cd".repeat(32)}`;
+    expect(parsePayment(uri, MAINNET)).toStrictEqual({ kind: "unrecognized" });
+  });
+
   it("returns unrecognized for garbage", () => {
     expect(parsePayment("hello world", REGTEST)).toStrictEqual({ kind: "unrecognized" });
     expect(parsePayment("lnbc1notaninvoice", REGTEST)).toStrictEqual({ kind: "unrecognized" });

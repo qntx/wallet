@@ -147,7 +147,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$5(arr) {
+	function u32$6(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -510,42 +510,42 @@
 			_defineProperty(this, "name", "ValidationError");
 		}
 	};
-	function fail$2() {
+	function fail$3() {
 		throw new ValidationError();
 	}
 	function literal(expected) {
 		return (value) => {
-			if (value !== expected) fail$2();
+			if (value !== expected) fail$3();
 			return expected;
 		};
 	}
 	var nullValue = literal(null);
 	var bool = (value) => {
-		if (typeof value !== "boolean") fail$2();
+		if (typeof value !== "boolean") fail$3();
 		return value;
 	};
 	function int(min, max) {
 		return (value) => {
-			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$2();
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$3();
 			return value;
 		};
 	}
 	function str(max, pattern) {
 		return (value) => {
-			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$2();
+			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$3();
 			return value;
 		};
 	}
 	function bytes(min, max) {
 		const high = max !== null && max !== void 0 ? max : min;
 		return (value) => {
-			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$2();
+			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$3();
 			return value;
 		};
 	}
 	function arr(item, max, min = 0) {
 		return (value) => {
-			if (!Array.isArray(value) || value.length < min || value.length > max) fail$2();
+			if (!Array.isArray(value) || value.length < min || value.length > max) fail$3();
 			const out = [];
 			for (const element of value) out.push(item(element));
 			return out;
@@ -564,18 +564,18 @@
 	function obj(shape) {
 		const keys = Object.keys(shape);
 		return (value) => {
-			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$2();
+			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$3();
 			const record = value;
-			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$2();
+			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$3();
 			const out = {};
 			for (const key of keys) {
 				const field = shape[key];
-				if (field === void 0) fail$2();
+				if (field === void 0) fail$3();
 				const raw = record[key];
 				if (field instanceof Opt) {
 					if (raw !== void 0) out[key] = field.validator(raw);
 				} else {
-					if (!Object.hasOwn(record, key)) fail$2();
+					if (!Object.hasOwn(record, key)) fail$3();
 					out[key] = field(raw);
 				}
 			}
@@ -594,12 +594,12 @@
 	*/
 	function record(key, value, max) {
 		return (input) => {
-			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$2();
+			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$3();
 			const out = {};
 			const entries = Object.entries(input);
-			if (entries.length > max) fail$2();
+			if (entries.length > max) fail$3();
 			for (const [name, item] of entries) {
-				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$2();
+				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$3();
 				out[key(name)] = value(item);
 			}
 			return out;
@@ -613,7 +613,7 @@
 			} catch (error) {
 				if (!(error instanceof ValidationError)) throw error;
 			}
-			return fail$2();
+			return fail$3();
 		};
 	}
 	/** Validates a value and returns it, or undefined on a shape mismatch. */
@@ -978,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-uDP7C9jQ.mjs
+	// packages/wallet/dist/protocol-DHHAM4kV.mjs
 	init_objectSpread2();
 	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
 	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
@@ -1292,6 +1292,11 @@
 		network: caip2,
 		account: accountRef,
 		message: bytes(1, 65536)
+	}), obj({
+		kind: literal("tron.typed-data"),
+		network: caip2,
+		account: accountRef,
+		typedData: str(1048576)
 	}));
 	var signResult = union(obj({
 		kind: literal("evm.transaction"),
@@ -1309,7 +1314,7 @@
 		kind: literal("bitcoin.message"),
 		signature: str(512)
 	}), obj({
-		kind: union(literal("tron.transaction"), literal("tron.message")),
+		kind: union(literal("tron.transaction"), literal("tron.message"), literal("tron.typed-data")),
 		signature: bytes(65, 65)
 	}));
 	var CHAINS_METHODS = {
@@ -2116,7 +2121,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$4(arr) {
+	function u32$5(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -3629,7 +3634,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$6, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$7, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3859,7 +3864,7 @@
 				return res.subarray(0, pos);
 			}
 		}));
-		utf8$6 = /* @__PURE__ */ freeze(() => {
+		utf8$7 = /* @__PURE__ */ freeze(() => {
 			let _utf8Encoder;
 			let _utf8Decoder;
 			const utf8Builtin = {
@@ -4307,8 +4312,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$5(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$5(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -4330,10 +4335,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$5(block);
+		const b32 = u32$6(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$5(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$5(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$6(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$6(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -4417,14 +4422,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$5(k);
+			let k32 = u32$6(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$5(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$6(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$5(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$6(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4438,7 +4443,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$5(nonce));
+			const n32 = swap32IfBE$1(u32$6(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -8371,7 +8376,7 @@
 	var DOMAIN = "qntx-wallet/vault/v1/manifest";
 	var isManifestRecord = (record) => record.kind === MANIFEST_KIND;
 	var byCodeUnits = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-	function u32$3(value) {
+	function u32$4(value) {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
 		return out;
@@ -8383,7 +8388,7 @@
 		const hash = sha256$1.create();
 		const lp = (value) => {
 			const bytes = typeof value === "string" ? utf8ToBytes$1(value) : value;
-			hash.update(u32$3(bytes.length));
+			hash.update(u32$4(bytes.length));
 			hash.update(bytes);
 		};
 		const row = (entry) => {
@@ -8393,13 +8398,13 @@
 			lp(entry.sealed);
 		};
 		lp(DOMAIN);
-		hash.update(u32$3(meta.format));
+		hash.update(u32$4(meta.format));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
-		hash.update(u32$3(records.length));
+		hash.update(u32$4(records.length));
 		for (const record of records) row(record);
 		const factors = [...image.factors].sort((a, b) => byCodeUnits(a.id, b.id));
-		hash.update(u32$3(factors.length));
+		hash.update(u32$4(factors.length));
 		for (const factor of factors) row(factor);
 		return hash.digest();
 	}
@@ -11939,7 +11944,7 @@
 				}
 			});
 		};
-		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$6), (value) => {
+		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$7), (value) => {
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
@@ -12508,7 +12513,7 @@
 	var encoder$2 = new TextEncoder();
 	var fatalDecoder = new TextDecoder("utf-8", { fatal: true });
 	/** Encode `text` as UTF-8 bytes. */
-	function utf8Encode$1(text) {
+	function utf8Encode$2(text) {
 		return encoder$2.encode(text);
 	}
 	/** Decode `bytes` as strict UTF-8; `undefined` on any invalid sequence. */
@@ -12851,7 +12856,7 @@
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$4(this.state);
+			this.state32 = u32$5(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -12870,7 +12875,7 @@
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$4(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$5(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -12974,7 +12979,7 @@
 		const body = address.slice(2);
 		if (!HEX40.test(body)) throw fieldError("address", "expected 0x + 40 hex");
 		const lower = body.toLowerCase();
-		const hash = keccak_256(utf8Encode$1(lower));
+		const hash = keccak_256(utf8Encode$2(lower));
 		let out = "0x";
 		for (let i = 0; i < 40; i++) {
 			var _hash$Math$floor;
@@ -13019,7 +13024,7 @@
 	var N_HALF = N / 2n;
 	/** `keccak256("\x19Ethereum Signed Message:\n" + len + message)`. */
 	function eip191Hash(message) {
-		const prefix = utf8Encode$1(`\u0019Ethereum Signed Message:\n${message.length}`);
+		const prefix = utf8Encode$2(`\u0019Ethereum Signed Message:\n${message.length}`);
 		const joined = new Uint8Array(prefix.length + message.length);
 		joined.set(prefix);
 		joined.set(message, prefix.length);
@@ -13418,8 +13423,8 @@
 		if (text === void 0) throw syntaxError("InvalidUtf8");
 		return parse$1(text);
 	}
-	new Uint8Array([255, ...utf8Encode$1("solana offchain")]);
-	// packages/wallet-chains/dist/src-DMfKNa_g.mjs
+	new Uint8Array([255, ...utf8Encode$2("solana offchain")]);
+	// packages/wallet-chains/dist/src-BAJO7wKQ.mjs
 	init_defineProperty();
 	/**
 	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show, and
@@ -13626,8 +13631,11 @@
 	* Quantities are canonical `0x` hex (lowercase, no leading zeros, `0x0` for
 	* zero), token amounts are decimal strings of the smallest unit.
 	*/
-	var utf8$5 = new TextDecoder("utf-8", { fatal: true });
-	var utf8Encode = new TextEncoder();
+	var utf8$6 = new TextDecoder("utf-8", {
+		fatal: true,
+		ignoreBOM: true
+	});
+	var utf8Encode$1 = new TextEncoder();
 	var bytesContent = (bytes) => ({
 		kind: "bytes",
 		hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -13640,7 +13648,7 @@
 	var messageContent = (bytes, family) => {
 		let text;
 		try {
-			text = utf8$5.decode(bytes);
+			text = utf8$6.decode(bytes);
 		} catch (_unused2) {
 			return bytesContent(bytes);
 		}
@@ -13671,7 +13679,7 @@
 	* rendering shows the encoding, not the bytes it encodes.
 	*/
 	var messageTextHazard = (text) => {
-		if (utf8Encode.encode(text).length === 32) return "digest-length";
+		if (utf8Encode$1.encode(text).length === 32) return "digest-length";
 		if (hasHiddenCharacters(text)) return "hidden-characters";
 		if (isEncodedBytes(text)) return "encoded-bytes";
 	};
@@ -13689,7 +13697,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-DwUD7OAY.mjs
+	// packages/wallet-chains/dist/account-ref-B8ghHmXw.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -15416,23 +15424,6 @@
 			_defineProperty(this, "name", "Address.InvalidChecksumError");
 		}
 	};
-	// packages/wallet-chains/dist/address-CtC83uU8.mjs
-	init_secp256k1();
-	init_utils$2();
-	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
-	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
-	function checksumEvmAddress(address) {
-		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
-		const checksummed = checksum(address);
-		assert$7(checksummed, { strict: true });
-		return checksummed;
-	}
-	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
-	function evmAddressFromPublicKey(pubkey) {
-		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
-		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
-	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/regex.js
 	/** @internal */
 	function execTyped(regex, string) {
@@ -18451,6 +18442,1755 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
+	// packages/wallet-chains/dist/typed-data-CBf8nsvd.mjs
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
+	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
+	function checksumEvmAddress(address) {
+		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
+		const checksummed = checksum(address);
+		assert$7(checksummed, { strict: true });
+		return checksummed;
+	}
+	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
+	function evmAddressFromPublicKey(pubkey) {
+		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
+		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
+		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+	}
+	/**
+	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
+	* address on every chain that supports it.
+	*/
+	var EVM_DELEGATOR = {
+		address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+		name: "EIP7702StatelessDeleGator",
+		version: "1.3.0"
+	};
+	/** ERC-7821 batch-default execution mode: `0x01` followed by 31 zero bytes. */
+	var EXECUTE_BATCH_MODE = "0x0100000000000000000000000000000000000000000000000000000000000000";
+	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
+	var EXECUTIONS = [{
+		type: "tuple[]",
+		components: [
+			{
+				name: "target",
+				type: "address"
+			},
+			{
+				name: "value",
+				type: "uint256"
+			},
+			{
+				name: "callData",
+				type: "bytes"
+			}
+		]
+	}];
+	var hex$2 = (v) => {
+		assert$8(v);
+		return v;
+	};
+	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
+	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$2(EXECUTIONS, [calls.map((c) => ({
+		target: hex$2(checksumEvmAddress(c.to)),
+		value: c.value,
+		callData: hex$2(c.data)
+	}))])]);
+	var list = (v) => Array.isArray(v) ? v : [];
+	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
+	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
+	var decodeBatchExecute = (data) => {
+		try {
+			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
+			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
+			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
+			const executions = [];
+			for (const e of list(inner)) {
+				if (!isExecution(e)) return;
+				executions.push({
+					to: checksumEvmAddress(e.target),
+					value: e.value,
+					data: e.callData
+				});
+			}
+			return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase() ? executions : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
+	function assertHex$2(value, field) {
+		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+	}
+	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
+	var canonicalHex = (value) => `0x${value.toString(16)}`;
+	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
+	var quantityBigInt = (value, field) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+		return BigInt(value);
+	};
+	var safeInteger = (value, field) => {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
+		return value;
+	};
+	var quantity = (value, field) => {
+		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
+		if (CANONICAL_HEX.test(value)) return value;
+		return canonicalHex(quantityBigInt(value, field));
+	};
+	var hexBytes$1 = (value, field) => {
+		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+		return value.toLowerCase();
+	};
+	var accessList = (value) => {
+		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
+		return value.map((entry) => {
+			if (!isRecord$3(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
+			const keys = Object.keys(entry).sort();
+			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
+			const { address, storageKeys } = entry;
+			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
+			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
+			return {
+				address: checksumEvmAddress(address),
+				storageKeys: storageKeys.map((k) => {
+					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
+					return k.toLowerCase();
+				})
+			};
+		});
+	};
+	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
+	var networkChainId = (network) => {
+		var _exec;
+		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
+		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
+		const id = Number(idPart);
+		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
+		return id;
+	};
+	var REQUIRED = {
+		base: [
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data"
+		],
+		gasPrice: ["gasPrice"],
+		accessList: ["accessList"],
+		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
+	};
+	var ALLOWED = {
+		base: [
+			"type",
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data",
+			"to"
+		],
+		legacy: ["gasPrice"],
+		eip2930: ["gasPrice", "accessList"],
+		eip1559: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas"
+		],
+		eip7702: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas",
+			"authorization"
+		]
+	};
+	var requireFields = (input, fields) => {
+		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
+	};
+	var rejectUnknown = (input, type) => {
+		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
+		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
+		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
+	};
+	/**
+	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
+	* canonical quantities, EIP-55 addresses. Idempotent.
+	*/
+	var normalizeEvmTransaction = (tx) => {
+		if (!isRecord$3(tx)) throw new ChainError("invalid-request", "tx must be an object");
+		const { type } = tx;
+		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`);
+		rejectUnknown(tx, type);
+		requireFields(tx, REQUIRED.base);
+		const chainId = safeInteger(tx["chainId"], "chainId");
+		const nonce = safeInteger(tx["nonce"], "nonce");
+		const gas = quantity(tx["gas"], "gas");
+		const value = quantity(tx["value"], "value");
+		const data = hexBytes$1(tx["data"], "data");
+		const toRaw = tx["to"];
+		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
+		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
+		const base = _objectSpread2({
+			chainId,
+			nonce,
+			gas,
+			value,
+			data
+		}, to === void 0 ? {} : { to });
+		if (type === "legacy") {
+			requireFields(tx, REQUIRED.gasPrice);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
+		}
+		if (type === "eip2930") {
+			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, {
+				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
+				accessList: accessList(tx["accessList"])
+			});
+		}
+		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
+		const fees = {
+			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
+			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
+		};
+		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
+		const list = accessList(tx["accessList"]);
+		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
+		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
+		const auth = tx["authorization"];
+		if (!isRecord$3(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
+		const authAddress = checksumEvmAddress(auth["address"]);
+		if (authAddress !== EVM_DELEGATOR.address && authAddress !== "0x0000000000000000000000000000000000000000") throw new ChainError("unsupported", "authorization address is not supported");
+		return _objectSpread2(_objectSpread2(_objectSpread2({ type }, base), {}, {
+			to,
+			accessList: list
+		}, fees), {}, { authorization: { address: authAddress } });
+	};
+	var isField = (value) => isRecord$3(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
+	var isTypedDataInput = (value) => {
+		if (!isRecord$3(value)) return false;
+		const { types, primaryType, domain, message } = value;
+		if (!isRecord$3(types)) return false;
+		if (typeof primaryType !== "string" || primaryType === "") return false;
+		if (!isRecord$3(domain)) return false;
+		if (!isRecord$3(message)) return false;
+		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
+	};
+	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/** `value` is an array of message objects (empty allowed). */
+	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
+	/** The `Type field,Type field` signature of struct `name` in `types`. */
+	var typedDataSignature = (types, name) => {
+		var _types$name;
+		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
+	};
+	/** Struct `name` has exactly `fields`, in order, no more. */
+	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
+	/** A hex `address` field value, checksummed; `undefined` when malformed. */
+	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
+	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
+	var typedDataUint = (value, max) => {
+		let parsed;
+		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
+		else return;
+		return parsed >= 0n && parsed <= max ? parsed : void 0;
+	};
+	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
+	var MAX_UINT48 = 2n ** 48n - 1n;
+	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+	/** A `bytes` field value: `0x`-prefixed hex of even length. */
+	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
+	/**
+	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
+	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
+	* message and a missing nested struct fails here rather than inside the encoder.
+	*/
+	var checkStructure = (types, type, value, depth) => {
+		const array = /^(.+)\[\d*\]$/.exec(type);
+		const struct = array === null ? types[type] : void 0;
+		if (array === null && struct === void 0) return;
+		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
+		if (array !== null) {
+			var _array$;
+			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
+			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
+			return;
+		}
+		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
+		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
+	};
+	/**
+	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
+	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
+	* domain, so the same document would sign differently across wallets.
+	*/
+	var parseTypedData = (typedData) => {
+		var _json$types$EIP712Dom;
+		let json;
+		try {
+			json = JSON.parse(typedData);
+		} catch (_unused2) {
+			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
+		}
+		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
+		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
+		try {
+			validate$1(json);
+		} catch (_unused3) {
+			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
+		}
+		checkStructure(json.types, json.primaryType, json.message, 0);
+		const declared = new Set(((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : []).map((field) => field.name));
+		const domain = Object.fromEntries(Object.entries(json.domain).filter(([key]) => declared.has(key)));
+		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain }) };
+	};
+	var FIXED_BYTES$1 = /^bytes(?:[1-9]|[12][0-9]|3[0-2])$/;
+	var INT_TYPE$1 = /^u?int([0-9]*)$/;
+	/**
+	* The display value of one atomic leaf, or `undefined` when the value is not in a form that is
+	* shown exactly as it is encoded. Only the canonical forms every EIP-712 hasher agrees on are
+	* accepted — anything else aborts the whole expansion.
+	*/
+	var leafValue = (type, value) => {
+		if (type === "address") return typedDataAddress(value);
+		if (type === "bool") return typeof value === "boolean" ? value ? "true" : "false" : void 0;
+		if (type === "string") {
+			var _excerpt$lines$;
+			if (typeof value !== "string") return;
+			const excerpt = displayExcerpt(value, 1, 96);
+			return excerpt.omitted === 0 ? (_excerpt$lines$ = excerpt.lines[0]) !== null && _excerpt$lines$ !== void 0 ? _excerpt$lines$ : "" : void 0;
+		}
+		if (type === "bytes" || FIXED_BYTES$1.test(type)) return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) && value.length <= 96 ? value.toLowerCase() : void 0;
+		const int = INT_TYPE$1.exec(type);
+		if (int !== null) {
+			const bits = int[1] === "" ? 256 : Number(int[1]);
+			if (bits % 8 !== 0 || bits < 8 || bits > 256) return;
+			const signed = !type.startsWith("u");
+			let parsed;
+			if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+			else if (typeof value === "string" && ((signed ? /^-?[0-9]+$/ : /^[0-9]+$/).test(value) || /^0x[0-9a-fA-F]+$/.test(value))) parsed = BigInt(value);
+			else return;
+			const min = signed ? -(2n ** BigInt(bits - 1)) : 0n;
+			const max = signed ? 2n ** BigInt(bits - 1) - 1n : 2n ** BigInt(bits) - 1n;
+			return parsed >= min && parsed <= max ? parsed.toString(10) : void 0;
+		}
+	};
+	/**
+	* Whether the atomic leaf of `type` holding `value` is a commitment: `bytesN` always is — the
+	* signature commits to raw bytes the owner cannot read — as is a non-empty `bytes` or a `string`
+	* that is just an encoded-bytes rendering of ≥ 32 bytes. `"0x"` and an empty-array leaf ("[]")
+	* carry nothing and are not.
+	*/
+	var isCommitmentLeaf = (type, value) => type === "bytes" && value !== "0x" || FIXED_BYTES$1.test(type) || type === "string" && typeof value === "string" && isEncodedBytes(value);
+	/**
+	* Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
+	* declaration order, arrays element by element), as display lines, and whether any leaf is a
+	* commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
+	* shown exactly as it is encoded. `leaf` may override an atomic leaf's display — a string return is
+	* used verbatim (commitment flags still apply) and `undefined` falls back to the default rule,
+	* which aborts the expansion when it cannot show the leaf exactly.
+	*/
+	var typedDataFields = (json, leaf) => {
+		const leaves = [];
+		let hasCommitment = false;
+		const push = (path, value, commits) => {
+			var _excerpt$lines$2;
+			const excerpt = displayExcerpt(path, 1, 96);
+			if (excerpt.omitted !== 0) return false;
+			leaves.push({
+				path: (_excerpt$lines$2 = excerpt.lines[0]) !== null && _excerpt$lines$2 !== void 0 ? _excerpt$lines$2 : "",
+				value
+			});
+			hasCommitment = hasCommitment || commits;
+			return leaves.length <= 16;
+		};
+		const walk = (type, value, path) => {
+			var _leaf;
+			const array = /^(.+)\[\d*\]$/.exec(type);
+			if (array !== null) {
+				if (!Array.isArray(value)) return false;
+				return value.length === 0 ? push(path, "[]", false) : value.every((item, index) => {
+					var _array$2;
+					return walk((_array$2 = array[1]) !== null && _array$2 !== void 0 ? _array$2 : "", item, `${path}[${index}]`);
+				});
+			}
+			const struct = json.types[type];
+			if (struct !== void 0) return isTypedDataMessage(value) && struct.every((field) => walk(field.type, value[field.name], path === "" ? field.name : `${path}.${field.name}`));
+			const display = (_leaf = leaf === null || leaf === void 0 ? void 0 : leaf(type, value)) !== null && _leaf !== void 0 ? _leaf : leafValue(type, value);
+			return display !== void 0 && push(path, display, isCommitmentLeaf(type, value));
+		};
+		return walk(json.primaryType, json.message, "") ? {
+			fields: leaves,
+			hasCommitment
+		} : void 0;
+	};
+	/**
+	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
+	* decimal string or a `0x` hex string.
+	*/
+	var domainChainId = (domain) => {
+		const { chainId } = domain;
+		if (chainId === void 0) return;
+		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
+		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
+		return numeric;
+	};
+	// packages/wallet-chains/dist/token-call-BypPFdXR.mjs
+	init_objectSpread2();
+	/** The native asset id in `AssetFlow` and simulated asset changes. */
+	var EVM_NATIVE_ASSET = "native";
+	var USDC$1 = Object.freeze({
+		symbol: "USDC",
+		decimals: 6,
+		name: "USD Coin"
+	});
+	var USDT$2 = Object.freeze({
+		symbol: "USDT",
+		decimals: 6,
+		name: "Tether USD"
+	});
+	var CELO_ALIAS = Object.freeze({
+		symbol: "CELO",
+		decimals: 18,
+		name: "Celo native asset",
+		role: "native-alias"
+	});
+	var ARC_USDC_ALIAS = Object.freeze({
+		symbol: "USDC",
+		decimals: 6,
+		name: "USDC",
+		role: "native-alias"
+	});
+	var WETH = Object.freeze({
+		symbol: "WETH",
+		decimals: 18,
+		name: "Wrapped Ether",
+		role: "wrapped-native"
+	});
+	var WBNB = Object.freeze({
+		symbol: "WBNB",
+		decimals: 18,
+		name: "Wrapped BNB",
+		role: "wrapped-native"
+	});
+	/** The built-in table. */
+	var evmTokenTable = Object.freeze({
+		"1": Object.freeze({
+			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1,
+			"0xdAC17F958D2ee523a2206206994597C13D831ec7": USDT$2,
+			"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": WETH
+		}),
+		"10": Object.freeze({
+			"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"25": Object.freeze({
+			"0x3D7F2C478aAfdB65542BCB44bCeeC05849999d2D": USDC$1,
+			"0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23": Object.freeze({
+				symbol: "WCRO",
+				decimals: 18,
+				name: "Wrapped CRO",
+				role: "wrapped-native"
+			})
+		}),
+		"56": Object.freeze({ "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c": WBNB }),
+		"130": Object.freeze({
+			"0x078D782b760474a361dDA0AF3839290b0EF57AD6": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"137": Object.freeze({
+			"0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC$1,
+			"0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270": Object.freeze({
+				symbol: "WPOL",
+				decimals: 18,
+				name: "Wrapped Polygon Ecosystem Token",
+				role: "wrapped-native"
+			})
+		}),
+		"143": Object.freeze({
+			"0x754704Bc059F8C67012fEd69BC8A327a5aafb603": USDC$1,
+			"0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A": Object.freeze({
+				symbol: "WMON",
+				decimals: 18,
+				name: "Wrapped MON",
+				role: "wrapped-native"
+			})
+		}),
+		"146": Object.freeze({
+			"0x29219dd400f2Bf60E5a23d13Be72B486D4038894": USDC$1,
+			"0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38": Object.freeze({
+				symbol: "wS",
+				decimals: 18,
+				name: "Wrapped Sonic",
+				role: "wrapped-native"
+			})
+		}),
+		"196": Object.freeze({ "0xB6CEceAB302E2E4948951eE7843FC24E92933061": USDC$1 }),
+		"204": Object.freeze({ "0x4200000000000000000000000000000000000006": WBNB }),
+		"324": Object.freeze({ "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4": USDC$1 }),
+		"480": Object.freeze({
+			"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"988": Object.freeze({ "0x779Ded0c9e1022225f8E0630b35a9b54bE713736": Object.freeze({
+			symbol: "USDT0",
+			decimals: 6,
+			name: "USDT0",
+			role: "native-alias"
+		}) }),
+		"999": Object.freeze({
+			"0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC$1,
+			"0x5555555555555555555555555555555555555555": Object.freeze({
+				symbol: "WHYPE",
+				decimals: 18,
+				name: "Wrapped HYPE",
+				role: "wrapped-native"
+			})
+		}),
+		"1329": Object.freeze({
+			"0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": USDC$1,
+			"0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7": Object.freeze({
+				symbol: "WSEI",
+				decimals: 18,
+				name: "Wrapped SEI",
+				role: "wrapped-native"
+			})
+		}),
+		"1672": Object.freeze({ "0xC879C018dB60520F4355C26eD1a6D572cdAC1815": USDC$1 }),
+		"1868": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"4326": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"5042": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
+		"8217": Object.freeze({
+			"0xd077A400968890Eacc75cdc901F0356c943e4fDb": USDT$2,
+			"0x19Aac5f612f524B754CA7e7c41cbFa2E981A4432": Object.freeze({
+				symbol: "WKLAY",
+				decimals: 18,
+				name: "Wrapped Klay",
+				role: "wrapped-native"
+			})
+		}),
+		"8453": Object.freeze({
+			"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC$1 }),
+		"42161": Object.freeze({
+			"0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1,
+			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH
+		}),
+		"42220": Object.freeze({
+			"0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC$1,
+			"0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e": USDT$2,
+			"0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS
+		}),
+		"43114": Object.freeze({
+			"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1,
+			"0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT$2,
+			"0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7": Object.freeze({
+				symbol: "WAVAX",
+				decimals: 18,
+				name: "Wrapped AVAX",
+				role: "wrapped-native"
+			})
+		}),
+		"57073": Object.freeze({
+			"0x2D270e6886d130D724215A266106e6832161EAEd": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC$1 }),
+		"60808": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"80094": Object.freeze({ "0x6969696969696969696969696969696969696969": Object.freeze({
+			symbol: "WBERA",
+			decimals: 18,
+			name: "Wrapped Bera",
+			role: "wrapped-native"
+		}) }),
+		"534352": Object.freeze({ "0x5300000000000000000000000000000000000004": WETH }),
+		"747474": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"5042002": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
+		"7777777": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"11142220": Object.freeze({ "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS })
+	});
+	var lookupEvmToken = (table, chainId, address) => {
+		var _table$String;
+		return (_table$String = table[String(chainId)]) === null || _table$String === void 0 ? void 0 : _table$String[address];
+	};
+	var MAX_UINT256 = 2n ** 256n - 1n;
+	var MAX_UINT160 = 2n ** 160n - 1n;
+	/** The canonical Permit2 deployment (the same address on every supported chain). */
+	var PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+	/** A fungible-token allowance; `max` is the type's maximum, which marks it unlimited. */
+	var allowanceChange = (token, spender, value, change, max, chainId, table, extra = {}) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2(_objectSpread2({
+			kind: "allowance",
+			spender,
+			amount: _objectSpread2({
+				asset: token,
+				amount: value.toString(10)
+			}, known === void 0 ? {} : {
+				symbol: known.symbol,
+				decimals: known.decimals
+			}),
+			change,
+			unlimited: change !== "decrease" && value === max
+		}, extra), {}, { verified: known !== void 0 });
+	};
+	/**
+	* An order leg amount: the chain's native asset when `token` matches `nativeMarker` — each protocol
+	* names its own marker and the leg it applies to (UniswapX: the zero address, outputs only —
+	* `CurrencyLibrary.NATIVE = address(0)`; CoW: `BUY_ETH_ADDRESS`, the buy token only); with no
+	* marker every address is an ERC-20 (1inch signs no native asset). The native symbol/decimals are
+	* attached by `withNativeAmountMeta` like every native amount; an ERC-20 gets symbol/decimals when
+	* the token is in the built-in table.
+	*/
+	var orderAmount = (token, amount, chainId, table, nativeMarker) => {
+		if (nativeMarker !== void 0 && token.toLowerCase() === nativeMarker) return {
+			asset: EVM_NATIVE_ASSET,
+			amount: amount.toString(10)
+		};
+		const found = lookupEvmToken(table, chainId, token);
+		return _objectSpread2({
+			asset: token,
+			amount: amount.toString(10)
+		}, found === void 0 ? {} : {
+			symbol: found.symbol,
+			decimals: found.decimals
+		});
+	};
+	var ORDER_INFO = [
+		"address reactor",
+		"address swapper",
+		"uint256 nonce",
+		"uint256 deadline",
+		"address additionalValidationContract",
+		"bytes additionalValidationData"
+	];
+	var DUTCH_OUTPUT = [
+		"address token",
+		"uint256 startAmount",
+		"uint256 endAmount",
+		"address recipient"
+	];
+	var ORDER_TYPES = {
+		ExclusiveDutchOrder: {
+			ExclusiveDutchOrder: [
+				"OrderInfo info",
+				"uint256 decayStartTime",
+				"uint256 decayEndTime",
+				"address exclusiveFiller",
+				"uint256 exclusivityOverrideBps",
+				"address inputToken",
+				"uint256 inputStartAmount",
+				"uint256 inputEndAmount",
+				"DutchOutput[] outputs"
+			],
+			OrderInfo: ORDER_INFO,
+			DutchOutput: DUTCH_OUTPUT
+		},
+		V2DutchOrder: {
+			V2DutchOrder: [
+				"OrderInfo info",
+				"address cosigner",
+				"address baseInputToken",
+				"uint256 baseInputStartAmount",
+				"uint256 baseInputEndAmount",
+				"DutchOutput[] baseOutputs"
+			],
+			OrderInfo: ORDER_INFO,
+			DutchOutput: DUTCH_OUTPUT
+		},
+		V3DutchOrder: {
+			V3DutchOrder: [
+				"OrderInfo info",
+				"address cosigner",
+				"uint256 startingBaseFee",
+				"V3DutchInput baseInput",
+				"V3DutchOutput[] baseOutputs"
+			],
+			OrderInfo: ORDER_INFO,
+			V3DutchInput: [
+				"address token",
+				"uint256 startAmount",
+				"NonlinearDutchDecay curve",
+				"uint256 maxAmount",
+				"uint256 adjustmentPerGweiBaseFee"
+			],
+			V3DutchOutput: [
+				"address token",
+				"uint256 startAmount",
+				"NonlinearDutchDecay curve",
+				"address recipient",
+				"uint256 minAmount",
+				"uint256 adjustmentPerGweiBaseFee"
+			],
+			NonlinearDutchDecay: ["uint256 relativeBlocks", "int256[] relativeAmounts"]
+		},
+		PriorityOrder: {
+			PriorityOrder: [
+				"OrderInfo info",
+				"address cosigner",
+				"uint256 auctionStartBlock",
+				"uint256 baselinePriorityFeeWei",
+				"PriorityInput input",
+				"PriorityOutput[] outputs"
+			],
+			OrderInfo: ORDER_INFO,
+			PriorityInput: [
+				"address token",
+				"uint256 amount",
+				"uint256 mpsPerPriorityFeeWei"
+			],
+			PriorityOutput: [
+				"address token",
+				"uint256 amount",
+				"uint256 mpsPerPriorityFeeWei",
+				"address recipient"
+			]
+		}
+	};
+	var PERMIT2_TYPES = {
+		EIP712Domain: [
+			"string name",
+			"uint256 chainId",
+			"address verifyingContract"
+		],
+		TokenPermissions: ["address token", "uint256 amount"]
+	};
+	/**
+	* The reactors verified for each chain and order type (UniswapX README "Deployment Addresses" at
+	* eb7ce077036258b9510b42ad37aa920cf3aaf308; probed on-chain — code present, `permit2()` = the
+	* Permit2 address — in vectors/chains/order-protocols.json). Chains whose deployment could not be
+	* verified are left out, so their orders fall back.
+	*/
+	var REACTORS = {
+		1: {
+			ExclusiveDutchOrder: "0x6000da47483062a0d734ba3dc7576ce6a0b645c4",
+			V2DutchOrder: "0x00000011f84b9aa48e5f8aa8b9897600006289be",
+			V3DutchOrder: "0x0000000015757c461808ea25eb309638b62681cf"
+		},
+		10: { V3DutchOrder: "0x000000000923439a92dae8930613568824108631" },
+		56: { V3DutchOrder: "0x00000000a55e50c71b70db3c8b58749cd1e18eb2" },
+		130: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
+		137: { V3DutchOrder: "0x00000000bab6e234db8ad638b6a6395b7c499bc4" },
+		143: { V3DutchOrder: "0x000000000ac008f7e07210cfb6648e40249232c2" },
+		196: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
+		480: { V3DutchOrder: "0x00000000d714ea34028930b762e96bfbe50f42c2" },
+		1868: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
+		8453: {
+			V3DutchOrder: "0x000000008a8330b5d1f43a62bf4c673a49f27ba0",
+			PriorityOrder: "0x000000001ec5656dcdb24d90dfa42742738de729"
+		},
+		42161: { V3DutchOrder: "0xb274d5f4b833b61b340b654d600a864fb604a87c" },
+		42220: { V3DutchOrder: "0x00000000b8077fdf2281a80be96f6c282b5d943a" },
+		43114: { V3DutchOrder: "0x00000000862ccf095823fc7576fa6c7e6b7385ef" }
+	};
+	var ZERO$3 = "0x0000000000000000000000000000000000000000";
+	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
+	var address$1 = (message, key) => typedDataAddress(message[key]);
+	var uint$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
+	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
+	var parse = (type, witness) => {
+		const { info } = witness;
+		if (!isTypedDataMessage(info)) return;
+		const output = (item, amount) => {
+			if (!isTypedDataMessage(item)) return;
+			const token = address$1(item, "token");
+			const value = amount(item);
+			const recipient = address$1(item, "recipient");
+			return token === void 0 || value === void 0 || recipient === void 0 ? void 0 : {
+				token,
+				amount: value,
+				recipient
+			};
+		};
+		const outputsOf = (key, amount) => {
+			const raw = witness[key];
+			if (!Array.isArray(raw) || raw.length === 0) return;
+			const outputs = [];
+			for (const item of raw) {
+				const parsed = output(item, amount);
+				if (parsed === void 0) return;
+				outputs.push(parsed);
+			}
+			return outputs;
+		};
+		const dutch = (m) => {
+			const start = uint$1(m, "startAmount");
+			const end = uint$1(m, "endAmount");
+			return start === void 0 || end === void 0 ? void 0 : start < end ? start : end;
+		};
+		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
+			const exclusive = type === "ExclusiveDutchOrder";
+			const prefix = exclusive ? "input" : "baseInput";
+			const inputToken = address$1(witness, `${prefix}Token`);
+			const start = uint$1(witness, `${prefix}StartAmount`);
+			const end = uint$1(witness, `${prefix}EndAmount`);
+			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
+			const filler = exclusive ? address$1(witness, "exclusiveFiller") : void 0;
+			const decayed = uint$1(witness, "decayStartTime") !== void 0 && uint$1(witness, "decayEndTime") !== void 0 && uint$1(witness, "exclusivityOverrideBps") !== void 0;
+			const cosigned = exclusive || address$1(witness, "cosigner") !== void 0;
+			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
+			return _objectSpread2({
+				info,
+				inputToken,
+				giveAmount: start > end ? start : end,
+				outputs
+			}, exclusive && filler !== void 0 && filler.toLowerCase() !== ZERO$3 ? { exclusiveFiller: filler } : {});
+		}
+		if (type === "V3DutchOrder") {
+			const input = witness["baseInput"];
+			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "startingBaseFee") === void 0) return;
+			const inputToken = address$1(input, "token");
+			const maxAmount = uint$1(input, "maxAmount");
+			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1(m, "minAmount") : void 0);
+			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
+				info,
+				inputToken,
+				giveAmount: maxAmount,
+				outputs
+			};
+		}
+		const { input } = witness;
+		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "auctionStartBlock") === void 0 || uint$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1(input, "mpsPerPriorityFeeWei") === void 0) return;
+		const inputToken = address$1(input, "token");
+		const amount = uint$1(input, "amount");
+		const outputs = outputsOf("outputs", (m) => uint$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1(m, "amount"));
+		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
+			info,
+			inputToken,
+			giveAmount: amount,
+			outputs
+		};
+	};
+	/**
+	* The UniswapX order a Permit2 witness document signs, `oversize` when its outputs cannot all be
+	* shown, or `undefined` — the caller then falls back to the opaque-witness path.
+	*/
+	var recognizeUniswapX = (json, signer, chainId, table) => {
+		var _types$primaryType, _REACTORS$chainId;
+		const { types, primaryType, message, domain } = json;
+		if (primaryType !== "PermitWitnessTransferFrom") return;
+		const witnessField = (_types$primaryType = types[primaryType]) === null || _types$primaryType === void 0 ? void 0 : _types$primaryType.at(-1);
+		const witnessType = (witnessField === null || witnessField === void 0 ? void 0 : witnessField.name) === "witness" ? witnessField.type : void 0;
+		if (witnessType === void 0 || !isWitnessType(witnessType)) return;
+		const expected = _objectSpread2(_objectSpread2({}, PERMIT2_TYPES), {}, { PermitWitnessTransferFrom: [
+			"TokenPermissions permitted",
+			"address spender",
+			"uint256 nonce",
+			"uint256 deadline",
+			`${witnessType} witness`
+		] }, ORDER_TYPES[witnessType]);
+		if (Object.keys(types).length !== Object.keys(expected).length || !Object.entries(expected).every(([name, fields]) => sameFields(types, name, fields)) || domainChainId(domain) !== chainId) return;
+		const { permitted } = message;
+		const { witness } = message;
+		const spender = address$1(message, "spender");
+		const permittedToken = isTypedDataMessage(permitted) ? address$1(permitted, "token") : void 0;
+		const permittedAmount = isTypedDataMessage(permitted) ? uint$1(permitted, "amount") : void 0;
+		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
+		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
+		const { info } = parsed;
+		const reactor = address$1(info, "reactor");
+		const swapper = address$1(info, "swapper");
+		const nonce = uint$1(info, "nonce");
+		const deadline = uint$1(info, "deadline");
+		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
+		if (parsed.outputs.length > 8) return { kind: "oversize" };
+		const maker = checksumEvmAddress(signer);
+		const giveAmount = parsed.giveAmount < permittedAmount ? parsed.giveAmount : permittedAmount;
+		return {
+			kind: "order",
+			order: _objectSpread2({
+				protocol: "uniswapx",
+				maker,
+				give: orderAmount(parsed.inputToken, giveAmount, chainId, table),
+				receive: parsed.outputs.map((o) => ({
+					recipient: o.recipient,
+					amount: orderAmount(o.token, o.amount, chainId, table, ZERO$3)
+				})),
+				expiry: Number(deadline),
+				partialFill: false
+			}, parsed.exclusiveFiller === void 0 ? {} : { exclusiveFiller: parsed.exclusiveFiller })
+		};
+	};
+	var isMessage$1 = isTypedDataMessage;
+	var address$2 = typedDataAddress;
+	var uint$2 = typedDataUint;
+	var DETAILS = [
+		"address token",
+		"uint160 amount",
+		"uint48 expiration",
+		"uint48 nonce"
+	];
+	var PERMISSIONS = ["address token", "uint256 amount"];
+	var WITNESS_WARNING = {
+		kind: "permit2-witness",
+		message: "the permit carries a witness with further terms"
+	};
+	var entries = (value) => Array.isArray(value) && value.length > 0 && value.every(isMessage$1) ? value : void 0;
+	var permit = (...approvals) => ({
+		approvals,
+		warnings: []
+	});
+	/**
+	* The permit a typed-data document grants, or `undefined` when its shape is not exactly one of the
+	* recognized ones. `chainId` is the request network's, used for the built-in token table. `signer`
+	* lets a witness be checked against the account it binds (UniswapX `info.swapper`).
+	*/
+	function recognizePermit(json, chainId, table, signer, permit2 = PERMIT2_ADDRESS) {
+		const { types, primaryType, message, domain } = json;
+		const verifying = address$2(domain["verifyingContract"]);
+		if (verifying === void 0) return;
+		const spender = address$2(message["spender"]);
+		if (spender === void 0) return;
+		const allow = (token, value, change, max, extra = {}) => allowanceChange(token, spender, value, change, max, chainId, table, extra);
+		if (primaryType === "Permit") {
+			if (sameFields(types, "Permit", [
+				"address owner",
+				"address spender",
+				"uint256 value",
+				"uint256 nonce",
+				"uint256 deadline"
+			])) {
+				const value = uint$2(message["value"], MAX_UINT256);
+				return value === void 0 ? void 0 : permit(allow(verifying, value, "set", MAX_UINT256));
+			}
+			if (sameFields(types, "Permit", [
+				"address holder",
+				"address spender",
+				"uint256 nonce",
+				"uint256 expiry",
+				"bool allowed"
+			])) {
+				const { allowed } = message;
+				return typeof allowed === "boolean" ? permit(allow(verifying, allowed ? MAX_UINT256 : 0n, "set", MAX_UINT256)) : void 0;
+			}
+			return;
+		}
+		if (permit2 === "" || verifying.toLowerCase() !== permit2.toLowerCase()) return;
+		return recognizePermit2(json, allow, signer, chainId, table);
+	}
+	var all$3 = (list, build) => {
+		const built = list === null || list === void 0 ? void 0 : list.map(build);
+		return built === void 0 || built.some((a) => a === void 0) ? void 0 : permit(...built.filter((a) => a !== void 0));
+	};
+	var recognizePermit2 = (json, allow, signer, chainId, table) => {
+		var _own$slice;
+		const { types, primaryType, message } = json;
+		const via = "permit2";
+		const allowance = (details) => {
+			const token = address$2(details["token"]);
+			const amount = uint$2(details["amount"], MAX_UINT160);
+			const expiration = uint$2(details["expiration"], MAX_UINT48);
+			return token === void 0 || amount === void 0 || expiration === void 0 ? void 0 : allow(token, amount, "set", MAX_UINT160, {
+				via,
+				expiration: Number(expiration)
+			});
+		};
+		const transfer = (permitted, deadline) => {
+			const token = address$2(permitted["token"]);
+			const amount = uint$2(permitted["amount"], MAX_UINT256);
+			return token === void 0 || amount === void 0 ? void 0 : allow(token, amount, "transfer", MAX_UINT256, _objectSpread2({ via }, deadline <= MAX_UINT48 ? { expiration: Number(deadline) } : {}));
+		};
+		if (primaryType === "PermitSingle") {
+			const { details } = message;
+			return sameFields(types, primaryType, [
+				"PermitDetails details",
+				"address spender",
+				"uint256 sigDeadline"
+			]) && sameFields(types, "PermitDetails", DETAILS) && isMessage$1(details) ? all$3([details], allowance) : void 0;
+		}
+		if (primaryType === "PermitBatch") return sameFields(types, primaryType, [
+			"PermitDetails[] details",
+			"address spender",
+			"uint256 sigDeadline"
+		]) && sameFields(types, "PermitDetails", DETAILS) ? all$3(entries(message["details"]), allowance) : void 0;
+		const witness = primaryType.includes("Witness");
+		const batch = primaryType.includes("Batch");
+		const expected = batch ? [
+			"TokenPermissions[] permitted",
+			"address spender",
+			"uint256 nonce",
+			"uint256 deadline"
+		] : [
+			"TokenPermissions permitted",
+			"address spender",
+			"uint256 nonce",
+			"uint256 deadline"
+		];
+		if (primaryType !== `Permit${batch ? "Batch" : ""}${witness ? "Witness" : ""}TransferFrom`) return;
+		const own = types[primaryType];
+		const last = own === null || own === void 0 ? void 0 : own.at(-1);
+		const fieldsOk = witness ? sameFields(_objectSpread2(_objectSpread2({}, types), {}, { [primaryType]: (_own$slice = own === null || own === void 0 ? void 0 : own.slice(0, -1)) !== null && _own$slice !== void 0 ? _own$slice : [] }), primaryType, expected) && (last === null || last === void 0 ? void 0 : last.name) === "witness" && types[last.type] !== void 0 : sameFields(types, primaryType, expected);
+		const deadline = uint$2(message["deadline"], MAX_UINT256);
+		if (!fieldsOk || !sameFields(types, "TokenPermissions", PERMISSIONS) || deadline === void 0) return;
+		const { permitted } = message;
+		const result = batch ? all$3(entries(permitted), (item) => transfer(item, deadline)) : isMessage$1(permitted) ? all$3([permitted], (item) => transfer(item, deadline)) : void 0;
+		return result === void 0 || !witness ? result : witnessOutcome(result, json, signer, chainId, table);
+	};
+	/**
+	* What a witness carries when the permit itself decoded: a recognised UniswapX order (the take-once
+	* approval stays; no further warning), or the witness subtree's leaves with the warning. A subtree
+	* that cannot be shown in full — too many leaves, a leaf not exactly encodable — or a recognised
+	* order over the item limit blinds the document; a commitment leaf blinds it too.
+	*/
+	var witnessOutcome = (result, json, signer, chainId, table) => {
+		var _json$types$json$prim;
+		const uniswapx = recognizeUniswapX(json, signer, chainId, table);
+		if ((uniswapx === null || uniswapx === void 0 ? void 0 : uniswapx.kind) === "order") return {
+			approvals: result.approvals,
+			warnings: [],
+			order: uniswapx.order
+		};
+		const witnessType = (_json$types$json$prim = json.types[json.primaryType]) === null || _json$types$json$prim === void 0 || (_json$types$json$prim = _json$types$json$prim.at(-1)) === null || _json$types$json$prim === void 0 ? void 0 : _json$types$json$prim.type;
+		const { witness } = json.message;
+		const subtree = uniswapx === void 0 && witnessType !== void 0 && isMessage$1(witness) ? typedDataFields({
+			types: json.types,
+			primaryType: witnessType,
+			domain: {},
+			message: witness
+		}) : void 0;
+		return _objectSpread2(_objectSpread2({
+			approvals: result.approvals,
+			warnings: [WITNESS_WARNING]
+		}, subtree === void 0 ? {} : { fields: subtree.fields.map((leaf) => _objectSpread2(_objectSpread2({}, leaf), {}, { path: `witness.${leaf.path}` })) }), uniswapx !== void 0 || subtree === void 0 ? { blind: "typed-data-oversize" } : subtree.hasCommitment ? { blind: "typed-data-commitment" } : {});
+	};
+	/**
+	* The ERC-20/721/1155 selector table shared with TRON's TRC-20 decoding — its own module so the
+	* TRON bundle does not pull the rest of the EVM decoder (0x, Across, Lido, Seaport, Safe,
+	* typed-data). Permit2's approve/lockdown stay in decode.ts: they are gated on the Permit2 address,
+	* which a TRC-20 callee never is.
+	*/
+	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
+	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
+	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
+	var ERC20_DECREASE = from$2("function decreaseAllowance(address spender, uint256 subtractedValue)");
+	var SET_APPROVAL_FOR_ALL = from$2("function setApprovalForAll(address operator, bool approved)");
+	var ERC721_SAFE_FROM_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
+	var ERC1155_SAFE_BATCH_FROM = from$2("function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)");
+	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
+	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
+	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
+	function assertHex$1(data) {
+		if (!/^0x[0-9a-fA-F]*$/.test(data)) throw new ChainError("invalid-request", "call data is not 0x-prefixed hex");
+	}
+	var argAddress$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
+		return checksumEvmAddress(value);
+	};
+	var argUint$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
+		return value;
+	};
+	/**
+	* Decodes `data` as `fn` and verifies the encoding is canonical (re-encoding the decoded args
+	* reproduces the input byte-for-byte). Returns undefined on selector mismatch, decode failure or a
+	* non-canonical encoding — the caller falls through to the next candidate or the opaque class.
+	*/
+	var tryCall$5 = (fn, data) => {
+		const selector = getSelector(fn);
+		if (!data.toLowerCase().startsWith(selector)) return;
+		try {
+			assertHex$1(data);
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	var tokenFlow$1 = (target, to, amount, chainId, table) => {
+		const token = lookupEvmToken(table, chainId, target);
+		return {
+			flows: [{
+				to,
+				amount: _objectSpread2({
+					asset: target,
+					amount: amount.toString(10)
+				}, token === void 0 ? {} : {
+					symbol: token.symbol,
+					decimals: token.decimals
+				}),
+				verified: token !== void 0
+			}],
+			verified: token !== void 0
+		};
+	};
+	var argBool = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "boolean") throw new ChainError("invalid-request", "decoded argument is not a bool");
+		return value;
+	};
+	var argList$2 = (args, index) => {
+		const value = args[index];
+		if (!Array.isArray(value)) throw new ChainError("invalid-request", "decoded argument is not an array");
+		return value;
+	};
+	var nftFlow = (asset, to, id, value = 1n) => [{
+		to,
+		amount: {
+			asset,
+			amount: value.toString(10),
+			tokenId: id.toString(10)
+		},
+		verified: false
+	}];
+	/**
+	* The token-standard selectors, in the same order the EVM decoder tries them: transfer,
+	* approve/increaseAllowance/decreaseAllowance, setApprovalForAll, transferFrom, the two ERC-721
+	* safeTransferFrom forms, then ERC-1155 single and batch. `token` is the callee, `data` 0x hex.
+	*/
+	var decodeTokenCall = (token, data, chainId, table) => {
+		const transferArgs = tryCall$5(ERC20_TRANSFER, data);
+		if (transferArgs !== void 0) {
+			const { flows, verified } = tokenFlow$1(token, argAddress$3(transferArgs, 0), argUint$3(transferArgs, 1), chainId, table);
+			return {
+				summary: "transfer",
+				outflows: flows,
+				approvals: [],
+				verifiability: verified ? "full" : "partial"
+			};
+		}
+		for (const [fn, change] of [
+			[ERC20_APPROVE, "set"],
+			[ERC20_INCREASE, "increase"],
+			[ERC20_DECREASE, "decrease"]
+		]) {
+			const args = tryCall$5(fn, data);
+			if (args !== void 0) return {
+				summary: "approve",
+				outflows: [],
+				approvals: [allowanceChange(token, argAddress$3(args, 0), argUint$3(args, 1), change, MAX_UINT256, chainId, table)],
+				verifiability: "partial"
+			};
+		}
+		const operatorArgs = tryCall$5(SET_APPROVAL_FOR_ALL, data);
+		if (operatorArgs !== void 0) return {
+			summary: "approve",
+			outflows: [],
+			approvals: [{
+				kind: "operator",
+				asset: token,
+				spender: argAddress$3(operatorArgs, 0),
+				approved: argBool(operatorArgs, 1),
+				verified: false
+			}],
+			verifiability: "partial"
+		};
+		const transferFromArgs = tryCall$5(ERC721_TRANSFER_FROM, data);
+		if (transferFromArgs !== void 0) {
+			const to = argAddress$3(transferFromArgs, 1);
+			const id = argUint$3(transferFromArgs, 2);
+			if (lookupEvmToken(table, chainId, token) !== void 0) return {
+				summary: "transfer",
+				outflows: tokenFlow$1(token, to, id, chainId, table).flows,
+				approvals: [],
+				verifiability: "partial"
+			};
+			return {
+				summary: "transfer",
+				outflows: nftFlow(token, to, id),
+				approvals: [],
+				verifiability: "partial"
+			};
+		}
+		for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
+			const args = tryCall$5(fn, data);
+			if (args !== void 0) return {
+				summary: "transfer",
+				outflows: nftFlow(token, argAddress$3(args, 1), argUint$3(args, 2)),
+				approvals: [],
+				verifiability: "partial"
+			};
+		}
+		const erc1155Args = tryCall$5(ERC1155_SAFE_FROM, data);
+		if (erc1155Args !== void 0) return {
+			summary: "transfer",
+			outflows: nftFlow(token, argAddress$3(erc1155Args, 1), argUint$3(erc1155Args, 2), argUint$3(erc1155Args, 3)),
+			approvals: [],
+			verifiability: "partial"
+		};
+		const batchArgs = tryCall$5(ERC1155_SAFE_BATCH_FROM, data);
+		if (batchArgs !== void 0) {
+			const ids = argList$2(batchArgs, 2);
+			const values = argList$2(batchArgs, 3);
+			if (ids.length > 0 && ids.length === values.length) {
+				const to = argAddress$3(batchArgs, 1);
+				return {
+					summary: "transfer",
+					outflows: ids.flatMap((id, i) => {
+						var _values$i;
+						return nftFlow(token, to, argUint$3([id], 0), argUint$3([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0));
+					}),
+					approvals: [],
+					verifiability: "partial"
+				};
+			}
+		}
+	};
+	// packages/wallet-chains/dist/networks.mjs
+	init_objectSpread2();
+	var evm = (chainId, name, symbol, testnet) => ({
+		id: `eip155:${chainId}`,
+		family: "evm",
+		name,
+		symbol,
+		decimals: 18,
+		testnet,
+		chainId
+	});
+	var EVM_NETWORKS = [
+		evm(1, "Ethereum", "ETH", false),
+		evm(8453, "Base", "ETH", false),
+		evm(42161, "Arbitrum One", "ETH", false),
+		evm(10, "OP Mainnet", "ETH", false),
+		evm(137, "Polygon", "POL", false),
+		evm(56, "BNB Smart Chain", "BNB", false),
+		evm(999, "HyperEVM", "HYPE", false),
+		evm(43114, "Avalanche C-Chain", "AVAX", false),
+		evm(4663, "Robinhood Chain", "ETH", false),
+		evm(143, "Monad", "MON", false),
+		evm(5042, "Arc", "USDC", false),
+		evm(9745, "Plasma", "XPL", false),
+		evm(196, "X Layer", "OKB", false),
+		evm(1672, "Pharos", "PROS", false),
+		evm(5e3, "Mantle", "MNT", false),
+		evm(25, "Cronos", "CRO", false),
+		evm(100, "Gnosis", "xDAI", false),
+		evm(988, "Stable", "USDT0", false),
+		evm(747474, "Katana", "ETH", false),
+		evm(80094, "Berachain", "BERA", false),
+		evm(480, "World Chain", "ETH", false),
+		evm(130, "Unichain", "ETH", false),
+		evm(1329, "Sei", "SEI", false),
+		evm(59144, "Linea", "ETH", false),
+		evm(42220, "Celo", "CELO", false),
+		evm(146, "Sonic", "S", false),
+		evm(324, "ZKsync Era", "ETH", false),
+		evm(1868, "Soneium", "ETH", false),
+		evm(4326, "MegaETH", "ETH", false),
+		evm(8217, "Kaia", "KAIA", false),
+		evm(33139, "ApeChain", "APE", false),
+		evm(57073, "Ink", "ETH", false),
+		evm(252, "Fraxtal", "FRAX", false),
+		evm(2020, "Ronin", "RON", false),
+		evm(534352, "Scroll", "ETH", false),
+		evm(60808, "BOB", "ETH", false),
+		evm(204, "opBNB", "BNB", false),
+		evm(42170, "Arbitrum Nova", "ETH", false),
+		evm(167e3, "Taiko", "ETH", false),
+		evm(14, "Flare", "FLR", false),
+		evm(7777777, "Zora", "ETH", false),
+		evm(11155111, "Sepolia", "ETH", true),
+		evm(84532, "Base Sepolia", "ETH", true),
+		evm(421614, "Arbitrum Sepolia", "ETH", true),
+		evm(11155420, "OP Sepolia", "ETH", true),
+		evm(80002, "Polygon Amoy", "POL", true),
+		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm(998, "HyperEVM Testnet", "HYPE", true),
+		evm(43113, "Avalanche Fuji", "AVAX", true),
+		evm(46630, "Robinhood Chain Testnet", "ETH", true),
+		evm(10143, "Monad Testnet", "MON", true),
+		evm(5042002, "Arc Testnet", "USDC", true),
+		evm(1952, "X Layer Testnet", "OKB", true),
+		evm(5003, "Mantle Sepolia", "MNT", true),
+		evm(10200, "Gnosis Chiado", "xDAI", true),
+		evm(1301, "Unichain Sepolia", "ETH", true),
+		evm(1328, "Sei Testnet", "SEI", true),
+		evm(59141, "Linea Sepolia", "ETH", true),
+		evm(11142220, "Celo Sepolia", "CELO", true),
+		evm(14601, "Sonic Testnet", "S", true),
+		evm(300, "ZKsync Sepolia", "ETH", true),
+		evm(1946, "Soneium Minato", "ETH", true),
+		evm(33111, "ApeChain Curtis", "APE", true),
+		evm(763373, "Ink Sepolia", "ETH", true),
+		evm(2523, "Fraxtal Hoodi", "FRAX", true),
+		evm(5611, "opBNB Testnet", "tBNB", true),
+		evm(999999999, "Zora Sepolia", "ETH", true)
+	];
+	var BUILT_IN_NETWORKS = Object.freeze([
+		...EVM_NETWORKS,
+		{
+			id: "bip122:000000000019d6689c085ae165831e93",
+			chainId: 0,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+			testnet: false,
+			family: "bitcoin",
+			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+		},
+		{
+			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			chainId: 0,
+			name: "Bitcoin Testnet4",
+			symbol: "tBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
+		},
+		{
+			id: "bip122:00000008819873e925422c1ff0f99f7c",
+			chainId: 0,
+			name: "Bitcoin Signet",
+			symbol: "sBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+		},
+		{
+			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			chainId: 0,
+			name: "Bitcoin Regtest",
+			symbol: "rBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+		},
+		{
+			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+			chainId: 0,
+			name: "Solana",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: false,
+			family: "solana",
+			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+		},
+		{
+			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+			chainId: 0,
+			name: "Solana Devnet",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: true,
+			family: "solana",
+			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+		},
+		{
+			id: "tron:728126428",
+			family: "tron",
+			name: "TRON",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: false,
+			chainId: 728126428,
+			genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"
+		},
+		{
+			id: "tron:2494104990",
+			family: "tron",
+			name: "TRON Shasta",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: true,
+			chainId: 2494104990,
+			genesisHash: "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e"
+		},
+		{
+			id: "tron:3448148188",
+			family: "tron",
+			name: "TRON Nile",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: true,
+			chainId: 3448148188,
+			genesisHash: "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc"
+		}
+	]);
+	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
+	/**
+	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
+	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
+	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
+	*/
+	var withNativeAmountMeta = (intent, network, asset, decimals) => {
+		var _networkMeta;
+		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
+		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
+		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
+			amount: amount(a.amount),
+			receive: amount(a.receive)
+		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) }), i.message === void 0 || i.message.kind !== "typed-data" ? {} : { message: _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i.message), i.message.seaport === void 0 ? {} : { seaport: _objectSpread2(_objectSpread2({}, i.message.seaport), {}, {
+			offer: i.message.seaport.offer.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
+				startAmount: amount(item.startAmount),
+				endAmount: amount(item.endAmount)
+			})),
+			consideration: i.message.seaport.consideration.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
+				startAmount: amount(item.startAmount),
+				endAmount: amount(item.endAmount)
+			}))
+		}) }), i.message.order === void 0 ? {} : { order: _objectSpread2(_objectSpread2({}, i.message.order), {}, {
+			give: amount(i.message.order.give),
+			receive: i.message.order.receive.map((leg) => _objectSpread2(_objectSpread2({}, leg), {}, { amount: amount(leg.amount) }))
+		}) }), i.message.safe === void 0 ? {} : { safe: _objectSpread2(_objectSpread2({}, i.message.safe), {}, { calls: i.message.safe.calls.map(decorate) }, i.message.safe.refund === void 0 ? {} : { refund: _objectSpread2(_objectSpread2({}, i.message.safe.refund), {}, {
+			gasPrice: amount(i.message.safe.refund.gasPrice),
+			amount: amount(i.message.safe.refund.amount)
+		}) }) }) });
+		return decorate(intent);
+	};
+	// packages/wallet-chains/dist/families-B9rgBFc2.mjs
+	var RECOGNISED_FAMILIES = [
+		{
+			family: "Hyperliquid L1",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Exchange",
+				primaryType: /^Agent$/
+			},
+			nearMiss: "typed-data-commitment"
+		},
+		{
+			family: "Hyperliquid",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "HyperliquidSignTransaction"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket exchange",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Polymarket CTF Exchange"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket CLOB auth",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "ClobAuthDomain"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket deposit wallet",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "DepositWallet"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in token",
+			claim: {
+				surface: "evm.call",
+				callee: "token-table"
+			},
+			nearMiss: "token-function"
+		},
+		{
+			family: "built-in TRON token",
+			claim: {
+				surface: "tron.call",
+				callee: "token-table"
+			},
+			nearMiss: "token-function"
+		},
+		{
+			family: "permit",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^Permit/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Permit2",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "permit2"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in token signature",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "token-table"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Safe",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^SafeTx$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^(?:OrderComponents|BulkOrder)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "seaport"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "1inch",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "1inch Aggregation Router",
+				contracts: [
+					"0x111111125421cA6dc452d289314280a0f8842A65",
+					"0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
+					"0x1111111254EEB25477B68fb85Ed929f73A960582"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "1inch LOP",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "1inch Limit Order Protocol",
+				contracts: [
+					"0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
+					"0x11431a89893025D2a48dCA4EddC396f8C8117187",
+					"0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
+					"0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
+					"0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "CoW",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Gnosis Protocol",
+				contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Snapshot",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "snapshot",
+				primaryType: /^Vote$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "0x",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "ZeroEx",
+				contracts: ["0xDef1C0ded9bec7F1a1670819833240f027b25EfF", "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Blur",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Blur Exchange",
+				contracts: [
+					"0x000000000000Ad05Ccc4F10045630fb830B95127",
+					"0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
+					"0x29469395eAf6f95920E59F858042f0e28D98a20B"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "LooksRare",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "LooksRareProtocol",
+				contracts: ["0x0000000000E655fAe4d56241588680F86E3b2377"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Bebop",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "BebopSettlement",
+				contracts: ["0xbbbbbBB520d69a9775E85b458C58c648259FAD5F"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Bebop",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "JamSettlement",
+				contracts: ["0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Paraswap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "AUGUSTUS RFQ",
+				contracts: [
+					"0xe92b586627ccA7a83dC919cc7127196d70f55a06",
+					"0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
+					"0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
+					"0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Velora Delta",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Portikus",
+				contracts: ["0x0000000000bbF5c5Fd284e657F01Bd000933C96D"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "KyberSwap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Kyber Limit Order Protocol",
+				contracts: ["0x227B0c196eA8db17A665EA6824D972A64202E936"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "KyberSwap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Kyber DSLO Protocol",
+				contracts: ["0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "OpenOcean",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "openocean Limit Order Protocol",
+				contracts: [
+					"0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
+					"0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+					"0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
+					"0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
+					"0xB45373129B4220160b92bd2320869f44d48eCd01",
+					"0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
+					"0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
+					"0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
+					"0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
+					"0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
+					"0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
+					"0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Odos",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "OdosLimitOrderRouter",
+				contracts: [
+					"0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
+					"0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
+					"0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
+					"0x93052961c75c92Fd5d6362655936C239EF2D5336",
+					"0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
+					"0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
+					"0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
+					"0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
+					"0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
+					"0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
+					"0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "TRON permit",
+			claim: {
+				surface: "tron.typed-data",
+				primaryType: /^Permit/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "TRON Permit2",
+			claim: {
+				surface: "tron.typed-data",
+				verifyingContract: "permit2"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in TRC-20 signature",
+			claim: {
+				surface: "tron.typed-data",
+				verifyingContract: "token-table"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "System",
+			claim: {
+				surface: "solana.instruction",
+				program: "system"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "token"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token-2022",
+			claim: {
+				surface: "solana.instruction",
+				program: "token2022"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Stake",
+			claim: {
+				surface: "solana.instruction",
+				program: "stake"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Associated Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "associatedToken"
+			},
+			nearMiss: "core-instruction"
+		}
+	];
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
 	init_defineProperty();
 	/**
@@ -20365,402 +22105,24 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-BI-2LwiX.mjs
+	// packages/wallet-chains/dist/envelope-CTXEc-Gc.mjs
 	init_objectSpread2();
-	/**
-	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
-	* address on every chain that supports it.
-	*/
-	var EVM_DELEGATOR = {
-		address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
-		name: "EIP7702StatelessDeleGator",
-		version: "1.3.0"
-	};
-	/** ERC-7821 batch-default execution mode: `0x01` followed by 31 zero bytes. */
-	var EXECUTE_BATCH_MODE = "0x0100000000000000000000000000000000000000000000000000000000000000";
-	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
-	var EXECUTIONS = [{
-		type: "tuple[]",
-		components: [
-			{
-				name: "target",
-				type: "address"
-			},
-			{
-				name: "value",
-				type: "uint256"
-			},
-			{
-				name: "callData",
-				type: "bytes"
-			}
-		]
-	}];
-	var hex$1 = (v) => {
-		assert$8(v);
-		return v;
-	};
-	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
-	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$2(EXECUTIONS, [calls.map((c) => ({
-		target: hex$1(checksumEvmAddress(c.to)),
-		value: c.value,
-		callData: hex$1(c.data)
-	}))])]);
-	var list = (v) => Array.isArray(v) ? v : [];
-	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
-	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
-	var decodeBatchExecute = (data) => {
-		try {
-			const [mode, executionData] = list(decodeData(EXECUTE, hex$1(data)));
-			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$2(EXECUTIONS, hex$1(executionData)));
-			const executions = [];
-			for (const e of list(inner)) {
-				if (!isExecution(e)) return;
-				executions.push({
-					to: checksumEvmAddress(e.target),
-					value: e.value,
-					data: e.callData
-				});
-			}
-			return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase() ? executions : void 0;
-		} catch (_unused) {
-			return;
-		}
-	};
-	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
-	function assertHex$1(value, field) {
-		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-	}
-	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
-	var canonicalHex = (value) => `0x${value.toString(16)}`;
-	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
-	var quantityBigInt = (value, field) => {
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
-		return BigInt(value);
-	};
-	var safeInteger = (value, field) => {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
-		return value;
-	};
-	var quantity = (value, field) => {
-		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
-		if (CANONICAL_HEX.test(value)) return value;
-		return canonicalHex(quantityBigInt(value, field));
-	};
-	var hexBytes$1 = (value, field) => {
-		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-		return value.toLowerCase();
-	};
-	var accessList = (value) => {
-		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
-		return value.map((entry) => {
-			if (!isRecord$3(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
-			const keys = Object.keys(entry).sort();
-			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
-			const { address, storageKeys } = entry;
-			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
-			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
-			return {
-				address: checksumEvmAddress(address),
-				storageKeys: storageKeys.map((k) => {
-					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
-					return k.toLowerCase();
-				})
-			};
-		});
-	};
-	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
-	var networkChainId = (network) => {
-		var _exec;
-		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
-		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
-		const id = Number(idPart);
-		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
-		return id;
-	};
-	var REQUIRED = {
-		base: [
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data"
-		],
-		gasPrice: ["gasPrice"],
-		accessList: ["accessList"],
-		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
-	};
-	var ALLOWED = {
-		base: [
-			"type",
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data",
-			"to"
-		],
-		legacy: ["gasPrice"],
-		eip2930: ["gasPrice", "accessList"],
-		eip1559: [
-			"accessList",
-			"maxFeePerGas",
-			"maxPriorityFeePerGas"
-		],
-		eip7702: [
-			"accessList",
-			"maxFeePerGas",
-			"maxPriorityFeePerGas",
-			"authorization"
-		]
-	};
-	var requireFields = (input, fields) => {
-		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
-	};
-	var rejectUnknown = (input, type) => {
-		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
-		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
-		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
-	};
-	/**
-	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
-	* canonical quantities, EIP-55 addresses. Idempotent.
-	*/
-	var normalizeEvmTransaction = (tx) => {
-		if (!isRecord$3(tx)) throw new ChainError("invalid-request", "tx must be an object");
-		const { type } = tx;
-		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`);
-		rejectUnknown(tx, type);
-		requireFields(tx, REQUIRED.base);
-		const chainId = safeInteger(tx["chainId"], "chainId");
-		const nonce = safeInteger(tx["nonce"], "nonce");
-		const gas = quantity(tx["gas"], "gas");
-		const value = quantity(tx["value"], "value");
-		const data = hexBytes$1(tx["data"], "data");
-		const toRaw = tx["to"];
-		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
-		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
-		const base = _objectSpread2({
-			chainId,
-			nonce,
-			gas,
-			value,
-			data
-		}, to === void 0 ? {} : { to });
-		if (type === "legacy") {
-			requireFields(tx, REQUIRED.gasPrice);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
-		}
-		if (type === "eip2930") {
-			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, {
-				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
-				accessList: accessList(tx["accessList"])
-			});
-		}
-		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
-		const fees = {
-			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
-			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
-		};
-		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
-		const list = accessList(tx["accessList"]);
-		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
-		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
-		const auth = tx["authorization"];
-		if (!isRecord$3(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
-		const authAddress = checksumEvmAddress(auth["address"]);
-		if (authAddress !== EVM_DELEGATOR.address && authAddress !== "0x0000000000000000000000000000000000000000") throw new ChainError("unsupported", "authorization address is not supported");
-		return _objectSpread2(_objectSpread2(_objectSpread2({ type }, base), {}, {
-			to,
-			accessList: list
-		}, fees), {}, { authorization: { address: authAddress } });
-	};
-	var isField = (value) => isRecord$3(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
-	var isTypedDataInput = (value) => {
-		if (!isRecord$3(value)) return false;
-		const { types, primaryType, domain, message } = value;
-		if (!isRecord$3(types)) return false;
-		if (typeof primaryType !== "string" || primaryType === "") return false;
-		if (!isRecord$3(domain)) return false;
-		if (!isRecord$3(message)) return false;
-		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
-	};
-	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	/** `value` is an array of message objects (empty allowed). */
-	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
-	/** The `Type field,Type field` signature of struct `name` in `types`. */
-	var typedDataSignature = (types, name) => {
-		var _types$name;
-		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
-	};
-	/** Struct `name` has exactly `fields`, in order, no more. */
-	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
-	/** A hex `address` field value, checksummed; `undefined` when malformed. */
-	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
-	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
-	var typedDataUint = (value, max) => {
-		let parsed;
-		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
-		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
-		else return;
-		return parsed >= 0n && parsed <= max ? parsed : void 0;
-	};
-	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
-	var MAX_UINT48 = 2n ** 48n - 1n;
-	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
-	/** A `bytes` field value: `0x`-prefixed hex of even length. */
-	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
-	/**
-	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
-	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
-	* message and a missing nested struct fails here rather than inside the encoder.
-	*/
-	var checkStructure = (types, type, value, depth) => {
-		const array = /^(.+)\[\d*\]$/.exec(type);
-		const struct = array === null ? types[type] : void 0;
-		if (array === null && struct === void 0) return;
-		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
-		if (array !== null) {
-			var _array$;
-			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
-			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
-			return;
-		}
-		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
-		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
-	};
-	/**
-	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
-	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
-	* domain, so the same document would sign differently across wallets.
-	*/
-	var parseTypedData = (typedData) => {
-		var _json$types$EIP712Dom;
-		let json;
-		try {
-			json = JSON.parse(typedData);
-		} catch (_unused2) {
-			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
-		}
-		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
-		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
-		try {
-			validate$1(json);
-		} catch (_unused3) {
-			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
-		}
-		checkStructure(json.types, json.primaryType, json.message, 0);
-		const declared = new Set(((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : []).map((field) => field.name));
-		const domain = Object.fromEntries(Object.entries(json.domain).filter(([key]) => declared.has(key)));
-		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain }) };
-	};
-	var FIXED_BYTES = /^bytes(?:[1-9]|[12][0-9]|3[0-2])$/;
-	var INT_TYPE = /^u?int([0-9]*)$/;
-	/**
-	* The display value of one atomic leaf, or `undefined` when the value is not in a form that is
-	* shown exactly as it is encoded. Only the canonical forms every EIP-712 hasher agrees on are
-	* accepted — anything else aborts the whole expansion.
-	*/
-	var leafValue = (type, value) => {
-		if (type === "address") return typedDataAddress(value);
-		if (type === "bool") return typeof value === "boolean" ? value ? "true" : "false" : void 0;
-		if (type === "string") {
-			var _excerpt$lines$;
-			if (typeof value !== "string") return;
-			const excerpt = displayExcerpt(value, 1, 96);
-			return excerpt.omitted === 0 ? (_excerpt$lines$ = excerpt.lines[0]) !== null && _excerpt$lines$ !== void 0 ? _excerpt$lines$ : "" : void 0;
-		}
-		if (type === "bytes" || FIXED_BYTES.test(type)) return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) && value.length <= 96 ? value.toLowerCase() : void 0;
-		const int = INT_TYPE.exec(type);
-		if (int !== null) {
-			const bits = int[1] === "" ? 256 : Number(int[1]);
-			if (bits % 8 !== 0 || bits < 8 || bits > 256) return;
-			const signed = !type.startsWith("u");
-			let parsed;
-			if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
-			else if (typeof value === "string" && ((signed ? /^-?[0-9]+$/ : /^[0-9]+$/).test(value) || /^0x[0-9a-fA-F]+$/.test(value))) parsed = BigInt(value);
-			else return;
-			const min = signed ? -(2n ** BigInt(bits - 1)) : 0n;
-			const max = signed ? 2n ** BigInt(bits - 1) - 1n : 2n ** BigInt(bits) - 1n;
-			return parsed >= min && parsed <= max ? parsed.toString(10) : void 0;
-		}
-	};
-	/**
-	* Whether the atomic leaf of `type` holding `value` is a commitment: `bytesN` always is — the
-	* signature commits to raw bytes the owner cannot read — as is a non-empty `bytes` or a `string`
-	* that is just an encoded-bytes rendering of ≥ 32 bytes. `"0x"` and an empty-array leaf ("[]")
-	* carry nothing and are not.
-	*/
-	var isCommitmentLeaf = (type, value) => type === "bytes" && value !== "0x" || FIXED_BYTES.test(type) || type === "string" && typeof value === "string" && isEncodedBytes(value);
-	/**
-	* Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
-	* declaration order, arrays element by element), as display lines, and whether any leaf is a
-	* commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
-	* shown exactly as it is encoded.
-	*/
-	var typedDataFields = (json) => {
-		const leaves = [];
-		let hasCommitment = false;
-		const push = (path, value, commits) => {
-			var _excerpt$lines$2;
-			const excerpt = displayExcerpt(path, 1, 96);
-			if (excerpt.omitted !== 0) return false;
-			leaves.push({
-				path: (_excerpt$lines$2 = excerpt.lines[0]) !== null && _excerpt$lines$2 !== void 0 ? _excerpt$lines$2 : "",
-				value
-			});
-			hasCommitment = hasCommitment || commits;
-			return leaves.length <= 16;
-		};
-		const walk = (type, value, path) => {
-			const array = /^(.+)\[\d*\]$/.exec(type);
-			if (array !== null) {
-				if (!Array.isArray(value)) return false;
-				return value.length === 0 ? push(path, "[]", false) : value.every((item, index) => {
-					var _array$2;
-					return walk((_array$2 = array[1]) !== null && _array$2 !== void 0 ? _array$2 : "", item, `${path}[${index}]`);
-				});
-			}
-			const struct = json.types[type];
-			if (struct !== void 0) return isTypedDataMessage(value) && struct.every((field) => walk(field.type, value[field.name], path === "" ? field.name : `${path}.${field.name}`));
-			const leaf = leafValue(type, value);
-			return leaf !== void 0 && push(path, leaf, isCommitmentLeaf(type, value));
-		};
-		return walk(json.primaryType, json.message, "") ? {
-			fields: leaves,
-			hasCommitment
-		} : void 0;
-	};
-	/**
-	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
-	* decimal string or a `0x` hex string.
-	*/
-	var domainChainId = (domain) => {
-		const { chainId } = domain;
-		if (chainId === void 0) return;
-		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
-		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
-		return numeric;
-	};
 	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
-	function assertHex$2(value, field) {
+	function assertHex(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 	}
-	var hex$2 = (value, field) => {
-		assertHex$2(value, field);
+	var hex$1 = (value, field) => {
+		assertHex(value, field);
 		return value;
 	};
 	var accessEntry = (entry) => ({
-		address: hex$2(entry.address, "accessList.address"),
-		storageKeys: entry.storageKeys.map((k) => hex$2(k, "accessList.storageKeys"))
+		address: hex$1(entry.address, "accessList.address"),
+		storageKeys: entry.storageKeys.map((k) => hex$1(k, "accessList.storageKeys"))
 	});
 	/** The EIP-7702 authorization an `eip7702` transaction carries: the account's next-but-one nonce. */
 	var evmAuthorization = (tx) => ({
 		chainId: tx.chainId,
-		address: hex$2(tx.authorization.address, "authorization.address"),
+		address: hex$1(tx.authorization.address, "authorization.address"),
 		nonce: BigInt(tx.nonce + 1)
 	});
 	/**
@@ -20770,8 +22132,8 @@
 	var evmEnvelope = (tx, authorization) => {
 		const base = {
 			chainId: tx.chainId,
-			to: tx.to === void 0 ? void 0 : hex$2(tx.to, "to"),
-			data: hex$2(tx.data, "data"),
+			to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
+			data: hex$1(tx.data, "data"),
 			value: BigInt(tx.value),
 			nonce: BigInt(tx.nonce),
 			gas: BigInt(tx.gas)
@@ -20801,7 +22163,7 @@
 			if (authorization === void 0) throw new ChainError("invalid-request", "an eip7702 envelope needs its signed authorization");
 			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
 				type: "eip7702",
-				to: hex$2(tx.to, "to"),
+				to: hex$1(tx.to, "to"),
 				accessList: tx.accessList.map(accessEntry),
 				maxFeePerGas: BigInt(tx.maxFeePerGas),
 				maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
@@ -20827,909 +22189,6 @@
 			serialize: (signature) => serialize(envelope, { signature })
 		};
 	};
-	// packages/wallet-chains/dist/token-call-SU0_d3v-.mjs
-	init_objectSpread2();
-	var USDC$1 = Object.freeze({
-		symbol: "USDC",
-		decimals: 6,
-		name: "USD Coin"
-	});
-	var USDT$2 = Object.freeze({
-		symbol: "USDT",
-		decimals: 6,
-		name: "Tether USD"
-	});
-	var CELO_ALIAS = Object.freeze({
-		symbol: "CELO",
-		decimals: 18,
-		name: "Celo native asset",
-		role: "native-alias"
-	});
-	var ARC_USDC_ALIAS = Object.freeze({
-		symbol: "USDC",
-		decimals: 6,
-		name: "USDC",
-		role: "native-alias"
-	});
-	var WETH = Object.freeze({
-		symbol: "WETH",
-		decimals: 18,
-		name: "Wrapped Ether",
-		role: "wrapped-native"
-	});
-	var WBNB = Object.freeze({
-		symbol: "WBNB",
-		decimals: 18,
-		name: "Wrapped BNB",
-		role: "wrapped-native"
-	});
-	/** The built-in table. */
-	var evmTokenTable = Object.freeze({
-		"1": Object.freeze({
-			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1,
-			"0xdAC17F958D2ee523a2206206994597C13D831ec7": USDT$2,
-			"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": WETH
-		}),
-		"10": Object.freeze({
-			"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"25": Object.freeze({
-			"0x3D7F2C478aAfdB65542BCB44bCeeC05849999d2D": USDC$1,
-			"0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23": Object.freeze({
-				symbol: "WCRO",
-				decimals: 18,
-				name: "Wrapped CRO",
-				role: "wrapped-native"
-			})
-		}),
-		"56": Object.freeze({ "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c": WBNB }),
-		"130": Object.freeze({
-			"0x078D782b760474a361dDA0AF3839290b0EF57AD6": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"137": Object.freeze({
-			"0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC$1,
-			"0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270": Object.freeze({
-				symbol: "WPOL",
-				decimals: 18,
-				name: "Wrapped Polygon Ecosystem Token",
-				role: "wrapped-native"
-			})
-		}),
-		"143": Object.freeze({
-			"0x754704Bc059F8C67012fEd69BC8A327a5aafb603": USDC$1,
-			"0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A": Object.freeze({
-				symbol: "WMON",
-				decimals: 18,
-				name: "Wrapped MON",
-				role: "wrapped-native"
-			})
-		}),
-		"146": Object.freeze({
-			"0x29219dd400f2Bf60E5a23d13Be72B486D4038894": USDC$1,
-			"0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38": Object.freeze({
-				symbol: "wS",
-				decimals: 18,
-				name: "Wrapped Sonic",
-				role: "wrapped-native"
-			})
-		}),
-		"196": Object.freeze({ "0xB6CEceAB302E2E4948951eE7843FC24E92933061": USDC$1 }),
-		"204": Object.freeze({ "0x4200000000000000000000000000000000000006": WBNB }),
-		"324": Object.freeze({ "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4": USDC$1 }),
-		"480": Object.freeze({
-			"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"988": Object.freeze({ "0x779Ded0c9e1022225f8E0630b35a9b54bE713736": Object.freeze({
-			symbol: "USDT0",
-			decimals: 6,
-			name: "USDT0",
-			role: "native-alias"
-		}) }),
-		"999": Object.freeze({
-			"0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC$1,
-			"0x5555555555555555555555555555555555555555": Object.freeze({
-				symbol: "WHYPE",
-				decimals: 18,
-				name: "Wrapped HYPE",
-				role: "wrapped-native"
-			})
-		}),
-		"1329": Object.freeze({
-			"0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": USDC$1,
-			"0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7": Object.freeze({
-				symbol: "WSEI",
-				decimals: 18,
-				name: "Wrapped SEI",
-				role: "wrapped-native"
-			})
-		}),
-		"1672": Object.freeze({ "0xC879C018dB60520F4355C26eD1a6D572cdAC1815": USDC$1 }),
-		"1868": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"4326": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"5042": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
-		"8217": Object.freeze({
-			"0xd077A400968890Eacc75cdc901F0356c943e4fDb": USDT$2,
-			"0x19Aac5f612f524B754CA7e7c41cbFa2E981A4432": Object.freeze({
-				symbol: "WKLAY",
-				decimals: 18,
-				name: "Wrapped Klay",
-				role: "wrapped-native"
-			})
-		}),
-		"8453": Object.freeze({
-			"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC$1 }),
-		"42161": Object.freeze({
-			"0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1,
-			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH
-		}),
-		"42220": Object.freeze({
-			"0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC$1,
-			"0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e": USDT$2,
-			"0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS
-		}),
-		"43114": Object.freeze({
-			"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1,
-			"0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT$2,
-			"0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7": Object.freeze({
-				symbol: "WAVAX",
-				decimals: 18,
-				name: "Wrapped AVAX",
-				role: "wrapped-native"
-			})
-		}),
-		"57073": Object.freeze({
-			"0x2D270e6886d130D724215A266106e6832161EAEd": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC$1 }),
-		"60808": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"80094": Object.freeze({ "0x6969696969696969696969696969696969696969": Object.freeze({
-			symbol: "WBERA",
-			decimals: 18,
-			name: "Wrapped Bera",
-			role: "wrapped-native"
-		}) }),
-		"534352": Object.freeze({ "0x5300000000000000000000000000000000000004": WETH }),
-		"747474": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"5042002": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
-		"7777777": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"11142220": Object.freeze({ "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS })
-	});
-	var lookupEvmToken = (table, chainId, address) => {
-		var _table$String;
-		return (_table$String = table[String(chainId)]) === null || _table$String === void 0 ? void 0 : _table$String[address];
-	};
-	var MAX_UINT256 = 2n ** 256n - 1n;
-	var MAX_UINT160 = 2n ** 160n - 1n;
-	/** A fungible-token allowance; `max` is the type's maximum, which marks it unlimited. */
-	var allowanceChange = (token, spender, value, change, max, chainId, table, extra = {}) => {
-		const known = lookupEvmToken(table, chainId, token);
-		return _objectSpread2(_objectSpread2({
-			kind: "allowance",
-			spender,
-			amount: _objectSpread2({
-				asset: token,
-				amount: value.toString(10)
-			}, known === void 0 ? {} : {
-				symbol: known.symbol,
-				decimals: known.decimals
-			}),
-			change,
-			unlimited: change !== "decrease" && value === max
-		}, extra), {}, { verified: known !== void 0 });
-	};
-	/**
-	* The ERC-20/721/1155 selector table shared with TRON's TRC-20 decoding — its own module so the
-	* TRON bundle does not pull the rest of the EVM decoder (0x, Across, Lido, Seaport, Safe,
-	* typed-data). Permit2's approve/lockdown stay in decode.ts: they are gated on the Permit2 address,
-	* which a TRC-20 callee never is.
-	*/
-	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
-	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
-	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
-	var ERC20_DECREASE = from$2("function decreaseAllowance(address spender, uint256 subtractedValue)");
-	var SET_APPROVAL_FOR_ALL = from$2("function setApprovalForAll(address operator, bool approved)");
-	var ERC721_SAFE_FROM_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
-	var ERC1155_SAFE_BATCH_FROM = from$2("function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)");
-	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
-	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
-	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
-	function assertHex(data) {
-		if (!/^0x[0-9a-fA-F]*$/.test(data)) throw new ChainError("invalid-request", "call data is not 0x-prefixed hex");
-	}
-	var argAddress$3 = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
-		return checksumEvmAddress(value);
-	};
-	var argUint$3 = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
-		return value;
-	};
-	/**
-	* Decodes `data` as `fn` and verifies the encoding is canonical (re-encoding the decoded args
-	* reproduces the input byte-for-byte). Returns undefined on selector mismatch, decode failure or a
-	* non-canonical encoding — the caller falls through to the next candidate or the opaque class.
-	*/
-	var tryCall$4 = (fn, data) => {
-		const selector = getSelector(fn);
-		if (!data.toLowerCase().startsWith(selector)) return;
-		try {
-			assertHex(data);
-			const args = decodeData(fn, data);
-			if (!Array.isArray(args)) return;
-			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused) {
-			return;
-		}
-	};
-	var tokenFlow$1 = (target, to, amount, chainId, table) => {
-		const token = lookupEvmToken(table, chainId, target);
-		return {
-			flows: [{
-				to,
-				amount: _objectSpread2({
-					asset: target,
-					amount: amount.toString(10)
-				}, token === void 0 ? {} : {
-					symbol: token.symbol,
-					decimals: token.decimals
-				}),
-				verified: token !== void 0
-			}],
-			verified: token !== void 0
-		};
-	};
-	var argBool = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "boolean") throw new ChainError("invalid-request", "decoded argument is not a bool");
-		return value;
-	};
-	var argList$2 = (args, index) => {
-		const value = args[index];
-		if (!Array.isArray(value)) throw new ChainError("invalid-request", "decoded argument is not an array");
-		return value;
-	};
-	var nftFlow = (asset, to, id, value = 1n) => [{
-		to,
-		amount: {
-			asset,
-			amount: value.toString(10),
-			tokenId: id.toString(10)
-		},
-		verified: false
-	}];
-	/**
-	* The token-standard selectors, in the same order the EVM decoder tries them: transfer,
-	* approve/increaseAllowance/decreaseAllowance, setApprovalForAll, transferFrom, the two ERC-721
-	* safeTransferFrom forms, then ERC-1155 single and batch. `token` is the callee, `data` 0x hex.
-	*/
-	var decodeTokenCall = (token, data, chainId, table) => {
-		const transferArgs = tryCall$4(ERC20_TRANSFER, data);
-		if (transferArgs !== void 0) {
-			const { flows, verified } = tokenFlow$1(token, argAddress$3(transferArgs, 0), argUint$3(transferArgs, 1), chainId, table);
-			return {
-				summary: "transfer",
-				outflows: flows,
-				approvals: [],
-				verifiability: verified ? "full" : "partial"
-			};
-		}
-		for (const [fn, change] of [
-			[ERC20_APPROVE, "set"],
-			[ERC20_INCREASE, "increase"],
-			[ERC20_DECREASE, "decrease"]
-		]) {
-			const args = tryCall$4(fn, data);
-			if (args !== void 0) return {
-				summary: "approve",
-				outflows: [],
-				approvals: [allowanceChange(token, argAddress$3(args, 0), argUint$3(args, 1), change, MAX_UINT256, chainId, table)],
-				verifiability: "partial"
-			};
-		}
-		const operatorArgs = tryCall$4(SET_APPROVAL_FOR_ALL, data);
-		if (operatorArgs !== void 0) return {
-			summary: "approve",
-			outflows: [],
-			approvals: [{
-				kind: "operator",
-				asset: token,
-				spender: argAddress$3(operatorArgs, 0),
-				approved: argBool(operatorArgs, 1),
-				verified: false
-			}],
-			verifiability: "partial"
-		};
-		const transferFromArgs = tryCall$4(ERC721_TRANSFER_FROM, data);
-		if (transferFromArgs !== void 0) {
-			const to = argAddress$3(transferFromArgs, 1);
-			const id = argUint$3(transferFromArgs, 2);
-			if (lookupEvmToken(table, chainId, token) !== void 0) return {
-				summary: "transfer",
-				outflows: tokenFlow$1(token, to, id, chainId, table).flows,
-				approvals: [],
-				verifiability: "partial"
-			};
-			return {
-				summary: "transfer",
-				outflows: nftFlow(token, to, id),
-				approvals: [],
-				verifiability: "partial"
-			};
-		}
-		for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
-			const args = tryCall$4(fn, data);
-			if (args !== void 0) return {
-				summary: "transfer",
-				outflows: nftFlow(token, argAddress$3(args, 1), argUint$3(args, 2)),
-				approvals: [],
-				verifiability: "partial"
-			};
-		}
-		const erc1155Args = tryCall$4(ERC1155_SAFE_FROM, data);
-		if (erc1155Args !== void 0) return {
-			summary: "transfer",
-			outflows: nftFlow(token, argAddress$3(erc1155Args, 1), argUint$3(erc1155Args, 2), argUint$3(erc1155Args, 3)),
-			approvals: [],
-			verifiability: "partial"
-		};
-		const batchArgs = tryCall$4(ERC1155_SAFE_BATCH_FROM, data);
-		if (batchArgs !== void 0) {
-			const ids = argList$2(batchArgs, 2);
-			const values = argList$2(batchArgs, 3);
-			if (ids.length > 0 && ids.length === values.length) {
-				const to = argAddress$3(batchArgs, 1);
-				return {
-					summary: "transfer",
-					outflows: ids.flatMap((id, i) => {
-						var _values$i;
-						return nftFlow(token, to, argUint$3([id], 0), argUint$3([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0));
-					}),
-					approvals: [],
-					verifiability: "partial"
-				};
-			}
-		}
-	};
-	// packages/wallet-chains/dist/networks.mjs
-	init_objectSpread2();
-	var evm = (chainId, name, symbol, testnet) => ({
-		id: `eip155:${chainId}`,
-		family: "evm",
-		name,
-		symbol,
-		decimals: 18,
-		testnet,
-		chainId
-	});
-	var EVM_NETWORKS = [
-		evm(1, "Ethereum", "ETH", false),
-		evm(8453, "Base", "ETH", false),
-		evm(42161, "Arbitrum One", "ETH", false),
-		evm(10, "OP Mainnet", "ETH", false),
-		evm(137, "Polygon", "POL", false),
-		evm(56, "BNB Smart Chain", "BNB", false),
-		evm(999, "HyperEVM", "HYPE", false),
-		evm(43114, "Avalanche C-Chain", "AVAX", false),
-		evm(4663, "Robinhood Chain", "ETH", false),
-		evm(143, "Monad", "MON", false),
-		evm(5042, "Arc", "USDC", false),
-		evm(9745, "Plasma", "XPL", false),
-		evm(196, "X Layer", "OKB", false),
-		evm(1672, "Pharos", "PROS", false),
-		evm(5e3, "Mantle", "MNT", false),
-		evm(25, "Cronos", "CRO", false),
-		evm(100, "Gnosis", "xDAI", false),
-		evm(988, "Stable", "USDT0", false),
-		evm(747474, "Katana", "ETH", false),
-		evm(80094, "Berachain", "BERA", false),
-		evm(480, "World Chain", "ETH", false),
-		evm(130, "Unichain", "ETH", false),
-		evm(1329, "Sei", "SEI", false),
-		evm(59144, "Linea", "ETH", false),
-		evm(42220, "Celo", "CELO", false),
-		evm(146, "Sonic", "S", false),
-		evm(324, "ZKsync Era", "ETH", false),
-		evm(1868, "Soneium", "ETH", false),
-		evm(4326, "MegaETH", "ETH", false),
-		evm(8217, "Kaia", "KAIA", false),
-		evm(33139, "ApeChain", "APE", false),
-		evm(57073, "Ink", "ETH", false),
-		evm(252, "Fraxtal", "FRAX", false),
-		evm(2020, "Ronin", "RON", false),
-		evm(534352, "Scroll", "ETH", false),
-		evm(60808, "BOB", "ETH", false),
-		evm(204, "opBNB", "BNB", false),
-		evm(42170, "Arbitrum Nova", "ETH", false),
-		evm(167e3, "Taiko", "ETH", false),
-		evm(14, "Flare", "FLR", false),
-		evm(7777777, "Zora", "ETH", false),
-		evm(11155111, "Sepolia", "ETH", true),
-		evm(84532, "Base Sepolia", "ETH", true),
-		evm(421614, "Arbitrum Sepolia", "ETH", true),
-		evm(11155420, "OP Sepolia", "ETH", true),
-		evm(80002, "Polygon Amoy", "POL", true),
-		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm(998, "HyperEVM Testnet", "HYPE", true),
-		evm(43113, "Avalanche Fuji", "AVAX", true),
-		evm(46630, "Robinhood Chain Testnet", "ETH", true),
-		evm(10143, "Monad Testnet", "MON", true),
-		evm(5042002, "Arc Testnet", "USDC", true),
-		evm(1952, "X Layer Testnet", "OKB", true),
-		evm(5003, "Mantle Sepolia", "MNT", true),
-		evm(10200, "Gnosis Chiado", "xDAI", true),
-		evm(1301, "Unichain Sepolia", "ETH", true),
-		evm(1328, "Sei Testnet", "SEI", true),
-		evm(59141, "Linea Sepolia", "ETH", true),
-		evm(11142220, "Celo Sepolia", "CELO", true),
-		evm(14601, "Sonic Testnet", "S", true),
-		evm(300, "ZKsync Sepolia", "ETH", true),
-		evm(1946, "Soneium Minato", "ETH", true),
-		evm(33111, "ApeChain Curtis", "APE", true),
-		evm(763373, "Ink Sepolia", "ETH", true),
-		evm(2523, "Fraxtal Hoodi", "FRAX", true),
-		evm(5611, "opBNB Testnet", "tBNB", true),
-		evm(999999999, "Zora Sepolia", "ETH", true)
-	];
-	var BUILT_IN_NETWORKS = Object.freeze([
-		...EVM_NETWORKS,
-		{
-			id: "bip122:000000000019d6689c085ae165831e93",
-			chainId: 0,
-			name: "Bitcoin",
-			symbol: "BTC",
-			decimals: 8,
-			testnet: false,
-			family: "bitcoin",
-			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-		},
-		{
-			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
-			chainId: 0,
-			name: "Bitcoin Testnet4",
-			symbol: "tBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
-		},
-		{
-			id: "bip122:00000008819873e925422c1ff0f99f7c",
-			chainId: 0,
-			name: "Bitcoin Signet",
-			symbol: "sBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
-		},
-		{
-			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
-			chainId: 0,
-			name: "Bitcoin Regtest",
-			symbol: "rBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
-		},
-		{
-			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-			chainId: 0,
-			name: "Solana",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: false,
-			family: "solana",
-			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
-		},
-		{
-			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-			chainId: 0,
-			name: "Solana Devnet",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: true,
-			family: "solana",
-			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
-		},
-		{
-			id: "tron:728126428",
-			family: "tron",
-			name: "TRON",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: false,
-			chainId: 728126428,
-			genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"
-		},
-		{
-			id: "tron:2494104990",
-			family: "tron",
-			name: "TRON Shasta",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: true,
-			chainId: 2494104990,
-			genesisHash: "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e"
-		},
-		{
-			id: "tron:3448148188",
-			family: "tron",
-			name: "TRON Nile",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: true,
-			chainId: 3448148188,
-			genesisHash: "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc"
-		}
-	]);
-	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
-	/**
-	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
-	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
-	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
-	*/
-	var withNativeAmountMeta = (intent, network, asset, decimals) => {
-		var _networkMeta;
-		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
-		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
-		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
-			amount: amount(a.amount),
-			receive: amount(a.receive)
-		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) }), i.message === void 0 || i.message.kind !== "typed-data" ? {} : { message: _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i.message), i.message.seaport === void 0 ? {} : { seaport: _objectSpread2(_objectSpread2({}, i.message.seaport), {}, {
-			offer: i.message.seaport.offer.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
-				startAmount: amount(item.startAmount),
-				endAmount: amount(item.endAmount)
-			})),
-			consideration: i.message.seaport.consideration.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
-				startAmount: amount(item.startAmount),
-				endAmount: amount(item.endAmount)
-			}))
-		}) }), i.message.order === void 0 ? {} : { order: _objectSpread2(_objectSpread2({}, i.message.order), {}, {
-			give: amount(i.message.order.give),
-			receive: i.message.order.receive.map((leg) => _objectSpread2(_objectSpread2({}, leg), {}, { amount: amount(leg.amount) }))
-		}) }), i.message.safe === void 0 ? {} : { safe: _objectSpread2(_objectSpread2({}, i.message.safe), {}, { calls: i.message.safe.calls.map(decorate) }, i.message.safe.refund === void 0 ? {} : { refund: _objectSpread2(_objectSpread2({}, i.message.safe.refund), {}, {
-			gasPrice: amount(i.message.safe.refund.gasPrice),
-			amount: amount(i.message.safe.refund.amount)
-		}) }) }) });
-		return decorate(intent);
-	};
-	// packages/wallet-chains/dist/families-D4rDj2e-.mjs
-	var RECOGNISED_FAMILIES = [
-		{
-			family: "Hyperliquid L1",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Exchange",
-				primaryType: /^Agent$/
-			},
-			nearMiss: "typed-data-commitment"
-		},
-		{
-			family: "Hyperliquid",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "HyperliquidSignTransaction"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket exchange",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Polymarket CTF Exchange"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket CLOB auth",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "ClobAuthDomain"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket deposit wallet",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "DepositWallet"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "built-in token",
-			claim: {
-				surface: "evm.call",
-				callee: "token-table"
-			},
-			nearMiss: "token-function"
-		},
-		{
-			family: "built-in TRON token",
-			claim: {
-				surface: "tron.call",
-				callee: "token-table"
-			},
-			nearMiss: "token-function"
-		},
-		{
-			family: "permit",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^Permit/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Permit2",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "permit2"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "built-in token signature",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "token-table"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Safe",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^SafeTx$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Seaport",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^(?:OrderComponents|BulkOrder)$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Seaport",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "seaport"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "1inch",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "1inch Aggregation Router",
-				contracts: [
-					"0x111111125421cA6dc452d289314280a0f8842A65",
-					"0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
-					"0x1111111254EEB25477B68fb85Ed929f73A960582"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "1inch LOP",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "1inch Limit Order Protocol",
-				contracts: [
-					"0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
-					"0x11431a89893025D2a48dCA4EddC396f8C8117187",
-					"0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
-					"0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
-					"0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "CoW",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Gnosis Protocol",
-				contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Snapshot",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "snapshot",
-				primaryType: /^Vote$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "0x",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "ZeroEx",
-				contracts: ["0xDef1C0ded9bec7F1a1670819833240f027b25EfF", "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Blur",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Blur Exchange",
-				contracts: [
-					"0x000000000000Ad05Ccc4F10045630fb830B95127",
-					"0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
-					"0x29469395eAf6f95920E59F858042f0e28D98a20B"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "LooksRare",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "LooksRareProtocol",
-				contracts: ["0x0000000000E655fAe4d56241588680F86E3b2377"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Bebop",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "BebopSettlement",
-				contracts: ["0xbbbbbBB520d69a9775E85b458C58c648259FAD5F"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Bebop",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "JamSettlement",
-				contracts: ["0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Paraswap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "AUGUSTUS RFQ",
-				contracts: [
-					"0xe92b586627ccA7a83dC919cc7127196d70f55a06",
-					"0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
-					"0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
-					"0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Velora Delta",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Portikus",
-				contracts: ["0x0000000000bbF5c5Fd284e657F01Bd000933C96D"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "KyberSwap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Kyber Limit Order Protocol",
-				contracts: ["0x227B0c196eA8db17A665EA6824D972A64202E936"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "KyberSwap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Kyber DSLO Protocol",
-				contracts: ["0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "OpenOcean",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "openocean Limit Order Protocol",
-				contracts: [
-					"0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
-					"0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
-					"0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
-					"0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
-					"0xB45373129B4220160b92bd2320869f44d48eCd01",
-					"0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
-					"0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
-					"0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
-					"0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
-					"0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
-					"0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
-					"0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Odos",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "OdosLimitOrderRouter",
-				contracts: [
-					"0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
-					"0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
-					"0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
-					"0x93052961c75c92Fd5d6362655936C239EF2D5336",
-					"0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
-					"0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
-					"0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
-					"0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
-					"0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
-					"0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
-					"0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "System",
-			claim: {
-				surface: "solana.instruction",
-				program: "system"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Token",
-			claim: {
-				surface: "solana.instruction",
-				program: "token"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Token-2022",
-			claim: {
-				surface: "solana.instruction",
-				program: "token2022"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Stake",
-			claim: {
-				surface: "solana.instruction",
-				program: "stake"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Associated Token",
-			claim: {
-				surface: "solana.instruction",
-				program: "associatedToken"
-			},
-			nearMiss: "core-instruction"
-		}
-	];
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/ContractAddress.js
 	/**
 	* Computes contract address via [CREATE](https://ethereum.stackexchange.com/questions/68943/create-opcode-what-does-it-really-do/68945#68945) opcode.
@@ -24141,8 +24600,6 @@ zoo`.split("\n"));
 	// packages/wallet-chains/dist/evm.mjs
 	init_utils$2();
 	init_objectSpread2();
-	/** The native asset id in `AssetFlow` and simulated asset changes. */
-	var EVM_NATIVE_ASSET = "native";
 	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
 	* address only. Verified against the Across deployments registry on 2026-11-08.
@@ -24173,11 +24630,11 @@ zoo`.split("\n"));
 	var DEPOSIT$1 = from$2("function deposit(bytes32 depositor, bytes32 recipient, bytes32 inputToken, bytes32 outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, bytes32 exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityParameter, bytes message)");
 	var DEPOSIT_V3 = from$2("function depositV3(address depositor, address recipient, address inputToken, address outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, address exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes message)");
 	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
-	var tryCall$3 = (fn, data) => {
+	var tryCall$4 = (fn, data) => {
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			const reencoded = encodeData$1(fn, args).toLowerCase();
@@ -24187,7 +24644,7 @@ zoo`.split("\n"));
 		}
 	};
 	/** A bytes32 carrying an EVM address must be left-padded; anything else is a non-EVM target. */
-	var paddedAddress = (value) => {
+	var paddedAddress$1 = (value) => {
 		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) return;
 		if (value.slice(2, 26) !== "000000000000000000000000") return;
 		return checksumEvmAddress(`0x${value.slice(26)}`);
@@ -24222,8 +24679,8 @@ zoo`.split("\n"));
 		var _ref, _ACROSS_WRAPPED_NATIV;
 		const pool = ACROSS_SPOKEPOOLS[chainId];
 		if (pool === void 0 || call.to === void 0 || call.to.toLowerCase() !== pool.toLowerCase()) return;
-		const v4 = tryCall$3(DEPOSIT$1, call.data);
-		const v3 = v4 === void 0 ? tryCall$3(DEPOSIT_V3, call.data) : void 0;
+		const v4 = tryCall$4(DEPOSIT$1, call.data);
+		const v3 = v4 === void 0 ? tryCall$4(DEPOSIT_V3, call.data) : void 0;
 		if (v4 === void 0 && v3 === void 0) return;
 		const args = (_ref = v4 !== null && v4 !== void 0 ? v4 : v3) !== null && _ref !== void 0 ? _ref : [];
 		const [depositor, recipient, inputToken, outputToken] = [
@@ -24231,7 +24688,7 @@ zoo`.split("\n"));
 			1,
 			2,
 			3
-		].map((i) => v4 === void 0 ? argAddress$2(args, i) : paddedAddress(args[i]));
+		].map((i) => v4 === void 0 ? argAddress$2(args, i) : paddedAddress$1(args[i]));
 		if (depositor === void 0 || recipient === void 0 || inputToken === void 0 || outputToken === void 0) return;
 		const inputAmount = argUint$2(args, 4);
 		const outputAmount = argUint$2(args, 5);
@@ -24656,20 +25113,20 @@ zoo`.split("\n"));
 	var BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 	var bytes32 = (value) => typeof value === "string" && BYTES32.test(value) ? value.toLowerCase() : void 0;
 	var nonZero = (hex) => hex === ZERO_BYTES32 ? void 0 : hex;
-	var uint$2 = (value) => typedDataUint(value, MAX_UINT256$1);
+	var uint = (value) => typedDataUint(value, MAX_UINT256$1);
 	var sameAddress = (a, b) => a !== void 0 && b !== void 0 && a.toLowerCase() === b.toLowerCase();
 	/** The strict parse both `Order` and `TypedDataSign.contents` share. */
 	var orderValues = (message) => {
 		const maker = typedDataAddress(message["maker"]);
 		const signer = typedDataAddress(message["signer"]);
-		const tokenId = uint$2(message["tokenId"]);
-		const makerAmount = uint$2(message["makerAmount"]);
-		const takerAmount = uint$2(message["takerAmount"]);
-		const side = uint$2(message["side"]);
-		const signatureType = uint$2(message["signatureType"]);
+		const tokenId = uint(message["tokenId"]);
+		const makerAmount = uint(message["makerAmount"]);
+		const takerAmount = uint(message["takerAmount"]);
+		const side = uint(message["side"]);
+		const signatureType = uint(message["signatureType"]);
 		const metadata = bytes32(message["metadata"]);
 		const builder = bytes32(message["builder"]);
-		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint$2(message["salt"]) === void 0 || uint$2(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
+		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint(message["salt"]) === void 0 || uint(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
 		const meta = nonZero(metadata);
 		const code = nonZero(builder);
 		return _objectSpread2(_objectSpread2({
@@ -24754,7 +25211,7 @@ zoo`.split("\n"));
 		const { message } = json;
 		const wallet = typedDataAddress(message["verifyingContract"]);
 		const { contents } = message;
-		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint$2(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
+		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
 		const order = orderValues(contents);
 		if (order === void 0 || order.signatureType !== 3n || !sameAddress(order.signer, wallet) || !sameAddress(order.maker, wallet)) return;
 		const content = orderContent(order, exchange, "deposit-wallet");
@@ -24776,7 +25233,7 @@ zoo`.split("\n"));
 		if (json.primaryType !== "ClobAuth" || domain["name"] !== "ClobAuthDomain" || domain["version"] !== "1" || chainId !== 137 && chainId !== 80002 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN_AUTH) || !typeSet(types, ["EIP712Domain", "ClobAuth"]) || !sameFields(types, "ClobAuth", CLOB_AUTH_FIELDS)) return;
 		const address = typedDataAddress(message["address"]);
 		const { timestamp } = message;
-		const nonce = uint$2(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		if (address === void 0 || !sameAddress(address, context.signer) || message["message"] !== CLOB_AUTH_MESSAGE || typeof timestamp !== "string" || !/^[0-9]{1,12}$/.test(timestamp) || nonce === void 0) return;
 		return {
 			content: { polymarket: {
@@ -24801,7 +25258,7 @@ zoo`.split("\n"));
 			"Batch",
 			"Call"
 		]) || !sameFields(types, "Batch", BATCH_FIELDS) || !sameFields(types, "Call", CALL_FIELDS) || !sameAddress(typedDataAddress(message["wallet"]), wallet)) return;
-		const nonce = uint$2(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		const deadline = typedDataUint(message["deadline"], MAX_UINT48);
 		const calls = typedDataMessages(message["calls"]);
 		if (nonce === void 0 || deadline === void 0 || calls === void 0 || calls.length === 0) return;
@@ -24822,7 +25279,7 @@ zoo`.split("\n"));
 		const decoded = [];
 		for (const call of calls) {
 			const target = typedDataAddress(call["target"]);
-			const value = uint$2(call["value"]);
+			const value = uint(call["value"]);
 			const data = typedDataBytes(call["data"]);
 			if (target === void 0 || value === void 0 || data === void 0) return;
 			decoded.push(decodeCall({
@@ -24865,26 +25322,106 @@ zoo`.split("\n"));
 		}, polymarket.blind === void 0 ? {} : { blind: polymarket.blind });
 	};
 	/**
-	* An order leg amount: the chain's native asset when `token` matches `nativeMarker` — each protocol
-	* names its own marker and the leg it applies to (UniswapX: the zero address, outputs only —
-	* `CurrencyLibrary.NATIVE = address(0)`; CoW: `BUY_ETH_ADDRESS`, the buy token only); with no
-	* marker every address is an ERC-20 (1inch signs no native asset). The native symbol/decimals are
-	* attached by `withNativeAmountMeta` like every native amount; an ERC-20 gets symbol/decimals when
-	* the token is in the built-in table.
+	* CCTP TokenMessengerV2 `depositForBurnWithHook` deposits USDC into Hyperliquid via Circle's
+	* CctpForwarder on HyperEVM (destination domain 19). Only the Hyperliquid route is described — a
+	* call to the messenger on these chains that does not match it exactly is blind
+	* (`cctp-destination`): an unrecognised hook could send the burn anywhere.
+	*
+	* Verified on chain 2026-11-21 (code present).
 	*/
-	var orderAmount = (token, amount, chainId, table, nativeMarker) => {
-		if (nativeMarker !== void 0 && token.toLowerCase() === nativeMarker) return {
-			asset: EVM_NATIVE_ASSET,
-			amount: amount.toString(10)
+	var CCTP_MESSENGERS = {
+		42161: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+		421614: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA"
+	};
+	var CCTP_USDC = {
+		42161: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+		421614: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d"
+	};
+	/** Circle's CctpForwarder on HyperEVM (999 mainnet, 998 testnet) — the mint recipient on domain 19. */
+	var CCTP_FORWARDERS = {
+		42161: "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757",
+		421614: "0x02e39ECb8368b41bF68FF99ff351aC9864e5E2a2"
+	};
+	var DEPOSIT_WITH_HOOK = from$2("function depositForBurnWithHook(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold, bytes hookData)");
+	/** `call.to` is this chain's TokenMessengerV2 — the call is CCTP territory, described or blind. */
+	var isCctpMessenger = (chainId, to) => {
+		var _CCTP_MESSENGERS$chai;
+		return to !== void 0 && to.toLowerCase() === ((_CCTP_MESSENGERS$chai = CCTP_MESSENGERS[chainId]) === null || _CCTP_MESSENGERS$chai === void 0 ? void 0 : _CCTP_MESSENGERS$chai.toLowerCase());
+	};
+	/** Strict canonical decode — unlike Across, no calldata suffix is tolerated. */
+	var tryCall$3 = (fn, data) => {
+		if (!data.toLowerCase().startsWith(getSelector(fn))) return;
+		try {
+			assertHex$2(data, "data");
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+		} catch (_unused2) {
+			return;
+		}
+	};
+	var paddedAddress = (value) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) return;
+		if (value.slice(2, 26) !== "000000000000000000000000") return;
+		return checksumEvmAddress(`0x${value.slice(26)}`);
+	};
+	var FORWARD_PREFIX_HEX = "636374702d666f7277617264";
+	/** The 56-byte Hyperliquid forward hook: tag, zeros, version 0, length 24, recipient, dex. */
+	var decodeHook = (value, from) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{112}$/.test(value)) return;
+		const hex = value.slice(2);
+		if (!hex.startsWith(FORWARD_PREFIX_HEX)) return;
+		if (hex.slice(24, 48) !== "000000000000000000000000") return;
+		if (hex.slice(48, 56) !== "00000000" || hex.slice(56, 64) !== "00000018") return;
+		const recipient = checksumEvmAddress(`0x${hex.slice(64, 104)}`);
+		if (recipient.toLowerCase() !== from.toLowerCase()) return;
+		const dex = hex.slice(104, 112);
+		if (dex !== "00000000" && dex !== "ffffffff") return;
+		return {
+			recipient,
+			dex: dex === "00000000" ? "perps" : "spot"
 		};
-		const found = lookupEvmToken(table, chainId, token);
-		return _objectSpread2({
-			asset: token,
-			amount: amount.toString(10)
-		}, found === void 0 ? {} : {
-			symbol: found.symbol,
-			decimals: found.decimals
-		});
+	};
+	/**
+	* A fully described Hyperliquid deposit: the burn is bounded by `amount` USDC to this chain's
+	* verified TokenMessengerV2, routed to the forwarder on domain 19, and the hook commits the
+	* depositor's own address plus a perps/spot dex and a `maxFee` strictly below the amount.
+	*/
+	var decodeCctp = (chainId, call, from, table) => {
+		var _paddedAddress, _paddedAddress2;
+		const messenger = CCTP_MESSENGERS[chainId];
+		const usdc = CCTP_USDC[chainId];
+		const forwarder = CCTP_FORWARDERS[chainId];
+		if (messenger === void 0 || usdc === void 0 || forwarder === void 0 || !isCctpMessenger(chainId, call.to) || call.value !== 0n) return;
+		const args = tryCall$3(DEPOSIT_WITH_HOOK, call.data);
+		if (args === void 0) return;
+		const [amount, domain, mintRecipient, burnToken, destinationCaller, maxFee] = args;
+		const burn = typeof burnToken === "string" && /^0x[0-9a-fA-F]{40}$/.test(burnToken) ? checksumEvmAddress(burnToken) : void 0;
+		if (typeof amount !== "bigint" || typeof maxFee !== "bigint" || domain !== 19 || burn === void 0 || burn.toLowerCase() !== usdc.toLowerCase() || ((_paddedAddress = paddedAddress(mintRecipient)) === null || _paddedAddress === void 0 ? void 0 : _paddedAddress.toLowerCase()) !== forwarder.toLowerCase() || ((_paddedAddress2 = paddedAddress(destinationCaller)) === null || _paddedAddress2 === void 0 ? void 0 : _paddedAddress2.toLowerCase()) !== forwarder.toLowerCase() || maxFee <= 0n || maxFee >= amount) return;
+		const hook = decodeHook(args.at(7), from);
+		if (hook === void 0) return;
+		const meta = table === void 0 ? void 0 : lookupEvmToken(table, chainId, usdc);
+		const amountOf = (v) => meta === void 0 ? {
+			asset: usdc,
+			amount: v.toString(10)
+		} : {
+			asset: usdc,
+			amount: v.toString(10),
+			decimals: meta.decimals,
+			symbol: meta.symbol
+		};
+		return {
+			outflows: [{
+				to: messenger,
+				amount: amountOf(amount),
+				verified: true
+			}],
+			hyperliquidDeposit: {
+				recipient: hook.recipient,
+				dex: hook.dex,
+				maxFee: amountOf(maxFee)
+			}
+		};
 	};
 	/**
 	* The chains the settlement's `domainSeparator()` was verified on
@@ -24920,7 +25457,7 @@ zoo`.split("\n"));
 		"string sellTokenBalance",
 		"string buyTokenBalance"
 	];
-	var ZERO$3 = "0x0000000000000000000000000000000000000000";
+	var ZERO$2 = "0x0000000000000000000000000000000000000000";
 	var BUY_ETH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 	var KINDS = /* @__PURE__ */ new Set(["sell", "buy"]);
 	var SELL_BALANCES = /* @__PURE__ */ new Set([
@@ -24946,13 +25483,13 @@ zoo`.split("\n"));
 		const buyAmount = typedDataUint(message["buyAmount"], MAX_UINT256);
 		const feeAmount = typedDataUint(message["feeAmount"], MAX_UINT256);
 		const validTo = typedDataUint(message["validTo"], 2n ** 32n - 1n);
-		if (sellToken === void 0 || buyToken === void 0 || sellToken.toLowerCase() === ZERO$3 || sellToken.toLowerCase() === BUY_ETH || buyToken.toLowerCase() === ZERO$3 || receiver === void 0 || sellAmount === void 0 || buyAmount === void 0 || feeAmount === void 0 || validTo === void 0 || sellAmount + feeAmount > MAX_UINT256) return;
+		if (sellToken === void 0 || buyToken === void 0 || sellToken.toLowerCase() === ZERO$2 || sellToken.toLowerCase() === BUY_ETH || buyToken.toLowerCase() === ZERO$2 || receiver === void 0 || sellAmount === void 0 || buyAmount === void 0 || feeAmount === void 0 || validTo === void 0 || sellAmount + feeAmount > MAX_UINT256) return;
 		return {
 			protocol: "cow",
 			maker: checksumEvmAddress(signer),
 			give: orderAmount(sellToken, sellAmount + feeAmount, chainId, table),
 			receive: [{
-				recipient: receiver.toLowerCase() === ZERO$3 ? checksumEvmAddress(signer) : receiver,
+				recipient: receiver.toLowerCase() === ZERO$2 ? checksumEvmAddress(signer) : receiver,
 				amount: orderAmount(buyToken, buyAmount, chainId, table, BUY_ETH)
 			}],
 			expiry: Number(validTo),
@@ -25031,7 +25568,7 @@ zoo`.split("\n"));
 			endAmount: amount(kind, token, end, identifier, chainId, table)
 		};
 	};
-	var all$1$1 = (list, build) => {
+	var all$2 = (list, build) => {
 		const built = list === null || list === void 0 ? void 0 : list.map(build);
 		return built === void 0 || built.some((entry) => entry === void 0) ? void 0 : built.filter((entry) => entry !== void 0);
 	};
@@ -25048,8 +25585,8 @@ zoo`.split("\n"));
 		const zone = typedDataAddress(message["zone"]);
 		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
 		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
-		const offer = all$1$1(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
-		const consideration = all$1$1(typedDataMessages(message["consideration"]), (entry) => {
+		const offer = all$2(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
+		const consideration = all$2(typedDataMessages(message["consideration"]), (entry) => {
 			const base = item(entry, chainId, table);
 			const recipient = typedDataAddress(entry["recipient"]);
 			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
@@ -25119,17 +25656,17 @@ zoo`.split("\n"));
 	var REQUEST_PERMIT = from$2("function requestWithdrawalsWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
 	var REQUEST_WSTETH_PERMIT = from$2("function requestWithdrawalsWstETHWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
 	var CLAIM = from$2("function claimWithdrawals(uint256[] requestIds, uint256[] hints)");
-	var ZERO$2 = "0x0000000000000000000000000000000000000000";
+	var ZERO$1 = "0x0000000000000000000000000000000000000000";
 	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
 	var tryCall$2 = (fn, data) => {
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused2) {
+		} catch (_unused3) {
 			return;
 		}
 	};
@@ -25198,7 +25735,7 @@ zoo`.split("\n"));
 			if (args === void 0) continue;
 			const total = argList$1(args, 0).reduce((sum, amount) => sum + amount, 0n);
 			const raw = argAddress$1(args, 1);
-			const owner = raw === ZERO$2 ? signer : raw;
+			const owner = raw === ZERO$1 ? signer : raw;
 			const action = {
 				kind: "lido-request",
 				token,
@@ -25280,7 +25817,7 @@ zoo`.split("\n"));
 	var NO_PARTIAL_FILLS = 1n << 255n;
 	var ALLOWED_SENDER = (1n << 80n) - 1n;
 	var EXPIRATION = (1n << 40n) - 1n << 80n;
-	var ZERO$1 = "0x0000000000000000000000000000000000000000";
+	var ZERO = "0x0000000000000000000000000000000000000000";
 	var PSEUDO_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 	/** The order under the exact Aggregation Router v6 domain, or `undefined` — a near miss. */
 	var recognizeOneinch = (json, chainId, table) => {
@@ -25300,7 +25837,7 @@ zoo`.split("\n"));
 		const makingAmount = typedDataUint(message["makingAmount"], MAX_UINT256);
 		const takingAmount = typedDataUint(message["takingAmount"], MAX_UINT256);
 		const traits = typedDataUint(message["makerTraits"], MAX_UINT256);
-		if (maker === void 0 || receiver === void 0 || makerAsset === void 0 || takerAsset === void 0 || makingAmount === void 0 || takingAmount === void 0 || traits === void 0 || typedDataUint(message["salt"], MAX_UINT256) === void 0 || makerAsset.toLowerCase() === ZERO$1 || makerAsset.toLowerCase() === PSEUDO_NATIVE || takerAsset.toLowerCase() === ZERO$1 || takerAsset.toLowerCase() === PSEUDO_NATIVE || (traits & REJECTED) !== 0n) return;
+		if (maker === void 0 || receiver === void 0 || makerAsset === void 0 || takerAsset === void 0 || makingAmount === void 0 || takingAmount === void 0 || traits === void 0 || typedDataUint(message["salt"], MAX_UINT256) === void 0 || makerAsset.toLowerCase() === ZERO || makerAsset.toLowerCase() === PSEUDO_NATIVE || takerAsset.toLowerCase() === ZERO || takerAsset.toLowerCase() === PSEUDO_NATIVE || (traits & REJECTED) !== 0n) return;
 		const expiry = (traits & EXPIRATION) >> 80n;
 		const allowed = traits & ALLOWED_SENDER;
 		return _objectSpread2(_objectSpread2({
@@ -25308,407 +25845,10 @@ zoo`.split("\n"));
 			maker,
 			give: orderAmount(makerAsset, makingAmount, chainId, table),
 			receive: [{
-				recipient: receiver.toLowerCase() === ZERO$1 ? maker : receiver,
+				recipient: receiver.toLowerCase() === ZERO ? maker : receiver,
 				amount: orderAmount(takerAsset, takingAmount, chainId, table)
 			}]
 		}, expiry === 0n ? {} : { expiry: Number(expiry) }), {}, { partialFill: (traits & NO_PARTIAL_FILLS) === 0n }, allowed === 0n ? {} : { allowedSender: `0x${allowed.toString(16).padStart(20, "0")}` });
-	};
-	var ORDER_INFO = [
-		"address reactor",
-		"address swapper",
-		"uint256 nonce",
-		"uint256 deadline",
-		"address additionalValidationContract",
-		"bytes additionalValidationData"
-	];
-	var DUTCH_OUTPUT = [
-		"address token",
-		"uint256 startAmount",
-		"uint256 endAmount",
-		"address recipient"
-	];
-	var ORDER_TYPES = {
-		ExclusiveDutchOrder: {
-			ExclusiveDutchOrder: [
-				"OrderInfo info",
-				"uint256 decayStartTime",
-				"uint256 decayEndTime",
-				"address exclusiveFiller",
-				"uint256 exclusivityOverrideBps",
-				"address inputToken",
-				"uint256 inputStartAmount",
-				"uint256 inputEndAmount",
-				"DutchOutput[] outputs"
-			],
-			OrderInfo: ORDER_INFO,
-			DutchOutput: DUTCH_OUTPUT
-		},
-		V2DutchOrder: {
-			V2DutchOrder: [
-				"OrderInfo info",
-				"address cosigner",
-				"address baseInputToken",
-				"uint256 baseInputStartAmount",
-				"uint256 baseInputEndAmount",
-				"DutchOutput[] baseOutputs"
-			],
-			OrderInfo: ORDER_INFO,
-			DutchOutput: DUTCH_OUTPUT
-		},
-		V3DutchOrder: {
-			V3DutchOrder: [
-				"OrderInfo info",
-				"address cosigner",
-				"uint256 startingBaseFee",
-				"V3DutchInput baseInput",
-				"V3DutchOutput[] baseOutputs"
-			],
-			OrderInfo: ORDER_INFO,
-			V3DutchInput: [
-				"address token",
-				"uint256 startAmount",
-				"NonlinearDutchDecay curve",
-				"uint256 maxAmount",
-				"uint256 adjustmentPerGweiBaseFee"
-			],
-			V3DutchOutput: [
-				"address token",
-				"uint256 startAmount",
-				"NonlinearDutchDecay curve",
-				"address recipient",
-				"uint256 minAmount",
-				"uint256 adjustmentPerGweiBaseFee"
-			],
-			NonlinearDutchDecay: ["uint256 relativeBlocks", "int256[] relativeAmounts"]
-		},
-		PriorityOrder: {
-			PriorityOrder: [
-				"OrderInfo info",
-				"address cosigner",
-				"uint256 auctionStartBlock",
-				"uint256 baselinePriorityFeeWei",
-				"PriorityInput input",
-				"PriorityOutput[] outputs"
-			],
-			OrderInfo: ORDER_INFO,
-			PriorityInput: [
-				"address token",
-				"uint256 amount",
-				"uint256 mpsPerPriorityFeeWei"
-			],
-			PriorityOutput: [
-				"address token",
-				"uint256 amount",
-				"uint256 mpsPerPriorityFeeWei",
-				"address recipient"
-			]
-		}
-	};
-	var PERMIT2_TYPES = {
-		EIP712Domain: [
-			"string name",
-			"uint256 chainId",
-			"address verifyingContract"
-		],
-		TokenPermissions: ["address token", "uint256 amount"]
-	};
-	/**
-	* The reactors verified for each chain and order type (UniswapX README "Deployment Addresses" at
-	* eb7ce077036258b9510b42ad37aa920cf3aaf308; probed on-chain — code present, `permit2()` = the
-	* Permit2 address — in vectors/chains/order-protocols.json). Chains whose deployment could not be
-	* verified are left out, so their orders fall back.
-	*/
-	var REACTORS = {
-		1: {
-			ExclusiveDutchOrder: "0x6000da47483062a0d734ba3dc7576ce6a0b645c4",
-			V2DutchOrder: "0x00000011f84b9aa48e5f8aa8b9897600006289be",
-			V3DutchOrder: "0x0000000015757c461808ea25eb309638b62681cf"
-		},
-		10: { V3DutchOrder: "0x000000000923439a92dae8930613568824108631" },
-		56: { V3DutchOrder: "0x00000000a55e50c71b70db3c8b58749cd1e18eb2" },
-		130: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
-		137: { V3DutchOrder: "0x00000000bab6e234db8ad638b6a6395b7c499bc4" },
-		143: { V3DutchOrder: "0x000000000ac008f7e07210cfb6648e40249232c2" },
-		196: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
-		480: { V3DutchOrder: "0x00000000d714ea34028930b762e96bfbe50f42c2" },
-		1868: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
-		8453: {
-			V3DutchOrder: "0x000000008a8330b5d1f43a62bf4c673a49f27ba0",
-			PriorityOrder: "0x000000001ec5656dcdb24d90dfa42742738de729"
-		},
-		42161: { V3DutchOrder: "0xb274d5f4b833b61b340b654d600a864fb604a87c" },
-		42220: { V3DutchOrder: "0x00000000b8077fdf2281a80be96f6c282b5d943a" },
-		43114: { V3DutchOrder: "0x00000000862ccf095823fc7576fa6c7e6b7385ef" }
-	};
-	var ZERO = "0x0000000000000000000000000000000000000000";
-	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
-	var address$1 = (message, key) => typedDataAddress(message[key]);
-	var uint$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
-	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
-	var parse = (type, witness) => {
-		const { info } = witness;
-		if (!isTypedDataMessage(info)) return;
-		const output = (item, amount) => {
-			if (!isTypedDataMessage(item)) return;
-			const token = address$1(item, "token");
-			const value = amount(item);
-			const recipient = address$1(item, "recipient");
-			return token === void 0 || value === void 0 || recipient === void 0 ? void 0 : {
-				token,
-				amount: value,
-				recipient
-			};
-		};
-		const outputsOf = (key, amount) => {
-			const raw = witness[key];
-			if (!Array.isArray(raw) || raw.length === 0) return;
-			const outputs = [];
-			for (const item of raw) {
-				const parsed = output(item, amount);
-				if (parsed === void 0) return;
-				outputs.push(parsed);
-			}
-			return outputs;
-		};
-		const dutch = (m) => {
-			const start = uint$1(m, "startAmount");
-			const end = uint$1(m, "endAmount");
-			return start === void 0 || end === void 0 ? void 0 : start < end ? start : end;
-		};
-		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
-			const exclusive = type === "ExclusiveDutchOrder";
-			const prefix = exclusive ? "input" : "baseInput";
-			const inputToken = address$1(witness, `${prefix}Token`);
-			const start = uint$1(witness, `${prefix}StartAmount`);
-			const end = uint$1(witness, `${prefix}EndAmount`);
-			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
-			const filler = exclusive ? address$1(witness, "exclusiveFiller") : void 0;
-			const decayed = uint$1(witness, "decayStartTime") !== void 0 && uint$1(witness, "decayEndTime") !== void 0 && uint$1(witness, "exclusivityOverrideBps") !== void 0;
-			const cosigned = exclusive || address$1(witness, "cosigner") !== void 0;
-			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
-			return _objectSpread2({
-				info,
-				inputToken,
-				giveAmount: start > end ? start : end,
-				outputs
-			}, exclusive && filler !== void 0 && filler.toLowerCase() !== ZERO ? { exclusiveFiller: filler } : {});
-		}
-		if (type === "V3DutchOrder") {
-			const input = witness["baseInput"];
-			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "startingBaseFee") === void 0) return;
-			const inputToken = address$1(input, "token");
-			const maxAmount = uint$1(input, "maxAmount");
-			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1(m, "minAmount") : void 0);
-			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
-				info,
-				inputToken,
-				giveAmount: maxAmount,
-				outputs
-			};
-		}
-		const { input } = witness;
-		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "auctionStartBlock") === void 0 || uint$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1(input, "mpsPerPriorityFeeWei") === void 0) return;
-		const inputToken = address$1(input, "token");
-		const amount = uint$1(input, "amount");
-		const outputs = outputsOf("outputs", (m) => uint$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1(m, "amount"));
-		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
-			info,
-			inputToken,
-			giveAmount: amount,
-			outputs
-		};
-	};
-	/**
-	* The UniswapX order a Permit2 witness document signs, `oversize` when its outputs cannot all be
-	* shown, or `undefined` — the caller then falls back to the opaque-witness path.
-	*/
-	var recognizeUniswapX = (json, signer, chainId, table) => {
-		var _types$primaryType, _REACTORS$chainId;
-		const { types, primaryType, message, domain } = json;
-		if (primaryType !== "PermitWitnessTransferFrom") return;
-		const witnessField = (_types$primaryType = types[primaryType]) === null || _types$primaryType === void 0 ? void 0 : _types$primaryType.at(-1);
-		const witnessType = (witnessField === null || witnessField === void 0 ? void 0 : witnessField.name) === "witness" ? witnessField.type : void 0;
-		if (witnessType === void 0 || !isWitnessType(witnessType)) return;
-		const expected = _objectSpread2(_objectSpread2({}, PERMIT2_TYPES), {}, { PermitWitnessTransferFrom: [
-			"TokenPermissions permitted",
-			"address spender",
-			"uint256 nonce",
-			"uint256 deadline",
-			`${witnessType} witness`
-		] }, ORDER_TYPES[witnessType]);
-		if (Object.keys(types).length !== Object.keys(expected).length || !Object.entries(expected).every(([name, fields]) => sameFields(types, name, fields)) || domainChainId(domain) !== chainId) return;
-		const { permitted } = message;
-		const { witness } = message;
-		const spender = address$1(message, "spender");
-		const permittedToken = isTypedDataMessage(permitted) ? address$1(permitted, "token") : void 0;
-		const permittedAmount = isTypedDataMessage(permitted) ? uint$1(permitted, "amount") : void 0;
-		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
-		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
-		const { info } = parsed;
-		const reactor = address$1(info, "reactor");
-		const swapper = address$1(info, "swapper");
-		const nonce = uint$1(info, "nonce");
-		const deadline = uint$1(info, "deadline");
-		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
-		if (parsed.outputs.length > 8) return { kind: "oversize" };
-		const maker = checksumEvmAddress(signer);
-		const giveAmount = parsed.giveAmount < permittedAmount ? parsed.giveAmount : permittedAmount;
-		return {
-			kind: "order",
-			order: _objectSpread2({
-				protocol: "uniswapx",
-				maker,
-				give: orderAmount(parsed.inputToken, giveAmount, chainId, table),
-				receive: parsed.outputs.map((o) => ({
-					recipient: o.recipient,
-					amount: orderAmount(o.token, o.amount, chainId, table, ZERO)
-				})),
-				expiry: Number(deadline),
-				partialFill: false
-			}, parsed.exclusiveFiller === void 0 ? {} : { exclusiveFiller: parsed.exclusiveFiller })
-		};
-	};
-	var isMessage$1 = isTypedDataMessage;
-	var address$2 = typedDataAddress;
-	var uint = typedDataUint;
-	var DETAILS = [
-		"address token",
-		"uint160 amount",
-		"uint48 expiration",
-		"uint48 nonce"
-	];
-	var PERMISSIONS = ["address token", "uint256 amount"];
-	var WITNESS_WARNING = {
-		kind: "permit2-witness",
-		message: "the permit carries a witness with further terms"
-	};
-	var entries = (value) => Array.isArray(value) && value.length > 0 && value.every(isMessage$1) ? value : void 0;
-	var permit = (...approvals) => ({
-		approvals,
-		warnings: []
-	});
-	/**
-	* The permit a typed-data document grants, or `undefined` when its shape is not exactly one of the
-	* recognized ones. `chainId` is the request network's, used for the built-in token table. `signer`
-	* lets a witness be checked against the account it binds (UniswapX `info.swapper`).
-	*/
-	function recognizePermit(json, chainId, table, signer) {
-		const { types, primaryType, message, domain } = json;
-		const verifying = address$2(domain["verifyingContract"]);
-		if (verifying === void 0) return;
-		const spender = address$2(message["spender"]);
-		if (spender === void 0) return;
-		const allow = (token, value, change, max, extra = {}) => allowanceChange(token, spender, value, change, max, chainId, table, extra);
-		if (primaryType === "Permit") {
-			if (sameFields(types, "Permit", [
-				"address owner",
-				"address spender",
-				"uint256 value",
-				"uint256 nonce",
-				"uint256 deadline"
-			])) {
-				const value = uint(message["value"], MAX_UINT256);
-				return value === void 0 ? void 0 : permit(allow(verifying, value, "set", MAX_UINT256));
-			}
-			if (sameFields(types, "Permit", [
-				"address holder",
-				"address spender",
-				"uint256 nonce",
-				"uint256 expiry",
-				"bool allowed"
-			])) {
-				const { allowed } = message;
-				return typeof allowed === "boolean" ? permit(allow(verifying, allowed ? MAX_UINT256 : 0n, "set", MAX_UINT256)) : void 0;
-			}
-			return;
-		}
-		if (verifying.toLowerCase() !== "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) return;
-		return recognizePermit2(json, allow, signer, chainId, table);
-	}
-	var all$2 = (list, build) => {
-		const built = list === null || list === void 0 ? void 0 : list.map(build);
-		return built === void 0 || built.some((a) => a === void 0) ? void 0 : permit(...built.filter((a) => a !== void 0));
-	};
-	var recognizePermit2 = (json, allow, signer, chainId, table) => {
-		var _own$slice;
-		const { types, primaryType, message } = json;
-		const via = "permit2";
-		const allowance = (details) => {
-			const token = address$2(details["token"]);
-			const amount = uint(details["amount"], MAX_UINT160);
-			const expiration = uint(details["expiration"], MAX_UINT48);
-			return token === void 0 || amount === void 0 || expiration === void 0 ? void 0 : allow(token, amount, "set", MAX_UINT160, {
-				via,
-				expiration: Number(expiration)
-			});
-		};
-		const transfer = (permitted, deadline) => {
-			const token = address$2(permitted["token"]);
-			const amount = uint(permitted["amount"], MAX_UINT256);
-			return token === void 0 || amount === void 0 ? void 0 : allow(token, amount, "transfer", MAX_UINT256, _objectSpread2({ via }, deadline <= MAX_UINT48 ? { expiration: Number(deadline) } : {}));
-		};
-		if (primaryType === "PermitSingle") {
-			const { details } = message;
-			return sameFields(types, primaryType, [
-				"PermitDetails details",
-				"address spender",
-				"uint256 sigDeadline"
-			]) && sameFields(types, "PermitDetails", DETAILS) && isMessage$1(details) ? all$2([details], allowance) : void 0;
-		}
-		if (primaryType === "PermitBatch") return sameFields(types, primaryType, [
-			"PermitDetails[] details",
-			"address spender",
-			"uint256 sigDeadline"
-		]) && sameFields(types, "PermitDetails", DETAILS) ? all$2(entries(message["details"]), allowance) : void 0;
-		const witness = primaryType.includes("Witness");
-		const batch = primaryType.includes("Batch");
-		const expected = batch ? [
-			"TokenPermissions[] permitted",
-			"address spender",
-			"uint256 nonce",
-			"uint256 deadline"
-		] : [
-			"TokenPermissions permitted",
-			"address spender",
-			"uint256 nonce",
-			"uint256 deadline"
-		];
-		if (primaryType !== `Permit${batch ? "Batch" : ""}${witness ? "Witness" : ""}TransferFrom`) return;
-		const own = types[primaryType];
-		const last = own === null || own === void 0 ? void 0 : own.at(-1);
-		const fieldsOk = witness ? sameFields(_objectSpread2(_objectSpread2({}, types), {}, { [primaryType]: (_own$slice = own === null || own === void 0 ? void 0 : own.slice(0, -1)) !== null && _own$slice !== void 0 ? _own$slice : [] }), primaryType, expected) && (last === null || last === void 0 ? void 0 : last.name) === "witness" && types[last.type] !== void 0 : sameFields(types, primaryType, expected);
-		const deadline = uint(message["deadline"], MAX_UINT256);
-		if (!fieldsOk || !sameFields(types, "TokenPermissions", PERMISSIONS) || deadline === void 0) return;
-		const { permitted } = message;
-		const result = batch ? all$2(entries(permitted), (item) => transfer(item, deadline)) : isMessage$1(permitted) ? all$2([permitted], (item) => transfer(item, deadline)) : void 0;
-		return result === void 0 || !witness ? result : witnessOutcome(result, json, signer, chainId, table);
-	};
-	/**
-	* What a witness carries when the permit itself decoded: a recognised UniswapX order (the take-once
-	* approval stays; no further warning), or the witness subtree's leaves with the warning. A subtree
-	* that cannot be shown in full — too many leaves, a leaf not exactly encodable — or a recognised
-	* order over the item limit blinds the document; a commitment leaf blinds it too.
-	*/
-	var witnessOutcome = (result, json, signer, chainId, table) => {
-		var _json$types$json$prim;
-		const uniswapx = recognizeUniswapX(json, signer, chainId, table);
-		if ((uniswapx === null || uniswapx === void 0 ? void 0 : uniswapx.kind) === "order") return {
-			approvals: result.approvals,
-			warnings: [],
-			order: uniswapx.order
-		};
-		const witnessType = (_json$types$json$prim = json.types[json.primaryType]) === null || _json$types$json$prim === void 0 || (_json$types$json$prim = _json$types$json$prim.at(-1)) === null || _json$types$json$prim === void 0 ? void 0 : _json$types$json$prim.type;
-		const { witness } = json.message;
-		const subtree = uniswapx === void 0 && witnessType !== void 0 && isMessage$1(witness) ? typedDataFields({
-			types: json.types,
-			primaryType: witnessType,
-			domain: {},
-			message: witness
-		}) : void 0;
-		return _objectSpread2(_objectSpread2({
-			approvals: result.approvals,
-			warnings: [WITNESS_WARNING]
-		}, subtree === void 0 ? {} : { fields: subtree.fields.map((leaf) => _objectSpread2(_objectSpread2({}, leaf), {}, { path: `witness.${leaf.path}` })) }), uniswapx !== void 0 || subtree === void 0 ? { blind: "typed-data-oversize" } : subtree.hasCommitment ? { blind: "typed-data-commitment" } : {});
 	};
 	/**
 	* Recognition of Safe `SafeTx` typed data. A document is recognized only when the primary type is
@@ -25753,7 +25893,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused3) {
+		} catch (_unused4) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -25896,11 +26036,11 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused4) {
+		} catch (_unused5) {
 			return;
 		}
 	};
@@ -26018,7 +26158,7 @@ zoo`.split("\n"));
 	var decodeExec = (data) => {
 		if (!data.toLowerCase().startsWith("0x2213bc0b")) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(EXEC, data);
 			if (!Array.isArray(args) || args.length !== 5) return;
 			if (encodeData$1(EXEC, args).toLowerCase() !== data.toLowerCase()) return;
@@ -26031,7 +26171,7 @@ zoo`.split("\n"));
 				target,
 				data: inner
 			};
-		} catch (_unused5) {
+		} catch (_unused6) {
 			return;
 		}
 	};
@@ -26043,14 +26183,14 @@ zoo`.split("\n"));
 	var decodeSettlerExecute = (data) => {
 		if (!data.toLowerCase().startsWith("0x1fff991f")) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(SETTLER_EXECUTE, data);
 			if (!Array.isArray(args) || args.length !== 3) return;
 			if (encodeData$1(SETTLER_EXECUTE, args).toLowerCase() !== data.toLowerCase()) return;
 			const [slippage] = args;
 			if (!isSlippage(slippage)) return;
 			return slippage;
-		} catch (_unused6) {
+		} catch (_unused7) {
 			return;
 		}
 	};
@@ -26147,11 +26287,11 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$1(data, "data");
+			assertHex$2(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused7) {
+		} catch (_unused8) {
 			return;
 		}
 	};
@@ -26210,6 +26350,24 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
+		if (isCctpMessenger(chainId, call.to)) {
+			var _call$to;
+			const cctp = decodeCctp(chainId, call, signer, table);
+			if (cctp !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
+				summary: "transfer",
+				outflows: cctp.outflows,
+				hyperliquidDeposit: cctp.hyperliquidDeposit,
+				fee,
+				verifiability: "partial"
+			});
+			return _objectSpread2(_objectSpread2({}, base), {}, {
+				summary: "contract-call",
+				outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "") : [],
+				fee,
+				verifiability: "opaque",
+				blind: "cctp-destination"
+			});
+		}
 		const lido = decodeLido(chainId, call, signer, table);
 		if (lido !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 			summary: "stake",
@@ -26230,7 +26388,7 @@ zoo`.split("\n"));
 	};
 	/** The token-standard selectors, else an opaque call. None of them accounts for native value. */
 	var standardIntent = (call, { network, fee, table }) => {
-		var _call$to;
+		var _call$to2;
 		const chainId = networkChainId(network);
 		const data = call.data.toLowerCase();
 		const base = {
@@ -26246,7 +26404,7 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
-		const token = (_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "";
+		const token = (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "";
 		if (token.toLowerCase() === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) {
 			const permitArgs = tryCall(PERMIT2_APPROVE, data);
 			if (permitArgs !== void 0) {
@@ -26280,7 +26438,7 @@ zoo`.split("\n"));
 	* value sent along with calldata is always an outflow to the contract that receives it.
 	*/
 	var decodeCall = (call, context) => {
-		var _call$to2;
+		var _call$to3, _call$to4;
 		if (call.data === "0x" && call.to !== void 0) return {
 			family: "evm",
 			network: context.network,
@@ -26291,7 +26449,7 @@ zoo`.split("\n"));
 			warnings: [],
 			verifiability: "full"
 		};
-		const address = (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : call.created;
+		const address = (_call$to3 = call.to) !== null && _call$to3 !== void 0 ? _call$to3 : call.created;
 		const token = call.to === void 0 ? void 0 : lookupEvmToken(context.table, networkChainId(context.network), call.to);
 		const contract = address === void 0 ? {} : { contract: _objectSpread2(_objectSpread2({
 			address,
@@ -26301,7 +26459,7 @@ zoo`.split("\n"));
 			family: "evm",
 			network: context.network,
 			summary: "contract-call",
-			outflows: call.value > 0n ? nativeOutflow(call.value, call.to) : [],
+			outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to4 = call.to) !== null && _call$to4 !== void 0 ? _call$to4 : "") : [],
 			approvals: [],
 			fee: context.fee,
 			warnings: [],
@@ -26327,7 +26485,7 @@ zoo`.split("\n"));
 	var weakest = (intents) => intents.some((i) => i.verifiability === "opaque") ? "opaque" : intents.some((i) => i.verifiability === "partial") ? "partial" : "full";
 	/** The address a contract creation from `signer` at `nonce` deploys to (CREATE). */
 	var createdAddress = (signer, nonce) => {
-		assertHex$1(signer, "signer");
+		assertHex$2(signer, "signer");
 		return checksumEvmAddress(fromCreate({
 			from: signer,
 			nonce: BigInt(nonce)
@@ -28126,7 +28284,7 @@ zoo`.split("\n"));
 		return decoder$2.decode(pubkey);
 	}
 	var decoder$1 = getCompiledTransactionMessageDecoder();
-	var utf8$4 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$5 = new TextDecoder("utf-8", { fatal: true });
 	/**
 	* Whether a cluster could accept `bytes` as the message of a transaction — signing them as a raw
 	* message would authorise it.
@@ -28135,7 +28293,7 @@ zoo`.split("\n"));
 		const [first] = bytes;
 		if (first === void 0 || first === 255) return false;
 		if (first >= 128) try {
-			utf8$4.decode(bytes);
+			utf8$5.decode(bytes);
 			return false;
 		} catch (_unused) {
 			return true;
@@ -28257,6 +28415,142 @@ zoo`.split("\n"));
 	var validateLookupTables = (tables) => {
 		if (tables === void 0) return;
 		for (const table of tables) if (!isSolanaAddress(table.address) || !table.addresses.every(isSolanaAddress)) throw new ChainError("invalid-address", "lookup table entries must be base58 32-byte addresses");
+	};
+	/** SPL Token — AMM v4 asserts its token program account equals this id (processor.rs check). */
+	var SPL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+	var SWAP_V2 = Uint8Array.from([
+		43,
+		4,
+		237,
+		11,
+		26,
+		201,
+		30,
+		98
+	]);
+	var SWAP_BASE_INPUT = Uint8Array.from([
+		143,
+		190,
+		90,
+		218,
+		196,
+		30,
+		51,
+		222
+	]);
+	var u32$3 = getU32Decoder();
+	var u64$4 = getU64Decoder();
+	var startsWith$1 = (data, prefix) => data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
+	/**
+	* AMM swap instructions whose account layout pins the signer's worst-case in/out. Anything that
+	* does not match a documented shape exactly — tag, data length, account count, signer slot, the AMM
+	* v4 token program — returns undefined and falls back to the program-authority rule.
+	*/
+	var decodeAmmSwapIx = (parsed, ix, lookups, program) => {
+		const { data } = ix;
+		const account = (i) => {
+			const index = ix.accountIndices[i];
+			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+		};
+		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8") {
+			const tag = data.at(0);
+			if (!(tag === 9 || tag === 16) && !(tag === 17) || data.length !== 17) return;
+			const n = ix.accountIndices.length;
+			const expected = tag === 16 || tag === 17 ? 8 : null;
+			if (expected === null ? n !== 17 && n !== 18 : n !== expected) return;
+			if (account(0) !== SPL_TOKEN) return;
+			const authority = account(n - 1);
+			const sourceAccount = account(n - 3);
+			const destinationAccount = account(n - 2);
+			if (authority === void 0 || sourceAccount === void 0 || destinationAccount === void 0) return;
+			return {
+				program,
+				protocol: "raydium-amm-v4",
+				authority,
+				sourceAccount,
+				destinationAccount,
+				maxIn: u64$4.decode(data, 1),
+				minOut: u64$4.decode(data, 9)
+			};
+		}
+		if (program === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C") {
+			if (!startsWith$1(data, SWAP_BASE_INPUT) || data.length !== 24 || ix.accountIndices.length !== 13) return;
+			const authority = account(0);
+			const sourceAccount = account(4);
+			const destinationAccount = account(5);
+			const sourceMint = account(10);
+			const destinationMint = account(11);
+			const destinationTokenProgram = account(9);
+			if (authority === void 0 || sourceAccount === void 0 || destinationAccount === void 0 || sourceMint === void 0 || destinationMint === void 0 || destinationTokenProgram === void 0) return;
+			return {
+				program,
+				protocol: "raydium-cpmm",
+				authority,
+				sourceAccount,
+				destinationAccount,
+				sourceMint,
+				destinationMint,
+				destinationTokenProgram,
+				maxIn: u64$4.decode(data, 8),
+				minOut: u64$4.decode(data, 16)
+			};
+		}
+		if (program === "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK") {
+			if (!startsWith$1(data, SWAP_V2) || data.length !== 41 || ix.accountIndices.length < 13) return;
+			const authority = account(0);
+			const sourceAccount = account(3);
+			const destinationAccount = account(4);
+			const sourceMint = account(11);
+			const destinationMint = account(12);
+			if (authority === void 0 || sourceAccount === void 0 || destinationAccount === void 0 || sourceMint === void 0 || destinationMint === void 0) return;
+			if (data.at(40) !== 1) return;
+			return {
+				program,
+				protocol: "raydium-clmm",
+				authority,
+				sourceAccount,
+				destinationAccount,
+				sourceMint,
+				destinationMint,
+				maxIn: u64$4.decode(data, 8),
+				minOut: u64$4.decode(data, 16)
+			};
+		}
+		if (program === "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc") {
+			if (!startsWith$1(data, SWAP_V2) || data.length < 43 || ix.accountIndices.length < 15) return;
+			const option = data.at(42);
+			if (option === 0) {
+				if (data.length !== 43) return;
+			} else if (option === 1) {
+				if (data.length < 47) return;
+				const slices = u32$3.decode(data, 43);
+				if (data.length !== 47 + slices * 2) return;
+			} else return;
+			const authority = account(3);
+			if (authority === void 0) return;
+			const aToB = data.at(41);
+			if (aToB !== 0 && aToB !== 1 || data.at(40) !== 1) return;
+			const sourceIndex = aToB === 1 ? 7 : 9;
+			const destinationIndex = aToB === 1 ? 9 : 7;
+			const sourceAccount = account(sourceIndex);
+			const destinationAccount = account(destinationIndex);
+			const sourceMint = account(aToB === 1 ? 5 : 6);
+			const destinationMint = account(aToB === 1 ? 6 : 5);
+			const destinationTokenProgram = account(aToB === 1 ? 1 : 0);
+			if (sourceAccount === void 0 || destinationAccount === void 0 || sourceMint === void 0 || destinationMint === void 0 || destinationTokenProgram === void 0) return;
+			return {
+				program,
+				protocol: "orca-whirlpool",
+				authority,
+				sourceAccount,
+				destinationAccount,
+				sourceMint,
+				destinationMint,
+				destinationTokenProgram,
+				maxIn: u64$4.decode(data, 8),
+				minOut: u64$4.decode(data, 16)
+			};
+		}
 	};
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var SOLANA_NATIVE_ASSET = "lamports";
@@ -28697,6 +28991,13 @@ zoo`.split("\n"));
 				jupiter
 			} : { kind: "other" };
 		}
+		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" || program === "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" || program === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C" || program === "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc") {
+			const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
+			return amm !== void 0 && amm.authority === signer ? {
+				kind: "amm-swap",
+				amm
+			} : { kind: "other" };
+		}
 		if (program === "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d") {
 			const core = decodeCoreIx(parsed, ix, lookups);
 			return core !== void 0 && core.authority === signer ? {
@@ -28733,9 +29034,9 @@ zoo`.split("\n"));
 		for (const call of calls) {
 			var _call$mint;
 			if (call.kind === "other") return "opaque";
-			if (call.kind === "token-approve" || call.kind === "jupiter" || call.kind === "core-transfer" || call.kind === "token-transfer" || call.kind === "token-burn") allFull = false;
+			if (call.kind === "token-approve" || call.kind === "jupiter" || call.kind === "amm-swap" || call.kind === "core-transfer" || call.kind === "token-transfer" || call.kind === "token-burn") allFull = false;
 			if (call.kind === "token-transfer-checked" && lookupSolanaToken(table, network, (_call$mint = call.mint) !== null && _call$mint !== void 0 ? _call$mint : "") === void 0) allFull = false;
-			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-transfer" && call.kind !== "token-burn" && call.kind !== "token-approve" && call.kind !== "jupiter" && call.kind !== "core-transfer") return "opaque";
+			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-transfer" && call.kind !== "token-burn" && call.kind !== "token-approve" && call.kind !== "jupiter" && call.kind !== "amm-swap" && call.kind !== "core-transfer") return "opaque";
 		}
 		if (parsed.lookups.length > 0) return "partial";
 		return allFull ? "full" : "partial";
@@ -28775,8 +29076,13 @@ zoo`.split("\n"));
 		const warnings = [];
 		const minimumReceived = [];
 		const wsolAtas = /* @__PURE__ */ new Set([associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token), associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token2022)]);
+		const atas = /* @__PURE__ */ new Map();
+		for (const [mint, token] of Object.entries((_table$request$networ = table[request.network]) !== null && _table$request$networ !== void 0 ? _table$request$networ : {})) for (const tokenProgram of [PROGRAM_IDS.token, PROGRAM_IDS.token2022]) atas.set(associatedTokenAddress(signer, mint, tokenProgram), {
+			mint,
+			symbol: token.symbol
+		});
 		let otherTransfer = false;
-		let hasJupiter = false;
+		let hasSwap = false;
 		for (const call of calls) {
 			if (call.kind === "system-transfer" && call.to !== void 0 && call.from === signer) {
 				var _call$amount;
@@ -28804,7 +29110,7 @@ zoo`.split("\n"));
 			}
 			if (call.kind === "jupiter" && call.jupiter !== void 0) {
 				const swap = call.jupiter;
-				hasJupiter = true;
+				hasSwap = true;
 				otherTransfer = true;
 				const sell = lookupSolanaToken(table, request.network, swap.sourceMint);
 				outflows.push({
@@ -28840,6 +29146,59 @@ zoo`.split("\n"));
 				if (swap.platformFeeBps > 0) warnings.push({
 					kind: "platform-fee",
 					message: `${swap.platformFeeBps} bps`
+				});
+			}
+			if (call.kind === "amm-swap" && call.amm !== void 0) {
+				var _swap$sourceMint, _atas$get, _swap$destinationMint, _atas$get2;
+				const swap = call.amm;
+				hasSwap = true;
+				otherTransfer = true;
+				const sourceMint = (_swap$sourceMint = swap.sourceMint) !== null && _swap$sourceMint !== void 0 ? _swap$sourceMint : (_atas$get = atas.get(swap.sourceAccount)) === null || _atas$get === void 0 ? void 0 : _atas$get.mint;
+				const sourceToken = sourceMint === void 0 ? void 0 : lookupSolanaToken(table, request.network, sourceMint);
+				outflows.push(sourceMint === void 0 ? {
+					to: swap.program,
+					amount: {
+						asset: swap.sourceAccount,
+						amount: swap.maxIn.toString(10)
+					},
+					verified: false,
+					tokenAccount: swap.sourceAccount
+				} : {
+					to: swap.program,
+					amount: sourceMint === "So11111111111111111111111111111111111111112" ? {
+						asset: SOLANA_NATIVE_ASSET,
+						amount: swap.maxIn.toString(10)
+					} : _objectSpread2({
+						asset: sourceMint,
+						amount: swap.maxIn.toString(10)
+					}, sourceToken === void 0 ? {} : {
+						symbol: sourceToken.symbol,
+						decimals: sourceToken.decimals
+					}),
+					verified: sourceMint === "So11111111111111111111111111111111111111112" || sourceToken !== void 0
+				});
+				const destinationMint = (_swap$destinationMint = swap.destinationMint) !== null && _swap$destinationMint !== void 0 ? _swap$destinationMint : (_atas$get2 = atas.get(swap.destinationAccount)) === null || _atas$get2 === void 0 ? void 0 : _atas$get2.mint;
+				const destinationToken = destinationMint === void 0 ? void 0 : lookupSolanaToken(table, request.network, destinationMint);
+				const ownAta = (swap.destinationTokenProgram === void 0 ? [PROGRAM_IDS.token, PROGRAM_IDS.token2022].map((p) => destinationMint === void 0 ? "" : associatedTokenAddress(signer, destinationMint, p)) : [destinationMint === void 0 ? "" : associatedTokenAddress(signer, destinationMint, swap.destinationTokenProgram)]).includes(swap.destinationAccount);
+				minimumReceived.push(destinationMint === void 0 ? {
+					to: swap.destinationAccount,
+					amount: {
+						asset: swap.destinationAccount,
+						amount: swap.minOut.toString(10)
+					},
+					tokenAccount: swap.destinationAccount
+				} : {
+					to: ownAta ? signer : swap.destinationAccount,
+					amount: destinationMint === "So11111111111111111111111111111111111111112" ? {
+						asset: SOLANA_NATIVE_ASSET,
+						amount: swap.minOut.toString(10)
+					} : _objectSpread2({
+						asset: destinationMint,
+						amount: swap.minOut.toString(10)
+					}, destinationToken === void 0 ? {} : {
+						symbol: destinationToken.symbol,
+						decimals: destinationToken.decimals
+					})
 				});
 			}
 			if (call.kind === "core-transfer" && call.core !== void 0) {
@@ -29004,11 +29363,6 @@ zoo`.split("\n"));
 		const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
 		const programs = [];
 		const authority = /* @__PURE__ */ new Map();
-		const atas = /* @__PURE__ */ new Map();
-		for (const [mint, token] of Object.entries((_table$request$networ = table[request.network]) !== null && _table$request$networ !== void 0 ? _table$request$networ : {})) for (const tokenProgram of [PROGRAM_IDS.token, PROGRAM_IDS.token2022]) atas.set(associatedTokenAddress(signer, mint, tokenProgram), {
-			mint,
-			symbol: token.symbol
-		});
 		const signerIndex = parsed.staticAccounts.indexOf(signer);
 		const signerWritable = signerIndex !== -1 && isWritableIndex(parsed, signerIndex);
 		const altWritable = parsed.lookups.some((l) => l.writableIndexes.length > 0);
@@ -29037,7 +29391,7 @@ zoo`.split("\n"));
 			authority.set(program, entry);
 			if (blind === void 0 && (altWritable || entry.accounts.length > 12)) blind = "program-authority";
 		}
-		const summary = hasJupiter ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
+		const summary = hasSwap ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
 		const programAuthority = [...authority.entries()].map(([program, entry]) => ({
 			program,
 			sol: entry.sol,
@@ -29128,7 +29482,11 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/message-BZj0LOAB.mjs
+	// packages/wallet-chains/dist/typed-data-BmMOmT73.mjs
+	init_secp256k1();
+	init_utils$2();
+	init_sha2();
+	init_base();
 	init_objectSpread2();
 	/**
 	* A strict protobuf wire reader/writer for the TRON protocol messages. Unlike the google-protobuf
@@ -29486,7 +29844,7 @@ zoo`.split("\n"));
 	* satisfies `encodeTronRawData(decodeTronRawData(b)) == b`; a non-canonical encoding — an
 	* explicitly-encoded default among them — is malformed.
 	*/
-	var utf8$3 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$4 = new TextDecoder("utf-8", { fatal: true });
 	var field$2 = (fs, n) => fs.find((f) => f.field === n);
 	var all$1 = (fs, n) => fs.filter((f) => f.field === n);
 	var int64Field = (f, what) => {
@@ -29540,7 +29898,7 @@ zoo`.split("\n"));
 		const value = bytesFieldOf(field$2(any, 2), "Any.value");
 		let typeUrl;
 		try {
-			typeUrl = utf8$3.decode(urlBytes);
+			typeUrl = utf8$4.decode(urlBytes);
 		} catch (_unused) {
 			return malformed$1("Any.type_url is not UTF-8");
 		}
@@ -29661,12 +30019,184 @@ zoo`.split("\n"));
 			return false;
 		}
 	};
-	// packages/wallet-chains/dist/tron.mjs
-	init_secp256k1();
-	init_utils$2();
-	init_sha2();
-	init_base();
-	init_objectSpread2();
+	/**
+	* A strict JSON parser: the RFC 8259 grammar `JSON.parse` accepts, plus the two canonicality rules
+	* signing inputs need — a duplicate object key and trailing text after the value are malformed
+	* inputs, not silently resolved. Errors are reported through `invalid` so the caller's error type
+	* carries them; `depth` bounds nesting so a deep document cannot exhaust the stack.
+	*/
+	var WS = /* @__PURE__ */ new Set([
+		" ",
+		"	",
+		"\n",
+		"\r"
+	]);
+	var HEX_QUAD = /^[0-9a-fA-F]{4}$/;
+	var strictJson = (text, invalid, depth = 200) => {
+		let at = 0;
+		const fail = (reason) => invalid(`${reason} at offset ${at}`);
+		const ws = () => {
+			var _text$at;
+			while (at < text.length && WS.has((_text$at = text[at]) !== null && _text$at !== void 0 ? _text$at : "")) at += 1;
+		};
+		const string = () => {
+			let out = "";
+			at += 1;
+			for (;;) {
+				var _text$at2;
+				if (at >= text.length) fail("unterminated string");
+				const c = (_text$at2 = text[at]) !== null && _text$at2 !== void 0 ? _text$at2 : "";
+				if (c === "\"") {
+					at += 1;
+					return out;
+				}
+				if (c === "\\") {
+					at += 1;
+					const escape = text[at];
+					switch (escape) {
+						case "\"":
+						case "\\":
+						case "/":
+							out += escape;
+							at += 1;
+							break;
+						case "b":
+							out += "\b";
+							at += 1;
+							break;
+						case "f":
+							out += "\f";
+							at += 1;
+							break;
+						case "n":
+							out += "\n";
+							at += 1;
+							break;
+						case "r":
+							out += "\r";
+							at += 1;
+							break;
+						case "t":
+							out += "	";
+							at += 1;
+							break;
+						case "u": {
+							const digits = text.slice(at + 1, at + 5);
+							if (!HEX_QUAD.test(digits)) fail(String.raw`malformed \u escape`);
+							out += String.fromCodePoint(Number.parseInt(digits, 16));
+							at += 5;
+							break;
+						}
+						default: fail(`unknown escape \\${escape !== null && escape !== void 0 ? escape : "?"}`);
+					}
+				} else {
+					if (c < " ") fail("control character in string");
+					out += c;
+					at += 1;
+				}
+			}
+		};
+		const number = () => {
+			var _text$at3, _text$at4, _text$at5, _text$at6;
+			const start = at;
+			if (text[at] === "-") at += 1;
+			if (text[at] === "0") at += 1;
+			else if (((_text$at3 = text[at]) !== null && _text$at3 !== void 0 ? _text$at3 : "") >= "1" && ((_text$at4 = text[at]) !== null && _text$at4 !== void 0 ? _text$at4 : "") <= "9") while (((_text$at5 = text[at]) !== null && _text$at5 !== void 0 ? _text$at5 : "") >= "0" && ((_text$at6 = text[at]) !== null && _text$at6 !== void 0 ? _text$at6 : "") <= "9") at += 1;
+			else fail("malformed number");
+			if (text[at] === ".") {
+				var _text$at7, _text$at8, _text$at9, _text$at10;
+				at += 1;
+				if (!(((_text$at7 = text[at]) !== null && _text$at7 !== void 0 ? _text$at7 : "") >= "0" && ((_text$at8 = text[at]) !== null && _text$at8 !== void 0 ? _text$at8 : "") <= "9")) fail("malformed number");
+				while (((_text$at9 = text[at]) !== null && _text$at9 !== void 0 ? _text$at9 : "") >= "0" && ((_text$at10 = text[at]) !== null && _text$at10 !== void 0 ? _text$at10 : "") <= "9") at += 1;
+			}
+			if (text[at] === "e" || text[at] === "E") {
+				var _text$at11, _text$at12, _text$at13, _text$at14;
+				at += 1;
+				if (text[at] === "+" || text[at] === "-") at += 1;
+				if (!(((_text$at11 = text[at]) !== null && _text$at11 !== void 0 ? _text$at11 : "") >= "0" && ((_text$at12 = text[at]) !== null && _text$at12 !== void 0 ? _text$at12 : "") <= "9")) fail("malformed number");
+				while (((_text$at13 = text[at]) !== null && _text$at13 !== void 0 ? _text$at13 : "") >= "0" && ((_text$at14 = text[at]) !== null && _text$at14 !== void 0 ? _text$at14 : "") <= "9") at += 1;
+			}
+			return Number(text.slice(start, at));
+		};
+		const literal = (word, value) => {
+			if (!text.startsWith(word, at)) fail(`malformed value`);
+			at += word.length;
+			return value;
+		};
+		const value = (level) => {
+			if (level > depth) fail("document nests too deeply");
+			ws();
+			const c = text[at];
+			if (c === "\"") return string();
+			if (c === "{") {
+				const object = {};
+				const keys = /* @__PURE__ */ new Set();
+				at += 1;
+				ws();
+				if (text[at] === "}") {
+					at += 1;
+					return object;
+				}
+				for (;;) {
+					ws();
+					if (text[at] !== "\"") fail("expected a member name");
+					const key = string();
+					if (keys.has(key)) fail(`duplicate key ${JSON.stringify(key)}`);
+					keys.add(key);
+					ws();
+					if (text[at] !== ":") fail("expected ':'");
+					at += 1;
+					const member = value(level + 1);
+					Object.defineProperty(object, key, {
+						value: member,
+						enumerable: true,
+						writable: true,
+						configurable: true
+					});
+					ws();
+					if (text[at] === ",") {
+						at += 1;
+						continue;
+					}
+					if (text[at] === "}") {
+						at += 1;
+						return object;
+					}
+					fail("expected ',' or '}'");
+				}
+			}
+			if (c === "[") {
+				const array = [];
+				at += 1;
+				ws();
+				if (text[at] === "]") {
+					at += 1;
+					return array;
+				}
+				for (;;) {
+					array.push(value(level + 1));
+					ws();
+					if (text[at] === ",") {
+						at += 1;
+						continue;
+					}
+					if (text[at] === "]") {
+						at += 1;
+						return array;
+					}
+					fail("expected ',' or ']'");
+				}
+			}
+			if (c === "t") return literal("true", true);
+			if (c === "f") return literal("false", false);
+			if (c === "n") return literal("null", null);
+			return number();
+		};
+		const parsed = value(1);
+		ws();
+		if (at !== text.length) fail("trailing text after the JSON value");
+		return parsed;
+	};
 	var base58check$1 = createBase58check(sha256$1);
 	/** A 34-character base58check string whose payload is 21 bytes starting with 0x41. */
 	var isTronAddress = (value) => {
@@ -29674,7 +30204,7 @@ zoo`.split("\n"));
 		try {
 			const decoded = base58check$1.decode(value);
 			return decoded.length === 21 && decoded[0] === 65;
-		} catch (_unused) {
+		} catch (_unused4) {
 			return false;
 		}
 	};
@@ -29721,6 +30251,409 @@ zoo`.split("\n"));
 		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
 		return tronAddressFromBytes(concatBytes$3(Uint8Array.of(65), keccak_256(uncompressed.subarray(1)).subarray(12)));
 	}
+	/**
+	* TIP-712 typed data — EIP-712 with TRON's two deviations (tips/tip-712.md; the oracle is TronWeb
+	* 6.5.2's TypedDataEncoder): an `address` leaf is the 20 bytes after the 0x41 version byte, and
+	* `trcToken` is an atomic type encoded like `uint256`. `parseTronTypedData` validates the canonical
+	* JSON — what `TypedDataEncoder.getPayload` emits — and `tronTypedDataDigest` computes
+	* `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖ hashStruct(primaryType, message))`,
+	* byte-identical to TronWeb's `hashTypedData` on every accepted document. Where the canonical
+	* grammar is stricter than TronWeb's loose inputs (JSON booleans only, even-length `0x` hex, no
+	* bare-width `uint`), the difference can only change what it hashes to, never whether it signs — so
+	* strictness is a validation concern, not a compatibility one.
+	*/
+	var fail$2 = (what) => {
+		throw new ChainError("invalid-typed-data", what);
+	};
+	var INT_TYPE = /^(u?)int(\d*)$/;
+	var FIXED_BYTES = /^bytes(\d+)$/;
+	var ARRAY_TAIL = /^(.*)\[(\d*)\]$/;
+	/**
+	* A leaf `address` value's 20-byte body: a base58check `T…` string, `41` + 40 hex, or `0x` + 40
+	* hex. Bare 40-hex is refused — TronWeb's `toHex` would hash it as garbage rather than an address,
+	* so accepting it could only mis-sign.
+	*/
+	var addressBody = (value) => {
+		if (typeof value !== "string") return;
+		if (isTronAddress(value)) return tronAddressToBytes(value).subarray(1);
+		if (/^41[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$3(value).subarray(1);
+		if (/^0x[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$3(value.slice(2));
+	};
+	/** The display form of a leaf `address` value — base58check, whichever form the document used. */
+	var tronTypedDataBase58 = (value) => {
+		const body = addressBody(value);
+		return body === void 0 ? void 0 : tronAddressFromHex(`41${bytesToHex$4(body)}`);
+	};
+	var word = (value) => {
+		return hexToBytes$3((value < 0n ? 2n ** 256n + value : value).toString(16).padStart(64, "0"));
+	};
+	var intBounds = (signed, bits) => signed ? [-(2n ** BigInt(bits - 1)), 2n ** BigInt(bits - 1) - 1n] : [0n, 2n ** BigInt(bits) - 1n];
+	/** Canonical-JSON int leaf: safe integer, decimal string (`-` only where signed), or `0x` hex. */
+	var strictInt = (value, signed) => {
+		if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+		if (typeof value === "string" && ((signed ? /^-?[0-9]+$/ : /^[0-9]+$/).test(value) || /^0x[0-9a-fA-F]+$/.test(value))) return BigInt(value);
+	};
+	/** A `tron_signTypedData` argument's int leaf — TronWeb's getBigInt forms. */
+	var looseInt = (value) => {
+		if (typeof value === "bigint") return value;
+		if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+		if (typeof value === "string" && (/^-?[0-9]+$/.test(value) || /^0x[0-9a-fA-F]+$/.test(value))) return BigInt(value);
+	};
+	/** A bytes leaf — canonical `0x` even-length hex, plus a `Uint8Array` in argument mode. */
+	var hexLeaf = (value, args) => {
+		if (args && value instanceof Uint8Array) return value;
+		return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) ? hexToBytes$3(value.slice(2)) : void 0;
+	};
+	/**
+	* The encoder for one atomic type, mirroring TronWeb's `getBaseEncoder` — including its rule that a
+	* base-looking name with a malformed width (`uint7`, `bytes33`, bare `uint`) is a name error, not
+	* "no such type", so `isBaseName` below can count it against struct names. `args` relaxes leaf
+	* forms to what `_signTypedData(domain, types, value)` accepts.
+	*/
+	var baseEncoder = (type, args) => {
+		const int = INT_TYPE.exec(type);
+		if (int !== null) {
+			const signed = int[1] === "";
+			const w = int[2] === "" ? NaN : Number(int[2]);
+			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$2(`invalid numeric width in type ${type}`);
+			const [min, max] = intBounds(signed, w);
+			return (value) => {
+				const parsed = args ? looseInt(value) : strictInt(value, signed);
+				if (parsed === void 0 || parsed < min || parsed > max) return fail$2(`value is out of bounds for ${type}`);
+				return word(parsed);
+			};
+		}
+		const fixed = FIXED_BYTES.exec(type);
+		if (fixed !== null) {
+			const w = Number(fixed[1]);
+			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$2(`invalid bytes width in type ${type}`);
+			return (value) => {
+				const bytes = hexLeaf(value, args);
+				if (bytes === void 0 || bytes.length !== w) return fail$2(`invalid length for ${type}`);
+				const out = /* @__PURE__ */ new Uint8Array(32);
+				out.set(bytes);
+				return out;
+			};
+		}
+		switch (type) {
+			case "trcToken": return baseEncoder("uint256", args);
+			case "address": return (value) => {
+				const body = addressBody(value);
+				if (body === void 0) return fail$2("address is not a base58, 41-hex or 0x-hex TRON address");
+				return concatBytes$3(/* @__PURE__ */ new Uint8Array(12), body);
+			};
+			case "bool": return (value) => {
+				if (args) return word(Boolean(value) ? 1n : 0n);
+				if (typeof value !== "boolean") return fail$2("bool is not a JSON boolean");
+				return word(value ? 1n : 0n);
+			};
+			case "bytes": return (value) => {
+				const bytes = hexLeaf(value, args);
+				if (bytes === void 0) return fail$2("bytes is not 0x-prefixed even-length hex");
+				return keccak_256(bytes);
+			};
+			case "string": return (value) => {
+				if (typeof value !== "string") return fail$2("string value is not a string");
+				return keccak_256(utf8ToBytes$1(value));
+			};
+			default: return;
+		}
+	};
+	/** Mirrors TronWeb's `isBaseTypeName`: every base-looking name counts, even a malformed one. */
+	var isBaseName = (name) => INT_TYPE.test(name) || FIXED_BYTES.test(name) || name === "address" || name === "bool" || name === "string" || name === "bytes" || name === "trcToken";
+	/** A field type's base after stripping `[]`/`[n]` suffixes; a malformed suffix stays attached. */
+	var baseName = (type) => {
+		let t = type;
+		for (;;) {
+			var _tail$;
+			const tail = ARRAY_TAIL.exec(t);
+			if (tail === null) return t;
+			t = (_tail$ = tail[1]) !== null && _tail$ !== void 0 ? _tail$ : "";
+		}
+	};
+	var encodeTypeOf = (types, name) => {
+		var _types$name;
+		return `${name}(${((_types$name = types[name]) !== null && _types$name !== void 0 ? _types$name : []).map((f) => `${f.type} ${f.name}`).join(",")})`;
+	};
+	/**
+	* Validates a struct-type map like TronWeb's TypedDataEncoder constructor: no base-name collisions,
+	* unique field names, field types resolving to a base or a declared struct, no cycles, and exactly
+	* one root — the only type nothing references, hence the primary type. Unlike TronWeb, an
+	* unreachable type (it could only be part of a disconnected cycle) is also refused: it would be
+	* dead weight in the document.
+	*/
+	var checkTypes = (types) => {
+		var _roots$;
+		const names = Object.keys(types);
+		const links = /* @__PURE__ */ new Map();
+		const parents = /* @__PURE__ */ new Map();
+		const subtypes = /* @__PURE__ */ new Map();
+		for (const name of names) {
+			links.set(name, /* @__PURE__ */ new Set());
+			parents.set(name, []);
+			subtypes.set(name, /* @__PURE__ */ new Set());
+		}
+		for (const name of names) {
+			var _types$name2;
+			if (isBaseName(name)) fail$2(`struct type name ${JSON.stringify(name)} collides with a base type`);
+			const seen = /* @__PURE__ */ new Set();
+			for (const field of (_types$name2 = types[name]) !== null && _types$name2 !== void 0 ? _types$name2 : []) {
+				var _parents$get, _links$get;
+				if (seen.has(field.name)) fail$2(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
+				seen.add(field.name);
+				const base = baseName(field.type);
+				if (base === name) fail$2(`circular type reference to ${JSON.stringify(base)}`);
+				let baseIsAtomic;
+				try {
+					baseIsAtomic = baseEncoder(base, false) !== void 0;
+				} catch (error) {
+					if (error instanceof ChainError) fail$2(`invalid field type ${JSON.stringify(field.type)}`);
+					throw error;
+				}
+				if (baseIsAtomic) continue;
+				if (!parents.has(base)) fail$2(`unknown type ${JSON.stringify(base)}`);
+				((_parents$get = parents.get(base)) !== null && _parents$get !== void 0 ? _parents$get : []).push(name);
+				((_links$get = links.get(name)) !== null && _links$get !== void 0 ? _links$get : /* @__PURE__ */ new Set()).add(base);
+			}
+		}
+		const roots = names.filter((n) => {
+			var _parents$get2;
+			return ((_parents$get2 = parents.get(n)) !== null && _parents$get2 !== void 0 ? _parents$get2 : []).length === 0;
+		});
+		if (roots.length === 0) fail$2("missing primary type");
+		if (roots.length !== 1) fail$2(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
+		const primary = (_roots$ = roots[0]) !== null && _roots$ !== void 0 ? _roots$ : "";
+		const visited = /* @__PURE__ */ new Set();
+		const checkCircular = (type, found) => {
+			var _links$get2;
+			if (found.has(type)) fail$2(`circular type reference to ${JSON.stringify(type)}`);
+			found.add(type);
+			visited.add(type);
+			for (const child of (_links$get2 = links.get(type)) !== null && _links$get2 !== void 0 ? _links$get2 : /* @__PURE__ */ new Set()) {
+				var _subtypes$get;
+				checkCircular(child, found);
+				for (const subtype of found) ((_subtypes$get = subtypes.get(subtype)) !== null && _subtypes$get !== void 0 ? _subtypes$get : /* @__PURE__ */ new Set()).add(child);
+			}
+			found.delete(type);
+		};
+		checkCircular(primary, /* @__PURE__ */ new Set());
+		if (visited.size !== names.length) fail$2("types contains types the primary type does not reach");
+		const fullTypes = /* @__PURE__ */ new Map();
+		for (const [name, set] of subtypes) {
+			const st = [...set].sort();
+			fullTypes.set(name, encodeTypeOf(types, name) + st.map((t) => encodeTypeOf(types, t)).join(""));
+		}
+		return {
+			primary,
+			fullTypes
+		};
+	};
+	/**
+	* The encoder/walker pair over a validated type map. `hashStruct` produces TronWeb's `hashStruct`:
+	* each leaf its 32-byte word, an array the keccak of its elements' encodings, a struct the keccak
+	* of `typeHash ‖ fields` (a struct-typed field or element carries its own keccak). `visit` mirrors
+	* `TypedDataEncoder.getPayload`'s message normalization: bytes as `0x` hex, integers decimal,
+	* addresses `41`-hex, booleans `!!value`.
+	*/
+	var makeEncoder = (types, args) => {
+		const { primary, fullTypes } = checkTypes(types);
+		const encode = (type, value, depth) => {
+			if (depth > 32) fail$2("typedData nests too deeply");
+			const atomic = baseEncoder(type, args);
+			if (atomic !== void 0) return atomic(value);
+			const tail = ARRAY_TAIL.exec(type);
+			if (tail !== null) {
+				var _tail$2;
+				if (!Array.isArray(value)) return fail$2(`${type} value is not an array`);
+				const len = tail[2] === "" ? void 0 : Number(tail[2]);
+				if (len !== void 0 && len !== value.length) return fail$2(`array length mismatch; expected length ${len}`);
+				const elementType = (_tail$2 = tail[1]) !== null && _tail$2 !== void 0 ? _tail$2 : "";
+				const structElements = fullTypes.has(elementType);
+				return keccak_256(concatBytes$3(...value.map((v) => encode(elementType, v, depth + 1)).map((e) => structElements ? keccak_256(e) : e)));
+			}
+			const fields = types[type];
+			if (fields !== void 0) {
+				var _fullTypes$get;
+				if (!isRecord$4(value)) return fail$2(`${type} value is not an object`);
+				return concatBytes$3(keccak_256(utf8ToBytes$1((_fullTypes$get = fullTypes.get(type)) !== null && _fullTypes$get !== void 0 ? _fullTypes$get : "")), ...fields.map((f) => {
+					const e = encode(f.type, value[f.name], depth + 1);
+					return fullTypes.has(f.type) ? keccak_256(e) : e;
+				}));
+			}
+			return fail$2(`unknown type ${type}`);
+		};
+		const visitLeaf = (type, value) => {
+			if (/^bytes(\d*)/.test(type)) {
+				const bytes = hexLeaf(value, args);
+				if (bytes === void 0) return fail$2(`invalid bytes value for ${type}`);
+				return `0x${bytesToHex$4(bytes)}`;
+			}
+			if (/^u?int/.test(type) || type === "trcToken") {
+				const v = looseInt(value);
+				if (v === void 0) return fail$2(`invalid numeric value for ${type}`);
+				return v.toString(10);
+			}
+			switch (type) {
+				case "address": {
+					const body = addressBody(value);
+					if (body === void 0) return fail$2("address is not a base58, 41-hex or 0x-hex TRON address");
+					return `41${bytesToHex$4(body)}`;
+				}
+				case "bool": return Boolean(value);
+				case "string":
+					if (typeof value !== "string") return fail$2("string value is not a string");
+					return value;
+				default: return fail$2(`unsupported type ${type}`);
+			}
+		};
+		const visit = (type, value, depth) => {
+			if (depth > 32) fail$2("typedData nests too deeply");
+			if (baseEncoder(type, true) !== void 0) return visitLeaf(type, value);
+			const tail = ARRAY_TAIL.exec(type);
+			if (tail !== null) {
+				if (!Array.isArray(value)) return fail$2(`${type} value is not an array`);
+				const len = tail[2] === "" ? void 0 : Number(tail[2]);
+				if (len !== void 0 && len !== value.length) return fail$2(`array length mismatch; expected length ${len}`);
+				return value.map((v) => {
+					var _tail$3;
+					return visit((_tail$3 = tail[1]) !== null && _tail$3 !== void 0 ? _tail$3 : "", v, depth + 1);
+				});
+			}
+			const fields = types[type];
+			if (fields !== void 0) {
+				if (!isRecord$4(value)) return fail$2(`${type} value is not an object`);
+				return Object.fromEntries(fields.map((f) => [f.name, visit(f.type, value[f.name], depth + 1)]));
+			}
+			return fail$2(`unknown type ${type}`);
+		};
+		return {
+			primary,
+			hashStruct: (type, value) => keccak_256(encode(type, value, 0)),
+			visit: (type, value) => visit(type, value, 0)
+		};
+	};
+	/** The five domain fields a TIP-712 document may carry, in canonical order. */
+	var DOMAIN_FIELD_TYPES = [
+		{
+			name: "name",
+			type: "string"
+		},
+		{
+			name: "version",
+			type: "string"
+		},
+		{
+			name: "chainId",
+			type: "uint256"
+		},
+		{
+			name: "verifyingContract",
+			type: "address"
+		},
+		{
+			name: "salt",
+			type: "bytes32"
+		}
+	];
+	var DOMAIN_NAMES = new Set(DOMAIN_FIELD_TYPES.map((f) => f.name));
+	/** `types.EIP712Domain` exactly mirrors the domain's non-null keys, in canonical order. */
+	var domainFieldsOf = (domain) => {
+		const fields = [];
+		for (const f of DOMAIN_FIELD_TYPES) {
+			const value = domain[f.name];
+			if (value !== void 0 && value !== null) fields.push(f);
+		}
+		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$2(`invalid typed-data domain key ${JSON.stringify(key)}`);
+		return fields;
+	};
+	var sameFieldList = (declared, expected) => declared.length === expected.length && declared.every((f, i) => {
+		var _expected$i, _expected$i2;
+		return f.name === ((_expected$i = expected[i]) === null || _expected$i === void 0 ? void 0 : _expected$i.name) && f.type === ((_expected$i2 = expected[i]) === null || _expected$i2 === void 0 ? void 0 : _expected$i2.type);
+	});
+	/**
+	* The domain's non-null entries — a `null` domain value is dropped like TronWeb's `== null` skip,
+	* so `types.EIP712Domain` can still match the remaining keys.
+	*/
+	var domainValues = (domain) => Object.fromEntries(Object.entries(domain).filter(([, v]) => v !== null && v !== void 0));
+	/**
+	* Parses the canonical TIP-712 JSON. Beyond `isTypedDataInput`'s shape, the document must be strict
+	* JSON (no duplicate keys, nothing after the value), `types.EIP712Domain` must be exactly the
+	* domain's present keys in canonical order, the struct types must form a single root DAG naming
+	* `primaryType`, and every leaf must carry its canonical value — verified by running the encoder,
+	* so anything that would hash is something that validated.
+	*/
+	var parseTronTypedData = (typedData) => {
+		var _json$types$EIP712Dom;
+		const json = strictJson(typedData, (reason) => fail$2(`typedData ${reason}`));
+		if (!isTypedDataInput(json)) return fail$2("typedData must be a JSON object with types, primaryType, domain and message");
+		const domainFields = domainFieldsOf(json.domain);
+		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$2("typedData must declare types.EIP712Domain"), domainFields)) fail$2("types.EIP712Domain is not the canonical field list of the domain keys present");
+		tronTypedDataDigest(json);
+		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
+	};
+	/**
+	* The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
+	* hashStruct(primaryType, message))`. The domain is hashed under the fields its non-null keys
+	* derive; the message under `json.primaryType`, which must be the unique root of `types` minus
+	* `EIP712Domain`.
+	*/
+	var tronTypedDataDigest = (json) => {
+		const domainFields = domainFieldsOf(json.domain);
+		const messageTypes = {};
+		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
+		const encoder = makeEncoder(messageTypes, false);
+		if (encoder.primary !== json.primaryType) fail$2(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
+		const domain = makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain);
+		const message = encoder.hashStruct(json.primaryType, json.message);
+		return keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message));
+	};
+	/**
+	* The document as an EVM-equivalent input for `recognizePermit`: every `address` leaf becomes
+	* `0x`-form so the EVM recognizers' `0x`-only rules match. A document declaring `trcToken` anywhere
+	* has no EVM equivalent and is not mapped.
+	*/
+	var tronTypedDataToEvm = (json) => {
+		var _json$types$json$prim;
+		if (Object.values(json.types).some((fields) => fields.some((f) => baseName(f.type) === "trcToken"))) return;
+		const map = (type, value) => {
+			const tail = ARRAY_TAIL.exec(type);
+			if (tail !== null) return Array.isArray(value) ? value.map((v) => {
+				var _tail$4;
+				return map((_tail$4 = tail[1]) !== null && _tail$4 !== void 0 ? _tail$4 : "", v);
+			}) : value;
+			const struct = json.types[type];
+			if (struct !== void 0) return isRecord$4(value) ? Object.fromEntries(struct.map((f) => [f.name, map(f.type, value[f.name])])) : value;
+			if (type === "address") {
+				const body = addressBody(value);
+				return body === void 0 ? value : `0x${bytesToHex$4(body)}`;
+			}
+			return value;
+		};
+		const domain = _objectSpread2({}, json.domain);
+		const verifying = addressBody(domain["verifyingContract"]);
+		if (verifying !== void 0) domain["verifyingContract"] = `0x${bytesToHex$4(verifying)}`;
+		return {
+			types: json.types,
+			primaryType: json.primaryType,
+			domain,
+			message: Object.fromEntries(((_json$types$json$prim = json.types[json.primaryType]) !== null && _json$types$json$prim !== void 0 ? _json$types$json$prim : []).map((f) => [f.name, map(f.type, json.message[f.name])]))
+		};
+	};
+	/**
+	* The leaf-value override for `typedDataFields` on a TRON document: `address` leaves render base58
+	* and `trcToken` decimal; anything else defers to the default leaf rule.
+	*/
+	var tronTypedDataLeaf = (type, value) => {
+		if (type === "address") return tronTypedDataBase58(value);
+		if (type === "trcToken") {
+			const v = strictInt(value, false);
+			const [, max] = intBounds(false, 256);
+			return v === void 0 || v > max ? void 0 : v.toString(10);
+		}
+	};
+	// packages/wallet-chains/dist/tron.mjs
+	init_utils$2();
+	init_objectSpread2();
 	/**
 	* The twelve contract value messages the wallet models, as both decode output and builder input — a
 	* `TronContract` produced by a builder encodes byte-for-byte to what `decodeTronContract` reads
@@ -29770,13 +30703,16 @@ zoo`.split("\n"));
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
 	};
-	var utf8$1$1 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$2 = new TextDecoder("utf-8", {
+		fatal: true,
+		ignoreBOM: true
+	});
 	var stringOf = (f, what) => {
 		if (f === void 0) return "";
 		const data = bytesOf$2(f);
 		try {
-			return utf8$1$1.decode(data);
-		} catch (_unused2) {
+			return utf8$2.decode(data);
+		} catch (_unused) {
 			return malformed$1(`${what} is not UTF-8`);
 		}
 	};
@@ -30163,6 +31099,7 @@ zoo`.split("\n"));
 		var _decoders$typeId;
 		return (_decoders$typeId = decoders[typeId]) === null || _decoders$typeId === void 0 ? void 0 : _decoders$typeId.call(decoders, value);
 	};
+	new TextEncoder();
 	Object.fromEntries(TRON_CONTRACT_TYPES.map((t) => [t.name, t.id]));
 	from$2("function transfer(address to, uint256 amount)");
 	from$2("function approve(address spender, uint256 amount)");
@@ -30236,10 +31173,14 @@ zoo`.split("\n"));
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[address];
 	};
 	/**
-	* The TRON interpreter of the family-claim table (src/families.ts), mirroring evm/families.ts: a
-	* request a decoded family claims but which the decoder did not decode is blind with the row's
-	* reason.
+	* The verified Permit2 deployments on TRON networks, keyed by CAIP-2 network id. SUN.io's Permit2
+	* on mainnet — https://sunio.zendesk.com/hc/en-us/articles/54899665032601 — was confirmed on-chain:
+	* its DOMAIN_SEPARATOR() equals the TIP-712 hash of `{name: "Permit2", chainId: 728126428,
+	* verifyingContract}` under TronWeb 6.5.2. The Nile deployment is unverified, so the map has no
+	* Nile entry and Nile documents stay unclaimed.
 	*/
+	var TRON_PERMIT2 = { "tron:728126428": "TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9" };
+	new TextDecoder("utf-8", { fatal: true });
 	/**
 	* The claim an undecoded `TriggerSmartContract` into `callee` makes: a listed token's selector
 	* table did not decode it, so it is an unrecognised function of a token the owner holds.
@@ -30247,6 +31188,22 @@ zoo`.split("\n"));
 	var tronCallNearMiss = (callee, network, table) => {
 		var _RECOGNISED_FAMILIES$;
 		return (_RECOGNISED_FAMILIES$ = RECOGNISED_FAMILIES.find((row) => row.claim.surface === "tron.call" && row.claim.callee === "token-table" && lookupTronToken(table, network, callee) !== void 0)) === null || _RECOGNISED_FAMILIES$ === void 0 ? void 0 : _RECOGNISED_FAMILIES$.nearMiss;
+	};
+	/**
+	* The claim an unrecognised `tron.typed-data` document makes: a `Permit*` primary type, a Permit2
+	* verifying contract, or a built-in TRC-20 verifying contract names a family the decoder should
+	* have recognised — when it did not, the document blinds with the row's reason.
+	*/
+	var tronTypedDataNearMiss = (json, network, table) => {
+		var _RECOGNISED_FAMILIES$2;
+		const verifying = tronTypedDataBase58(json.domain["verifyingContract"]);
+		return (_RECOGNISED_FAMILIES$2 = RECOGNISED_FAMILIES.find((row) => {
+			const { claim } = row;
+			if (claim.surface !== "tron.typed-data") return false;
+			if ("primaryType" in claim) return claim.primaryType.test(json.primaryType);
+			if (verifying === void 0) return false;
+			return claim.verifyingContract === "permit2" && verifying === TRON_PERMIT2[network] || claim.verifyingContract === "token-table" && lookupTronToken(table, network, verifying) !== void 0;
+		})) === null || _RECOGNISED_FAMILIES$2 === void 0 ? void 0 : _RECOGNISED_FAMILIES$2.nearMiss;
 	};
 	/**
 	* `decodeTron(request, signer)` — the TRON display decoder of design.md "解码结果". A modeled
@@ -30259,7 +31216,10 @@ zoo`.split("\n"));
 	var refuse = (what) => {
 		throw new ChainError("invalid-request", what);
 	};
-	var utf8$2 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$3 = new TextDecoder("utf-8", {
+		fatal: true,
+		ignoreBOM: true
+	});
 	/** All TRX amounts carry the native asset id, 6 decimals and the network's symbol. */
 	var sun = (amount, symbol) => ({
 		asset: "sun",
@@ -30308,7 +31268,7 @@ zoo`.split("\n"));
 	})) });
 	var memoDisplay = (memo) => {
 		try {
-			const text = utf8$2.decode(memo);
+			const text = utf8$3.decode(memo);
 			if (!hasHiddenCharacters(text)) return {
 				kind: "text",
 				text
@@ -30476,6 +31436,67 @@ zoo`.split("\n"));
 			}
 		}
 	};
+	/** A permit approval's EVM-form addresses mapped back to base58 for display. */
+	var mapPermitApproval = (a) => a.kind === "allowance" ? _objectSpread2(_objectSpread2({}, a), {}, {
+		spender: tronAddressFromEvm(a.spender),
+		amount: _objectSpread2(_objectSpread2({}, a.amount), {}, { asset: tronAddressFromEvm(a.amount.asset) })
+	}) : a;
+	/** The domain fields as the prompt shows them — `verifyingContract` in base58. */
+	var tronDomainDisplay = (domain) => {
+		const { name, version, salt } = domain;
+		const chainId = domainChainId(domain);
+		const verifying = tronTypedDataBase58(domain["verifyingContract"]);
+		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, typeof name === "string" ? { name } : {}), typeof version === "string" ? { version } : {}), chainId === void 0 ? {} : { chainId }), verifying === void 0 ? {} : { verifyingContract: verifying }), typeof salt === "string" ? { salt } : {});
+	};
+	/**
+	* The display decode of a `tron.typed-data` request. The permit recognizers run on the document
+	* mapped to EVM form — every `address` leaf `0x`-hex — so the EVM selector tables match; a document
+	* declaring `trcToken` has no EVM equivalent and can only be field-shown or blind. Approvals and
+	* addresses come back out in base58. Blind precedence mirrors the EVM lane: a recognized permit's
+	* own reason, then family near-miss, then oversize, then commitment.
+	*/
+	var tronTypedDataIntent = (typedData, network, chainId, signer, table) => {
+		var _permit$blind, _permit$approvals, _permit$warnings;
+		const { json } = parseTronTypedData(typedData);
+		const evmJson = tronTypedDataToEvm(json);
+		const permit2 = TRON_PERMIT2[network];
+		const permit = evmJson === void 0 ? void 0 : recognizePermit(evmJson, chainId, evmTableFor(network, chainId, table), tronAddressToEvm(signer), permit2 === void 0 ? "" : tronAddressToEvm(permit2));
+		const nearMiss = permit === void 0 ? tronTypedDataNearMiss(json, network, table) : void 0;
+		const shown = permit === void 0 ? typedDataFields(json, tronTypedDataLeaf) : void 0;
+		let fields;
+		if (permit === void 0) fields = shown === null || shown === void 0 ? void 0 : shown.fields;
+		else if (permit.fields !== void 0) {
+			var _json$types$json$prim, _ref;
+			const witnessType = (_json$types$json$prim = json.types[json.primaryType]) === null || _json$types$json$prim === void 0 || (_json$types$json$prim = _json$types$json$prim.at(-1)) === null || _json$types$json$prim === void 0 ? void 0 : _json$types$json$prim.type;
+			const { witness } = json.message;
+			fields = (_ref = witnessType !== void 0 && isTypedDataMessage(witness) ? typedDataFields({
+				types: json.types,
+				primaryType: witnessType,
+				domain: {},
+				message: witness
+			}, tronTypedDataLeaf) : void 0) === null || _ref === void 0 ? void 0 : _ref.fields.map((leaf) => ({
+				path: `witness.${leaf.path}`,
+				value: leaf.value
+			}));
+		}
+		const blind = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : permit === void 0 ? nearMiss !== null && nearMiss !== void 0 ? nearMiss : shown === void 0 ? "typed-data-oversize" : shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
+		return _objectSpread2({
+			family: "tron",
+			network,
+			summary: permit === void 0 ? "message" : "approve",
+			outflows: [],
+			approvals: ((_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : []).map(mapPermitApproval),
+			fee: void 0,
+			warnings: (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : [],
+			message: _objectSpread2({
+				kind: "typed-data",
+				primaryType: json.primaryType,
+				domain: tronDomainDisplay(json.domain),
+				data: json.message
+			}, fields === void 0 ? {} : { fields }),
+			verifiability: permit === void 0 ? "opaque" : "partial"
+		}, blind === void 0 ? {} : { blind });
+	};
 	/**
 	* The display decode of a normalized request. `signer` is the base58 address the account signs
 	* with; a modeled contract whose owner is anyone else is refused.
@@ -30500,6 +31521,7 @@ zoo`.split("\n"));
 				verifiability: "opaque"
 			}, blind === void 0 ? {} : { blind });
 		}
+		if (request.kind === "tron.typed-data") return tronTypedDataIntent(request.typedData, request.network, chainId, signer, table);
 		if (request.kind !== "tron.transaction") throw new ChainError("unsupported", `${request.kind} is not a TRON request`);
 		const raw = decodeTronRawData(request.rawData);
 		if (raw.expiration > BigInt(Number.MAX_SAFE_INTEGER)) refuse("expiration exceeds the safe integer range");
@@ -30557,6 +31579,21 @@ zoo`.split("\n"));
 				network,
 				account,
 				rawData
+			};
+		}
+		if (request["kind"] === "tron.typed-data") {
+			var _BUILT_IN_NETWORKS$fi;
+			const { typedData } = request;
+			if (typeof typedData !== "string") throw new ChainError("invalid-request", "tron.typed-data payload must be the canonical JSON source string");
+			const { json } = parseTronTypedData(typedData);
+			const domainChain = domainChainId(json.domain);
+			const networkChain = (_BUILT_IN_NETWORKS$fi = BUILT_IN_NETWORKS.find((n) => n.id === network)) === null || _BUILT_IN_NETWORKS$fi === void 0 ? void 0 : _BUILT_IN_NETWORKS$fi.chainId;
+			if (domainChain !== void 0 && domainChain !== networkChain) throw new ChainError("chain-id-mismatch", `typed-data domain.chainId ${domainChain} does not match network ${network}`);
+			return {
+				kind: "tron.typed-data",
+				network,
+				account,
+				typedData
 			};
 		}
 		if (request["kind"] === "tron.message") {
@@ -36037,7 +37074,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-BGULCirc.mjs
+	// packages/wallet-chains/dist/message-ZOT446GF.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -36627,6 +37664,9 @@ zoo`.split("\n"));
 		viaPermit2: " 经 Permit2",
 		viaAllowanceHolder: " 经 AllowanceHolder",
 		receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
+		receiveMinTokenAccount: (amount, tokenAccount) => `至少收到 ${amount} 个代币账户 ${tokenAccount} 所持代币的基本单位`,
+		hyperliquidDeposit: (amount, dex, recipient) => `向你的 Hyperliquid ${dex === "perps" ? "合约" : "现货"}账户 ${recipient} 存入 ${amount}`,
+		hyperliquidFee: (amount) => `Circle 手续费至多 ${amount}`,
 		until: (date) => ` 至 ${date}（UTC）`,
 		operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
 		operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -36817,6 +37857,9 @@ zoo`.split("\n"));
 		viaPermit2: " via Permit2",
 		viaAllowanceHolder: " via AllowanceHolder",
 		receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
+		receiveMinTokenAccount: (amount, tokenAccount) => `Receive at least ${amount} base units of the token in account ${tokenAccount}`,
+		hyperliquidDeposit: (amount, dex, recipient) => `Deposit ${amount} to your Hyperliquid ${dex} account ${recipient}`,
+		hyperliquidFee: (amount) => `Circle fee at most ${amount}`,
 		until: (date) => ` until ${date} (UTC)`,
 		operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
 		operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -37051,13 +38094,14 @@ zoo`.split("\n"));
 			return `${formatUnits(lamports, 9)} ${(_networkMeta$symbol = (_networkMeta = networkMeta((_intent$network = intent.network) !== null && _intent$network !== void 0 ? _intent$network : "")) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol) !== null && _networkMeta$symbol !== void 0 ? _networkMeta$symbol : "SOL"}`;
 		};
 		const delegation = intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation];
-		const received = intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)) : [catalog.bridgeLine(networkLabel(catalog, intent.bridge.destinationNetwork), ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(catalog, intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, utcDateTime(intent.bridge.fillDeadline), intent.bridge.refundTo)];
+		const received = intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => entry.tokenAccount === void 0 ? catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to) : catalog.receiveMinTokenAccount(entry.amount.amount, entry.tokenAccount)) : [catalog.bridgeLine(networkLabel(catalog, intent.bridge.destinationNetwork), ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(catalog, intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, utcDateTime(intent.bridge.fillDeadline), intent.bridge.refundTo)];
 		return [
 			...delegation,
 			...contractLines(catalog, intent),
 			...intent.outflows.map((flow) => flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).flatMap((action) => catalog.stakeLines(action, sol)),
 			...received,
+			...intent.hyperliquidDeposit === void 0 ? [] : [catalog.hyperliquidDeposit(intent.outflows[0] === void 0 ? "?" : formatAmount(catalog, intent.outflows[0].amount), intent.hyperliquidDeposit.dex, intent.hyperliquidDeposit.recipient), catalog.hyperliquidFee(formatAmount(catalog, intent.hyperliquidDeposit.maxFee))],
 			...intent.approvals.map((change) => approvalLine(catalog, change))
 		];
 	}
@@ -37114,6 +38158,9 @@ zoo`.split("\n"));
 			...omitted === 0 ? [] : [catalog.omitted(omitted)]
 		];
 	}
+	var CONTROL_CHAR = new RegExp("\\p{Cc}", "u");
+	/** Every code point prints plainly: no control characters, nothing hidden or reordering. */
+	var isPlainText = (text) => !CONTROL_CHAR.test(text) && !hasHiddenCharacters(text);
 	/** The zero address in an order's `zone`: no zone contract gates fulfilment. */
 	var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 	function orderLines(catalog, order) {
@@ -37265,7 +38312,7 @@ zoo`.split("\n"));
 		const { name, chainId, verifyingContract } = message.domain;
 		if (message.hyperliquid !== void 0) return [catalog.hlChain[message.hyperliquid.chain], ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)];
 		if (message.polymarket !== void 0) return polymarketLines(catalog, intent, message.polymarket);
-		const network = chainId === void 0 ? intent.network : `eip155:${chainId}`;
+		const network = intent.family === "tron" ? intent.network : chainId === void 0 ? intent.network : `eip155:${chainId}`;
 		return [
 			...name === void 0 ? [] : [catalog.typedApp(field(name))],
 			...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
@@ -37296,9 +38343,14 @@ zoo`.split("\n"));
 			description: joinLines(signInLines(catalog, message.signIn))
 		};
 		const hazard = intent.blind === void 0 ? void 0 : messageTextHazard(message.text);
+		const digest = hazard === "digest-length" ? `0x${bytesToHex$4(utf8ToBytes$1(message.text))}` : void 0;
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
-			description: joinLines([...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : hazard === void 0 ? [] : [catalog.textHazard[hazard]], ...textLines(catalog, message.text)])
+			description: joinLines([
+				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+				...digest === void 0 ? [] : [catalog.bytesData(digest)],
+				...digest !== void 0 && !isPlainText(message.text) ? [] : textLines(catalog, message.text)
+			])
 		};
 	}
 	function chainPrompt(locale, intent) {
@@ -37662,6 +38714,8 @@ zoo`.split("\n"));
 		if (message.length === 0) throw new ChainError("invalid-request", "a TRON message is non-empty bytes");
 		return sign$1(tronMessageDigest(message), key(privateKey));
 	};
+	/** TIP-712 typed-data signing; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signTronTypedData = (typedData, privateKey) => sign$1(tronTypedDataDigest(parseTronTypedData(typedData).json), key(privateKey));
 	// packages/wallet-kernel/src/modules/chains/tron.ts
 	init_secp256k1();
 	init_bip32();
@@ -37703,6 +38757,10 @@ zoo`.split("\n"));
 		if (request.kind === "tron.transaction") return {
 			kind: "tron.transaction",
 			signature: signTronTransaction(request.rawData, priv)
+		};
+		if (request.kind === "tron.typed-data") return {
+			kind: "tron.typed-data",
+			signature: signTronTypedData(request.typedData, priv)
 		};
 		return {
 			kind: "tron.message",
@@ -37845,7 +38903,7 @@ zoo`.split("\n"));
 				seed
 			};
 			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly);
-			if (request.kind === "tron.transaction" || request.kind === "tron.message") return executeTron(request, source, intentOnly);
+			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
 			return executeSolana(request, source, intentOnly);
 		};
 		return async (intentOnly) => withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => execute(seed, intentOnly));
@@ -37855,7 +38913,7 @@ zoo`.split("\n"));
 		if (account.kind !== "imported") throw new KernelError("integrity", "unreachable: imported path with an hd account");
 		const isEvm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data";
 		const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
-		const isTron = request.kind === "tron.transaction" || request.kind === "tron.message";
+		const isTron = request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data";
 		if (!isEvm && !isSolana && !isTron) throw new KernelError("unsupported", "imported accounts are not supported on bitcoin");
 		const record = ctx.image.records.find((entry) => entry.kind === "key" && entry.id === account.keyId);
 		if (record === void 0) throw new KernelError("not-found", "no such imported key");
@@ -37869,7 +38927,7 @@ zoo`.split("\n"));
 			};
 			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly);
 			if (request.kind === "solana.transaction" || request.kind === "solana.message") return executeSolana(request, source, intentOnly);
-			if (request.kind === "tron.transaction" || request.kind === "tron.message") return executeTron(request, source, intentOnly);
+			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
 			throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
 		};
 		return (intentOnly) => {
@@ -38400,7 +39458,7 @@ zoo`.split("\n"));
 		const { sbox2 } = tableEncoding;
 		const toClean = [];
 		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$5(key));
+		const k32 = swap32IfBE$1(u32$6(key));
 		const Nk = k32.length;
 		const subByte = (n) => applySbox(sbox2, n, n, n, n);
 		const xk = new Uint32Array(len + 28);
@@ -38500,7 +39558,7 @@ zoo`.split("\n"));
 	function prepareBlockEncrypt(plaintext, outLen, dst) {
 		if (dst === void 0) dst = new Uint8Array(outLen);
 		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$5(dst);
+		const o = u32$6(dst);
 		return {
 			b: plaintext,
 			o,
@@ -38525,7 +39583,7 @@ zoo`.split("\n"));
 	}
 	function padPCKS(left) {
 		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$5(tmp);
+		const tmp32 = u32$6(tmp);
 		tmp.set(left);
 		const paddingByte = BLOCK_SIZE - left.length;
 		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
@@ -38562,12 +39620,12 @@ zoo`.split("\n"));
 				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
 				const xk = expandKeyLE(key);
 				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$5(input);
+				const b = u32$6(input);
 				swap32IfBE$1(b);
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$5(_iv);
+				const n32 = u32$6(_iv);
 				swap32IfBE$1(n32);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				let i = 0;
@@ -38596,11 +39654,11 @@ zoo`.split("\n"));
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$5(_iv);
+				const n32 = u32$6(_iv);
 				swap32IfBE$1(n32);
 				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$5(ciphertext);
-				const o = u32$5(dst);
+				const b = u32$6(ciphertext);
+				const o = u32$6(dst);
 				swap32IfBE$1(b);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				for (let i = 0; i + 4 <= b.length;) {
@@ -39109,9 +40167,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$4(B);
-		const V = u32$4(new Uint8Array(blockSize * N));
-		const tmp = u32$4(new Uint8Array(blockSize));
+		const B32 = u32$5(B);
+		const V = u32$5(new Uint8Array(blockSize * N));
+		const tmp = u32$5(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;

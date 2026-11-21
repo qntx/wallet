@@ -50,7 +50,7 @@ const rig = (options: { connected?: boolean; outcome?: unknown; network?: string
         await Promise.resolve();
         revoked.push(origin);
       },
-      getState: () => ({ sessions: sessions as never, pending: {} }),
+      getState: () => ({ sessions: sessions as never, pending: {}, ready: true }),
       store: {
         subscribe: (listener: (state: { sessions: unknown }) => void) => {
           sessionListeners.push(listener);

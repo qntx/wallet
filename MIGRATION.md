@@ -1321,3 +1321,131 @@ Host checklist:
 New route `GET /v1/eligibility` (client id required, 1 rate-limit unit, `cache-control: private,
 no-store`); contract `eligibility` in `@qntx/wallet-engine/gateway/contract`. Deploying the gateway
 is required before hosts enable apps: without a `ready` eligibility answer `enable` refuses.
+
+## 24. Spark outcomes, TRON precision, Hyperliquid CCTP deposits and the optional builder fee
+
+Typechecked snippets: `tests/migration/spark-tokens.ts` (archive, `duplicate`), `tests/migration/
+error-codes.ts` (`duplicate` category), `tests/migration/tron.ts` (bigint/string fields),
+`tests/migration/hyperliquid.ts` (CCTP deposit, `builder: "declined"`, `approveBuilder`).
+
+### Spark payments
+
+- A payment whose commit call went out is `failed` only on the operator's word (expired/returned).
+  Expect more `unknown` records that stay `unknown`; show them as "outcome unknown — do not pay
+  again" and let the user retry the **same** request (it resumes under the same transfer id and
+  pays at most once).
+- New `SparkControllerError.category === "duplicate"`: a new payment with the same kind, receiver
+  and amount (and token) as an `unknown` one is refused; `error.payment` is the earlier record.
+  Offer to open that payment instead of sending again.
+- Shortfalls now fail `insufficient-funds` before any record is written.
+- `engine.spark.archivePayment(account, id)`: only for token records the operator can never answer
+  for (no spent output ids). Ask the user first. The record's history entry stays `pending` with
+  flag `unresolved`; it no longer blocks new sends. `SparkPaymentState` gains `"archived"`.
+
+### TRON
+
+- `TronFeeQuote.bandwidth.stakedAvailable`, `.freeAvailable` and `.energy.available` are `bigint`
+  (were `number`). TRON account resource counters in the account view are decimal strings. Format
+  them with the existing decimal helpers; never `Number()` a balance.
+
+### Hyperliquid (`@qntx/wallet-engine/apps`)
+
+- Deposits use CCTP: `depositInfo` describes the CCTP route (TokenMessengerV2, USDC, forwarder,
+  domain 19) instead of Bridge2; there is no 5 USDC minimum, but the amount must exceed the Circle
+  fee cap. `fund.deposit` returns `{ kind: "approval-required", approval }` when
+  the USDC allowance is short (only an exact approval request is opened — the deposit cannot be
+  built before the approval is mined); call `deposit` again once that approval confirmed, which
+  returns `{ kind: "deposit", deposit }`. A `dex: "spot"` parameter funds the spot balance instead
+  of perps. Bridge2 constants and the Bridge2 deposit are removed.
+- `AppGroupState.builder` is `"approved" | "declined" | undefined`. A declined builder still ends
+  `enabled`; trades carry no builder. `controller.approveBuilder(group, "hyperliquid")` asks again
+  (e.g. from settings); a refusal leaves `declined`.
+
+### Signing prompts hosts may notice
+
+- A 32-byte message prompt adds a `Data 0x…` line and omits text that does not print plainly.
+- Raydium AMM v4 / CPMM / CLMM and Orca Whirlpool swaps that used to show program-authority lines
+  (or be blind past the account budget) are now swap prompts with "at most … / at least …" lines.
+- Calls to the CCTP TokenMessengerV2 on Arbitrum other than a described Hyperliquid deposit are
+  blind (`cctp-destination`) — plain CCTP bridging from Arbitrum to other chains now needs blind
+  signing enabled.
+- EVM history: accounts with code (EIP-7702 delegation) show their new history entries as
+  unverified.
+
+## 25. TRON in-app-browser provider, `tron-sign`, memos
+
+Compiled snippet: `tests/migration/tron-dapp.ts`.
+
+1. **Bridge.** `createBrowserBridge` takes a `tron` handler — pass the engine's `tronWallet` next to `solanaWallet`
+   and `bitcoinWallet`. The injected script (`injectedScript(info)`) now also installs `window.tron`,
+   `window.tronLink` and `window.tronWeb` and announces TIP-6963 with the same `ProviderInfo`; nothing else to do.
+
+   ```ts
+   // before
+   createBrowserBridge({ eip1193, nip07, webln, solana, bitcoin, connections, inject, now });
+   // after
+   createBrowserBridge({
+     eip1193,
+     nip07,
+     webln,
+     solana,
+     bitcoin,
+     tron: engine.tronWallet,
+     connections,
+     inject,
+     now,
+   });
+   ```
+
+2. **Connection requests** may carry `namespace: "tron"`. Approve them like a Solana connection; `grant.network` must
+   be an enabled TRON network and becomes the session's `tronNetwork` (the network the page sees as `chainId`).
+3. **Pending requests** gain method `tron-sign`. Approve with `requests.approve(id, "tron-sign", …)`: a dApp
+   transaction settles to a `TrackedTransaction` (state `submitted`, `tron.dappSignature` set — the dApp broadcasts it,
+   the wallet only tracks it); a message or typed data settles to a `SignatureResult` (`kind: "tron.message" |
+   "tron.typed-data"`). Show `pending.tronFee` for transactions as for any TRON send; the new risk code
+   `fee-limit-below-estimate` (warning) means the dApp's `fee_limit` is below the energy estimate.
+4. **Approval timing.** A dApp transaction is refused at approval when less than 20 s of validity remain ("the dApp
+   must build it again"); an engine-built TRON send is rebuilt in place instead. Hosts should not hold a TRON approval
+   sheet open waiting for anything else.
+5. **Memos.** `send` on a TRON network accepts `memo` (≤ 256 UTF-8 bytes, one line); other families throw.
+   `pending.tronFee.memo` is the memo fee in sun.
+6. **`watch-asset`** can now arrive for a TRON network (TRC-20 base58 address).
+7. `engine.connections.setTronNetwork(origin, network)` switches a dApp session's TRON network from the host UI (the
+   TRON counterpart of `setCurrentNetwork`); the page receives `chainChanged { chainId }`.
+
+## 26. WalletConnect
+
+### WalletConnect peers are a new dApp origin kind
+
+`RequestOrigin`, `ConnectionOrigin` (`ConnectionSession.origin`, `PendingConnection.origin`) and the
+`origin` of every dApp request input are now `BrowserOrigin | WalletConnectOrigin`
+(`DappOrigin`). A host that switches on `origin.kind` must handle `"walletconnect"`:
+`origin.origin` is the session key `walletconnect:<topic>` (never a URL), `origin.url` and
+`origin.name` are the peer's self-declared metadata (show them as unverified), `origin.verify` is
+the Verify verdict. Use `dappUrl(origin)` wherever the host displays or checks the site.
+
+### New risk codes
+
+`verify-mismatch` (Verify `INVALID`) and `verify-threat` (Verify `isScam`) are `danger` findings —
+an acknowledgement UI must name them; `requiredAcknowledgement` already includes them.
+
+### `wc:` URIs
+
+`engine.payments.parse` returns `{ kind: "walletconnect", uri }` for a WalletConnect v2 pairing
+URI. Route it to `walletConnect.pair(uri)` (entry `@qntx/wallet-engine/walletconnect`).
+
+### Injected Solana and Bitcoin providers: rejection codes
+
+A rejected, expired or invalidated request now rejects the page's promise with `4001` (and a
+sign-in message for another domain with `-32602`) instead of `-32603 internal error`. Code that
+treated `-32603` as "the user said no" must use `4001`.
+
+### `bitcoin:signAndSendTransaction` results
+
+Each entry is `{ txId, signedPsbt }` (was `{ txId }`).
+
+### Engine surface
+
+`engine.connections` gains `establishWalletConnect`, `previewAccounts`, `authorize`, `touch`;
+`ConnectionState` gains `ready`. Handler requests take an optional `network` the in-app bridge
+never sets.

@@ -25,6 +25,8 @@ import type {
 } from "@wallet-standard/features";
 import { registerWallet } from "@wallet-standard/wallet";
 
+import { installTron } from "./tron.ts";
+
 /**
  * The Bitcoin Wallet Standard features, as Exodus defines them
  * (ExodusMovement/bitcoin-wallet-standard `packages/core/features/src`: connect, signMessage; the
@@ -390,6 +392,9 @@ export function install(info: ProviderInfo): void {
     writable: false,
     configurable: false,
   });
+
+  // window.tron / tronLink / tronWeb on the same channel, `provider: "tron"`.
+  installTron({ request, on, removeListener, emit, doc, info, global: page });
 
   // Wallet Standard (Solana): the same machinery, `provider: "solana"`. The wallet is registered
   // into the page's `getWallets()` registry rather than exposed as a global.

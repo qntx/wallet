@@ -11,6 +11,7 @@ import * as Signature from "ox/Signature";
 import { ChainError } from "../index.ts";
 import { tronAddressFromEvm } from "./address.ts";
 import { tronMessageDigest } from "./message.ts";
+import { parseTronTypedData, tronTypedDataDigest } from "./typed-data.ts";
 
 /** The signer of a 65-byte r‖s‖v signature (v∈{27,28}), as a base58 TRON address. */
 const recover = (payload: Uint8Array, signature: Uint8Array): string => {
@@ -44,6 +45,10 @@ export const recoverTronTransactionSigner = (rawData: Uint8Array, signature: Uin
 export const recoverTronMessageSigner = (message: Uint8Array, signature: Uint8Array): string =>
   recover(tronMessageDigest(message), signature);
 
+/** Recovers the signer address of a TIP-712 typed-data signature. */
+export const recoverTronTypedDataSigner = (typedData: string, signature: Uint8Array): string =>
+  recover(tronTypedDataDigest(parseTronTypedData(typedData).json), signature);
+
 /** Whether `signature` signs sha256(rawData) for `address` — false on any error. */
 export const verifyTronTransactionSignature = (
   rawData: Uint8Array,
@@ -65,6 +70,19 @@ export const verifyTronMessageSignature = (
 ): boolean => {
   try {
     return recoverTronMessageSigner(message, signature) === address;
+  } catch {
+    return false;
+  }
+};
+
+/** Whether `signature` signs the TIP-712 digest of `typedData` for `address` — false on any error. */
+export const verifyTronTypedDataSignature = (
+  typedData: string,
+  signature: Uint8Array,
+  address: string,
+): boolean => {
+  try {
+    return recoverTronTypedDataSigner(typedData, signature) === address;
   } catch {
     return false;
   }

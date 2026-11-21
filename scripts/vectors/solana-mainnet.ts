@@ -15,7 +15,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
+const require = createRequire(
+  new URL("../../packages/wallet-chains/package.json", import.meta.url),
+);
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS require is untyped
 const { getCompiledTransactionMessageDecoder } = require("@solana/transaction-messages") as {
   getCompiledTransactionMessageDecoder: () => {
@@ -48,6 +50,21 @@ const FIXTURES: ReadonlyArray<readonly [string, string, string]> = [
     "Raydium AMM v4",
     "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
     "4ZgGzFAQUZW2EopfWqgQkFmRccYqDXuCVRnbBpR4wR9xGMZKyuNjZySwKZwd8eQNSf9YTSeH3fmcnMpLzpULvMf1",
+  ],
+  [
+    "Raydium AMM v4 tag 16",
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+    "uBXCNYExECDVqcBTxgD6SzhEwqjWgsRQ3dauCZ4RsgHyTLAHhYHzLtNdxvQs5JyXsWzcbjY3JpzBbyTp7kD82YY",
+  ],
+  [
+    "Raydium AMM v4 tag 16",
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+    "3EEBc3QZhML214CcRWJmADRfYzZ38VFJWJSKWEJoAdGDdWUfEzACL34QVQqho4rmnM2uWWK4pvJk53XRxL1YwTto",
+  ],
+  [
+    "Raydium AMM v4 tag 17",
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+    "5LeqC3ag5BJ3ZVGCm48AGYr1eYvhZtqMRbxiFCDbctp36eqS1L8xsUmcxRQLWWzhhGnJA9h9XYQNLJmd1b8HTjrP",
   ],
   [
     "Raydium CLMM",

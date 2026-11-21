@@ -9,9 +9,11 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 
 import { hasHiddenCharacters } from "../display.ts";
+import { recognizePermit } from "../evm/permit.ts";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
+import { domainChainId, isTypedDataMessage, typedDataFields } from "../evm/typed-data.ts";
 import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
@@ -24,6 +26,8 @@ import type {
   StakeAction,
   TronPermission,
   TronResource,
+  TypedDataDomain,
+  TypedDataLeaf,
 } from "../index.ts";
 import { networkMeta } from "../networks.ts";
 import { tronAddressFromEvm, tronAddressToEvm } from "./address.ts";
@@ -31,17 +35,24 @@ import { TRON_NATIVE_ASSET } from "./assets.ts";
 import { tronContractType } from "./contract-types.ts";
 import { decodeTronContract } from "./contracts.ts";
 import type { TronContract, TronPermissionWire } from "./contracts.ts";
-import { tronCallNearMiss } from "./families.ts";
+import { tronCallNearMiss, tronTypedDataNearMiss } from "./families.ts";
+import { TRON_PERMIT2 } from "./permit2.ts";
 import { decodeTronRawData } from "./raw.ts";
 import type { TronRawData } from "./raw.ts";
 import { lookupTronToken, tronTokenTable } from "./tokens.ts";
 import type { TronTokenTable } from "./tokens.ts";
+import {
+  parseTronTypedData,
+  tronTypedDataBase58,
+  tronTypedDataLeaf,
+  tronTypedDataToEvm,
+} from "./typed-data.ts";
 
 const refuse = (what: string): never => {
   throw new ChainError("invalid-request", what);
 };
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** All TRX amounts carry the native asset id, 6 decimals and the network's symbol. */
 const sun = (amount: bigint, symbol: string): AssetAmount => ({
@@ -364,6 +375,106 @@ const contractEffects = (
   }
 };
 
+/** A permit approval's EVM-form addresses mapped back to base58 for display. */
+const mapPermitApproval = (a: ApprovalChange): ApprovalChange =>
+  a.kind === "allowance"
+    ? {
+        ...a,
+        spender: tronAddressFromEvm(a.spender),
+        amount: { ...a.amount, asset: tronAddressFromEvm(a.amount.asset) },
+      }
+    : a;
+
+/** The domain fields as the prompt shows them — `verifyingContract` in base58. */
+const tronDomainDisplay = (domain: Readonly<Record<string, unknown>>): TypedDataDomain => {
+  const { name, version, salt } = domain;
+  const chainId = domainChainId(domain);
+  const verifying = tronTypedDataBase58(domain["verifyingContract"]);
+  return {
+    ...(typeof name === "string" ? { name } : {}),
+    ...(typeof version === "string" ? { version } : {}),
+    ...(chainId === undefined ? {} : { chainId }),
+    ...(verifying === undefined ? {} : { verifyingContract: verifying }),
+    ...(typeof salt === "string" ? { salt } : {}),
+  };
+};
+
+/**
+ * The display decode of a `tron.typed-data` request. The permit recognizers run on the document
+ * mapped to EVM form — every `address` leaf `0x`-hex — so the EVM selector tables match; a document
+ * declaring `trcToken` has no EVM equivalent and can only be field-shown or blind. Approvals and
+ * addresses come back out in base58. Blind precedence mirrors the EVM lane: a recognized permit's
+ * own reason, then family near-miss, then oversize, then commitment.
+ */
+const tronTypedDataIntent = (
+  typedData: string,
+  network: string,
+  chainId: number,
+  signer: string,
+  table: TronTokenTable,
+): DisplayIntent => {
+  const { json } = parseTronTypedData(typedData);
+  const evmJson = tronTypedDataToEvm(json);
+  const permit2 = TRON_PERMIT2[network];
+  const permit =
+    evmJson === undefined
+      ? undefined
+      : recognizePermit(
+          evmJson,
+          chainId,
+          evmTableFor(network, chainId, table),
+          tronAddressToEvm(signer),
+          permit2 === undefined ? "" : tronAddressToEvm(permit2),
+        );
+  const nearMiss = permit === undefined ? tronTypedDataNearMiss(json, network, table) : undefined;
+  const shown = permit === undefined ? typedDataFields(json, tronTypedDataLeaf) : undefined;
+  let fields: ReadonlyArray<TypedDataLeaf> | undefined;
+  if (permit === undefined) {
+    fields = shown?.fields;
+  } else if (permit.fields !== undefined) {
+    /* A recognized permit whose witness subtree was displayable on the EVM-mapped doc gets its
+       leaves re-walked on the TRON doc so `address` leaves render base58. */
+    const witnessType = json.types[json.primaryType]?.at(-1)?.type;
+    const { witness } = json.message;
+    const subtree =
+      witnessType !== undefined && isTypedDataMessage(witness)
+        ? typedDataFields(
+            { types: json.types, primaryType: witnessType, domain: {}, message: witness },
+            tronTypedDataLeaf,
+          )
+        : undefined;
+    fields = subtree?.fields.map((leaf) => ({ path: `witness.${leaf.path}`, value: leaf.value }));
+  }
+  const blind: BlindReason | undefined =
+    permit?.blind ??
+    (permit === undefined
+      ? (nearMiss ??
+        (shown === undefined
+          ? "typed-data-oversize"
+          : shown.hasCommitment
+            ? "typed-data-commitment"
+            : undefined))
+      : undefined);
+  return {
+    family: "tron",
+    network,
+    summary: permit === undefined ? "message" : "approve",
+    outflows: [],
+    approvals: (permit?.approvals ?? []).map(mapPermitApproval),
+    fee: undefined,
+    warnings: permit?.warnings ?? [],
+    message: {
+      kind: "typed-data",
+      primaryType: json.primaryType,
+      domain: tronDomainDisplay(json.domain),
+      data: json.message,
+      ...(fields === undefined ? {} : { fields }),
+    },
+    verifiability: permit === undefined ? "opaque" : "partial",
+    ...(blind === undefined ? {} : { blind }),
+  };
+};
+
 /**
  * The display decode of a normalized request. `signer` is the base58 address the account signs
  * with; a modeled contract whose owner is anyone else is refused.
@@ -393,6 +504,9 @@ export const decodeTron = (
       verifiability: "opaque",
       ...(blind === undefined ? {} : { blind }),
     };
+  }
+  if (request.kind === "tron.typed-data") {
+    return tronTypedDataIntent(request.typedData, request.network, chainId, signer, table);
   }
   if (request.kind !== "tron.transaction") {
     throw new ChainError("unsupported", `${request.kind} is not a TRON request`);

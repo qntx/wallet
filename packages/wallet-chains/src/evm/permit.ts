@@ -60,6 +60,7 @@ export function recognizePermit(
   chainId: number,
   table: EvmTokenTable,
   signer: string,
+  permit2: string = PERMIT2_ADDRESS,
 ): Permit | undefined {
   const { types, primaryType, message, domain } = json;
   const verifying = address(domain["verifyingContract"]);
@@ -107,7 +108,7 @@ export function recognizePermit(
     }
     return undefined;
   }
-  if (verifying.toLowerCase() !== PERMIT2_ADDRESS.toLowerCase()) {
+  if (permit2 === "" || verifying.toLowerCase() !== permit2.toLowerCase()) {
     return undefined;
   }
   return recognizePermit2(json, allow, signer, chainId, table);

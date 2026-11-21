@@ -156,7 +156,7 @@ describe("the facade's frozen snapshot cannot edit the engine's ledger", () => {
           case "eth_estimateGas":
             return "0x5208";
           case "eth_feeHistory":
-            return { baseFeePerGas: ["0x1"], reward: [["0x1", "0x2"]] };
+            return { baseFeePerGas: ["0x1"], reward: [["0x1", "0x2", "0x3"]] };
           case "eth_blockNumber":
             return "0x2";
           case "eth_sendRawTransaction": {

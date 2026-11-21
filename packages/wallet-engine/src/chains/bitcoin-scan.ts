@@ -12,6 +12,7 @@ import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 
+import type { EngineLogger } from "../events.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { Esplora } from "./bitcoin.ts";
@@ -281,10 +282,14 @@ export type LockedUtxo = ScanUtxo & {
 
 export class BtcUtxoStore {
   private engineStore: EngineStore | undefined;
+  private logger: EngineLogger | undefined;
   private utxos = new Map<string, LockedUtxo>();
+  private readonly queue: Uint8Array[] = [];
+  private draining = false;
 
-  async unlock(store: EngineStore): Promise<void> {
+  async unlock(store: EngineStore, logger: EngineLogger): Promise<void> {
     this.engineStore = store;
+    this.logger = logger;
     const raw = await store.collection("btc-utxos").get("state");
     this.utxos =
       raw === undefined
@@ -306,13 +311,39 @@ export class BtcUtxoStore {
           );
   }
 
-  private async persist(): Promise<void> {
-    const store = this.engineStore;
-    if (store !== undefined) {
-      await store
-        .collection("btc-utxos")
-        .put("state", new TextEncoder().encode(JSON.stringify(Object.fromEntries(this.utxos))));
+  /**
+   * Snapshot writes are serialized through a FIFO drain in issue order — a slow earlier write can
+   * never land after a newer snapshot. Each write carries the full snapshot taken at call time, so
+   * a failed write (logged, never thrown) is repaired by the next successful one; in-memory state
+   * is authoritative for the session either way.
+   */
+  private persist(): void {
+    this.queue.push(new TextEncoder().encode(JSON.stringify(Object.fromEntries(this.utxos))));
+    void this.drain();
+  }
+
+  private async drain(): Promise<void> {
+    if (this.draining) {
+      return;
     }
+    this.draining = true;
+    for (;;) {
+      const payload = this.queue.shift();
+      if (payload === undefined) {
+        break;
+      }
+      const store = this.engineStore;
+      if (store === undefined) {
+        continue;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- writes must land in issue order
+        await store.collection("btc-utxos").put("state", payload);
+      } catch (error) {
+        this.logger?.warn("btc-utxos snapshot write failed", error);
+      }
+    }
+    this.draining = false;
   }
 
   private static key(u: { txid: string; vout: number }): string {
@@ -351,7 +382,35 @@ export class BtcUtxoStore {
         txId,
       });
     }
-    void this.persist();
+    this.persist();
+  }
+
+  /**
+   * Re-locks a live transaction's inputs on restart — the durable `btc.inputs` record outlives a
+   * lost snapshot write, so its spend must stay unselectable. Gap-fill only: an input already
+   * locked under any tx id keeps its owner.
+   */
+  restoreLocks(txId: string, inputs: ReadonlyArray<ScanUtxo>): void {
+    let changed = false;
+    for (const u of inputs) {
+      const key = BtcUtxoStore.key(u);
+      if (this.utxos.get(key)?.status === "locked") {
+        continue;
+      }
+      this.utxos.set(key, {
+        txid: u.txid,
+        vout: u.vout,
+        value: u.value,
+        address: u.address,
+        height: u.height,
+        status: "locked",
+        txId,
+      });
+      changed = true;
+    }
+    if (changed) {
+      this.persist();
+    }
   }
 
   /** True while a pending request or an unconfirmed transaction holds this output. */
@@ -381,7 +440,7 @@ export class BtcUtxoStore {
         }
       }
     }
-    void this.persist();
+    this.persist();
   }
 
   all(): ReadonlyArray<LockedUtxo> {

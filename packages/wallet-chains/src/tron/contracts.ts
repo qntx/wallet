@@ -180,7 +180,7 @@ const bytesOf = (f: ProtoField | undefined): Uint8Array => {
   return f.data;
 };
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 const stringOf = (f: ProtoField | undefined, what: string): string => {
   if (f === undefined) {

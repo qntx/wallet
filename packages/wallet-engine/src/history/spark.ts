@@ -81,6 +81,8 @@ const RECORD_STATUS: Readonly<Record<SparkPaymentState, HistoryStatus>> = {
   unknown: "pending",
   settled: "confirmed",
   failed: "failed",
+  // Genuinely unknown forever — pending, never failed.
+  archived: "pending",
 };
 
 /**
@@ -117,7 +119,7 @@ export const sparkRecordEntry = (
   timestamp: record.submittedAt,
   verified: false,
   origin: "local",
-  flags: [],
+  flags: record.state === "archived" ? ["unresolved"] : [],
 });
 
 /** The group's Spark payment records as history entries. */

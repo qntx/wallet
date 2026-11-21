@@ -9,6 +9,8 @@ import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { PhishingController } from "../phishing/controller.ts";
 import { PHISHING_BLOCKED_MESSAGE } from "../phishing/status.ts";
+import { dappUrl, isDappOrigin, walletConnectKey } from "../requests/types.ts";
+import type { DappOrigin, WalletConnectOrigin } from "../requests/types.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import {
@@ -19,7 +21,7 @@ import {
   userRejectedRequest,
 } from "./errors.ts";
 
-export type ConnectionOrigin = { readonly kind: "browser"; readonly origin: string };
+export type ConnectionOrigin = DappOrigin;
 
 export type ConnectionScope = {
   /** CAIP-10 */
@@ -42,6 +44,8 @@ export type ConnectionSession = {
   readonly identity?: NostrKeyRef;
   /** The session's current EVM network; only dApp sessions have one. */
   readonly currentNetwork: string;
+  /** The session's current TRON network; set when a `tron` namespace is granted. */
+  readonly tronNetwork?: string;
   /** The origin's Nostr policy — set when the host approves a `nostr` connection. */
   readonly nostrPolicy?: NostrPolicy;
   /** The origin's Lightning policy — set when the host approves a `lightning` connection. */
@@ -79,7 +83,7 @@ export type PendingConnection = {
    * Which namespace the connection is for — `eip155` (EVM), `nostr` (NIP-07) or `lightning`
    * (WebLN).
    */
-  readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122";
+  readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122" | "tron";
   readonly network?: string;
   /** `false` for a `network` request that adds the network without making it current. */
   readonly activate?: boolean;
@@ -105,6 +109,8 @@ export type AccountGroup = { readonly walletId: string; readonly groupIndex: num
 export type ConnectionState = {
   readonly sessions: Readonly<Record<string, ConnectionSession>>;
   readonly pending: Readonly<Record<string, PendingConnection>>;
+  /** Whether the session store is open and loaded. */
+  readonly ready: boolean;
 };
 
 export type ConnectionControllerOptions = {
@@ -121,6 +127,8 @@ export type ConnectionControllerOptions = {
   readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
   /** The group's Solana address on `network` (a CAIP-2 `solana:<genesis>` chain). */
   readonly solanaAddress: (group: AccountGroup, network: string) => Promise<string>;
+  /** The group's TRON address (base58) on `network` (a `tron:<chain>` CAIP-2 chain). */
+  readonly tronAddress: (group: AccountGroup, network: string) => Promise<string>;
   /** The group's fixed dApp-facing Bitcoin address of `purpose` on `network` (`bip122:<genesis>`). */
   readonly bitcoinAddress: (
     group: AccountGroup,
@@ -207,6 +215,21 @@ export const BITCOIN_METHODS: ReadonlyArray<string> = [
 /** `payment` is the group's `btc.bip84` address, `ordinals` its `btc.bip86` one. */
 export type BitcoinPurpose = "payment" | "ordinals";
 
+/** The `tron` namespace scope's granted methods — the TronLink surface. */
+export const TRON_METHODS: ReadonlyArray<string> = [
+  "eth_requestAccounts",
+  "tron_requestAccounts",
+  "wallet_switchEthereumChain",
+  "wallet_watchAsset",
+  "tron_signTransaction",
+  "tron_sendRawTransaction",
+  "tron_signMessageV2",
+  "tron_signTypedData",
+];
+
+/** The `tron` namespace scope's notifications. */
+export const TRON_NOTIFICATIONS: ReadonlyArray<string> = ["accountsChanged", "chainChanged"];
+
 /** The order of a `bip122` scope's two accounts. */
 export const BITCOIN_PURPOSES: ReadonlyArray<BitcoinPurpose> = ["payment", "ordinals"];
 
@@ -239,14 +262,16 @@ const isIdentity = (value: unknown): value is NostrKeyRef =>
   value["index"] >= 0;
 
 export const isSession = (value: unknown): value is ConnectionSession => {
-  if (!isObject(value) || !isObject(value["origin"]) || !isObject(value["scopes"])) {
+  if (!isObject(value) || !isObject(value["scopes"])) {
     return false;
   }
+  const { origin } = value;
   return (
     typeof value["id"] === "string" &&
-    value["origin"]["kind"] === "browser" &&
-    typeof value["origin"]["origin"] === "string" &&
+    isDappOrigin(origin) &&
+    (origin.kind !== "walletconnect" || origin.origin === walletConnectKey(origin.topic)) &&
     typeof value["currentNetwork"] === "string" &&
+    (value["tronNetwork"] === undefined || typeof value["tronNetwork"] === "string") &&
     typeof value["createdAt"] === "number" &&
     typeof value["lastUsedAt"] === "number" &&
     (value["group"] === undefined || isGroup(value["group"])) &&
@@ -310,7 +335,8 @@ const isChainScope = (network: string): boolean =>
   network === "lightning" ||
   network.startsWith("eip155:") ||
   network.startsWith("solana:") ||
-  network.startsWith("bip122:");
+  network.startsWith("bip122:") ||
+  network.startsWith("tron:");
 
 type Waiter = {
   readonly resolve: (session: ConnectionSession) => void;
@@ -327,7 +353,10 @@ export class ConnectionController extends Controller<ConnectionState> {
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: ConnectionControllerOptions) {
-    super({ name: "connections", defaultState: () => ({ sessions: {}, pending: {} }) });
+    super({
+      name: "connections",
+      defaultState: () => ({ sessions: {}, pending: {}, ready: false }),
+    });
     this.options = options;
   }
 
@@ -357,7 +386,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       }
     }
     await Promise.all(expired.map(async (key) => collection.delete(key)));
-    this.update(() => ({ sessions, pending: {} }));
+    this.update(() => ({ sessions, pending: {}, ready: true }));
     this.unsubscribeSelection = this.options.onSelectedGroup(() => {
       this.options.invalidateAll();
       void this.repointQueued();
@@ -382,7 +411,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       cancel();
     }
     this.expiries.clear();
-    this.update(() => ({ sessions: {}, pending: {} }));
+    this.update(() => ({ sessions: {}, pending: {}, ready: false }));
   }
 
   /**
@@ -403,9 +432,26 @@ export class ConnectionController extends Controller<ConnectionState> {
 
   /**
    * Throws `4100` unless `origin` is `https://host[:port]` (or localhost in development) and not on
+   * the phishing list. A WalletConnect peer instead passes its origin object: an established
+   * session must carry the same session key and topic, and its unverified peer URL must not be on
    * the phishing list.
    */
-  checkOrigin(origin: string): ConnectionOrigin {
+  checkOrigin(origin: string | WalletConnectOrigin): ConnectionOrigin {
+    if (typeof origin !== "string") {
+      const session = Object.values(this.getState().sessions).find(
+        (s) =>
+          s.origin.kind === "walletconnect" &&
+          s.origin.origin === origin.origin &&
+          s.origin.topic === origin.topic,
+      );
+      if (session === undefined) {
+        throw unauthorized();
+      }
+      if (this.options.phishing.check(origin.url) === "blocked") {
+        throw unauthorized(PHISHING_BLOCKED_MESSAGE);
+      }
+      return origin;
+    }
     let url: URL;
     try {
       url = new URL(origin);
@@ -436,6 +482,27 @@ export class ConnectionController extends Controller<ConnectionState> {
   /** What the origin's session authorized on `network` — `undefined` when nothing. */
   sessionAccounts(origin: string, network: string): SessionAccounts | undefined {
     return sessionAccounts(this.session(origin), network);
+  }
+
+  /**
+   * The selected group's accounts on `network` as a grant would bind them — a preview for callers
+   * that sign before a session exists; nothing is persisted. `undefined` when no group is selected
+   * or the account cannot be derived.
+   */
+  async previewAccounts(network: string): Promise<SessionAccounts | undefined> {
+    const group = this.options.selectedGroup();
+    if (group === undefined) {
+      return undefined;
+    }
+    const bound = await this.repointScopes(
+      { [network]: { accounts: [], methods: [], notifications: [] } },
+      group,
+    );
+    const scope = bound[network];
+    if (scope === undefined || scope.accounts.length === 0) {
+      return undefined;
+    }
+    return { group, addresses: scope.accounts.map(addressOf) };
   }
 
   /** The identity the origin's `nostr` scope is bound to, with the pubkey the page sees. */
@@ -478,7 +545,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     const id = `conn-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
     const entry: PendingConnection = {
       id,
-      origin: { kind: "browser", origin },
+      origin: this.session(origin)?.origin ?? { kind: "browser", origin },
       kind,
       namespace,
       ...(network === undefined ? {} : { network }),
@@ -520,7 +587,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     if (entry === undefined || waiter === undefined) {
       throw new Error(`unknown connection request ${id}`);
     }
-    if (this.options.phishing.check(entry.origin.origin) === "blocked") {
+    if (this.options.phishing.check(dappUrl(entry.origin)) === "blocked") {
       const blocked = unauthorized(PHISHING_BLOCKED_MESSAGE);
       this.dropPending(id);
       waiter.reject(blocked);
@@ -531,7 +598,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     return this.serial(async () => {
       const store = this.requireStore();
-      const { scopes, group, identity } = await this.grantScopes(entry, grant);
+      const { scopes, group, identity, tronNetwork } = await this.grantScopes(entry, grant);
       if (this.getState().pending[id] === undefined) {
         throw new Error(`connection request ${id} is no longer pending`);
       }
@@ -548,13 +615,12 @@ export class ConnectionController extends Controller<ConnectionState> {
         : { ...existing?.scopes };
       const sessionGroup = group ?? existing?.group;
       const sessionIdentity = identity ?? existing?.identity;
+      const sessionTronNetwork = tronNetwork ?? existing?.tronNetwork;
       /* A later grant (e.g. an added network) keeps the policies an earlier grant set. */
       const nostrPolicy = grant.nostr?.policy ?? existing?.nostrPolicy;
       const lightningPolicy = grant.lightning?.policy ?? existing?.lightningPolicy;
       const session: ConnectionSession = {
-        id:
-          existing?.id ??
-          `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+        id: existing?.id ?? this.newSessionId(),
         origin: entry.origin,
         scopes: { ...merged, ...scopes },
         currentNetwork:
@@ -563,6 +629,7 @@ export class ConnectionController extends Controller<ConnectionState> {
             : grant.network,
         ...(sessionGroup === undefined ? {} : { group: sessionGroup }),
         ...(sessionIdentity === undefined ? {} : { identity: sessionIdentity }),
+        ...(sessionTronNetwork === undefined ? {} : { tronNetwork: sessionTronNetwork }),
         ...(nostrPolicy === undefined ? {} : { nostrPolicy }),
         ...(lightningPolicy === undefined ? {} : { lightningPolicy }),
         createdAt: existing?.createdAt ?? now,
@@ -588,6 +655,60 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     this.dropPending(id);
     waiter.reject(userRejectedRequest());
+  }
+
+  /**
+   * Establishes a WalletConnect peer's session inside the session write queue: each network's scope
+   * is bound to the selected group's accounts, `settle` receives the bound scopes and settles the
+   * peer on the relay, returning its origin, and the session is persisted under that origin — a
+   * group switch cannot interleave between the accounts the peer is given and the ones recorded.
+   * Nothing is persisted when `settle` throws.
+   */
+  async establishWalletConnect(
+    scopes: Readonly<Record<string, Omit<ConnectionScope, "accounts">>>,
+    settle: (scopes: Readonly<Record<string, ConnectionScope>>) => Promise<WalletConnectOrigin>,
+  ): Promise<ConnectionSession> {
+    return this.serial(async () => {
+      const store = this.requireStore();
+      const group = this.options.selectedGroup();
+      if (group === undefined) {
+        throw userRejectedRequest("no account group is selected");
+      }
+      const enabled = this.options.enabledNetworks();
+      const boundable = (network: string): boolean =>
+        (network.startsWith("eip155:") ||
+          network.startsWith("solana:") ||
+          network.startsWith("bip122:")) &&
+        enabled.includes(network);
+      const requested = Object.keys(scopes);
+      const [first] = requested;
+      if (first === undefined || !requested.every(boundable)) {
+        throw invalidParams("every scope must name an enabled eip155, solana or bip122 network");
+      }
+      const bound = await this.repointScopes(
+        Object.fromEntries(
+          Object.entries(scopes).map(([network, scope]) => [network, { ...scope, accounts: [] }]),
+        ),
+        group,
+      );
+      if (Object.values(bound).some((scope) => scope.accounts.length === 0)) {
+        throw internalError("an account could not be derived for a granted network");
+      }
+      const origin = await settle(bound);
+      const existing = this.session(origin.origin);
+      const now = this.options.now();
+      const session: ConnectionSession = {
+        id: existing?.id ?? this.newSessionId(),
+        origin,
+        scopes: bound,
+        group,
+        currentNetwork: requested.find((network) => network.startsWith("eip155:")) ?? first,
+        createdAt: existing?.createdAt ?? now,
+        lastUsedAt: now,
+      };
+      await this.persist(store, session);
+      return session;
+    });
   }
 
   /** Ends the origin's session; its pending connection and unfinished requests are void. */
@@ -620,6 +741,19 @@ export class ConnectionController extends Controller<ConnectionState> {
         throw unauthorized();
       }
       await this.persist(store, { ...session, currentNetwork: network });
+      this.options.invalidate(origin);
+    });
+  }
+
+  /** Switches the session's TRON network; the origin's unfinished requests are void. */
+  async setTronNetwork(origin: string, network: string): Promise<void> {
+    await this.serial(async () => {
+      const store = this.requireStore();
+      const session = this.session(origin);
+      if (session === undefined || session.scopes[network] === undefined) {
+        throw unauthorized();
+      }
+      await this.persist(store, { ...session, tronNetwork: network });
       this.options.invalidate(origin);
     });
   }
@@ -780,10 +914,15 @@ export class ConnectionController extends Controller<ConnectionState> {
             ];
           }
           if (network.startsWith("bip122:")) {
-            return [network, await this.bitcoinScope(target, network)];
+            const bound = await this.bitcoinScope(target, network);
+            return [network, { ...scope, accounts: bound.accounts }];
           }
           if (network.startsWith("solana:")) {
             const address = await this.options.solanaAddress(target, network);
+            return [network, { ...scope, accounts: [caip10(network, address)] }];
+          }
+          if (network.startsWith("tron:")) {
+            const address = await this.options.tronAddress(target, network);
             return [network, { ...scope, accounts: [caip10(network, address)] }];
           }
           if (network.startsWith("eip155:")) {
@@ -811,6 +950,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     readonly scopes: Record<string, ConnectionScope>;
     readonly group?: AccountGroup;
     readonly identity?: NostrKeyRef;
+    readonly tronNetwork?: string;
   }> {
     const scopes: Record<string, ConnectionScope> = {};
     if (entry.namespace === "nostr") {
@@ -870,6 +1010,27 @@ export class ConnectionController extends Controller<ConnectionState> {
       Object.assign(scopes, Object.fromEntries(solanaEntries));
       return { scopes, group };
     }
+    if (entry.namespace === "tron") {
+      const tronNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("tron:"));
+      if (!tronNetworks.includes(grant.network)) {
+        throw invalidParams(`${grant.network} is not an enabled TRON network`);
+      }
+      const tronEntries = await Promise.all(
+        tronNetworks.map(async (network): Promise<[string, ConnectionScope]> => {
+          const address = await this.options.tronAddress(group, network);
+          return [
+            network,
+            {
+              accounts: [caip10(network, address)],
+              methods: TRON_METHODS,
+              notifications: TRON_NOTIFICATIONS,
+            },
+          ];
+        }),
+      );
+      Object.assign(scopes, Object.fromEntries(tronEntries));
+      return { scopes, group, tronNetwork: grant.network };
+    }
     if (entry.namespace === "bip122") {
       const bitcoinNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("bip122:"));
       const bitcoinEntries = await Promise.all(
@@ -896,6 +1057,10 @@ export class ConnectionController extends Controller<ConnectionState> {
       notifications: SESSION_NOTIFICATIONS,
     };
     return { scopes, group };
+  }
+
+  private newSessionId(): string {
+    return `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
   }
 
   private dropPending(id: string): void {

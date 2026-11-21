@@ -26,6 +26,7 @@ export { ORDER_ITEMS } from "./order.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { ALLOWANCE_HOLDER, ZEROX_CHAINS, isZeroExSettler, decodeZeroX } from "./zerox.ts";
 export { ACROSS_SPOKEPOOLS, ACROSS_WRAPPED_NATIVE, decodeAcross } from "./across.ts";
+export { CCTP_FORWARDERS, CCTP_MESSENGERS, CCTP_USDC, HYPERLIQUID_DOMAIN } from "./cctp.ts";
 export { LIDO_CHAIN, LIDO_STETH, LIDO_WSTETH, LIDO_QUEUE } from "./lido.ts";
 export {
   TYPED_FIELD_BUDGET,

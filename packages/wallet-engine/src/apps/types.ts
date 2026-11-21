@@ -45,8 +45,12 @@ export type AppGroupState = {
   readonly requestId?: string;
   /** `validUntil - now < 14 days` — the host surfaces a renew prompt. */
   readonly renewalDue: boolean;
-  /** Set once `maxBuilderFee(owner, builder) >= f` was confirmed on Hyperliquid. */
-  readonly builder?: "approved";
+  /**
+   * `approved` once `maxBuilderFee(owner, builder) >= f` was confirmed on Hyperliquid; `declined`
+   * when the user refused the approval — trades go out without a builder either way the fee is
+   * unconfirmed.
+   */
+  readonly builder?: "approved" | "declined";
   /** The last failure — keeps `enabling`/`disabled` resumable. */
   readonly error?: AppError;
 };
@@ -86,6 +90,8 @@ export type AppFlow = {
   readonly stale: () => boolean;
   /** The address of the last agent a previous session enabled, when the record persisted one. */
   readonly wasEnabledAgent: () => string | undefined;
+  /** Whether the persisted record saw the builder approval declined. */
+  readonly wasBuilderDeclined: () => boolean;
 };
 
 /** A wallet group — identical to the trading path's `HyperliquidGroup`. */
@@ -103,6 +109,8 @@ export type AppProvider = {
   readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
   /** Run or resume the enable flow to `enabled`, or leave a resumable `enabling`/error state. */
   readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
+  /** Ask an enabled group for the builder fee approval it declined or never gave. */
+  readonly approveBuilder: (group: AppGroup, flow: AppFlow) => Promise<void>;
   /** Enable a fresh agent, then drop the old one — the old stays usable until then. */
   readonly renew: (group: AppGroup, flow: AppFlow) => Promise<void>;
   /**

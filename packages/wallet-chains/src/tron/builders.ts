@@ -7,6 +7,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  */
 import * as AbiFunction from "ox/AbiFunction";
 
+import { hasHiddenCharacters } from "../display.ts";
 import { ChainError } from "../index.ts";
 import { tronAddressToEvm } from "./address.ts";
 import { TRON_CONTRACT_TYPES, tronTypeUrl } from "./contract-types.ts";
@@ -28,6 +29,30 @@ export type TronTransactionHeader = {
   readonly feeLimit?: bigint;
   readonly memo?: Uint8Array;
   readonly permissionId?: number;
+};
+
+/** A TRON memo (`raw_data.data`) is 1–256 UTF-8 bytes. */
+export const TRON_MEMO_MAX_BYTES = 256;
+
+const utf8Encode = new TextEncoder();
+
+/**
+ * A memo's wire bytes: non-empty, at most `TRON_MEMO_MAX_BYTES` UTF-8 bytes, no line breaks and no
+ * hidden characters — the prompt shows it verbatim, so anything that could hide a second line or an
+ * invisible payload is refused as `invalid-request`.
+ */
+export const tronMemoBytes = (memo: string): Uint8Array => {
+  const bytes = utf8Encode.encode(memo);
+  if (bytes.length === 0 || bytes.length > TRON_MEMO_MAX_BYTES) {
+    throw new ChainError("invalid-request", `a memo is 1 to ${TRON_MEMO_MAX_BYTES} UTF-8 bytes`);
+  }
+  if (memo.includes("\n") || memo.includes("\r") || hasHiddenCharacters(memo)) {
+    throw new ChainError(
+      "invalid-request",
+      "a memo must not contain newlines or hidden characters",
+    );
+  }
+  return bytes;
 };
 
 const TRON_TYPE_BY_NAME: Readonly<Record<string, number>> = Object.fromEntries(

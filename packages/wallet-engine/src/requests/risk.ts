@@ -7,12 +7,14 @@ import type {
 } from "@qntx/wallet-chains";
 import { SAFE_MULTISEND_CALL_ONLY, evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
+import { tronTokenTable } from "@qntx/wallet-chains/tron";
 
 import { mayCarryInscription } from "../chains/bitcoin.ts";
 import type { PhishingStatus } from "../phishing/status.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import { sameAsset } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
+import type { WalletConnectVerify } from "./types.ts";
 
 /**
  * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
@@ -52,7 +54,10 @@ export type RiskFinding = {
     | "blind-signing"
     | "contract-recipient"
     | "token-contract-recipient"
-    | "token-recipient-empty";
+    | "token-recipient-empty"
+    | "fee-limit-below-estimate"
+    | "verify-mismatch"
+    | "verify-threat";
   readonly level: "warning" | "danger";
 };
 
@@ -65,6 +70,21 @@ export function originRisk(status: PhishingStatus): ReadonlyArray<RiskFinding> {
     return [{ code: "phishing-origin", level: "danger" }];
   }
   return status === "unchecked" ? [{ code: "phishing-unchecked", level: "warning" }] : [];
+}
+
+/**
+ * A WalletConnect peer's Verify verdict: a flagged domain or a domain mismatch is a danger; an
+ * unverifiable one is neutral.
+ */
+export function verifyRisk(verify: WalletConnectVerify): ReadonlyArray<RiskFinding> {
+  const found: RiskFinding[] = [];
+  if (verify.isScam) {
+    found.push({ code: "verify-threat", level: "danger" });
+  }
+  if (verify.validation === "INVALID") {
+    found.push({ code: "verify-mismatch", level: "danger" });
+  }
+  return found;
 }
 
 /** `findings` plus `extra`, deduplicated by code, `danger` first. */
@@ -234,10 +254,11 @@ const originParts = (origin: string): { scheme: string; host: string; hostPort: 
 const isLocalHost = (host: string): boolean => LOCAL_HOSTS.has(host) || host.endsWith(".localhost");
 
 /**
- * What a Sign-In with Ethereum/Solana message adds to a request from `origin`: a message for
- * another domain is refused (`reject`) in production and a `danger` on a local development page;
- * the signing address must be the signer; an expired or not-yet-valid window and a text that only
- * resembles a sign-in message are warnings.
+ * What a Sign-In with X message adds to a request from `origin`: a message for another domain is
+ * refused (`reject`) in production and a `danger` on a local development page; the signing address
+ * must be the signer; an expired or not-yet-valid window and a text that only resembles a sign-in
+ * message are warnings. TRON has no sign-in standard — a `tron` parse is only ever `malformed`, the
+ * claims-only path.
  */
 export function assessSignIn(input: {
   readonly signIn: SignInParse;
@@ -245,7 +266,7 @@ export function assessSignIn(input: {
   readonly origin: string;
   /** The address that will sign. */
   readonly signer: string;
-  readonly family: "evm" | "solana";
+  readonly family: "evm" | "solana" | "tron";
   /** Milliseconds since the epoch. */
   readonly now: number;
 }): { readonly reject?: string; readonly risk: ReadonlyArray<RiskFinding> } {
@@ -403,5 +424,16 @@ export function impersonatesBuiltIn(chainId: number, address: string, symbol: st
   return Object.entries(evmTokenTable[String(chainId)] ?? {}).some(
     ([known, token]) =>
       known.toLowerCase() !== address.toLowerCase() && token.symbol.toLowerCase() === wanted,
+  );
+}
+
+/**
+ * The TRC-20 counterpart of {@link impersonatesBuiltIn}: a contract reporting the symbol of a
+ * different token in the TRON table. Addresses are base58 — case-sensitive, no checksum folding.
+ */
+export function impersonatesTronToken(network: string, address: string, symbol: string): boolean {
+  const wanted = symbol.toLowerCase();
+  return Object.entries(tronTokenTable[network] ?? {}).some(
+    ([known, token]) => known !== address && token.symbol.toLowerCase() === wanted,
   );
 }

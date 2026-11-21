@@ -308,6 +308,35 @@ describe("chain prompts", () => {
     );
   });
 
+  it("swap: a token-account minimum names the account in both locales", () => {
+    const swap: PromptIntent = {
+      summary: "swap",
+      outflows: [
+        {
+          to: TO,
+          amount: { asset: USDC, amount: "10000000", symbol: "USDC", decimals: 6 },
+          verified: true,
+        },
+      ],
+      approvals: [],
+      minimumReceived: [
+        {
+          to: SPENDER,
+          amount: { asset: SPENDER, amount: "604607796" },
+          tokenAccount: SPENDER,
+        },
+      ],
+      fee: undefined,
+      verifiability: "partial",
+    };
+    expect(chainPrompt("en", swap).description).toBe(
+      `There may be other outflows\nSend 10 USDC to ${TO}\nReceive at least 604607796 base units of the token in account ${SPENDER}\nFee unknown`,
+    );
+    expect(chainPrompt("zh-Hans", swap).description).toBe(
+      `可能还有其他转出\n发送 10 USDC 到 ${TO}\n至少收到 604607796 个代币账户 ${SPENDER} 所持代币的基本单位\n手续费未知`,
+    );
+  });
+
   it.each([
     [1, "1970-01-01"],
     [951_782_400, "2000-02-29"],
@@ -1087,6 +1116,222 @@ describe("chain prompts via the real decoders", () => {
     expect(chainPrompt("zh-Hans", tronTransfer(memo)).description).toBe(
       `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n${"x".repeat(320)}\n… 还有 80 个字符未显示\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
     );
+  });
+
+  it("a full 256-byte memo renders without an omitted line", () => {
+    const memo = utf8ToBytes("y".repeat(256));
+    const en = chainPrompt("en", tronTransfer(memo)).description;
+    expect(en).toContain(`Memo:\n${"y".repeat(256)}`);
+    expect(en).not.toContain("… ");
+  });
+});
+
+describe("TRON typed-data prompts", () => {
+  const account = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "tron.bip44" };
+  const SIGNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
+  const USDT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+  const PERMIT2 = "TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9";
+  const typed = (doc: unknown): PromptIntent =>
+    decodeTron(
+      {
+        kind: "tron.typed-data",
+        network: "tron:728126428",
+        account,
+        typedData: JSON.stringify(doc),
+      },
+      SIGNER,
+    );
+  const permitSingle = (extra?: { name: string; type: string }) => ({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PermitSingle: [
+        { name: "details", type: "PermitDetails" },
+        { name: "spender", type: "address" },
+        { name: "sigDeadline", type: "uint256" },
+        ...(extra === undefined ? [] : [extra]),
+      ],
+      PermitDetails: [
+        { name: "token", type: "address" },
+        { name: "amount", type: "uint160" },
+        { name: "expiration", type: "uint48" },
+        { name: "nonce", type: "uint48" },
+      ],
+    },
+    primaryType: "PermitSingle",
+    domain: { name: "Permit2", chainId: "0x2b6653dc", verifyingContract: PERMIT2 },
+    message: {
+      details: { token: USDT, amount: "1000000", expiration: "2000000000", nonce: "7" },
+      spender: "410000000000000000000000000000000000000001",
+      sigDeadline: "2000000100",
+      ...(extra === undefined ? {} : { extra: "1" }),
+    },
+  });
+
+  it("a recognized SUN Permit2 PermitSingle shows base58 approvals in both locales", () => {
+    const intent = typed(permitSingle());
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm approval",
+      description:
+        "App: Permit2\n" +
+        "Network: TRON\n" +
+        `Verifying contract ${PERMIT2}\n` +
+        "Type: PermitSingle\n" +
+        "There may be other outflows\n" +
+        "Allow T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn to spend 1 USDT via Permit2 until 2033-05-18 (UTC)",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认授权",
+      description:
+        "应用：Permit2\n" +
+        "网络：TRON\n" +
+        `验证合约 ${PERMIT2}\n` +
+        "类型：PermitSingle\n" +
+        "可能还有其他转出\n" +
+        "授权 T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn 使用 1 USDT 经 Permit2 至 2033-05-18（UTC）",
+    });
+  });
+
+  it("an EIP-2612 Permit on a listed TRC-20 is recognized in both locales", () => {
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Permit: [
+          { name: "owner", type: "address" },
+          { name: "spender", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Permit",
+      domain: {
+        name: "Tether USD",
+        version: "1",
+        chainId: "0x2b6653dc",
+        verifyingContract: USDT,
+      },
+      message: {
+        owner: "41f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        spender: "410000000000000000000000000000000000000002",
+        value: "1000000",
+        nonce: "0",
+        deadline: "2000000100",
+      },
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm approval",
+      description:
+        "App: Tether USD\n" +
+        "Network: TRON\n" +
+        `Verifying contract ${USDT}\n` +
+        "Type: Permit\n" +
+        "There may be other outflows\n" +
+        "Allow T9yD14Nj9j7xAB4dbGeiX9h8unkKT76qbH to spend 1 USDT",
+    });
+    expect(chainPrompt("zh-Hans", intent).title).toBe("确认授权");
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "应用：Tether USD\n" +
+        "网络：TRON\n" +
+        `验证合约 ${USDT}\n` +
+        "类型：Permit\n" +
+        "可能还有其他转出\n" +
+        "授权 T9yD14Nj9j7xAB4dbGeiX9h8unkKT76qbH 使用 1 USDT",
+    );
+  });
+
+  it("an unclaimed document shows fields with a trcToken and a base58 address", () => {
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Send: [
+          { name: "asset", type: "trcToken" },
+          { name: "to", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+      },
+      primaryType: "Send",
+      domain: { name: "TRC10", chainId: "0x2b6653dc" },
+      message: { asset: "1002000", to: USDT, amount: "42" },
+    });
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm signature",
+      description:
+        "App: TRC10\n" +
+        "Network: TRON\n" +
+        "Type: Send\n" +
+        "The wallet cannot verify what this signature authorises\n" +
+        `· asset = 1002000\n· to = ${USDT}\n· amount = 42`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "应用：TRC10\n" +
+        "网络：TRON\n" +
+        "类型：Send\n" +
+        "钱包无法核实此签名授权的内容\n" +
+        `· asset = 1002000\n· to = ${USDT}\n· amount = 42`,
+    );
+  });
+
+  it("a Permit2 near-miss is blind as a variant, in both locales", () => {
+    const intent = typed(permitSingle({ name: "extra", type: "uint256" }));
+    expect(intent.blind).toBe("typed-data-variant");
+    const en = chainPrompt("en", intent);
+    expect(en.title).toBe("Confirm blind signing");
+    expect(en.description).toContain(
+      "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
+    );
+    expect(chainPrompt("zh-Hans", intent).title).toBe("确认盲签");
+  });
+
+  it("an oversized document and a bytes32 commitment are blind, in both locales", () => {
+    const big = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Wide: Array.from({ length: 20 }, (_, i) => ({ name: `f${i}`, type: "string" })),
+      },
+      primaryType: "Wide",
+      domain: { name: "Big", chainId: "0x2b6653dc" },
+      message: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`f${i}`, `v${i}`])),
+    });
+    expect(big.blind).toBe("typed-data-oversize");
+    expect(chainPrompt("en", big).description).toContain(
+      "This typed data is too large to show in full",
+    );
+    expect(chainPrompt("zh-Hans", big).description).toContain("此类型数据过大，无法完整显示");
+
+    const commitment = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Commit: [{ name: "h", type: "bytes32" }],
+      },
+      primaryType: "Commit",
+      domain: { name: "C", chainId: "0x2b6653dc" },
+      message: { h: `0x${"ef".repeat(32)}` },
+    });
+    expect(commitment.blind).toBe("typed-data-commitment");
+    expect(chainPrompt("en", commitment).description).toContain(
+      "It signs a hash or raw bytes; the wallet cannot see what they commit to",
+    );
+    expect(chainPrompt("zh-Hans", commitment).title).toBe("确认盲签");
   });
 });
 
@@ -2485,17 +2730,70 @@ describe("blind text prompts", () => {
     });
   });
 
-  it("a 32-byte text shows under the digest-length hazard, in both locales", () => {
+  it("a 32-byte text shows its bytes and text under the digest-length hazard, in both locales", () => {
     const text = "Sign in to app.example.org #4821";
+    const hex = `0x${[...new TextEncoder().encode(text)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
     const intent = personal(text);
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n${text}`,
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}\nMessage:\n${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n${text}`,
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}\n消息：\n${text}`,
+    });
+  });
+
+  it("a non-printable 32-byte text shows only its bytes under the digest-length hazard", () => {
+    const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
+    const intent = decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: bytes,
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBe("message-bytes");
+    const hex = `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}`,
+    });
+  });
+
+  it("a BOM-prefixed 32-byte message stays blind instead of decoding to 29 bytes", () => {
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode("sign this digest for me now!!"),
+    ]);
+    expect(bytes).toHaveLength(32);
+    const intent = decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: bytes,
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBe("message-bytes");
+    const hex = `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}`,
     });
   });
 

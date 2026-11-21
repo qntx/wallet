@@ -11,6 +11,7 @@ import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import type { RiskFinding } from "./risk.ts";
+import { isRequestOrigin } from "./types.ts";
 import type {
   BitcoinAccount,
   BitcoinGroup,
@@ -64,6 +65,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "pay",
   "zap",
   "evm-sign",
+  "tron-sign",
   "nostr-sign",
   "webln-invoice",
   "watch-asset",
@@ -109,16 +111,11 @@ const isAccount = (
   );
 };
 
-const isOrigin = (value: unknown): boolean =>
-  isObject(value) &&
-  (value["kind"] === "internal" ||
-    (value["kind"] === "browser" && typeof value["origin"] === "string"));
-
 const isEntry = (value: unknown): value is SignLogEntry =>
   isObject(value) &&
   typeof value["id"] === "string" &&
   typeof value["at"] === "number" &&
-  isOrigin(value["origin"]) &&
+  isRequestOrigin(value["origin"]) &&
   METHODS.has(value["method"]) &&
   OUTCOMES.has(value["outcome"]) &&
   isAccount(value["account"]);

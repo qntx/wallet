@@ -42,6 +42,7 @@ export const SPARK_ERROR_IS_NEW: Readonly<Record<SparkErrorCategory, boolean>> =
   "insufficient-funds": false,
   rejected: false,
   unknown: true,
+  duplicate: true,
   internal: false,
 };
 

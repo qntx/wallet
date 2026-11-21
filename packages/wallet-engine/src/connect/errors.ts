@@ -1,3 +1,12 @@
+import { ChainError } from "@qntx/wallet-chains";
+
+import {
+  InvalidTokenError,
+  OriginBusyError,
+  RequestEndedError,
+  SignInOriginError,
+} from "../requests/types.ts";
+
 /** EIP-1193 / EIP-1474 / EIP-3326 error: `code` is what the page's promise rejects with. */
 export class ProviderError extends Error {
   readonly code: number;
@@ -30,6 +39,27 @@ export const requestPending = (message: string): ProviderError =>
 export const limitExceeded = (message: string): ProviderError => new ProviderError(-32005, message);
 
 export const internalError = (message: string): ProviderError => new ProviderError(-32603, message);
+
+export function toProviderError(error: unknown): ProviderError {
+  if (error instanceof ProviderError) {
+    return error;
+  }
+  if (error instanceof InvalidTokenError || error instanceof SignInOriginError) {
+    return invalidParams(error.message);
+  }
+  if (error instanceof OriginBusyError) {
+    return userRejectedRequest(error.message);
+  }
+  if (error instanceof RequestEndedError) {
+    return error.stage === "failed"
+      ? internalError(error.message)
+      : userRejectedRequest(error.message);
+  }
+  if (error instanceof ChainError) {
+    return invalidParams(error.message);
+  }
+  return internalError(error instanceof Error ? error.message : String(error));
+}
 
 /** JSON-RPC implementation-defined server error (outside EIP-1474's assigned codes). */
 export const PAYMENT_PENDING_CODE = -32010;

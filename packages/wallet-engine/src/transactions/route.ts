@@ -18,6 +18,7 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
+import type { DappOrigin } from "../requests/types.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AcrossBridgeQuote } from "../swaps/bridge.ts";
 import type { JupiterSwapQuote, ZeroExSwapQuote } from "../swaps/index.ts";
@@ -130,8 +131,14 @@ export type TrackedTransaction = {
   /**
    * TRON build record — `raw_data.expiration` bounds drop proofs (past it the network can never
    * include the transaction); `from` is the sender, for group membership like `evm.from`.
+   * `dappSignature` is set on a dApp-observed entry: the wallet-signed signature (lowercase hex)
+   * `submitDappTron` later matches against the bytes the dApp broadcasts.
    */
-  readonly tron?: { readonly expiration: number; readonly from: string };
+  readonly tron?: {
+    readonly expiration: number;
+    readonly from: string;
+    readonly dappSignature?: string;
+  };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */
@@ -186,32 +193,18 @@ export type SendParams = {
    * selection. Naming an inscription-protected output opts into spending it.
    */
   readonly inputs?: ReadonlyArray<string>;
+  /** TRON only — the `raw_data.data` memo; refused on every other family. */
+  readonly memo?: string;
   readonly verify: SignParams["verify"];
 };
 
 export type PrepareParams = Omit<SendParams, "verify">;
 
-export type ChainRequestMethod =
-  | "send"
-  | "speed-up"
-  | "cancel"
-  | "cpfp"
-  | "evm-delegation"
-  | "evm-batch"
-  | "evm-approve"
-  | "evm-swap"
-  | "evm-bridge"
-  | "evm-nft-send"
-  | "solana-core-send"
-  | "evm-lido"
-  | "solana-stake"
-  | "solana-swap"
-  | "tron-stake"
-  | "tron-approve";
+export type { ChainRequestMethod } from "../requests/types.ts";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
-  | ({ readonly method: "send" } & PrepareParams)
+  | ({ readonly method: "send"; readonly origin?: DappOrigin } & PrepareParams)
   | { readonly method: "speed-up" | "cancel"; readonly txId: string }
   | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number }
   | {
@@ -232,7 +225,7 @@ export type ChainRequestInput =
       }>;
       readonly fee: PrepareParams["fee"];
       /** A page asking for the batch (`wallet_sendCalls`); absent means the wallet itself. */
-      readonly origin?: { readonly kind: "browser"; readonly origin: string };
+      readonly origin?: DappOrigin;
     }
   | {
       readonly method: "evm-approve";
@@ -241,6 +234,17 @@ export type ChainRequestInput =
       readonly token: string;
       readonly spender: string;
       readonly amount: bigint;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      /** The Hyperliquid CCTP deposit — `depositForBurnWithHook` on the route's messenger. */
+      readonly method: "evm-cctp";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly amount: bigint;
+      readonly dex: "perps" | "spot";
+      /** The Circle forward fee bound — strictly below `amount`. */
+      readonly maxFee: bigint;
       readonly fee: PrepareParams["fee"];
     }
   | {
@@ -412,7 +416,7 @@ export type PreparedRequest = {
 };
 
 export type SignatureResult = {
-  readonly kind: "evm.personal-message" | "evm.typed-data";
+  readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
   readonly signature: Uint8Array;
 };
 

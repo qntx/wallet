@@ -20,9 +20,10 @@ export type SparkPaymentKind = "transfer" | "lightning" | "exit" | "token";
 /**
  * `submitted`: persisted before the commit call, and kept after it returned until the operator
  * reports a final status. `unknown`: the commit response was lost — it may have committed.
- * `settled` and `failed` are the operator's final answer.
+ * `settled` and `failed` are the operator's final answer. `archived`: the user gave up on an
+ * outcome the operator can never answer for — kept, never reconciled, never blocking.
  */
-export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed" | "archived";
 
 /** One wallet-initiated Spark payment, from just before its commit call to the operator's answer. */
 export type SparkPaymentRecord = {
@@ -58,11 +59,6 @@ type Outcome = Partial<
 /** Each open record is re-checked after this, doubling per inconclusive check up to the cap. */
 export const RECONCILE_BASE_MS = 15_000;
 export const RECONCILE_MAX_MS = 600_000;
-/**
- * A sats payment the operator still does not list this long after submission never committed: every
- * commit call has long ended, and an uncommitted SSP request expires within minutes.
- */
-export const ABSENT_FAIL_MS = 1_800_000;
 const HISTORY_PAGE = 100;
 const HISTORY_MAX_PAGES = 10;
 /** Operator timestamps may run behind the device clock by up to this much. */
@@ -78,7 +74,7 @@ const reconcilable = (record: SparkPaymentRecord): boolean =>
 const recordSchema = z.object({
   id: z.string(),
   kind: z.enum(["transfer", "lightning", "exit", "token"]),
-  state: z.enum(["submitted", "unknown"]),
+  state: z.enum(["submitted", "unknown", "archived"]),
   receiver: z.string(),
   amount: z.string().check(z.regex(/^[0-9]+$/)),
   tokenIdentifier: z.optional(z.string()),
@@ -135,14 +131,15 @@ export const tokenOutcome = (
 };
 
 /**
- * Pages the operator's history newest first for `ids`. `complete` means the listing ended or went
- * past `since` (less the clock-skew margin) — an id not found then is not listed at all.
+ * Pages the operator's history newest first for `ids`, stopping once all are found, the listing
+ * ends, or it runs past `since` (less the clock-skew margin) — payments older than every record in
+ * flight cannot answer for them.
  */
 export const findPayments = async (
   history: SparkClient["transfers"]["history"],
   ids: ReadonlySet<string>,
   since: number,
-): Promise<{ readonly found: ReadonlyMap<string, SparkPayment>; readonly complete: boolean }> => {
+): Promise<ReadonlyMap<string, SparkPayment>> => {
   const found = new Map<string, SparkPayment>();
   let offset = 0;
   for (let page = 0; page < HISTORY_MAX_PAGES; page += 1) {
@@ -157,11 +154,11 @@ export const findPayments = async (
       (payment) => payment.createdAt !== undefined && payment.createdAt < since - CLOCK_SKEW_MS,
     );
     if (found.size === ids.size || nextOffset === undefined || passedSince) {
-      return { found, complete: true };
+      return found;
     }
     offset = nextOffset;
   }
-  return { found, complete: false };
+  return found;
 };
 
 export type SparkPaymentLedgerOptions = {
@@ -235,6 +232,18 @@ export class SparkPaymentLedger {
     );
   }
 
+  /**
+   * Gives up on an outcome the operator can never answer: only an open record that is not
+   * reconcilable — a token send whose broadcast failed before its spent outputs were known — may be
+   * archived. Returns the archived record, `undefined` when refused.
+   */
+  archive(id: string): SparkPaymentRecord | undefined {
+    const record = this.records[id];
+    return record !== undefined && isOpen(record) && !reconcilable(record)
+      ? this.resolve(record, { state: "archived" })
+      : undefined;
+  }
+
   /** Persists the record before the commit call; a failed write throws and nothing may be sent. */
   async begin(draft: SparkPaymentDraft): Promise<SparkPaymentRecord> {
     const record: SparkPaymentRecord = {
@@ -268,27 +277,36 @@ export class SparkPaymentLedger {
   }
 
   /**
-   * Whether the operator lists this record's transfer, asked right after a commit call failed:
-   * `listed` also folds a final status into the record; `absent` only when a complete read past
-   * `submittedAt` does not carry it; an incomplete listing or a failed read answers `unknown`.
+   * One post-commit probe of the operator's listing: an entry the record can fold resolves it; an
+   * absent or unreadable answer changes nothing — absence is not evidence of an outcome.
    */
-  async check(record: SparkPaymentRecord): Promise<"listed" | "absent" | "unknown"> {
-    let page: { readonly found: ReadonlyMap<string, SparkPayment>; readonly complete: boolean };
+  async check(record: SparkPaymentRecord): Promise<void> {
     try {
-      page = await findPayments(
+      const found = await findPayments(
         this.options.client.transfers.history,
         new Set([record.id]),
         record.submittedAt,
       );
+      const payment = found.get(record.id);
+      if (payment !== undefined) {
+        this.observe([payment]);
+      }
     } catch {
-      return "unknown";
+      /* an unreadable listing decides nothing */
     }
-    const payment = page.found.get(record.id);
-    if (payment === undefined) {
-      return page.complete ? "absent" : "unknown";
-    }
-    this.observe([payment]);
-    return "listed";
+  }
+
+  /** An open `unknown` record a retry of `draft` would double-send; `undefined` when clear. */
+  duplicateOf(draft: SparkPaymentDraft): SparkPaymentRecord | undefined {
+    return Object.values(this.records).find(
+      (record) =>
+        record.state === "unknown" &&
+        record.id !== draft.id &&
+        record.kind === draft.kind &&
+        record.receiver === draft.receiver &&
+        record.amount === draft.amount &&
+        record.tokenIdentifier === draft.tokenIdentifier,
+    );
   }
 
   /** Resolves open sats records listed in a history page the controller already read. */
@@ -327,19 +345,16 @@ export class SparkPaymentLedger {
     const sats = due.filter((record) => record.kind !== "token");
     if (sats.length > 0) {
       try {
-        const { found, complete } = await findPayments(
+        /* Only the operator's listing decides: an id it does not carry means it never recorded
+           the transfer, not that the payment failed — a delayed commit may still land. */
+        const found = await findPayments(
           this.options.client.transfers.history,
           new Set(sats.map((record) => record.id)),
           Math.min(...sats.map((record) => record.submittedAt)),
         );
         for (const record of sats) {
           const payment = found.get(record.id);
-          const outcome =
-            payment === undefined
-              ? complete && now - record.submittedAt >= ABSENT_FAIL_MS
-                ? { state: "failed" as const, error: "the Spark operator lists no such transfer" }
-                : undefined
-              : paymentOutcome(payment);
+          const outcome = payment === undefined ? undefined : paymentOutcome(payment);
           if (outcome !== undefined) {
             outcomes.set(record.id, outcome);
           }
@@ -387,9 +402,10 @@ export class SparkPaymentLedger {
     const { collection, logger } = this.options;
     const write = async (): Promise<void> => {
       try {
-        await (isOpen(record)
-          ? collection.put(record.id, encodePaymentRecord(record))
-          : collection.delete(record.id));
+        /* Open and archived records keep their row — a final one deletes it. */
+        await (record.state === "settled" || record.state === "failed"
+          ? collection.delete(record.id)
+          : collection.put(record.id, encodePaymentRecord(record)));
       } catch (error) {
         // The row keeps its previous open state, so the next session reconciles it again.
         logger.warn("spark payment record write failed", error);

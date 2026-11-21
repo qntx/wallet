@@ -531,6 +531,7 @@ const verifyEntry = async (
   entry: HistoryEntry,
   item: HistoryItem,
   trusted: boolean,
+  accountCode: () => Promise<string | undefined>,
 ): Promise<HistoryEntry> => {
   let parsed: unknown;
   try {
@@ -590,10 +591,21 @@ const verifyEntry = async (
         (receipt.l1Fee === undefined || receipt.l1Fee === null ? 0n : BigInt(receipt.l1Fee))
       ).toString(10)
     : undefined;
+  let verified = trusted && !uncheckable && provable;
+  if (verified) {
+    /* Bytecode on the account — an EIP-7702 delegation designator included — means the delegate
+       can move the wallet's funds without leaving the provider-visible trace the claims were
+       checked against; only a reverted receipt (no native value moved) may verify. `0x`/`0x0`
+       is empty; a missing or malformed answer fails closed like non-empty code. */
+    const code = await accountCode();
+    if (code !== "0x" && code !== "0x0") {
+      verified = receipt.status === "0x0";
+    }
+  }
   return {
     ...entry,
     status: receipt.status === "0x0" ? "failed" : "confirmed",
-    verified: trusted && !uncheckable && provable,
+    verified,
     ...(fee === undefined ? {} : { fee }),
     flags: [...flags],
   };
@@ -627,6 +639,20 @@ export const evmHistoryStream = (
   const gatewayBase = options.gateway.url.replace(/\/+$/, "");
   let cursor: string | undefined;
   let done = false;
+  /* The account's code is read lazily — the first entry whose verification would otherwise
+     succeed triggers it — and the answer (failure included) is shared for the stream's life. */
+  let codeRead: Promise<string | undefined> | undefined;
+  const accountCode = async (): Promise<string | undefined> => {
+    codeRead ??= (async () => {
+      try {
+        const raw = await requestJson(client, "eth_getCode", [address, "latest"]);
+        return typeof raw === "string" ? raw : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    return codeRead;
+  };
   return {
     id: network,
     next: async () => {
@@ -681,7 +707,7 @@ export const evmHistoryStream = (
           if (hit !== undefined && hit.verified && hit.block === entry.block) {
             return hit;
           }
-          return verifyEntry(client, address, entry, item, trusted);
+          return verifyEntry(client, address, entry, item, trusted, accountCode);
         });
         return { items, done };
       } finally {

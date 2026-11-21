@@ -83,7 +83,7 @@ type RawAccount = {
   readonly data: Uint8Array;
 };
 
-const parseAccount = (value: unknown): RawAccount | undefined => {
+const parseAccount = (value: unknown, what: string): RawAccount | undefined => {
   const record = obj(value);
   const data = record?.["data"];
   if (
@@ -95,15 +95,15 @@ const parseAccount = (value: unknown): RawAccount | undefined => {
     return undefined;
   }
   return {
-    lamports: BigInt(str(record["lamports"])),
+    lamports: rpcInt(what, "lamports", record["lamports"]),
     owner: record["owner"],
     data: base64.decode(data[0]),
   };
 };
 
-const accountList = (value: unknown): ReadonlyArray<RawAccount | undefined> => {
+const accountList = (value: unknown, what: string): ReadonlyArray<RawAccount | undefined> => {
   const list = Array.isArray(value) ? (value as unknown[]) : [];
-  return list.map(parseAccount);
+  return list.map((entry) => parseAccount(entry, what));
 };
 
 const u64Decoder = getU64Decoder();
@@ -156,8 +156,10 @@ export type SolanaIntent =
       readonly kind: "stake-delegate";
       readonly seed: string;
       readonly stakeAccount: string;
-      /** Delegated lamports; the create instruction funds this plus the rent reserve. */
+      /** Delegated lamports; the create instruction funds this plus `rent`. */
       readonly lamports: bigint;
+      /** Rent-exempt reserve the create instruction funds on top of `lamports`. */
+      readonly rent: bigint;
       readonly vote: string;
     }
   | { readonly kind: "stake-deactivate"; readonly stakeAccount: string }
@@ -209,22 +211,25 @@ const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? 
 
 const arr = (v: unknown): unknown[] | undefined => (Array.isArray(v) ? v : undefined);
 
-const str = (v: unknown, fallback = "0"): string => {
-  if (typeof v === "string") {
+/**
+ * A field the RPC spec guarantees — a non-negative integer read as a JSON number. Missing or
+ * malformed throws instead of reading as 0: a 0 `lastValidBlockHeight` would prove a live
+ * transaction dropped (a resent one pays twice), and a 0 balance or rent builds on wrong
+ * economics.
+ */
+const rpcInt = (method: string, field: string, v: unknown): bigint => {
+  if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) {
+    return BigInt(v);
+  }
+  if (typeof v === "bigint" && v >= 0n) {
     return v;
   }
-  return typeof v === "number" || typeof v === "bigint" ? String(v) : fallback;
+  throw new TypeError(`${method}: malformed ${field}`);
 };
 
 export class SolanaChainAdapter {
   private async rpc(rpc: SolanaRpc, method: string, params: unknown[]): Promise<unknown> {
     return rpc.call(method, params);
-  }
-
-  /** Rent-exempt reserve for a stake account; the result is a bare u64 or context-wrapped. */
-  private async rentExempt(rpc: SolanaRpc): Promise<bigint> {
-    const result = await this.rpc(rpc, "getMinimumBalanceForRentExemption", [STAKE_ACCOUNT_BYTES]);
-    return BigInt(str(obj(result)?.["value"] ?? result));
   }
 
   private async instructions(
@@ -247,14 +252,13 @@ export class SolanaChainAdapter {
     if (intent.kind === "stake-delegate") {
       const stake = address(intent.stakeAccount);
       const authority = createNoopSigner(address(from));
-      const rent = await this.rentExempt(rpc);
       return [
         getCreateAccountWithSeedInstruction({
           payer: authority,
           newAccount: stake,
           base: address(from),
           seed: intent.seed,
-          amount: intent.lamports + rent,
+          amount: intent.lamports + intent.rent,
           space: BigInt(STAKE_ACCOUNT_BYTES),
           programAddress: address(PROGRAM_IDS.stake),
         }),
@@ -344,12 +348,19 @@ export class SolanaChainAdapter {
       await this.rpc(rpc, "getLatestBlockhash", [{ commitment: "confirmed" }]),
     );
     const value = obj(hashResult?.["value"]);
-    const blockhashValue = typeof value?.["blockhash"] === "string" ? value["blockhash"] : "";
-    const lastValidBlockHeight = BigInt(str(value?.["lastValidBlockHeight"], "0"));
+    const rawBlockhash = value?.["blockhash"];
+    if (typeof rawBlockhash !== "string" || rawBlockhash === "") {
+      throw new TypeError("getLatestBlockhash: malformed blockhash");
+    }
+    const lastValidBlockHeight = rpcInt(
+      "getLatestBlockhash",
+      "lastValidBlockHeight",
+      value?.["lastValidBlockHeight"],
+    );
     const compiled = this.compile(
       from,
       instructions,
-      blockhashValue,
+      rawBlockhash,
       lastValidBlockHeight,
       intent.kind === "instructions" ? intent.lookupTables : undefined,
     );
@@ -361,7 +372,7 @@ export class SolanaChainAdapter {
       instructions,
       writable: this.writableAccounts(instructions),
       unitsConsumed: units,
-      blockhash: blockhashValue,
+      blockhash: rawBlockhash,
       lastValidBlockHeight,
       ...(intent.kind === "instructions" && intent.lookupTables !== undefined
         ? { lookupTables: intent.lookupTables }
@@ -404,8 +415,8 @@ export class SolanaChainAdapter {
       ]),
     );
     const value = obj(result?.["value"]);
-    const units = Number(value?.["unitsConsumed"] ?? 0);
-    return units > 0 ? units : CU_SIMULATE_LIMIT;
+    const units = value?.["unitsConsumed"];
+    return typeof units === "number" && units > 0 ? units : CU_SIMULATE_LIMIT;
   }
 
   private compile(
@@ -450,7 +461,7 @@ export class SolanaChainAdapter {
     const fees = (Array.isArray(result) ? result : [])
       .flatMap((r: unknown) => {
         const fee = obj(r)?.["prioritizationFee"];
-        return fee === undefined ? [] : [Number(fee)];
+        return typeof fee === "number" && Number.isSafeInteger(fee) && fee >= 0 ? [fee] : [];
       })
       .sort((a, b) => a - b);
     const pick = (p: number): bigint =>
@@ -510,7 +521,7 @@ export class SolanaChainAdapter {
         { encoding: "base64", commitment: "confirmed" },
       ]),
     );
-    const tables = accountList(result?.["value"]);
+    const tables = accountList(result?.["value"], "getMultipleAccounts");
     const writable: string[] = [];
     for (const [index, lookup] of lookups.entries()) {
       const data = tables[index]?.data;
@@ -571,8 +582,8 @@ export class SolanaChainAdapter {
         error: `${JSON.stringify(value["err"])}${typeof last === "string" ? ` (${last})` : ""}`,
       };
     }
-    const pre = accountList(before?.["value"]);
-    const post = accountList(value?.["accounts"]);
+    const pre = accountList(before?.["value"], "getMultipleAccounts");
+    const post = accountList(value?.["accounts"], "simulateTransaction");
     const changes: AssetChange[] = [];
     const ownerIndex = watch.indexOf(owner);
     if (ownerIndex !== -1) {
@@ -682,8 +693,8 @@ export class SolanaChainAdapter {
   async tip(rpc: SolanaRpc): Promise<{ slot: bigint; height: bigint }> {
     const result = obj(await this.rpc(rpc, "getEpochInfo", [{ commitment: "confirmed" }]));
     return {
-      slot: BigInt(str(result?.["absoluteSlot"], "0")),
-      height: BigInt(str(result?.["blockHeight"], "0")),
+      slot: rpcInt("getEpochInfo", "absoluteSlot", result?.["absoluteSlot"]),
+      height: rpcInt("getEpochInfo", "blockHeight", result?.["blockHeight"]),
     };
   }
 

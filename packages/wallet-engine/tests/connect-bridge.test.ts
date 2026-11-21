@@ -25,6 +25,7 @@ import type {
   ProviderInfo,
 } from "../src/connect/index.ts";
 import { PROVIDER_SCRIPT } from "../src/connect/inject.generated.ts";
+import type { WalletConnectOrigin } from "../src/requests/types.ts";
 
 const SITE = "https://app.example.com";
 const PAGE = `${SITE}/dapp`;
@@ -36,7 +37,7 @@ const INFO: ProviderInfo = {
   rdns: "xyz.meowl",
 };
 
-type Handle = (origin: string, request: Eip1193Request) => Promise<unknown>;
+type Handle = (origin: string | WalletConnectOrigin, request: Eip1193Request) => Promise<unknown>;
 
 const tick = async (): Promise<void> =>
   new Promise((resolve) => {
@@ -57,11 +58,13 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const injections: string[] = [];
   const listeners: Array<(event: Eip1193Event) => void> = [];
   const invalidated: string[] = [];
-  const handled: Array<{ origin: string; request: Eip1193Request }> = [];
+  const handled: Array<{ origin: string | WalletConnectOrigin; request: Eip1193Request }> = [];
   const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
   const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
-  const handledSolana: Array<{ origin: string; request: SolanaRequest }> = [];
-  const handledBitcoin: Array<{ origin: string; request: BitcoinRequest }> = [];
+  const handledSolana: Array<{ origin: string | WalletConnectOrigin; request: SolanaRequest }> = [];
+  const handledBitcoin: Array<{ origin: string | WalletConnectOrigin; request: BitcoinRequest }> =
+    [];
+  const handledTron: Array<{ origin: string; request: { method: string; params?: unknown } }> = [];
   const phishing = new Set<string>();
   let now = 0;
   const options: BrowserBridgeOptions = {
@@ -107,9 +110,16 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
       },
       subscribe: () => () => undefined,
     },
+    tron: {
+      handle: async (origin, req) => {
+        handledTron.push({ origin, request: req });
+        return Promise.resolve("tron-result");
+      },
+      subscribe: () => () => undefined,
+    },
     connections: {
       checkOrigin: (origin) => {
-        if (!origin.startsWith("https://")) {
+        if (typeof origin !== "string" || !origin.startsWith("https://")) {
           throw new ProviderError(4100, "origin not allowed");
         }
         if (phishing.has(origin)) {

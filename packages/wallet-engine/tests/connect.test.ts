@@ -221,6 +221,10 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
       await Promise.resolve();
       return `SoLaNaAdd${String(group.groupIndex)}`;
     },
+    tronAddress: async (_group: { walletId: string; groupIndex: number }, _network: string) => {
+      await Promise.resolve();
+      return "TTronAddUnused123";
+    },
     nostrPubkey: async (ref: { index: number }) =>
       Promise.resolve(NOSTR_PUBKEYS[ref.index] ?? NOSTR_PUBKEYS[0]),
     invalidate: (origin: string) => {
@@ -413,7 +417,7 @@ describe("connection sessions", () => {
     });
     r.connections.lock();
     await expect(second).resolves.toBe(4001);
-    expect(r.connections.getState()).toStrictEqual({ sessions: {}, pending: {} });
+    expect(r.connections.getState()).toStrictEqual({ sessions: {}, pending: {}, ready: false });
     await r.destroy();
   });
 

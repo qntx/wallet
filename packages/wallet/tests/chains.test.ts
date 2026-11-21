@@ -16,7 +16,11 @@ import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitc
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { signEvmPersonalMessage, signEvmTransaction } from "@qntx/wallet-chains/evm/sign";
 import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
-import { signTronMessage, signTronTransaction } from "@qntx/wallet-chains/tron/sign";
+import {
+  signTronMessage,
+  signTronTransaction,
+  signTronTypedData,
+} from "@qntx/wallet-chains/tron/sign";
 
 import { chains } from "../src/chains/index.ts";
 import type { ChainSignRequest, ChainTemplate } from "../src/protocol/chains.ts";
@@ -657,7 +661,20 @@ describe("chains(wallet)", () => {
     );
     const KEY_ID = "22".repeat(8);
 
-    const tronParams = (kind: "tron.transaction" | "tron.message") => ({
+    const TYPED_DATA = JSON.stringify({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Ping: [{ name: "nonce", type: "uint64" }],
+      },
+      primaryType: "Ping",
+      domain: { name: "T", chainId: "0x2b6653dc" },
+      message: { nonce: "3" },
+    });
+
+    const tronParams = (kind: "tron.transaction" | "tron.message" | "tron.typed-data") => ({
       request:
         kind === "tron.transaction"
           ? {
@@ -671,12 +688,23 @@ describe("chains(wallet)", () => {
               },
               rawData: RAW,
             }
-          : {
-              kind: "tron.message" as const,
-              network: "tron:728126428",
-              account: { kind: "imported" as const, keyId: KEY_ID, family: "tron" as const },
-              message: utf8ToBytes("hello tron"),
-            },
+          : kind === "tron.typed-data"
+            ? {
+                kind: "tron.typed-data" as const,
+                network: "tron:728126428",
+                account: {
+                  kind: "imported" as const,
+                  keyId: KEY_ID,
+                  family: "tron" as const,
+                },
+                typedData: TYPED_DATA,
+              }
+            : {
+                kind: "tron.message" as const,
+                network: "tron:728126428",
+                account: { kind: "imported" as const, keyId: KEY_ID, family: "tron" as const },
+                message: utf8ToBytes("hello tron"),
+              },
       verify: { kind: "password" as const, password: "test password" },
     });
 
@@ -723,6 +751,23 @@ describe("chains(wallet)", () => {
       });
       const result = await chains(wallet).sign(tronParams("tron.message"));
       expect(result.kind).toBe("tron.message");
+    });
+
+    it("accepts a typed-data signature that verifies for the account", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.typed-data",
+        signature: signTronTypedData(TYPED_DATA, TRON_PRIV),
+      });
+      const result = await chains(wallet).sign(tronParams("tron.typed-data"));
+      expect(result.kind).toBe("tron.typed-data");
+    });
+
+    it("rejects a typed-data signature over different content", async () => {
+      const other = signTronTypedData(TYPED_DATA.replace('"nonce":"3"', '"nonce":"4"'), TRON_PRIV);
+      const wallet = await tronConnect({ kind: "tron.typed-data", signature: other });
+      await expect(chains(wallet).sign(tronParams("tron.typed-data"))).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
     });
 
     it("rejects a foreign-key signature with integrity", async () => {

@@ -20,6 +20,7 @@ import {
   impersonatesBuiltIn,
   mergeRisk,
   originRisk,
+  verifyRisk,
 } from "../src/requests/risk.ts";
 
 const KNOWN = "0x52908400098527886E0F7030069857D2E4169EE7";
@@ -116,6 +117,23 @@ describe("originRisk and mergeRisk", () => {
       { code: "phishing-origin", level: "danger" },
       { code: "first-recipient", level: "warning" },
     ]);
+  });
+});
+
+describe("verifyRisk", () => {
+  it("flags a Verify mismatch and a flagged domain as dangers, alone or together", () => {
+    expect(verifyRisk({ validation: "INVALID", isScam: false })).toStrictEqual([
+      { code: "verify-mismatch", level: "danger" },
+    ]);
+    expect(verifyRisk({ validation: "VALID", isScam: true })).toStrictEqual([
+      { code: "verify-threat", level: "danger" },
+    ]);
+    expect(verifyRisk({ validation: "INVALID", isScam: true })).toStrictEqual([
+      { code: "verify-threat", level: "danger" },
+      { code: "verify-mismatch", level: "danger" },
+    ]);
+    expect(verifyRisk({ validation: "VALID", isScam: false })).toStrictEqual([]);
+    expect(verifyRisk({ validation: "UNKNOWN", isScam: false })).toStrictEqual([]);
   });
 });
 

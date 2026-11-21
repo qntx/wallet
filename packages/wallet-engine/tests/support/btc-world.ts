@@ -208,7 +208,7 @@ export const rawOf = (tx: TrackedTransaction): string => tx.raw ?? "";
 export const inputTxidsOf = (tx: TrackedTransaction): ReadonlyArray<string> =>
   (tx.btc?.inputs ?? []).map((i) => i.txid);
 
-/** Fire-and-forget store writes (BtcUtxoStore.persist is `void`ed) need one macrotask. */
+/** Serialized snapshot writes (BtcUtxoStore.persist) need one macrotask to drain. */
 export const flush = async (): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve);

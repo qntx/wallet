@@ -15,6 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Wallet } from "@qntx/wallet";
 import type { BlindReason, SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { decodeTron } from "@qntx/wallet-chains/tron";
 import type { chains } from "@qntx/wallet/chains";
 
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
@@ -28,8 +29,10 @@ import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type {
+  AccountRef,
   DisplayIntent,
   PrepareParams,
+  PreparedMessage,
   PreparedRequest,
   SendParams,
   TrackedTransaction,
@@ -114,6 +117,11 @@ function fake(
     verifiability?: DisplayIntent["verifiability"];
     checks?: string[];
     blind?: BlindReason;
+    tokens?: ConstructorParameters<typeof RequestController>[0]["tokens"];
+    dappTron?: (
+      ref: AccountRef,
+      request: SignRequest,
+    ) => Promise<PreparedRequest | PreparedMessage>;
   } = {},
 ) {
   const events: string[] = [];
@@ -124,6 +132,16 @@ function fake(
   const txs: Record<string, TrackedTransaction> = {};
   const transactions = {
     getState: () => ({ txs }),
+    prepareDappTron: async (
+      ref: AccountRef,
+      request: SignRequest,
+    ): Promise<PreparedRequest | PreparedMessage> => {
+      events.push("prepareDappTron");
+      if (options.dappTron === undefined) {
+        throw new Error("tron is not wired in this test");
+      }
+      return options.dappTron(ref, request);
+    },
     prepareSend: async (_p: PrepareParams, requestId: string): Promise<PreparedRequest> => {
       events.push(`prepare ${requestId}`);
       await buildGate;
@@ -183,7 +201,7 @@ function fake(
     phishing: { check: () => "clear" },
     blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
-    tokens: tokensStub,
+    tokens: options.tokens ?? tokensStub,
     transactions,
     ...bookDeps(),
     spark: {
@@ -1320,5 +1338,137 @@ describe("solana-sign approval risk", () => {
   it("an Authorize to the signer raises no stake-authority finding", async () => {
     const pending = await prepareTx(SOL_PAYER);
     expect(pending.risk.find((finding) => finding.code === "stake-authority")).toBeUndefined();
+  });
+});
+
+describe("watch-asset on TRON", () => {
+  const TRON_NET = "tron:728126428";
+  const USDT_TRC20 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // in the built-in table
+  const OTHER_TRC20 = "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ"; // valid base58check, not a built-in
+  const input = (address: string) => ({
+    method: "watch-asset" as const,
+    origin: { kind: "browser" as const, origin: "https://app.example" },
+    account: ACCOUNT,
+    network: TRON_NET,
+    address,
+  });
+  const tokens = (metadata: { symbol: string; decimals: number }, added: string[]) => ({
+    metadata: async (): Promise<{ symbol: string; decimals: number }> => {
+      await Promise.resolve();
+      return Promise.resolve(metadata);
+    },
+    add: async (_network: string, address: string): Promise<void> => {
+      await Promise.resolve();
+      added.push(address);
+    },
+  });
+
+  it("shows a built-in TRC-20 verified and tracks it on approval", async () => {
+    const added: string[] = [];
+    const f = fake({ tokens: tokens({ symbol: "USDT", decimals: 6 }, added) });
+    await f.controller.init();
+    const request = await f.controller.prepare(input(USDT_TRC20));
+    expect(request.display).toStrictEqual({
+      kind: "token.watch",
+      network: TRON_NET,
+      address: USDT_TRC20,
+      symbol: "USDT",
+      decimals: 6,
+      verified: true,
+    });
+    expect(request.risk).toStrictEqual([]);
+    const result = await f.controller.approve(request.id, "watch-asset", approval(request));
+    expect(result).toStrictEqual({ kind: "token.watch" });
+    expect(added).toStrictEqual([USDT_TRC20]);
+  });
+
+  it("flags a contract reporting a built-in symbol as impersonation", async () => {
+    const added: string[] = [];
+    const f = fake({ tokens: tokens({ symbol: "usdt", decimals: 6 }, added) });
+    await f.controller.init();
+    const request = await f.controller.prepare(input(OTHER_TRC20));
+    expect(request.display).toMatchObject({ verified: false, symbol: "usdt" });
+    expect(request.risk).toStrictEqual([{ code: "token-impersonation", level: "danger" }]);
+  });
+
+  it("refuses a malformed address without reading metadata", async () => {
+    const f = fake({
+      tokens: {
+        metadata: async (): Promise<{ symbol: string; decimals: number }> => {
+          await Promise.resolve();
+          return Promise.reject(new Error("metadata must not be read"));
+        },
+        add: async (): Promise<void> => Promise.resolve(),
+      },
+    });
+    await f.controller.init();
+    await expect(f.controller.prepare(input("not-a-tron-address"))).rejects.toThrow(
+      "is not a TRC-20 address",
+    );
+  });
+});
+
+describe("tron-sign", () => {
+  const TRON_NET = "tron:728126428";
+  const TRON_ACCOUNT: AccountRef = {
+    kind: "hd",
+    walletId: "w",
+    groupIndex: 0,
+    template: "tron.bip44",
+  };
+  const TRON_FROM = "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ";
+  const SIGNATURE = new Uint8Array(65).fill(0x42);
+  const messageRequest: SignRequest = {
+    kind: "tron.message",
+    network: TRON_NET,
+    account: TRON_ACCOUNT,
+    message: new TextEncoder().encode("hello tron"),
+  };
+  const preparedMessage = (): PreparedMessage => ({
+    account: TRON_ACCOUNT,
+    network: TRON_NET,
+    intent: decodeTron(messageRequest, TRON_FROM),
+    checks: [],
+    signer: TRON_FROM,
+    staleReason: async () => Promise.resolve(undefined),
+    release: () => undefined,
+    submit: async () => Promise.resolve({ kind: "tron.message" as const, signature: SIGNATURE }),
+  });
+
+  it("a browser tron-sign shows the intent and returns the signature", async () => {
+    const f = fake({
+      dappTron: async (_ref, request) => {
+        await Promise.resolve();
+        expect(request).toBe(messageRequest); // passed through untouched
+        return Promise.resolve(preparedMessage());
+      },
+    });
+    await f.controller.init();
+    const pending = await f.controller.prepare({
+      method: "tron-sign",
+      origin: { kind: "browser", origin: "https://sun.io" },
+      account: TRON_ACCOUNT,
+      network: TRON_NET,
+      request: messageRequest,
+    });
+    expect(pending.display).toMatchObject({ summary: "message", message: { kind: "text" } });
+    expect(f.events).toContain("prepareDappTron");
+    const result = await f.controller.approve(pending.id, "tron-sign", approval(pending, VERIFY));
+    expect(result).toStrictEqual({ kind: "tron.message", signature: SIGNATURE });
+  });
+
+  it("an internal tron-sign may only sign typed data", async () => {
+    const f = fake({
+      dappTron: async () => Promise.reject(new Error("must not reach prepareDappTron")),
+    });
+    await f.controller.init();
+    await expect(
+      f.controller.prepare({
+        method: "tron-sign",
+        account: TRON_ACCOUNT,
+        network: TRON_NET,
+        request: messageRequest,
+      }),
+    ).rejects.toThrow("an internal request can only sign typed data");
   });
 });

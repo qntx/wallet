@@ -202,6 +202,7 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     enabledNetworks: () => [N1],
     bitcoinAddress: async () => Promise.resolve("bc1qunused"),
     solanaAddress: async () => Promise.resolve("SoLaNaAdd0"),
+    tronAddress: async () => Promise.resolve("TTronAddUnused123"),
     nostrPubkey: async () => Promise.resolve(`npub${"0".repeat(62)}`),
     invalidate: () => undefined,
   });

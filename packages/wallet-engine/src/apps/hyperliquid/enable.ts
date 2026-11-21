@@ -221,18 +221,23 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
   };
 
   /** The builder step: request approveBuilderFee when HL has not confirmed `f` yet. */
-  const approveBuilder = async (
+  const approveBuilderStep = async (
     group: AppGroup,
     flow: AppFlow,
     owner: string,
-  ): Promise<boolean> => {
+  ): Promise<"approved" | "declined"> => {
     const { builder } = options;
     if (builder === undefined || flow.current().builder === "approved") {
-      return true;
+      return "approved";
     }
     const fee = builder.feeRateTenthsBps;
     if ((await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >= fee) {
-      return true;
+      return "approved";
+    }
+    /* A decline persists until an approval replaces it: renew and re-enable finish without a
+       builder instead of re-asking; only the explicit approveBuilder flow asks again. */
+    if (flow.wasBuilderDeclined() || flow.current().builder === "declined") {
+      return "declined";
     }
     flow.write({ step: "approve-builder" });
     const pending = await userSigned.approveBuilderFee(group, {
@@ -240,13 +245,23 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       maxFeeRate: feeRate(fee),
     });
     flow.write({ requestId: pending.requestId });
-    await pending.outcome;
+    try {
+      await pending.outcome;
+    } catch (error) {
+      flow.write({ requestId: undefined });
+      if (error instanceof HyperliquidError && error.category === "approval-rejected") {
+        /* A user refusal is not a failure: enable without the builder and record the
+           decline so reconcile never re-asks. */
+        return "declined";
+      }
+      throw error;
+    }
     flow.write({ requestId: undefined });
     if (!(await waitBuilderFee(owner, builder.address.toLowerCase(), fee))) {
       /* The agent is live on Hyperliquid — keep it; the next enable resumes at this step. */
       fail(flow, "unavailable", "the builder fee approval never confirmed");
     }
-    return true;
+    return "approved";
   };
 
   /** The enable state machine — every step writes; a failure leaves a resumable state. */
@@ -287,7 +302,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       },
     });
     await approveAgent(group, flow, owner, agent);
-    const builderOk = await approveBuilder(group, flow, owner);
+    const builderState = await approveBuilderStep(group, flow, owner);
     /* `require` filters the verified list — the agent created above is only kernel-known until a
        refresh lands it there; without this, trading right after enable threw not-enabled. */
     await provider.agents.refresh();
@@ -296,7 +311,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       status: "enabled",
       step: undefined,
       requestId: undefined,
-      ...(builderOk ? { builder: "approved" as const } : {}),
+      builder: builderState,
       renewalDue: agent.validUntil - options.now() < RENEWAL_WINDOW_MS,
       error: undefined,
     });
@@ -321,6 +336,38 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       guard(flow, async () => {
         await enableFlow(group, flow);
       }),
+    approveBuilder: async (group, flow) => {
+      const { builder } = options;
+      if (builder === undefined) {
+        throw new HyperliquidError("invalid-input", "no builder is configured");
+      }
+      const fee = builder.feeRateTenthsBps;
+      const owner = await provider.agents.owner(group);
+      if ((await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >= fee) {
+        flow.write({ builder: "approved" });
+        return;
+      }
+      const pending = await userSigned.approveBuilderFee(group, {
+        builder: builder.address,
+        maxFeeRate: feeRate(fee),
+      });
+      flow.write({ requestId: pending.requestId });
+      try {
+        await pending.outcome;
+      } catch (error) {
+        flow.write({ requestId: undefined });
+        if (error instanceof HyperliquidError && error.category === "approval-rejected") {
+          flow.write({ builder: "declined" });
+          return;
+        }
+        throw error;
+      }
+      flow.write({ requestId: undefined });
+      if (!(await waitBuilderFee(owner, builder.address.toLowerCase(), fee))) {
+        fail(flow, "unavailable", "the builder fee approval never confirmed");
+      }
+      flow.write({ builder: "approved" });
+    },
     renew: async (group, flow) => {
       const before = await kernelAgents(group);
       try {
@@ -549,6 +596,25 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         (await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >=
           builder.feeRateTenthsBps;
       if (builder !== undefined && !builderConfirmed) {
+        if (flow.wasBuilderDeclined()) {
+          /* The user already refused the approval — enabled without it, no new request. */
+          await provider.agents.refresh();
+          provider.agents.markEnabled(newest.address);
+          flow.write({
+            status: "enabled",
+            step: undefined,
+            agent: {
+              address: newest.address,
+              name: newest.name,
+              validUntil: newest.validUntil,
+              network: newest.network,
+            },
+            builder: "declined",
+            renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,
+            error: undefined,
+          });
+          return;
+        }
         flow.write({
           status: "enabling",
           step: "approve-builder",

@@ -187,7 +187,7 @@ const txRowLeg = (row: TronIndexerTransactionRow): Leg | "malformed" | undefined
     return "malformed";
   }
   // The node reports JSON int64 imprecisely beyond 2^53 — the documented `amountField` limit.
-  const amount = BigInt(Math.trunc(value.amount));
+  const amount = BigInt(value.amount);
   if (type === "TransferContract") {
     return { kind: "trx", from, to, amount };
   }

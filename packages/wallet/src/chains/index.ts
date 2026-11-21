@@ -17,6 +17,7 @@ import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import {
   verifyTronMessageSignature,
   verifyTronTransactionSignature,
+  verifyTronTypedDataSignature,
 } from "@qntx/wallet-chains/tron";
 
 import { integrity } from "../channel.ts";
@@ -175,7 +176,9 @@ const checkTron = async (
   const verified =
     request.kind === "tron.transaction"
       ? verifyTronTransactionSignature(request.rawData, result.signature, account.address)
-      : verifyTronMessageSignature(request.message, result.signature, account.address);
+      : request.kind === "tron.message"
+        ? verifyTronMessageSignature(request.message, result.signature, account.address)
+        : verifyTronTypedDataSignature(request.typedData, result.signature, account.address);
   if (!verified) {
     throw integrity("signature does not verify for the account");
   }
@@ -234,6 +237,7 @@ const checkResult = async (
       return checkSolana(internals, request, result);
     case "tron.transaction":
     case "tron.message":
+    case "tron.typed-data":
       return checkTron(internals, request, result);
     case "bitcoin.message":
       return checkBitcoinMessage(internals, request, result);

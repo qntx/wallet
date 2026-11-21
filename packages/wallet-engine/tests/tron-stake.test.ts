@@ -42,6 +42,7 @@ const CHAIN_PARAMETERS = {
     { key: "getMaxFeeLimit", value: 5_000_000_000 },
     { key: "getCreateNewAccountBandwidthRate", value: 4 },
     { key: "getMaxCreateAccountTxSize", value: 5000 },
+    { key: "getMemoFee", value: 1_000_000 },
     { key: "getMaxDelegateLockPeriod", value: 86400 },
     { key: "getWitnessAllowanceFrozenTime", value: 1 },
   ],

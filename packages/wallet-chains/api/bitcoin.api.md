@@ -93,7 +93,7 @@ export function bitcoinPubkeyFromXpub(xpub: string, template: BitcoinAccountTemp
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination";
 
 // @public (undocumented)
 type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -118,6 +118,7 @@ type DisplayIntent = {
     readonly minimumReceived?: ReadonlyArray<{
         readonly to: string;
         readonly amount: AssetAmount;
+        readonly tokenAccount?: string;
     }>;
     readonly fee: {
         readonly max: AssetAmount;
@@ -128,6 +129,11 @@ type DisplayIntent = {
         readonly destinationNetwork: string;
         readonly fillDeadline: number;
         readonly refundTo: string;
+    };
+    readonly hyperliquidDeposit?: {
+        readonly recipient: string;
+        readonly dex: "perps" | "spot";
+        readonly maxFee: AssetAmount;
     };
     readonly warnings: ReadonlyArray<IntentWarning>;
     readonly message?: MessageContent;
@@ -492,6 +498,11 @@ type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly message: Uint8Array;
+} | {
+    readonly kind: "tron.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
 };
 
 // @public

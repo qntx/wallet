@@ -65,7 +65,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination";
 
 // @public (undocumented)
 export const buildTronRawData: (header: TronTransactionHeader, contract: TronContract) => Uint8Array;
@@ -98,6 +98,7 @@ type DisplayIntent = {
     readonly minimumReceived?: ReadonlyArray<{
         readonly to: string;
         readonly amount: AssetAmount;
+        readonly tokenAccount?: string;
     }>;
     readonly fee: {
         readonly max: AssetAmount;
@@ -108,6 +109,11 @@ type DisplayIntent = {
         readonly destinationNetwork: string;
         readonly fillDeadline: number;
         readonly refundTo: string;
+    };
+    readonly hyperliquidDeposit?: {
+        readonly recipient: string;
+        readonly dex: "perps" | "spot";
+        readonly maxFee: AssetAmount;
     };
     readonly warnings: ReadonlyArray<IntentWarning>;
     readonly message?: MessageContent;
@@ -310,6 +316,14 @@ type OffchainOrder = {
     readonly exclusiveFiller?: string;
 };
 
+// @public (undocumented)
+type ParsedTypedData = {
+    readonly json: TypedDataInput;
+};
+
+// @public
+export const parseTronTypedData: (typedData: string) => ParsedTypedData;
+
 // @public
 type PolymarketContent = {
     readonly kind: "order";
@@ -374,6 +388,9 @@ export const recoverTronMessageSigner: (message: Uint8Array, signature: Uint8Arr
 
 // @public
 export const recoverTronTransactionSigner: (rawData: Uint8Array, signature: Uint8Array) => string;
+
+// @public
+export const recoverTronTypedDataSigner: (typedData: string, signature: Uint8Array) => string;
 
 // @public
 type SafeTransaction = {
@@ -497,6 +514,11 @@ type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly message: Uint8Array;
+} | {
+    readonly kind: "tron.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
 };
 
 // @public
@@ -596,6 +618,9 @@ export const TRON_CONTRACT_TYPES: ReadonlyArray<{
     readonly treatment: TronContractTreatment;
 }>;
 
+// @public
+export const TRON_MEMO_MAX_BYTES = 256;
+
 // @public (undocumented)
 export const TRON_MESSAGE_PREFIX = "TRON Signed Message:\n";
 
@@ -604,6 +629,9 @@ export const TRON_NATIVE_ASSET = "sun";
 
 // @public
 export const TRON_NETWORKS: ReadonlyArray<string>;
+
+// @public
+export const TRON_PERMIT2: Readonly<Record<string, string>>;
 
 // @public
 export function tronAddressFromBytes(bytes: Uint8Array): string;
@@ -717,6 +745,9 @@ export const tronContractType: (id: number) => {
     readonly treatment: TronContractTreatment;
 } | undefined;
 
+// @public
+export const tronMemoBytes: (memo: string) => Uint8Array;
+
 // @public (undocumented)
 export const tronMessageDigest: (message: Uint8Array) => Uint8Array;
 
@@ -761,6 +792,9 @@ export type TronRawData = {
 };
 
 // @public
+export const tronRawDataFromJson: (rawData: unknown, visible: boolean) => Uint8Array;
+
+// @public
 type TronResource = "bandwidth" | "energy" | "tron-power";
 
 // @public
@@ -790,6 +824,21 @@ export type TronTransactionHeader = {
 export const tronTransactionId: (rawData: Uint8Array) => Uint8Array;
 
 // @public
+export const tronTypedDataBase58: (value: unknown) => string | undefined;
+
+// @public
+export const tronTypedDataDigest: (json: TypedDataInput) => Uint8Array;
+
+// @public
+export const tronTypedDataFromArgs: (domain: unknown, types: unknown, message: unknown) => string;
+
+// @public
+export const tronTypedDataLeaf: (type: string, value: unknown) => string | undefined;
+
+// @public
+export const tronTypedDataToEvm: (json: TypedDataInput) => TypedDataInput | undefined;
+
+// @public
 export const tronTypeUrl: (name: string) => string;
 
 // @public (undocumented)
@@ -807,6 +856,20 @@ type TypedDataDomain = {
     readonly salt?: string;
 };
 
+// @public (undocumented)
+type TypedDataField = {
+    readonly name: string;
+    readonly type: string;
+};
+
+// @public
+type TypedDataInput = {
+    readonly types: Record<string, ReadonlyArray<TypedDataField>>;
+    readonly primaryType: string;
+    readonly domain: Record<string, unknown>;
+    readonly message: Record<string, unknown>;
+};
+
 // @public
 type TypedDataLeaf = {
     readonly path: string;
@@ -821,6 +884,9 @@ export const verifyTronMessageSignature: (message: Uint8Array, signature: Uint8A
 
 // @public
 export const verifyTronTransactionSignature: (rawData: Uint8Array, signature: Uint8Array, address: string) => boolean;
+
+// @public
+export const verifyTronTypedDataSignature: (typedData: string, signature: Uint8Array, address: string) => boolean;
 
 // (No @packageDocumentation comment for this package)
 

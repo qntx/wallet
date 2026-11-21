@@ -8,8 +8,11 @@
  *   minification), proving the apps entry never leaks into the main one.
  * - `apps`: the `@qntx/wallet-engine/apps` entry with `@qntx/*` workspace packages external (they are
  *   the host's peer deps) and the Hyperliquid SDK bundled — the apps entry's own incremental cost.
+ * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
+ *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
+ *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
  */
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -42,14 +45,37 @@ type Entry = {
   readonly forbidden: ReadonlyArray<string>;
 };
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- package.json has a fixed shape
+const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+  dependencies: Record<string, string>;
+  peerDependencies: Record<string, string>;
+};
+
+/** The `@qntx/*` workspace packages and every engine dependency but the WalletConnect SDK. */
+const WALLETCONNECT_EXTERNAL = [
+  ...Object.keys(pkg.peerDependencies),
+  "@qntx/wallet/chains",
+  "@qntx/wallet/hyperliquid",
+  ...Object.keys(pkg.dependencies).filter(
+    (name) => !name.startsWith("@reown/") && !name.startsWith("@walletconnect/"),
+  ),
+];
+
 const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    /* 131 kB with the TRON family, the extra EVM fee models and the nonce/tracking fixes. */
-    budget: 136 * 1024,
+    /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
+       deposit and the nonce/tracking fixes. */
+    budget: 144 * 1024,
     external: true,
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "@walletconnect/",
+      "@reown/",
+      "relay.walletconnect",
+    ],
   },
   {
     name: "apps",
@@ -57,6 +83,14 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
     budget: 26 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    forbidden: [],
+  },
+  {
+    name: "walletconnect",
+    source: "src/walletconnect/index.ts",
+    /* measured 420545 B gzipped — our glue plus WalletKit, the sign client and the core. */
+    budget: 414 * 1024,
+    external: WALLETCONNECT_EXTERNAL,
     forbidden: [],
   },
 ];

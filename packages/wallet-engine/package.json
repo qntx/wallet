@@ -42,6 +42,11 @@
       "types": "./dist/apps.d.mts",
       "import": "./dist/apps.mjs",
       "default": "./dist/apps.mjs"
+    },
+    "./walletconnect": {
+      "types": "./dist/walletconnect.d.mts",
+      "import": "./dist/walletconnect.mjs",
+      "default": "./dist/walletconnect.mjs"
     }
   },
   "publishConfig": {
@@ -62,6 +67,7 @@
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/siwx": "0.8.0",
+    "@reown/walletkit": "1.6.0",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana-program/address-lookup-table": "0.16.0",
@@ -70,6 +76,9 @@
     "@solana-program/system": "0.16.0",
     "@solana-program/token": "0.18.0",
     "@solana/kit": "8.5.0",
+    "@walletconnect/core": "2.25.0",
+    "@walletconnect/types": "2.25.0",
+    "@walletconnect/utils": "2.25.0",
     "@zxcvbn-ts/core": "4.2.0",
     "@zxcvbn-ts/language-common": "4.1.3",
     "viem": "2.57.12",
@@ -88,10 +97,12 @@
     "@solana-program/token-2022": "0.20.0",
     "@solana/wallet-standard-features": "1.5.0",
     "@solana/wallet-standard-util": "1.2.0",
+    "@tronweb3/tronwallet-adapter-tronlink": "1.3.0",
     "@wallet-standard/app": "1.1.1",
     "@wallet-standard/base": "1.1.1",
     "@wallet-standard/features": "1.1.1",
     "@wallet-standard/wallet": "1.1.1",
+    "@walletconnect/sign-client": "2.25.0",
     "fake-indexeddb": "6.2.6",
     "fast-check": "4.10.2",
     "publint": "0.3.25"

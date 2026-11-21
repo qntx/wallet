@@ -96,8 +96,8 @@ the package root.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).
 - `engine.eip1193`, `engine.nip07`, `engine.webln`, `engine.solanaWallet`,
-  `engine.bitcoinWallet` — the injected provider handlers for each wallet standard (`handle`, and
-  `subscribe` where the standard has events).
+  `engine.bitcoinWallet`, `engine.tronWallet` — the injected provider handlers for each wallet
+  standard (`handle`, and `subscribe` where the standard has events).
 - `engine.phishing` — the phishing list (`check`, `sync`, `trust`, `untrust`); its lifecycle is
   independent of the lock state.
 - `engine.spark` — Spark reads and receives, with token balances (`SparkAccountState.tokens`); it
@@ -166,7 +166,9 @@ cross-checked against a second provider before anything is built or signed, and 
 `reads-unverified` flag marks a prepare whose cross-check could not run.
 
 Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
-TRC-10 decimal id or a TRC-20 `T…` address; `tron-stake` carries one action — `freeze`,
+TRC-10 decimal id or a TRC-20 `T…` address and an optional `memo` (1–256 UTF-8 bytes, no line
+breaks or hidden characters — it becomes `raw_data.data` and costs the chain's flat memo fee,
+quoted as `tronFee.memo`); `tron-stake` carries one action — `freeze`,
 `unfreeze`, `withdraw-expired`, `cancel-unfreeze`, `delegate` (with an optional `lockBlocks`),
 `undelegate`, `vote` or `claim-rewards` — checked against the java-tron actuator rules before
 signing; `tron-approve` builds the TRC-20 `approve` call (amount `0n` revokes). A pending request
@@ -174,6 +176,35 @@ carries `tronFee`, a `TronFeeQuote` with the expected and maximum burn, the band
 (`staked`/`free`/`burn`/`activation-staked`/`activation-fee`), energy details for contract
 calls, the activation charge for a first send to an absent account, and warnings
 (`recipient-not-activated`, `token-recipient-empty`).
+
+A built TRON request is fresh for 20 seconds before its `expiration`: approve with less left — or
+after the reference block left the solidified chain — and the route rebuilds the same contract on
+a fresh head before signing, never signing stale bytes; a rebuild whose fee bound grows is refused
+instead. DApp-built transactions get no rebuild: under 20 seconds they are refused and the dApp
+must build again.
+
+The in-app browser gets the TronLink surface — `window.tron`, `window.tronLink` and
+`window.tronWeb`, installed immutable in the top frame only and announced over TIP-6963.
+`tronWeb` covers what real dApps call: `defaultAddress`, `ready`, `trx.sign`,
+`trx.signMessageV2`, `_signTypedData`/`signTypedData`, `trx.sendRawTransaction`,
+`getBlockByNumber(0)` (the network genesis), `addressChanged` and the node setters as no-ops;
+every other member — `transactionBuilder`, `utils`, `event`, `plugin`, the rest of `trx` — is a
+refusal that rejects with code `4200` rather than a wrong answer, and there are no `isTronLink`
+flags. `trx.sign` on a hex string is refused: a digest is signed with `signMessageV2`, and
+multi-signature is not offered.
+
+A dApp transaction is signed only when it can be shown exactly: `raw_data` must bind the session's
+own account as owner, a single modeled contract, `Permission_id` 0, an `expiration` between 20
+seconds and 24 hours out, and a reference block proven on the chain (full node or, within its
+head, the solidity node, cross-checked against the independent endpoint when one is configured);
+the page's `txID` must be sha256 of `raw_data` and a supplied `raw_data` JSON must re-encode to the
+same bytes. The wallet never broadcasts a dApp transaction itself — approve creates a `submitted`
+entry carrying `tron.dappSignature` and no `raw`, so the poll can only observe: when the dApp's
+broadcast lands the entry goes `confirmed`/`final`, and if the head passes `expiration` with no
+inclusion it is `dropped`. `trx.sendRawTransaction` hands the wallet-signed bytes back through
+`submitDappTron` — the signature must match the observed entry's — for the one wallet broadcast.
+`tron_signMessageV2` signs TIP-191 bytes, `tron_signTypedData` a TIP-712 document the page
+supplies as `domain`/`types`/`message`, and `wallet_watchAsset` accepts TRC-20 only.
 
 Tracking follows the chain's own rule: the signed bytes bind to the solidified head and stay
 `submitted` — rebroadcast as needed — until the solidified node reports them (solidified
@@ -186,8 +217,7 @@ the node (the raw data hash must equal the txid and every claimed leg must decod
 — an entry the node contradicts is flagged `chain-mismatch`, one it cannot prove stays
 unverified.
 
-Not offered: `AccountPermissionUpdate` (multi-sig/permission changes), transaction memos, and a
-dApp provider — there is no `engine.tronWallet` like `eip1193`/`solanaWallet`.
+Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
 
 ## Hyperliquid
 
@@ -286,10 +316,16 @@ visible but marked, never as live.
 
 ### Funding
 
-`fund.deposit(group, amount, fee)` prepares the Bridge2 deposit — an Arbitrum USDC transfer that
-credits the Hyperliquid account (5 USDC minimum — smaller deposits are lost — and credit inside
-a minute; `HYPERLIQUID_DEPOSIT` has the contracts per network). Hyperliquid has deprecated
-Bridge2 in favour of CCTP; it is still live and described here, CCTP support comes later.
+`fund.deposit(group, { amount, fee, dex? })` prepares the CCTP deposit — a USDC
+`depositForBurnWithHook` on Arbitrum's TokenMessengerV2 that Circle's CctpForwarder mints on
+HyperEVM into the Hyperliquid account (destination domain 19, confirmed finality;
+`HYPERLIQUID_DEPOSIT` has the contracts per network and `dex` defaults to `"perps"`). The
+provider reads the Circle forward fee from Iris and refuses a deposit the fee would consume or
+that exceeds the on-chain per-message burn limit. It is a two-call flow: when the messenger's
+USDC allowance is short the result is `approval-required` carrying only an exact-amount approve
+request (the burn call cannot be prepared while the approval is unmined — its `eth_estimateGas`
+reverts); the host approves it and calls `deposit` again, and the re-read allowance then yields
+the `deposit` variant carrying the burn request.
 `transfer.{toPerp,toSpot}` move USDC between the owner's spot and perp accounts, `usdSend`/
 `spotSend` send to another address and `withdraw` sends USDC back to the owner's Arbitrum
 address. Every one opens an approval request: the returned `HyperliquidPendingAction` carries
@@ -317,6 +353,128 @@ signature allow-list covers only the owner account's actions.
 > rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
 > kernel does not sign those actions. The window is the unlocked period plus nonces pre-signed
 > up to 5 minutes before the lock.
+
+## WalletConnect
+
+`@qntx/wallet-engine/walletconnect` is a separate entry point: the wallet side of WalletConnect
+v2 (Reown WalletKit + the sign client). A host that never pairs pays nothing — the SDK and its
+relay transport live only in this entry's bundle. WalletConnect peers are ordinary dApp origins
+keyed `walletconnect:<session topic>`: their sessions live in `engine.connections` alongside
+browser sessions, and every `session_request` runs through the same handlers and request pipeline
+the in-app browser uses, so the approval UI and risk checks are unchanged.
+
+```ts
+import { createWalletConnect } from "@qntx/wallet-engine/walletconnect";
+
+const walletConnect = await createWalletConnect({
+  projectId, // from the Reown dashboard — see the checklist below
+  metadata: {
+    name: "my wallet",
+    description: "…",
+    url: "https://wallet.example",
+    icons: ["https://wallet.example/icon.png"],
+    redirect: { native: "mywallet://", universal: "https://wallet.example/wc" },
+  },
+  storage, // WalletConnectStorage — a host-provided key-value store, required
+  wallet, // the same Wallet the engine was built on
+  engine, // the WalletEngine
+  now: () => Date.now(),
+  logger: { warn: (m, e) => console.warn(m, e) },
+});
+await walletConnect.dispose();
+```
+
+`walletConnect.getState().proposals` lists open proposals (peer name/url — self-declared, display
+only — Verify status, risk findings, offerable networks). `approve(id, { networks, acknowledged })`
+grants a subset of the offered networks and returns the `ConnectionSession`; `reject(id)` answers
+USER_REJECTED. Danger findings must be passed back in `acknowledged` or `approve` throws
+`"unacknowledged"`. `pair(uri)` accepts a `wc:` URI; `dispose()` tears down the relay connection —
+sessions persist in the engine's connection store, not in WalletConnect's.
+
+### Storage
+
+`storage` is mandatory (`WalletConnectStorage`: `getKeys`/`getEntries`/`getItem`/`setItem`/
+`removeItem`, JSON values). The SDK persists sessions, pairings, keys and pending requests there;
+give it durable storage or every restart loses the pairings.
+
+- **Web:** an IndexedDB-backed key-value store the host provides (a `localStorage` JSON shim works
+  for a playground, not for production).
+- **React Native:** `import "@walletconnect/react-native-compat"` as the **first** import of the
+  app entry — before anything that transitively loads the SDK. Its peer dependencies:
+  `@react-native-async-storage/async-storage`, `@react-native-community/netinfo`,
+  `react-native-get-random-values`, `expo-application`. Back `storage` with AsyncStorage.
+
+### Globals WalletKit needs
+
+| Global                                                   | Web                                                    | React Native              |
+| -------------------------------------------------------- | ------------------------------------------------------ | ------------------------- |
+| `WebSocket` (captured once at module load)               | built-in                                               | built-in                  |
+| `fetch` (Verify, telemetry off, Echo only if registered) | built-in                                               | built-in                  |
+| `crypto.getRandomValues`, `crypto.randomUUID`            | built-in                                               | via `react-native-compat` |
+| `TextEncoder`/`TextDecoder`, `atob`/`btoa`               | built-in                                               | via `react-native-compat` |
+| `URL`                                                    | built-in                                               | via `react-native-compat` |
+| `navigator.product`, `NetInfo`                           | n/a                                                    | via `react-native-compat` |
+| `window`/`document`/`localStorage`                       | dApp-side branches only — the wallet never enters them | n/a                       |
+
+### Deep links
+
+A scanned QR or pasted `wc:` URI goes `engine.payments.parse(text)` → `{ kind: "walletconnect",
+uri }` → `walletConnect.pair(uri)` — parse only pairs the `walletconnect` result. On mobile,
+register the app's universal link (iOS) / scheme (Android) for `wc:` URIs and set
+`metadata.redirect` so dApps can return to the wallet.
+
+### Namespaces and methods
+
+| Namespace | Methods                                                                                                                                                                                                                                       | Events                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `eip155`  | `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`, `wallet_sendCalls`, `wallet_getCallsStatus`, `wallet_showCallsStatus`, `wallet_getCapabilities`, `wallet_watchAsset`, `wallet_switchEthereumChain`, `wallet_addEthereumChain` | `accountsChanged`, `chainChanged`                            |
+| `solana`  | `solana_signMessage`, `solana_signTransaction`, `solana_signAllTransactions`, `solana_signAndSendTransaction`                                                                                                                                 | `accountsChanged`, `chainChanged`                            |
+| `bip122`  | `getAccountAddresses`, `signMessage`, `signPsbt`, `sendTransfer`                                                                                                                                                                              | `accountsChanged`, `chainChanged`, `bip122_addressesChanged` |
+
+Limits: `eth_sign`/`eth_signTypedData`(v1/v3)/`eth_signTransaction` are never approved (the
+injected provider refuses them too); BIP-322 is the only `signMessage` protocol (`ecdsa`/absent →
+4200); `sendTransfer` refuses `memo` (no OP_RETURN); `solana_signAndSendTransaction` ignores
+`sendOptions` — the engine broadcasts with its own settings; bip122 sessions advertise only the
+payment address (the ordinal address comes back from `getAccountAddresses`). A proposal's embedded
+`requests.authentication`/`requests.walletPay` are ignored — approval proceeds without them.
+
+### Verify, phishing, lifecycle
+
+Each proposal carries a WalletConnect Verify result plus the engine's phishing check on the
+peer's metadata origin: `isScam` and `INVALID` are `danger` findings (`verify-threat`,
+`verify-mismatch`) that block approval unless acknowledged; `UNKNOWN` is neutral. A peer on the
+phishing deny list is rejected outright.
+
+A proposal that arrives while the vault is locked is held and judged on unlock; an expired one is
+dropped. Session requests requeue on a mid-approval lock, except one-click auth, which is refused.
+Pending requests, sessions and pairings survive restarts via `storage`. Sessions expire with the
+WalletConnect TTL and reconcile against the connection store; revoking the origin or a dApp
+disconnect deletes both.
+
+### One-click auth
+
+`session_authenticate` requests are validated (peer URL, domain = peer host, SIWE URI = peer
+origin, every recap chain on the session's network), signed as a SIWE `personal-message` through
+the ordinary `evm-sign` pipeline — the existing sign-in parse and risk display apply — and settled
+as a Cacao. When the recap carries eip155 methods the auth also creates the session; without
+methods it stays an auth.
+
+### One instance
+
+One `createWalletConnect` per JS runtime: Core keeps a global singleton keyed by storage prefix
+(`DISABLE_GLOBAL_CORE` opts out). Telemetry is always off.
+
+### Host checklist
+
+- `projectId` from the [Reown dashboard](https://dashboard.reown.com) — not a secret, but configure
+  the project's allowed domains/bundle ids there.
+- **License:** WalletConnect is under the WalletConnect Community License — Reown's relay is
+  mandatory and the free tier covers ≤ 500 MAU and ≤ 2.5 M relay RPC calls/month. Take a
+  commercial licence before a public release above that, and never patch or fork the SDK (§1c).
+- Register the deep link / universal link and set `metadata.redirect`.
+- On RN, `react-native-compat` must be the first import.
+- Upgrade `@reown/walletkit` only together with the `@walletconnect/*` packages — WalletKit pins
+  core/utils/types exactly.
 
 ## React Native hosts
 

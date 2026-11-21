@@ -23,7 +23,7 @@ const fixture = JSON.parse(
 type RpcCall = { readonly method: string; readonly params: unknown[] };
 
 /** A `PublicClient`-shaped transport answering receipts/txs from the recorded fixture. */
-const rpcClient = (network: string, calls: RpcCall[]) =>
+const rpcClient = (network: string, calls: RpcCall[], code?: string | Error) =>
   ({
     transport: {
       request: async ({ method, params }: { method: string; params: unknown[] }) => {
@@ -35,6 +35,12 @@ const rpcClient = (network: string, calls: RpcCall[]) =>
         }
         if (method === "eth_getTransactionByHash") {
           return Promise.resolve(record?.tx ?? null);
+        }
+        if (method === "eth_getCode") {
+          if (code instanceof Error) {
+            return Promise.reject(code);
+          }
+          return Promise.resolve(code ?? "0x");
         }
         return Promise.reject(new Error(`unmocked ${method}`));
       },
@@ -54,6 +60,7 @@ const stream = (options: {
   requests?: Array<Record<string, unknown>>;
   onTruncated?: () => void;
   onUnsupported?: () => void;
+  cache?: Map<string, HistoryEntry>;
 }) => {
   const requests = options.requests ?? [];
   const queue = [...(options.pages ?? [options.page])];
@@ -75,7 +82,7 @@ const stream = (options: {
     } as never,
     options.network,
     OWNER,
-    new Map(),
+    options.cache ?? new Map(),
     options.onTruncated ?? (() => {}),
     options.onUnsupported ?? (() => {}),
   );
@@ -690,5 +697,151 @@ describe("evm lookalike counterparties", () => {
       "lookalike-counterparty",
     );
     expect(merged.find((e) => e.id === "eip155:999:0x97fb")?.flags).toStrictEqual([]);
+  });
+});
+
+/**
+ * An account carrying bytecode (an EIP-7702 delegation designator `0xef0100‖address` included) can
+ * move the wallet's native balance through its delegate — a successful receipt no longer proves the
+ * provider's transfer list is complete, so a freshly verified entry needs a reverted receipt (no
+ * native value moved); the check reads `eth_getCode` once per stream and fails closed.
+ */
+describe("evm history under delegated code", () => {
+  const DELEGATED = `0xef0100${"ab".repeat(20)}`;
+  const ERC20_HASH = "0x979e19a53feb2c15122009b523c48f66df025de6ff54db5290c567eac324f181";
+  const MINT_HASH = "0x865952a53a753b3900906186fe6e24c19a1af6ab14f389575b390c6b5c03d92c";
+  const SENDER = "0x5555555555555555555555555555555555555555";
+
+  const nativeIn = (hash: string, block: number) => {
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: {
+          blockNumber: `0x${block.toString(16)}`,
+          status: "0x1",
+          from: SENDER,
+          to: OWNER,
+          gasUsed: "0x5208",
+          effectiveGasPrice: "0x1",
+          logs: [],
+        },
+        tx: { from: SENDER, to: OWNER, value: "0xde0b6b3a7640000" },
+      },
+    };
+    return item(hash, block, [
+      {
+        kind: "native",
+        from: SENDER,
+        to: OWNER,
+        contract: null,
+        tokenId: null,
+        amount: "1000000000000000000",
+        decimals: null,
+        symbol: null,
+        logIndex: null,
+      },
+    ]);
+  };
+
+  it("a delegated account keeps matching native and erc20 claims unverified", async () => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      page: page([
+        nativeIn(`0x${"f0".repeat(32)}`, 0x1937400),
+        item(ERC20_HASH, 26436309, [ERC20_IN]),
+      ]),
+      client: rpcClient("eip155:1", [], DELEGATED),
+    });
+    const { items } = await s.next();
+    expect(entryOf(items, `0x${"f0".repeat(32)}`)?.verified).toBe(false);
+    expect(entryOf(items, ERC20_HASH)?.verified).toBe(false);
+  });
+
+  it("a reverted receipt still verifies on a delegated account", async () => {
+    const hash = `0x${"f1".repeat(32)}`;
+    const net = fixture["eip155:1"] as Record<
+      string,
+      { receipt: Record<string, unknown>; tx: unknown }
+    >;
+    const base = net[ERC20_HASH] as { receipt: Record<string, unknown>; tx: unknown };
+    net[hash] = { receipt: { ...base.receipt, status: "0x0" }, tx: base.tx };
+    const { stream: s } = stream({
+      network: "eip155:1",
+      page: page([item(hash, 26436309, [ERC20_IN])]),
+      client: rpcClient("eip155:1", [], DELEGATED),
+    });
+    const { items } = await s.next();
+    expect(entryOf(items, hash)?.verified).toBe(true);
+  });
+
+  it("an empty code keeps the existing verification outcome", async () => {
+    const pages = await Promise.all(
+      ["0x", "0x0"].map(async (code) => {
+        const { stream: s } = stream({
+          network: "eip155:1",
+          page: ETH_PAGE,
+          client: rpcClient("eip155:1", [], code),
+        });
+        const { items } = await s.next();
+        return items;
+      }),
+    );
+    for (const items of pages) {
+      expect(entryOf(items, ERC20_HASH)?.verified).toBe(true);
+      expect(entryOf(items, MINT_HASH)?.verified).toBe(true);
+    }
+  });
+
+  it("a getCode failure fails closed", async () => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      page: ETH_PAGE,
+      client: rpcClient("eip155:1", [], new Error("endpoint down")),
+    });
+    const { items } = await s.next();
+    expect(entryOf(items, ERC20_HASH)?.verified).toBe(false);
+    expect(entryOf(items, MINT_HASH)?.verified).toBe(false);
+  });
+
+  it("reads the code once for the whole stream, across pages", async () => {
+    const calls: RpcCall[] = [];
+    const { stream: s } = stream({
+      network: "eip155:1",
+      pages: [
+        page([item(ERC20_HASH, 26436309, [ERC20_IN])], "26429715"),
+        page([item(MINT_HASH, 26429715, [erc721("109", 628), erc721("110", 629)])]),
+      ],
+      client: rpcClient("eip155:1", calls, DELEGATED),
+    });
+    await s.next();
+    await s.next();
+    expect(calls.filter((c) => c.method === "eth_getCode")).toHaveLength(1);
+  });
+
+  it("a cached verified entry never triggers the code read", async () => {
+    const cache = new Map<string, HistoryEntry>();
+    const onePage = page([
+      item(ERC20_HASH, 26436309, [ERC20_IN]),
+      item(MINT_HASH, 26429715, [erc721("109", 628), erc721("110", 629)]),
+    ]);
+    const { stream: first } = stream({
+      network: "eip155:1",
+      page: onePage,
+      client: rpcClient("eip155:1", []),
+      cache,
+    });
+    const firstPage = await first.next();
+    for (const e of firstPage.items) {
+      cache.set(e.id, e);
+    }
+    const calls: RpcCall[] = [];
+    const { stream: second } = stream({
+      network: "eip155:1",
+      page: onePage,
+      client: rpcClient("eip155:1", calls, DELEGATED),
+      cache,
+    });
+    await second.next();
+    expect(calls).toHaveLength(0);
   });
 });

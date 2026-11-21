@@ -13,6 +13,14 @@ import type {
 } from "../index.ts";
 import { ChainError } from "../index.ts";
 import { withNativeAmountMeta } from "../networks.ts";
+import {
+  RAYDIUM_AMM_PROGRAM,
+  RAYDIUM_CLMM_PROGRAM,
+  RAYDIUM_CPMM_PROGRAM,
+  WHIRLPOOL_PROGRAM,
+  decodeAmmSwapIx,
+} from "./amm.ts";
+import type { AmmSwap } from "./amm.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
 import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
@@ -51,6 +59,7 @@ type IxCall = {
     | "token-sync-native"
     | "token-close-account"
     | "jupiter"
+    | "amm-swap"
     | "core-transfer"
     | "other";
   readonly to?: string | undefined;
@@ -69,6 +78,8 @@ type IxCall = {
   readonly create?: SystemCreate | undefined;
   /** A recognised Jupiter swap instruction. */
   readonly jupiter?: JupiterSwap | undefined;
+  /** A recognised AMM swap instruction (Raydium v4/CLMM/CPMM, Orca Whirlpool). */
+  readonly amm?: AmmSwap | undefined;
   /** A recognised Metaplex Core transfer: the asset leaves for `newOwner`. */
   readonly core?: { readonly asset: string; readonly newOwner: string } | undefined;
 };
@@ -204,6 +215,17 @@ const classifyIx = (
       ? { kind: "jupiter", jupiter }
       : { kind: "other" };
   }
+  if (
+    program === RAYDIUM_AMM_PROGRAM ||
+    program === RAYDIUM_CLMM_PROGRAM ||
+    program === RAYDIUM_CPMM_PROGRAM ||
+    program === WHIRLPOOL_PROGRAM
+  ) {
+    const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
+    return amm !== undefined && amm.authority === signer
+      ? { kind: "amm-swap", amm }
+      : { kind: "other" };
+  }
   if (program === MPL_CORE_PROGRAM) {
     const core = decodeCoreIx(parsed, ix, lookups);
     return core !== undefined && core.authority === signer
@@ -250,6 +272,7 @@ const classify = (
     if (
       call.kind === "token-approve" ||
       call.kind === "jupiter" ||
+      call.kind === "amm-swap" ||
       call.kind === "core-transfer" ||
       call.kind === "token-transfer" ||
       call.kind === "token-burn"
@@ -269,6 +292,7 @@ const classify = (
       call.kind !== "token-burn" &&
       call.kind !== "token-approve" &&
       call.kind !== "jupiter" &&
+      call.kind !== "amm-swap" &&
       call.kind !== "core-transfer"
     ) {
       return "opaque";
@@ -337,13 +361,26 @@ const decodeTransaction = (
   const approvals: ApprovalChange[] = [];
   const staking: StakeAction[] = [];
   const warnings: IntentWarning[] = [];
-  const minimumReceived: Array<{ to: string; amount: AssetFlow["amount"] }> = [];
+  const minimumReceived: Array<{
+    to: string;
+    amount: AssetFlow["amount"];
+    tokenAccount?: string;
+  }> = [];
   const wsolAtas = new Set([
     associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token),
     associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token2022),
   ]);
+  const atas = new Map<string, { mint: string; symbol: string }>();
+  for (const [mint, token] of Object.entries(table[request.network] ?? {})) {
+    for (const tokenProgram of [PROGRAM_IDS.token, PROGRAM_IDS.token2022]) {
+      atas.set(associatedTokenAddress(signer, mint, tokenProgram), {
+        mint,
+        symbol: token.symbol,
+      });
+    }
+  }
   let otherTransfer = false;
-  let hasJupiter = false;
+  let hasSwap = false;
   for (const call of calls) {
     if (call.kind === "system-transfer" && call.to !== undefined && call.from === signer) {
       /* The source is the instruction's first account — a second signer funds its own transfer. */
@@ -373,7 +410,7 @@ const decodeTransaction = (
     }
     if (call.kind === "jupiter" && call.jupiter !== undefined) {
       const swap = call.jupiter;
-      hasJupiter = true;
+      hasSwap = true;
       otherTransfer = true;
       const sell = lookupSolanaToken(table, request.network, swap.sourceMint);
       outflows.push({
@@ -409,6 +446,82 @@ const decodeTransaction = (
       if (swap.platformFeeBps > 0) {
         warnings.push({ kind: "platform-fee", message: `${swap.platformFeeBps} bps` });
       }
+    }
+    if (call.kind === "amm-swap" && call.amm !== undefined) {
+      const swap = call.amm;
+      hasSwap = true;
+      otherTransfer = true;
+      /* Mints the instruction does not name (AMM v4) resolve through the signer's ATA table —
+         a source/destination that is the signer's ATA of a table mint shows that mint. */
+      const sourceMint = swap.sourceMint ?? atas.get(swap.sourceAccount)?.mint;
+      const sourceToken =
+        sourceMint === undefined
+          ? undefined
+          : lookupSolanaToken(table, request.network, sourceMint);
+      outflows.push(
+        sourceMint === undefined
+          ? {
+              to: swap.program,
+              amount: { asset: swap.sourceAccount, amount: swap.maxIn.toString(10) },
+              verified: false,
+              tokenAccount: swap.sourceAccount,
+            }
+          : {
+              to: swap.program,
+              amount:
+                sourceMint === WSOL_MINT
+                  ? { asset: SOLANA_NATIVE_ASSET, amount: swap.maxIn.toString(10) }
+                  : {
+                      asset: sourceMint,
+                      amount: swap.maxIn.toString(10),
+                      ...(sourceToken === undefined
+                        ? {}
+                        : { symbol: sourceToken.symbol, decimals: sourceToken.decimals }),
+                    },
+              verified: sourceMint === WSOL_MINT || sourceToken !== undefined,
+            },
+      );
+      const destinationMint = swap.destinationMint ?? atas.get(swap.destinationAccount)?.mint;
+      const destinationToken =
+        destinationMint === undefined
+          ? undefined
+          : lookupSolanaToken(table, request.network, destinationMint);
+      /* `to` is the signer only when the destination is the signer's own ATA of the destination
+         mint — the instruction's explicit token program when it names one, else either. */
+      const destinationAtas =
+        swap.destinationTokenProgram === undefined
+          ? [PROGRAM_IDS.token, PROGRAM_IDS.token2022].map((p) =>
+              destinationMint === undefined
+                ? ""
+                : associatedTokenAddress(signer, destinationMint, p),
+            )
+          : [
+              destinationMint === undefined
+                ? ""
+                : associatedTokenAddress(signer, destinationMint, swap.destinationTokenProgram),
+            ];
+      const ownAta = destinationAtas.includes(swap.destinationAccount);
+      minimumReceived.push(
+        destinationMint === undefined
+          ? {
+              to: swap.destinationAccount,
+              amount: { asset: swap.destinationAccount, amount: swap.minOut.toString(10) },
+              tokenAccount: swap.destinationAccount,
+            }
+          : {
+              to: ownAta ? signer : swap.destinationAccount,
+              amount:
+                destinationMint === WSOL_MINT
+                  ? { asset: SOLANA_NATIVE_ASSET, amount: swap.minOut.toString(10) }
+                  : {
+                      asset: destinationMint,
+                      amount: swap.minOut.toString(10),
+                      ...(destinationToken === undefined
+                        ? {}
+                        : { symbol: destinationToken.symbol, decimals: destinationToken.decimals }),
+                    },
+            },
+      );
     }
     if (call.kind === "core-transfer" && call.core !== undefined) {
       otherTransfer = true;
@@ -568,15 +681,6 @@ const decodeTransaction = (
   /* The writable non-signer accounts each signer-taking unknown program can reach, and whether it
      can move the signer's SOL. */
   const authority = new Map<string, { sol: boolean; accounts: string[] }>();
-  const atas = new Map<string, { mint: string; symbol: string }>();
-  for (const [mint, token] of Object.entries(table[request.network] ?? {})) {
-    for (const tokenProgram of [PROGRAM_IDS.token, PROGRAM_IDS.token2022]) {
-      atas.set(associatedTokenAddress(signer, mint, tokenProgram), {
-        mint,
-        symbol: token.symbol,
-      });
-    }
-  }
   const signerIndex = parsed.staticAccounts.indexOf(signer);
   const signerWritable = signerIndex !== -1 && isWritableIndex(parsed, signerIndex);
   const altWritable = parsed.lookups.some((l) => l.writableIndexes.length > 0);
@@ -637,7 +741,7 @@ const decodeTransaction = (
       blind = "program-authority";
     }
   }
-  const summary = hasJupiter
+  const summary = hasSwap
     ? "swap"
     : otherTransfer
       ? "transfer"

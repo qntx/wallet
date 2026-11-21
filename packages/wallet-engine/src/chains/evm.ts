@@ -251,10 +251,35 @@ const hexHeight = (v: unknown): number => {
   return height;
 };
 
+/** A JSON-RPC hex quantity the spec guarantees — missing or malformed throws, never 0. */
+const hexQuantity = (v: unknown, method: string): bigint => {
+  if (typeof v !== "string" || !/^0x[0-9a-fA-F]+$/.test(v)) {
+    throw new TypeError(`${method}: malformed quantity`);
+  }
+  return BigInt(v);
+};
+
 const hex = (v: bigint | number): string => numberToHex(v);
 
 const evmRpc = async (client: PublicClient, method: string, params: unknown[]): Promise<unknown> =>
   client.transport.request({ method, params });
+
+const transactionCount = async (
+  client: PublicClient,
+  from: string,
+  tag: string,
+): Promise<number> => {
+  const n = Number(
+    hexQuantity(
+      await evmRpc(client, "eth_getTransactionCount", [from, tag]),
+      "eth_getTransactionCount",
+    ),
+  );
+  if (!Number.isSafeInteger(n)) {
+    throw new TypeError("eth_getTransactionCount: malformed quantity");
+  }
+  return n;
+};
 
 export const evmRpcHex = async (
   client: PublicClient,
@@ -282,12 +307,12 @@ export class EvmChainAdapter {
 
   /** The endpoint's pending transaction count for `from`. */
   async pendingCount(client: PublicClient, from: string): Promise<number> {
-    return Number(await evmRpcHex(client, "eth_getTransactionCount", [from, "pending"]));
+    return transactionCount(client, from, "pending");
   }
 
   /** The endpoint's mined transaction count for `from`: every nonce below it is consumed. */
   async confirmedCount(client: PublicClient, from: string): Promise<number> {
-    return Number(await evmRpcHex(client, "eth_getTransactionCount", [from, "latest"]));
+    return transactionCount(client, from, "latest");
   }
 
   /** True when the endpoint knows the transaction, mined or in its pool. */
@@ -424,7 +449,7 @@ export class EvmChainAdapter {
         ? [{ from, to, value: hex(value), data }]
         : [{ from, to, value: hex(value), data }, "latest", override];
     const estimate =
-      BigInt(await evmRpcHex(client, "eth_estimateGas", params)) +
+      hexQuantity(await evmRpc(client, "eth_estimateGas", params), "eth_estimateGas") +
       (authorization === undefined ? 0n : 25_000n);
     const scale = erc20 ? 11n : 12n;
     const buffered = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
@@ -448,7 +473,7 @@ export class EvmChainAdapter {
     pricing: GasPricing,
   ): Promise<ReadonlyArray<EvmFeeQuote>> {
     const gasPrice = async (): Promise<ReadonlyArray<EvmFeeQuote>> => {
-      const price = BigInt(await evmRpcHex(client, "eth_gasPrice", []));
+      const price = hexQuantity(await evmRpc(client, "eth_gasPrice", []), "eth_gasPrice");
       return (["slow", "normal", "fast"] as const).map((name) => ({
         tier: name,
         wei: price,
@@ -478,9 +503,12 @@ export class EvmChainAdapter {
       const { baseFeePerGas, reward } = history;
       if (
         !Array.isArray(baseFeePerGas) ||
+        baseFeePerGas.length === 0 ||
         !baseFeePerGas.every((v) => typeof v === "string") ||
         !Array.isArray(reward) ||
-        !reward.every((r) => Array.isArray(r) && r.every((v) => typeof v === "string"))
+        reward.length === 0 ||
+        !reward.every((r) => Array.isArray(r) && r.every((v) => typeof v === "string")) ||
+        !reward.every((r) => r.length >= 3)
       ) {
         throw new TypeError("eth_feeHistory returned a malformed result");
       }
@@ -637,8 +665,11 @@ export class EvmChainAdapter {
       return undefined;
     }
     const { blockHash, blockNumber, status } = isRecord(receipt) ? receipt : {};
+    if (typeof status !== "string" || !/^0x[0-9a-fA-F]+$/.test(status)) {
+      throw new TypeError("eth_getTransactionReceipt: malformed status");
+    }
     return {
-      failed: typeof status === "string" && BigInt(status) === 0n,
+      failed: BigInt(status) === 0n,
       block: { hash: checkedBlockHash(blockHash), height: hexHeight(blockNumber) },
     };
   }
