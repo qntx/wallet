@@ -27,6 +27,12 @@ export type FamilyClaim =
       readonly surface: "evm.typed-data";
       readonly verifyingContract: "token-table" | "permit2" | "seaport";
     }
+  /* An order protocol's domain name or any of its verifying contracts (either claims it). */
+  | {
+      readonly surface: "evm.typed-data";
+      readonly domainName: string;
+      readonly contracts: ReadonlyArray<string>;
+    }
   | { readonly surface: "solana.instruction"; readonly program: keyof typeof PROGRAM_IDS };
 
 export type RecognisedFamily = {
@@ -126,6 +132,16 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
       surface: "evm.typed-data",
       domainName: "snapshot",
       primaryType: /^Vote$/,
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* CoW GPv2 orders on the settlement contract (cow-contracts networks.json; research.md). */
+  {
+    family: "CoW",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Gnosis Protocol",
+      contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"],
     },
     nearMiss: "typed-data-variant",
   },

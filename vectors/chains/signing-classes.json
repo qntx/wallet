@@ -220,16 +220,16 @@
           }
         }
       },
-      "verifiability": "opaque",
-      "blind": "typed-data-commitment",
+      "verifiability": "partial",
+      "blind": null,
       "prompt": {
         "en": {
-          "title": "Confirm blind signing",
-          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
+          "title": "Confirm swap",
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x2222222222222222222222222222222222222222 receives at least 1 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nValid until 2033-05-18 03:33 (UTC)"
         },
         "zh-Hans": {
-          "title": "确认盲签",
-          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
+          "title": "确认兑换",
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x2222222222222222222222222222222222222222 至少收到 1 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n有效期至 2033-05-18 03:33（UTC）"
         }
       }
     },

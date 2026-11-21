@@ -376,14 +376,14 @@ const cases: VectorCase[] = [
         buyTokenBalance: "erc20",
       },
     }),
-    /* appData is a bytes32 commitment leaf: blind until a CoW decoder claims the document. */
-    verifiability: "opaque",
-    blind: "typed-data-commitment",
+    /* The CoW family decoder claims the document; appData stays hidden as part of the order. */
+    verifiability: "partial",
+    blind: null,
     prompt: p(
-      "Confirm blind signing",
-      "确认盲签",
-      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCommitment}\n${typedCaveat}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
-      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCommitmentZh}\n${typedCaveatZh}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
+      "Confirm swap",
+      "确认兑换",
+      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nCoW Protocol order by ${SIGNER}\nGive at most 1 USDC\n${SIGNER} receives at least 1 base units of unverified token ${WETH}\nValid until 2033-05-18 03:33 (UTC)`,
+      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\nCoW Protocol 订单，挂单方 ${SIGNER}\n最多付出 1 USDC\n${SIGNER} 至少收到 1 个最小单位（未验证代币 ${WETH}）\n有效期至 2033-05-18 03:33（UTC）`,
     ),
   },
   {

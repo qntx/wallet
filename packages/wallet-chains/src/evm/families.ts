@@ -42,6 +42,16 @@ export const typedDataNearMiss = (
     if (claim.surface !== "evm.typed-data") {
       return false;
     }
+    /* A contracts claim also carries domainName — either property claims the document, so it
+       must be checked before the plain domainName branch. */
+    if ("contracts" in claim) {
+      const contract = verifying?.toLowerCase();
+      return (
+        json.domain["name"] === claim.domainName ||
+        (contract !== undefined &&
+          claim.contracts.some((address) => address.toLowerCase() === contract))
+      );
+    }
     if ("domainName" in claim) {
       return (
         json.domain["name"] === claim.domainName &&

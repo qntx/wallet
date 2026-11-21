@@ -74,6 +74,9 @@ const fieldsOf = (
 ): ReadonlyArray<TypedDataLeaf> | undefined =>
   intent.message?.kind === "typed-data" ? intent.message.fields : undefined;
 
+const orderOf = (intent: ReturnType<typeof decodeEvm>) =>
+  intent.message?.kind === "typed-data" ? intent.message.order : undefined;
+
 describe("everyday contract calls are described, not blind", () => {
   const txCases = [
     [
@@ -136,9 +139,9 @@ describe("everyday contract calls are described, not blind", () => {
     );
   });
 
-  /* The GPv2 order's appData is a hash leaf, so until a CoW decoder claims the document it is
-     blind as a commitment; its leaves still show in declaration order. */
-  it("a CoW order's appData hash blinds it until the family is decoded", () => {
+  /* The CoW decoder claims the GPv2 order: its appData hash is a commitment the family names,
+     so the order is described as a swap rather than blind as a commitment. */
+  it("a CoW GPv2 order decodes as a swap order", () => {
     const intent = decodeEvm(
       typed({
         types: {
@@ -187,23 +190,28 @@ describe("everyday contract calls are described, not blind", () => {
       }),
       SIGNER,
     );
-    expect(intent.verifiability).toBe("opaque");
-    expect(intent.blind).toBe("typed-data-commitment");
-    expect(isBlindIntent(intent)).toBe(true);
-    expect(fieldsOf(intent)).toStrictEqual([
-      { path: "sellToken", value: checksumEvmAddress(USDC) },
-      { path: "buyToken", value: checksumEvmAddress(WETH) },
-      { path: "receiver", value: checksumEvmAddress(SIGNER) },
-      { path: "sellAmount", value: "1000000" },
-      { path: "buyAmount", value: "1" },
-      { path: "validTo", value: "2000000000" },
-      { path: "appData", value: `0x${"00".repeat(32)}` },
-      { path: "feeAmount", value: "0" },
-      { path: "kind", value: "sell" },
-      { path: "partiallyFillable", value: "false" },
-      { path: "sellTokenBalance", value: "erc20" },
-      { path: "buyTokenBalance", value: "erc20" },
-    ]);
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.blind).toBeUndefined();
+    expect(isBlindIntent(intent)).toBe(false);
+    expect(orderOf(intent)).toStrictEqual({
+      protocol: "cow",
+      maker: SIGNER,
+      give: {
+        asset: checksumEvmAddress(USDC),
+        amount: "1000000",
+        symbol: "USDC",
+        decimals: 6,
+      },
+      receive: [
+        {
+          recipient: checksumEvmAddress(SIGNER),
+          amount: { asset: checksumEvmAddress(WETH), amount: "1" },
+        },
+      ],
+      expiry: 2_000_000_000,
+      partialFill: false,
+    });
+    expect(fieldsOf(intent)).toBeUndefined();
   });
 });
 
@@ -1808,17 +1816,18 @@ describe("typed-data near misses of decoded families are blind", () => {
       return tx(USDC, "0xdeadbeef");
     }
     if (claim.surface === "evm.typed-data" && "domainName" in claim) {
+      const pattern = "primaryType" in claim ? claim.primaryType : undefined;
       const primaryType =
-        claim.primaryType === undefined
+        pattern === undefined
           ? "Foo"
           : (
               {
                 "^Agent$": "Agent",
                 "^Vote$": "Vote",
               } as Record<string, string | undefined>
-            )[claim.primaryType.source];
+            )[pattern.source];
       if (primaryType === undefined) {
-        throw new Error(`no near-miss fixture for ${claim.primaryType}`);
+        throw new Error(`no near-miss fixture for ${pattern}`);
       }
       return simpleDoc(
         primaryType,
@@ -1873,6 +1882,16 @@ describe("typed-data near misses of decoded families are blind", () => {
       primaryType: string;
       domain: Record<string, unknown>;
     };
+    /* Contracts claims match on the domain name OR a verifying contract in the set — the same
+       interpretation as typedDataNearMiss. */
+    if ("contracts" in claim) {
+      const contract = domain["verifyingContract"];
+      return (
+        domain["name"] === claim.domainName ||
+        (typeof contract === "string" &&
+          claim.contracts.some((a) => a.toLowerCase() === contract.toLowerCase()))
+      );
+    }
     if ("domainName" in claim) {
       return (
         domain["name"] === claim.domainName &&

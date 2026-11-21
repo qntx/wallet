@@ -22,6 +22,7 @@ import { MAX_UINT160, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { recognizeApp } from "./apps.ts";
 import type { AppRecognition } from "./apps.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
@@ -550,17 +551,23 @@ export const decodeEvm = (
           }),
         )
       : undefined;
+  const cow =
+    permit === undefined && seaport === undefined && safe === undefined && app === undefined
+      ? recognizeCow(json, chainId, signer, table)
+      : undefined;
   const snapshot =
     permit === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
+    cow === undefined &&
     recognizeSnapshot(json);
   const unclaimed =
     permit === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
+    cow === undefined &&
     !snapshot;
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
   /* A recognised vote shows its leaves like an unclaimed document — the family names `proposal`,
@@ -583,20 +590,21 @@ export const decodeEvm = (
     domain: displayDomain(json.domain),
     data: json.message,
     ...(seaport === undefined ? {} : { seaport }),
+    ...(cow === undefined ? {} : { order: cow }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
     ...(app === undefined ? {} : app.content),
     ...(fields === undefined ? {} : { fields }),
   };
   const summary =
-    seaport === undefined
-      ? safe === undefined
+    cow !== undefined || seaport !== undefined
+      ? "swap"
+      : safe === undefined
         ? permit === undefined
           ? (app?.summary ?? "message")
           : "approve"
         : safe.multisend
           ? "batch"
-          : (safe.safe.calls[0]?.summary ?? "contract-call")
-      : "swap";
+          : (safe.safe.calls[0]?.summary ?? "contract-call");
   return withNativeAmountMeta(
     {
       family: "evm",
@@ -607,7 +615,8 @@ export const decodeEvm = (
       fee: undefined,
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
-      verifiability: app?.verifiability ?? (permit === undefined ? "opaque" : "partial"),
+      verifiability:
+        app?.verifiability ?? (permit === undefined && cow === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),
     },
     request.network,
