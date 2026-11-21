@@ -1,11 +1,12 @@
-import type * as z from "zod/mini";
-
 /**
  * Unauthenticated Polymarket market reads: Gamma (events/markets/search), CLOB (book/price/
  * midpoint/history/market details/fee rate/server time) and Data v2 (resolutions) — every answer
  * schema-parsed then normalised. Money/size/price fields are decimal strings; asset ids are uint256
  * decimal strings; JSON-text fields are parsed strictly.
  */
+
+import type * as z from "zod/mini";
+
 import { CLOB_HOST, DATA_HOST, GAMMA_HOST } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketHttp, PolymarketServerTime } from "./http.ts";

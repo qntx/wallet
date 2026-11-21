@@ -54,10 +54,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Polymarket market reads joined at layer 2 (30772 B); the layer-3 account lane — CREATE2
-       derivation, L2 client, account reads — measured 41732 B. */
-    /* Layer 4 (Polymarket orders/trading) measured 47208 B. */
-    /* Layer 5 (enable state machine + relayer + controller wiring) measured 50061 B. */
+    /* Measured 52777 B: the Hyperliquid SDK client + zod/mini + the full Polymarket client
+       (markets, account, L2, orders, relayer, enable, live, funding) incl. viem hashing. */
     budget: 52 * 1024,
     external: [
       "@qntx/wallet",

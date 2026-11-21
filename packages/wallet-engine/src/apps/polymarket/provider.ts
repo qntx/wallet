@@ -1,10 +1,10 @@
-import type { Wallet } from "@qntx/wallet";
 /**
  * The Polymarket provider facade — unauthenticated market reads, account reads scoped to the
- * located wallet, L2-authenticated reads signed inside the kernel, and order placement through a
- * kernel-described `TypedDataSign` approval. Enablement, funding and live views land in later
- * layers on the same injected-I/O surface.
+ * located wallet, L2-authenticated reads signed inside the kernel, order placement through a
+ * kernel-described `TypedDataSign` approval, live book/account views over the injected socket, and
+ * pUSD funding through the request pipeline and the builder-signed relayer.
  */
+import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../../events.ts";
@@ -60,7 +60,7 @@ export type PolymarketProviderOptions = {
   /** The WebSocket factory live views stream over — `(url) => new WebSocket(url)`. */
   readonly socket: (url: string) => AppSocket;
   readonly logger: EngineLogger;
-  /** Stored for the enable/relayer layers — validated by `createApps`. */
+  /** The host's Remote Builder Signing oracle for relayer submits — validated by `createApps`. */
   readonly builder?: PolymarketBuilder;
 };
 
@@ -70,14 +70,12 @@ export type PolymarketProvider = {
   readonly trade: PolymarketTrading;
   readonly live: PolymarketLive;
   readonly fund: PolymarketFunding;
-  /** The configured builder, when the host supplied one — nothing else reads it yet. */
-  readonly builder?: PolymarketBuilder;
 };
 
 const isEvmAddress = (address: string): address is `0x${string}` =>
   /^0x[0-9a-fA-F]{40}$/.test(address);
 
-export type { PolymarketBuilderHeaders };
+export type { PolymarketBuilderHeaders } from "./relayer.ts";
 
 export function createPolymarketProvider(options: PolymarketProviderOptions): PolymarketProvider {
   const http = createPolymarketHttp({
@@ -138,7 +136,7 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     account,
     relayer,
     requests: options.requests,
-    ...(options.builder === undefined ? {} : { builder: options.builder }),
+    hasBuilder: options.builder !== undefined,
     now: options.now,
     setTimer: options.setTimer,
   });
@@ -148,6 +146,5 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     trade,
     live,
     fund,
-    ...(options.builder === undefined ? {} : { builder: options.builder }),
   };
 }

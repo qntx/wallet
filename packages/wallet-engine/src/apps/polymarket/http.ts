@@ -1,7 +1,7 @@
 /**
  * The Polymarket read/post transport: injected `fetch` only, a deadline on the injected timer, JSON
  * parse and a zod/mini schema on every answer (design.md 不变量 7). `body` is the exact string sent —
- * later layers HMAC it, so the client never re-serializes.
+ * the L2 client HMACs it, so the transport never re-serializes.
  *
  * Mapping: a fetch that throws is `network`, a deadline miss `timeout`, a non-2xx `unavailable`
  * (the error carries the HTTP `status`, the server's parsed JSON error body when it was an object,

@@ -1,5 +1,5 @@
 /**
- * Polymarket funding — the only two movements this lane offers (research.md §4):
+ * Polymarket funding — the only two movements this app offers (research.md §4):
  *
  * - `deposit`: a pUSD `send` request from the owner's EOA to the located **deployed** deposit wallet.
  *   It is not eligibility-gated — a deposit opens nothing on the exchange.
@@ -9,7 +9,7 @@
  *   duplicate deliberate, not accidental).
  *
  * USDC/USDC.e wrapping and cross-chain bridging are not offered: Polymarket's collateral is pUSD on
- * Polygon, and wrapping paths belong to the swap/bridge lanes, not this app.
+ * Polygon, and wrapping paths belong to the swap/bridge flows, not this app.
  */
 import { toHex } from "viem";
 
@@ -56,8 +56,8 @@ export type PolymarketFunding = {
 export type PolymarketFundingOptions = {
   readonly account: PolymarketAccountReads;
   readonly relayer: PolymarketRelayer;
-  /** Presence gates withdraw — the relayer batch submits through the builder signer. */
-  readonly builder?: unknown;
+  /** Whether the host configured a builder — presence gates `withdraw` before any request. */
+  readonly hasBuilder: boolean;
   readonly requests?: Pick<RequestController, "prepare" | "outcome">;
   readonly now: () => number;
   readonly setTimer: SetTimer;
@@ -136,7 +136,7 @@ export function createPolymarketFunding(options: PolymarketFundingOptions): Poly
       const requests = requirePipeline();
       requireAmount(amount);
       /* The batch submits through the builder-signed relayer — refuse before any request. */
-      if (options.builder === undefined) {
+      if (!options.hasBuilder) {
         throw new PolymarketError(
           "builder-required",
           "withdrawing submits through the relayer, which needs the host's builder signer",

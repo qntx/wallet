@@ -5,9 +5,11 @@
  * injected.
  *
  * `createApps` builds the whole surface: the `AppsController` (enablement state, terms
- * acknowledgement, lifecycle on the wallet's lock state) and the `hyperliquid` provider — market
- * and account reads, pure quote previews, L1 `trade` signed by the wallet's enabled agent,
- * user-signed `transfer`/`fund` through the request pipeline. Internal seams (the agent registry,
+ * acknowledgement, lifecycle on the wallet's lock state) and the configured providers —
+ * `hyperliquid` (market and account reads, pure quote previews, L1 `trade` signed by the wallet's
+ * enabled agent, user-signed `transfer`/`fund` through the request pipeline) and `polymarket`
+ * (market/account reads, kernel-signed L2 trading, live book/account views, pUSD funding through
+ * the request pipeline and the host's builder-signed relayer). Internal seams (the agent registry,
  * provider factories, flow types) stay in the source tree; tests import them by path.
  */
 export { createApps } from "./controller.ts";

@@ -1912,7 +1912,6 @@ export type PolymarketProvider = {
     readonly trade: PolymarketTrading;
     readonly live: PolymarketLive;
     readonly fund: PolymarketFunding;
-    readonly builder?: PolymarketBuilder;
 };
 
 // @public (undocumented)

@@ -1,5 +1,3 @@
-import { toHex } from "viem";
-
 /**
  * The Polymarket `AppProvider`: locate → deploy → credentials → approvals → verify as one resumable
  * state machine (design.md §启用状态机). Facts live in the kernel (`pm-creds`), the relayer
@@ -11,6 +9,9 @@ import { toHex } from "viem";
  * `polymarket(wallet).importCredentials` inside the credentials step and goes out of scope with it
  * — it never reaches controller state, the store, the logger, or an error.
  */
+
+import { toHex } from "viem";
+
 import type { Wallet } from "@qntx/wallet";
 import { polymarket } from "@qntx/wallet/polymarket";
 
