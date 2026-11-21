@@ -1,3 +1,5 @@
+import type { CostModel } from "./budget/costs.ts";
+import type { Account } from "./config/accounts.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
 
@@ -10,6 +12,11 @@ export type Limiters = {
   readonly ip: RateLimiter;
   readonly rpc: RateLimiter;
   readonly default: RateLimiter;
+  /**
+   * Shares of each provider account's per-minute budget, keyed `account:ip-prefix`: one client's
+   * traffic is bounded in the provider's own units even when its calls are cheap per request.
+   */
+  readonly share: RateLimiter;
 };
 
 /** The provider account an upstream authenticates against, by name — never a secret. */
@@ -26,9 +33,13 @@ export type UpstreamProvider = {
 /** Request headers authenticating one provider account, resolved per request. */
 export type UpstreamAuth = () => Promise<Readonly<Record<string, string>>>;
 
-/** A provider whose auth name has been resolved to its header function at construction. */
+/** A provider whose auth name and billing account were resolved at construction. */
 export type ResolvedProvider = Omit<UpstreamProvider, "auth"> & {
   readonly auth?: UpstreamAuth;
+  /** The provider account this provider's calls are metered against — `auth ?? id`. */
+  readonly account: string;
+  /** How `account` prices this provider's calls. */
+  readonly costs: CostModel;
 };
 
 /** A served network: a registry CAIP-2 id and its upstreams in priority order. */
@@ -60,6 +71,11 @@ export type GatewayOptions = {
    * construction — a keyed endpoint is never called unauthenticated.
    */
   readonly auth: Readonly<Partial<Record<UpstreamAuthId, UpstreamAuth>>>;
+  /**
+   * Provider accounts by name (`auth ?? id`): cost model and budget for every upstream the gateway
+   * can call. A configured provider without an account fails construction.
+   */
+  readonly accounts: Readonly<Record<string, Account>>;
   /**
    * The 0x API key that enables `/v1/quotes/swap`, and the integrator fee the gateway charges on
    * top of a quote, when configured. Absent the route answers `unavailable`.

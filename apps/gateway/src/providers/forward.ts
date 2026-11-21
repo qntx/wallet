@@ -67,6 +67,11 @@ export type UpstreamRequest = {
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
   /**
+   * What this call costs the provider account, in the account's own metering unit (compute units or
+   * request credits) — required, so no call can reach the upstream unbilled.
+   */
+  readonly cost: number;
+  /**
    * A deadline for a body streamed past the attempt (Esplora), which the attempt timeout no longer
    * bounds once the attempt has returned.
    */
@@ -96,7 +101,16 @@ export type Send = (request: UpstreamRequest) => Promise<UpstreamResponse>;
 
 export type Forwarded<T> = { readonly value: T; readonly providerId: string };
 
+/**
+ * Bills `units` of `account`'s own metering unit to the client's share of that account, before the
+ * call it pays for is sent. Throws a `GatewayHttpError` (429/413) when the request's share is spent
+ * — that error ends the walk unmetered-by-the-breaker, never a provider outage.
+ */
+export type Meter = (account: string, units: number) => Promise<void>;
+
 export type ForwardOptions = {
+  /** Required: every upstream call passes its share charge first. */
+  readonly meter: Meter;
   /**
    * The call relays a signed transaction. Retrying it on another provider can broadcast the same
    * transaction twice, so failover is allowed only when the failed attempt provably never reached
@@ -118,7 +132,7 @@ export type Forwarder = {
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
     attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
-    options?: ForwardOptions,
+    options: ForwardOptions,
   ) => Promise<Forwarded<T>>;
 };
 
@@ -148,8 +162,16 @@ const failureReason = (error: unknown): string => {
 };
 
 const sendTo =
-  (fetch: typeof globalThis.fetch, provider: ResolvedProvider, signal: AbortSignal): Send =>
+  (
+    fetch: typeof globalThis.fetch,
+    provider: ResolvedProvider,
+    meter: Meter,
+    signal: AbortSignal,
+  ): Send =>
   async (request) => {
+    // The client pays its share of the provider account before the call exists: a refused
+    // charge is the request's own 429/413 and nothing is sent.
+    await meter(provider.account, request.cost);
     let auth: Readonly<Record<string, string>>;
     try {
       auth = (await provider.auth?.()) ?? {};
@@ -220,7 +242,7 @@ export function createForwarder(
     async run<T>(
       providers: ReadonlyArray<ResolvedProvider>,
       attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
-      options?: ForwardOptions,
+      options: ForwardOptions,
     ): Promise<Forwarded<T>> {
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
@@ -241,7 +263,7 @@ export function createForwarder(
             const failed = new AbortController();
             try {
               return await attempt(
-                sendTo(fetch, provider, AbortSignal.any([signal, failed.signal])),
+                sendTo(fetch, provider, options.meter, AbortSignal.any([signal, failed.signal])),
                 provider,
               );
             } catch (error) {
@@ -272,7 +294,7 @@ export function createForwarder(
           ) {
             throw error;
           }
-          if (options?.broadcast === true && !refused(error)) {
+          if (options.broadcast === true && !refused(error)) {
             // The provider may have relayed the transaction; no other answer is safe to invent.
             throw new GatewayHttpError(502, "outcome-unknown");
           }

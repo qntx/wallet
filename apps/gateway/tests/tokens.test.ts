@@ -9,6 +9,7 @@ import { buildTokenLists } from "../src/tokens/build.ts";
 import { tokenListSources } from "../src/tokens/sources.ts";
 import type { RawToken, TokenListUpstream } from "../src/tokens/sources.ts";
 import {
+  allowAll,
   DEVNET,
   fakeFetch,
   gateway,
@@ -444,7 +445,7 @@ describe("GET /v1/tokens/:caip2", () => {
     const app = gateway({
       fetch: fakeFetch({}).fetch,
       tokens: store,
-      limiters: { ip, rpc, default: dflt },
+      limiters: { ip, rpc, default: dflt, share: allowAll },
     });
     const res = await app.request(`/v1/tokens/${SEPOLIA}`, { headers: headers() });
     expect(res.status).toBe(200);

@@ -18,8 +18,7 @@ import type { PricesResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
 import { GatewayHttpError } from "../src/middleware/errors.ts";
-import { createForwarder } from "../src/providers/forward.ts";
-import type { Forwarder } from "../src/providers/forward.ts";
+import type { Forwarder, Meter } from "../src/providers/forward.ts";
 import { NATIVE_COINS, TOKEN_PLATFORMS, priceTarget } from "../src/providers/prices-assets.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
@@ -46,6 +45,8 @@ import {
   recordingLimiter,
   allowAll,
   countBefore,
+  denyAll,
+  testProvider,
 } from "./helpers.ts";
 import type { Upstream } from "./helpers.ts";
 
@@ -183,21 +184,24 @@ describe("POST /v1/prices request validation", () => {
       { length: 100 },
       (_v, i) => `${ETH}/erc20:0x${i.toString(16).padStart(40, "0")}`,
     );
+    const share = recordingLimiter();
     const app = gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: allowAll, rpc: allowAll, default: limiter },
+      limiters: { ip: allowAll, rpc: allowAll, default: limiter, share },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     });
     const res = await app.request(prices.path, request(assets));
     expect(res.status).toBe(200);
-    // The request, one CoinGecko platform call, DefiLlama's two calls.
-    expect(limiter.deltas).toStrictEqual([1, 1, 2]);
+    // The request's own unit, then one CoinGecko platform call and DefiLlama's two.
+    expect(limiter.deltas).toStrictEqual([1]);
+    expect(share.deltas).toStrictEqual([1, 1, 1]);
     expect(upstream.calls).toHaveLength(3);
 
     const cached = await app.request(prices.path, request(assets));
     expect(cached.status).toBe(200);
-    expect(limiter.deltas).toStrictEqual([1, 1, 2, 1]);
+    expect(limiter.deltas).toStrictEqual([1, 1]);
+    expect(share.deltas).toStrictEqual([1, 1, 1]);
     expect(upstream.calls).toHaveLength(3);
   });
 });
@@ -229,13 +233,13 @@ describe("POST /v1/prices fan-out accounting", () => {
       [DEFILLAMA_API]: () => Response.json({ coins: {} }),
     });
 
-  it("charges one unit per upstream call a batch of unknown tokens fans out to", async () => {
+  it("bills one unit per upstream call a batch of unknown tokens fans out to", async () => {
     const limiter = recordingLimiter();
     const upstream = answers();
     const app = gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: allowAll, rpc: allowAll, default: limiter },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: limiter },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     });
     for (const [seed, currency] of [
@@ -248,24 +252,20 @@ describe("POST /v1/prices fan-out accounting", () => {
       const res = await app.request(prices.path, request(spread(seed), currency));
       expect(res.status).toBe(200);
       const units = limiter.deltas.slice(before.units).reduce((a, b) => a + b, 0);
-      // The request's own unit plus one per upstream call it caused.
-      expect(units).toBe(1 + upstream.calls.length - before.calls);
+      // One share unit per upstream call the request's cache misses fanned out to.
+      expect(units).toBe(upstream.calls.length - before.calls);
     }
     // 9 platform calls + 2 DefiLlama (usd), twice; 9 for eur, which DefiLlama does not serve.
     expect(upstream.calls).toHaveLength(31);
   });
 
-  it("refuses a batch whose fan-out the limiter will not pay before any upstream call", async () => {
-    // Every source's charge exceeds one unit, so no call can be paid: a refused
-    // charge makes that source unavailable but never spends a call.
-    const oneUnit: RateLimiter = {
-      limit: async ({ delta = 1 }) => Promise.resolve({ success: delta <= 1 }),
-    };
+  it("refuses a batch whose fan-out the share limiter will not pay before any upstream call", async () => {
+    // Every share charge is refused: each source is unavailable without a call spent.
     const upstream = answers();
     const res = await gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: oneUnit, rpc: oneUnit, default: oneUnit },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     }).request(prices.path, request(spread(0)));
     expect(res.status).toBe(429);
@@ -298,11 +298,14 @@ describe("POST /v1/prices refused charges", () => {
   it("keeps an earlier source's paid answer when the next charge is refused", async () => {
     const upstream = upstreams();
     const cache = memoryPriceCache();
-    // The request (1) and CoinGecko's two calls (2) fit; the DefiLlama charge does not.
+    // CoinGecko's two calls are paid; every DefiLlama share charge is refused.
+    const llamaDenied: RateLimiter = {
+      limit: async ({ key }) => Promise.resolve({ success: !key.startsWith("defillama:") }),
+    };
     const limited = gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: allowAll, rpc: allowAll, default: countBefore(3) },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: llamaDenied },
       prices: { cache, coingecko: { apiKey: "k" } },
     });
     const res = await limited.request(prices.path, request([ETH_NATIVE, TOKEN]));
@@ -332,11 +335,11 @@ describe("POST /v1/prices refused charges", () => {
     const res = await gateway({
       fetch: upstream.fetch,
       now: () => NOW,
-      limiters: { ip: allowAll, rpc: allowAll, default: countBefore(1) },
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     }).request(prices.path, request([ETH_NATIVE]));
     expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("10");
+    expect(res.headers.get("retry-after")).toBe("60");
     expect(upstream.calls).toHaveLength(0);
   });
 });
@@ -572,36 +575,21 @@ describe("POST /v1/prices failover", () => {
 describe("POST /v1/prices attempt cancellation", () => {
   it("cancels a failed attempt's other in-flight calls", async () => {
     let solanaSignal: AbortSignal | undefined;
-    let onAbort: ((signal: AbortSignal) => void) | undefined;
-    const cancelled = new Promise<AbortSignal>((resolve) => {
-      onAbort = resolve;
-    });
     const upstream = fakeFetch(
       primary({
         [cgToken("ethereum")]: () => new Response("batch limit", { status: 400 }),
-        [cgToken("solana")]: async (_call, signal) => {
+        [cgToken("solana")]: async (call, signal) => {
           solanaSignal = signal;
-          return new Promise<Response>((resolve) => {
-            signal.addEventListener(
-              "abort",
-              () => {
-                resolve(Response.json({}));
-                onAbort?.(signal);
-              },
-              { once: true },
-            );
-          });
+          return replay(cgSolana)(call, signal);
         },
       }),
     );
     const res = await app(upstream).request(prices.path, request([USDC_ETH, USDC_SOL]));
-    // CoinGecko's two platform calls ran together; ethereum's 400 failed the attempt, so the
-    // still-open solana call is cancelled before the answer fails over to DefiLlama.
+    // CoinGecko's two platform calls ran together; ethereum's 400 fails only its own read —
+    // solana's paid answer is kept while DefiLlama prices what ethereum's call lost.
     expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama");
-    expect(solanaSignal?.aborted).toBe(true);
-    const signal = await cancelled;
-    expect(signal.aborted).toBe(true);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama,coingecko");
+    expect(solanaSignal?.aborted).toBe(false);
   });
 
   it("does not cancel a successful attempt's calls", async () => {
@@ -682,7 +670,8 @@ describe("POST /v1/prices cache", () => {
     const partial = memoryPriceCache();
     const failing = fakeFetch(primary({ [cgToken("ethereum")]: replay(cgRateLimited) }));
     await app(failing, { cache: partial }).request(prices.path, request([DEAD, BTC_NATIVE]));
-    expect([...partial.data.keys()]).toStrictEqual([`usd/${BTC_NATIVE}`]);
+    // CoinGecko's ethereum call 429s, but bitcoin's coin read is kept and DefiLlama prices DEAD.
+    expect([...partial.data.keys()]).toStrictEqual([`usd/${BTC_NATIVE}`, `usd/${DEAD}`]);
   });
 
   it("treats a failing or corrupt cache as a miss and still answers", async () => {
@@ -835,7 +824,7 @@ describe("POST /v1/prices provider edge cases", () => {
 describe("quotePrices", () => {
   const deps = (
     sources: ReadonlyArray<PriceSource>,
-    forwarder: Forwarder = createForwarder(fakeFetch({}).fetch, () => {}),
+    forwarder: Forwarder = meteringForwarder,
   ): PriceDeps => ({
     forwarder,
     cache: memoryPriceCache(),
@@ -844,23 +833,58 @@ describe("quotePrices", () => {
     log: () => {},
   });
 
-  const fakeSource = (value: ReadonlyMap<string, RawQuote>): PriceSource => ({
-    provider: { id: "fake", url: "https://fake.test" },
-    serves: () => true,
-    calls: () => 1,
-    quote: async () => {
-      await Promise.resolve();
-      return value;
-    },
-  });
+  const fakeSource = (value: ReadonlyMap<string, RawQuote>): PriceSource => {
+    const provider = testProvider("fake");
+    return {
+      provider,
+      serves: () => true,
+      quote: async (send) => {
+        await send({ url: provider.url, cost: 1 });
+        return value;
+      },
+    };
+  };
 
-  /** A `charge` that pays for `budget` units, then throws the limiter's 429 refusal. */
-  const chargeUpTo = (budget: number): ((units: number) => Promise<void>) => {
+  /** Runs the attempt against a `send` that meters each call like the real forwarder does. */
+  const meteringForwarder: Forwarder = {
+    run: async (providers, attempt, options) => {
+      const [provider] = providers;
+      if (provider === undefined) {
+        throw new Error("no providers");
+      }
+      return {
+        value: await attempt(async (request) => {
+          await options.meter(provider.account, request.cost);
+          return {
+            status: 200,
+            ok: true,
+            headers: new Headers(),
+            text: async () => Promise.resolve("{}"),
+            body: null,
+          };
+        }, provider),
+        providerId: provider.id,
+      };
+    },
+  };
+
+  /** A forwarder that fails the `dead` source's attempt with a 503. */
+  const deadForwarder: Forwarder = {
+    run: async (providers, attempt, options) => {
+      const [provider] = providers;
+      return provider?.id === "dead"
+        ? Promise.reject(new GatewayHttpError(503, "unavailable", 30))
+        : meteringForwarder.run(providers, attempt, options);
+    },
+  };
+
+  /** A share meter that pays for `budget` units, then throws the limiter's 429 refusal. */
+  const meterUpTo = (budget: number): Meter => {
     const limiter = countBefore(budget);
-    return async (units) => {
-      const { success } = await limiter.limit({ key: "charge", delta: units });
+    return async (_account, units) => {
+      const { success } = await limiter.limit({ key: "share", delta: units });
       if (!success) {
-        throw new GatewayHttpError(429, "rate-limited", 10);
+        throw new GatewayHttpError(429, "rate-limited", 60);
       }
     };
   };
@@ -899,18 +923,22 @@ describe("quotePrices", () => {
     ).rejects.toBeInstanceOf(TypeError);
   });
 
-  it("answers what earlier sources priced when a later charge is refused", async () => {
+  it("answers what earlier sources priced when a later share charge is refused", async () => {
     const quote = { price: 1810.44, change24h: undefined, updatedAtSeconds: NOW / 1000 };
+    const provider = testProvider("never");
     const never: PriceSource = {
-      provider: { id: "never", url: "https://never.test" },
+      provider,
       serves: () => true,
-      calls: () => 1,
-      quote: async () => Promise.reject(new TypeError("must not be called")),
+      // The meter refuses this call before the source's own code would run.
+      quote: async (send) => {
+        await send({ url: provider.url, cost: 1 });
+        throw new TypeError("must not be called");
+      },
     };
     const { response } = await quotePrices(
       deps([fakeSource(new Map([[ETH_NATIVE, quote]])), never]),
       { currency: "usd", assets: [ETH_NATIVE, BTC_NATIVE] },
-      chargeUpTo(1),
+      meterUpTo(1),
     );
     expect(response.prices.map((q) => q.asset)).toStrictEqual([ETH_NATIVE]);
     expect(response.missing).toStrictEqual([BTC_NATIVE]);
@@ -922,22 +950,19 @@ describe("quotePrices", () => {
       quotePrices(
         deps([fakeSource(new Map([[ETH_NATIVE, quote]]))]),
         { currency: "usd", assets: [ETH_NATIVE] },
-        chargeUpTo(0),
+        meterUpTo(0),
       ),
     ).rejects.toMatchObject({ status: 429, code: "rate-limited" });
   });
 
   it("answers 503 over 429 when a provider failed and a charge was refused", async () => {
     const quote = { price: 1810.44, change24h: undefined, updatedAtSeconds: NOW / 1000 };
-    const forwarder: Forwarder = {
-      run: async () => Promise.reject(new GatewayHttpError(503, "unavailable", 30)),
-    };
-    const dead = { ...fakeSource(new Map()), provider: { id: "dead", url: "https://dead.test" } };
+    const dead = { ...fakeSource(new Map()), provider: testProvider("dead") };
     await expect(
       quotePrices(
-        deps([dead, fakeSource(new Map([[BTC_NATIVE, quote]]))], forwarder),
+        deps([dead, fakeSource(new Map([[BTC_NATIVE, quote]]))], deadForwarder),
         { currency: "usd", assets: [ETH_NATIVE, BTC_NATIVE] },
-        chargeUpTo(1),
+        meterUpTo(0),
       ),
     ).rejects.toMatchObject({ status: 503 });
   });

@@ -15,9 +15,10 @@ import {
   memoryRiskStore,
   post,
   rpcOk,
+  TEST_ACCOUNTS,
 } from "./helpers.ts";
 
-const limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
+const limiters = { ip: allowAll, rpc: allowAll, default: allowAll, share: allowAll };
 const risk = memoryRiskStore();
 const prices = { cache: memoryPriceCache() };
 
@@ -40,6 +41,7 @@ describe("upstream auth", () => {
       "https://bs.test": () => new Response("0000genesis"),
     });
     const app = createGateway({
+      accounts: TEST_ACCOUNTS,
       fetch,
       networks: [NET, BTCNET],
       limiters,
@@ -72,6 +74,7 @@ describe("upstream auth", () => {
       "https://plain.test": () => rpcOk("0x2"),
     });
     const app = createGateway({
+      accounts: TEST_ACCOUNTS,
       fetch,
       networks: [NET],
       limiters,
@@ -108,6 +111,7 @@ describe("upstream auth", () => {
       throw new Error("auth down");
     };
     const app = createGateway({
+      accounts: TEST_ACCOUNTS,
       fetch,
       networks: [
         NET,
@@ -152,6 +156,7 @@ describe("upstream auth", () => {
   it("refuses to build when a provider names an unconfigured auth", () => {
     expect(() =>
       createGateway({
+        accounts: TEST_ACCOUNTS,
         fetch: async () => {
           await Promise.resolve();
           return new Response();

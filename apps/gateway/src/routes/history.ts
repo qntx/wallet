@@ -49,9 +49,6 @@ export function historyRoutes({
         throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
       }
       const body = c.req.valid("json");
-      // Two upstream calls per page; the request already paid one unit. A drain round pays its two
-      // more before it is sent.
-      await c.get("charge")(1);
       const { value, providerId } = await alchemyHistoryPage(
         forwarder,
         providers,
@@ -61,7 +58,7 @@ export function historyRoutes({
           ...(body.cursor === undefined ? {} : { cursor: body.cursor }),
           limit: body.limit ?? HISTORY_PAGE_MAX,
         },
-        async () => c.get("charge")(2),
+        c.get("meter"),
         log,
       );
       return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });

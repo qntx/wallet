@@ -2,12 +2,23 @@ import type { MiddlewareHandler } from "hono";
 
 import { health } from "@qntx/wallet-engine/gateway/contract";
 
+import type { Account } from "../config/accounts.ts";
+import type { Meter } from "../providers/forward.ts";
 import type { Limiters, RateLimiter } from "../types.ts";
 import type { ClientIdVariables } from "./client-id.ts";
 import { GatewayHttpError } from "./errors.ts";
 
 /** Matches the `period` of the Workers rate-limit bindings in wrangler.jsonc. */
 export const RATE_LIMIT_RETRY_AFTER_SECONDS = 10;
+
+/** The `SHARE_LIMITER` binding's limit: one IP's share units per account per minute. */
+export const SHARE_LIMIT = 1000;
+/** Matches the binding's 60-second period. */
+export const SHARE_RETRY_AFTER_SECONDS = 60;
+
+/** The slowest of an account's windows, expressed as units per minute. */
+const perMinute = (account: Account): number =>
+  Math.min(...account.budget.map((window) => (window.units * 60) / window.seconds));
 
 /** IPv4 → /24, IPv6 → /48; the full address never reaches a counter key or a log. */
 export function ipPrefix(ip: string | undefined): string {
@@ -39,6 +50,12 @@ export type RateLimitVariables = {
    * throws `429 rate-limited` when either refuses. `units <= 0` is a no-op.
    */
   charge: (units: number) => Promise<void>;
+  /**
+   * Bills `units` of a provider account's own cost unit to this request's share of that account
+   * (`account:ip-prefix` on the share limiter). Throws `429 rate-limited` when the share is spent
+   * and `413 too-costly` when one delta exceeds the whole client window — before any limiter call.
+   */
+  meter: Meter;
 };
 
 /**
@@ -49,7 +66,10 @@ export type RateLimitVariables = {
  * variable: a batch costs the sum of its calls, not one request.
  */
 export const rateLimit =
-  (limiters: Limiters): MiddlewareHandler<{ Variables: ClientIdVariables & RateLimitVariables }> =>
+  (
+    limiters: Limiters,
+    accounts: Readonly<Record<string, Account>>,
+  ): MiddlewareHandler<{ Variables: ClientIdVariables & RateLimitVariables }> =>
   async (c, next) => {
     if (c.req.path === health.path) {
       await next();
@@ -70,7 +90,31 @@ export const rateLimit =
         throw new GatewayHttpError(429, "rate-limited", RATE_LIMIT_RETRY_AFTER_SECONDS);
       }
     };
+    const meter: Meter = async (account, units) => {
+      if (units <= 0) {
+        return;
+      }
+      const found = accounts[account];
+      if (found === undefined) {
+        // Resolved providers carry a configured account; reaching this is a construction bug.
+        throw new Error(`provider account "${account}" is not configured`);
+      }
+      // One IP buys at most 5 % of the account's slowest per-minute window.
+      const delta = Math.max(1, Math.ceil((units * 20_000) / perMinute(found)));
+      if (delta > SHARE_LIMIT) {
+        throw new GatewayHttpError(413, "too-costly");
+      }
+      // One key today — the same /24 or /48 `charge` uses; IPv6's /64 joins this loop later.
+      for (const key of [prefix]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- every key must be charged in order
+        const result = await limiters.share.limit({ key: `${account}:${key}`, delta });
+        if (!result.success) {
+          throw new GatewayHttpError(429, "rate-limited", SHARE_RETRY_AFTER_SECONDS);
+        }
+      }
+    };
     await charge(1);
     c.set("charge", charge);
+    c.set("meter", meter);
     await next();
   };

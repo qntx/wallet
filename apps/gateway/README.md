@@ -45,18 +45,20 @@ double-broadcast it.
 
 ## Rate limiting
 
-Three Workers limiters count weighted units per 10 s window (values in `wrangler.jsonc`): the
-client IP prefix, then `x-client-id` + prefix on either the RPC limiter (transport routes) or the
-default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
-summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
-a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
-`eth_getBlockReceipts`, `getVoteAccounts`, full-transaction blocks, programId-filtered
-`getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a batch of 20
-`eth_getLogs` costs 200. Arrays the caller sizes pay per started 10 elements (`getMultipleAccounts`,
-`getSignatureStatuses` at 1, `eth_getProof` storage keys at 3) and `eth_simulateV1` pays 3 per
-simulated block or call, whichever is more. Esplora requests stay at one unit: every allow-listed
-path is bounded. A history page pays 2 units for its two upstream calls, and a drain round 2 more,
-charged before the drain is sent.
+Two kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
+bindings counting requests per 10 s window (values in `wrangler.jsonc`) — answer `429 rate-limited`:
+the client IP prefix first, then `x-client-id` + prefix on either the RPC limiter (transport
+routes) or the default one. Every request pays one unit up front; an RPC batch pays one more unit
+for each of its remaining calls.
+
+The **share limiter** (`SHARE_LIMITER`, 1000 units per 60 s) bills every upstream call at the
+provider's own price — compute units on Alchemy and dRPC (`src/budget/costs.ts` lists a row for
+every allow-listed method, plus `alchemy_getAssetTransfers`), one credit per call on request-priced
+endpoints. Before `send` fires, the forwarder charges `ceil(units × 20,000 / perMinute)` on the
+`account:ip-prefix` key, so one IP prefix buys at most 5 % of each account's tightest per-minute
+budget window (`src/config/accounts.ts` sets those budgets and their derivations). A refused charge
+never reaches the upstream — the request gets `429 rate-limited` — and a single delta over the
+whole 1000-unit window is `413 too-costly` without touching the limiter.
 
 ## Prices
 
@@ -65,9 +67,8 @@ spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
 `solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing }`: every asset is either
 priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt` in Unix ms) or
 `missing`. The asset set describes a portfolio, so it travels in the body and the answer is
-`no-store`. It costs one rate-limit unit on the default limiter, plus one per upstream call its cache
-misses fan out to (one per CoinGecko token platform and one for the native coins, two for DefiLlama),
-charged before the calls are sent.
+`no-store`. Each upstream call its cache misses fan out to (one per CoinGecko token platform and one
+for the native coins, two for DefiLlama) is billed to the request's share of the source's account.
 
 Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
 client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then

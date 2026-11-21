@@ -1,3 +1,4 @@
+import { PRODUCTION_ACCOUNTS, STAGING_ACCOUNTS } from "./config/accounts.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
 import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
 import { zeroExConfig } from "./providers/zerox.ts";
@@ -48,7 +49,12 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
   const zeroEx = zeroExConfig(env);
   const base = {
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
-    limiters: { ip: env.IP_LIMITER, rpc: env.RPC_LIMITER, default: env.DEFAULT_LIMITER },
+    limiters: {
+      ip: env.IP_LIMITER,
+      rpc: env.RPC_LIMITER,
+      default: env.DEFAULT_LIMITER,
+      share: env.SHARE_LIMITER,
+    },
     corsOrigins: env.CORS_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter((origin) => origin !== ""),
@@ -61,6 +67,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     return {
       ...base,
       networks: PRODUCTION_NETWORKS,
+      accounts: PRODUCTION_ACCOUNTS,
       auth: {
         alchemy: bearer(env.ALCHEMY_API_KEY),
         drpc: header("Drpc-Key", env.DRPC_API_KEY),
@@ -78,6 +85,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
   return {
     ...base,
     networks: STAGING_NETWORKS,
+    accounts: STAGING_ACCOUNTS,
     auth: {},
     prices: {
       cache,

@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { EVM_RPC_METHODS, SOLANA_RPC_METHODS } from "@qntx/wallet-engine/gateway/contract";
+
 import { createGateway } from "../src/app.ts";
+import { ALCHEMY_COSTS, DRPC_COSTS } from "../src/budget/costs.ts";
+import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { gatewayFor, priceCacheOf, riskStoreOf } from "../src/worker.ts";
 import type { WorkerEnv } from "../src/worker.ts";
 import { allowAll } from "./helpers.ts";
+
+const rpcMethods = (model: CostModel): Readonly<Record<string, CostRow>> =>
+  model.kind === "rpc" ? model.methods : {};
 
 const kv = (): KVNamespace =>
   ({
@@ -18,6 +25,7 @@ const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
+    SHARE_LIMITER: allowAll,
     CORS_ORIGINS: "http://localhost:5173,http://localhost:8081",
     NETWORKS: "staging",
     ZEROX_API_KEY: "z",
@@ -30,6 +38,7 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
+    SHARE_LIMITER: allowAll,
     CORS_ORIGINS: "",
     NETWORKS: "production",
     ZEROX_API_KEY: "z",
@@ -66,6 +75,17 @@ describe("gatewayFor", () => {
       apiKey: "cg2",
     });
     expect(() => createGateway(options)).not.toThrow();
+  });
+
+  it("prices every allow-listed method in both RPC cost tables", () => {
+    for (const table of [ALCHEMY_COSTS, DRPC_COSTS].map((m) => rpcMethods(m))) {
+      for (const method of [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS]) {
+        const row = table[method];
+        expect(row).toBeDefined();
+        expect(row?.units).toBeGreaterThanOrEqual(0);
+        expect(row?.source).toMatch(/^https:\/\//);
+      }
+    }
   });
 
   it("optional quote config passes through per env shape", () => {

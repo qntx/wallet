@@ -31,8 +31,8 @@
           "preview_id": "41f33427d52a480784d01947ef604d7a",
         },
       ],
-      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
-      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
+      // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
+      // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -48,6 +48,11 @@
           "name": "IP_LIMITER",
           "namespace_id": "1003",
           "simple": { "limit": 300, "period": 10 },
+        },
+        {
+          "name": "SHARE_LIMITER",
+          "namespace_id": "1004",
+          "simple": { "limit": 1000, "period": 60 },
         },
       ],
     },
@@ -71,8 +76,8 @@
         ],
       },
       "kv_namespaces": [{ "binding": "RISK", "id": "983019ff51a54c5abea1a0a8189d299d" }],
-      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
-      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
+      // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
+      // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -88,6 +93,11 @@
           "name": "IP_LIMITER",
           "namespace_id": "2003",
           "simple": { "limit": 300, "period": 10 },
+        },
+        {
+          "name": "SHARE_LIMITER",
+          "namespace_id": "2004",
+          "simple": { "limit": 1000, "period": 60 },
         },
       ],
     },

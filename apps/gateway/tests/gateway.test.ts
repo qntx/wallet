@@ -115,7 +115,7 @@ describe("served networks", () => {
     const dflt = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({}).fetch,
-      limiters: { ip: allowAll, rpc, default: dflt },
+      limiters: { ip: allowAll, rpc, default: dflt, share: allowAll },
     });
     const anonymous = await app.request("/v1/networks");
     const identified = await app.request("/v1/networks", { headers: headers() });
@@ -128,7 +128,7 @@ describe("served networks", () => {
   it("answers 429 when the default limiter refuses", async () => {
     const app = gateway({
       fetch: fakeFetch({}).fetch,
-      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll, share: allowAll },
     });
     const res = await app.request("/v1/networks", { headers: headers() });
     expect(res.status).toBe(429);
@@ -1041,7 +1041,7 @@ describe("rate limiting", () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk("0x1") });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll, share: allowAll },
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(429);
@@ -1059,7 +1059,10 @@ describe("rate limiting", () => {
       "https://a.test/evm": () => rpcOk("0x1"),
       "https://a.test/btc": () => new Response("0"),
     });
-    const app = gateway({ fetch: up.fetch, limiters: { ip: allowAll, rpc, default: dflt } });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip: allowAll, rpc, default: dflt, share: allowAll },
+    });
     await app.request(`/v1/rpc/${SEPOLIA}`, {
       ...post(call("eth_chainId")),
       headers: headers({ "content-type": "application/json", "cf-connecting-ip": "203.0.113.77" }),
@@ -1089,6 +1092,7 @@ describe("rate limiting", () => {
         },
         rpc: allowAll,
         default: allowAll,
+        share: allowAll,
       },
     });
     const statuses = [];
@@ -1117,13 +1121,16 @@ describe("rate limiting", () => {
           Array.from({ length: 20 }, (_v, i) => ({ jsonrpc: "2.0", id: i, result: [] })),
         ),
     });
-    const app = gateway({ fetch: up.fetch, limiters: { ip, rpc, default: allowAll } });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip, rpc, default: allowAll, share: allowAll },
+    });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
     expect(res.status).toBe(200);
     expect(up.callsTo("https://a.test")).toHaveLength(1);
-    // One unit up front, then the batch's 200 scan units minus the unit already paid.
-    expect(ip.deltas).toStrictEqual([1, 199]);
-    expect(rpc.deltas).toStrictEqual([1, 199]);
+    // One unit up front, then one more for each of the batch's 19 remaining calls.
+    expect(ip.deltas).toStrictEqual([1, 19]);
+    expect(rpc.deltas).toStrictEqual([1, 19]);
   });
 
   it("refuses the next request once a batch spends the window's units", async () => {
@@ -1135,7 +1142,7 @@ describe("rate limiting", () => {
     });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: countBefore(100), rpc: countBefore(100), default: allowAll },
+      limiters: { ip: countBefore(20), rpc: countBefore(20), default: allowAll, share: allowAll },
     });
     const first = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
     expect(first.status).toBe(200);
@@ -1152,7 +1159,7 @@ describe("rate limiting", () => {
     const rpc = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
-      limiters: { ip, rpc, default: allowAll },
+      limiters: { ip, rpc, default: allowAll, share: allowAll },
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(200);
@@ -1172,7 +1179,7 @@ describe("rate limiting", () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
     const app = gateway({
       fetch: up.fetch,
-      limiters: { ip: refuseSecond, rpc: allowAll, default: allowAll },
+      limiters: { ip: refuseSecond, rpc: allowAll, default: allowAll, share: allowAll },
     });
     const res = await app.request(
       `/v1/rpc/${SEPOLIA}`,
@@ -1190,7 +1197,7 @@ describe("rate limiting", () => {
     const rpc = recordingLimiter();
     const app = gateway({
       fetch: fakeFetch({ "https://a.test/btc": () => new Response("0") }).fetch,
-      limiters: { ip: allowAll, rpc, default: allowAll },
+      limiters: { ip: allowAll, rpc, default: allowAll, share: allowAll },
     });
     const res = await app.request(`/v1/esplora/${SIGNET}/block-height/0`, {
       headers: headers(),
@@ -1201,7 +1208,10 @@ describe("rate limiting", () => {
 
   it("does not count health", async () => {
     const rpc = recordingLimiter();
-    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { ip: rpc, rpc, default: rpc } });
+    const app = gateway({
+      fetch: fakeFetch({}).fetch,
+      limiters: { ip: rpc, rpc, default: rpc, share: allowAll },
+    });
     await app.request("/v1/health");
     expect(rpc.keys).toHaveLength(0);
   });
@@ -1491,6 +1501,7 @@ describe("upstream observability", () => {
         ip: { limit: async () => Promise.reject(new RangeError("quota exploded")) },
         rpc: allowAll,
         default: allowAll,
+        share: allowAll,
       },
     }).request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(500);

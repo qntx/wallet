@@ -3,9 +3,17 @@ import { expect } from "vite-plus/test";
 import { accepts } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
+import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
+import type { Account } from "../src/config/accounts.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { TokenListStore } from "../src/tokens/build.ts";
-import type { GatewayNetwork, Limiters, PriceCache, RateLimiter } from "../src/types.ts";
+import type {
+  GatewayNetwork,
+  Limiters,
+  PriceCache,
+  RateLimiter,
+  ResolvedProvider,
+} from "../src/types.ts";
 
 export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
 export const SEPOLIA = "eip155:11155111";
@@ -25,6 +33,49 @@ export const NETWORKS: ReadonlyArray<GatewayNetwork> = [
     { id: "b", url: `https://b.test/${slug}` },
   ],
 }));
+
+/**
+ * Every provider id the test networks and the code-built providers use, billed one request credit
+ * each against a budget no test can exhaust. `alchemy` prices by compute units so the history
+ * route's `alchemy_getAssetTransfers` cost resolves.
+ */
+export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
+  ...Object.fromEntries(
+    [
+      "a",
+      "b",
+      "drpc",
+      "blockstream",
+      "bs",
+      "dead",
+      "fake",
+      "keyed",
+      "never",
+      "other",
+      "plain",
+      "coingecko",
+      "defillama",
+      "0x",
+      "jupiter",
+      "across",
+    ].map((id) => [
+      id,
+      {
+        costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+        budget: [{ units: 1_000_000, seconds: 60 }],
+      } satisfies Account,
+    ]),
+  ),
+  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 1_000_000, seconds: 60 }] },
+};
+
+/** A code-built provider fake: id is its account, one request credit per call. */
+export const testProvider = (id: string, url = `https://${id}.test`): ResolvedProvider => ({
+  id,
+  url,
+  account: id,
+  costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+});
 
 export type UpstreamCall = {
   readonly url: string;
@@ -155,6 +206,7 @@ export function gateway(options: {
   readonly risk?: RiskStore;
   readonly tokens?: TokenListStore;
   readonly limiters?: Limiters;
+  readonly accounts?: Readonly<Record<string, Account>>;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
   readonly auth?: Parameters<typeof createGateway>[0]["auth"];
   readonly jupiter?: { apiKey: string };
@@ -165,7 +217,13 @@ export function gateway(options: {
   return createGateway({
     fetch: options.fetch,
     networks: options.networks ?? NETWORKS,
-    limiters: options.limiters ?? { ip: allowAll, rpc: allowAll, default: allowAll },
+    limiters: options.limiters ?? {
+      ip: allowAll,
+      rpc: allowAll,
+      default: allowAll,
+      share: allowAll,
+    },
+    accounts: options.accounts ?? TEST_ACCOUNTS,
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     tokens: options.tokens ?? memoryRiskStore(),

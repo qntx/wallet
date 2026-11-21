@@ -11,6 +11,7 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
+import type { RateLimitVariables } from "../middleware/rate-limit.ts";
 import type { AcrossQuote } from "../providers/across.ts";
 import { acrossQuote } from "../providers/across.ts";
 import type { Forwarder } from "../providers/forward.ts";
@@ -18,6 +19,7 @@ import type { JupiterConfig, JupiterQuote } from "../providers/jupiter.ts";
 import { jupiterQuote } from "../providers/jupiter.ts";
 import type { ZeroExQuote, ZeroExConfig } from "../providers/zerox.ts";
 import { zeroExQuote } from "../providers/zerox.ts";
+import type { ResolvedProvider } from "../types.ts";
 
 /**
  * `GET /v1/quotes/swap` — relays the swap quote through the configured upstream. Absent a `zeroEx`
@@ -27,8 +29,13 @@ export function quotesRoutes(deps: {
   readonly forwarder: Forwarder;
   readonly zeroEx: ZeroExConfig | undefined;
   readonly jupiter: JupiterConfig | undefined;
-}): Hono {
-  return new Hono()
+  readonly providers: {
+    readonly zerox: ResolvedProvider;
+    readonly jupiter: ResolvedProvider;
+    readonly across: ResolvedProvider;
+  };
+}): Hono<{ Variables: RateLimitVariables }> {
+  return new Hono<{ Variables: RateLimitVariables }>()
     .get(
       swapQuote.path,
       sValidator("query", swapQuoteRequest, (result) => {
@@ -43,14 +50,20 @@ export function quotesRoutes(deps: {
         const { network, sellToken, buyToken, sellAmount, taker, slippageBps } =
           c.req.valid("query");
         const chainId = Number(network.split(":")[1]);
-        const result: ZeroExQuote = await zeroExQuote(deps.forwarder, deps.zeroEx, {
-          chainId,
-          sellToken,
-          buyToken,
-          sellAmount,
-          taker,
-          slippageBps,
-        });
+        const result: ZeroExQuote = await zeroExQuote(
+          deps.forwarder,
+          deps.zeroEx,
+          deps.providers.zerox,
+          c.get("meter"),
+          {
+            chainId,
+            sellToken,
+            buyToken,
+            sellAmount,
+            taker,
+            slippageBps,
+          },
+        );
         if ("badRequest" in result) {
           throw new GatewayHttpError(400, "invalid-request");
         }
@@ -68,13 +81,19 @@ export function quotesRoutes(deps: {
         /* Jupiter serves keyless — the route is always available; a configured key only sets
            the upstream header. */
         const { inputMint, outputMint, amount, taker, slippageBps } = c.req.valid("query");
-        const result: JupiterQuote = await jupiterQuote(deps.forwarder, deps.jupiter, {
-          inputMint,
-          outputMint,
-          amount,
-          taker,
-          slippageBps,
-        });
+        const result: JupiterQuote = await jupiterQuote(
+          deps.forwarder,
+          deps.jupiter,
+          deps.providers.jupiter,
+          c.get("meter"),
+          {
+            inputMint,
+            outputMint,
+            amount,
+            taker,
+            slippageBps,
+          },
+        );
         if ("badRequest" in result) {
           throw new GatewayHttpError(400, "invalid-request");
         }
@@ -92,13 +111,18 @@ export function quotesRoutes(deps: {
         /* Across serves keyless — no provider option is needed. */
         const { network, destinationNetwork, inputToken, outputToken, amount } =
           c.req.valid("query");
-        const result: AcrossQuote = await acrossQuote(deps.forwarder, {
-          inputToken,
-          outputToken,
-          originChainId: network.slice(7),
-          destinationChainId: destinationNetwork.slice(7),
-          amount,
-        });
+        const result: AcrossQuote = await acrossQuote(
+          deps.forwarder,
+          deps.providers.across,
+          c.get("meter"),
+          {
+            inputToken,
+            outputToken,
+            originChainId: network.slice(7),
+            destinationChainId: destinationNetwork.slice(7),
+            amount,
+          },
+        );
         if ("badRequest" in result) {
           throw new GatewayHttpError(400, "invalid-request");
         }

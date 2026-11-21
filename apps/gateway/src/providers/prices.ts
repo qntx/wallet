@@ -16,7 +16,7 @@ import type {
 
 import { GatewayHttpError } from "../middleware/errors.ts";
 import type { PriceCache, ResolvedProvider } from "../types.ts";
-import type { Forwarder, Send, UpstreamResponse } from "./forward.ts";
+import type { Forwarder, Meter, Send, UpstreamResponse } from "./forward.ts";
 import { ProviderFailure, REFUSED_STATUSES, UNAVAILABLE_RETRY_AFTER_SECONDS } from "./forward.ts";
 import { priceTarget } from "./prices-assets.ts";
 import type { PriceTarget } from "./prices-assets.ts";
@@ -55,13 +55,12 @@ export type RawQuote = {
 
 /**
  * One price provider. `quote` answers for the assets it knows and omits the others; it throws on
- * any failure (a non-2xx status, a malformed body). `calls` is how many upstream calls `quote`
- * makes for `targets` — the request pays one rate-limit unit for each before they are sent.
+ * any failure (a non-2xx status, a malformed body). Every upstream call it makes is billed to the
+ * request's share of the provider's account by the forwarder before it is sent.
  */
 export type PriceSource = {
   readonly provider: ResolvedProvider;
   readonly serves: (currency: FiatCurrency) => boolean;
-  readonly calls: (targets: ReadonlyMap<string, PriceTarget>) => number;
   readonly quote: (
     send: Send,
     currency: FiatCurrency,
@@ -168,19 +167,19 @@ async function writeCached(deps: PriceDeps, key: string, entry: Entry, now: numb
 
 /**
  * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced,
- * `charge` paying for each source's upstream calls before they are sent. A refused charge makes
- * that source unavailable — the request's own budget is spent, not the provider's — so answers
- * already paid for are kept and the source's still-pending assets answer `missing` without being
- * cached as such. When no asset could be priced and the only failures were refused charges the
- * request rethrows the 429; when a provider failed it answers `503 unavailable` rather than
- * claiming everything is missing. An asset is cached as `missing` only when every source that
- * serves the currency answered — a failed or uncharged source might know it. Returns the response
- * and the providers whose data it carries.
+ * every upstream call billed to the request's share of the source's account before it is sent. A
+ * refused share charge makes that source unavailable — the request's own budget is spent, not the
+ * provider's — so answers already paid for are kept and the source's still-pending assets answer
+ * `missing` without being cached as such. When no asset could be priced and the only failures were
+ * refused charges the request rethrows the refusal; when a provider failed it answers `503
+ * unavailable` rather than claiming everything is missing. An asset is cached as `missing` only
+ * when every source that serves the currency answered — a failed or uncharged source might know it.
+ * Returns the response and the providers whose data it carries.
  */
 export async function quotePrices(
   deps: PriceDeps,
   request: PricesRequest,
-  charge: (units: number) => Promise<void>,
+  meter: Meter,
 ): Promise<{ readonly response: PricesResponse; readonly providers: ReadonlyArray<string> }> {
   const { currency } = request;
   const now = deps.now();
@@ -213,20 +212,10 @@ export async function quotePrices(
     }
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-      await charge(source.calls(pending));
-    } catch (error) {
-      if (!(error instanceof GatewayHttpError)) {
-        throw error;
-      }
-      // The request's own budget is spent, not the provider's: the source is
-      // unavailable, but nothing it could have answered may be cached missing.
-      chargeRefused ??= error;
-      continue;
-    }
-    try {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-      const { value } = await deps.forwarder.run([source.provider], async (send) =>
-        source.quote(send, currency, pending),
+      const { value } = await deps.forwarder.run(
+        [source.provider],
+        async (send) => source.quote(send, currency, pending),
+        { meter },
       );
       for (const [asset, raw] of value) {
         const quote = pending.has(asset) ? normalizeQuote(asset, raw, now) : undefined;
@@ -240,7 +229,13 @@ export async function quotePrices(
       if (!(error instanceof GatewayHttpError)) {
         throw error;
       }
-      failed = true;
+      if (error.status === 429 || error.status === 413) {
+        // The request's own budget is spent, not the provider's: the source is
+        // unavailable, but nothing it could have answered may be cached missing.
+        chargeRefused ??= error;
+      } else {
+        failed = true;
+      }
     }
   }
 

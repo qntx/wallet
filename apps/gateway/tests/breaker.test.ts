@@ -15,7 +15,17 @@ import {
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
 import type { GatewayNetwork } from "../src/types.ts";
-import { SEPOLIA, SIGNET, call, fakeFetch, gateway, headers, post } from "./helpers.ts";
+import {
+  SEPOLIA,
+  SIGNET,
+  allowAll,
+  call,
+  fakeFetch,
+  gateway,
+  headers,
+  post,
+  recordingLimiter,
+} from "./helpers.ts";
 import type { Upstream } from "./helpers.ts";
 
 const ETH = "eip155:1";
@@ -213,6 +223,44 @@ describe("shared upstream breakers", () => {
       await app.request(...request);
       expect(up.callsTo(watched)).toHaveLength(before);
     });
+  });
+});
+
+describe("upstream cost metering", () => {
+  /** The billing account each upstream URL prefix belongs to. */
+  const ACCOUNTS: ReadonlyArray<readonly [string, string]> = [
+    ["https://a.test", "a"],
+    ["https://b.test", "b"],
+    [ALCHEMY, "alchemy"],
+    ["https://api.0x.org", "0x"],
+    ["https://api.jup.ag", "jupiter"],
+    ["https://app.across.to", "across"],
+    [COINGECKO_API, "coingecko"],
+    [DEFILLAMA_API, "defillama"],
+  ];
+  const accountOf = (url: string): string => {
+    const found = ACCOUNTS.find(([prefix]) => url.startsWith(prefix));
+    if (found === undefined) {
+      throw new Error(`no account for ${url}`);
+    }
+    return found[1];
+  };
+
+  it.each(forwardedRoutes)("meters every upstream call of %s", async (_key, { request }) => {
+    const { up } = appWith(() => new Response("{}"));
+    const share = recordingLimiter();
+    const metered = gateway({
+      fetch: up.fetch,
+      networks: NETWORKS,
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share },
+      zeroEx: { apiKey: "k" },
+      prices: { cache: noCache, coingecko: { apiKey: "k" } },
+    });
+    await metered.request(...request);
+    // One share charge per upstream call, keyed by that call's account and the client's prefix.
+    const expected = up.calls.map((c) => `${accountOf(c.url)}:unknown`).toSorted();
+    expect(share.keys.toSorted()).toStrictEqual(expected);
+    expect(share.deltas.every((delta) => delta >= 1)).toBe(true);
   });
 });
 
