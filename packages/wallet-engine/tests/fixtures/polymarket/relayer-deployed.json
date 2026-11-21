@@ -1,1 +1,8 @@
-{"request":{"method":"GET","url":"https://relayer-v2.polymarket.com/deployed?address=0x9355d39b6bbf402b1f6d953cfb20437e261a7c00&type=WALLET"},"fetchedAt":1795270109790,"response":{"deployed":true}}
+{
+  "request": {
+    "method": "GET",
+    "url": "https://relayer-v2.polymarket.com/deployed?address=0x9355d39b6bbf402b1f6d953cfb20437e261a7c00&type=WALLET"
+  },
+  "fetchedAt": 1795270109790,
+  "response": { "deployed": true }
+}

@@ -1,1 +1,5 @@
-{"request":{"method":"GET","url":"https://clob.polymarket.com/time"},"fetchedAt":1795270109790,"response":1795270115}
+{
+  "request": { "method": "GET", "url": "https://clob.polymarket.com/time" },
+  "fetchedAt": 1795270109790,
+  "response": 1795270115
+}

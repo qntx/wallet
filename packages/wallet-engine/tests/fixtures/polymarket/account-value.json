@@ -1,1 +1,10 @@
-{"request":{"method":"GET","url":"https://data-api.polymarket.com/v2/value?user=0x9355d39b6bbf402b1f6d953cfb20437e261a7c00"},"fetchedAt":1795270109790,"response":{"data":{"proxy_wallet":"0x9355d39b6bbf402b1f6d953cfb20437e261a7c00","value":4.9615}}}
+{
+  "request": {
+    "method": "GET",
+    "url": "https://data-api.polymarket.com/v2/value?user=0x9355d39b6bbf402b1f6d953cfb20437e261a7c00"
+  },
+  "fetchedAt": 1795270109790,
+  "response": {
+    "data": { "proxy_wallet": "0x9355d39b6bbf402b1f6d953cfb20437e261a7c00", "value": 4.9615 }
+  }
+}

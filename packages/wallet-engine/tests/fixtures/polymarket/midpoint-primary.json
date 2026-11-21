@@ -1,1 +1,8 @@
-{"request":{"method":"GET","url":"https://clob.polymarket.com/midpoint?token_id=350977769852917329387037893294763093471844346281449484439085576212613048126"},"fetchedAt":1795270109790,"response":{"mid":"0.014"}}
+{
+  "request": {
+    "method": "GET",
+    "url": "https://clob.polymarket.com/midpoint?token_id=350977769852917329387037893294763093471844346281449484439085576212613048126"
+  },
+  "fetchedAt": 1795270109790,
+  "response": { "mid": "0.014" }
+}
