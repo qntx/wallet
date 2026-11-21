@@ -40,6 +40,9 @@ const tokenListDoc =
       if (network === undefined || typeof entry["address"] !== "string") {
         continue;
       }
+      if (NATIVE_ALIASES[network]?.has(entry["address"].toLowerCase()) === true) {
+        continue;
+      }
       const list = byNetwork.get(network) ?? [];
       list.push({
         address: entry["address"],
@@ -52,6 +55,16 @@ const tokenListDoc =
     return byNetwork;
   };
 
+/**
+ * ERC-20 addresses that shadow the native coin's balance — listing them would double count it.
+ * Celo's CELO: https://docs.celo.org/build/tools/contracts/core-contracts (GoldToken/CeloToken) and
+ * https://docs.celo.org/learn/protocol/celo-token (token duality).
+ */
+const NATIVE_ALIASES: Readonly<Record<string, ReadonlySet<string>>> = {
+  "eip155:42220": new Set(["0x471ece3750da237f93b8e339c536989b8978a438"]),
+};
+
+// tokens.uniswap.org (v22.34.0, read 2026-11-20) carries entries for every chain id below.
 const UNISWAP_CHAINS: Readonly<Record<number, string>> = {
   1: "eip155:1",
   10: "eip155:10",
@@ -60,6 +73,14 @@ const UNISWAP_CHAINS: Readonly<Record<number, string>> = {
   8453: "eip155:8453",
   42161: "eip155:42161",
   43114: "eip155:43114",
+  4663: "eip155:4663",
+  143: "eip155:143",
+  196: "eip155:196",
+  480: "eip155:480",
+  130: "eip155:130",
+  42220: "eip155:42220",
+  324: "eip155:324",
+  1868: "eip155:1868",
 };
 
 const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";

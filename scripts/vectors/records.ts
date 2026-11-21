@@ -9,6 +9,7 @@
  * - Entropy: walletId, origin, words, [passphrase: true,] backup, createdAt
  * - Data-key: purpose, createdAt
  * - Imported key: family, address, createdAt
+ * - HL agent: walletId, groupIndex, owner, network, name, validUntil, createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
@@ -46,6 +47,16 @@ function textOf(kind: string, input: Input): string {
       return JSON.stringify({
         family: i["family"],
         address: i["address"],
+        createdAt: i["createdAt"],
+      });
+    case "hl-agent":
+      return JSON.stringify({
+        walletId: i["walletId"],
+        groupIndex: i["groupIndex"],
+        owner: i["owner"],
+        network: i["network"],
+        name: i["name"],
+        validUntil: i["validUntil"],
         createdAt: i["createdAt"],
       });
     case "nostr-derived":
@@ -165,6 +176,19 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     input: {
       family: "solana",
       address: "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "hl-agent",
+    kind: "hl-agent",
+    input: {
+      walletId: WALLET_ID,
+      groupIndex: 0,
+      owner: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      network: "Mainnet",
+      name: "bot-1",
+      validUntil: CREATED_AT + 180 * 86_400_000,
       createdAt: CREATED_AT,
     },
   },

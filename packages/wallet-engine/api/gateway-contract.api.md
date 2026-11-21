@@ -125,6 +125,9 @@ export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
 export function endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType>(method: HttpMethod, path: `/v1/${string}`, request: Req, response: Res): Endpoint<Req, Res>;
 
 // @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
+
+// @public
 export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute>;
 
 // @public
@@ -163,6 +166,17 @@ export const evmRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObj
     method: z.ZodMiniLiteral<"eth_blobBaseFee" | "eth_blockNumber" | "eth_call" | "eth_chainId" | "eth_createAccessList" | "eth_estimateGas" | "eth_feeHistory" | "eth_gasPrice" | "eth_getBalance" | "eth_getBlockByHash" | "eth_getBlockByNumber" | "eth_getBlockReceipts" | "eth_getBlockTransactionCountByHash" | "eth_getBlockTransactionCountByNumber" | "eth_getCode" | "eth_getLogs" | "eth_getProof" | "eth_getStorageAt" | "eth_getTransactionByBlockHashAndIndex" | "eth_getTransactionByBlockNumberAndIndex" | "eth_getTransactionByHash" | "eth_getTransactionCount" | "eth_getTransactionReceipt" | "eth_maxPriorityFeePerGas" | "eth_sendRawTransaction" | "eth_simulateV1" | "net_version" | "web3_clientVersion">;
     params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
 }, z.core.$strip>[]>>]>;
+
+// @public
+export type FeeModel =
+/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+    {
+    readonly kind: "execution";
+} |
+/** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+    {
+    readonly kind: "op-stack";
+};
 
 // @public
 export const FIAT_CURRENCIES: readonly ["usd", "eur", "gbp", "jpy", "cny", "krw", "hkd", "sgd", "cad", "aud", "chf"];
@@ -258,6 +272,7 @@ const history_2: Endpoint<z.ZodMiniObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
     cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
+    truncated: z.ZodMiniBoolean<boolean>;
 }, z.core.$strict>>;
 export { history_2 as history }
 
@@ -341,6 +356,7 @@ export const historyResponse: z.ZodMiniObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
     cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
+    truncated: z.ZodMiniBoolean<boolean>;
 }, z.core.$strict>;
 
 // @public (undocumented)
@@ -414,9 +430,10 @@ export const nativeAssetId: (network: string) => string | undefined;
 export const networkById: (id: string) => NetworkInfo | undefined;
 
 // @public (undocumented)
-export type NetworkInfo = NetworkMeta & {
+export type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
     readonly multicall3?: string;
-    readonly opStack?: true;
+    readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;
 };
 

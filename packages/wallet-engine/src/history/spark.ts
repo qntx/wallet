@@ -1,8 +1,11 @@
 import type { SparkAccountRef, SparkNetwork } from "@qntx/wallet/protocol";
 
+import { sparkAccountKey } from "../spark/controller.ts";
+import type { SparkControllerState } from "../spark/controller.ts";
 import type { SparkActivity } from "../spark/notes.ts";
+import type { SparkPaymentRecord, SparkPaymentState } from "../spark/payments.ts";
 import type { Stream } from "./merge.ts";
-import type { HistoryEntry } from "./types.ts";
+import type { HistoryEntry, HistoryStatus } from "./types.ts";
 
 const PAGE = 25;
 
@@ -72,3 +75,66 @@ export const sparkHistoryStream = (
     },
   };
 };
+
+const RECORD_STATUS: Readonly<Record<SparkPaymentState, HistoryStatus>> = {
+  submitted: "pending",
+  unknown: "pending",
+  settled: "confirmed",
+  failed: "failed",
+};
+
+/**
+ * The group's own Spark payment record as a history entry: present from the moment it is submitted
+ * — token sends, which the operator's history never lists, included. It shares the operator entry's
+ * id, so the operator's view replaces it once listed. `verified` is false — the record is this
+ * wallet's own claim.
+ */
+export const sparkRecordEntry = (
+  network: SparkNetwork,
+  record: SparkPaymentRecord,
+): HistoryEntry => ({
+  id: `spark:${network}:${record.id}`,
+  family: "spark",
+  network: `spark:${network}`,
+  hash: record.id,
+  direction: "out",
+  // A Lightning payee key or an exit's bitcoin address (possibly the group's own) is no Spark
+  // counterparty.
+  counterparties: record.kind === "transfer" || record.kind === "token" ? [record.receiver] : [],
+  changes: [
+    record.tokenIdentifier === undefined
+      ? {
+          direction: "out",
+          asset: "sats",
+          amount: record.amount,
+          decimals: 8,
+          symbol: "BTC",
+          listed: true,
+        }
+      : { direction: "out", asset: record.tokenIdentifier, amount: record.amount, listed: false },
+  ],
+  status: RECORD_STATUS[record.state],
+  timestamp: record.submittedAt,
+  verified: false,
+  origin: "local",
+  flags: [],
+});
+
+/** The group's Spark payment records as history entries. */
+export const sparkRecordEntries = (
+  state: SparkControllerState,
+  network: SparkNetwork,
+  group: { readonly walletId: string; readonly groupIndex: number },
+): ReadonlyArray<HistoryEntry> =>
+  Object.values(state.accounts[sparkAccountKey({ ...group, network })]?.payments ?? {}).map(
+    (record) => sparkRecordEntry(network, record),
+  );
+
+/** Whether any account's payment records changed — other Spark state does not touch history. */
+export const sparkRecordsChanged = (
+  next: SparkControllerState,
+  previous: SparkControllerState,
+): boolean =>
+  Object.keys({ ...next.accounts, ...previous.accounts }).some(
+    (k) => next.accounts[k]?.payments !== previous.accounts[k]?.payments,
+  );

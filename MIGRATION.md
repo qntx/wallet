@@ -490,27 +490,31 @@ pending and never offer to send again. Only a definitive refusal rejects (`faile
 bytes moved from `TrackedTransaction.evm.raw` to `TrackedTransaction.raw` for every family.
 Bitcoin dApp `signAndSendTransaction` broadcasts are tracked the same way.
 
-Spark payments behave alike: a lost response resolves `{ kind: "pending", transferId }` (or
-`token-pending`) instead of failing — see section 11.
+`confirmed` is no longer terminal: a transaction records the block it landed in
+(`TrackedTransaction.block`) and stays tracked at a low frequency until `final` — EVM `finalized`
+tag, six Bitcoin confirmations, Solana `finalized` commitment. A reorg returns it to `submitted`
+(and polling, with rebroadcast of the persisted bytes), so show it pending again until `final`.
+A `final` transaction is never polled again.
+
+Spark payments behave alike: a lost response resolves `{ kind: "pending", payment }` instead of
+failing, and the engine keeps the payment record until the Spark operator settles or fails it —
+see section 12.
 
 [`tests/migration/unknown-outcome.ts`](tests/migration/unknown-outcome.ts):
 
 ```ts
 import type { TrackedTransaction, TxState, WalletEngine } from "@qntx/wallet-engine";
 
-const TERMINAL: ReadonlySet<TxState> = new Set([
-  "confirmed",
-  "failed",
-  "rejected",
-  "dropped",
-  "replaced",
-]);
+const ENDED: ReadonlySet<TxState> = new Set(["failed", "rejected", "dropped", "replaced"]);
 
 /**
  * A broadcast whose outcome is unknown (timeout, 5xx, transport error) no longer rejects: `approve`
  * resolves with a `submitted` transaction tracked under its own hash, and the engine rebroadcasts
  * the same bytes. Never offer "try again" for it — a second send could pay twice. Only a definitive
- * refusal rejects, and the transaction is then `failed`.
+ * refusal rejects, and the transaction is then `failed`. `confirmed` is no longer terminal either:
+ * a transaction in a block (`tx.block` set) stays tracked until `final` — EVM `finalized` tag, six
+ * Bitcoin confirmations, Solana `finalized` commitment — and a reorg puts it back to `submitted`,
+ * so show it pending again until `final`.
  */
 export function watchUntilSettled(
   engine: WalletEngine,
@@ -523,7 +527,7 @@ export function watchUntilSettled(
       return;
     }
     onChange(tx);
-    if (TERMINAL.has(tx.state)) {
+    if (tx.block === undefined ? ENDED.has(tx.state) : tx.final === true) {
       stop();
     }
   });
@@ -656,7 +660,8 @@ from Esplora (all four Bitcoin templates), Solana RPC, the Spark operators and t
 Locally tracked sends fold into the matching chain entry. A gateway EVM entry is `verified` only
 after it was checked against RPC; show `flags` (`zero-value-transfer`, `lookalike-counterparty`,
 `token-impersonation`, `suspicious-token-symbol`, `chain-mismatch`) as warnings and never offer a
-history counterparty as a known recipient.
+history counterparty as a known recipient. `truncated` names the networks whose provider pages
+dropped entries that could not be paged — show a gap notice while it is non-empty.
 
 [`tests/migration/history.ts`](tests/migration/history.ts):
 
@@ -665,18 +670,19 @@ import type { GroupHistory, WalletEngine } from "@qntx/wallet-engine";
 
 /**
  * One newest-first activity list per account group, incoming transfers included. State is keyed
- * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`.
+ * `${walletId}:${groupIndex}`; `loadMore` pages older entries while `hasMore`. `gaps` names the
+ * networks whose provider pages dropped entries — render a gap notice while it is non-empty.
  */
 export function showActivity(
   engine: WalletEngine,
   group: { readonly walletId: string; readonly groupIndex: number },
-  render: (history: GroupHistory) => void,
+  render: (history: GroupHistory, gaps: ReadonlyArray<string>) => void,
 ): () => void {
   const key = `${group.walletId}:${String(group.groupIndex)}`;
   const stop = engine.history.store.subscribe((state) => {
     const history = state.groups[key];
     if (history !== undefined) {
-      render(history);
+      render(history, history.truncated);
     }
   });
   void engine.history.load(group);
@@ -801,11 +807,16 @@ export async function sendFromCoins(
 - `SparkAccountState.tokens` holds token balances in base units.
 - A token payment is a `pay` request with `token: { identifier, amount }` to a plain Spark address
   and no `amountSats` (`engine.spark` has no send method). It resolves
-  `{ kind: "token", transactionHash }` or, when the response was lost,
-  `{ kind: "token-pending", inputOutputIds }`.
-- Every Spark payment is idempotent per request: a lost response resolves
-  `{ kind: "pending", transferId }`. `SparkResult` gains `pending`, `token` and `token-pending`;
-  `SparkDisplay` gains a `token` variant.
+  `{ kind: "token", transactionHash }`.
+- Every Spark payment is idempotent per request and recorded before it is sent. A lost response
+  resolves `{ kind: "pending", payment }`, where `payment` is a `SparkPaymentRecord` (`state`
+  `submitted` | `unknown` | `settled` | `failed`). The open record is persisted, reconciled against
+  the Spark operator after unlock and on a backed-off poll, listed in
+  `SparkAccountState.payments` (by `payment.id`) and in `engine.history` as a pending entry. Show
+  it in flight and never pay again; `failed` only comes from the operator. `SparkResult` gains
+  `pending` and `token`; `SparkDisplay` gains a `token` variant.
+- While a token send with an unknown outcome is open, another send of the same token is refused
+  until it resolves.
 - Paying a Bitcoin address from Spark (cooperative exit): `amountSats` is what arrives, the exit
   debits `amountSats + feeSats`, the display carries `feeSats`, and `maxFeeSats` is required — a
   higher quote is refused at prepare.
@@ -814,7 +825,13 @@ export async function sendFromCoins(
 
 ```ts
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkResult, SparkTokenBalance, WalletEngine } from "@qntx/wallet-engine";
+import type {
+  SparkPaymentRecord,
+  SparkPaymentState,
+  SparkResult,
+  SparkTokenBalance,
+  WalletEngine,
+} from "@qntx/wallet-engine";
 import { requiredAcknowledgement } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
@@ -848,11 +865,21 @@ export async function payToken(
 }
 
 /**
- * `pending` and `token-pending` mean the response was lost after the payment may have committed:
- * show it as in flight, never as failed, and never pay again.
+ * `pending` means the response was lost after the payment may have committed: show it as in flight,
+ * never as failed, and never pay again.
  */
 export function describeSparkResult(result: SparkResult): "done" | "in-flight" {
-  return result.kind === "pending" || result.kind === "token-pending" ? "in-flight" : "done";
+  return result.kind === "pending" ? "in-flight" : "done";
+}
+
+/** The engine keeps following a pending payment: its record settles or fails in the account state. */
+export function paymentState(
+  engine: WalletEngine,
+  ref: SparkAccountRef,
+  payment: SparkPaymentRecord,
+): SparkPaymentState | undefined {
+  const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
+  return engine.spark.getState().accounts[key]?.payments?.[payment.id]?.state;
 }
 
 /**
@@ -989,3 +1016,70 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
 - NIP-07 confirms every replaceable, addressable and ephemeral event kind, whatever the origin's
   policy.
 - Password re-verification is rate-limited like unlock (`rate-limited` with `retryAt`).
+
+## 16. Built-in EVM networks and fee model
+
+### `NetworkInfo.opStack` → `NetworkInfo.feeModel`
+
+`NetworkInfo` (exported from `@qntx/wallet-engine`, `@qntx/wallet-engine/connect` and
+`@qntx/wallet-engine/gateway/contract`) no longer has `opStack?: true`. Every EVM entry now carries
+`feeModel: { kind: "execution" } | { kind: "op-stack" }`.
+
+```ts
+// before
+if (network.opStack === true) showL1Fee();
+// after
+if (network.feeModel?.kind === "op-stack") showL1Fee();
+```
+
+Treat an unknown future `kind` as "charges something beyond gas" rather than as "execution".
+
+### More built-in networks
+
+`BUILT_IN_NETWORKS` / `NETWORKS` grow from 8 + 8 EVM networks to 31 mainnets + 22 testnets in a fixed
+order (existing first). Hosts that hard-code the number of networks, index the array by position, or
+render every network unconditionally should filter by `testnet` and by what `engine.networks.enabled()`
+reports (networks with an endpoint or served by the gateway). Signing chain ids still come only from the
+table; `wallet_addEthereumChain` / `wallet_switchEthereumChain` for ids outside it still answer 4902.
+
+### Gateway
+
+Production now needs the Alchemy app and the dRPC key enabled for the new networks (see the report for
+the list). Staging serves every built-in EVM testnet through public keyless endpoints.
+
+## 17. TRON family
+
+- `ChainFamily`, `NetworkMeta.family`, `AccountRef` (imported `family`), `KeyInfo.family` and the `keys.import` family parameter now include `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions in host code need a `"tron"` case.
+- `ChainTemplate` includes `"tron.bip44"` and `ChainAccount` has a `tron.bip44` arm with a base58 `address`; `ChainSignRequest`/`ChainSignResult` have `tron.transaction` and `tron.message` arms.
+- `BUILT_IN_NETWORKS` (`@qntx/wallet-chains/networks`) contains three TRON entries. Code that iterates it without filtering by `family` will now see them.
+- `@qntx/wallet-engine` `NetworkInfo.family` is typed `EngineFamily`; code that assigned a `NetworkMeta` to `NetworkInfo` must narrow the family first.
+- A TRON private key's text form is 64 hex characters without `0x`; `keys.export` returns it in that form.
+
+## 18. Hyperliquid agent key and app signing
+
+### Vault
+
+- New record kind `hl-agent` (id: the agent's lowercase address; header
+  `{ walletId, groupIndex, owner, network, name, validUntil, createdAt }`; sealed payload: the
+  32-byte agent private key). `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows
+  like every other record.
+- No data migration: existing vaults are unchanged until the first `hyperliquid.createAgent`.
+- Downgrade: once a vault holds an `hl-agent` record, a build without this change reports the
+  vault `unsupported` (an unclaimed record kind) and leaves it untouched. Delete all agents
+  (`hyperliquid.deleteAgent`) before downgrading.
+- Backups never contain agent keys. After a restore, create and approve a new agent.
+
+### Host-visible behaviour
+
+- `chain.sign` of Hyperliquid user-signed typed data and of Polymarket orders, `ClobAuth` and
+  deposit-wallet batches now produces described prompts and `DisplayIntent.message.hyperliquid` /
+  `.polymarket`. Shapes under those domains that are not exactly the described ones are now blind
+  (`typed-data-variant`; `typed-data-commitment` for the Hyperliquid `Exchange`/`Agent` document)
+  and are refused unless the vault's blind-signing policy is on — previously they were shown as a
+  generic field list.
+- `chain.sign` of an `approveAgent` for an agent address this vault holds is refused with
+  `invalid-input` unless the signer is the agent's owner and `hyperliquidChain`, the agent name and
+  `valid_until` equal the values given to `hyperliquid.createAgent`. Build the name as
+  `` `${name} valid_until ${validUntil}` ``.
+- New methods `hyperliquid.createAgent`, `hyperliquid.listAgents`, `hyperliquid.deleteAgent`,
+  `hyperliquid.signL1` (session required). `hyperliquid.signL1` does not refresh the idle timer.

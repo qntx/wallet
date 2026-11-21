@@ -11,17 +11,27 @@ describe("encodeHexAscii", () => {
   it("matches bytesToHex on generated inputs", () => {
     fc.assert(
       fc.property(fc.uint8Array({ maxLength: 80 }), (input) => {
-        expect(decode(encodeHexAscii(input))).toBe(`0x${bytesToHex(input)}`);
+        expect(decode(encodeHexAscii(input, "0x"))).toBe(`0x${bytesToHex(input)}`);
       }),
     );
   });
 
   it("encodes the fixed cases", () => {
-    expect(decode(encodeHexAscii(new Uint8Array(0)))).toBe("0x");
-    expect(decode(encodeHexAscii(new Uint8Array([0])))).toBe("0x00");
-    expect(decode(encodeHexAscii(new Uint8Array([0, 0, 1])))).toBe("0x000001");
-    expect(decode(encodeHexAscii(new Uint8Array(32).fill(0xab)))).toBe(`0x${"ab".repeat(32)}`);
-    expect(decode(encodeHexAscii(new Uint8Array(64).fill(0xab)))).toBe(`0x${"ab".repeat(64)}`);
+    expect(decode(encodeHexAscii(new Uint8Array(0), "0x"))).toBe("0x");
+    expect(decode(encodeHexAscii(new Uint8Array([0]), "0x"))).toBe("0x00");
+    expect(decode(encodeHexAscii(new Uint8Array([0, 0, 1]), "0x"))).toBe("0x000001");
+    expect(decode(encodeHexAscii(new Uint8Array(32).fill(0xab), "0x"))).toBe(
+      `0x${"ab".repeat(32)}`,
+    );
+    expect(decode(encodeHexAscii(new Uint8Array(64).fill(0xab), "0x"))).toBe(
+      `0x${"ab".repeat(64)}`,
+    );
+  });
+
+  it("encodes bare hex without the 0x prefix", () => {
+    expect(decode(encodeHexAscii(new Uint8Array(0), ""))).toBe("");
+    expect(decode(encodeHexAscii(new Uint8Array([0, 0, 1]), ""))).toBe("000001");
+    expect(decode(encodeHexAscii(new Uint8Array(32).fill(0xab), ""))).toBe("ab".repeat(32));
   });
 });
 

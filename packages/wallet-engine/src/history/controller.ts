@@ -19,7 +19,7 @@ import type { GroupAddresses, HistoryGroup } from "./local.ts";
 import { compose, OrderedMerge } from "./merge.ts";
 import type { Stream } from "./merge.ts";
 import { solanaHistoryStream } from "./solana.ts";
-import { sparkHistoryStream } from "./spark.ts";
+import { sparkHistoryStream, sparkRecordEntries, sparkRecordsChanged } from "./spark.ts";
 import type { HistoryEntry } from "./types.ts";
 
 const PAGE = 25;
@@ -35,6 +35,8 @@ export type GroupHistory = {
   readonly stale: boolean;
   /** Source id → error message; the other sources still list their entries. */
   readonly errors: Readonly<Record<string, string>>;
+  /** Networks whose provider omitted entries it could not page — the list has gaps there. */
+  readonly truncated: ReadonlyArray<string>;
 };
 
 export type HistoryState = {
@@ -60,7 +62,7 @@ export type HistoryControllerOptions = {
       readonly network: string;
     }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
   };
-  readonly spark: Pick<SparkController, "history">;
+  readonly spark: Pick<SparkController, "history" | "store">;
   readonly sparkNetwork: SparkNetwork;
   readonly transactions: Pick<TransactionController, "store">;
   readonly addressBook: Pick<AddressBookController, "store">;
@@ -154,6 +156,8 @@ type GroupRuntime = {
   mergeDone: boolean;
   own: GroupAddresses;
   errors: Record<string, string>;
+  /** Networks that reported a truncated page during this load. */
+  truncated: Set<string>;
 };
 
 const newRuntime = (group: HistoryGroup): GroupRuntime => ({
@@ -164,6 +168,7 @@ const newRuntime = (group: HistoryGroup): GroupRuntime => ({
   mergeDone: false,
   own: { bitcoin: new Set() },
   errors: {},
+  truncated: new Set(),
 });
 
 /**
@@ -192,6 +197,11 @@ export class HistoryController extends Controller<HistoryState> {
     this.unsubscribes = [
       this.options.transactions.store.subscribe(recompose),
       this.options.addressBook.store.subscribe(recompose),
+      this.options.spark.store.subscribe((next, previous) => {
+        if (sparkRecordsChanged(next, previous)) {
+          recompose();
+        }
+      }),
     ];
   }
 
@@ -250,6 +260,7 @@ export class HistoryController extends Controller<HistoryState> {
         hasMore: patch.hasMore ?? current?.hasMore ?? true,
         stale: patch.stale ?? current?.stale ?? false,
         errors: patch.errors ?? current?.errors ?? {},
+        truncated: patch.truncated ?? current?.truncated ?? [],
       };
       return { ...state, groups: { ...state.groups, [key]: next } };
     });
@@ -257,10 +268,13 @@ export class HistoryController extends Controller<HistoryState> {
 
   private locals(group: HistoryGroup, own: GroupAddresses): ReadonlyArray<HistoryEntry> {
     const { txs } = this.options.transactions.store.getState();
-    return Object.values(txs).flatMap((tx) => {
-      const entry = localEntry(tx, group, own);
-      return entry === undefined ? [] : [entry];
-    });
+    return [
+      ...Object.values(txs).flatMap((tx) => {
+        const entry = localEntry(tx, group, own);
+        return entry === undefined ? [] : [entry];
+      }),
+      ...sparkRecordEntries(this.options.spark.store.getState(), this.options.sparkNetwork, group),
+    ];
   }
 
   /** Book entries + recipients of live tracked sends + the group's own addresses — never history. */
@@ -389,6 +403,9 @@ export class HistoryController extends Controller<HistoryState> {
             network,
             address,
             cached,
+            () => {
+              runtime.truncated.add(network);
+            },
           ),
         );
       }
@@ -482,6 +499,7 @@ export class HistoryController extends Controller<HistoryState> {
       }
       const persisted = new Map(runtime.emitted.map((entry) => [entry.id, entry]));
       runtime.errors = {};
+      runtime.truncated.clear();
       runtime.merge = new OrderedMerge(
         this.streams(group, runtime.own, persisted, runtime),
         (entry) => entry.timestamp ?? Number.MAX_SAFE_INTEGER,
@@ -506,6 +524,7 @@ export class HistoryController extends Controller<HistoryState> {
           hasMore: !page.done,
           stale: false,
           errors: { ...runtime.errors },
+          truncated: [...runtime.truncated].sort(),
         });
         await this.persist(key, runtime.emitted);
       } catch (error) {
@@ -549,6 +568,7 @@ export class HistoryController extends Controller<HistoryState> {
         hasMore: !page.done,
         stale: false,
         errors: { ...runtime.errors },
+        truncated: [...runtime.truncated].sort(),
       });
       await this.persist(key, runtime.emitted);
     });

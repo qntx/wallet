@@ -6,7 +6,11 @@ import { decodeEvm, normalizeEvm } from "../src/evm/index.ts";
 import { ChainError, parseSignIn } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { normalizeSolana } from "../src/solana/index.ts";
+import { decodeTron } from "../src/tron/decode.ts";
+import { normalizeTron } from "../src/tron/index.ts";
+import { decodeTronRawData, encodeTronRawData } from "../src/tron/raw.ts";
 import { attempt } from "./fuzz.ts";
+import { ACCOUNT, OWNER, tronVectors } from "./tron.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
@@ -167,6 +171,96 @@ describe("Solana and Bitcoin decode fuzz", () => {
     fc.assert(
       fc.property(fc.uint8Array(), (psbt) => {
         expect(intentOrChainError(attempt(() => decodeBitcoinPsbt(psbtRequest(psbt))))).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+});
+
+const TRON_NET = "tron:728126428";
+const RAW_VECTORS = tronVectors.transactions.map((v) =>
+  Uint8Array.from((v.rawDataHex.match(/../g) ?? []).map((h) => Number.parseInt(h, 16))),
+);
+
+const tronTx = (rawData: Uint8Array): SignRequest => ({
+  kind: "tron.transaction",
+  network: TRON_NET,
+  account: ACCOUNT,
+  rawData,
+});
+
+/** One or two single-byte mutations applied to a real vector. */
+const mutated = fc
+  .tuple(
+    fc.integer({ min: 0, max: RAW_VECTORS.length - 1 }),
+    fc.nat({ max: 300 }),
+    fc.integer({ min: 1, max: 255 }),
+    fc.nat({ max: 300 }),
+    fc.integer({ min: 1, max: 255 }),
+  )
+  .map(([vi, p1, x1, p2, x2]) => {
+    const base = RAW_VECTORS[vi] ?? new Uint8Array(0);
+    const bytes = new Uint8Array(base);
+    if (base.length > 0) {
+      bytes[p1 % base.length] = ((bytes[p1 % base.length] ?? 0) + x1) % 256;
+      bytes[p2 % base.length] = ((bytes[p2 % base.length] ?? 0) + x2) % 256;
+    }
+    return bytes;
+  });
+
+const rawRoundTripsOrChainError = (bytes: Uint8Array): boolean => {
+  const r = attempt(() => decodeTronRawData(bytes));
+  if (!r.ok) {
+    return r.error instanceof ChainError;
+  }
+  const encoded = encodeTronRawData(r.value);
+  return encoded.length === bytes.length && encoded.every((b, i) => b === bytes[i]);
+};
+
+describe("TRON decode/normalize fuzz", () => {
+  it("decodeTronRawData round-trips or throws only a ChainError", () => {
+    fc.assert(
+      fc.property(fc.uint8Array(), (bytes) => {
+        expect(rawRoundTripsOrChainError(bytes)).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
+  it("mutated vectors round-trip or throw only a ChainError", () => {
+    fc.assert(
+      fc.property(mutated, (bytes) => {
+        expect(rawRoundTripsOrChainError(bytes)).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
+  it("decodeTron on mutated vectors returns an intent or a ChainError", () => {
+    fc.assert(
+      fc.property(mutated, (bytes) => {
+        expect(intentOrChainError(attempt(() => decodeTron(tronTx(bytes), OWNER)))).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
+  it("normalizeTron on arbitrary bytes throws only a ChainError", () => {
+    fc.assert(
+      fc.property(fc.uint8Array(), (bytes) => {
+        expect(okOrChainError(attempt(() => normalizeTron(tronTx(bytes))))).toBe(true);
+        expect(
+          okOrChainError(
+            attempt(() =>
+              normalizeTron({
+                kind: "tron.message",
+                network: TRON_NET,
+                account: ACCOUNT,
+                message: bytes,
+              }),
+            ),
+          ),
+        ).toBe(true);
       }),
       { numRuns },
     );

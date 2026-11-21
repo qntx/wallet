@@ -39,8 +39,8 @@ const SEND = {
   fee: "normal" as const,
   verify: VERIFY,
 };
-const RECEIPT = { status: "0x1", blockNumber: "0x1" };
-const REVERTED = { status: "0x0", blockNumber: "0x1" };
+const RECEIPT = { status: "0x1", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` };
+const REVERTED = { status: "0x0", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` };
 
 type Node = {
   latest: number;

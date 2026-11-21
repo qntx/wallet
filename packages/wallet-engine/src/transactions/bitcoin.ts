@@ -40,7 +40,7 @@ import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import type { EngineStore } from "../store/port.ts";
 import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
 import type { BroadcastVerdict, SignedBroadcast } from "./broadcast.ts";
-import { failTx, newId, replacementStaleReason } from "./route.ts";
+import { failTx, includedPoll, newId, replacementStaleReason } from "./route.ts";
 import type {
   PrepareParams,
   PreparedRequest,
@@ -50,6 +50,8 @@ import type {
   SignResult,
   SparkDepositTag,
   TrackedTransaction,
+  TxBlock,
+  TxPoll,
   TxState,
 } from "./route.ts";
 
@@ -345,6 +347,85 @@ const accountContext = async (
   };
 };
 
+/** A confirmed transaction is final once this many blocks sit on top of its own. */
+const BITCOIN_FINAL_CONFIRMATIONS = 6;
+
+/**
+ * Esplora `/tx/:txid/status` → the inclusion block, `undefined` when the status carries no
+ * well-formed `block_hash`/`block_height` (unconfirmed or a degraded answer).
+ */
+const statusBlock = (status: unknown): TxBlock | undefined => {
+  if (!isObject(status) || status["confirmed"] !== true) {
+    return undefined;
+  }
+  const { block_hash: hash, block_height: height } = status;
+  return typeof hash === "string" &&
+    /^[0-9a-f]{64}$/i.test(hash) &&
+    typeof height === "number" &&
+    Number.isSafeInteger(height) &&
+    height >= 0
+    ? { hash, height }
+    : undefined;
+};
+
+/** `/blocks/tip/height` → the chain tip; a malformed answer is a `TypeError`. */
+const tipHeight = async (es: Esplora): Promise<number> => {
+  const tip = await es.get("/blocks/tip/height");
+  if (typeof tip !== "number" || !Number.isSafeInteger(tip) || tip < 0) {
+    throw new TypeError("malformed tip height");
+  }
+  return tip;
+};
+
+/**
+ * Confirmed at `height` is final once the tip leaves {@link BITCOIN_FINAL_CONFIRMATIONS} blocks on
+ * top of it.
+ */
+const tipFinal = async (es: Esplora, height: number): Promise<boolean> =>
+  (await tipHeight(es)) - height + 1 >= BITCOIN_FINAL_CONFIRMATIONS;
+
+/**
+ * The finality recheck for a transaction already in `tx.block`: a status still carrying a block
+ * compares against the persisted one; a status without it (unconfirmed or 404) asks
+ * `/block-height/:height` whether that height still holds our hash — a different answer is the
+ * reorg, while an equal hash or a height past the endpoint's tip (non-transient error) proves
+ * nothing. Transient errors propagate and the poll is retried.
+ */
+const recheck = async (
+  tx: TrackedTransaction,
+  hash: string,
+  block: TxBlock,
+  es: Esplora,
+): Promise<TxPoll | undefined> => {
+  let status: unknown;
+  try {
+    status = await es.get(`/tx/${hash}/status`);
+  } catch (error) {
+    if (!(error instanceof EsploraError) || error.transient) {
+      throw error;
+    }
+    status = undefined;
+  }
+  const found = statusBlock(status);
+  if (found !== undefined) {
+    return includedPoll(tx, "confirmed", found, await tipFinal(es, found.height));
+  }
+  let atHeight: unknown;
+  try {
+    atHeight = await es.get(`/block-height/${String(block.height)}`);
+  } catch (error) {
+    if (error instanceof EsploraError && !error.transient) {
+      return undefined; // past the endpoint's tip — nothing proven
+    }
+    throw error;
+  }
+  return typeof atHeight === "string" &&
+    block.hash !== undefined &&
+    atHeight.toLowerCase() !== block.hash.toLowerCase()
+    ? { kind: "reorged" }
+    : undefined;
+};
+
 /** Per-controller route — the UTXO store is engine state. */
 export const createBitcoinRoute = (): BitcoinRoute => {
   const bitcoin = new BitcoinChainAdapter();
@@ -371,17 +452,21 @@ export const createBitcoinRoute = (): BitcoinRoute => {
   const unseen = new Map<string, { since: number; attempt: number; next: number }>();
 
   /**
-   * Esplora `/tx/:txid/status` → `confirmed`, or `undefined` to keep polling. While the endpoint
-   * does not know the transaction (and no live replacement explains why) its persisted bytes are
-   * rebroadcast with backoff; once neither endpoint has known it for {@link UNKNOWN_DROP_MS} it is
-   * `dropped`.
+   * Esplora `/tx/:txid/status` → `included` on a confirmed status (final once six blocks sit on
+   * top), or `undefined` to keep polling. While the endpoint does not know the transaction (and no
+   * live replacement explains why) its persisted bytes are rebroadcast with backoff; once neither
+   * endpoint has known it for {@link UNKNOWN_DROP_MS} it ends `dropped`. A confirmed transaction
+   * whose block left the chain answers `reorged`.
    */
-  const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState | undefined> => {
+  const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
     if (tx.hash === undefined) {
-      return "failed";
+      return { kind: "ended", state: "failed" };
     }
     const { networks } = ctx.options;
     const es = networks.esplora(tx.network);
+    if (tx.block !== undefined) {
+      return recheck(tx, tx.hash, tx.block, es);
+    }
     let status: unknown;
     try {
       status = await es.get(`/tx/${tx.hash}/status`);
@@ -392,7 +477,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       return pollUnseen(ctx, tx, tx.hash, es);
     }
     unseen.delete(tx.id);
-    return isObject(status) && status["confirmed"] === true ? "confirmed" : undefined;
+    const block = statusBlock(status);
+    if (block === undefined) {
+      return undefined;
+    }
+    return {
+      kind: "included",
+      state: "confirmed",
+      block,
+      // The status settles inclusion; a failing tip read is rechecked at the next poll.
+      final: await tipFinal(es, block.height).catch(() => false),
+    };
   };
 
   const pollUnseen = async (
@@ -400,7 +495,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     tx: TrackedTransaction,
     txid: string,
     es: Esplora,
-  ): Promise<TxState | undefined> => {
+  ): Promise<TxPoll | undefined> => {
     // A live replacement evicts the original from the pool: it is expected to be unknown then.
     const replaced = Object.values(ctx.txs()).some(
       (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
@@ -414,7 +509,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const conflict = await foreignSpend(es, tx);
     if (conflict === "confirmed") {
       unseen.delete(tx.id);
-      return "replaced";
+      return { kind: "ended", state: "replaced" };
     }
     const now = ctx.options.now();
     const watch = unseen.get(tx.id) ?? { since: now, attempt: 0, next: now };
@@ -426,7 +521,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         (await esploraKnows(independent.client, txid).catch(() => true));
       if (!elsewhere) {
         unseen.delete(tx.id);
-        return "dropped";
+        return { kind: "ended", state: "dropped" };
       }
     }
     if (tx.raw !== undefined && now >= watch.next && conflict !== "unconfirmed") {
@@ -1209,6 +1304,16 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     prepare,
     nextReceiveAddress,
     poll,
+    reopen: (tx) => {
+      unseen.delete(tx.id);
+      if (tx.btc !== undefined) {
+        // The send's inputs are held again so a new send never double-spends them while it retries.
+        bitcoinUtxos.lock(
+          tx.btc.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 })),
+          tx.id,
+        );
+      }
+    },
     settle: (id, state) => {
       bitcoinUtxos.endTx(id, state === "confirmed" ? "confirmed" : "dropped");
     },
@@ -1244,10 +1349,17 @@ export type BitcoinRoute = {
     groupIndex: number,
     network: string,
   ) => Promise<string>;
-  readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
+  readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   /**
-   * A transaction that reached a terminal state frees the outputs it locked; a confirmed one's
-   * inputs are spent and leave the lock table.
+   * A reorg returned the transaction to the pool: its inputs are locked under it again so a new
+   * send never double-spends them while it retries. A dApp transaction carries no `btc` record —
+   * the wallet never learned its inputs — so there is nothing to re-lock; if the node does not
+   * re-admit it, a later send could pick the same UTXOs (residual, accepted).
+   */
+  readonly reopen: (tx: TrackedTransaction) => void;
+  /**
+   * A transaction that settled frees the outputs it locked; a confirmed one's inputs are spent and
+   * leave the lock table.
    */
   readonly settle: (id: string, state: TxState) => void;
   readonly prepareReplace: (

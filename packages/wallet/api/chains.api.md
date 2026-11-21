@@ -13,7 +13,7 @@ type AccountRef = {
 } | {
     readonly kind: "imported";
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
 
 // @public
@@ -52,6 +52,10 @@ export type ChainAccount = {
     readonly address: string;
 } | {
     readonly template: "solana.bip44-change";
+    readonly network: string;
+    readonly address: string;
+} | {
+    readonly template: "tron.bip44";
     readonly network: string;
     readonly address: string;
 } | {
@@ -135,6 +139,16 @@ export type ChainSignRequest = {
     readonly format: "bip322-simple" | "legacy";
     readonly change: 0 | 1;
     readonly index: number;
+} | {
+    readonly kind: "tron.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly rawData: Uint8Array;
+} | {
+    readonly kind: "tron.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
 };
 
 // @public (undocumented)
@@ -153,10 +167,13 @@ export type ChainSignResult = {
 } | {
     readonly kind: "bitcoin.message";
     readonly signature: string;
+} | {
+    readonly kind: "tron.transaction" | "tron.message";
+    readonly signature: Uint8Array;
 };
 
 // @public (undocumented)
-export type ChainTemplate = "evm.bip44" | "solana.bip44-change" | "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+export type ChainTemplate = "evm.bip44" | "solana.bip44-change" | "tron.bip44" | "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public (undocumented)
 type DataKeyApi = {
@@ -247,14 +264,14 @@ type InitialFactor = {
 // @public
 type KeyInfo = {
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly address: string;
     readonly createdAt: number;
 };
 
 // @public
 type KeysApi = {
-    readonly import: (family: "evm" | "solana" | "bitcoin", secret: string | Uint8Array) => Promise<KeyInfo>;
+    readonly import: (family: "evm" | "solana" | "bitcoin" | "tron", secret: string | Uint8Array) => Promise<KeyInfo>;
     readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
     readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
     readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;

@@ -9,6 +9,7 @@ type EsploraRoute = { readonly method: "GET" | "POST"; readonly pattern: RegExp 
 /** The Esplora surface the engine uses; every other path is rejected. */
 export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute> = [
   { method: "GET", pattern: /^\/block-height\/\d{1,10}$/ },
+  { method: "GET", pattern: /^\/blocks\/tip\/height$/ },
   { method: "GET", pattern: /^\/fee-estimates$/ },
   { method: "GET", pattern: new RegExp(`^/scripthash/${HEX64}/txs$`) },
   { method: "GET", pattern: new RegExp(`^/scripthash/${HEX64}/txs/chain/${HEX64}$`) },

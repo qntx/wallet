@@ -124,6 +124,7 @@ export type {
   TxState,
 } from "./transactions/controller.ts";
 export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transactions/route.ts";
+export type { TxBlock } from "./transactions/route.ts";
 export type { EvmFeeTier } from "./chains/evm.ts";
 export type { SolanaFeeTier } from "./chains/solana.ts";
 export type { BitcoinPsbtInput, BitcoinSigHash, SolanaAccount } from "./requests/types.ts";
@@ -133,7 +134,7 @@ export type {
   NetworkControllerState,
   SolanaRpc,
 } from "./networks/controller.ts";
-export type { NetworkInfo } from "./networks/registry.ts";
+export type { FeeModel, NetworkInfo } from "./networks/registry.ts";
 export type { Esplora } from "./chains/bitcoin.ts";
 export type { EnsResolution } from "./names/ens.ts";
 export type { LidoPosition, LidoWithdrawalRequest } from "./lido/index.ts";
@@ -197,6 +198,7 @@ export type {
 } from "./payments/parse.ts";
 export type { ResolveOptions } from "./payments/resolve.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
+export type { SparkPaymentKind, SparkPaymentRecord, SparkPaymentState } from "./spark/payments.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";
 export { decodeExitChain, encodeExitChain } from "./spark/exit-chain-codec.ts";

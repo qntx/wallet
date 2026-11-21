@@ -614,6 +614,9 @@ type EngineCollection = {
 };
 
 // @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
+
+// @public
 type EngineLogger = {
     readonly warn: (message: string, error?: unknown) => void;
 };
@@ -640,6 +643,17 @@ type EvmSignInput = {
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
+};
+
+// @public
+type FeeModel =
+/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+    {
+    readonly kind: "execution";
+} |
+/** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+    {
+    readonly kind: "op-stack";
 };
 
 // @public (undocumented)
@@ -737,9 +751,10 @@ type NetworkControllerState = {
 };
 
 // @public (undocumented)
-type NetworkInfo = NetworkMeta & {
+type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
     readonly multicall3?: string;
-    readonly opStack?: true;
+    readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;
 };
 
@@ -1350,6 +1365,7 @@ type SparkAccountState = {
     readonly errorCategory?: string;
     readonly recent?: ReadonlyArray<SparkActivity>;
     readonly tokens?: ReadonlyArray<SparkTokenBalance>;
+    readonly payments?: Readonly<Record<string, SparkPaymentRecord>>;
 };
 
 // @public (undocumented)
@@ -1455,6 +1471,7 @@ class SparkController extends Controller<SparkControllerState> {
         receiver: string;
         tokenIdentifier: string;
         amount: bigint;
+        transferId: string;
         verify: VerifyFactor;
         commit: () => void;
     }): Promise<string>;
@@ -1537,6 +1554,26 @@ type SparkExitInput = {
     readonly speed?: "FAST" | "MEDIUM" | "SLOW";
 };
 
+// @public
+type SparkPaymentKind = "transfer" | "lightning" | "exit" | "token";
+
+// @public
+type SparkPaymentRecord = {
+    readonly id: string;
+    readonly kind: SparkPaymentKind;
+    readonly state: SparkPaymentState;
+    readonly receiver: string;
+    readonly amount: string;
+    readonly tokenIdentifier?: string;
+    readonly inputOutputIds?: ReadonlyArray<string>;
+    readonly transactionHash?: string;
+    readonly submittedAt: number;
+    readonly error?: string;
+};
+
+// @public
+type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+
 // @public (undocumented)
 type SparkResult = {
     readonly kind: "spark";
@@ -1551,15 +1588,14 @@ type SparkResult = {
     readonly kind: "token";
     readonly transactionHash: string;
 } |
-/** The commit call's response was lost; the payment may settle under `transferId`. */
+/**
+* The commit response was lost and the payment may have gone out: `payment` is its open record,
+* which `SparkAccountState.payments` and `engine.history` keep following until the Spark operator
+* settles or fails it.
+*/
     {
     readonly kind: "pending";
-    readonly transferId: string;
-} |
-/** A token broadcast's response was lost; it may settle under the spent `inputOutputIds`. */
-    {
-    readonly kind: "token-pending";
-    readonly inputOutputIds: ReadonlyArray<string>;
+    readonly payment: SparkPaymentRecord;
 };
 
 // @public
@@ -1597,6 +1633,8 @@ type TrackedTransaction = {
     readonly state: TxState;
     readonly intent: DisplayIntent | undefined;
     readonly nonce: number;
+    readonly block?: TxBlock | undefined;
+    readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
     readonly replaces?: string;
     readonly parentId?: string;
@@ -1678,6 +1716,12 @@ class TransactionController extends Controller<TransactionControllerState> {
 // @public (undocumented)
 type TransactionControllerState = {
     readonly txs: Record<string, TrackedTransaction>;
+};
+
+// @public
+type TxBlock = {
+    readonly hash?: string;
+    readonly height: number;
 };
 
 // @public (undocumented)

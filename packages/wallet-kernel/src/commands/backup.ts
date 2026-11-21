@@ -30,7 +30,8 @@ import type {
 } from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
-import { keyIdOf } from "../derive/key-id.ts";
+import { KEY_FAMILY_BYTE, keyIdOf } from "../derive/key-id.ts";
+import type { KeyFamily } from "../derive/key-id.ts";
 import { KernelError } from "../errors.ts";
 import { requirePasskey } from "../platform.ts";
 import type { KernelPlatform, PasskeyResult } from "../platform.ts";
@@ -157,15 +158,12 @@ function parseHeader(text: string): BackupHeaderWire {
 const PAYLOAD_WALLET = 0x01;
 const PAYLOAD_KEY = 0x02;
 
-const KEY_FAMILY_NAME: Readonly<Record<number, "evm" | "solana" | "bitcoin">> = {
+/** Name for each payload family byte — the inverse of the shared KEY_FAMILY_BYTE table. */
+const KEY_FAMILY_NAME: Readonly<Record<number, KeyFamily>> = {
   0x01: "evm",
   0x02: "solana",
   0x03: "bitcoin",
-};
-const KEY_FAMILY_BYTE: Readonly<Record<"evm" | "solana" | "bitcoin", number>> = {
-  evm: 0x01,
-  solana: 0x02,
-  bitcoin: 0x03,
+  0x04: "tron",
 };
 
 function encodePayload(
@@ -174,7 +172,7 @@ function encodePayload(
     entropy: Uint8Array;
   }>,
   keys: ReadonlyArray<{
-    family: "evm" | "solana" | "bitcoin";
+    family: KeyFamily;
     secret: Uint8Array;
   }>,
 ): Uint8Array {
@@ -204,13 +202,13 @@ function encodePayload(
 
 function decodePayload(bytes: Uint8Array): {
   wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }>;
-  keys: Array<{ family: "evm" | "solana" | "bitcoin"; secret: Uint8Array }>;
+  keys: Array<{ family: KeyFamily; secret: Uint8Array }>;
 } {
   if (bytes.length === 0 || bytes[0] !== 2) {
     throw new KernelError("integrity", "backup: bad payload version");
   }
   const wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }> = [];
-  const keys: Array<{ family: "evm" | "solana" | "bitcoin"; secret: Uint8Array }> = [];
+  const keys: Array<{ family: KeyFamily; secret: Uint8Array }> = [];
   let off = 1;
   while (off < bytes.length) {
     const tag = bytes[off++];
@@ -247,7 +245,7 @@ type BackupContents = {
   readonly wallets: ReadonlyArray<BackupHeaderWallet & { readonly entropy: Uint8Array }>;
   readonly keys: ReadonlyArray<{
     readonly keyId: string;
-    readonly family: "evm" | "solana" | "bitcoin";
+    readonly family: KeyFamily;
     readonly secret: Uint8Array;
   }>;
   readonly header: string;
@@ -274,7 +272,7 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
     }
     const keys: Array<{
       keyId: string;
-      family: "evm" | "solana" | "bitcoin";
+      family: KeyFamily;
       secret: Uint8Array;
     }> = [];
     for (const record of ctx.image.records) {

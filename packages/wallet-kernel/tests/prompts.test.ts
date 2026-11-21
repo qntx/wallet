@@ -1,4 +1,4 @@
-import { hexToBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * Kernel-owned verification prompt text: exact strings for every core prompt kind, the chain prompt
  * per verifiability level, and every Spark approval kind, in both catalogs.
@@ -12,6 +12,7 @@ import type { DisplayIntent } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
+import { buildTronRawData, decodeTron } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../src/errors.ts";
 import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
@@ -499,6 +500,122 @@ describe("chain prompts", () => {
       )}\n… 还有 94 个字符未显示`,
     );
   });
+
+  it("a TRON permission update names operations by contract id, not bitmap position", () => {
+    /* Bitmap bits 7, 31 and 46: bit 7 is unassigned, bit 31 is TriggerSmartContract
+       (array position 31 holds id 49, UpdateBrokerageContract — a position lookup
+       would name it wrongly) and bit 46 is AccountPermissionUpdateContract. */
+    const operations = `0x800000800040${"00".repeat(26)}`;
+    const intent: PromptIntent = {
+      family: "tron",
+      network: "tron:728126428",
+      summary: "authorization",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      verifiability: "partial",
+      blind: "tron-permission-update",
+      tron: {
+        contractType: "AccountPermissionUpdateContract",
+        expiration: 1_767_225_660_000,
+        permissionUpdate: {
+          owner: {
+            type: "owner",
+            id: 2,
+            name: "owner",
+            threshold: "1",
+            parentId: 0,
+            keys: [{ address: "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6", weight: "1" }],
+          },
+          actives: [
+            {
+              type: "active",
+              id: 2,
+              name: "active0",
+              threshold: "1",
+              parentId: 0,
+              operations,
+              keys: [{ address: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC", weight: "1" }],
+            },
+          ],
+        },
+      },
+    };
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "Account takeover: this gives control of this account to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC. Whoever holds these keys can move all of its assets.\n" +
+        "Network: TRON\n" +
+        'Owner permission "owner": threshold 1; keys TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 (weight 1)\n' +
+        'Active permission "active0": threshold 1; keys TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC (weight 1); allows ContractType 7, TriggerSmartContract, AccountPermissionUpdateContract\n' +
+        "Expires 2026-01-01 00:01 (UTC)\n" +
+        "Bandwidth or account-activation fees may be charged",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        "账户接管：此交易把本账户的控制权交给 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC，持有这些密钥的人可以转走全部资产。\n" +
+        "网络：TRON\n" +
+        "所有者权限「owner」：阈值 1；密钥 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6（权重 1）\n" +
+        "活跃权限「active0」：阈值 1；密钥 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC（权重 1）；允许 ContractType 7、TriggerSmartContract、AccountPermissionUpdateContract\n" +
+        "2026-01-01 00:01（UTC）后失效\n" +
+        "可能扣除带宽费或账户激活费",
+    });
+  });
+
+  it("an active permission with no set operations allows no transactions", () => {
+    const intent: PromptIntent = {
+      family: "tron",
+      network: "tron:728126428",
+      summary: "authorization",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      verifiability: "partial",
+      blind: "tron-permission-update",
+      tron: {
+        contractType: "AccountPermissionUpdateContract",
+        expiration: 1_767_225_660_000,
+        permissionUpdate: {
+          owner: {
+            type: "owner",
+            id: 2,
+            name: "owner",
+            threshold: "1",
+            parentId: 0,
+            keys: [{ address: "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6", weight: "1" }],
+          },
+          actives: [
+            {
+              type: "active",
+              id: 2,
+              name: "active0",
+              threshold: "1",
+              parentId: 0,
+              operations: `0x${"00".repeat(32)}`,
+              keys: [{ address: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC", weight: "1" }],
+            },
+          ],
+        },
+      },
+    };
+    expect(chainPrompt("en", intent).description).toBe(
+      "Account takeover: this gives control of this account to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC. Whoever holds these keys can move all of its assets.\n" +
+        "Network: TRON\n" +
+        'Owner permission "owner": threshold 1; keys TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 (weight 1)\n' +
+        'Active permission "active0": threshold 1; keys TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC (weight 1); allows no transactions\n' +
+        "Expires 2026-01-01 00:01 (UTC)\n" +
+        "Bandwidth or account-activation fees may be charged",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "账户接管：此交易把本账户的控制权交给 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC，持有这些密钥的人可以转走全部资产。\n" +
+        "网络：TRON\n" +
+        "所有者权限「owner」：阈值 1；密钥 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6（权重 1）\n" +
+        "活跃权限「active0」：阈值 1；密钥 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC（权重 1）；不允许任何交易\n" +
+        "2026-01-01 00:01（UTC）后失效\n" +
+        "可能扣除带宽费或账户激活费",
+    );
+  });
 });
 
 describe("chain prompts via the real decoders", () => {
@@ -918,6 +1035,57 @@ describe("chain prompts via the real decoders", () => {
     );
     expect(chainPrompt("zh-Hans", intent).description).toContain(
       "包含其他签名者的输入；无法核实手续费",
+    );
+  });
+
+  const TRON_OWNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
+  const TRON_TO = "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC";
+  const tronTransfer = (memo: Uint8Array): PromptIntent =>
+    decodeTron(
+      {
+        kind: "tron.transaction",
+        network: "tron:728126428",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "tron.bip44" },
+        rawData: buildTronRawData(
+          {
+            refBlock: {
+              number: 76050000,
+              id: "0000000004886e501a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f7890",
+            },
+            expiration: 1_767_225_660_000,
+            timestamp: 1_767_225_600_000,
+            memo,
+          },
+          { type: "TransferContract", owner: TRON_OWNER, to: TRON_TO, amount: 1_000_000n },
+        ),
+      },
+      TRON_OWNER,
+    );
+
+  it("a TRON binary memo shows its hex up to 64 bytes, then only its length", () => {
+    const data = new Uint8Array(64).fill(0xff);
+    expect(chainPrompt("en", tronTransfer(data)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo data 0x${"ff".repeat(64)}\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(data)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注数据 0x${"ff".repeat(64)}\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
+    );
+    const long = new Uint8Array(65).fill(0xff);
+    expect(chainPrompt("en", tronTransfer(long)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo of 65 bytes\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(long)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注 65 字节\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
+    );
+  });
+
+  it("a TRON text memo over the excerpt budget is cut with an omitted count", () => {
+    const memo = utf8ToBytes("x".repeat(400));
+    expect(chainPrompt("en", tronTransfer(memo)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo:\n${"x".repeat(320)}\n… 80 more characters not shown\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(memo)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n${"x".repeat(320)}\n… 还有 80 个字符未显示\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
     );
   });
 });
@@ -2178,6 +2346,501 @@ describe("blind text prompts", () => {
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
       description: `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n${text}`,
+    });
+  });
+});
+
+describe("hyperliquid prompts", () => {
+  const HL_DEST = "0x5E9EE1089755C3435139848e47e6635505D5a13A";
+  const HL_AGENT = "0x1234567890AbcdEF1234567890aBcdef12345678";
+  const HL_SUB = "0x0123456789abcDEF0123456789abCDef01234567";
+  const HL_BUILDER = "0x0000000000000000000000000000000000000Bad";
+  const HL_VALIDATOR = "0x0000000000000000000000000000000000000123";
+  const HL_TOKEN = "SPOT:0x22222222222222222222222222222222";
+  const HL_POWERS =
+    "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.";
+  const HL_POWERS_ZH =
+    "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。";
+
+  const hlIntent = (
+    summary: PromptIntent["summary"],
+    verifiability: PromptIntent["verifiability"],
+    hyperliquid: NonNullable<
+      Extract<PromptIntent["message"], { kind: "typed-data" }>["hyperliquid"]
+    >,
+  ): PromptIntent => ({
+    summary,
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability,
+    network: "eip155:42161",
+    message: {
+      kind: "typed-data",
+      primaryType: "HyperliquidTransaction:X",
+      domain: {
+        name: "HyperliquidSignTransaction",
+        version: "1",
+        chainId: 42161,
+        verifyingContract: "0x0000000000000000000000000000000000000000",
+      },
+      data: {},
+      hyperliquid,
+    },
+  });
+
+  it("withdraw names the bridge and its fee", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "withdraw",
+      chain: "Testnet",
+      destination: HL_DEST,
+      amount: "25",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Testnet\nWithdraw 25 USDC from Hyperliquid to ${HL_DEST} through the Hyperliquid bridge\nHyperliquid charges a withdrawal fee`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 测试网\n经 Hyperliquid 跨链桥提现 25 USDC 到 ${HL_DEST}\nHyperliquid 会收取提现手续费`,
+    });
+  });
+
+  it("spot-send warns the token name is unverified", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "spot-send",
+      chain: "Testnet",
+      destination: HL_DEST,
+      token: HL_TOKEN,
+      amount: "10.25",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Testnet\nSend 10.25 of token ${HL_TOKEN} to ${HL_DEST} on Hyperliquid\nThe wallet cannot verify the token's name; check its id`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 测试网\n在 Hyperliquid 上发送 10.25 代币 ${HL_TOKEN} 到 ${HL_DEST}\n钱包无法核实代币名称，请核对其 id`,
+    });
+  });
+
+  it("usd-class-transfer names both directions", () => {
+    const toPerp = hlIntent("transfer", "full", {
+      kind: "usd-class-transfer",
+      chain: "Mainnet",
+      amount: "5",
+      toPerp: true,
+    });
+    expect(chainPrompt("en", toPerp)).toStrictEqual({
+      title: "Confirm transfer",
+      description: "Hyperliquid Mainnet\nMove 5 USDC from your Hyperliquid spot balance to perps",
+    });
+    expect(chainPrompt("zh-Hans", toPerp)).toStrictEqual({
+      title: "确认转账",
+      description: "Hyperliquid 主网\n将 5 USDC 从 Hyperliquid 现货账户转入永续账户",
+    });
+    const toSpot = hlIntent("transfer", "full", {
+      kind: "usd-class-transfer",
+      chain: "Testnet",
+      amount: "0.75",
+      toPerp: false,
+    });
+    expect(chainPrompt("en", toSpot).description).toBe(
+      "Hyperliquid Testnet\nMove 0.75 USDC from your Hyperliquid perps balance to spot",
+    );
+    expect(chainPrompt("zh-Hans", toSpot).description).toBe(
+      "Hyperliquid 测试网\n将 0.75 USDC 从 Hyperliquid 永续账户转入现货账户",
+    );
+  });
+
+  it("send-asset names both DEXes and the sub-account", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "send-asset",
+      chain: "Mainnet",
+      destination: HL_DEST,
+      sourceDex: "",
+      destinationDex: "spot",
+      token: HL_TOKEN,
+      amount: "1.5",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Mainnet\nSend 1.5 of token ${HL_TOKEN} from perps to spot of ${HL_DEST}\nThe wallet cannot verify the token's name; check its id`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 主网\n发送 1.5 代币 ${HL_TOKEN}：从永续账户到 ${HL_DEST} 的现货账户\n钱包无法核实代币名称，请核对其 id`,
+    });
+    const sub = hlIntent("transfer", "partial", {
+      kind: "send-asset",
+      chain: "Testnet",
+      destination: HL_DEST,
+      sourceDex: "spot",
+      destinationDex: "builder01",
+      token: HL_TOKEN,
+      amount: "3",
+      fromSubAccount: HL_SUB,
+    });
+    expect(chainPrompt("en", sub).description).toBe(
+      `Hyperliquid Testnet\nSend 3 of token ${HL_TOKEN} from spot to DEX builder01 of ${HL_DEST}\nFrom sub-account ${HL_SUB}\nThe wallet cannot verify the token's name; check its id`,
+    );
+    expect(chainPrompt("zh-Hans", sub).description).toBe(
+      `Hyperliquid 测试网\n发送 3 代币 ${HL_TOKEN}：从现货账户到 ${HL_DEST} 的DEX builder01\n来自子账户 ${HL_SUB}\n钱包无法核实代币名称，请核对其 id`,
+    );
+  });
+
+  it("staking-withdraw warns about the unstaking queue", () => {
+    const intent = hlIntent("stake", "full", {
+      kind: "staking-withdraw",
+      chain: "Testnet",
+      wei: "250000000",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm staking",
+      description:
+        "Hyperliquid Testnet\nMove 2.5 HYPE from staking to your spot balance; it arrives after Hyperliquid's 7-day unstaking queue",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认质押",
+      description:
+        "Hyperliquid 测试网\n将 2.5 HYPE 从质押账户转回现货账户，经 Hyperliquid 的 7 天解除质押队列后到账",
+    });
+  });
+
+  it("token-delegate covers delegate and undelegate", () => {
+    const delegate = hlIntent("stake", "partial", {
+      kind: "token-delegate",
+      chain: "Mainnet",
+      validator: HL_VALIDATOR,
+      wei: "10000000000",
+      undelegate: false,
+    });
+    expect(chainPrompt("en", delegate)).toStrictEqual({
+      title: "Confirm staking",
+      description: `Hyperliquid Mainnet\nDelegate 100 HYPE to validator ${HL_VALIDATOR}`,
+    });
+    expect(chainPrompt("zh-Hans", delegate)).toStrictEqual({
+      title: "确认质押",
+      description: `Hyperliquid 主网\n将 100 HYPE 委托给验证者 ${HL_VALIDATOR}`,
+    });
+    const undelegate = hlIntent("stake", "partial", {
+      kind: "token-delegate",
+      chain: "Testnet",
+      validator: HL_VALIDATOR,
+      wei: "500000000",
+      undelegate: true,
+    });
+    expect(chainPrompt("en", undelegate).description).toBe(
+      `Hyperliquid Testnet\nUndelegate 5 HYPE from validator ${HL_VALIDATOR}`,
+    );
+    expect(chainPrompt("zh-Hans", undelegate).description).toBe(
+      `Hyperliquid 测试网\n从验证者 ${HL_VALIDATOR} 取消委托 5 HYPE`,
+    );
+  });
+
+  it("approve-agent covers named and unnamed agents without expiry", () => {
+    const named = hlIntent("approve", "partial", {
+      kind: "approve-agent",
+      chain: "Mainnet",
+      agent: HL_AGENT,
+      name: "bot-1",
+    });
+    expect(chainPrompt("en", named)).toStrictEqual({
+      title: "Confirm approval",
+      description: `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} named "bot-1"\nNo expiry in the name: Hyperliquid's default applies\n${HL_POWERS}`,
+    });
+    expect(chainPrompt("zh-Hans", named)).toStrictEqual({
+      title: "确认授权",
+      description: `Hyperliquid 主网\n授权代理 ${HL_AGENT}，名称“bot-1”\n名称中没有有效期：适用 Hyperliquid 的默认期限\n${HL_POWERS_ZH}`,
+    });
+    const unnamed = hlIntent("approve", "partial", {
+      kind: "approve-agent",
+      chain: "Mainnet",
+      agent: HL_AGENT,
+      name: "",
+    });
+    expect(chainPrompt("en", unnamed).description).toBe(
+      `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} (unnamed)\nNo expiry in the name: Hyperliquid's default applies\n${HL_POWERS}`,
+    );
+    expect(chainPrompt("zh-Hans", unnamed).description).toBe(
+      `Hyperliquid 主网\n授权代理 ${HL_AGENT}（未命名）\n名称中没有有效期：适用 Hyperliquid 的默认期限\n${HL_POWERS_ZH}`,
+    );
+  });
+
+  it("approve-agent says whether this wallet holds the agent key", () => {
+    const action = {
+      kind: "approve-agent" as const,
+      chain: "Mainnet" as const,
+      agent: HL_AGENT,
+      name: "bot-1",
+      validUntil: 1798765432000,
+    };
+    const held = chainPrompt("en", {
+      ...hlIntent("approve", "partial", action),
+      agentHeld: true,
+    });
+    expect(held.description).toBe(
+      `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} named "bot-1"\nThe agent key is held by this wallet\nValid until 2027-01-01 01:03 (UTC)\n${HL_POWERS}`,
+    );
+    expect(
+      chainPrompt("zh-Hans", { ...hlIntent("approve", "partial", action), agentHeld: true })
+        .description,
+    ).toBe(
+      `Hyperliquid 主网\n授权代理 ${HL_AGENT}，名称“bot-1”\n代理密钥由本钱包持有\n有效期至 2027-01-01 01:03（UTC）\n${HL_POWERS_ZH}`,
+    );
+    const notHeld = chainPrompt("en", {
+      ...hlIntent("approve", "partial", action),
+      agentHeld: false,
+    });
+    expect(notHeld.description).toContain(
+      "The agent key is not held by this wallet: whoever holds it can trade this account",
+    );
+    expect(
+      chainPrompt("zh-Hans", { ...hlIntent("approve", "partial", action), agentHeld: false })
+        .description,
+    ).toContain("代理密钥不在本钱包中：持有者可以替此账户交易");
+    // Without the binding flag the intent is unchanged (old behavior).
+    expect(chainPrompt("en", hlIntent("approve", "partial", action)).description).not.toContain(
+      "held by this wallet",
+    );
+  });
+
+  it("approve-builder-fee names the builder and the rate", () => {
+    const intent = hlIntent("approve", "partial", {
+      kind: "approve-builder-fee",
+      chain: "Mainnet",
+      builder: HL_BUILDER,
+      maxFeeRate: "0.1%",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm approval",
+      description: `Hyperliquid Mainnet\nAllow builder ${HL_BUILDER} to charge up to 0.1% of each order's value`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认授权",
+      description: `Hyperliquid 主网\n允许 builder ${HL_BUILDER} 对每笔订单收取最多 0.1% 的费用`,
+    });
+  });
+});
+
+describe("polymarket prompts", () => {
+  const PM_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B";
+  const PM_PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+  const PM_CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+  const PM_WALLET = "0x3000000000000000000000000000000000000003";
+  const PM_PROXY = "0x1000000000000000000000000000000000000001";
+  const PM_SAFE = "0x2000000000000000000000000000000000000002";
+  const PM_ACCOUNT = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  const PM_TOKEN = "21742633143463906290569050155826241533067272736897614950488156847949938836455";
+  const PM_FEE =
+    "Polymarket sets the trading fee when the order is matched; this signature does not cap it";
+  const PM_FEE_ZH = "交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额";
+  const pusd = (amount: string) => ({ asset: PM_PUSD, decimals: 6, symbol: "pUSD", amount });
+  const shares = (amount: string) => ({
+    asset: PM_CTF,
+    decimals: 6,
+    tokenId: PM_TOKEN,
+    amount,
+  });
+
+  type PmContent = NonNullable<
+    Extract<PromptIntent["message"], { kind: "typed-data" }>["polymarket"]
+  >;
+  const pmIntent = (
+    summary: PromptIntent["summary"],
+    verifiability: PromptIntent["verifiability"],
+    polymarket: PmContent,
+    blind?: PromptIntent["blind"],
+  ): PromptIntent => ({
+    summary,
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability,
+    network: "eip155:137",
+    ...(blind === undefined ? {} : { blind }),
+    message: {
+      kind: "typed-data",
+      primaryType: "Order",
+      domain: { name: "Polymarket CTF Exchange" },
+      data: {},
+      polymarket,
+    },
+  });
+  const pmOrder = (
+    over: Partial<Extract<PmContent, { kind: "order" }>>,
+  ): Extract<PmContent, { kind: "order" }> => ({
+    kind: "order",
+    exchange: { address: PM_EXCHANGE, name: "CTF Exchange", version: "2" },
+    side: "buy",
+    tokenId: PM_TOKEN,
+    maker: PM_ACCOUNT,
+    signer: PM_ACCOUNT,
+    wallet: "account",
+    give: pusd("50000000"),
+    receive: shares("100000000"),
+    price: { amount: "500000", exact: true },
+    ...over,
+  });
+
+  it("an EOA buy shows the exchange, shares and pay cap", () => {
+    const intent = pmIntent("swap", "partial", pmOrder({}));
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm order",
+      description: `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nBuy at least 100 shares of outcome token ${PM_TOKEN}\nPay at most 50 pUSD (price 0.5 pUSD per share)\n${PM_FEE}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认订单",
+      description: `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n买入至少 100 份结果代币 ${PM_TOKEN}\n最多支付 50 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_ZH}`,
+    });
+  });
+
+  it("an EOA sell shows the shares given and the receive floor", () => {
+    const intent = pmIntent(
+      "swap",
+      "partial",
+      pmOrder({ side: "sell", give: shares("100000000"), receive: pusd("50000000") }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nSell 100 shares of outcome token ${PM_TOKEN}\nReceive at least 50 pUSD before fees (price 0.5 pUSD per share)\n${PM_FEE}`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n卖出 100 份结果代币 ${PM_TOKEN}\n扣费前至少收到 50 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_ZH}`,
+    );
+  });
+
+  it("each funding wallet gets its own line", () => {
+    const cases = [
+      [
+        "proxy",
+        PM_PROXY,
+        `Funds from your Polymarket proxy wallet ${PM_PROXY}`,
+        `资金来自你的 Polymarket 代理钱包 ${PM_PROXY}`,
+      ],
+      [
+        "safe",
+        PM_SAFE,
+        `Funds from your Polymarket Safe ${PM_SAFE}`,
+        `资金来自你的 Polymarket Safe ${PM_SAFE}`,
+      ],
+      [
+        "deposit-wallet",
+        PM_WALLET,
+        `Funds from deposit wallet ${PM_WALLET}; only its owner's signature makes this order valid`,
+        `资金来自存款钱包 ${PM_WALLET}；只有其所有者的签名才能使此订单生效`,
+      ],
+    ] as const;
+    for (const [wallet, maker, enLine, zhLine] of cases) {
+      const intent = pmIntent("swap", "partial", pmOrder({ wallet, maker, signer: PM_ACCOUNT }));
+      expect(chainPrompt("en", intent).description).toContain(enLine);
+      expect(chainPrompt("zh-Hans", intent).description).toContain(zhLine);
+    }
+  });
+
+  it("a non-exact price is marked approximate and builder fields show verbatim", () => {
+    const intent = pmIntent(
+      "swap",
+      "partial",
+      pmOrder({
+        give: pusd("1000000"),
+        receive: shares("3000001"),
+        price: { amount: "333333", exact: false },
+        builder: `0x${"62".repeat(32)}`,
+        metadata: `0x${"ab".repeat(32)}`,
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nBuy at least 3.000001 shares of outcome token ${PM_TOKEN}\nPay at most 1 pUSD (price ≈ 0.333333 pUSD per share)\n${PM_FEE}\nBuilder code 0x${"62".repeat(32)}\nOrder metadata 0x${"ab".repeat(32)}`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n买入至少 3.000001 份结果代币 ${PM_TOKEN}\n最多支付 1 pUSD（价格 ≈ 0.333333 pUSD/份）\n${PM_FEE_ZH}\nBuilder 代码 0x${"62".repeat(32)}\n订单元数据 0x${"ab".repeat(32)}`,
+    );
+  });
+
+  it("CLOB auth prompts as a sign-in", () => {
+    const intent = pmIntent("message", "partial", {
+      kind: "auth",
+      address: PM_ACCOUNT,
+      timestamp: 10000000,
+      nonce: "23",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm sign-in",
+      description: `Network: Polygon\nCreate or derive Polymarket API credentials for ${PM_ACCOUNT}\nTime 1970-04-26 17:46 (UTC)\nCredential nonce 23\nThe credentials authenticate account requests such as cancelling orders; every order still needs your signature`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认登录",
+      description: `网络：Polygon\n为 ${PM_ACCOUNT} 创建或派生 Polymarket API 凭证\n时间 1970-04-26 17:46（UTC）\n凭证序号 23\n凭证用于验证撤单等账户请求；每笔订单仍需你的签名`,
+    });
+  });
+
+  it("a batch lists every decoded call", () => {
+    const call = (over: Partial<DisplayIntent>): DisplayIntent => ({
+      summary: "approve",
+      outflows: [],
+      approvals: [],
+      warnings: [],
+      fee: undefined,
+      verifiability: "partial",
+      family: "evm",
+      network: "eip155:137",
+      ...over,
+    });
+    const intent = pmIntent("batch", "partial", {
+      kind: "batch",
+      wallet: PM_WALLET,
+      nonce: "7",
+      deadline: 1800000000,
+      calls: [
+        call({
+          approvals: [
+            {
+              kind: "allowance",
+              spender: PM_EXCHANGE,
+              amount: { asset: PM_PUSD, amount: "25000000" },
+              change: "set",
+              unlimited: false,
+              verified: false,
+            },
+          ],
+        }),
+        call({
+          approvals: [
+            {
+              kind: "operator",
+              asset: PM_CTF,
+              spender: PM_EXCHANGE,
+              approved: true,
+              verified: false,
+            },
+          ],
+        }),
+      ],
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm batch",
+      description: `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\nAllow ${PM_EXCHANGE} to spend 25000000 base units of unverified token ${PM_PUSD}\nAllow ${PM_EXCHANGE} to transfer all tokens of ${PM_CTF}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认批量交易",
+      description: `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n授权 ${PM_EXCHANGE} 使用 25000000 个最小单位（未验证代币 ${PM_PUSD}）\n授权 ${PM_EXCHANGE} 转走 ${PM_CTF} 的全部代币`,
+    });
+  });
+
+  it("an oversize batch shows the header and the oversize warning", () => {
+    const intent = pmIntent(
+      "batch",
+      "opaque",
+      { kind: "batch", wallet: PM_WALLET, nonce: "7", deadline: 1800000000, calls: [] },
+      "typed-data-oversize",
+    );
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\nThis typed data is too large to show in full`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n此类型数据过大，无法完整显示`,
     });
   });
 });

@@ -110,6 +110,50 @@ const drainUntilIdle = async (
 const errorCode = (error: unknown): string =>
   error instanceof WalletError ? error.code : "not-a-wallet-error";
 
+/** The one request a scripted test expects the kernel to be holding. */
+const heldRequest = (port: GatedPort): { id: number; method: string } => {
+  const [entry] = port.held;
+  if (entry === undefined) {
+    throw new Error("nothing held by the kernel");
+  }
+  return entry;
+};
+
+describe("hyperliquid methods ride the channel", () => {
+  const AGENT = {
+    address: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+    owner: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+    walletId: "aa".repeat(8),
+    groupIndex: 0,
+    network: "Mainnet",
+    name: "bot-1",
+    validUntil: 1_812_902_400_000,
+    createdAt: 1_812_902_400_000,
+  };
+
+  it("posts hyperliquid.listAgents as a plain method and validates the result", async () => {
+    const { channel, port } = await connect();
+    const call = channel.call("hyperliquid.listAgents", null);
+    await tick();
+    const entry = heldRequest(port);
+    expect(entry.method).toBe("hyperliquid.listAgents");
+    port.send({ v: 3, id: entry.id, ok: [AGENT] });
+    await expect(call).resolves.toStrictEqual([AGENT]);
+    channel.destroy();
+  });
+
+  it("rejects an off-schema hyperliquid.listAgents result", async () => {
+    const { channel, port } = await connect();
+    const call = channel.call("hyperliquid.listAgents", null);
+    await tick();
+    const entry = heldRequest(port);
+    expect(entry.method).toBe("hyperliquid.listAgents");
+    port.send({ v: 3, id: entry.id, ok: [{ network: "Nowhere" }] });
+    await expect(call).rejects.toBeInstanceOf(WalletError);
+    channel.destroy();
+  });
+});
+
 describe("in-flight bound", () => {
   it("posts at most MAX_IN_FLIGHT requests and drains the queue in FIFO order", async () => {
     const { channel, port } = await connect();

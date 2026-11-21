@@ -2,10 +2,10 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 /**
- * The family byte that namespaces an imported key's keyId: 0x01 evm, 0x02 solana, 0x03 bitcoin. The
- * same secret on two families maps to different keyIds.
+ * The family byte that namespaces an imported key's keyId: 0x01 evm, 0x02 solana, 0x03 bitcoin,
+ * 0x04 tron. The same secret on two families maps to different keyIds.
  */
-export const KEY_FAMILY_BYTE = { evm: 0x01, solana: 0x02, bitcoin: 0x03 } as const;
+export const KEY_FAMILY_BYTE = { evm: 0x01, solana: 0x02, bitcoin: 0x03, tron: 0x04 } as const;
 export type KeyFamily = keyof typeof KEY_FAMILY_BYTE;
 
 /**

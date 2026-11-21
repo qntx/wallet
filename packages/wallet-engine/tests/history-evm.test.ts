@@ -43,15 +43,19 @@ const rpcClient = (network: string, calls: RpcCall[]) =>
 
 const stream = (options: {
   network: string;
-  page: unknown;
+  page?: unknown;
+  /** When set, each gateway request pops the next page instead of replaying `page`. */
+  pages?: ReadonlyArray<unknown>;
   client: unknown;
   independent?: unknown;
   requests?: Array<Record<string, unknown>>;
+  onTruncated?: () => void;
 }) => {
   const requests = options.requests ?? [];
+  const queue = [...(options.pages ?? [options.page])];
   const fetch = (async (_input: unknown, init?: { body?: string }) => {
     requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    return Promise.resolve(Response.json(options.page));
+    return Promise.resolve(Response.json(queue.shift()));
   }) as typeof globalThis.fetch;
   const s = evmHistoryStream(
     {
@@ -65,6 +69,7 @@ const stream = (options: {
     options.network,
     OWNER,
     new Map(),
+    options.onTruncated ?? (() => {}),
   );
   return { stream: s, requests };
 };
@@ -76,7 +81,11 @@ const item = (hash: string, block: number, transfers: HistoryItem["transfers"]):
   transfers,
 });
 
-const page = (items: HistoryItem[], cursor: string | null = null) => ({ items, cursor });
+const page = (items: HistoryItem[], cursor: string | null = null, truncated = false) => ({
+  items,
+  cursor,
+  truncated,
+});
 
 const NATIVE_ZERO = {
   kind: "native",
@@ -307,6 +316,28 @@ describe("evmHistoryStream verification", () => {
     const e = entryOf(items, hash);
     expect(e?.flags).toContain("token-impersonation");
     expect(e?.flags).toContain("suspicious-token-symbol");
+  });
+
+  it("fires onTruncated for each truncated page and keeps paging with the cursor", async () => {
+    let truncated = 0;
+    const { stream: s, requests } = stream({
+      network: "eip155:1",
+      pages: [
+        page([item("0x".padEnd(66, "a"), 200, [ERC20_IN])], "99", true),
+        page([item("0x".padEnd(66, "b"), 90, [ERC20_IN])], null, true),
+        page([], null),
+      ],
+      client: rpcClient("eip155:1", []),
+      onTruncated: () => {
+        truncated += 1;
+      },
+    });
+    const first = await s.next();
+    expect(first.done).toBe(false);
+    const second = await s.next();
+    expect(requests[1]).toStrictEqual({ address: OWNER, cursor: "99", limit: 25 });
+    expect(second.done).toBe(true);
+    expect(truncated).toBe(2);
   });
 });
 

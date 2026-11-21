@@ -77,6 +77,18 @@ const EXPECTED_BTC_SIGNED_PSBT =
   "66349778bd30478f294d9e0a63554ff7f5dc44e9a938bc01220603fc2a760d930aa1459b35185f45784f" +
   "4b42050311b232ed490f05db13f448e1541816a93ed054000080000000800000008000000000000000000000";
 
+// vectors/chains/tron.json "tronlink" key: the anvil mnemonic's tron.bip44 group-0 account is the
+// TronLink dev pair 15f0bb… → TWer2Ygk… (verified via tronweb 6.5.2 address.fromPrivateKey). The
+// raw_data is a 1 TRX TransferContract from that owner to TJRyWwFs…, built offline once with
+// buildTronRawData (refBlock number 1, id "aa…", expiration 1700000000000). The expected signature
+// is tronweb 6.5.2 utils.crypto.ECKeySign(sha256(rawData), key), computed offline in a scratch
+// script — it matches signTronTransaction byte for byte.
+const TRON_RAW = hexToBytes(
+  "0a0200012208aaaaaaaaaaaaaaaa4080d095ffbc315a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541e2e1a54926527fbb4e4420de4c6bab82beaee24d1215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d70c0cbd8febc31",
+);
+const EXPECTED_TRON_SIG =
+  "45e14e23a71071a1d5c62f0687af512676983066ed08fc9b892b6432ebabfa923eeba43698e490f70b77a46ed2f5bb95c22c5213ec967137dfe0bc3e71e8815d1c";
+
 function assert(cond: boolean, name: string): asserts cond {
   if (!cond) {
     throw new Error(`smoke: ${name}`);
@@ -354,6 +366,44 @@ export async function main(): Promise<void> {
   const signedPsbt = field(btcSigned, "signedPsbt");
   assert(signedPsbt instanceof Uint8Array, "chain.sign bitcoin signedPsbt bytes");
   eq(bytesToHex(signedPsbt), EXPECTED_BTC_SIGNED_PSBT, "chain.sign bitcoin psbt");
+
+  const tronAccounts = ok(
+    await kernel2.call(
+      "wallet.accounts",
+      {
+        walletId: anvilWalletId,
+        groupIndex: 0,
+        template: "tron.bip44",
+        network: "tron:728126428",
+      },
+      session,
+    ),
+  );
+  eq(field(tronAccounts, "address"), "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6", "wallet.accounts tron");
+
+  const tronSigned = ok(
+    await kernel2.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "tron.transaction",
+          network: "tron:728126428",
+          account: {
+            kind: "hd",
+            walletId: anvilWalletId,
+            groupIndex: 0,
+            template: "tron.bip44",
+          },
+          rawData: new Uint8Array(TRON_RAW),
+        },
+        verify: verifyPassword(),
+      },
+      session,
+    ),
+  );
+  const tronSig = field(tronSigned, "signature");
+  assert(tronSig instanceof Uint8Array, "chain.sign tron signature bytes");
+  eq(bytesToHex(tronSig), EXPECTED_TRON_SIG, "chain.sign tron transaction");
 
   // 4. Sign an event with the derived key — the schnorr signature must verify.
   const signed = ok(

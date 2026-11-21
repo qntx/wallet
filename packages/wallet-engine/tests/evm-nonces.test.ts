@@ -81,4 +81,62 @@ describe("EvmNonces", () => {
     expect(nonces.taken(NET, FROM, 0)).toBe(true);
     expect(() => nonces.reserve("c", NET, FROM, [0], false)).toThrow(/already used/);
   });
+
+  it("a reorg reopens exactly the consumed nonce: held again, the floor lifted", () => {
+    const nonces = new EvmNonces();
+    nonces.reserve("a", NET, FROM, [5], false);
+    nonces.consume("a");
+    expect(nonces.taken(NET, FROM, 5)).toBe(true);
+    nonces.reopen("a", NET, FROM, [5]);
+    // The nonce is a hold again: no fresh send may take it, its replacement may.
+    expect(nonces.taken(NET, FROM, 5)).toBe(true);
+    expect(nonces.next(NET, FROM)).toBe(6);
+    expect(() => nonces.reserve("b", NET, FROM, [5], false)).toThrow(/already used/);
+    nonces.reserve("b", NET, FROM, [5], true);
+    // Consuming again after the retry lands restores the floor with nothing held.
+    nonces.release("b");
+    nonces.consume("a");
+    expect(nonces.taken(NET, FROM, 5)).toBe(true);
+    expect(nonces.next(NET, FROM)).toBe(6);
+    expect(() => nonces.reserve("c", NET, FROM, [5], false)).toThrow(/already used/);
+    expect(() => nonces.reserve("c", NET, FROM, [6], false)).not.toThrow();
+  });
+
+  it("reopening only the reorged consumer keeps the floor on the rest", () => {
+    const nonces = new EvmNonces();
+    nonces.reserve("a", NET, FROM, [5], false);
+    nonces.consume("a");
+    nonces.reserve("c", NET, FROM, [6], false);
+    nonces.consume("c");
+    expect(nonces.next(NET, FROM)).toBe(7);
+    nonces.reopen("a", NET, FROM, [5]);
+    // A's reorg lifts only A's record: C still counts, so the floor stays 7.
+    expect(nonces.taken(NET, FROM, 6)).toBe(true);
+    expect(nonces.next(NET, FROM)).toBe(7);
+    nonces.reopen("c", NET, FROM, [6]);
+    expect(() => nonces.reserve("d", NET, FROM, [6], false)).toThrow(/already used/);
+    expect(nonces.next(NET, FROM)).toBe(7);
+  });
+
+  it("a 7702 pair consumes and reopens as a pair", () => {
+    const nonces = new EvmNonces();
+    nonces.reserve("a", NET, FROM, [3, 4], false);
+    nonces.consume("a");
+    expect(nonces.taken(NET, FROM, 3)).toBe(true);
+    expect(nonces.taken(NET, FROM, 4)).toBe(true);
+    expect(nonces.next(NET, FROM)).toBe(5);
+    nonces.reopen("a", NET, FROM, [3, 4]);
+    expect(() => nonces.reserve("b", NET, FROM, [4], false)).toThrow(/already used/);
+    expect(nonces.next(NET, FROM)).toBe(5);
+  });
+
+  it("a reloaded in-block row is spent, not held", () => {
+    const nonces = new EvmNonces();
+    nonces.spend("a", NET, FROM, [5]);
+    expect(nonces.taken(NET, FROM, 5)).toBe(true);
+    expect(nonces.next(NET, FROM)).toBe(6);
+    // Its reorg reopens the spent record like a consumed one.
+    nonces.reopen("a", NET, FROM, [5]);
+    expect(() => nonces.reserve("b", NET, FROM, [5], false)).toThrow(/already used/);
+  });
 });

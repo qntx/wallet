@@ -9,7 +9,7 @@ import { loadVectors } from "./helpers.ts";
 
 type Vector = {
   readonly name: string;
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly familyByte: number;
   readonly publicKey: string;
   readonly keyId: string;

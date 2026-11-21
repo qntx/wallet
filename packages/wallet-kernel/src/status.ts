@@ -4,6 +4,7 @@ import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
+import { HL_AGENT_KIND, parseAgentHeader } from "./modules/apps/record.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
 import {
   parseBackupKeyHeader,
@@ -68,7 +69,7 @@ export function statusContents(
   keys: ReadonlyArray<NostrKeyInfo>;
   importedKeys: ReadonlyArray<{
     keyId: string;
-    family: "evm" | "solana" | "bitcoin";
+    family: "evm" | "solana" | "bitcoin" | "tron";
     address: string;
     createdAt: number;
   }>;
@@ -80,7 +81,7 @@ export function statusContents(
   const wallets: WalletInfo[] = [];
   const importedKeys: Array<{
     keyId: string;
-    family: "evm" | "solana" | "bitcoin";
+    family: "evm" | "solana" | "bitcoin" | "tron";
     address: string;
     createdAt: number;
   }> = [];
@@ -143,6 +144,9 @@ export function statusContents(
         } else {
           unsupported = true;
         }
+      } else if (record.kind === HL_AGENT_KIND) {
+        // A malformed agent header is vault corruption, like any other authenticated public row.
+        parseAgentHeader(record.header);
       } else if (modules.some((module) => module.ownsRecord(record.kind))) {
         owned.push(record);
       } else {

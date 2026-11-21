@@ -62,7 +62,7 @@ export type BackupKeyHeader = {
 };
 
 export type KeyHeader = {
-  readonly family: "evm" | "solana" | "bitcoin";
+  readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly address: string;
   readonly createdAt: number;
 };
@@ -249,7 +249,7 @@ export function parseBackupKeyHeader(text: string): BackupKeyHeader {
   return { id, factors, createdAt: asCreatedAt(object["createdAt"]) };
 }
 
-const FAMILY_VALUES = new Set(["evm", "solana", "bitcoin"]);
+const FAMILY_VALUES = new Set(["evm", "solana", "bitcoin", "tron"]);
 
 const isKeyFamily = (value: unknown): value is KeyHeader["family"] =>
   typeof value === "string" && FAMILY_VALUES.has(value);

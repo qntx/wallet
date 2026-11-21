@@ -106,27 +106,39 @@ describe("EvmChainAdapter", () => {
     expect(maxFee).toBe("0x1e");
   });
 
-  it("reads receipt status and the finalized tag", async () => {
+  it("reads the receipt block, the finalized tag and a block hash by height", async () => {
     const a = new EvmChainAdapter();
     const c = rpc({
       eth_getTransactionReceipt: {
         status: `0x${"1".repeat(40)}`,
         blockNumber: "0x5",
-        blockHash: `0x${"1".repeat(40)}`,
+        blockHash: `0x${"11".repeat(32)}`,
       },
-      eth_getBlockByNumber: { number: "0x6" },
+      eth_getBlockByNumber: { number: "0x6", hash: `0x${"22".repeat(32)}` },
     });
-    await expect(a.status(c, "0x0")).resolves.toBe("finalized");
+    await expect(a.receipt(c, "0x0")).resolves.toStrictEqual({
+      failed: false,
+      block: { hash: `0x${"11".repeat(32)}`, height: 5 },
+    });
+    await expect(a.finalizedHeight(c)).resolves.toBe(6);
+    await expect(a.blockHashAt(c, 5)).resolves.toBe(`0x${"22".repeat(32)}`);
     const pending = rpc({ eth_getTransactionReceipt: null });
-    await expect(a.status(pending, "0x0")).resolves.toBe("pending");
+    await expect(a.receipt(pending, "0x0")).resolves.toBeUndefined();
     const failed = rpc({
       eth_getTransactionReceipt: {
         status: "0x0",
         blockNumber: "0x5",
-        blockHash: `0x${"1".repeat(40)}`,
+        blockHash: `0x${"11".repeat(32)}`,
       },
     });
-    await expect(a.status(failed, "0x0")).resolves.toBe("failed");
+    await expect(a.receipt(failed, "0x0")).resolves.toMatchObject({ failed: true });
+    const malformed = rpc({
+      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x5", blockHash: "0x1" },
+    });
+    await expect(a.receipt(malformed, "0x0")).rejects.toBeInstanceOf(TypeError);
+    const tipless = rpc({ eth_getBlockByNumber: null });
+    await expect(a.finalizedHeight(tipless)).rejects.toBeInstanceOf(TypeError);
+    await expect(a.blockHashAt(tipless, 5)).resolves.toBeUndefined();
   });
 
   it("sums the L1 data fee and the operator fee read from the GasPriceOracle", async () => {

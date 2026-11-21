@@ -35,7 +35,17 @@ jobs:
       # GHSA-fc5q-39xc-vjpf (picomatch ReDoS, published 2026-11-17, no fixed release yet): reached
       # only through build and test tooling (tinyglobby in bumpp, vitest, nitrogen, madge,
       # react-native codegen), which glob this repository's own files. Remove once a fix ships.
-      - run: bun audit --ignore GHSA-fc5q-39xc-vjpf
+      # GHSA-848j-6mx2-7j84 (elliptic, no fixed release), GHSA-58qx-3vcg-4xpx and
+      # GHSA-96hv-2xvq-fx4p (ws 8.18.0, pinned exactly by @ethersproject/providers 5.8.0): reached
+      # only through @polymarket/clob-client-v2, a root devDependency that scripts/vectors/polymarket.ts
+      # uses as the signing oracle. It is never bundled and opens no socket there. Remove when the
+      # SDK drops ethers v5.
+      - run: >-
+          bun audit
+          --ignore GHSA-fc5q-39xc-vjpf
+          --ignore GHSA-848j-6mx2-7j84
+          --ignore GHSA-58qx-3vcg-4xpx
+          --ignore GHSA-96hv-2xvq-fx4p
 
   evm-anvil:
     runs-on: ubuntu-latest

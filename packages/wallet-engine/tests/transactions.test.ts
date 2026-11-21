@@ -35,7 +35,11 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
         ],
       },
       eth_sendRawTransaction: `0x${"ab".repeat(32)}`,
-      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" },
+      eth_getTransactionReceipt: {
+        status: "0x1",
+        blockNumber: "0x1",
+        blockHash: `0x${"11".repeat(32)}`,
+      },
       eth_getBlockByNumber: { number: "0x2" },
       eth_blockNumber: "0x1",
       eth_call: `0x${"00".repeat(32)}`,

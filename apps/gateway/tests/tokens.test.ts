@@ -153,6 +153,28 @@ describe("source parsers", () => {
     expect(entriesOf(parsed, "eip155:1").map((t) => t.symbol)).toStrictEqual(["0G", "USDC"]);
   });
 
+  it("drops Celo's native-alias CELO but keeps its real tokens", () => {
+    const parsed = byId("uniswap").parse({
+      tokens: [
+        {
+          chainId: 42220,
+          address: "0x471EcE3750Da237f93B8E339c536989b8978a438",
+          symbol: "CELO",
+          name: "Celo native asset",
+          decimals: 18,
+        },
+        {
+          chainId: 42220,
+          address: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+          symbol: "USDC",
+          name: "USD Coin",
+          decimals: 6,
+        },
+      ],
+    });
+    expect(entriesOf(parsed, "eip155:42220").map((t) => t.symbol)).toStrictEqual(["USDC"]);
+  });
+
   it("maps the coingecko hyperevm document to eip155:999", () => {
     const parsed = byId("coingecko").parse(fixture("tokens-coingecko-hyperevm"));
     expect([...parsed.keys()]).toStrictEqual(["eip155:999"]);
@@ -186,8 +208,8 @@ describe("buildTokenLists", () => {
     const solana = stored(store, SOLANA_MAINNET);
     expect(solana?.tokens.length).toBe(2);
     expect(stored(store, "eip155:999")?.tokens.length).toBe(4);
-    // uniswap's 7 networks (two empty in the excerpt) + coingecko + jupiter.
-    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(9);
+    // uniswap's 15 networks (most empty in the excerpt) + coingecko + jupiter.
+    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(17);
   });
 
   it("normalizes case and whitespace and drops entries failing the schema", async () => {

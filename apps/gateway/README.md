@@ -4,19 +4,19 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                     |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                     |
-| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                              |
-| `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                  |
-| `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards; Alchemy Transfers; `503 unavailable` on networks without it (staging)                                |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                            |
-| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                     |
-| `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                         |
-| `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                 |
-| `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                           |
+| Route                            | Behavior                                                                                                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                                                        |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                        |
+| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                    |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                                 |
+| `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                     |
+| `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `503 unavailable` on networks without it (staging) |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                               |
+| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                                                        |
+| `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                            |
+| `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                    |
+| `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                                                              |
 
 Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
@@ -158,8 +158,8 @@ After changing `wrangler.jsonc`, regenerate the committed runtime types:
 
 ## Deploy staging
 
-Staging serves testnets only (Sepolia, Base Sepolia, Solana devnet, Bitcoin signet and testnet4)
-through keyless public endpoints, at `https://wallet-gateway-staging.qntx.org`.
+Staging serves testnets only (every built-in EVM testnet, Solana devnet, Bitcoin signet and
+testnet4) through keyless public endpoints — two per network, listed in `src/config/networks.ts`, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
 bunx wrangler login                     # once; the staging account (env.staging.account_id)
@@ -171,8 +171,9 @@ Roll back with `bunx wrangler rollback --env staging`.
 ## Production
 
 Production serves mainnets only at `https://gateway.meowl.xyz` on account
-`9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): the eight EVM mainnets plus Solana through Alchemy first and
-dRPC second (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
+`9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): every built-in EVM mainnet (the order and the list are
+`src/config/networks.ts`; a test keeps it equal to the engine registry) plus Solana through Alchemy first and
+dRPC second (both provider accounts must have every one of these networks enabled) (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
 Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
 isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
 

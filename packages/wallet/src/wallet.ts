@@ -448,7 +448,7 @@ export class KernelWallet implements Wallet {
 
   readonly keys: KeysApi = {
     import: async (
-      family: "evm" | "solana" | "bitcoin",
+      family: "evm" | "solana" | "bitcoin" | "tron",
       secret: string | Uint8Array,
     ): Promise<KeyInfo> =>
       this.withVerifying(async () => {
@@ -726,10 +726,11 @@ export class KernelWallet implements Wallet {
 
 /**
  * `keys.import`'s `secret` in bytes: a string is the family's canonical text encoding — `0x` hex
- * for EVM, base58 for Solana — while a Uint8Array passes straight through to the kernel's checks.
+ * for EVM, base58 for Solana, bare hex for TRON — while a Uint8Array passes straight through to the
+ * kernel's checks.
  */
 function decodeKeySecret(
-  family: "evm" | "solana" | "bitcoin",
+  family: "evm" | "solana" | "bitcoin" | "tron",
   secret: string | Uint8Array,
 ): Uint8Array {
   if (secret instanceof Uint8Array) {
@@ -747,6 +748,12 @@ function decodeKeySecret(
     } catch {
       throw new WalletError("invalid-input", "a Solana private key is base58");
     }
+  }
+  if (family === "tron") {
+    if (!/^[0-9a-fA-F]{64}$/.test(secret)) {
+      throw new WalletError("invalid-input", "a TRON private key is 64-hex without 0x");
+    }
+    return hex.decode(secret);
   }
   throw new WalletError("invalid-input", `keys are not supported on ${family}`);
 }

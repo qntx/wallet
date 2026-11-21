@@ -20,6 +20,8 @@ const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const ETH = "eip155:1";
 const ARB = "eip155:42161";
 const HYPE = "eip155:999";
+const ARC = "eip155:5042";
+const SONIC = "eip155:146";
 const SEPOLIA = "eip155:11155111";
 const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
@@ -27,6 +29,8 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
   { id: ETH, providers: [{ id: "alchemy", url: "https://eth.alchemy.test/v2" }] },
   { id: ARB, providers: [{ id: "alchemy", url: "https://arb.alchemy.test/v2" }] },
   { id: HYPE, providers: [{ id: "alchemy", url: "https://hype.alchemy.test/v2" }] },
+  { id: ARC, providers: [{ id: "alchemy", url: "https://arc.alchemy.test/v2" }] },
+  { id: SONIC, providers: [{ id: "alchemy", url: "https://sonic.alchemy.test/v2" }] },
   { id: SEPOLIA, providers: [{ id: "other", url: "https://other.test" }] },
   { id: SOLANA, providers: [{ id: "alchemy", url: "https://sol.alchemy.test" }] },
 ];
@@ -35,6 +39,8 @@ const UPSTREAM: Readonly<Record<string, string>> = {
   [ETH]: "https://eth.alchemy.test",
   [ARB]: "https://arb.alchemy.test",
   [HYPE]: "https://hype.alchemy.test",
+  [ARC]: "https://arc.alchemy.test",
+  [SONIC]: "https://sonic.alchemy.test",
 };
 
 type Fixture = { readonly response: unknown };
@@ -114,8 +120,10 @@ describe("history page", () => {
         transfers: Array<Record<string, unknown>>;
       }>;
       cursor: string | null;
+      truncated: boolean;
     };
     expect(body.cursor).toBe("26429715");
+    expect(body.truncated).toBe(false);
     expect(body.items.map((i) => i.hash)).toStrictEqual([
       "0xda98151f32d7fb8c8daad5849363590ca179c6511b3f7d7e6d613d50072b0533",
       "0x979e19a53feb2c15122009b523c48f66df025de6ff54db5290c567eac324f181",
@@ -202,6 +210,7 @@ describe("history page", () => {
     const body = (await expectContract(res, historyResponse)) as {
       items: Array<{ hash: string; block: string }>;
       cursor: string | null;
+      truncated: boolean;
     };
     const drain = up.seen.slice(2);
     expect(drain).toHaveLength(2);
@@ -216,6 +225,39 @@ describe("history page", () => {
       "0x865952a53a753b3900906186fe6e24c19a1af6ab14f389575b390c6b5c03d92c",
     );
     expect(body.cursor).toBe("26429714");
+    // The drain round came back unkeyed — the whole block fit, no gap to report.
+    expect(body.truncated).toBe(false);
+  });
+
+  it("flags a drained frontier block that still does not fit one max page", async () => {
+    let round = 0;
+    const up = upstream({
+      to: () => {
+        round += 1;
+        const { transfers } = page(fixture("eth-to").response);
+        const pair = transfers.filter((t) => t["hash"]?.toString().startsWith("0x865952a5"));
+        // Every round answers keyed — the drain round's pageKey means the block is still split.
+        return { transfers: pair, pageKey: "k" };
+      },
+      from: () => ({ transfers: [] }),
+    });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(ETH, { address: OWNER }));
+    expect(res.status).toBe(200);
+    const body = (await expectContract(res, historyResponse)) as {
+      items: Array<{ hash: string; transfers: ReadonlyArray<unknown> }>;
+      cursor: string | null;
+      truncated: boolean;
+    };
+    expect(round).toBe(2);
+    // The drained transfers are kept; the cursor still walks past the block.
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.transfers).toHaveLength(2);
+    expect(body.cursor).toBe("26429714");
+    expect(body.truncated).toBe(true);
   });
 
   it("returns cursor null and dedupes a self-transfer when nothing pages", async () => {
@@ -274,6 +316,34 @@ describe("history page", () => {
     for (const call of up.seen) {
       expect(params(call)["category"]).toStrictEqual(["external", "erc20", "erc721", "erc1155"]);
     }
+  });
+
+  it("includes the internal category on Arc", async () => {
+    const up = upstream({ to: () => ({ transfers: [] }), from: () => ({ transfers: [] }) });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ARC]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(ARC, { address: OWNER }));
+    expect(res.status).toBe(200);
+    for (const call of up.seen) {
+      expect(params(call)["category"]).toStrictEqual([
+        "external",
+        "internal",
+        "erc20",
+        "erc721",
+        "erc1155",
+      ]);
+    }
+  });
+
+  it("503s a served network outside the transfers set without an upstream call", async () => {
+    const fetch = fakeFetch({});
+    const app = gateway({ fetch: fetch.fetch, networks: NETWORKS });
+    const res = await app.request(...request(SONIC, { address: OWNER }));
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ error: "unavailable" });
+    expect(fetch.calls).toHaveLength(0);
   });
 
   it("maps the hyperevm fixture: one erc20 and two natives", async () => {
@@ -380,9 +450,33 @@ describe("history page", () => {
     const res = await app.request(...request(ETH, { address: OWNER }));
     const body = (await expectContract(res, historyResponse)) as {
       items: Array<{ transfers: ReadonlyArray<unknown> }>;
+      truncated: boolean;
     };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.transfers).toHaveLength(100);
+    expect(body.truncated).toBe(true);
+  });
+
+  it("flags and cuts a page over 500 items", async () => {
+    const { transfers } = page(fixture("eth-to").response);
+    const one = transfers.find((t) => t["category"] === "erc20");
+    const many = Array.from({ length: 501 }, (_, i) => ({
+      ...one,
+      uniqueId: `0xitems:${i}`,
+      hash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+    }));
+    const up = upstream({ to: () => ({ transfers: many }), from: () => ({ transfers: [] }) });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
+      networks: NETWORKS,
+    });
+    const res = await app.request(...request(ETH, { address: OWNER }));
+    const body = (await expectContract(res, historyResponse)) as {
+      items: Array<{ hash: string }>;
+      truncated: boolean;
+    };
+    expect(body.items).toHaveLength(500);
+    expect(body.truncated).toBe(true);
   });
 
   it("charges a drain before sending it: a refused charge never reaches the upstream", async () => {

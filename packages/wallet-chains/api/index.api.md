@@ -64,7 +64,7 @@ export type AssetFlow = {
 export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction";
+export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "tron-contract" | "tron-field" | "tron-permission-update";
 
 // @public (undocumented)
 export class ChainError extends Error {
@@ -77,7 +77,7 @@ export class ChainError extends Error {
 export type ChainErrorCode = "unknown-field" | "chain-id-mismatch" | "invalid-quantity" | "invalid-address" | "invalid-typed-data" | "invalid-request" | "unsupported";
 
 // @public (undocumented)
-export type ChainFamily = "evm" | "solana" | "bitcoin";
+export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 // @public (undocumented)
 export type DisplayExcerpt = {
@@ -128,6 +128,23 @@ export type DisplayIntent = {
         readonly symbol?: string;
     };
     readonly programs?: ReadonlyArray<string>;
+    readonly tron?: {
+        readonly contractType: string;
+        readonly expiration: number;
+        readonly permissionId?: number;
+        readonly memo?: {
+            readonly kind: "text";
+            readonly text: string;
+        } | {
+            readonly kind: "bytes";
+            readonly hex: string;
+        };
+        readonly permissionUpdate?: {
+            readonly owner: TronPermission;
+            readonly witness?: TronPermission;
+            readonly actives: ReadonlyArray<TronPermission>;
+        };
+    };
     readonly blind?: BlindReason;
 };
 
@@ -171,6 +188,58 @@ type EvmTransactionBase = {
     readonly to?: string;
 };
 
+// @public
+export type HyperliquidAction = {
+    readonly kind: "usd-send" | "withdraw";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly amount: string;
+} | {
+    readonly kind: "spot-send";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly token: string;
+    readonly amount: string;
+} | {
+    readonly kind: "usd-class-transfer";
+    readonly chain: HyperliquidChain;
+    readonly amount: string;
+    readonly toPerp: boolean;
+} | {
+    readonly kind: "send-asset";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly sourceDex: string;
+    readonly destinationDex: string;
+    readonly token: string;
+    readonly amount: string;
+    readonly fromSubAccount?: string;
+} | {
+    readonly kind: "staking-deposit" | "staking-withdraw";
+    readonly chain: HyperliquidChain;
+    readonly wei: string;
+} | {
+    readonly kind: "token-delegate";
+    readonly chain: HyperliquidChain;
+    readonly validator: string;
+    readonly wei: string;
+    readonly undelegate: boolean;
+} | {
+    readonly kind: "approve-agent";
+    readonly chain: HyperliquidChain;
+    readonly agent: string;
+    readonly name: string;
+    readonly validUntil?: number;
+} | {
+    readonly kind: "approve-builder-fee";
+    readonly chain: HyperliquidChain;
+    readonly builder: string;
+    readonly maxFeeRate: string;
+};
+
+// @public
+export type HyperliquidChain = "Mainnet" | "Testnet";
+
 // @public (undocumented)
 export type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";
 
@@ -210,14 +279,50 @@ export type MessageContent = {
     readonly data: Readonly<Record<string, unknown>>;
     readonly seaport?: SeaportOrder;
     readonly safe?: SafeTransaction;
+    readonly hyperliquid?: HyperliquidAction;
+    readonly polymarket?: PolymarketContent;
     readonly fields?: ReadonlyArray<TypedDataLeaf>;
 };
 
 // @public
-export const messageContent: (bytes: Uint8Array, family: "evm" | "solana") => MessageContent;
+export const messageContent: (bytes: Uint8Array, family: "evm" | "solana" | "tron") => MessageContent;
 
 // @public
-export function parseSignIn(text: string, family: "evm" | "solana"): SignInParse | undefined;
+export function parseSignIn(text: string, family: "evm" | "solana" | "tron"): SignInParse | undefined;
+
+// @public
+export type PolymarketContent = {
+    readonly kind: "order";
+    readonly exchange: {
+        readonly address: string;
+        readonly name: string;
+        readonly version: "2" | "3";
+    };
+    readonly side: "buy" | "sell";
+    readonly tokenId: string;
+    readonly maker: string;
+    readonly signer: string;
+    readonly wallet: "account" | "proxy" | "safe" | "deposit-wallet";
+    readonly give: AssetAmount;
+    readonly receive: AssetAmount;
+    readonly price: {
+        readonly amount: string;
+        readonly exact: boolean;
+    };
+    readonly builder?: string;
+    readonly metadata?: string;
+} | {
+    readonly kind: "auth";
+    readonly address: string;
+    readonly timestamp: number;
+    readonly nonce: string;
+} | {
+    readonly kind: "batch";
+    readonly wallet: string;
+    readonly nonce: string;
+    readonly deadline: number;
+    readonly calls: ReadonlyArray<DisplayIntent>;
+};
 
 // @public
 export type SafeTransaction = {
@@ -331,6 +436,16 @@ export type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly typedData: string;
+} | {
+    readonly kind: "tron.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly rawData: Uint8Array;
+} | {
+    readonly kind: "tron.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
 };
 
 // @public
@@ -368,7 +483,61 @@ export type StakeAction = {
     {
     readonly kind: "lido-claim";
     readonly requestIds: ReadonlyArray<string>;
+} |
+/** FreezeBalanceV2 / UnfreezeBalanceV2. */
+    {
+    readonly kind: "tron-freeze" | "tron-unfreeze";
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+} |
+/** DelegateResourceContract; `lock` present only when the lock flag is set. */
+    {
+    readonly kind: "tron-delegate";
+    readonly receiver: string;
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+    readonly lock?: {
+        readonly blocks: string;
+    };
+} |
+/** UnDelegateResourceContract. */
+    {
+    readonly kind: "tron-undelegate";
+    readonly receiver: string;
+    readonly amount: AssetAmount;
+    readonly resource: TronResource;
+} | {
+    readonly kind: "tron-withdraw-unfrozen";
+} | {
+    readonly kind: "tron-cancel-unfreeze";
+} |
+/** WithdrawBalanceContract — claims the SR-voting reward balance. */
+    {
+    readonly kind: "tron-claim-rewards";
+} | {
+    readonly kind: "tron-vote";
+    readonly votes: ReadonlyArray<{
+        readonly witness: string;
+        readonly count: string;
+    }>;
 };
+
+// @public
+export type TronPermission = {
+    readonly type: "owner" | "witness" | "active";
+    readonly id: number;
+    readonly name: string;
+    readonly threshold: string;
+    readonly parentId: number;
+    readonly operations?: string;
+    readonly keys: ReadonlyArray<{
+        readonly address: string;
+        readonly weight: string;
+    }>;
+};
+
+// @public
+export type TronResource = "bandwidth" | "energy" | "tron-power";
 
 // @public
 export type TypedDataDomain = {

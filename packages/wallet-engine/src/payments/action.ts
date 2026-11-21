@@ -9,6 +9,7 @@ import type { VerifyFactor } from "@qntx/wallet";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { SparkControllerError } from "../spark/errors.ts";
+import type { SparkPaymentRecord } from "../spark/payments.ts";
 
 /**
  * What the host shows for a Spark, Lightning or exit request; `family` tells it apart from a chain
@@ -45,10 +46,12 @@ export type SparkResult =
   | { readonly kind: "lightning"; readonly payment: LightningPayment }
   | { readonly kind: "withdraw"; readonly exit: CooperativeExitResult }
   | { readonly kind: "token"; readonly transactionHash: string }
-  /** The commit call's response was lost; the payment may settle under `transferId`. */
-  | { readonly kind: "pending"; readonly transferId: string }
-  /** A token broadcast's response was lost; it may settle under the spent `inputOutputIds`. */
-  | { readonly kind: "token-pending"; readonly inputOutputIds: ReadonlyArray<string> };
+  /**
+   * The commit response was lost and the payment may have gone out: `payment` is its open record,
+   * which `SparkAccountState.payments` and `engine.history` keep following until the Spark operator
+   * settles or fails it.
+   */
+  | { readonly kind: "pending"; readonly payment: SparkPaymentRecord };
 
 /**
  * A validated, fixed Spark payment: everything that does not need the user's verification has
@@ -73,35 +76,19 @@ export type PreparedSparkAction = {
 
 /**
  * Runs the committing call: an "unknown" controller error means the response was lost after the
- * payment may have committed under `transferId` — the request reports `pending`, never `failed`.
+ * payment may have committed — the request reports `pending` with the open payment record, never
+ * `failed`.
  */
-export const pendingOnUnknown = async (
-  transferId: string,
-  run: () => Promise<SparkResult>,
-): Promise<SparkResult> => {
+export const pendingOnUnknown = async (run: () => Promise<SparkResult>): Promise<SparkResult> => {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof SparkControllerError && error.category === "unknown") {
-      return { kind: "pending", transferId };
-    }
-    throw error;
-  }
-};
-
-/**
- * The token variant of {@link pendingOnUnknown}: a token transfer commits under the spent output ids
- * its last `SparkTokenBroadcastError` carried, so an "unknown" outcome reports `token-pending` with
- * those ids — the request is submitted, never `failed`.
- */
-export const tokenPendingOnUnknown = async (
-  run: () => Promise<SparkResult>,
-): Promise<SparkResult> => {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof SparkControllerError && error.category === "unknown") {
-      return { kind: "token-pending", inputOutputIds: error.inputOutputIds ?? [] };
+    if (
+      error instanceof SparkControllerError &&
+      error.category === "unknown" &&
+      error.payment !== undefined
+    ) {
+      return { kind: "pending", payment: error.payment };
     }
     throw error;
   }

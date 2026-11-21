@@ -1,0 +1,190 @@
+{
+  "signer": "0x2222222222222222222222222222222222222222",
+  "cases": [
+    {
+      "name": "Monad native MON transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:143",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 143,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Monad\nSend 1 MON to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 MON"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Monad\n发送 1 MON 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 MON"
+        }
+      }
+    },
+    {
+      "name": "Monad USDC transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:143",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 143,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xa9059cbb00000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000f4240",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Monad\nSend 1 USDC to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 MON"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Monad\n发送 1 USDC 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 MON"
+        }
+      }
+    },
+    {
+      "name": "Unichain native ETH transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:130",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 130,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Unichain\nSend 1 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Unichain\n发送 1 ETH 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "ZKsync Era native ETH transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:324",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 324,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: ZKsync Era\nSend 1 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：ZKsync Era\n发送 1 ETH 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "Robinhood Chain Testnet native ETH transfer",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:46630",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 46630,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x00000000000000000000000000000000DeaDBeef"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Robinhood Chain Testnet\nSend 1 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Robinhood Chain Testnet\n发送 1 ETH 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    }
+  ]
+}

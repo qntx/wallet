@@ -1,35 +1,31 @@
+import type { SparkPaymentRecord } from "./payments.ts";
+
 /** SparkController error categories — never carry request bytes or secrets. */
 export type SparkErrorCategory =
   | "network"
   | "approval-required"
   | "insufficient-funds"
   | "rejected"
-  /** The payment may have committed; it settles under its transfer id. */
+  /** The payment may have committed; `payment` is its open record. */
   | "unknown"
   | "internal";
 
 export class SparkControllerError extends Error {
   readonly category: SparkErrorCategory;
-  /** The transfer id under which an "unknown" outcome may have committed. */
-  readonly transferId?: string;
-  /** Token transfers: the spent output ids under which an "unknown" outcome may have committed. */
-  readonly inputOutputIds?: ReadonlyArray<string>;
+  /** An "unknown" outcome's payment record — open until the Spark operator answers. */
+  readonly payment?: SparkPaymentRecord;
 
   constructor(
     category: SparkErrorCategory,
     message: string,
     cause?: unknown,
-    transferId?: string,
-    inputOutputIds?: ReadonlyArray<string>,
+    payment?: SparkPaymentRecord,
   ) {
     super(message, { cause });
     this.name = "SparkControllerError";
     this.category = category;
-    if (transferId !== undefined) {
-      this.transferId = transferId;
-    }
-    if (inputOutputIds !== undefined) {
-      this.inputOutputIds = inputOutputIds;
+    if (payment !== undefined) {
+      this.payment = payment;
     }
   }
 }

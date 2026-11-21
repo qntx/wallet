@@ -27,8 +27,17 @@ const DRAIN_MAX_COUNT = "0x3e8";
  * the address's own (a client can bloat one cheaply), so it is the request's 400, never an outage.
  */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/**
+ * Chains where Alchemy's `alchemy_getAssetTransfers` answers, probed live 2026-11-20 with the
+ * public demo key; networks that answered "EAPIs not enabled" or "Unsupported method" are absent —
+ * their history route replies 503 `unavailable` without an upstream call.
+ */
+const TRANSFERS_CHAINS: ReadonlySet<number> = new Set([
+  1, 8453, 42161, 10, 137, 56, 999, 43114, 4663, 143, 5042, 100, 80094, 480, 130, 59144, 42220, 324,
+  1868, 33139,
+]);
 /** Chains where Alchemy accepts the `internal` transfer category. */
-const INTERNAL_CATEGORY_CHAINS: ReadonlySet<number> = new Set([1, 137, 8453]);
+const INTERNAL_CATEGORY_CHAINS: ReadonlySet<number> = new Set([1, 137, 8453, 5042]);
 
 const CATEGORIES_ALL = ["external", "internal", "erc20", "erc721", "erc1155"] as const;
 const CATEGORIES_NO_INTERNAL = ["external", "erc20", "erc721", "erc1155"] as const;
@@ -79,6 +88,10 @@ type UpstreamPage = z.output<typeof upstreamPage>;
 /** The network's Alchemy providers re-labelled so history failures never open the RPC breaker. */
 export const historyProviders = (network: ResolvedNetwork): ReadonlyArray<ResolvedProvider> => {
   const out: ResolvedProvider[] = [];
+  const chainId = Number(network.id.split(":")[1]);
+  if (!TRANSFERS_CHAINS.has(chainId)) {
+    return out;
+  }
   for (const provider of network.providers) {
     if (provider.id === "alchemy") {
       out.push({ ...provider, id: "alchemy-transfers" });
@@ -300,6 +313,7 @@ const pageResult = (
 const buildResponse = (
   kept: ReadonlyArray<Kept>,
   cursor: HistoryResponse["cursor"],
+  drainTruncated: boolean,
 ): HistoryResponse => {
   const byHash = new Map<string, Kept[]>();
   for (const k of kept) {
@@ -310,6 +324,10 @@ const buildResponse = (
       group.push(k);
     }
   }
+  const truncated =
+    drainTruncated ||
+    byHash.size > HISTORY_ITEMS_MAX ||
+    [...byHash.values()].some((group) => group.length > HISTORY_TRANSFERS_MAX);
   const items = [...byHash.values()]
     .map((group) => {
       const [first] = group;
@@ -332,7 +350,7 @@ const buildResponse = (
       a.block === b.block ? (a.hash < b.hash ? -1 : 1) : Number(BigInt(b.block) - BigInt(a.block)),
     )
     .slice(0, HISTORY_ITEMS_MAX);
-  return { items, cursor };
+  return { items, cursor, truncated };
 };
 
 /**
@@ -377,13 +395,15 @@ export const alchemyHistoryPage = async (
     );
     let nextCursor = frontier === undefined ? null : decimalString(frontier);
 
+    let drainTruncated = false;
     if (kept.length === 0 && frontier !== undefined) {
       await chargeDrain();
       const drainPages = await round(
         { fromBlock: toHex(decimalString(frontier)), toBlock: toHex(decimalString(frontier)) },
         DRAIN_MAX_COUNT,
       );
-      if (drainPages.some((page) => page.pageKey !== undefined)) {
+      drainTruncated = drainPages.some((page) => page.pageKey !== undefined);
+      if (drainTruncated) {
         // The frontier block holds more than a max page: keep what came — one bounded round
         // is the whole cost this route pays for it.
         log(JSON.stringify({ event: "history-drain-truncated" }));
@@ -417,7 +437,7 @@ export const alchemyHistoryPage = async (
         });
       }
     }
-    const response = buildResponse(mapped, nextCursor);
+    const response = buildResponse(mapped, nextCursor, drainTruncated);
     if (!accepts(historyResponse, response)) {
       throw new ProviderFailure("malformed", false);
     }

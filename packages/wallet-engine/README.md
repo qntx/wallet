@@ -72,9 +72,14 @@ the package root.
 - `engine.transactions` — tracked transactions (`store`, `txById`) and coin control; it builds,
   signs and records nothing itself — sends, replacements and dApp signatures go through
   `requests`. A broadcast whose outcome is unknown resolves `submitted` and the engine
-  rebroadcasts the same signed bytes — never re-send it. Coin control: `setUtxosFrozen` /
-  `frozenUtxos` persist per-account freezes, and `inputs` on a send picks the outpoints (naming
-  a UTXO protected as a possible inscription carrier is the opt-in to spend it).
+  rebroadcasts the same signed bytes — never re-send it. Inclusion is not finality: a
+  transaction in a block carries `block` (hash and height — EVM block number, Bitcoin height,
+  Solana slot) and stays tracked at a low frequency until `final` — EVM `finalized` tag, six
+  Bitcoin confirmations, Solana `finalized` commitment. A reorg returns it to `submitted`
+  (polling and rebroadcast resume) and a `final` transaction is never polled again. Coin
+  control: `setUtxosFrozen` / `frozenUtxos` persist per-account freezes, and `inputs` on a
+  send picks the outpoints (naming a UTXO protected as a possible inscription carrier is the
+  opt-in to spend it).
 - `engine.requests` — every wallet-owned outflow becomes a request here (`prepare`, `approve`,
   `reject`, `outcome`, the sign log).
   `approve(id, method, { verify, acknowledged })` — `requiredAcknowledgement(request)` returns
@@ -84,7 +89,8 @@ the package root.
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
 - `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
-  entries carry `verified`, `origin` and `flags`.
+  entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
+  left unpagable gaps.
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).
@@ -95,8 +101,11 @@ the package root.
   independent of the lock state.
 - `engine.spark` — Spark reads and receives, with token balances (`SparkAccountState.tokens`); it
   has no send method — every payment, token sends included, goes through `requests`. Token sends
-  are `pay` with `token` and resolve `"token"`; `pending` and `token-pending` results mean the
-  commit response was lost — show them in flight, never failed, and never pay again. Cooperative
+  are `pay` with `token` and resolve `"token"`. Every payment is recorded before it is sent; a
+  `pending` result carries that record (`SparkPaymentRecord`) when the commit response was lost —
+  show it in flight, never failed, and never pay again. The engine reconciles open records against
+  the Spark operator (after unlock, then on a backed-off poll) and lists them in
+  `SparkAccountState.payments` and in `engine.history` until they settle or fail. Cooperative
   exits take `amountSats` (what arrives at the Bitcoin address, the debit adds the quoted fee)
   and require `maxFeeSats`.
 - `engine.accounts` — wallets and account groups, selection, names,

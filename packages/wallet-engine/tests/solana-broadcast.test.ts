@@ -247,7 +247,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     await timers.fire(POLL_MS);
     expect(w.wires).toStrictEqual([rawOf(tx)]); // byte-identical rebroadcast
 
-    w.statuses.set(hashOf(tx), { confirmationStatus: "confirmed", err: null });
+    w.statuses.set(hashOf(tx), { confirmationStatus: "confirmed", err: null, slot: w.env.slot });
     await timers.fire(POLL_MS);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
   });
@@ -274,7 +274,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     await timers.fire(POLL_MS);
     expect(w.wires).toStrictEqual([rawOf(tx)]);
 
-    w.statuses.set(hashOf(tx), { confirmationStatus: "confirmed", err: null });
+    w.statuses.set(hashOf(tx), { confirmationStatus: "confirmed", err: null, slot: w.env.slot });
     await timers.fire(POLL_MS);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
   });

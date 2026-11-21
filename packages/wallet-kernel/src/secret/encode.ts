@@ -8,14 +8,17 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 const hexChar = (nibble: number): number => (nibble < 10 ? 0x30 + nibble : 0x61 + (nibble - 10)); // "0".."9", "a".."f"
 
-/** ASCII bytes of `0x` + lowercase hex — the EVM private-key encoding. */
-export function encodeHexAscii(bytes: Uint8Array): Uint8Array {
-  const out = new Uint8Array(2 + bytes.length * 2);
-  out[0] = 0x30; // "0"
-  out[1] = 0x78; // "x"
+/**
+ * ASCII bytes of lowercase hex — `0x`-prefixed for EVM, bare for TRON (the TronLink/tronweb
+ * private-key encoding).
+ */
+export function encodeHexAscii(bytes: Uint8Array, prefix: "0x" | ""): Uint8Array {
+  const head = utf8ToBytes(prefix);
+  const out = new Uint8Array(head.length + bytes.length * 2);
+  out.set(head);
   for (const [i, b] of bytes.entries()) {
-    out[2 + i * 2] = hexChar(Math.floor(b / 16));
-    out[3 + i * 2] = hexChar(b % 16);
+    out[head.length + i * 2] = hexChar(Math.floor(b / 16));
+    out[head.length + i * 2 + 1] = hexChar(b % 16);
   }
   return out;
 }

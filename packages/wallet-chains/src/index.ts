@@ -15,7 +15,7 @@ export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
 
-export type ChainFamily = "evm" | "solana" | "bitcoin";
+export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
 export type AccountRef =
   | {
@@ -90,6 +90,19 @@ export type SignRequest =
       readonly network: string;
       readonly account: AccountRef;
       readonly typedData: string;
+    }
+  | {
+      readonly kind: "tron.transaction";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** `Transaction.raw` wire bytes — the only thing a TRON signature authorises. */
+      readonly rawData: Uint8Array;
+    }
+  | {
+      readonly kind: "tron.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly message: Uint8Array;
     };
 
 export type EvmAccessListEntry = {
@@ -157,7 +170,13 @@ export type BlindReason =
   | "safe-refund-unbounded" // a SafeTx with gasPrice > 0: the refund total depends on executor gas
   // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
   // Token) that the signer takes part in
-  | "core-instruction";
+  | "core-instruction"
+  // a TRON contract type the wallet does not describe (unsupported or unknown enum value)
+  | "tron-contract"
+  // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range
+  | "tron-field"
+  // a TRON permission update: decoded in full, but it hands account control to other keys
+  | "tron-permission-update";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -239,6 +258,21 @@ export type ApprovalChange =
       readonly verified: false;
     };
 
+/** The TRON resource a freeze/delegate acts on (ResourceCode 0/1/2). */
+export type TronResource = "bandwidth" | "energy" | "tron-power";
+
+/** A decoded TRON account permission; `operations` is the 32-byte bitmap hex, actives only. */
+export type TronPermission = {
+  readonly type: "owner" | "witness" | "active";
+  readonly id: number;
+  readonly name: string;
+  /** Decimal string. */
+  readonly threshold: string;
+  readonly parentId: number;
+  readonly operations?: string;
+  readonly keys: ReadonlyArray<{ readonly address: string; readonly weight: string }>;
+};
+
 /** One staking operation shown on the signing surface. */
 export type StakeAction =
   | { readonly kind: "create"; readonly account: string; readonly lamports: string }
@@ -260,7 +294,36 @@ export type StakeAction =
       readonly owner: string;
     }
   /** Lido claim of finalised withdrawal requests on Ethereum mainnet (ETH to the caller). */
-  | { readonly kind: "lido-claim"; readonly requestIds: ReadonlyArray<string> };
+  | { readonly kind: "lido-claim"; readonly requestIds: ReadonlyArray<string> }
+  /** FreezeBalanceV2 / UnfreezeBalanceV2. */
+  | {
+      readonly kind: "tron-freeze" | "tron-unfreeze";
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+    }
+  /** DelegateResourceContract; `lock` present only when the lock flag is set. */
+  | {
+      readonly kind: "tron-delegate";
+      readonly receiver: string;
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+      readonly lock?: { readonly blocks: string };
+    }
+  /** UnDelegateResourceContract. */
+  | {
+      readonly kind: "tron-undelegate";
+      readonly receiver: string;
+      readonly amount: AssetAmount;
+      readonly resource: TronResource;
+    }
+  | { readonly kind: "tron-withdraw-unfrozen" }
+  | { readonly kind: "tron-cancel-unfreeze" }
+  /** WithdrawBalanceContract — claims the SR-voting reward balance. */
+  | { readonly kind: "tron-claim-rewards" }
+  | {
+      readonly kind: "tron-vote";
+      readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: string }>;
+    };
 
 export type IntentWarning = {
   readonly kind: string;
@@ -315,6 +378,133 @@ export type SafeTransaction = {
   };
 };
 
+/** The Hyperliquid environment a user-signed action targets (`hyperliquidChain`). */
+export type HyperliquidChain = "Mainnet" | "Testnet";
+
+/**
+ * A recognized Hyperliquid user-signed action (EIP-712 `HyperliquidSignTransaction` domain). The
+ * signable shapes and field lists are nktkas's `…Types` constants (`src/api/exchange/_methods/*.ts`
+ * in @nktkas/hyperliquid); amounts are the exact decimal strings signed, addresses EIP-55
+ * checksummed.
+ */
+export type HyperliquidAction =
+  | {
+      readonly kind: "usd-send" | "withdraw";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      readonly amount: string;
+    }
+  | {
+      readonly kind: "spot-send";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      /** `NAME:0x<tokenId>` — the name is requester text the signature does not verify on-chain. */
+      readonly token: string;
+      readonly amount: string;
+    }
+  | {
+      readonly kind: "usd-class-transfer";
+      readonly chain: HyperliquidChain;
+      readonly amount: string;
+      /** `true` moves spot → perps, `false` perps → spot. */
+      readonly toPerp: boolean;
+    }
+  | {
+      readonly kind: "send-asset";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      /** `""` is perps, `"spot"` spot, otherwise a builder DEX name. */
+      readonly sourceDex: string;
+      readonly destinationDex: string;
+      readonly token: string;
+      readonly amount: string;
+      /** Absent when the signed `fromSubAccount` is the empty string. */
+      readonly fromSubAccount?: string;
+    }
+  | {
+      readonly kind: "staking-deposit" | "staking-withdraw";
+      readonly chain: HyperliquidChain;
+      /** HYPE amount in wei (8 decimals), decimal string. */
+      readonly wei: string;
+    }
+  | {
+      readonly kind: "token-delegate";
+      readonly chain: HyperliquidChain;
+      readonly validator: string;
+      readonly wei: string;
+      readonly undelegate: boolean;
+    }
+  | {
+      readonly kind: "approve-agent";
+      readonly chain: HyperliquidChain;
+      readonly agent: string;
+      /** The agent name with any ` valid_until <ms>` suffix stripped; `""` is an unnamed agent. */
+      readonly name: string;
+      /** Milliseconds since epoch the agent's authority ends, when the name carries one. */
+      readonly validUntil?: number;
+    }
+  | {
+      readonly kind: "approve-builder-fee";
+      readonly chain: HyperliquidChain;
+      readonly builder: string;
+      /** The signed percent string, e.g. `"0.1%"`. */
+      readonly maxFeeRate: string;
+    };
+
+/**
+ * A recognized Polymarket typed-data request: a CLOB order (EOA, proxy, Safe or the ERC-7739
+ * deposit-wallet envelope), the CLOB L1 auth signature, or a deposit-wallet call batch. Every
+ * alternative is produced only by the exact document shapes in `evm/polymarket.ts`.
+ */
+export type PolymarketContent =
+  | {
+      readonly kind: "order";
+      /** The allow-listed exchange the order verifies against. */
+      readonly exchange: {
+        readonly address: string;
+        readonly name: string;
+        readonly version: "2" | "3";
+      };
+      readonly side: "buy" | "sell";
+      /** The outcome token id, decimal string. */
+      readonly tokenId: string;
+      /** The order's funding address and signer, EIP-55. */
+      readonly maker: string;
+      readonly signer: string;
+      /** Whose funds the order commits: the account, its CREATE2 proxy/Safe, or a deposit wallet. */
+      readonly wallet: "account" | "proxy" | "safe" | "deposit-wallet";
+      /**
+       * What the order gives up: BUY pays pUSD `makerAmount`, SELL pays `makerAmount` outcome
+       * shares (asset = the market's outcome-token contract, `tokenId` set).
+       */
+      readonly give: AssetAmount;
+      /** What the order receives at minimum: BUY shares `takerAmount`, SELL pUSD `takerAmount`. */
+      readonly receive: AssetAmount;
+      /** PUSD base units per whole share, rounded down; `exact` false when it does not divide. */
+      readonly price: { readonly amount: string; readonly exact: boolean };
+      /** Signed bytes32 values shown verbatim, only when not zero; lowercase hex. */
+      readonly builder?: string;
+      readonly metadata?: string;
+    }
+  | {
+      readonly kind: "auth";
+      /** The account the credentials are derived for, EIP-55. */
+      readonly address: string;
+      /** Unix seconds. */
+      readonly timestamp: number;
+      readonly nonce: string;
+    }
+  | {
+      readonly kind: "batch";
+      /** The deposit wallet the batch executes on, EIP-55. */
+      readonly wallet: string;
+      readonly nonce: string;
+      /** Unix seconds after which the batch lapses (uint48). */
+      readonly deadline: number;
+      /** The decoded call intents; empty when the batch is blind (oversize). */
+      readonly calls: ReadonlyArray<DisplayIntent>;
+    };
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -338,6 +528,10 @@ export type MessageContent =
       readonly seaport?: SeaportOrder;
       /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
       readonly safe?: SafeTransaction;
+      /** A recognized Hyperliquid user-signed action under the `HyperliquidSignTransaction` domain. */
+      readonly hyperliquid?: HyperliquidAction;
+      /** A recognized Polymarket order, CLOB auth signature or deposit-wallet batch. */
+      readonly polymarket?: PolymarketContent;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is
@@ -360,7 +554,10 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
  * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
  * in 7×10⁷ keccak outputs are; grindable in minutes).
  */
-export const messageContent = (bytes: Uint8Array, family: "evm" | "solana"): MessageContent => {
+export const messageContent = (
+  bytes: Uint8Array,
+  family: "evm" | "solana" | "tron",
+): MessageContent => {
   let text: string;
   try {
     text = utf8.decode(bytes);
@@ -437,6 +634,23 @@ export type DisplayIntent = {
    * first-appearance order; present iff non-empty (so iff a Solana transaction is `opaque`).
    */
   readonly programs?: ReadonlyArray<string>;
+  /** TRON transaction fields the prompt shows on every request. */
+  readonly tron?: {
+    readonly contractType: string;
+    /** Unix ms. */
+    readonly expiration: number;
+    /** Present only when the contract's Permission_id is non-zero. */
+    readonly permissionId?: number;
+    readonly memo?:
+      | { readonly kind: "text"; readonly text: string }
+      | { readonly kind: "bytes"; readonly hex: string };
+    /** Full permission content of an AccountPermissionUpdateContract. */
+    readonly permissionUpdate?: {
+      readonly owner: TronPermission;
+      readonly witness?: TronPermission;
+      readonly actives: ReadonlyArray<TronPermission>;
+    };
+  };
   /** Why the request is blind — the signer can neither show it nor bound what it authorises. */
   readonly blind?: BlindReason;
 };

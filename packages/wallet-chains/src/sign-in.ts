@@ -80,7 +80,14 @@ const parseValid = (text: string, family: "evm" | "solana"): MessageFields => {
  * sign-in preamble; `malformed` when it has one but is not a conforming message for the family
  * (ERC-4361: wallets should warn about that shape).
  */
-export function parseSignIn(text: string, family: "evm" | "solana"): SignInParse | undefined {
+export function parseSignIn(
+  text: string,
+  family: "evm" | "solana" | "tron",
+): SignInParse | undefined {
+  // TRON has no sign-in standard — a sign-in preamble is always malformed.
+  if (family === "tron") {
+    return text.includes(PREAMBLE) ? { status: "malformed", claims: claims(text) } : undefined;
+  }
   try {
     return { status: "valid", fields: parseValid(text, family) };
   } catch {

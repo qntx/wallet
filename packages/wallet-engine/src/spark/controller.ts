@@ -1,8 +1,9 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import {
   bitcoinAddressScript,
+  decodeBolt11,
   decodeSparkAddress,
   decodeTokenIdentifier,
   encodeSparkAddress,
@@ -32,6 +33,8 @@ import type { EngineStore, EngineCollection } from "../store/port.ts";
 import { categorize, SparkControllerError } from "./errors.ts";
 import { encodePaymentNote, parsePaymentNote } from "./notes.ts";
 import type { PaymentNote, SparkActivity } from "./notes.ts";
+import { SparkPaymentLedger } from "./payments.ts";
+import type { SparkPaymentDraft, SparkPaymentRecord } from "./payments.ts";
 import { sparkStore } from "./store.ts";
 
 export type SparkAccountState = {
@@ -44,6 +47,11 @@ export type SparkAccountState = {
   readonly recent?: ReadonlyArray<SparkActivity>;
   /** Token balances in base units, refreshed alongside `recent`; absent until the first read. */
   readonly tokens?: ReadonlyArray<SparkTokenBalance>;
+  /**
+   * This session's payment records by id — every open one, plus those that settled or failed since
+   * unlock; absent until the account has one.
+   */
+  readonly payments?: Readonly<Record<string, SparkPaymentRecord>>;
 };
 
 export type SparkTokenBalance = {
@@ -81,7 +89,25 @@ export type SparkControllerOptions = {
   readonly createClient: SparkClientFactory;
 };
 
-const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
+/** The `SparkControllerState.accounts` key of an account. */
+export const sparkAccountKey = (ref: SparkAccountRef): string =>
+  `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
+const key = sparkAccountKey;
+
+/** A commit whose outcome the retries could not settle; `recorded` reports it as unknown. */
+class UnknownOutcomeError extends Error {
+  readonly inputOutputIds: ReadonlyArray<string> | undefined;
+
+  constructor(message: string, cause: unknown) {
+    super(message, { cause });
+    this.name = "UnknownOutcomeError";
+    this.inputOutputIds =
+      cause instanceof SparkTokenBroadcastError ? cause.inputOutputIds : undefined;
+  }
+}
+
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 /** An exit may only pay an address on the account's own L1 network. */
 const assertExitAddress = (address: string, network: SparkNetwork): void => {
@@ -140,6 +166,7 @@ export class SparkController extends Controller<SparkControllerState> {
   private engineStore: EngineStore | undefined;
   private readonly accounts = new Map<string, SparkAccountRef>();
   private readonly clients = new Map<string, SparkClient>();
+  private readonly ledgers = new Map<string, SparkPaymentLedger>();
   private readonly recentSeq = new Map<string, number>();
   private readonly tokensSeq = new Map<string, number>();
   private readonly aborts = new Map<string, AbortController>();
@@ -193,6 +220,8 @@ export class SparkController extends Controller<SparkControllerState> {
     this.aborts.delete(k);
     this.clients.get(k)?.close();
     this.clients.delete(k);
+    this.ledgers.get(k)?.stop();
+    this.ledgers.delete(k);
     this.update((s) => {
       if (!(k in s.accounts)) {
         return s;
@@ -209,8 +238,12 @@ export class SparkController extends Controller<SparkControllerState> {
       this.aborts.get(k)?.abort();
       client.close();
     }
+    for (const ledger of this.ledgers.values()) {
+      ledger.stop();
+    }
     this.aborts.clear();
     this.clients.clear();
+    this.ledgers.clear();
     this.engineStore = undefined;
     await Promise.resolve();
     this.update((s) =>
@@ -240,6 +273,18 @@ export class SparkController extends Controller<SparkControllerState> {
         fetch: this.options.fetch,
       });
       this.clients.set(k, client);
+      const ledger = new SparkPaymentLedger({
+        collection: this.engineStore.collection(`spark-payments:${k}`),
+        client,
+        now: this.options.now,
+        setTimer: this.options.setTimer,
+        logger: this.options.logger,
+        onChange: (payments) => {
+          this.patch(k, { payments });
+        },
+      });
+      this.ledgers.set(k, ledger);
+      void ledger.load();
       const abort = new AbortController();
       this.aborts.set(k, abort);
       // The initial sync lives in the event loop's catch-up pass: a transient failure at
@@ -288,6 +333,8 @@ export class SparkController extends Controller<SparkControllerState> {
           });
           void this.refreshRecent(k, client);
           void this.refreshTokens(k, client);
+          // Every catch-up also asks the operator about the payments still open.
+          void this.ledgers.get(k)?.reconcile();
           const iterator = client.events(signal)[Symbol.asyncIterator]();
           let open = true;
           while (open) {
@@ -402,6 +449,7 @@ export class SparkController extends Controller<SparkControllerState> {
       // A stale seq or a closed client (lockAll cleared the map) must not write.
       if (this.recentSeq.get(k) === seq && this.clients.get(k) === client) {
         this.patch(k, { recent: items });
+        this.ledgers.get(k)?.observe(payments);
       }
     } catch (error) {
       this.options.logger.warn(`spark recent refresh failed for ${k}`, error);
@@ -440,11 +488,54 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   private clientFor(ref: SparkAccountRef): SparkClient {
+    return this.connection(ref).client;
+  }
+
+  /** A running account's client and payment ledger — they start and stop together. */
+  private connection(ref: SparkAccountRef): {
+    readonly client: SparkClient;
+    readonly ledger: SparkPaymentLedger;
+  } {
     const client = this.clients.get(key(ref));
-    if (client === undefined) {
+    const ledger = this.ledgers.get(key(ref));
+    if (client === undefined || ledger === undefined) {
       throw new SparkControllerError("internal", "account is not connected");
     }
-    return client;
+    return { client, ledger };
+  }
+
+  /**
+   * Runs a committing call under a payment record persisted first — a failed write throws before
+   * anything is sent. An unknown outcome leaves the record open and throws `unknown` carrying it; a
+   * definite error fails it; a call that returns keeps it `submitted` until the operator's history
+   * settles it, unless `settled` reads the final state from the result itself.
+   */
+  private async recorded<T>(
+    ledger: SparkPaymentLedger,
+    draft: SparkPaymentDraft,
+    call: () => Promise<T>,
+    settled?: (result: T) => Pick<SparkPaymentRecord, "transactionHash">,
+  ): Promise<T> {
+    const record = await ledger.begin(draft);
+    let result: T;
+    try {
+      result = await call();
+    } catch (error) {
+      if (error instanceof UnknownOutcomeError) {
+        const payment = ledger.resolve(record, {
+          state: "unknown",
+          error: errorText(error.cause),
+          ...(error.inputOutputIds === undefined ? {} : { inputOutputIds: error.inputOutputIds }),
+        });
+        throw new SparkControllerError("unknown", error.message, error.cause, payment);
+      }
+      ledger.resolve(record, { state: "failed", error: errorText(error) });
+      throw error;
+    }
+    if (settled !== undefined) {
+      ledger.resolve(record, { state: "settled", ...settled(result) });
+    }
+    return result;
   }
 
   private async guarded<T>(fn: () => Promise<T>): Promise<T> {
@@ -462,12 +553,14 @@ export class SparkController extends Controller<SparkControllerState> {
    * Runs a committing client call with up to three idempotent retries (1 s, 2 s, 4 s backoff):
    * `retryable` decides which error means the outcome is unknown and the same call may repeat,
    * `call` receives the previous attempt's error so a retry can carry the handle it reported. A
-   * definite error propagates; exhaustion is reported by `exhausted`.
+   * definite error on the first attempt propagates; after an uncertain attempt nothing is definite
+   * any more — the earlier attempt may have committed — so exhaustion and any later error throw
+   * {@link UnknownOutcomeError} with `message`.
    */
   private async committing<T>(
     retryable: (error: unknown) => boolean,
     call: (lastError: unknown) => Promise<T>,
-    exhausted: (lastError: unknown) => SparkControllerError,
+    message: string,
   ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= 3; attempt += 1) {
@@ -476,7 +569,7 @@ export class SparkController extends Controller<SparkControllerState> {
         return await call(lastError);
       } catch (error) {
         if (!retryable(error)) {
-          throw error;
+          throw attempt === 0 ? error : new UnknownOutcomeError(message, lastError);
         }
         lastError = error;
         if (attempt < 3) {
@@ -487,19 +580,18 @@ export class SparkController extends Controller<SparkControllerState> {
         }
       }
     }
-    throw exhausted(lastError);
+    throw new UnknownOutcomeError(message, lastError);
   }
 
   /**
    * A sats payment commits under its transfer id: a network failure leaves the outcome unknown, so
    * the same call retries under the same id — the SO/SSP deduplicates it.
    */
-  private async committed<T>(transferId: string, call: () => Promise<T>): Promise<T> {
+  private async committed<T>(call: () => Promise<T>): Promise<T> {
     return this.committing(
       (error) => categorize(error) === "network",
       async () => call(),
-      (lastError) =>
-        new SparkControllerError("unknown", "payment outcome unknown", lastError, transferId),
+      "payment outcome unknown",
     );
   }
 
@@ -515,14 +607,7 @@ export class SparkController extends Controller<SparkControllerState> {
       (error) => error instanceof SparkTokenBroadcastError,
       async (lastError) =>
         call(lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined),
-      (lastError) =>
-        new SparkControllerError(
-          "unknown",
-          "token transfer outcome unknown",
-          lastError,
-          undefined,
-          lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined,
-        ),
+      "token transfer outcome unknown",
     );
   }
 
@@ -597,7 +682,7 @@ export class SparkController extends Controller<SparkControllerState> {
     },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
-      const client = this.clientFor(ref);
+      const { client, ledger } = this.connection(ref);
       const receiver = decodeSparkAddress(params.receiver);
       if (receiver.network !== ref.network) {
         throw new SparkControllerError("rejected", "receiver address is on a different network");
@@ -612,12 +697,22 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const transfer = await this.committed(params.transferId, async () =>
-        client.transfers.send({
+      const transfer = await this.recorded(
+        ledger,
+        {
+          id: params.transferId,
+          kind: "transfer",
           receiver: params.receiver,
-          amountSats: params.amountSats,
-          transferId: params.transferId,
-        }),
+          amount: String(params.amountSats),
+        },
+        async () =>
+          this.committed(async () =>
+            client.transfers.send({
+              receiver: params.receiver,
+              amountSats: params.amountSats,
+              transferId: params.transferId,
+            }),
+          ),
       );
       void this.refreshRecent(key(ref), client);
       return transfer;
@@ -639,13 +734,15 @@ export class SparkController extends Controller<SparkControllerState> {
       tokenIdentifier: string;
       /** Base units, 1…2^128−1. */
       amount: bigint;
+      /** The request's idempotent transfer id — keys the payment record. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the transfer; a throw there means nothing may be sent. */
       commit: () => void;
     },
   ): Promise<string> {
     return this.guarded(async () => {
-      const client = this.clientFor(ref);
+      const { client, ledger } = this.connection(ref);
       const receiver = decodeSparkAddress(params.receiver);
       if (receiver.network !== ref.network) {
         throw new SparkControllerError("rejected", "receiver address is on a different network");
@@ -667,6 +764,14 @@ export class SparkController extends Controller<SparkControllerState> {
       if (params.amount <= 0n || params.amount > U128_MAX) {
         throw new SparkControllerError("rejected", "token amount must be 1…2^128−1 base units");
       }
+      // Until an uncertain send of this token resolves, its inputs must not be spent by another:
+      // "inputs no longer owned" is how that send is recognized as settled.
+      if (ledger.holdsToken(params.tokenIdentifier)) {
+        throw new SparkControllerError(
+          "rejected",
+          "an earlier transfer of this token is still unresolved",
+        );
+      }
       await this.options.spark.approve({
         account: ref,
         intent: {
@@ -679,13 +784,25 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const transactionHash = await this.committedToken(async (inputOutputIds) =>
-        client.tokens.transfer({
-          tokenIdentifier: params.tokenIdentifier,
-          amount: params.amount,
+      const transactionHash = await this.recorded(
+        ledger,
+        {
+          id: params.transferId,
+          kind: "token",
           receiver: params.receiver,
-          ...(inputOutputIds === undefined ? {} : { inputOutputIds }),
-        }),
+          amount: params.amount.toString(),
+          tokenIdentifier: params.tokenIdentifier,
+        },
+        async () =>
+          this.committedToken(async (inputOutputIds) =>
+            client.tokens.transfer({
+              tokenIdentifier: params.tokenIdentifier,
+              amount: params.amount,
+              receiver: params.receiver,
+              ...(inputOutputIds === undefined ? {} : { inputOutputIds }),
+            }),
+          ),
+        (hash) => ({ transactionHash: hash }),
       );
       void this.refreshTokens(key(ref), client);
       void this.refreshRecent(key(ref), client);
@@ -749,7 +866,16 @@ export class SparkController extends Controller<SparkControllerState> {
     },
   ): Promise<LightningPayment> {
     return this.guarded(async () => {
-      const client = this.clientFor(ref);
+      const { client, ledger } = this.connection(ref);
+      const decoded = decodeBolt11(params.invoice);
+      const amountSats =
+        params.amountSats ??
+        (decoded.amountMsat === undefined
+          ? undefined
+          : Math.ceil(Number(decoded.amountMsat) / 1000));
+      if (amountSats === undefined) {
+        throw new SparkControllerError("rejected", "amountless invoice requires amountSats");
+      }
       await this.options.spark.approve({
         account: ref,
         intent: {
@@ -761,13 +887,23 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const payment = await this.committed(params.transferId, async () =>
-        client.lightning.pay({
-          invoice: params.invoice,
-          maxFeeSats: params.maxFeeSats,
-          ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
-          transferId: params.transferId,
-        }),
+      const payment = await this.recorded(
+        ledger,
+        {
+          id: params.transferId,
+          kind: "lightning",
+          receiver: bytesToHex(decoded.payee),
+          amount: String(amountSats),
+        },
+        async () =>
+          this.committed(async () =>
+            client.lightning.pay({
+              invoice: params.invoice,
+              maxFeeSats: params.maxFeeSats,
+              ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
+              transferId: params.transferId,
+            }),
+          ),
       );
       if (params.note !== undefined) {
         try {
@@ -803,7 +939,7 @@ export class SparkController extends Controller<SparkControllerState> {
     },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
-      const client = this.clientFor(ref);
+      const { client, ledger } = this.connection(ref);
       const parsed = parseSparkInvoice(params.invoice, {
         network: ref.network,
         now: this.options.now(),
@@ -845,11 +981,24 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const result = await this.committed(params.transferId, async () =>
-        client.invoices.pay(params.invoice, {
-          amount: amountSats,
-          transferId: params.transferId,
-        }),
+      const result = await this.recorded(
+        ledger,
+        {
+          id: params.transferId,
+          kind: "transfer",
+          receiver: encodeSparkAddress({
+            network: ref.network,
+            identityPublicKey: parsed.receiverIdentityPublicKey,
+          }),
+          amount: String(amountSats),
+        },
+        async () =>
+          this.committed(async () =>
+            client.invoices.pay(params.invoice, {
+              amount: amountSats,
+              transferId: params.transferId,
+            }),
+          ),
       );
       void this.refreshRecent(key(ref), client);
       // invoices.pay returns a string for token invoices — unreachable after the pre-approval
@@ -945,7 +1094,7 @@ export class SparkController extends Controller<SparkControllerState> {
     },
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
-      const client = this.clientFor(ref);
+      const { client, ledger } = this.connection(ref);
       assertExitAddress(params.address, ref.network);
       const { feeSats, exitSats } = await this.settleExitFee(client, params);
       if (feeSats > params.maxFeeSats) {
@@ -968,14 +1117,24 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const exit = await this.committed(params.transferId, async () =>
-        client.withdrawals.cooperativeExit({
-          address: params.address,
-          speed: params.speed,
-          maxFeeSats: feeSats,
-          amountSats: exitSats,
-          transferId: params.transferId,
-        }),
+      const exit = await this.recorded(
+        ledger,
+        {
+          id: params.transferId,
+          kind: "exit",
+          receiver: params.address,
+          amount: String(params.amountSats),
+        },
+        async () =>
+          this.committed(async () =>
+            client.withdrawals.cooperativeExit({
+              address: params.address,
+              speed: params.speed,
+              maxFeeSats: feeSats,
+              amountSats: exitSats,
+              transferId: params.transferId,
+            }),
+          ),
       );
       void this.refreshRecent(key(ref), client);
       return exit;

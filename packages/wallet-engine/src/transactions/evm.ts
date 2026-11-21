@@ -58,8 +58,10 @@ import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
 import {
   accountAddressOf,
+  awaitingFinality,
   EVM_BATCH_LIMIT,
   failTx,
+  includedPoll,
   newId,
   replacementStaleReason,
 } from "./route.ts";
@@ -76,7 +78,7 @@ import type {
   SignParams,
   SignResult,
   TrackedTransaction,
-  TxState,
+  TxPoll,
 } from "./route.ts";
 
 /** Consecutive polls that must see the nonce mined without our receipt before the tx is settled. */
@@ -192,18 +194,25 @@ export type EvmRoute = {
       };
     },
   ) => Promise<PreparedRequest>;
-  readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
+  readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   readonly prepareReplace: (
     ctx: RouteContext,
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
   ) => Promise<PreparedRequest>;
-  /** Re-holds the nonce of a live transaction reloaded at unlock. */
+  /**
+   * Re-anchors the nonces of a transaction reloaded at unlock: held for a live one, recorded
+   * consumed for one already in a block.
+   */
   readonly resume: (tx: TrackedTransaction) => void;
   /**
-   * A terminal transaction frees its nonces: a receipt (confirmed or failed) also raises the
-   * account's consumed floor; anything else may never have reached the network, so the nonce is
-   * simply reusable.
+   * A reorg returned the transaction to the pool: its consumed nonces are held again so a new send
+   * can never take them while it retries. No-op without a build record.
+   */
+  readonly reopen: (tx: TrackedTransaction) => void;
+  /**
+   * A settled transaction frees its nonces: a receipt (its `block`) also records them consumed;
+   * anything else may never have reached the network, so the nonce is simply reusable.
    */
   readonly settle: (tx: TrackedTransaction) => void;
 };
@@ -877,6 +886,39 @@ const nftRead = async <T>(
   return primary;
 };
 
+/**
+ * A fee `read` charges beyond `gasUsed × effectiveGasPrice` for `tx`, the larger of the primary and
+ * independent reads (the chain charges it either way; the figure only drives display and checks).
+ * Unknown when the primary read fails.
+ */
+const beyondGasRead = async (
+  ctx: RouteContext,
+  network: string,
+  tx: EvmUnsignedTransaction,
+  flags: Array<RequestCheckCode | undefined>,
+  read: (client: PublicClient, tx: EvmUnsignedTransaction) => Promise<bigint>,
+): Promise<bigint | undefined> => {
+  const { networks } = ctx.options;
+  let fee: bigint;
+  try {
+    fee = await read(networks.client(network), tx);
+  } catch {
+    flags.push("reads-unverified");
+    return undefined;
+  }
+  const independent = networks.independentClient(network);
+  if (independent.kind === "available") {
+    try {
+      const other = await read(independent.client, tx);
+      flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
+      fee = other > fee ? other : fee;
+    } catch {
+      flags.push("reads-unverified");
+    }
+  }
+  return fee;
+};
+
 /** Per-controller route — nonce ownership and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
@@ -894,36 +936,21 @@ export const createEvmRoute = (): EvmRoute => {
     readonly nativeValue: bigint | undefined;
   };
 
-  /**
-   * OP Stack L1 data fee plus operator fee for `tx`, the larger of the primary and independent
-   * reads (the chain charges it either way; the figure only drives display and checks). Unknown
-   * when the primary read fails.
-   */
-  const opStackFee = async (
+  /** What the network's fee model charges beyond `gasUsed × effectiveGasPrice`, if anything. */
+  // eslint-disable-next-line typescript/consistent-return -- the switch is exhaustive; a new fee model kind fails typecheck
+  const beyondGasFee = async (
     ctx: RouteContext,
     network: string,
     tx: EvmUnsignedTransaction,
     flags: Array<RequestCheckCode | undefined>,
   ): Promise<bigint | undefined> => {
-    const { networks } = ctx.options;
-    let fee: bigint;
-    try {
-      fee = await evm.opStackFee(networks.client(network), tx);
-    } catch {
-      flags.push("reads-unverified");
-      return undefined;
+    switch (ctx.options.networks.info(network).feeModel?.kind) {
+      case "op-stack":
+        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t));
+      case "execution":
+      case undefined:
+        return undefined;
     }
-    const independent = networks.independentClient(network);
-    if (independent.kind === "available") {
-      try {
-        const other = await evm.opStackFee(independent.client, tx);
-        flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
-        fee = other > fee ? other : fee;
-      } catch {
-        flags.push("reads-unverified");
-      }
-    }
-    return fee;
   };
 
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
@@ -977,7 +1004,7 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     const feed = evm.applyFee(unsigned, quote);
-    const l1 = info.opStack === true ? await opStackFee(ctx, network, feed, flags) : undefined;
+    const l1 = await beyondGasFee(ctx, network, feed, flags);
     if (
       spec.nativeValue !== undefined &&
       feeReachesAmount(
@@ -1831,10 +1858,7 @@ export const createEvmRoute = (): EvmRoute => {
           }
         : { ...original, ...feeFields };
     const request = evm.toSignRequest(unsigned, account, chainId);
-    const l1 =
-      networks.info(old.network).opStack === true
-        ? await opStackFee(ctx, old.network, unsigned, flags)
-        : undefined;
+    const l1 = await beyondGasFee(ctx, old.network, unsigned, flags);
     const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 
@@ -1888,15 +1912,50 @@ export const createEvmRoute = (): EvmRoute => {
     };
   };
 
-  const receiptState = async (
+  /**
+   * A receipt settles inclusion; `final` compares its block against the endpoint's `finalized` tag
+   * — a failing tag read answers `final: false` and is rechecked at the next poll.
+   */
+  const included = async (
     client: ReturnType<RouteContext["options"]["networks"]["client"]>,
-    hash: string,
-  ): Promise<TxState | undefined> => {
-    const state = await evm.status(client, hash);
-    if (state === "pending") {
-      return undefined;
+    found: NonNullable<Awaited<ReturnType<typeof evm.receipt>>>,
+  ): Promise<TxPoll> => ({
+    kind: "included",
+    state: found.failed ? "failed" : "confirmed",
+    block: found.block,
+    final: await evm.finalizedHeight(client).then(
+      (height) => found.block.height <= height,
+      () => false,
+    ),
+  });
+
+  /**
+   * The finality recheck for a transaction already in `tx.block`: the receipt confirms or moves its
+   * block, a different hash at that height proves the reorg, and a lagging endpoint (same hash, or
+   * no block that far) proves nothing. At most three reads; errors propagate.
+   */
+  const recheck = async (
+    client: ReturnType<RouteContext["options"]["networks"]["client"]>,
+    tx: TrackedTransaction & { readonly block: NonNullable<TrackedTransaction["block"]> },
+  ): Promise<TxPoll | undefined> => {
+    const found = await evm.receipt(client, tx.hash ?? "");
+    if (found !== undefined) {
+      return includedPoll(
+        tx,
+        found.failed ? "failed" : "confirmed",
+        found.block,
+        found.block.height <= (await evm.finalizedHeight(client)),
+      );
     }
-    return state === "finalized" ? "confirmed" : state;
+    const current = await evm.blockHashAt(client, tx.block.height);
+    if (
+      current !== undefined &&
+      tx.block.hash !== undefined &&
+      current.toLowerCase() !== tx.block.hash.toLowerCase()
+    ) {
+      return { kind: "reorged" };
+    }
+    return undefined;
   };
 
   const anyMined = async (
@@ -1905,27 +1964,33 @@ export const createEvmRoute = (): EvmRoute => {
     siblings: TrackedTransaction[],
   ): Promise<boolean> => {
     const client = ctx.options.networks.client(tx.network);
-    const states = await Promise.all(
-      siblings.map(async (t) => (t.hash === undefined ? undefined : receiptState(client, t.hash))),
+    const mined = await Promise.all(
+      siblings.map(async (t) =>
+        t.hash === undefined ? false : (await evm.receipt(client, t.hash)) !== undefined,
+      ),
     );
-    return states.some((state) => state !== undefined);
+    return mined.some(Boolean);
   };
 
   /**
-   * Returns the terminal state once the receipt lands, `dropped` or `replaced` once the nonce is
-   * settled without our receipt, or `undefined` to keep polling. While the node does not know the
-   * transaction it is rebroadcast with exponential backoff.
+   * Returns `included` once the receipt lands, `reorged` when a confirmed transaction's block
+   * leaves the chain, `ended` once the nonce is settled without our receipt, or `undefined` to keep
+   * polling. While the node does not know the transaction it is rebroadcast with exponential
+   * backoff.
    */
-  const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState | undefined> => {
+  const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
     if (tx.hash === undefined) {
-      return "failed";
+      return { kind: "ended", state: "failed" };
     }
     const { hash } = tx;
     const client = ctx.options.networks.client(tx.network);
-    const settled = await receiptState(client, hash);
-    if (settled !== undefined) {
+    if (tx.block !== undefined) {
+      return recheck(client, { ...tx, block: tx.block });
+    }
+    const found = await evm.receipt(client, hash);
+    if (found !== undefined) {
       watching.delete(tx.id);
-      return settled;
+      return included(client, found);
     }
     const record = tx.evm;
     const { raw } = tx;
@@ -1941,17 +2006,20 @@ export const createEvmRoute = (): EvmRoute => {
     watching.set(tx.id, watch);
 
     if ((await evm.confirmedCount(client, record.from)) > tx.nonce) {
-      const late = await receiptState(client, hash);
+      const late = await evm.receipt(client, hash);
       if (late !== undefined) {
         watching.delete(tx.id);
-        return late;
+        return included(client, late);
       }
       watch.consumed += 1;
       if (watch.consumed < DROP_CONFIRMATIONS) {
         return undefined;
       }
       watching.delete(tx.id);
-      return (await anyMined(ctx, tx, sameNonce(ctx, tx, record.from))) ? "replaced" : "dropped";
+      return {
+        kind: "ended",
+        state: (await anyMined(ctx, tx, sameNonce(ctx, tx, record.from))) ? "replaced" : "dropped",
+      };
     }
     watch.consumed = 0;
 
@@ -1980,7 +2048,7 @@ export const createEvmRoute = (): EvmRoute => {
         (await evm.known(independent.client, hash).catch(() => true));
       if (!elsewhere) {
         watching.delete(tx.id);
-        return "dropped";
+        return { kind: "ended", state: "dropped" };
       }
     }
     if (watch.nextResubmit === undefined || now >= watch.nextResubmit) {
@@ -2020,13 +2088,25 @@ export const createEvmRoute = (): EvmRoute => {
       if (record === undefined) {
         return;
       }
+      if (awaitingFinality(tx)) {
+        nonces.spend(tx.id, tx.network, record.from, heldNoncesOf(tx));
+        return;
+      }
       nonces.reserve(tx.id, tx.network, record.from, heldNoncesOf(tx), true);
     },
+    reopen: (tx) => {
+      watching.delete(tx.id);
+      const record = tx.evm;
+      if (record === undefined) {
+        return;
+      }
+      nonces.reopen(tx.id, tx.network, record.from, heldNoncesOf(tx));
+    },
     settle: (tx) => {
-      if (tx.state === "confirmed" || tx.state === "failed") {
-        nonces.consume(tx.id);
-      } else {
+      if (tx.block === undefined) {
         nonces.release(tx.id);
+      } else {
+        nonces.consume(tx.id);
       }
     },
   };

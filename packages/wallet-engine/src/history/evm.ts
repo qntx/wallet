@@ -481,6 +481,7 @@ export const evmHistoryStream = (
   network: string,
   address: string,
   cached: EvmHistoryCache,
+  onTruncated: () => void,
 ): Stream<HistoryEntry> => {
   const info = networkById(network);
   if (info === undefined) {
@@ -517,6 +518,9 @@ export const evmHistoryStream = (
         const page = parseWith(historyResponse, await res.json());
         if (page === undefined) {
           throw new Error(`history ${network}: malformed response`);
+        }
+        if (page.truncated) {
+          onTruncated();
         }
         const { cursor: nextCursor } = page;
         cursor = nextCursor ?? undefined;

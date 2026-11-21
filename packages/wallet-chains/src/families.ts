@@ -16,7 +16,13 @@ import type { PROGRAM_IDS } from "./solana/ids.ts";
 
 export type FamilyClaim =
   | { readonly surface: "evm.call"; readonly callee: "token-table" }
+  | { readonly surface: "tron.call"; readonly callee: "token-table" }
   | { readonly surface: "evm.typed-data"; readonly primaryType: RegExp }
+  | {
+      readonly surface: "evm.typed-data";
+      readonly domainName: string;
+      readonly primaryType?: RegExp;
+    }
   | {
       readonly surface: "evm.typed-data";
       readonly verifyingContract: "token-table" | "permit2" | "seaport";
@@ -30,10 +36,50 @@ export type RecognisedFamily = {
 };
 
 export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
+  /* The phantom agent's connectionId is a hash of the msgpack action, a commitment no prompt can
+     bound; main and imported accounts never get it described (the kernel's agent key signs L1
+     actions through its own command). First: an `Exchange`/`Agent` document must not fall through
+     to a wider claim. */
+  {
+    family: "Hyperliquid L1",
+    claim: { surface: "evm.typed-data", domainName: "Exchange", primaryType: /^Agent$/ },
+    nearMiss: "typed-data-commitment",
+  },
+  /* Hyperliquid user-signed actions under the HyperliquidSignTransaction domain. */
+  {
+    family: "Hyperliquid",
+    claim: { surface: "evm.typed-data", domainName: "HyperliquidSignTransaction" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Polymarket CLOB orders under the shared exchange domain (docs resources/contracts.md). */
+  {
+    family: "Polymarket exchange",
+    claim: { surface: "evm.typed-data", domainName: "Polymarket CTF Exchange" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Polymarket CLOB L1 auth that derives API credentials (clob-client-v2 signing/eip712.ts). */
+  {
+    family: "Polymarket CLOB auth",
+    claim: { surface: "evm.typed-data", domainName: "ClobAuthDomain" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Polymarket deposit-wallet envelopes: ERC-7739 order wrappers and call batches (docs
+     trading/wallets-auth.md). */
+  {
+    family: "Polymarket deposit wallet",
+    claim: { surface: "evm.typed-data", domainName: "DepositWallet" },
+    nearMiss: "typed-data-variant",
+  },
   /* ERC-20/721/1155 transfer, approve and setApprovalForAll selectors to a listed token. */
   {
     family: "built-in token",
     claim: { surface: "evm.call", callee: "token-table" },
+    nearMiss: "token-function",
+  },
+  /* The same selectors in a TriggerSmartContract to a listed TRC-20 token. */
+  {
+    family: "built-in TRON token",
+    claim: { surface: "tron.call", callee: "token-table" },
     nearMiss: "token-function",
   },
   /* EIP-2612 and DAI Permit on any contract, and the Permit2 forms when addressed to Permit2. */

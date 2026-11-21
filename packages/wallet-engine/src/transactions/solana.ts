@@ -49,9 +49,9 @@ import type {
   RouteContext,
   SendParams,
   TrackedTransaction,
-  TxState,
+  TxPoll,
 } from "./route.ts";
-import { accountAddressOf, errorMessage, newId, failTx } from "./route.ts";
+import { accountAddressOf, errorMessage, includedPoll, newId, failTx } from "./route.ts";
 
 /** The network's base signature fee, lamports per signature. */
 const BASE_FEE_LAMPORTS = 5000n;
@@ -738,26 +738,52 @@ export const submitDappSolana = async (
 export const pollSolana = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
-): Promise<TxState | undefined> => {
+): Promise<TxPoll | undefined> => {
   if (tx.hash === undefined) {
-    return "failed";
+    return { kind: "ended", state: "failed" };
   }
   const rpc = ctx.options.networks.solanaRpc(tx.network);
+  if (tx.block !== undefined) {
+    /* The finality recheck: the entry reports its commitment. No entry, or only a processed one,
+       proves a reorg only when the answering bank is already at or past the persisted slot and
+       the entry — if any — names a different one; a bank behind the slot proves nothing. */
+    const status = await solana.signatureStatus(rpc, tx.hash);
+    const { entry } = status;
+    if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+      return includedPoll(
+        tx,
+        entry.failed ? "failed" : "confirmed",
+        { height: entry.slot },
+        entry.commitment === "finalized",
+      );
+    }
+    return status.slot !== undefined &&
+      status.slot >= BigInt(tx.block.height) &&
+      (entry === undefined || entry.slot !== tx.block.height)
+      ? { kind: "reorged" }
+      : undefined;
+  }
   /* With a blockhash bound the tip is read before the status, so a transaction landing between
      the reads can never be finalised `dropped` by an answer a stale bank produced. */
   const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
   const status = await solana.signatureStatus(rpc, tx.hash);
-  if (status.state !== "pending") {
-    return status.state === "finalized" ? "confirmed" : status.state;
+  const { entry } = status;
+  if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+    return {
+      kind: "included",
+      state: entry.failed ? "failed" : "confirmed",
+      block: { height: entry.slot },
+      final: entry.commitment === "finalized",
+    };
   }
   if (tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0)) {
     /* Expired, but `dropped` only when proven: the node has no entry at any commitment and the
        status answer came from a bank at least as far along as the height proof. Anything else —
        a stale-bank status, a processed-only entry — stays tracked and is not rebroadcast: the
        blockhash is dead, resending can only hit "already processed" or nothing. */
-    return status.seen || status.slot === undefined || status.slot < tip.slot
+    return status.entry !== undefined || status.slot === undefined || status.slot < tip.slot
       ? undefined
-      : "dropped";
+      : { kind: "ended", state: "dropped" };
   }
   if (tx.raw !== undefined) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");

@@ -7,11 +7,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { decodeEvm } from "../src/evm/index.ts";
 import { isBlindIntent } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
+import { decodeTron } from "../src/tron/decode.ts";
 
 type VectorCase = {
   readonly name: string;
   readonly request: SignRequest & {
     readonly message?: { readonly $bytes: string };
+    readonly rawData?: { readonly $bytes: string };
     readonly typedData?: unknown;
   };
   readonly verifiability: string;
@@ -23,29 +25,44 @@ const vectors = JSON.parse(
     resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
     "utf8",
   ),
-) as { signer: string; cases: VectorCase[] };
+) as { signers: { evm: string; tron: string }; cases: VectorCase[] };
 
 /** Rehydrates the JSON-only request forms (`$bytes`, parsed typed-data doc). */
 const request = (v: VectorCase): SignRequest => {
-  if (v.request.kind === "evm.personal-message") {
-    return { ...v.request, message: hexToBytes(v.request.message.$bytes.slice(2)) };
+  if (v.request.kind === "evm.personal-message" || v.request.kind === "tron.message") {
+    return {
+      ...v.request,
+      message: hexToBytes(v.request.message.$bytes.replace(/^0x/, "")),
+    };
   }
   if (v.request.kind === "evm.typed-data") {
     return { ...v.request, typedData: JSON.stringify(v.request.typedData) };
   }
+  if (v.request.kind === "tron.transaction") {
+    return { ...v.request, rawData: hexToBytes(v.request.rawData.$bytes.replace(/^0x/, "")) };
+  }
   return v.request;
 };
+
+/** The decoder and signer for the request's family. */
+const familyOf = (
+  kind: string,
+): { decode: typeof decodeEvm | typeof decodeTron; signer: string } =>
+  kind.startsWith("tron.")
+    ? { decode: decodeTron, signer: vectors.signers.tron }
+    : { decode: decodeEvm, signer: vectors.signers.evm };
 
 const blindOf = (intent: DisplayIntent): string | null => intent.blind ?? null;
 
 describe("signing-classes vectors", () => {
   it("has one case per expected class and blind reason", () => {
-    expect(vectors.cases).toHaveLength(20);
-    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(20);
+    expect(vectors.cases).toHaveLength(61);
+    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(61);
   });
 
   it.each(vectors.cases)("$name", (v) => {
-    const intent = decodeEvm(request(v), vectors.signer);
+    const { decode, signer } = familyOf(v.request.kind);
+    const intent = decode(request(v), signer);
     expect(intent.verifiability).toBe(v.verifiability);
     expect(blindOf(intent)).toBe(v.blind);
     expect(isBlindIntent(intent)).toBe(v.blind !== null);
