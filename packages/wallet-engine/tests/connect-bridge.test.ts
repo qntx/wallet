@@ -62,6 +62,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
   const handledSolana: Array<{ origin: string; request: SolanaRequest }> = [];
   const handledBitcoin: Array<{ origin: string; request: BitcoinRequest }> = [];
+  const handledTron: Array<{ origin: string; request: { method: string; params?: unknown } }> = [];
   const phishing = new Set<string>();
   let now = 0;
   const options: BrowserBridgeOptions = {
@@ -104,6 +105,13 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
       handle: async (origin, req) => {
         handledBitcoin.push({ origin, request: req });
         return Promise.resolve("bitcoin-result");
+      },
+      subscribe: () => () => undefined,
+    },
+    tron: {
+      handle: async (origin, req) => {
+        handledTron.push({ origin, request: req });
+        return Promise.resolve("tron-result");
       },
       subscribe: () => () => undefined,
     },

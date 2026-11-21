@@ -542,11 +542,11 @@ export type BitcoinWalletAccount = {
 
 // @public
 export class BitcoinWalletHandler implements BitcoinHandler {
-    constructor(options: Options$1_2);
+    constructor(options: Options$2);
     // (undocumented)
     handle(origin: string, request: BitcoinRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options$1_2;
+    readonly options: Options$2;
     // (undocumented)
     subscribe(listener: (event: BitcoinEvent) => void): () => void;
 }
@@ -769,6 +769,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     sessionAccounts(origin: string, network: string): SessionAccounts | undefined;
     setActiveIdentity(ref: NostrKeyRef | undefined): Promise<void>;
     setCurrentNetwork(origin: string, network: string): Promise<void>;
+    setTronNetwork(origin: string, network: string): Promise<void>;
     // (undocumented)
     touch(origin: string): Promise<void>;
 }
@@ -783,6 +784,7 @@ type ConnectionControllerOptions = {
     readonly selectedGroup: () => ConnectionAccountGroup | undefined;
     readonly evmAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
     readonly solanaAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
+    readonly tronAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
     readonly bitcoinAddress: (group: ConnectionAccountGroup, network: string, purpose: BitcoinPurpose) => Promise<string>;
     readonly enabledNetworks: () => ReadonlyArray<string>;
     readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
@@ -822,6 +824,7 @@ export type ConnectionSession = {
     readonly group?: ConnectionAccountGroup;
     readonly identity?: NostrKeyRef;
     readonly currentNetwork: string;
+    readonly tronNetwork?: string;
     readonly nostrPolicy?: NostrPolicy;
     readonly lightningPolicy?: LightningPolicy;
     readonly createdAt: number;
@@ -1496,6 +1499,20 @@ type Options$1 = {
 
 // @public (undocumented)
 type Options$1_2 = {
+    readonly connections: SolanaConnections;
+    readonly requests: SolanaRequests;
+    readonly solanaAccount: (group: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string) => Promise<{
+        readonly address: string;
+        readonly publicKey: Uint8Array;
+    }>;
+    readonly solanaNetwork: () => string;
+};
+
+// @public (undocumented)
+type Options$2 = {
     readonly connections: BitcoinConnections;
     readonly requests: BitcoinRequests;
     readonly bitcoinAccount: (group: {
@@ -1536,16 +1553,12 @@ type Options_2 = {
 
 // @public (undocumented)
 type Options_3 = {
-    readonly connections: SolanaConnections;
-    readonly requests: SolanaRequests;
-    readonly solanaAccount: (group: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-    }, network: string) => Promise<{
-        readonly address: string;
-        readonly publicKey: Uint8Array;
-    }>;
-    readonly solanaNetwork: () => string;
+    readonly connections: TronConnections;
+    readonly requests: TronRequests;
+    readonly transactions: Pick<TransactionController, "submitDappTron">;
+    readonly tronNetworks: () => ReadonlyArray<string>;
+    readonly tronNetwork: () => string;
+    readonly isTracked: (network: string, address: string) => boolean;
 };
 
 // @public
@@ -1663,7 +1676,7 @@ export type PendingConnection = {
     readonly id: string;
     readonly origin: ConnectionOrigin;
     readonly kind: "connect" | "network";
-    readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122";
+    readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122" | "tron";
     readonly network?: string;
     readonly activate?: boolean;
     readonly createdAt: number;
@@ -2206,11 +2219,11 @@ export type SolanaWalletAccount = {
 
 // @public
 export class SolanaWalletHandler implements SolanaHandler {
-    constructor(options: Options_3);
+    constructor(options: Options$1_2);
     // (undocumented)
     handle(origin: string, request: SolanaRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options_3;
+    readonly options: Options$1_2;
     subscribe(listener: (event: SolanaEvent) => void): () => void;
 }
 
@@ -3031,6 +3044,16 @@ type TronApi = {
 };
 
 // @public (undocumented)
+type TronConnections = Pick<ConnectionController, "checkOrigin" | "session" | "authorize" | "sessionAccounts" | "setTronNetwork" | "request" | "touch" | "revoke" | "getState" | "store">;
+
+// @public (undocumented)
+type TronEvent = {
+    readonly name: "tronStateChanged";
+    readonly origin: string;
+    readonly state: TronProviderState;
+};
+
+// @public (undocumented)
 export type TronFeeQuote = {
     readonly expected: string;
     readonly max: string;
@@ -3054,10 +3077,38 @@ export type TronFeeQuote = {
 };
 
 // @public (undocumented)
+type TronHandler = {
+    readonly handle: (origin: string, request: TronRequest) => Promise<unknown>;
+    readonly subscribe: (listener: (event: TronEvent) => void) => () => void;
+};
+
+// @public (undocumented)
 type TronIndexerPath = keyof typeof TRON_INDEXER_PATHS;
 
 // @public (undocumented)
 type TronNodePath = keyof typeof TRON_NODE_PATHS;
+
+// @public
+type TronProviderAddress = {
+    readonly base58: string;
+    readonly hex: string;
+};
+
+// @public
+type TronProviderState = {
+    readonly address: TronProviderAddress | false;
+    readonly chainId: string;
+    readonly genesis: string;
+};
+
+// @public
+type TronRequest = {
+    readonly method: string;
+    readonly params?: unknown;
+};
+
+// @public (undocumented)
+type TronRequests = Pick<RequestController, "prepare" | "outcome">;
 
 // @public
 type TronSignInput = {
@@ -3067,6 +3118,16 @@ type TronSignInput = {
     readonly network: string;
     readonly request: SignRequest;
 };
+
+// @public
+class TronWalletHandler implements TronHandler {
+    constructor(options: Options_3);
+    // (undocumented)
+    handle(origin: string, request: TronRequest): Promise<unknown>;
+    // (undocumented)
+    readonly options: Options_3;
+    subscribe(listener: (event: TronEvent) => void): () => void;
+}
 
 // @public
 export type TxBlock = {
@@ -3113,6 +3174,7 @@ export type WalletEngine = {
     readonly webln: Pick<WeblnHandler, "handle">;
     readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
     readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
+    readonly tronWallet: Pick<TronWalletHandler, "handle" | "subscribe">;
     readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
     readonly spark: HostController<SparkController, "history" | "accountBalance" | "receiveAddress" | "createInvoice" | "newDepositAddress" | "paymentStatus" | "quoteExit" | "registerLightningAddress" | "unregisterLightningAddress">;
     readonly accounts: HostController<AccountTreeController, "imported" | "addGroup" | "addGroups" | "renameWallet" | "renameGroup" | "setHidden" | "select" | "bind" | "unbind" | "bindingOf" | "discoverSpark" | "discoverGroups" | "refreshTotals">;
