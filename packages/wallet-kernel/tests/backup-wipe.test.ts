@@ -11,7 +11,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import type * as envelope from "../src/vault/envelope.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
@@ -329,5 +329,36 @@ describe("backup.restore secret wiping", () => {
       ).toBe("integrity");
     });
     expectPlaintextWiped(sliced);
+  });
+
+  it("wipes the DEK the gate minted when a fresh-vault restore fails past the gate", async () => {
+    const { envelope } = await envelopeWithPasswordFactor();
+    /* The gate's DEK is Secret.take(random(32)) — the buffer the platform returns becomes the
+       secret's bytes, so a wrapping random that keeps the live buffer observes its wipe. */
+    const inner = seededRandom(8);
+    const live: Uint8Array[] = [];
+    const b = createHarness({
+      random: (n) => {
+        const buf = inner.random(n);
+        live.push(buf);
+        return buf;
+      },
+    });
+    await b.settle();
+    const before = live.length;
+    // Decode throws after the gate minted a DEK nothing owns — commitRecords never ran to take it.
+    payloadOpen.override = new Uint8Array([2, 0x01]);
+    expect(
+      errCode(
+        await b.call("backup.restore", {
+          envelope,
+          backupFactor: backupPasswordF(),
+          factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+        }),
+      ),
+    ).toBe("integrity");
+    const deks = live.slice(before).filter((buf) => buf.length === 32);
+    expect(deks.length).toBeGreaterThan(0);
+    expect(deks.every(zeroed)).toBe(true);
   });
 });

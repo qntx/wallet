@@ -684,6 +684,18 @@ describe("verifiability + decode", () => {
       symbol: "SOL",
     });
   });
+
+  it("System createAccount funded by a second signer is not an outflow of ours", () => {
+    const ix = getCreateAccountInstruction({
+      payer: createNoopSigner(OTHER_KEY),
+      newAccount: createNoopSigner(DEST),
+      lamports: 1000n,
+      space: 100n,
+      programAddress: address("11111111111111111111111111111111"),
+    });
+    const intent = decodeSolana(req(compile([ix])) as never, FEE_PAYER);
+    expect(intent.outflows).toStrictEqual([]);
+  });
 });
 
 const STAKE_PROG = "Stake11111111111111111111111111111111111111";
@@ -1308,5 +1320,60 @@ describe("core-program near misses are blind", () => {
     expect(intent.verifiability).toBe("full");
     expect(intent.blind).toBeUndefined();
     expect(intent.outflows).toStrictEqual([]);
+  });
+
+  it.each([
+    [
+      "System AdvanceNonceAccount",
+      /* [nonce, authority] — the RecentBlockhashes sysvar is missing. */
+      ix(PROGRAM_IDS.system, [w0(DEST), sgn(FEE_PAYER)], u32le(4)),
+    ],
+    [
+      "SPL Token InitializeAccount",
+      /* [account, mint, owner] — the rent sysvar is missing. */
+      ix(PROGRAM_IDS.token, [w0(SRC), ro(MINT), sgn(FEE_PAYER)], new Uint8Array([1])),
+    ],
+    [
+      "SPL Token Revoke",
+      /* [account, owner, extra] — one account too many. */
+      ix(PROGRAM_IDS.token, [w0(SRC), sgn(FEE_PAYER), ro(DEST)], new Uint8Array([5])),
+    ],
+  ])("a %s with the wrong account count the signer signs is blind", (_name, instruction) => {
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBe("core-instruction");
+  });
+
+  it("a with-seed create whose base account differs from the data's base is not a stake create", () => {
+    /* acc(2) is the base account the program checks; a create naming a different base in its
+       data is not the recognised stake-creation shape. */
+    const seed = new TextEncoder().encode("stake:0");
+    const owner = address(STAKE_PROG);
+    const derived = solanaAddressFromPublicKey(
+      sha256(
+        Uint8Array.from([
+          ...getAddressEncoder().encode(FEE_PAYER),
+          ...seed,
+          ...getAddressEncoder().encode(owner),
+        ]),
+      ),
+    );
+    const instruction = ix(
+      PROGRAM_IDS.system,
+      [sgn(FEE_PAYER), w0(derived), sgn(OTHER_KEY)],
+      cat(
+        u32le(3),
+        Uint8Array.from(getAddressEncoder().encode(FEE_PAYER)),
+        u64le(BigInt(seed.length)),
+        seed,
+        u64le(1_000_000_000n),
+        u64le(200n),
+        Uint8Array.from(getAddressEncoder().encode(owner)),
+      ),
+    );
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.staking).toBeUndefined();
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBe("core-instruction");
   });
 });
