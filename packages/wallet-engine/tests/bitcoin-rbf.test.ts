@@ -344,12 +344,12 @@ describe("bitcoin rbf", () => {
       const store = createMemoryEngineStore();
       setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
-      await route.unlock(store);
+      await route.unlock(store, { warn: () => {} });
       await route.prepare(c, params, "req-1");
       route.lock();
 
       route = createBitcoinRoute();
-      await route.unlock(store);
+      await route.unlock(store, { warn: () => {} });
       await expect(route.prepare(c, params, "req-2")).resolves.toBeDefined();
       await expect(store.collection("btc-utxos").get("state")).resolves.toBeUndefined();
     });
@@ -358,7 +358,7 @@ describe("bitcoin rbf", () => {
       const store = createMemoryEngineStore();
       setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
-      await route.unlock(store);
+      await route.unlock(store, { warn: () => {} });
       const prepared = await route.prepare(c, params, "req-1");
       const tx = await prepared.submit(verify, () => undefined);
       await new Promise((resolve) => {
@@ -375,7 +375,7 @@ describe("bitcoin rbf", () => {
 
       route.lock();
       route = createBitcoinRoute();
-      await route.unlock(store);
+      await route.unlock(store, { warn: () => {} });
       await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
     });
 

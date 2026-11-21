@@ -318,7 +318,7 @@ export class TransactionController extends Controller<TransactionControllerState
   async init(): Promise<void> {
     this.locked = false;
     this.engineStore = await this.options.openStore();
-    await this.bitcoinRoute.unlock(this.engineStore);
+    await this.bitcoinRoute.unlock(this.engineStore, this.options.logger);
     const collection = this.engineStore.collection("transactions");
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
@@ -342,6 +342,8 @@ export class TransactionController extends Controller<TransactionControllerState
           : loaded;
       if (tx.family === "evm") {
         this.evmRoute.resume(tx);
+      } else if (tx.family === "bitcoin") {
+        this.bitcoinRoute.resume(tx);
       }
       this.track(tx.id, hash);
     }
