@@ -72,6 +72,7 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
 const CUSTOM = "0x1111111111111111111111111111111111111111" as `0x${string}`;
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as `0x${string}`;
 const LISTED = "0x1abc00000000000000000000000000000000beef" as `0x${string}`;
 const UNHELD = "0x2abc00000000000000000000000000000000beef" as `0x${string}`;
 const FAKER = "0x3abc00000000000000000000000000000000beef" as `0x${string}`;
@@ -213,13 +214,18 @@ const makeEvm = (
     readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
     readonly store?: ReturnType<typeof createMemoryEngineStore>;
+    readonly chainId?: number;
   } = {},
 ) =>
   new AssetsController({
     ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
-      info: () => ({ family: "evm", chainId: 1, multicall3: MULTICALL3 }),
+      info: () => ({
+        family: "evm",
+        chainId: options.chainId ?? 1,
+        multicall3: MULTICALL3,
+      }),
     } as never,
     chains,
     openStore: async () => Promise.resolve(options.store ?? createMemoryEngineStore()),
@@ -265,7 +271,7 @@ describe("AssetsController EVM list discovery", () => {
     expect(calls).toHaveLength(2);
     const agg = decodedAggregate(calls);
     expect(agg.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED, UNHELD].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED, UNHELD].map((a) => a.toLowerCase()),
     );
     expect(agg.args[0].every((call) => call.callData === BALANCE_OF)).toBe(true);
     // Metadata aggregate: decimals only, once, for the held listed token.
@@ -275,7 +281,7 @@ describe("AssetsController EVM list discovery", () => {
     ]);
     expect(meta.args[0].map((call) => call.callData)).toStrictEqual([DECIMALS]);
     const rows = balances.tokens.map((t) => t.address);
-    expect(rows).toStrictEqual([USDC, USDT, LISTED]);
+    expect(rows).toStrictEqual([USDC, USDT, WETH, LISTED]);
     const listed = balances.tokens.find((t) => t.address === LISTED.toLowerCase());
     expect(listed).toStrictEqual({
       address: LISTED.toLowerCase(),
@@ -293,8 +299,36 @@ describe("AssetsController EVM list discovery", () => {
     expect(calls).toHaveLength(1);
     const again = decodedAggregate(calls);
     expect(again.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
+  });
+
+  it("a list entry at a native-alias address is a table token, never discovered", async () => {
+    // Celo's CELO alias: the table row is a balance shadow, so discovery must not re-add it.
+    const alias = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+    const celoUsdc = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
+    const celoUsdt = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
+    const calls: Call[] = [];
+    const c = evmClient(
+      new Map<string, TokenStub>([[alias.toLowerCase(), { balance: 9n, decimals: 18 }]]),
+      calls,
+    );
+    const assets = makeEvm(c, {
+      chainId: 42220,
+      gateway: GATEWAY,
+      fetch: listFetch(
+        [
+          {
+            status: 200,
+            body: listDoc("eip155:42220", 1, [evmEntry(alias, "CELO", "Celo native asset", 18)]),
+          },
+        ],
+        [],
+      ),
+    });
+    await assets.init();
+    const balances = await assets.refresh(OWNER, "eip155:42220");
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([celoUsdc, celoUsdt]);
   });
 
   it("a list token impersonating a table symbol is never eligible for discovery", async () => {
@@ -312,7 +346,7 @@ describe("AssetsController EVM list discovery", () => {
     });
     await assets.init();
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
   });
 
   it("a discovered list token whose decimals differ is unverified, not dropped", async () => {
@@ -343,8 +377,8 @@ describe("AssetsController EVM list discovery", () => {
     const balances = await assets.refresh(OWNER, MAINNET);
     expect(calls).toHaveLength(1);
     const agg = decodedAggregate(calls);
-    expect(agg.args[0]).toHaveLength(2);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(agg.args[0]).toHaveLength(3);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
   });
 });
 
@@ -696,8 +730,8 @@ describe("AssetsController EVM customs that are also list entries", () => {
     await assets.addToken(MAINNET, CUSTOM);
     const balances = await assets.refresh(OWNER, MAINNET);
     const rows = balances.tokens.map((t) => t.address);
-    expect(rows).toStrictEqual([USDC, USDT, CUSTOM]);
-    expect(balances.tokens[2]).toStrictEqual({
+    expect(rows).toStrictEqual([USDC, USDT, WETH, CUSTOM]);
+    expect(balances.tokens[3]).toStrictEqual({
       address: CUSTOM,
       symbol: "LST",
       name: "Listed Token",
@@ -749,7 +783,7 @@ describe("AssetsController EVM customs that are also list entries", () => {
 });
 
 describe("AssetsController EVM aggregate chunking", () => {
-  it("489 targets split into aggregate3 calls of 300 and 189, answers mapped in order", async () => {
+  it("490 targets split into aggregate3 calls of 300 and 190, answers mapped in order", async () => {
     const calls: Call[] = [];
     const addresses: Array<`0x${string}`> = Array.from(
       { length: 487 },
@@ -772,10 +806,10 @@ describe("AssetsController EVM aggregate chunking", () => {
     });
     await assets.init();
     const balances = await assets.refresh(OWNER, MAINNET);
-    // Two balance aggregates (300 + 189 targets), then one metadata aggregate for the three held.
+    // Two balance aggregates (300 + 190 targets), then one metadata aggregate for the three held.
     expect(calls).toHaveLength(3);
     expect(decodedAggregate(calls, 0).args[0]).toHaveLength(300);
-    expect(decodedAggregate(calls, 1).args[0]).toHaveLength(189);
+    expect(decodedAggregate(calls, 1).args[0]).toHaveLength(190);
     const meta = decodedAggregate(calls, 2);
     const held: ReadonlyArray<`0x${string}`> = [addresses[297]!, addresses[298]!, addresses[486]!];
     expect(meta.args[0].map((call) => call.target.toLowerCase()).toSorted()).toStrictEqual(
@@ -804,22 +838,26 @@ describe("AssetsController EVM discovery cadence", () => {
     });
     await assets.init();
     let balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
 
     // The token gains a balance between scans — a +9 min poll reads tracked+discovered only.
     stubs.set(LISTED.toLowerCase(), { balance: 11n, decimals: 6 });
     now += 9 * 60_000;
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
-    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([USDC, USDT]);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([
+      USDC,
+      USDT,
+      WETH,
+    ]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
 
     // The +10 min poll re-scans the whole list and finds it.
     now += 2 * 60_000;
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
     expect(decodedAggregate(calls).args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
     expect(balances.tokens.find((t) => t.address === LISTED.toLowerCase())?.verified).toBe(true);
 
@@ -829,12 +867,16 @@ describe("AssetsController EVM discovery cadence", () => {
     calls.length = 0;
     balances = await assets.refresh(OWNER, MAINNET);
     expect(decodedAggregate(calls).args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
-      [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
+      [USDC, USDT, WETH, LISTED].map((a) => a.toLowerCase()),
     );
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
     calls.length = 0;
     await assets.refresh(OWNER, MAINNET);
-    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([USDC, USDT]);
+    expect(decodedAggregate(calls).args[0].map((call) => call.target)).toStrictEqual([
+      USDC,
+      USDT,
+      WETH,
+    ]);
   });
 });
 

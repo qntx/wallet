@@ -56,6 +56,13 @@ export const NATIVE_SLIP44: Readonly<Record<string, number>> = {
   "eip155:1868": 60,
   "eip155:4326": 60,
   "eip155:8217": 8217,
+  "eip155:57073": 60,
+  "eip155:534352": 60,
+  "eip155:60808": 60,
+  "eip155:204": 714,
+  "eip155:42170": 60,
+  "eip155:167000": 60,
+  "eip155:7777777": 60,
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": 501,
   "bip122:000000000019d6689c085ae165831e93": 0,
 };

@@ -971,10 +971,12 @@ describe("quotePrices", () => {
 
 describe("prices-assets tables", () => {
   it("maps every production EVM network's tokens to a provider platform", () => {
+    // BOB has no CoinGecko asset platform — its token prices are absent by design.
+    const unmapped = new Set(["eip155:60808"]);
     for (const id of PRODUCTION_NETWORKS.map((n) => n.id).filter((id) =>
       id.startsWith("eip155:"),
     )) {
-      expect(TOKEN_PLATFORMS[id]).toBeDefined();
+      expect(TOKEN_PLATFORMS[id] !== undefined).toBe(!unmapped.has(id));
     }
   });
 

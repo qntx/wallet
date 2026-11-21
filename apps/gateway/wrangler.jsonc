@@ -77,6 +77,7 @@
           "JUPITER_API_KEY",
           "ALCHEMY_API_KEY",
           "DRPC_API_KEY",
+          "ANKR_API_KEY",
           "BLOCKSTREAM_CLIENT_ID",
           "BLOCKSTREAM_CLIENT_SECRET",
           "COINGECKO_API_KEY",

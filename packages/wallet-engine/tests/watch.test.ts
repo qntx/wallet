@@ -26,8 +26,8 @@ const stubbedAssets = (): AssetsController => {
     ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
-      // chainId 56 has no built-in token table entries — tokens stays empty here.
-      info: () => ({ family: "evm", chainId: 56 }),
+      // chainId 42170 has no built-in token table entries — tokens stays empty here.
+      info: () => ({ family: "evm", chainId: 42170 }),
     } as never,
     chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),

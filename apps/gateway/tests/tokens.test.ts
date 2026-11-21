@@ -6,7 +6,7 @@ import { parseWith, tokenListResponse } from "@qntx/wallet-engine/gateway/contra
 import type { TokenListResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { buildTokenLists } from "../src/tokens/build.ts";
-import { tokenListSources } from "../src/tokens/sources.ts";
+import { NATIVE_ALIASES, tokenListSources } from "../src/tokens/sources.ts";
 import type { RawToken, TokenListUpstream } from "../src/tokens/sources.ts";
 import {
   allowAll,
@@ -154,6 +154,18 @@ describe("source parsers", () => {
     expect(entriesOf(parsed, "eip155:1").map((t) => t.symbol)).toStrictEqual(["0G", "USDC"]);
   });
 
+  it("shadows exactly the engine table's mainnet native aliases", () => {
+    expect(
+      Object.fromEntries(
+        Object.entries(NATIVE_ALIASES).map(([id, set]) => [id, [...set].toSorted()]),
+      ),
+    ).toStrictEqual({
+      "eip155:42220": ["0x471ece3750da237f93b8e339c536989b8978a438"],
+      "eip155:5042": ["0x3600000000000000000000000000000000000000"],
+      "eip155:988": ["0x779ded0c9e1022225f8e0630b35a9b54be713736"],
+    });
+  });
+
   it("drops Celo's native-alias CELO but keeps its real tokens", () => {
     const parsed = byId("uniswap").parse({
       tokens: [
@@ -209,8 +221,8 @@ describe("buildTokenLists", () => {
     const solana = stored(store, SOLANA_MAINNET);
     expect(solana?.tokens.length).toBe(2);
     expect(stored(store, "eip155:999")?.tokens.length).toBe(4);
-    // uniswap's 15 networks (most empty in the excerpt) + coingecko + jupiter.
-    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(17);
+    // uniswap's 17 networks (most empty in the excerpt) + coingecko + jupiter.
+    expect(lines.filter((l) => l.includes('"event":"token-list-build"'))).toHaveLength(19);
   });
 
   it("normalizes case and whitespace and drops entries failing the schema", async () => {

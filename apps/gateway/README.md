@@ -204,15 +204,15 @@ Roll back with `bunx wrangler rollback --env staging`.
 
 Production serves mainnets only at `https://gateway.meowl.xyz` on account
 `9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): every built-in EVM mainnet (the order and the list are
-`src/config/networks.ts`; a test keeps it equal to the engine registry) plus Solana through Alchemy first and
-dRPC second (both provider accounts must have every one of these networks enabled) (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
+`src/config/networks.ts`; a test keeps it equal to the engine registry) plus Solana — through Alchemy first and
+dRPC second where Alchemy serves the chain, dRPC then Ankr otherwise (provider accounts must have every one of these networks enabled) (keys in request headers, never URLs — `Authorization: Bearer`, `Drpc-Key` and `x-api-key`), and
 Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
 isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
 
 Required secrets — set them **before** the first deploy, `wrangler deploy` refuses otherwise:
 
 ```bash
-for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY             BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET COINGECKO_API_KEY; do
+for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY ANKR_API_KEY BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET COINGECKO_API_KEY; do
   bunx wrangler secret put "$NAME" --env production
 done
 ```

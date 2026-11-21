@@ -949,9 +949,12 @@ export const createEvmRoute = (): EvmRoute => {
     tx: EvmUnsignedTransaction,
     flags: Array<RequestCheckCode | undefined>,
   ): Promise<bigint | undefined> => {
-    switch (ctx.options.networks.info(network).feeModel?.kind) {
+    const model = ctx.options.networks.info(network).feeModel;
+    switch (model?.kind) {
       case "op-stack":
-        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t));
+        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t, model));
+      case "scroll":
+        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.scrollL1Fee(c, t));
       case "execution":
       case undefined:
         return undefined;
@@ -982,14 +985,15 @@ export const createEvmRoute = (): EvmRoute => {
     }
     const nonce = nonces.next(network, from, chain);
     const unsigned = await evm.build(client, network, from, spec.intent, nonce);
-    const quotes = await evm.estimateFee(client);
+    const pricing = info.feeModel?.pricing ?? "eip1559";
+    const quotes = await evm.estimateFee(client, pricing);
     let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
     if (quote === undefined) {
       throw new Error("no fee quote");
     }
     if (independent.kind === "available") {
       try {
-        const others = await evm.estimateFee(independent.client);
+        const others = await evm.estimateFee(independent.client, pricing);
         const other = others.find((q) => q.tier === quote?.tier);
         if (other === undefined) {
           flags.push("reads-unverified");
@@ -1815,10 +1819,11 @@ export const createEvmRoute = (): EvmRoute => {
     const client = networks.client(old.network);
     const independent = networks.independentClient(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const { chainId } = networks.info(old.network);
+    const { chainId, feeModel } = networks.info(old.network);
     const original = rebuild(old, record.from, old.raw, chainId);
     const { account } = record;
-    const estimates = await evm.estimateFee(client);
+    const pricing = feeModel?.pricing ?? "eip1559";
+    const estimates = await evm.estimateFee(client, pricing);
     let estimate = estimates.find((q) => q.tier === "fast") ?? estimates[1];
     if (estimate === undefined) {
       throw new Error("no fee quote");
@@ -1829,7 +1834,7 @@ export const createEvmRoute = (): EvmRoute => {
     let independentCap: bigint | undefined;
     if (independent.kind === "available") {
       try {
-        const others = await evm.estimateFee(independent.client);
+        const others = await evm.estimateFee(independent.client, pricing);
         const other = others.find((q) => q.tier === estimate?.tier);
         if (other === undefined) {
           flags.push("reads-unverified");
@@ -1852,10 +1857,14 @@ export const createEvmRoute = (): EvmRoute => {
         : bump(oldFee.maxPriorityFeePerGas ?? 0n) > (estimate.maxPriorityFeePerGas ?? 0n)
           ? bump(oldFee.maxPriorityFeePerGas ?? 0n)
           : (estimate.maxPriorityFeePerGas ?? 0n);
+    // A legacy original stays legacy: its replacement fee is the single bumped gasPrice, not a
+    // 1559 cap pair.
     const feeFields =
-      priorityBump === undefined
-        ? { maxFeePerGas }
-        : { maxFeePerGas, maxPriorityFeePerGas: priorityBump };
+      original.gasPrice === undefined
+        ? priorityBump === undefined
+          ? { maxFeePerGas }
+          : { maxFeePerGas, maxPriorityFeePerGas: priorityBump }
+        : { gasPrice: maxFeePerGas };
     if (independentCap !== undefined) {
       flags.push(exceedsNetworkCap(maxFeePerGas, independentCap) ? "fee-above-network" : undefined);
     }

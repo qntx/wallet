@@ -372,13 +372,13 @@ const cases: VectorCase[] = [
       data: encodeFunctionData({ abi: parseAbi(["function deposit() payable"]) }),
       value: "0xde0b6b3a7640000",
     }),
-    verifiability: "opaque",
+    verifiability: "full",
     blind: null,
     prompt: p(
-      "Confirm contract call",
-      "确认合约调用",
-      `${net}\n${caveat}\nCall contract ${WETH}, function 0xd0e30db0\nSend 1 ETH to ${WETH}\n${fee}`,
-      `${netZh}\n${caveatZh}\n调用合约 ${WETH}，函数 0xd0e30db0\n发送 1 ETH 到 ${WETH}\n${feeZh}`,
+      "Confirm swap",
+      "确认兑换",
+      `${net}\nSend 1 ETH to ${WETH}\nReceive at least 1 WETH at ${SIGNER}\n${fee}`,
+      `${netZh}\n发送 1 ETH 到 ${WETH}\n至少收到 1 WETH，收款地址 ${SIGNER}\n${feeZh}`,
     ),
   },
   {

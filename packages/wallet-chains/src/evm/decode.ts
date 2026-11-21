@@ -40,6 +40,7 @@ import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
 import { domainChainId, parseTypedData, typedDataFields } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
+import { decodeWrappedNative } from "./wrapped-native.ts";
 import { decodeZeroX } from "./zerox.ts";
 
 const PERMIT2_APPROVE = AbiFunction.from(
@@ -198,6 +199,19 @@ const protocolIntent = (
       staking: lido.staking,
       fee,
       verifiability: "partial",
+    };
+  }
+
+  const wrapped = decodeWrappedNative(chainId, call, signer, table);
+  if (wrapped !== undefined) {
+    return {
+      ...base,
+      summary: "swap",
+      outflows: wrapped.outflows,
+      approvals: [],
+      minimumReceived: wrapped.minimumReceived,
+      fee,
+      verifiability: "full",
     };
   }
 

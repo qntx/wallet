@@ -335,8 +335,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
   ): Promise<ReadonlyArray<TokenBalance>> {
     const info = this.options.networks.info(network);
     const table = evmTokenTable[String(info.chainId)] ?? {};
-    const tableKeys = Object.keys(table);
-    const tableByLower = new Map(tableKeys.map((k) => [k.toLowerCase(), k]));
+    // A native alias is the native balance's ERC-20 view — never a separate balance read.
+    const tableKeys = Object.keys(table).filter((a) => table[a]?.role !== "native-alias");
+    const tableByLower = new Map(Object.keys(table).map((k) => [k.toLowerCase(), k]));
     const custom = (this.customTokens.get(network) ?? []).filter(
       (a) => !tableByLower.has(a.toLowerCase()),
     );

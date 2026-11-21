@@ -18,11 +18,18 @@ describe("gateway network config", () => {
     expect(evmOf(STAGING_NETWORKS.map((n) => n.id))).toStrictEqual(evmTestnets);
   });
 
-  it("gives every production EVM network exactly alchemy then drpc, both authenticated", () => {
+  it("gives every production EVM network exactly alchemy then drpc, or drpc then ankr", () => {
     for (const network of PRODUCTION_NETWORKS.filter((n) => n.id.startsWith("eip155:"))) {
-      expect(network.providers.map((p) => p.id)).toStrictEqual(["alchemy", "drpc"]);
+      expect(["alchemy,drpc", "drpc,ankr"]).toContain(network.providers.map((p) => p.id).join(","));
       expect(network.providers.every((p) => p.auth !== undefined)).toBe(true);
     }
+  });
+
+  it("serves exactly the Alchemy-unserved mainnets through dRPC then Ankr", () => {
+    const ankr = PRODUCTION_NETWORKS.filter((n) => n.providers.some((p) => p.auth === "ankr")).map(
+      (n) => n.id,
+    );
+    expect(ankr).toStrictEqual(["eip155:42170", "eip155:167000", "eip155:14"]);
   });
 
   it("keeps every staging provider keyless", () => {
