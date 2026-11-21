@@ -142,6 +142,19 @@ export const durableNonceOfMessage = (
   return { account: String(nonceAccount), value: String(compiled.lifetimeToken) };
 };
 
+/** The blockhash a persisted wire commits to; `undefined` when it cannot be decoded. */
+const lifetimeTokenOf = (raw: string): string | undefined => {
+  try {
+    const wire = base64.decode(raw);
+    const compiled = getCompiledTransactionMessageDecoder().decode(
+      new Uint8Array(getTransactionDecoder().decode(wire).messageBytes),
+    );
+    return String(compiled.lifetimeToken);
+  } catch {
+    return undefined;
+  }
+};
+
 export const prepareSolana = async (
   ctx: RouteContext,
   params: PrepareParams,
@@ -844,9 +857,20 @@ export const pollSolana = async (
     }
     return undefined;
   }
-  /* With a blockhash bound the tip is read before the status, so a transaction landing between
-     the reads can never be finalised `dropped` by an answer a stale bank produced. */
+  /* With a blockhash bound the tip is read first, then — only when the height alone says
+     expired — the blockhash's own validity on the same endpoint, then the status: a transaction
+     landing or a nonce advancing between the reads can never be finalised `dropped` by an answer
+     a stale bank produced. The stored bound was read at request time — possibly from an endpoint
+     behind the cluster — so it can sit below the blockhash's true expiry; `isBlockhashValid` is
+     the authoritative check, and a raw that cannot be decoded proves nothing. */
   const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
+  const expired = tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0);
+  const validity = !expired
+    ? undefined
+    : await (async () => {
+        const hash = tx.raw === undefined ? undefined : lifetimeTokenOf(tx.raw);
+        return hash === undefined ? undefined : solana.blockhashValid(rpc, hash);
+      })();
   const status = await solana.signatureStatus(rpc, tx.hash);
   const { entry } = status;
   if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
@@ -857,14 +881,23 @@ export const pollSolana = async (
       final: entry.commitment === "finalized",
     };
   }
-  if (tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0)) {
-    /* Expired, but `dropped` only when proven: the node has no entry at any commitment and the
-       status answer came from a bank at least as far along as the height proof. Anything else —
-       a stale-bank status, a processed-only entry — stays tracked and is not rebroadcast: the
-       blockhash is dead, resending can only hit "already processed" or nothing. */
-    return status.entry !== undefined || status.slot === undefined || status.slot < tip.slot
-      ? undefined
-      : { kind: "ended", state: "dropped" };
+  if (expired) {
+    if (validity === undefined) {
+      return undefined; // the wire's blockhash cannot be read — the drop is not proven
+    }
+    const bankFloor =
+      validity.slot !== undefined && validity.slot > tip.slot ? validity.slot : tip.slot;
+    /* Invalid on this endpoint, no entry at any commitment, and a status bank at least as far
+       along as the tip and the validity read: `dropped` proven. Anything else — a stale-bank
+       status, a processed-only entry — stays tracked and is not rebroadcast: a dead blockhash
+       can only hit "already processed" or nothing. A still-valid one keeps the wire going out. */
+    if (!validity.valid && status.entry === undefined && status.slot !== undefined && status.slot >= bankFloor) {
+      return { kind: "ended", state: "dropped" };
+    }
+    if (validity.valid && tx.raw !== undefined) {
+      await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
+    }
+    return undefined;
   }
   if (tx.raw !== undefined) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");

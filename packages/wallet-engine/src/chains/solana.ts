@@ -28,8 +28,9 @@ import {
  * Compute-unit headroom is simulated-units x 1.1; the priority fee comes from
  * getRecentPrioritizationFees percentiles (p50/p75/p90) over the writable accounts. Broadcast is
  * sendTransaction(skipPreflight:false, maxRetries:0) re-sent every 2 s while the blockhash is live;
- * an expired lastValidBlockHeight without confirmation is `dropped`. A 1232-byte compiled message
- * is rejected before signing.
+ * an expired lastValidBlockHeight without confirmation is `dropped` only once `isBlockhashValid`
+ * on the same endpoint says the hash is dead — a bound read from a lagging endpoint is never
+ * enough. A 1232-byte compiled message is rejected before signing.
  */
 import {
   address,
@@ -736,6 +737,28 @@ export class SolanaChainAdapter {
     return {
       value: nonce.state === NonceState.Initialized ? nonce.blockhash : undefined,
       slot,
+    };
+  }
+
+  /**
+   * `isBlockhashValid` at processed → whether the endpoint still accepts the blockhash, plus the
+   * slot of the bank the answer came from. A malformed answer throws — unknown, never a drop.
+   */
+  async blockhashValid(
+    rpc: SolanaRpc,
+    hash: string,
+  ): Promise<{ readonly valid: boolean; readonly slot: bigint | undefined }> {
+    const result = obj(
+      await this.rpc(rpc, "isBlockhashValid", [hash, { commitment: "processed" }]),
+    );
+    if (typeof result?.["value"] !== "boolean") {
+      throw new TypeError("isBlockhashValid returned a malformed answer");
+    }
+    const context = obj(result?.["context"])?.["slot"];
+    return {
+      valid: result["value"],
+      slot:
+        typeof context === "number" || typeof context === "bigint" ? BigInt(context) : undefined,
     };
   }
 }
