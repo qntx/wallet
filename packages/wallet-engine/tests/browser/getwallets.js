@@ -788,10 +788,10 @@ function nLength(n, nBitLength) {
   const nByteLength = Math.ceil(_nBitLength / 8);
   return { nBitLength: _nBitLength, nByteLength };
 }
-function Field(ORDER, bitLen, isLE = false, redef = {}) {
+function Field(ORDER, bitLen2, isLE = false, redef = {}) {
   if (ORDER <= _0n2)
     throw new Error("invalid field: expected ORDER > 0, got " + ORDER);
-  const { nBitLength: BITS, nByteLength: BYTES } = nLength(ORDER, bitLen);
+  const { nBitLength: BITS, nByteLength: BYTES } = nLength(ORDER, bitLen2);
   if (BYTES > 2048)
     throw new Error("invalid field: expected ORDER of <= 2048 bytes");
   let sqrtP;
@@ -1012,8 +1012,8 @@ function pippenger(c, fieldN, points, scalars) {
     buckets.fill(zero);
     for (let j = 0;j < slength; j++) {
       const scalar = scalars[j];
-      const wbits = Number(scalar >> BigInt(i) & MASK);
-      buckets[wbits] = buckets[wbits].add(points[j]);
+      const wbits2 = Number(scalar >> BigInt(i) & MASK);
+      buckets[wbits2] = buckets[wbits2].add(points[j]);
     }
     let resI = zero;
     for (let j = buckets.length - 1, sumI = zero;j > 0; j--) {
@@ -1069,7 +1069,7 @@ function validateOpts(curve) {
 }
 function twistedEdwards(curveDef) {
   const CURVE = validateOpts(curveDef);
-  const { Fp, n: CURVE_ORDER, prehash, hash: cHash, randomBytes, nByteLength, h: cofactor } = CURVE;
+  const { Fp, n: CURVE_ORDER, prehash, hash: cHash, randomBytes: randomBytes2, nByteLength, h: cofactor } = CURVE;
   const MASK = _2n2 << BigInt(nByteLength * 8) - _1n4;
   const modP = Fp.create;
   const Fn = Field(CURVE.n, CURVE.nBitLength);
@@ -1203,13 +1203,13 @@ function twistedEdwards(curveDef) {
       const D = modP(a * A);
       const x1y1 = X1 + Y1;
       const E = modP(modP(x1y1 * x1y1) - A - B);
-      const G = D + B;
-      const F = G - C;
+      const G2 = D + B;
+      const F = G2 - C;
       const H = D - B;
       const X3 = modP(E * F);
-      const Y3 = modP(G * H);
+      const Y3 = modP(G2 * H);
       const T3 = modP(E * H);
-      const Z3 = modP(F * G);
+      const Z3 = modP(F * G2);
       return new Point(X3, Y3, Z3, T3);
     }
     add(other) {
@@ -1223,12 +1223,12 @@ function twistedEdwards(curveDef) {
       const D = modP(Z1 * Z2);
       const E = modP((X1 + Y1) * (X2 + Y2) - A - B);
       const F = D - C;
-      const G = D + C;
+      const G2 = D + C;
       const H = modP(B - a * A);
       const X3 = modP(E * F);
-      const Y3 = modP(G * H);
+      const Y3 = modP(G2 * H);
       const T3 = modP(E * H);
-      const Z3 = modP(F * G);
+      const Z3 = modP(F * G2);
       return new Point(X3, Y3, Z3, T3);
     }
     subtract(other) {
@@ -1262,10 +1262,10 @@ function twistedEdwards(curveDef) {
       return toAffineMemo(this, iz);
     }
     clearCofactor() {
-      const { h: cofactor } = CURVE;
-      if (cofactor === _1n4)
+      const { h: cofactor2 } = CURVE;
+      if (cofactor2 === _1n4)
         return this;
-      return this.multiplyUnsafe(cofactor);
+      return this.multiplyUnsafe(cofactor2);
     }
     static fromHex(hex, zip215 = false) {
       const { d, a } = CURVE;
@@ -1380,7 +1380,7 @@ function twistedEdwards(curveDef) {
   G._setWindowSize(8);
   const utils = {
     getExtendedPublicKey,
-    randomPrivateKey: () => randomBytes(Fp.BYTES),
+    randomPrivateKey: () => randomBytes2(Fp.BYTES),
     precompute(windowSize = 8, point = Point.BASE) {
       point._setWindowSize(windowSize);
       point.multiply(BigInt(3));
@@ -2570,15 +2570,15 @@ function getWallets() {
   }
   return wallets;
 }
-function register(...wallets) {
-  wallets = wallets.filter((wallet) => !registeredWalletsSet.has(wallet));
-  if (!wallets.length)
+function register(...wallets2) {
+  wallets2 = wallets2.filter((wallet) => !registeredWalletsSet.has(wallet));
+  if (!wallets2.length)
     return () => {};
-  wallets.forEach((wallet) => addRegisteredWallet(wallet));
-  listeners["register"]?.forEach((listener) => guard(() => listener(...wallets)));
+  wallets2.forEach((wallet) => addRegisteredWallet(wallet));
+  listeners["register"]?.forEach((listener) => guard(() => listener(...wallets2)));
   return function unregister() {
-    wallets.forEach((wallet) => removeRegisteredWallet(wallet));
-    listeners["unregister"]?.forEach((listener) => guard(() => listener(...wallets)));
+    wallets2.forEach((wallet) => removeRegisteredWallet(wallet));
+    listeners["unregister"]?.forEach((listener) => guard(() => listener(...wallets2)));
   };
 }
 var cachedWalletsArray;
