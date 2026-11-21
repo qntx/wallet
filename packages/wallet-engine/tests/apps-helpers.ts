@@ -1,0 +1,525 @@
+import { expect } from "vite-plus/test";
+
+/**
+ * `createApps` end to end on the real Node kernel and a real `RequestController` (built the way
+ * requests.test.ts builds it, with `chains` wired to the real wallet): enable/renew/disable, orphan
+ * cleanup on every definitive failure, the revoke binding, cancel/busy rules, locked host methods,
+ * persistence shape, and user-signed outcomes. Approval requests are approved with the password
+ * factor; Hyperliquid answers come from an injected fetch; timers are manual.
+ */
+import { verifyEvent } from "@qntx/nostr";
+import type { Wallet } from "@qntx/wallet";
+import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
+import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
+
+import { createApps } from "../src/apps/index.ts";
+import type { AppsController } from "../src/apps/index.ts";
+import type { AppGroupState } from "../src/apps/types.ts";
+import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
+import { NetworkController } from "../src/networks/controller.ts";
+import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
+import type { SparkController } from "../src/spark/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
+import { TransactionController } from "../src/transactions/controller.ts";
+import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+
+export { describe, expect, it } from "vite-plus/test";
+
+/** Chain-only tests never reach the Spark controller (send-helpers' pattern). */
+const isSparkController = (_value: unknown): _value is SparkController => true;
+
+const noSpark = ((): SparkController => {
+  const stub: unknown = {};
+  if (isSparkController(stub)) {
+    return stub;
+  }
+  throw new Error("unreachable");
+})();
+
+const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
+const MNEMONIC =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const PASSWORD = "correct horse battery staple";
+const VERIFY = { kind: "password" as const, password: PASSWORD };
+const RANDOM = (length: number): Uint8Array => new Uint8Array(length).fill(7);
+const DAY = 86_400_000;
+
+export type ManualTimer = {
+  time: number;
+  readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+  readonly now: () => number;
+  readonly pump: () => boolean;
+};
+
+export const manualTimer = (start = Date.now()): ManualTimer => {
+  const queue: Array<{ at: number; fn: () => unknown; cancelled: boolean }> = [];
+  const timers = {
+    setTimer: (ms: number, fn: () => unknown) => {
+      const entry = { at: timers.time + ms, fn, cancelled: false };
+      queue.push(entry);
+      return () => {
+        entry.cancelled = true;
+      };
+    },
+    now: () => timers.time,
+    time: start,
+    pump: () => {
+      for (const entry of queue.filter((e) => !e.cancelled && e.at <= timers.time)) {
+        entry.cancelled = true;
+        entry.fn();
+      }
+      const [next] = queue.filter((e) => !e.cancelled).toSorted((a, b) => a.at - b.at);
+      if (next !== undefined) {
+        timers.time = next.at;
+      }
+      timers.time += 1;
+      return queue.some((e) => !e.cancelled);
+    },
+  };
+  return timers;
+};
+
+export type Posted = {
+  readonly endpoint: "info" | "exchange";
+  readonly body: Record<string, unknown>;
+};
+
+/** The live Hyperliquid state the injected fetch serves — tests mutate it between polls. */
+export type HlState = {
+  /** Agents Hyperliquid lists for the owner (what `extraAgents` answers). */
+  listed: Map<string, { address: string; name: string; validUntil: number }>;
+  maxBuilderFee: number;
+  role: string;
+  exchange?: (body: Record<string, unknown>) => unknown;
+  exchangeError?: () => unknown;
+  /** Info-endpoint override — answers before the defaults. */
+  info?: (body: Record<string, unknown>) => unknown;
+  /** ApproveAgent answers ok but Hyperliquid never lists the agent (verify-timeout tests). */
+  noAutoList?: boolean;
+  /** ApproveBuilderFee answers ok but maxBuilderFee never confirms (builder-timeout tests). */
+  noAutoBuilderFee?: boolean;
+  /** The gateway's /v1/eligibility answer — a response factory, or throw for `error` status. */
+  eligibility?: () => EligibilityResponse;
+};
+
+const listAgent = (
+  timers: ReturnType<typeof manualTimer>,
+  action: Record<string, unknown>,
+): { address: string; name: string; validUntil: number } => ({
+  address: String(action["agentAddress"]),
+  name: String(action["agentName"]).split(" ")[0] ?? "",
+  validUntil: timers.time + 179 * DAY,
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+/** Request bodies are always JSON objects in these tests — a guard, not an assertion. */
+const bodyJson = (init?: RequestInit): Record<string, unknown> => {
+  const parsed: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+  return isRecord(parsed) ? parsed : {};
+};
+
+export const hlFetch =
+  (posted: Posted[], timers: ReturnType<typeof manualTimer>, hl: HlState) =>
+  async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const body = bodyJson(init);
+    const headers = { date: new Date(timers.time).toUTCString() };
+    if (url.endsWith("/v1/eligibility")) {
+      const answer =
+        hl.eligibility === undefined
+          ? {
+              country: "US",
+              region: null,
+              apps: { hyperliquid: "available", polymarket: "available" },
+            }
+          : hl.eligibility();
+      return Response.json(answer, { headers });
+    }
+    if (url.endsWith("/exchange")) {
+      const action = isRecord(body["action"]) ? body["action"] : {};
+      posted.push({ endpoint: "exchange", body });
+      if (hl.exchangeError !== undefined) {
+        throw new Error("connection reset");
+      }
+      const answer =
+        hl.exchange === undefined
+          ? { status: "ok", response: { type: "default" } }
+          : await hl.exchange(body);
+      if (action["type"] === "approveAgent" && hl.noAutoList !== true) {
+        hl.listed.set(String(action["agentAddress"]), listAgent(timers, action));
+      }
+      if (action["type"] === "approveBuilderFee" && hl.noAutoBuilderFee !== true) {
+        // The confirmation poll reads maxBuilderFee — a committed approval raises it.
+        hl.maxBuilderFee = 10000;
+      }
+      return Response.json(answer, { headers });
+    }
+    posted.push({ endpoint: "info", body });
+    const { type } = body;
+    const override = hl.info?.(body);
+    const response =
+      override === undefined
+        ? type === "extraAgents"
+          ? [...hl.listed.values()]
+          : type === "maxBuilderFee"
+            ? hl.maxBuilderFee
+            : type === "userRole"
+              ? { role: hl.role }
+              : type === "allMids"
+                ? { BTC: "57957.5" }
+                : type === "orderStatus"
+                  ? { status: "unknownOid" }
+                  : {}
+        : override;
+    return Response.json(response, { headers });
+  };
+
+const arbRpc = async (init?: RequestInit): Promise<Response> => {
+  const body = bodyJson(init);
+  await Promise.resolve();
+  const result =
+    body["method"] === "eth_chainId"
+      ? "0x66eee"
+      : body["method"] === "eth_blockNumber"
+        ? "0x1"
+        : body["method"] === "eth_call"
+          ? `0x${"00".repeat(32)}`
+          : body["method"] === "eth_getTransactionCount"
+            ? "0x0"
+            : body["method"] === "eth_estimateGas"
+              ? "0x5208"
+              : body["method"] === "eth_feeHistory"
+                ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
+                : "0x0";
+  return Response.json({ jsonrpc: "2.0", id: 1, result });
+};
+
+export const tick = async (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve);
+  });
+
+export const until = async (cond: () => boolean, tries = 300): Promise<void> => {
+  for (let i = 0; i < tries && !cond(); i++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- real-kernel turns need the event loop.
+    await tick();
+  }
+  expect(cond()).toBe(true);
+};
+
+/** Pump manual timers until `cond` — for flows whose timers drive a verify window. */
+export const pumpUntil = async (
+  timers: ReturnType<typeof manualTimer>,
+  cond: () => boolean,
+  tries = 300,
+): Promise<void> => {
+  for (let i = 0; i < tries; i++) {
+    timers.pump();
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    await tick();
+    if (cond()) {
+      return;
+    }
+  }
+};
+
+/** Await a flow's rejection without leaving it unhandled while pumps drive it. */
+export const swallow = async (promise: Promise<unknown>): Promise<void> => {
+  try {
+    await promise;
+  } catch {
+    // The caller asserts the rejection separately.
+  }
+};
+
+let shared: { wallet: Wallet; walletId: string } | undefined;
+
+export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
+  if (shared === undefined) {
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(new Uint8Array(32).fill(11)),
+      kernelUrl: KERNEL_URL,
+    });
+    const { walletId } = await wallet.wallets.importMnemonic({
+      mnemonic: MNEMONIC,
+      factor: VERIFY,
+    });
+    shared = { wallet, walletId };
+  }
+  return shared;
+};
+
+export type World = {
+  wallet: Wallet;
+  provider: Awaited<ReturnType<typeof createApps>>["hyperliquid"];
+  walletId: string;
+  apps: AppsController;
+  destroy: () => Promise<void>;
+  requests: RequestController;
+  posted: Posted[];
+  timers: ReturnType<typeof manualTimer>;
+  hl: HlState;
+  store: EngineStore;
+  group: { walletId: string; groupIndex: number };
+  /** Logger warnings collected for the world (diagnostics). */
+  warns: string[];
+  state: () => AppGroupState | undefined;
+  approve: (id: string) => Promise<void>;
+};
+
+export const world = async (
+  groupIndex = 0,
+  options: {
+    agentName?: string;
+    store?: EngineStore;
+    openStore?: () => Promise<EngineStore>;
+    hl?: Partial<HlState>;
+    builder?: { address: string; feeRateTenthsBps: number };
+  } = {},
+): Promise<World> => {
+  const { wallet, walletId } = await nodeWallet();
+  // A previous test may have locked the shared wallet — restore the unlocked precondition.
+  await wallet.vault.unlock(VERIFY).catch(() => undefined);
+  const posted: Posted[] = [];
+  const timers = manualTimer();
+  const warns: string[] = [];
+  const logger = { warn: (...args: unknown[]) => warns.push(String(args[0])) };
+  const hl: HlState = { listed: new Map(), maxBuilderFee: 0, role: "user", ...options.hl };
+  const fetch = hlFetch(posted, timers, hl);
+  const networks = new NetworkController({
+    ...idleNetworkDeps,
+    fetch: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      return url === "https://arb-sepolia.test/rpc" ? arbRpc(init) : fetch(input, init);
+    },
+    rpc: { "eip155:421614": ["https://arb-sepolia.test/rpc"] },
+    openStore: async () => {
+      await Promise.resolve();
+      return createMemoryEngineStore();
+    },
+    logger,
+  });
+  const transactions = new TransactionController({
+    wallet,
+    networks,
+    openStore: async () => {
+      await Promise.resolve();
+      return createMemoryEngineStore();
+    },
+    random: RANDOM,
+    setTimer: timers.setTimer,
+    now: () => timers.time,
+    logger,
+    pollMs: 1,
+    chains: chains(wallet),
+  });
+  const requests = new RequestController({
+    phishing: { check: () => "clear" },
+    blindSigning: () => false,
+    simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
+    transactions,
+    ...bookDeps(),
+    spark: noSpark,
+    nostrSign: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    bitcoinPrepare: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    bitcoinSignPsbts: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    bitcoinSign: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    fetch,
+    random: RANDOM,
+    now: () => timers.time,
+    setTimer: timers.setTimer,
+    logger,
+  });
+  const store = options.store ?? createMemoryEngineStore();
+  const openStore =
+    options.openStore ??
+    (async () => {
+      await Promise.resolve();
+      return store;
+    });
+  const {
+    controller,
+    hyperliquid: provider,
+    destroy,
+  } = createApps({
+    wallet,
+    requests,
+    fetch,
+    /* Advances 1 ms per read — two clock reads never agree, which is exactly what the
+       revoke binding's single-read `validUntil` protects against. */
+    now: () => {
+      timers.time += 1;
+      return timers.time;
+    },
+    setTimer: timers.setTimer,
+    random: RANDOM,
+    logger,
+    openStore,
+    /* A socket that never opens — these tests exercise HTTP flows; live views are covered in
+       hyperliquid-live.test.ts with a controllable fake. */
+    socket: () => ({
+      readyState: 0,
+      send: () => undefined,
+      close: () => undefined,
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    }),
+    /* Every existing test enables apps → the stub answers "available" unless overridden. */
+    gateway: { url: "https://gateway.test" },
+    hyperliquid: {
+      network: "Testnet",
+      agentName: options.agentName ?? "qntx-test",
+      ...(options.builder === undefined ? {} : { builder: options.builder }),
+    },
+  });
+  await networks.init();
+  await transactions.init();
+  await requests.init();
+  /* The controller's init chain (agents refresh → eligibility → reconcile) runs on the
+     wallet's subscribe event — wait for the eligibility answer before the test drives. */
+  await until(() => controller.getState().eligibility.status !== "unknown");
+  const group = { walletId, groupIndex };
+  const gkey = `${walletId}/${groupIndex}`;
+  const state = (): AppGroupState | undefined =>
+    controller.getState().groups[gkey]?.["hyperliquid"];
+  const approve = async (id: string): Promise<void> => {
+    try {
+      await requests.approve(id, "evm-sign", { verify: VERIFY });
+    } catch (error) {
+      if (!(error instanceof AcknowledgementRequiredError)) {
+        throw error;
+      }
+      await requests.approve(id, "evm-sign", {
+        verify: VERIFY,
+        acknowledged: error.required,
+      });
+    }
+  };
+  await until(() => !controller.getState().locked);
+  return {
+    wallet,
+    walletId,
+    provider,
+    apps: controller,
+    destroy,
+    requests,
+    posted,
+    timers,
+    hl,
+    store,
+    group,
+    warns,
+    state,
+    approve,
+  };
+};
+
+export const requestId = (w: World): string => w.state()?.requestId ?? "";
+export const agentAddress = (w: World): string => w.state()?.agent?.address ?? "";
+export const isApprovePost = (p: Posted): boolean =>
+  p.endpoint === "exchange" &&
+  isRecord(p.body["action"]) &&
+  p.body["action"]["type"] === "approveAgent";
+export const restoredStatus = (w: World): boolean =>
+  w.state()?.status === "enabled" || w.state()?.status === "needs-reauthorization";
+
+export const kernelAgents = async (w: World): Promise<ReadonlyArray<HyperliquidAgentInfo>> => {
+  const agents = await hyperliquid(w.wallet).listAgents();
+  return agents.filter((a) => a.walletId === w.walletId && a.groupIndex === w.group.groupIndex);
+};
+
+/** Approve the pending request the flow published, then pump the verify poll to a status. */
+export const finishFlow = async (
+  w: World,
+  promise: Promise<unknown>,
+  target: string,
+): Promise<void> => {
+  await until(() => w.state()?.requestId !== undefined);
+  await w.approve(requestId(w));
+  await pumpUntil(w.timers, () => w.state()?.status === target, 80);
+  await swallow(promise);
+  await until(() => w.state()?.status === target);
+};
+
+export { KERNEL_URL, MNEMONIC, PASSWORD, VERIFY, DAY };
+
+/**
+ * An EngineStore whose `close()` ends the session but keeps the backing — each `openStore()`
+ * returns a fresh facade over the same records, like a real persistent store across lock/unlock.
+ */
+export const restartableStore = (): (() => Promise<EngineStore>) => {
+  const collections = new Map<string, Map<string, Uint8Array>>();
+  return async () => {
+    await Promise.resolve();
+    let closed = false;
+    const store: EngineStore = {
+      collection: (name) => {
+        let table = collections.get(name);
+        if (table === undefined) {
+          table = new Map();
+          collections.set(name, table);
+        }
+        return {
+          get: async (key) => {
+            await Promise.resolve();
+            return closed ? undefined : table.get(key);
+          },
+          put: async (key, bytes) => {
+            await Promise.resolve();
+            if (!closed) {
+              table.set(key, new Uint8Array(bytes));
+            }
+          },
+          delete: async (key) => {
+            await Promise.resolve();
+            if (!closed) {
+              table.delete(key);
+            }
+          },
+          list: async () => {
+            await Promise.resolve();
+            return closed ? [] : [...table.keys()];
+          },
+        };
+      },
+      close: async () => {
+        closed = true;
+        await Promise.resolve();
+      },
+    };
+    return store;
+  };
+};

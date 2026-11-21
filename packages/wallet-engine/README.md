@@ -189,6 +189,135 @@ unverified.
 Not offered: `AccountPermissionUpdate` (multi-sig/permission changes), transaction memos, and a
 dApp provider — there is no `engine.tronWallet` like `eip1193`/`solanaWallet`.
 
+## Hyperliquid
+
+`@qntx/wallet-engine/apps` is a separate entry point: the app providers (Hyperliquid today) and
+their controller. A host that never touches it pays nothing — the SDK, the WebSocket transport
+and the eligibility client live only in this entry's bundle.
+
+```ts
+import { createWalletEngine } from "@qntx/wallet-engine";
+import { createApps } from "@qntx/wallet-engine/apps";
+
+const engine = createWalletEngine({/* … */});
+const apps = await createApps({
+  wallet, // the same Wallet the engine was built on
+  requests: engine.requests, // user-signed actions open approval requests here
+  fetch: globalThis.fetch.bind(globalThis),
+  now: () => Date.now(),
+  setTimer: (ms, fn) => {
+    const id = setTimeout(fn, ms);
+    return () => clearTimeout(id);
+  },
+  random,
+  logger: { warn: (m, e) => console.warn(m, e) },
+  openStore: async () => openIndexedDbEngineStore({ name: "app-apps", dataKey /* … */ }),
+  // a separate EngineStore from the engine's own
+  socket: (url) => new WebSocket(url), // browser, RN or Node ≥ 22 — one socket for all views
+  gateway: { url: "https://api.example.com" },
+  // the wallet gateway — /v1/eligibility is fetched here
+  hyperliquid: {
+    network: "Mainnet", // or "Testnet"
+    agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
+    builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
+  },
+});
+await apps.destroy();
+```
+
+`apps.controller` is a `HostController<AppsState>` (the usual `store` facade) with
+`acknowledgeTerms`, `enable`, `renew`, `disable`, `cancel` and `refreshEligibility`; the provider
+itself is `apps.hyperliquid`. The full composition — engine, apps, approvals, orders, live views —
+is in `tests/migration/hyperliquid.ts`.
+
+### Enabling
+
+Each account group enables the app once: `acknowledgeTerms(group, "hyperliquid")` records the
+terms acknowledgement, then `enable(group, "hyperliquid")` creates a kernel-held agent key and
+opens an `ApproveAgent` approval request on `engine.requests`. The group's
+`AppGroupState` tells the host what to show:
+
+- `status: "enabling"` — a flow is running; `step` narrows it
+  (`"approve-agent"`, `"verify"`, `"approve-builder"`) and `requestId` names the request to render.
+  A flow interrupted by a lock or a reload resumes where it stopped on the next unlock.
+- `status: "enabled"` — trades sign with `agent` (address, `validUntil`, `renewalDue` when the
+  180-day validity window is close enough that a host should offer `renew`).
+- `status: "needs-reauthorization"` — the agent is gone, expired or rejected by Hyperliquid;
+  `renew` re-authorizes.
+- `status: "unavailable"` — eligibility says the app is blocked in this jurisdiction. The
+  overlay only ever covers `disabled`; an enabled group stays enabled so the user can still
+  disable it.
+- `status: "disabled"` — nothing enabled.
+
+`enable` and `renew` throw `HyperliquidError("unavailable")` unless the gateway's eligibility
+answer is `ready` and reports the app `available` — an unanswered or malformed check refuses too.
+`disable` (delete the agent, `revoke: true` to also unapprove it on Hyperliquid) and `cancel`
+(abort a running flow) are never gated. Call `apps.controller.refreshEligibility()` on foreground;
+unlock already refreshes.
+
+**Eligibility is display-only — it is not a security boundary.** The platforms enforce their own
+restrictions; the gateway answer only decides what the UI offers.
+
+### Trading
+
+`apps.hyperliquid` is platform-neutral: `markets` (meta, mids, perp/spot asset lookup),
+`account` (clearinghouse, spot, orders, fills), `quote` (price/size rounding and previews),
+`clock` (the skew/nonce clock), `trade` (signed L1 actions), `fund` and `transfer` (user-signed),
+`live` (WebSocket views).
+
+- `quote.limit`/`quote.market` build a preview — wire price, size, notional, minimum-check. For a
+  market order the preview's price is the slippage cap the exchange will fill against;
+  `trade.place` requires `slippageBps` (there is no default — the host must show the computed
+  cap it is about to sign).
+- `trade.place`/`close` answer `{ outcomes, price }`; each outcome is `resting`, `filled`,
+  `rejected`, `not-placed` or `unknown` per cloid. `unknown` means the POST's result is
+  unknowable and the action may have committed — the engine reconciles it by cloid and
+  **nothing is ever re-sent**. Give every order a stable `cloid` so reconciliation can find it.
+- `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`scheduleCancel`/`twap`/
+  `twapCancel`/`setLeverage`/`adjustMargin`/`close` round out the action set.
+
+### Live views
+
+`live.book`, `live.trades`, `live.candles` for markets and `live.account`, `live.spotState`,
+`live.openOrders`, `live.fills` for a group (resolved to its owner, closed on lock). A view's
+`LiveState` is `{ status: "connecting" | "live" | "stale", data, updatedAt }`: data only renders
+as `live` after a post-confirmation snapshot; any disconnect flips to `stale` — keep the data
+visible but marked, never as live.
+
+### Funding
+
+`fund.deposit(group, amount, fee)` prepares the Bridge2 deposit — an Arbitrum USDC transfer that
+credits the Hyperliquid account (5 USDC minimum — smaller deposits are lost — and credit inside
+a minute; `HYPERLIQUID_DEPOSIT` has the contracts per network). Hyperliquid has deprecated
+Bridge2 in favour of CCTP; it is still live and described here, CCTP support comes later.
+`transfer.{toPerp,toSpot}` move USDC between the owner's spot and perp accounts, `usdSend`/
+`spotSend` send to another address and `withdraw` sends USDC back to the owner's Arbitrum
+address. Every one opens an approval request: the returned `HyperliquidPendingAction` carries
+the `requestId` to render and an `outcome` promise (`ok`, or `unknown` — may have committed).
+
+### Builder fees
+
+An optional `hyperliquid.builder` attaches `{ b, f }` to signed order actions — but only after
+the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured) and
+this session confirmed `maxBuilderFee` still covers it. There is no default fee, the attached
+rate is never above the approved one, and `feeRateTenthsBps` is 1–100 (tenths of a basis point,
+0.1–10 bp).
+
+### Scope
+
+Sub-accounts, vaults and referral codes are out of scope for this phase: the kernel's agent
+signature allow-list covers only the owner account's actions.
+
+### Security
+
+> An unlocked agent and a compromised main runtime can place, modify and cancel any order,
+> change leverage, adjust isolated margin, set a scheduled cancel and trade for sub-accounts or
+> vaults — including filling against an attacker's resting orders at extreme prices in an
+> illiquid market, which "trades" funds to the attacker; it can attach a builder fee up to the
+> rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
+> kernel does not sign those actions. The window is the unlocked period plus nonces pre-signed
+> up to 5 minutes before the lock.
+
 ## React Native hosts
 
 The engine runs on the RN main runtime (Hermes) with no polyfills. Verified on 2026-11-02 in an

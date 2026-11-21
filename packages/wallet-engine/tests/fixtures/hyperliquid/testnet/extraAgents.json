@@ -1,0 +1,11 @@
+{
+  "request": { "type": "extraAgents", "user": "0x17543ae5adbe214c361ad7e06e97a5363affe2d6" },
+  "fetchedAt": 1795253705953,
+  "response": [
+    {
+      "name": "FatCat Arena",
+      "address": "0x440b71cc360f10d3f403d461d28988f6812c6f74",
+      "validUntil": 1802264663672
+    }
+  ]
+}

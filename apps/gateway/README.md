@@ -12,6 +12,7 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 | `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                                        |
 | `POST /v1/tron/:caip2/*`         | TRON node API: an allow-list of `/wallet/*` and `/walletsolidity/*` paths plus the TronGrid `/v1/accounts` indexer feeds (TronGrid providers only); request bodies are schema-checked, `broadcasthex` follows the broadcast rule below |
 | `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                            |
+| `GET /v1/eligibility`            | Per-app availability for the caller's edge-resolved jurisdiction (`{ country, region, apps: { hyperliquid, polymarket } }` — `available`/`close-only`/`blocked`); `private, no-store`                                                  |
 | `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it           |
 | `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                                 |
 | `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                                      |
@@ -115,6 +116,25 @@ every provider answered — a failed or uncharged source might know it. When no 
 and a provider failed, the route answers 503; when the only failures were refused charges, it
 rethrows the 429. Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD
 requests come back `missing`.
+
+## Eligibility
+
+`GET /v1/eligibility` answers per-app availability for the caller's IP jurisdiction — the edge
+resolves `cf.country`/`cf.regionCode`; subdivision codes (`CA-ON`, `UA-43`) are checked before
+the bare country, and `blocked` always wins over `close-only`. A missing country, `XX` (unknown)
+or `T1` (Tor) blocks every app: a jurisdiction gate fails closed.
+
+- **Hyperliquid** is `blocked` in the United States and its territories (PR/GU/VI/AS/MP/UM — a
+  conservative reading of "United States" in Terms §1.6(a)), Ontario (§1.6(a)), and the
+  comprehensively-sanctioned jurisdictions (§1.6(b) — IR, SY, CU, KP, Crimea/Donetsk/Luhansk as
+  UA-43/14/09, the set Polymarket publishes since the terms do not enumerate it). No
+  close-only tier.
+- **Polymarket** is `blocked` in the sanctioned set, and `close-only` in its published
+  restricted list — the frontend-only tier (IE, JP, MT, NL, KR) counts because the wallet is a
+  frontend; MT ("sports only") is treated as close-only conservatively.
+
+Sources are recorded per entry in `src/config/eligibility.ts`. The answer guides the UI only —
+the platforms enforce their own restrictions; this endpoint is not a security boundary.
 
 ## Phishing list
 

@@ -1,6 +1,7 @@
 export * from "./primitives.ts";
 export * from "./endpoint.ts";
 export * from "./health.ts";
+export * from "./eligibility.ts";
 export * from "./rpc.ts";
 export * from "./tron.ts";
 export * from "./esplora.ts";

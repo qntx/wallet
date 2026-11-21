@@ -343,6 +343,7 @@ const PROBES: Probe[] = [
     "lido",
     "staking",
     "assets",
+    "apps",
   ].map((dir): Probe => ({
     file: `packages/wallet-engine/src/${dir}/__lint_probe_i__.ts`,
     source: importing("../prices/controller.ts", "../prices/valuation.ts"),
