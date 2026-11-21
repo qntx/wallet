@@ -10,7 +10,7 @@ import {
 } from "cockatiel";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
-import type { ProviderBudget, ResolvedProvider } from "../types.ts";
+import type { ProviderBudget, ResolvedProvider, UpstreamRequest } from "../types.ts";
 import { ResponseTooLarge, readCapped } from "./body.ts";
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
@@ -71,24 +71,6 @@ class ProviderOutage extends Error {
     this.refused = refused;
   }
 }
-
-/** One upstream exchange; `send` adds the provider's auth headers and the attempt's signal. */
-export type UpstreamRequest = {
-  readonly url: string | URL;
-  readonly method?: "GET" | "POST";
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
-  /**
-   * What this call costs the provider account, in the account's own metering unit (compute units or
-   * request credits) — required, so no call can reach the upstream unbilled.
-   */
-  readonly cost: number;
-  /**
-   * A deadline for a body streamed past the attempt (Esplora), which the attempt timeout no longer
-   * bounds once the attempt has returned.
-   */
-  readonly bodyDeadlineMs?: number;
-};
 
 /** A provider's answer to one request, for the attempt to interpret. */
 export type UpstreamResponse = {

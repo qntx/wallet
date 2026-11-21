@@ -1,8 +1,25 @@
 import type { CostModel } from "./budget/costs.ts";
 import type { Account } from "./config/accounts.ts";
-import type { UpstreamRequest } from "./providers/forward.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
+
+/** One upstream exchange; `send` adds the provider's auth headers and the attempt's signal. */
+export type UpstreamRequest = {
+  readonly url: string | URL;
+  readonly method?: "GET" | "POST";
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string;
+  /**
+   * What this call costs the provider account, in the account's own metering unit (compute units or
+   * request credits) — required, so no call can reach the upstream unbilled.
+   */
+  readonly cost: number;
+  /**
+   * A deadline for a body streamed past the attempt (Esplora), which the attempt timeout no longer
+   * bounds once the attempt has returned.
+   */
+  readonly bodyDeadlineMs?: number;
+};
 
 export type RateLimiter = {
   limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;

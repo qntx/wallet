@@ -4,8 +4,13 @@ import { networkById } from "@qntx/wallet-engine/gateway/contract";
 
 import { probeCost, requestCost } from "../budget/costs.ts";
 import type { Account } from "../config/accounts.ts";
-import type { UpstreamRequest } from "../providers/forward.ts";
-import type { GatewayNetwork, ResolvedProvider, UpstreamAuth, UpstreamAuthId } from "../types.ts";
+import type {
+  GatewayNetwork,
+  ResolvedProvider,
+  UpstreamAuth,
+  UpstreamAuthId,
+  UpstreamRequest,
+} from "../types.ts";
 import { GatewayHttpError } from "./errors.ts";
 
 export type Family = "evm" | "solana" | "bitcoin";
