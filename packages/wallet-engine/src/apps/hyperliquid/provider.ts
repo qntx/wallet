@@ -309,6 +309,8 @@ export function createHyperliquidProvider(
             transport,
             ownerOf: async (group) => agents.owner(group),
             now: options.now,
+            setTimer: options.setTimer,
+            random: options.random,
             wallet: options.wallet,
           }),
         }),

@@ -9,6 +9,11 @@ import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import { eligibility as eligibilityContract } from "../gateway/contract/eligibility.ts";
+import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
+import { parseWith } from "../gateway/contract/endpoint.ts";
+import { CLIENT_ID_HEADER } from "../gateway/contract/primitives.ts";
+import { gatewaySession } from "../gateway/session.ts";
 import type { RequestController } from "../requests/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -20,6 +25,7 @@ import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
 import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
 import type { AppSocket } from "./hyperliquid/socket.ts";
+import { isAppId } from "./types.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
 
 const COLLECTION = "apps";
@@ -65,6 +71,8 @@ export type CreateAppsOptions = {
    * (browser, RN, Node ≥ 22). One socket serves every subscription.
    */
   readonly socket: (url: string) => AppSocket;
+  /** The gateway base URL — eligibility is fetched through the engine's gateway client. */
+  readonly gateway: { readonly url: string };
   readonly hyperliquid: AppsHyperliquidConfig;
 };
 
@@ -106,13 +114,17 @@ const isGroupState = (value: unknown): value is AppGroupState =>
   (value.status === "disabled" ||
     value.status === "enabling" ||
     value.status === "enabled" ||
-    value.status === "needs-reauthorization");
+    value.status === "needs-reauthorization" ||
+    value.status === "unavailable");
 
 export type AppsControllerDeps = {
   readonly providers: ReadonlyMap<AppId, AppProvider>;
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "reject">;
   readonly openStore: () => Promise<EngineStore>;
+  /** `GET /v1/eligibility` through the gateway client — throws on transport/malformed answers. */
+  readonly fetchEligibility: () => Promise<EligibilityResponse>;
+  readonly now: () => number;
   readonly logger: EngineLogger;
 };
 
@@ -134,7 +146,10 @@ export class AppsController extends Controller<AppsState> {
   private readonly enabledAgents = new Map<string, string>();
 
   constructor(deps: AppsControllerDeps) {
-    super({ name: "apps", defaultState: () => ({ locked: true, groups: {} }) });
+    super({
+      name: "apps",
+      defaultState: () => ({ locked: true, groups: {}, eligibility: { status: "unknown" } }),
+    });
     this.deps = deps;
   }
 
@@ -162,7 +177,7 @@ export class AppsController extends Controller<AppsState> {
         }
       }
     }
-    this.update(() => ({ locked: false, groups }));
+    this.update((state) => ({ ...state, locked: false, groups }));
     /* Re-derive every group that can carry state: persisted records and every group with a
        kernel agent on this network. */
     const union = new Map<string, AppGroup>();
@@ -185,6 +200,8 @@ export class AppsController extends Controller<AppsState> {
         union.set(groupKey(group), group);
       }
     }
+    /* Eligibility lands before reconcile so the overlay applies during group derivation. */
+    await this.refreshEligibility();
     for (const group of union.values()) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- groups reconcile sequentially.
       await this.reconcile(group);
@@ -219,6 +236,84 @@ export class AppsController extends Controller<AppsState> {
   private requireUnlocked(): void {
     if (this.getState().locked) {
       throw new HyperliquidError("unlock-required", "the vault is locked");
+    }
+  }
+
+  /** The app's availability under the last ready eligibility answer — undefined otherwise. */
+  private availability(app: AppId): AppAvailability | undefined {
+    const { eligibility } = this.getState();
+    return eligibility.status === "ready" ? eligibility.apps?.[app] : undefined;
+  }
+
+  /**
+   * `enable`/`renew` gate: unless eligibility is `ready` and the app is `available`, the flow must
+   * not start — `unknown`/`error` refuse too (a jurisdiction gate fails closed). This is a UI
+   * boundary only: `disable`/`cancel`/trading are not gated, and the platform enforces its own
+   * restrictions.
+   */
+  private requireAvailable(app: AppId): void {
+    const availability = this.availability(app);
+    if (availability !== "available") {
+      const { country, region } = this.getState().eligibility;
+      const where =
+        country === undefined || country === null
+          ? "an unverified"
+          : `your (${[country, region].filter(Boolean).join("-")})`;
+      throw new HyperliquidError(
+        "unavailable",
+        `this app is not available in ${where} jurisdiction`,
+      );
+    }
+  }
+
+  /**
+   * Refetch `/v1/eligibility` and apply the overlay: `disabled` groups in a blocked jurisdiction
+   * read `unavailable`; groups that were only overlaid revert when the app is no longer blocked.
+   * Called on every unlock; hosts should call it on foreground too.
+   */
+  async refreshEligibility(): Promise<void> {
+    if (this.getState().locked) {
+      return;
+    }
+    try {
+      const answer = await this.deps.fetchEligibility();
+      this.update((state) => ({
+        ...state,
+        eligibility: {
+          status: "ready",
+          apps: answer.apps,
+          country: answer.country,
+          region: answer.region,
+          checkedAt: this.deps.now(),
+        },
+      }));
+    } catch (error) {
+      this.deps.logger.warn("apps eligibility fetch failed", error);
+      this.update((state) => ({
+        ...state,
+        eligibility: { status: "error", checkedAt: this.deps.now() },
+      }));
+    }
+    /* Sweep: apply or lift the overlay on groups already written — `disabled` ↔ `unavailable`
+       only; other statuses are never rewritten. */
+    const { groups, eligibility } = this.getState();
+    const patched: AppsState["groups"] = { ...groups };
+    let changed = false;
+    for (const [gkey, apps] of Object.entries(groups)) {
+      for (const [app, group] of Object.entries(apps)) {
+        const blocked =
+          isAppId(app) && eligibility.status === "ready" && eligibility.apps?.[app] === "blocked";
+        if (group?.status === "disabled" && blocked) {
+          patched[gkey] = { ...patched[gkey], [app]: { ...group, status: "unavailable" } };
+          changed = true;
+        } else if (group?.status === "unavailable" && eligibility.status === "ready" && !blocked) {
+          patched[gkey] = { ...patched[gkey], [app]: { ...group, status: "disabled" } };
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      this.update((state) => ({ ...state, groups: patched }));
     }
   }
 
@@ -268,7 +363,12 @@ export class AppsController extends Controller<AppsState> {
         if (!isGroupState(merged)) {
           return;
         }
-        const next = merged;
+        const next: AppGroupState =
+          merged.status === "disabled" && this.availability(app) === "blocked"
+            ? /* The eligibility overlay: `disabled` under a ready-blocked jurisdiction reads
+                 `unavailable` — `enabled`/`enabling` are never rewritten. */
+              { ...merged, status: "unavailable" }
+            : merged;
         if (patch.requestId !== undefined) {
           this.pendingRequests.add(patch.requestId);
         }
@@ -278,7 +378,7 @@ export class AppsController extends Controller<AppsState> {
         /* The persisted record keeps only the terms flag and the last enabled agent. */
         if (next.status === "enabled" && next.agent !== undefined) {
           this.enabledAgents.set(key, next.agent.address);
-        } else if (next.status === "disabled") {
+        } else if (next.status === "disabled" || next.status === "unavailable") {
           this.enabledAgents.delete(key);
         }
         this.update((state) => ({
@@ -333,10 +433,12 @@ export class AppsController extends Controller<AppsState> {
   }
 
   async enable(group: HyperliquidGroup, app: AppId): Promise<void> {
+    this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.enable(group, view));
   }
 
   async renew(group: HyperliquidGroup, app: AppId): Promise<void> {
+    this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.renew(group, view));
   }
 
@@ -434,9 +536,27 @@ export function createApps(options: CreateAppsOptions): {
     setTimer: options.setTimer,
     logger: options.logger,
   });
+  /* `gatewayScope("/v1/eligibility")` is "service" — a fixed client id keeps the whole contract
+     table (which `gatewayFetch` needs for per-route scopes) out of this entry. */
+  const clientId = gatewaySession(options.gateway.url, options.random).clientIds.service;
+  const eligibilityFetch = async (input: URL): Promise<Response> =>
+    options.fetch(input, { headers: { [CLIENT_ID_HEADER]: clientId } });
   const controller = new AppsController({
     providers: new Map<AppId, AppProvider>([["hyperliquid", enable]]),
     wallet: options.wallet,
+    fetchEligibility: async (): Promise<EligibilityResponse> => {
+      const url = new URL(eligibilityContract.path, options.gateway.url);
+      const response = await eligibilityFetch(url);
+      if (!response.ok) {
+        throw new Error(`eligibility answered ${response.status}`);
+      }
+      const parsed = parseWith(eligibilityContract.response, await response.json());
+      if (parsed === undefined) {
+        throw new Error("malformed eligibility response");
+      }
+      return parsed;
+    },
+    now: options.now,
     requests: options.requests,
     openStore: options.openStore,
     logger: options.logger,

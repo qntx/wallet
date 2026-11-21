@@ -3,9 +3,13 @@
  * their own module so `apps/hyperliquid/enable.ts` and `apps/controller.ts` do not import each
  * other. See design.md §公开类型 / §启用状态机.
  */
+import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
 
 /** The apps the controller knows; unimplemented ids are typed, never stubbed. */
 export type AppId = "hyperliquid" | "polymarket";
+
+export const isAppId = (value: string): value is AppId =>
+  value === "hyperliquid" || value === "polymarket";
 
 /** The resumable enablement step a group is in; absent when `status` is terminal. */
 export type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
@@ -25,7 +29,12 @@ export type AppError = {
 
 /** One wallet group's per-app state — every flow step writes this, so a lock can resume. */
 export type AppGroupState = {
-  readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization";
+  /**
+   * `unavailable` is the eligibility overlay on `disabled`: the gateway says the app is blocked in
+   * the caller's jurisdiction. `enabled`/`enabling` groups keep their status so the user can still
+   * disable/cancel — the overlay never hides an existing position.
+   */
+  readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" | "unavailable";
   /** `acknowledgeTerms` persists this across lock/unlock. */
   readonly termsAcknowledged: boolean;
   /** The agent the group is enabling or enabled with. */
@@ -43,9 +52,19 @@ export type AppGroupState = {
 };
 
 /** The controller's per-groups view: `"<walletId>/<groupIndex>"` → per-app group state. */
+/** The gateway's per-app availability for this jurisdiction — `unknown`/`error` refuse enables. */
+export type AppsEligibility = {
+  readonly status: "unknown" | "ready" | "error";
+  readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+  readonly country?: EligibilityResponse["country"];
+  readonly region?: EligibilityResponse["region"];
+  readonly checkedAt?: number;
+};
+
 export type AppsState = {
   readonly locked: boolean;
   readonly groups: Record<string, Readonly<Partial<Record<AppId, AppGroupState>>>>;
+  readonly eligibility: AppsEligibility;
 };
 
 /**

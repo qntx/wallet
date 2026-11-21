@@ -20,6 +20,7 @@ import type { CandleSnapshotResponse, RecentTradesResponse } from "@nktkas/hyper
 import {
   candle as subCandle,
   clearinghouseState as subClearinghouse,
+  spotState as subSpotState,
   l2Book as subL2Book,
   openOrders as subOpenOrders,
   trades as subTrades,
@@ -29,6 +30,7 @@ import type {
   CandleEvent,
   L2BookEvent,
   OpenOrdersEvent,
+  SpotStateEvent,
   UserFillsEvent,
   ClearinghouseStateEvent,
   CandleParameters,
@@ -36,6 +38,7 @@ import type {
 
 import type { Wallet } from "@qntx/wallet";
 
+import type { SetTimer } from "../../timer.ts";
 import type { HyperliquidGroup } from "./agents.ts";
 import type { HyperliquidSocket } from "./socket.ts";
 import { payloadContains } from "./socket.ts";
@@ -75,6 +78,8 @@ export type HyperliquidLive = {
   ) => LiveView<CandleSnapshotResponse>;
   /** Full margin state — every `clearinghouseState` frame replaces `data`. */
   readonly account: (group: HyperliquidGroup) => LiveView<ClearinghouseStateEvent>;
+  /** Full spot state — every `spotState` frame replaces `data`. */
+  readonly spotState: (group: HyperliquidGroup) => LiveView<SpotStateEvent>;
   /** Full open-orders state — every `openOrders` frame replaces `data`. */
   readonly openOrders: (group: HyperliquidGroup) => LiveView<OpenOrdersEvent>;
   /**
@@ -92,12 +97,19 @@ export type HyperliquidLiveOptions = {
   /** Resolves a group to the owner's master address. */
   readonly ownerOf: (group: HyperliquidGroup) => Promise<string>;
   readonly now: () => number;
+  /** Snapshot retries run on the injected timer — a dead HTTP fetch must not stall a view. */
+  readonly setTimer: SetTimer;
+  /** Jitter source for the snapshot retry backoff. */
+  readonly random: (length: number) => Uint8Array;
   /** Lock-following: a vault that is not `unlocked` closes every user view. */
   readonly wallet: Wallet;
 };
 
 const TRADES_CAP = 100;
 const CANDLES_WINDOW = 200;
+/* Snapshot retry backoff — the socket's shape: 500 ms·2ⁿ capped at 30 s plus equal jitter. */
+const SNAPSHOT_BACKOFF_MIN_MS = 500;
+const SNAPSHOT_BACKOFF_MAX_MS = 30_000;
 
 /** Milliseconds per candle interval — the snapshot window is CANDLES_WINDOW intervals deep. */
 const INTERVAL_MS: Record<CandleParameters["interval"], number> = {
@@ -183,7 +195,8 @@ const liveFromPromise = <T>(build: () => Promise<LiveView<T>>): LiveView<T> => {
 };
 
 export function createHyperliquidLive(options: HyperliquidLiveOptions): HyperliquidLive {
-  const { socket, transport, ownerOf, now, wallet } = options;
+  const { socket, transport, ownerOf, now, setTimer, random, wallet } = options;
+  const jittered = (ms: number): number => ms + Math.floor(((random(1)[0] ?? 0) / 256) * ms);
   const config = { transport: socket };
   const http = { transport };
   /* Open user views — a vault lock closes them all; market views ignore it. */
@@ -266,11 +279,25 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
       if (args.snapshot === undefined) {
         return;
       }
-      let snap: T;
-      try {
-        snap = await args.snapshot();
-      } catch {
-        return; // stays connecting — the next reconnect re-confirms and retries
+      /* A failed fetch must not stall the view until the next reconnect — retry on the
+         injected timer with the socket's backoff shape, generation-checked. */
+      let snap: T | undefined;
+      /* oxlint-disable eslint/no-await-in-loop -- retries are sequential by design. */
+      for (let attempt = 0; snap === undefined; attempt += 1) {
+        try {
+          snap = await args.snapshot();
+        } catch {
+          if (closed || gen !== generation) {
+            return;
+          }
+          const backoff = Math.min(SNAPSHOT_BACKOFF_MAX_MS, SNAPSHOT_BACKOFF_MIN_MS * 2 ** attempt);
+          await new Promise<void>((resolve) => {
+            setTimer(jittered(backoff), resolve);
+          });
+        }
+        if (closed || gen !== generation) {
+          return;
+        }
       }
       if (closed || gen !== generation) {
         return;
@@ -431,6 +458,17 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
             matches: match("clearinghouseState", { type: "clearinghouseState", user }),
             start: async (listener, onError) =>
               subClearinghouse(config, { user }, listener, { onError }),
+            frame: (_current, message) => message,
+          }),
+        group,
+      ),
+    spotState: (group) =>
+      userView(
+        (user) =>
+          view<SpotStateEvent, SpotStateEvent>({
+            matches: match("spotState", { type: "spotState", user }),
+            start: async (listener, onError) =>
+              subSpotState(config, { user }, listener, { onError }),
             frame: (_current, message) => message,
           }),
         group,

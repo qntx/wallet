@@ -58,6 +58,7 @@ import { SparkTransfer } from '@qntx/spark';
 import { SpotClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
 import { SpotClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
 import { SpotMetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
+import { SpotStateEvent } from '@nktkas/hyperliquid/api/subscription';
 import { StoreApi } from 'zustand/vanilla';
 import { UnsignedEvent } from '@qntx/nostr';
 import { UserFeesResponse } from '@nktkas/hyperliquid/api/info';
@@ -70,6 +71,7 @@ import { UserRateLimitResponse } from '@nktkas/hyperliquid/api/info';
 import { UserRoleResponse } from '@nktkas/hyperliquid/api/info';
 import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
+import * as z from 'zod/mini';
 
 // @public (undocumented)
 type AccountRef = Exclude<SignParams["request"], {
@@ -167,6 +169,9 @@ type AppAgent = {
     readonly network: string;
 };
 
+// @public
+type AppAvailability = "available" | "close-only" | "blocked";
+
 // @public (undocumented)
 type AppError = {
     readonly category: string;
@@ -192,7 +197,7 @@ type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | 
 
 // @public
 export type AppGroupState = {
-    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization";
+    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" | "unavailable";
     readonly termsAcknowledged: boolean;
     readonly agent?: AppAgent;
     readonly step?: AppStep;
@@ -248,6 +253,7 @@ export class AppsController extends Controller<AppsState> {
     // (undocumented)
     lock(): Promise<void>;
     reconcile(group: AppGroup): Promise<void>;
+    refreshEligibility(): Promise<void>;
     // (undocumented)
     renew(group: HyperliquidGroup, app: AppId): Promise<void>;
 }
@@ -258,7 +264,18 @@ type AppsControllerDeps = {
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "reject">;
     readonly openStore: () => Promise<EngineStore>;
+    readonly fetchEligibility: () => Promise<EligibilityResponse>;
+    readonly now: () => number;
     readonly logger: EngineLogger;
+};
+
+// @public
+type AppsEligibility = {
+    readonly status: "unknown" | "ready" | "error";
+    readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+    readonly country?: EligibilityResponse["country"];
+    readonly region?: EligibilityResponse["region"];
+    readonly checkedAt?: number;
 };
 
 // @public (undocumented)
@@ -281,10 +298,11 @@ export type AppSocket = {
     onerror: (() => void) | null;
 };
 
-// @public
+// @public (undocumented)
 export type AppsState = {
     readonly locked: boolean;
     readonly groups: Record<string, Readonly<Partial<Record<AppId, AppGroupState>>>>;
+    readonly eligibility: AppsEligibility;
 };
 
 // @public
@@ -544,6 +562,9 @@ export type CreateAppsOptions = {
     readonly logger: EngineLogger;
     readonly openStore: () => Promise<EngineStore>;
     readonly socket: (url: string) => AppSocket;
+    readonly gateway: {
+        readonly url: string;
+    };
     readonly hyperliquid: AppsHyperliquidConfig;
 };
 
@@ -556,6 +577,27 @@ type DelegationStatus = {
 
 // @public (undocumented)
 type DisplayIntent = ReturnType<typeof decodeEvm>;
+
+// @public (undocumented)
+type EligibilityResponse = z.infer<typeof eligibilityResponse>;
+
+// @public (undocumented)
+const eligibilityResponse: z.ZodMiniObject<{
+    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
+    apps: z.ZodMiniObject<{
+        hyperliquid: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+        polymarket: z.ZodMiniEnum<{
+            available: "available";
+            blocked: "blocked";
+            "close-only": "close-only";
+        }>;
+    }, z.core.$strip>;
+}, z.core.$strip>;
 
 // @public
 type EngineCollection = {
@@ -747,6 +789,7 @@ export type HyperliquidLive = {
     readonly trades: (coin: string) => LiveView<RecentTradesResponse>;
     readonly candles: (coin: string, interval: CandleParameters["interval"]) => LiveView<CandleSnapshotResponse>;
     readonly account: (group: HyperliquidGroup) => LiveView<ClearinghouseStateEvent>;
+    readonly spotState: (group: HyperliquidGroup) => LiveView<SpotStateEvent>;
     readonly openOrders: (group: HyperliquidGroup) => LiveView<OpenOrdersEvent>;
     readonly fills: (group: HyperliquidGroup) => LiveView<UserFillsEvent["fills"]>;
 };

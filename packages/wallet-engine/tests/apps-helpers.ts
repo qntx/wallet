@@ -17,6 +17,7 @@ import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
 import { createApps } from "../src/apps/index.ts";
 import type { AppsController } from "../src/apps/index.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
+import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
@@ -100,6 +101,8 @@ export type HlState = {
   noAutoList?: boolean;
   /** ApproveBuilderFee answers ok but maxBuilderFee never confirms (builder-timeout tests). */
   noAutoBuilderFee?: boolean;
+  /** The gateway's /v1/eligibility answer — a response factory, or throw for `error` status. */
+  eligibility?: () => EligibilityResponse;
 };
 
 const listAgent = (
@@ -126,6 +129,17 @@ export const hlFetch =
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const body = bodyJson(init);
     const headers = { date: new Date(timers.time).toUTCString() };
+    if (url.endsWith("/v1/eligibility")) {
+      const answer =
+        hl.eligibility === undefined
+          ? {
+              country: "US",
+              region: null,
+              apps: { hyperliquid: "available", polymarket: "available" },
+            }
+          : hl.eligibility();
+      return Response.json(answer, { headers });
+    }
     if (url.endsWith("/exchange")) {
       const action = isRecord(body["action"]) ? body["action"] : {};
       posted.push({ endpoint: "exchange", body });
@@ -383,6 +397,8 @@ export const world = async (
       onclose: null,
       onerror: null,
     }),
+    /* Every existing test enables apps → the stub answers "available" unless overridden. */
+    gateway: { url: "https://gateway.test" },
     hyperliquid: {
       network: "Testnet",
       agentName: options.agentName ?? "qntx-test",
@@ -392,6 +408,9 @@ export const world = async (
   await networks.init();
   await transactions.init();
   await requests.init();
+  /* The controller's init chain (agents refresh → eligibility → reconcile) runs on the
+     wallet's subscribe event — wait for the eligibility answer before the test drives. */
+  await until(() => controller.getState().eligibility.status !== "unknown");
   const group = { walletId, groupIndex };
   const gkey = `${walletId}/${groupIndex}`;
   const state = (): AppGroupState | undefined =>

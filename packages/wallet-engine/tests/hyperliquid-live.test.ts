@@ -97,6 +97,14 @@ const rig = () => {
     // oxlint-disable-next-line typescript/require-await -- the seam's signature is a promise
     ownerOf: async () => OWNER,
     now: () => time,
+    setTimer: (ms, fn) => {
+      const entry = { at: time + ms, fn, cancelled: false };
+      queue.push(entry);
+      return () => {
+        entry.cancelled = true;
+      };
+    },
+    random: (length) => new Uint8Array(length).fill(0),
     wallet,
   });
   const confirm = (s: FakeSocket, payload: unknown): void => {
@@ -256,6 +264,34 @@ describe("hyperliquid live", () => {
     await view.close();
   });
 
+  it("retries a failed snapshot on the backoff timer", async () => {
+    const { live, sockets, http, confirm, runNext } = rig();
+    let calls = 0;
+    http["recentTrades"] = () => {
+      calls += 1;
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- a scripted failing fetch.
+      if (calls < 3) {
+        throw new Error("info down");
+      }
+      return [trade(1)];
+    };
+    const view = live.trades("BTC");
+    const s = sockets[0]!;
+    s.open();
+    confirm(s, s.frames("subscribe")[0]);
+    await tick();
+    expect(view.getState().status).toBe("connecting"); // first fetch failed, retry armed
+    runNext();
+    await tick();
+    expect(view.getState().status).toBe("connecting"); // second failure → next backoff
+    runNext();
+    await tick();
+    expect(view.getState().status).toBe("live");
+    expect(view.getState().data!.map((t) => t.tid)).toStrictEqual([1]);
+    expect(calls).toBe(3);
+    await view.close();
+  });
+
   it("resolves the group to its owner for user views", async () => {
     const { live, sockets } = rig();
     void live.account(GROUP);
@@ -265,6 +301,23 @@ describe("hyperliquid live", () => {
     expect(s.frames("subscribe")).toStrictEqual([
       expect.objectContaining({ type: "clearinghouseState", user: OWNER }),
     ]);
+  });
+
+  it("spotState streams full state for the group's owner", async () => {
+    const { live, sockets, confirm } = rig();
+    const view = live.spotState(GROUP);
+    await tick();
+    const s = sockets[0]!;
+    s.open();
+    expect(s.frames("subscribe")).toStrictEqual([
+      expect.objectContaining({ type: "spotState", user: OWNER }),
+    ]);
+    confirm(s, s.frames("subscribe")[0]);
+    const spot = { user: OWNER, spotState: { balances: [] } };
+    s.push({ channel: "spotState", data: spot });
+    await tick();
+    expect(view.getState()).toStrictEqual({ status: "live", data: spot, updatedAt: 0 });
+    await view.close();
   });
 
   it("openOrders streams full state", async () => {
