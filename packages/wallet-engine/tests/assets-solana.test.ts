@@ -423,11 +423,11 @@ describe("AssetsController solana token holdings", () => {
 
 /** A deferred the test resolves once a session boundary has passed underneath a call. */
 const deferred = () => {
-  let resolve = (): void => {};
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  let release = (): void => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  return { promise, resolve };
+  return { promise, resolve: release };
 };
 
 /** A gated controller like `make` whose every `getMultipleAccounts` parks until `wait`. */

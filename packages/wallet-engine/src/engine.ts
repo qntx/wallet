@@ -169,7 +169,7 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown
         ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
         : T extends ReadonlySet<infer E>
           ? ReadonlySet<DeepReadonly<E>>
-          : T extends object
+          : T extends Record<PropertyKey, unknown>
             ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
             : T;
 

@@ -462,11 +462,11 @@ describe("AssetsController built-in tokens", () => {
 
 /** A deferred the test resolves once a session boundary has passed underneath a call. */
 const deferred = () => {
-  let resolve = (): void => {};
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  let release = (): void => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  return { promise, resolve };
+  return { promise, resolve: release };
 };
 
 /** Wraps `evmClient`'s request: matching `eth_call`s report `started` then park until `wait`. */
@@ -490,6 +490,12 @@ const gateCall = (
     },
   }) as unknown as PublicClient;
 
+/** `when` for `gateCall`: a direct `decimals()` call against `token`. */
+const onTokenDecimals =
+  (token: string) =>
+  (to: string, data: `0x${string}`): boolean =>
+    to.toLowerCase() === token.toLowerCase() && data === DECIMALS;
+
 describe("AssetsController locked vault and stale sessions", () => {
   it("addToken and setTokenHidden refuse while the vault is locked", async () => {
     const c = evmClient(new Map([[CUSTOM.toLowerCase(), { symbol: "TST", decimals: 6 }]]), []);
@@ -501,7 +507,7 @@ describe("AssetsController locked vault and stale sessions", () => {
       "assets require an unlocked vault",
     );
     await assets.init();
-    await assets.lock();
+    assets.lock();
     await expect(assets.addToken(MAINNET, CUSTOM)).rejects.toThrow(
       "assets require an unlocked vault",
     );
@@ -519,11 +525,10 @@ describe("AssetsController locked vault and stale sessions", () => {
       new Map([[CUSTOM.toLowerCase(), { symbol: "TST", decimals: 6 }]]),
       calls,
     );
-    const c = gateCall(
-      inner,
-      (to, data) => to.toLowerCase() === CUSTOM.toLowerCase() && data === DECIMALS,
-      { started: reached.resolve, wait: gate.promise },
-    );
+    const c = gateCall(inner, onTokenDecimals(CUSTOM), {
+      started: reached.resolve,
+      wait: gate.promise,
+    });
     const assets = make(c, { chainId: 1, multicall3: MULTICALL3 }, store);
     await assets.init();
     const pending = assets.addToken(MAINNET, CUSTOM);

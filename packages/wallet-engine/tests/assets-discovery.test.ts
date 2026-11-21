@@ -1241,11 +1241,11 @@ describe("AssetsController visibility and prices", () => {
 
 /** A deferred the test resolves once a session boundary has passed underneath a call. */
 const deferred = () => {
-  let resolve = (): void => {};
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  let release = (): void => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  return { promise, resolve };
+  return { promise, resolve: release };
 };
 
 /** Wraps `evmClient`'s request: matching `eth_call`s report `started` then park until `wait`. */
@@ -1269,6 +1269,32 @@ const gateCall = (
     },
   }) as unknown as PublicClient;
 
+/** `when` for `gateCall`: the first aggregate3 only — module scope keeps tests conditional-free. */
+const firstAggregate =
+  (calls: Call[]) =>
+  (_to: string, data: `0x${string}`): boolean =>
+    data.startsWith(AGG_SELECTOR) && calls.length === 0;
+
+/** `when` for `gateCall`: a direct `decimals()` call against `token`. */
+const onTokenDecimals =
+  (token: string) =>
+  (to: string, data: `0x${string}`): boolean =>
+    to.toLowerCase() === token.toLowerCase() && data === DECIMALS;
+
+/** Whether `calls` holds an aggregate3 reading `decimals()` of `token`. */
+const hasDecimalsAggregate = (calls: Call[], token: string): boolean =>
+  calls.some(
+    (call) =>
+      call.data.startsWith(AGG_SELECTOR) &&
+      decodedAggregateFrom(call.data).args[0].some(
+        (inner2) =>
+          inner2.target.toLowerCase() === token.toLowerCase() && inner2.callData === DECIMALS,
+      ),
+  );
+
+const decodedAggregateFrom = (data: `0x${string}`) =>
+  decodeFunctionData({ abi: MULTICALL3_ABI, data });
+
 describe("AssetsController stale session writes", () => {
   it("a scan resolving after lock→unlock discovers and caches nothing in the new session", async () => {
     const calls: Call[] = [];
@@ -1282,7 +1308,7 @@ describe("AssetsController stale session writes", () => {
       ]),
       calls,
     );
-    const c = gateCall(inner, (_to, data) => data.startsWith(AGG_SELECTOR) && calls.length === 0, {
+    const c = gateCall(inner, firstAggregate(calls), {
       started: reached.resolve,
       wait: gate.promise,
     });
@@ -1337,11 +1363,10 @@ describe("AssetsController stale session writes", () => {
       ]),
       calls,
     );
-    const c = gateCall(
-      inner,
-      (to, data) => to.toLowerCase() === LISTED.toLowerCase() && data === DECIMALS,
-      { started: reached.resolve, wait: gate.promise },
-    );
+    const c = gateCall(inner, onTokenDecimals(LISTED), {
+      started: reached.resolve,
+      wait: gate.promise,
+    });
     const assets = makeEvm(c, {
       gateway: GATEWAY,
       fetch: listFetch(
@@ -1366,17 +1391,6 @@ describe("AssetsController stale session writes", () => {
     // The dead session's metadata must not satisfy the new session's missing-metadata read.
     calls.length = 0;
     await assets.refresh(OWNER, MAINNET);
-    const meta = calls.find(
-      (call) =>
-        call.data.startsWith(AGG_SELECTOR) &&
-        decodedAggregateFrom(call.data).args[0].some(
-          (inner2) =>
-            inner2.target.toLowerCase() === LISTED.toLowerCase() && inner2.callData === DECIMALS,
-        ),
-    );
-    expect(meta).toBeDefined();
+    expect(hasDecimalsAggregate(calls, LISTED)).toBe(true);
   });
 });
-
-const decodedAggregateFrom = (data: `0x${string}`) =>
-  decodeFunctionData({ abi: MULTICALL3_ABI, data });

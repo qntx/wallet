@@ -126,6 +126,7 @@ describe("engine surface", () => {
 });
 
 describe("host-visible state is deeply read-only", () => {
+  // oxlint-disable-next-line vitest/expect-expect -- the assertions are @ts-expect-error type errors
   it("no state object can be assigned or deleted through the facade", () => {
     // Never invoked — the assertions are the @ts-expect-error type errors.
     const edits = (engine: WalletEngine): void => {
@@ -137,11 +138,10 @@ describe("host-visible state is deeply read-only", () => {
       delete engine.transactions.getState().txs["t"];
       // @ts-expect-error the requests record is readonly
       engine.requests.getState().requests["r"] = undefined;
-      const request = engine.requests.getState().requests["r"];
-      if (request !== undefined) {
-        // @ts-expect-error nested fields are readonly too
-        request.stage = "failed";
-      }
+      const { requests } = engine.requests.getState();
+      const request = requests["r"]!;
+      // @ts-expect-error nested fields are readonly too
+      request.stage = "failed";
       // @ts-expect-error the balances record is readonly
       engine.assets.getState().balances["w1"] = undefined;
       // @ts-expect-error address book entries are readonly
@@ -154,6 +154,7 @@ describe("host-visible state is deeply read-only", () => {
     void edits;
   });
 
+  // oxlint-disable-next-line vitest/expect-expect -- the assertions are @ts-expect-error type errors
   it("the store's subscribe listener receives the same read-only state", () => {
     const edits = (engine: WalletEngine): void => {
       engine.transactions.store.subscribe((state) => {
