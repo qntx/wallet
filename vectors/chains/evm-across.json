@@ -76,7 +76,9 @@
             "to": "0xd260b2216B735277da6771564A01c04856E78321",
             "amount": {
               "asset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-              "amount": "107991891814888217628"
+              "amount": "107991891814888217628",
+              "symbol": "WETH",
+              "decimals": 18
             },
             "verified": true
           }

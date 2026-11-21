@@ -712,8 +712,8 @@ describe("described dApp requests on a fresh vault", () => {
       "WETH9 deposit() (wrap 1 ETH)",
       evmTx(walletId, { to: WETH, data: "0xd0e30db0", value: "0xde0b6b3a7640000" }),
       {
-        title: "Confirm contract call",
-        description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${WETH}, function 0xd0e30db0\nSend 1 ETH to ${WETH}\nMax fee 0.000196608 ETH`,
+        title: "Confirm swap",
+        description: `Network: Ethereum\nSend 1 ETH to ${WETH}\nReceive at least 1 WETH at ${address}\nMax fee 0.000196608 ETH`,
       },
     ],
     [
@@ -781,12 +781,13 @@ describe("described dApp requests on a fresh vault", () => {
     const fake = fakeKeystore("zh-Hans");
     const h = createHarness({ keystore: fake.keystore });
     const { session, walletId } = await importHardware(h);
+    const address = await evmAddress(h, session, walletId);
     const request = evmTx(walletId, { to: WETH, data: "0xd0e30db0", value: "0xde0b6b3a7640000" });
     const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
     expect(errCode(response)).toBeUndefined();
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
-      title: "确认合约调用",
-      description: `网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 ${WETH}，函数 0xd0e30db0\n发送 1 ETH 到 ${WETH}\n最高手续费 0.000196608 ETH`,
+      title: "确认兑换",
+      description: `网络：Ethereum\n发送 1 ETH 到 ${WETH}\n至少收到 1 WETH，收款地址 ${address}\n最高手续费 0.000196608 ETH`,
     });
   });
 

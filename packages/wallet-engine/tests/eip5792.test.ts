@@ -623,7 +623,6 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
 });
 
 describe("dApp transaction signing classes", () => {
-  const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
   const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -652,7 +651,6 @@ describe("dApp transaction signing classes", () => {
     await w.start();
     await w.connect();
     const txs = [
-      { to: WETH, data: "0xd0e30db0", value: "0xde0b6b3a7640000" },
       { to: AAVE_V3, data: SUPPLY },
       { to: ROUTER, data: EXECUTE, value: "0x2386f26fc10000" },
     ];

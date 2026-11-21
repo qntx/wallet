@@ -76,15 +76,6 @@ const fieldsOf = (
 describe("everyday contract calls are described, not blind", () => {
   const txCases = [
     [
-      "WETH deposit",
-      "deposit()",
-      tx(
-        WETH,
-        encodeFunctionData({ abi: parseAbi(["function deposit() payable"]) }),
-        "0xde0b6b3a7640000",
-      ),
-    ],
-    [
       "Aave V3 supply",
       "supply(address,uint256,address,uint16)",
       tx(

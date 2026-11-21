@@ -335,6 +335,154 @@
       }
     },
     {
+      "name": "Monad WMON deposit",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:143",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 143,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x14d1120d7b160000",
+          "data": "0xd0e30db0",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "Network: Monad\nSend 1.5 MON to 0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A\nReceive at least 1.5 WMON at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 MON"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "网络：Monad\n发送 1.5 MON 到 0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A\n至少收到 1.5 WMON，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 MON"
+        }
+      }
+    },
+    {
+      "name": "Sei WSEI withdraw",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1329",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1329,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x2e1a7d4d0000000000000000000000000000000000000000000000001bc16d674ec80000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "Network: Sei\nSend 2 WSEI to 0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7\nReceive at least 2 SEI at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 SEI"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "网络：Sei\n发送 2 WSEI 到 0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7\n至少收到 2 SEI，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 SEI"
+        }
+      }
+    },
+    {
+      "name": "Scroll WETH deposit",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:534352",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 534352,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x6f05b59d3b20000",
+          "data": "0xd0e30db0",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x5300000000000000000000000000000000000004"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "Network: Scroll\nSend 0.5 ETH to 0x5300000000000000000000000000000000000004\nReceive at least 0.5 WETH at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "网络：Scroll\n发送 0.5 ETH 到 0x5300000000000000000000000000000000000004\n至少收到 0.5 WETH，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "Ethereum WETH withdraw",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x2e1a7d4d0000000000000000000000000000000000000000000000000de0b6b3a7640000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "Network: Ethereum\nSend 1 WETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nReceive at least 1 ETH at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "网络：Ethereum\n发送 1 WETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n至少收到 1 ETH，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "opBNB native BNB transfer",
       "request": {
         "kind": "evm.transaction",

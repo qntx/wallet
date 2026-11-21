@@ -66,6 +66,8 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
 const OP_USDC = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" as `0x${string}`;
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as `0x${string}`;
+const OP_WETH = "0x4200000000000000000000000000000000000006" as `0x${string}`;
 const CELO = "eip155:42220";
 const CELO_USDC = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
 const CELO_USDT = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
@@ -249,7 +251,7 @@ describe("AssetsController built-in tokens", () => {
     const assets = make(c, { chainId: 1, multicall3: MULTICALL3 });
     await assets.init();
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
     expect(balances.tokens[0]).toStrictEqual({
       address: USDC,
       symbol: "USDC",
@@ -274,17 +276,21 @@ describe("AssetsController built-in tokens", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.to).toBe(MULTICALL3);
     const agg = decodedAggregate(calls);
-    expect(agg.args[0].map((call) => call.target)).toStrictEqual([USDC, USDT]);
-    expect(agg.args[0].map((call) => call.callData)).toStrictEqual([BALANCE_OF, BALANCE_OF]);
+    expect(agg.args[0].map((call) => call.target)).toStrictEqual([USDC, USDT, WETH]);
+    expect(agg.args[0].map((call) => call.callData)).toStrictEqual([
+      BALANCE_OF,
+      BALANCE_OF,
+      BALANCE_OF,
+    ]);
   });
 
-  it("shows only chainId 10's USDC there", async () => {
+  it("shows only chainId 10's built-ins there", async () => {
     const calls: Call[] = [];
     const c = evmClient(new Map([[OP_USDC.toLowerCase(), { balance: 42n }]]), calls);
     const assets = make(c, { chainId: 10, multicall3: MULTICALL3 });
     await assets.init();
     const balances = await assets.refresh(OWNER, "eip155:10");
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([OP_USDC]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([OP_USDC, OP_WETH]);
     expect(balances.tokens[0]?.verified).toBe(true);
     expect(balances.tokens[0]?.balance).toBe("42");
   });
@@ -316,10 +322,10 @@ describe("AssetsController built-in tokens", () => {
       new Map([[CUSTOM.toLowerCase(), { balance: 9n, symbol: "TST", decimals: 6 }]]),
       calls,
     );
-    const assets = make(c, { chainId: 56 });
+    const assets = make(c, { chainId: 42170 });
     await assets.init();
-    await assets.addToken("eip155:56", CUSTOM);
-    const balances = await assets.refresh(OWNER, "eip155:56");
+    await assets.addToken("eip155:42170", CUSTOM);
+    const balances = await assets.refresh(OWNER, "eip155:42170");
     expect(balances.tokens.map((t) => t.address)).toStrictEqual([CUSTOM]);
     expect(balances.tokens[0]?.verified).toBe(false);
   });
@@ -339,7 +345,7 @@ describe("AssetsController built-in tokens", () => {
     calls.length = 0;
     const balances = await assets.refresh(OWNER, MAINNET);
     const reads = calls.filter((call) => call.data === BALANCE_OF);
-    expect(reads.map((call) => call.to)).toStrictEqual([USDC, USDT, CUSTOM]);
+    expect(reads.map((call) => call.to)).toStrictEqual([USDC, USDT, WETH, CUSTOM]);
     expect(calls.every((call) => !call.data.startsWith(AGG_SELECTOR))).toBe(true);
     expect(balances.tokens[0]?.balance).toBe("5");
   });
@@ -351,7 +357,7 @@ describe("AssetsController built-in tokens", () => {
     await assets.init();
     await assets.addToken(MAINNET, CUSTOM);
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.verified)).toStrictEqual([true, true, false]);
+    expect(balances.tokens.map((t) => t.verified)).toStrictEqual([true, true, true, false]);
   });
 
   it("a hand-added built-in lists once, verified — added checksummed or lower-case", async () => {
@@ -362,7 +368,7 @@ describe("AssetsController built-in tokens", () => {
     await assets.addToken(MAINNET, USDC.toLowerCase());
     await assets.addToken(MAINNET, USDC);
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
     expect(balances.tokens[0]?.verified).toBe(true);
   });
 
@@ -379,7 +385,7 @@ describe("AssetsController built-in tokens", () => {
     const fresh = make(c, { chainId: 1, multicall3: MULTICALL3 }, store);
     await fresh.init();
     const balances = await fresh.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, CUSTOM]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH, CUSTOM]);
   });
 
   it("solana mainnet lists the table mints, verified, from the holdings read alone", async () => {
@@ -420,10 +426,11 @@ describe("AssetsController built-in tokens", () => {
     expect(calls.map((call) => call.data).toSorted()).toStrictEqual([SYMBOL, DECIMALS].toSorted());
     calls.length = 0;
     const balances = await assets.refresh(OWNER, MAINNET);
-    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, CUSTOM]);
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH, CUSTOM]);
     // Balances only — the addToken read seeded the per-unlock metadata cache.
     expect(calls).toHaveLength(1);
     expect(decodedAggregate(calls).args[0].map((call) => call.callData)).toStrictEqual([
+      BALANCE_OF,
       BALANCE_OF,
       BALANCE_OF,
       BALANCE_OF,
@@ -432,6 +439,7 @@ describe("AssetsController built-in tokens", () => {
     await assets.refresh(OWNER, MAINNET);
     expect(calls).toHaveLength(1);
     expect(decodedAggregate(calls).args[0].map((call) => call.callData)).toStrictEqual([
+      BALANCE_OF,
       BALANCE_OF,
       BALANCE_OF,
       BALANCE_OF,
@@ -456,8 +464,7 @@ describe("AssetsController built-in tokens", () => {
       const raw = await store.collection("assets-custom-tokens").get("customTokens");
       expect(raw).toBeUndefined();
       const balances = await assets.refresh(OWNER, MAINNET);
-      expect(balances.tokens.find((t) => t.address === CUSTOM)).toBeUndefined();
-      expect(balances.tokens.every((t) => t.decimals !== 18)).toBe(true);
+      expect(balances.tokens.map((t) => t.address)).toStrictEqual([USDC, USDT, WETH]);
     },
   );
 

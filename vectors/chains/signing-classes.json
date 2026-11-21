@@ -28,16 +28,16 @@
           "to": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
         }
       },
-      "verifiability": "opaque",
+      "verifiability": "full",
       "blind": null,
       "prompt": {
         "en": {
-          "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, function 0xd0e30db0\nSend 1 ETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nMax fee 0.000196608 ETH"
+          "title": "Confirm swap",
+          "description": "Network: Ethereum\nSend 1 ETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nReceive at least 1 WETH at 0x2222222222222222222222222222222222222222\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
-          "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2，函数 0xd0e30db0\n发送 1 ETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n最高手续费 0.000196608 ETH"
+          "title": "确认兑换",
+          "description": "网络：Ethereum\n发送 1 ETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n至少收到 1 WETH，收款地址 0x2222222222222222222222222222222222222222\n最高手续费 0.000196608 ETH"
         }
       }
     },

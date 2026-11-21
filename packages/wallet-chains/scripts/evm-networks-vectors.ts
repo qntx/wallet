@@ -18,6 +18,18 @@ const MONAD_USDC = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
 const INK_USDC = "0x2D270e6886d130D724215A266106e6832161EAEd";
 const CELO_ALIAS = "0x471EcE3750Da237f93B8E339c536989b8978a438";
 const ARC_USDC_ALIAS = "0x3600000000000000000000000000000000000000";
+const MONAD_WMON = "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A";
+const SEI_WSEI = "0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7";
+const SCROLL_WETH = "0x5300000000000000000000000000000000000004";
+const ETHEREUM_WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+const DEPOSIT = encodeFunctionData({ abi: parseAbi(["function deposit() payable"]) });
+const withdraw = (wad: bigint) =>
+  encodeFunctionData({ abi: parseAbi(["function withdraw(uint256)"]), args: [wad] });
+
+const swapP = (en: string, zh: string) => ({
+  en: { title: "Confirm swap", description: en },
+  "zh-Hans": { title: "确认兑换", description: zh },
+});
 
 const account = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" };
 const tx = (chainId: number, over: { to?: string; data?: string; value?: string }) => ({
@@ -133,6 +145,47 @@ const cases = [
         description: `网络：Arc\n可能还有其他转出\n授权 ${TO} 使用 5 USDC\n最高手续费 ${FEE} USDC`,
       },
     },
+  },
+  {
+    // deposit() on a listed wrapped native describes as a coin→token swap.
+    name: "Monad WMON deposit",
+    request: tx(143, { to: MONAD_WMON, data: DEPOSIT, value: "0x14d1120d7b160000" }),
+    verifiability: "full",
+    blind: null,
+    prompt: swapP(
+      `Network: Monad\nSend 1.5 MON to ${MONAD_WMON}\nReceive at least 1.5 WMON at ${SIGNER}\nMax fee ${FEE} MON`,
+      `网络：Monad\n发送 1.5 MON 到 ${MONAD_WMON}\n至少收到 1.5 WMON，收款地址 ${SIGNER}\n最高手续费 ${FEE} MON`,
+    ),
+  },
+  {
+    name: "Sei WSEI withdraw",
+    request: tx(1329, { to: SEI_WSEI, data: withdraw(2_000_000_000_000_000_000n) }),
+    verifiability: "full",
+    blind: null,
+    prompt: swapP(
+      `Network: Sei\nSend 2 WSEI to ${SEI_WSEI}\nReceive at least 2 SEI at ${SIGNER}\nMax fee ${FEE} SEI`,
+      `网络：Sei\n发送 2 WSEI 到 ${SEI_WSEI}\n至少收到 2 SEI，收款地址 ${SIGNER}\n最高手续费 ${FEE} SEI`,
+    ),
+  },
+  {
+    name: "Scroll WETH deposit",
+    request: tx(534352, { to: SCROLL_WETH, data: DEPOSIT, value: "0x6f05b59d3b20000" }),
+    verifiability: "full",
+    blind: null,
+    prompt: swapP(
+      `Network: Scroll\nSend 0.5 ETH to ${SCROLL_WETH}\nReceive at least 0.5 WETH at ${SIGNER}\nMax fee ${FEE} ETH`,
+      `网络：Scroll\n发送 0.5 ETH 到 ${SCROLL_WETH}\n至少收到 0.5 WETH，收款地址 ${SIGNER}\n最高手续费 ${FEE} ETH`,
+    ),
+  },
+  {
+    name: "Ethereum WETH withdraw",
+    request: tx(1, { to: ETHEREUM_WETH, data: withdraw(1_000_000_000_000_000_000n) }),
+    verifiability: "full",
+    blind: null,
+    prompt: swapP(
+      `Network: Ethereum\nSend 1 WETH to ${ETHEREUM_WETH}\nReceive at least 1 ETH at ${SIGNER}\nMax fee ${FEE} ETH`,
+      `网络：Ethereum\n发送 1 WETH 到 ${ETHEREUM_WETH}\n至少收到 1 ETH，收款地址 ${SIGNER}\n最高手续费 ${FEE} ETH`,
+    ),
   },
   {
     // opBNB prices legacy: the Max fee line comes out of gas × gasPrice.
