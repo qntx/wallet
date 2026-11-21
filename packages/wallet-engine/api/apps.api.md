@@ -184,6 +184,7 @@ type AppFlow = {
     readonly write: (patch: AppGroupPatch) => void;
     readonly stale: () => boolean;
     readonly wasEnabledAgent: () => string | undefined;
+    readonly wasBuilderDeclined: () => boolean;
 };
 
 // @public
@@ -203,7 +204,7 @@ export type AppGroupState = {
     readonly step?: AppStep;
     readonly requestId?: string;
     readonly renewalDue: boolean;
-    readonly builder?: "approved";
+    readonly builder?: "approved" | "declined";
     readonly error?: AppError;
 };
 
@@ -216,6 +217,7 @@ type AppProvider = {
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    readonly approveBuilder: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly renew: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly disable: (group: AppGroup, options: {
         readonly revoke: boolean;
@@ -239,6 +241,7 @@ export type AppsBuilderConfig = {
 export class AppsController extends Controller<AppsState> {
     constructor(deps: AppsControllerDeps);
     acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void>;
+    approveBuilder(group: HyperliquidGroup, app: AppId): Promise<void>;
     cancel(group: HyperliquidGroup, app: AppId): Promise<void>;
     // (undocumented)
     destroy(): Promise<void>;
@@ -448,6 +451,14 @@ type ChainRequestInput = ({
     readonly amount: bigint;
     readonly fee: PrepareParams["fee"];
 } | {
+    readonly method: "evm-cctp";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly amount: bigint;
+    readonly dex: "perps" | "spot";
+    readonly maxFee: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
     readonly method: "evm-swap";
     readonly account: AccountRef;
     readonly network: string;
@@ -555,7 +566,7 @@ type ChainRequestInput = ({
 };
 
 // @public (undocumented)
-type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
+type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
 export { ClearinghouseStateResponse }
 
@@ -593,6 +604,7 @@ export function createApps(options: CreateAppsOptions): {
 export type CreateAppsOptions = {
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly networks: Pick<NetworkController, "client">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
@@ -786,12 +798,23 @@ export type HyperliquidClock = {
 };
 
 // @public
+type HyperliquidDeposit = {
+    readonly kind: "approval-required";
+    readonly approval: HyperliquidPendingAction;
+} | {
+    readonly kind: "deposit";
+    readonly deposit: HyperliquidPendingAction;
+};
+
+// @public
 export type HyperliquidDepositInfo = {
-    readonly bridge: string;
+    readonly tokenMessenger: string;
     readonly usdc: string;
+    readonly forwarder: string;
     readonly network: string;
-    readonly minimum: bigint;
-    readonly creditSeconds: number;
+    readonly destinationDomain: number;
+    readonly minFinalityThreshold: number;
+    readonly dex: "perps" | "spot";
 };
 
 // @public (undocumented)
@@ -832,7 +855,8 @@ export type HyperliquidFund = {
     readonly deposit: (group: HyperliquidGroup, params: {
         readonly amount: bigint;
         readonly fee: EvmFeeTier;
-    }) => Promise<HyperliquidPendingAction>;
+        readonly dex?: "perps" | "spot";
+    }) => Promise<HyperliquidDeposit>;
 };
 
 // @public
@@ -1422,7 +1446,7 @@ class RequestController extends Controller<RequestControllerState> {
     // (undocumented)
     approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
     // (undocumented)
-    approve(id: string, method: "evm-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
     // (undocumented)
     approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
     // (undocumented)
@@ -1491,10 +1515,10 @@ type RequestControllerState = {
 };
 
 // @public (undocumented)
-type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput | NostrSignInput | WeblnInvoiceInput | WatchAssetInput | SolanaSignInput | BitcoinSignInput | SparkDepositInput | SparkExitInput;
+type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput | TronSignInput | NostrSignInput | WeblnInvoiceInput | WatchAssetInput | SolanaSignInput | BitcoinSignInput | SparkDepositInput | SparkExitInput;
 
 // @public (undocumented)
-type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "evm-delegation" | "evm-batch" | "nostr-sign" | "webln-invoice" | "watch-asset" | "solana-sign" | "bitcoin-sign" | "spark-deposit" | "spark-exit";
+type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sign" | "evm-delegation" | "evm-batch" | "nostr-sign" | "webln-invoice" | "watch-asset" | "solana-sign" | "bitcoin-sign" | "spark-deposit" | "spark-exit";
 
 // @public (undocumented)
 type RequestOrigin = {
@@ -1509,7 +1533,7 @@ type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "verify-mismatch" | "verify-threat";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat";
     readonly level: "warning" | "danger";
 };
 
@@ -1526,6 +1550,7 @@ type SendParams = {
     readonly fee: EvmFeeTier | SolanaFeeTier;
     readonly decimals?: number;
     readonly inputs?: ReadonlyArray<string>;
+    readonly memo?: string;
     readonly verify: SignParams["verify"];
 };
 
@@ -1534,7 +1559,7 @@ type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 type SignatureResult = {
-    readonly kind: "evm.personal-message" | "evm.typed-data";
+    readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
@@ -1688,6 +1713,7 @@ type SparkClientFactory = (options: {
 class SparkController extends Controller<SparkControllerState> {
     constructor(options: SparkControllerOptions);
     accountBalance(ref: SparkAccountRef): number | undefined;
+    archivePayment(ref: SparkAccountRef, id: string): void;
     claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void>;
     // (undocumented)
     createInvoice(ref: SparkAccountRef, params: {
@@ -1865,7 +1891,7 @@ type SparkPaymentRecord = {
 };
 
 // @public
-type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed" | "archived";
 
 // @public (undocumented)
 type SparkResult = {
@@ -1940,6 +1966,7 @@ type TrackedTransaction = {
     readonly tron?: {
         readonly expiration: number;
         readonly from: string;
+        readonly dappSignature?: string;
     };
     readonly replaces?: string;
     readonly parentId?: string;
@@ -1990,8 +2017,9 @@ class TransactionController extends Controller<TransactionControllerState> {
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
-        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
@@ -2021,6 +2049,7 @@ class TransactionController extends Controller<TransactionControllerState> {
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
     submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
+    submitDappTron(network: string, rawData: Uint8Array, signature: Uint8Array): Promise<TrackedTransaction>;
     txById(id: string): TrackedTransaction | undefined;
 }
 
@@ -2134,19 +2163,19 @@ const TRON_NODE_PATHS: {
         }, z.core.$strict>;
         readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
             address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            balance: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            balance: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             type: z.ZodMiniOptional<z.ZodMiniString<string>>;
             assetV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 key: z.ZodMiniString<string>;
-                value: z.ZodMiniNumber<number>;
+                value: z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>;
             }, z.core.$loose>>>;
             frozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>>;
             unfrozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                unfreeze_amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                unfreeze_amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                 unfreeze_expire_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             }, z.core.$loose>>>;
             votes: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
@@ -2155,11 +2184,11 @@ const TRON_NODE_PATHS: {
             }, z.core.$loose>>>;
             latest_withdraw_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             account_resource: z.ZodMiniOptional<z.ZodMiniObject<{
-                delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>;
-            delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
     };
     readonly "/wallet/getavailableunfreezecount": {
@@ -2178,7 +2207,7 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            max_size: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            max_size: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getdelegatedresourcev2": {
@@ -2191,8 +2220,8 @@ const TRON_NODE_PATHS: {
             delegatedResource: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
                 from: z.ZodMiniOptional<z.ZodMiniString<string>>;
                 to: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                 expire_time_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                 expire_time_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
             }, z.core.$loose>>>;
@@ -2204,7 +2233,7 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            reward: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            reward: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getassetissuebyid": {
@@ -2232,14 +2261,14 @@ const TRON_NODE_PATHS: {
             visible: z.ZodMiniLiteral<true>;
         }, z.core.$strict>;
         readonly response: z.ZodMiniObject<{
-            freeNetLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            freeNetUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            NetLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            NetUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            EnergyLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            EnergyUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            tronPowerLimit: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            tronPowerUsed: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            freeNetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            freeNetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            NetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            NetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            EnergyLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            EnergyUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            tronPowerLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            tronPowerUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
         }, z.core.$loose>;
     };
     readonly "/wallet/getchainparameters": {
@@ -2247,7 +2276,7 @@ const TRON_NODE_PATHS: {
         readonly response: z.ZodMiniObject<{
             chainParameter: z.ZodMiniArray<z.ZodMiniObject<{
                 key: z.ZodMiniString<string>;
-                value: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             }, z.core.$loose>>;
         }, z.core.$loose>;
     };
@@ -2276,6 +2305,8 @@ const TRON_NODE_PATHS: {
                 code: z.ZodMiniOptional<z.ZodMiniString<string>>;
                 message: z.ZodMiniOptional<z.ZodMiniString<string>>;
             }, z.core.$loose>;
+            energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
         }, z.core.$loose>]>;
     };
     readonly "/wallet/broadcasthex": {
@@ -2304,7 +2335,7 @@ const TRON_NODE_PATHS: {
                         value: z.ZodMiniObject<{
                             owner_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                             to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            amount: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                            amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                             asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
                         }, z.core.$loose>;
                     }, z.core.$loose>;
@@ -2376,19 +2407,20 @@ type TronFeeQuote = {
     readonly bandwidth: {
         readonly bytes: number;
         readonly source: "staked" | "free" | "burn" | "activation-staked" | "activation-fee";
-        readonly stakedAvailable: number;
-        readonly freeAvailable: number;
+        readonly stakedAvailable: bigint;
+        readonly freeAvailable: bigint;
         readonly burn: string;
     };
     readonly activation?: string;
     readonly energy?: {
         readonly used: number;
         readonly penalty: number;
-        readonly available: number;
+        readonly available: bigint;
         readonly burn: string;
         readonly feeLimit: string;
     };
-    readonly warnings: ReadonlyArray<"recipient-not-activated" | "token-recipient-empty">;
+    readonly memo?: string;
+    readonly warnings: ReadonlyArray<"recipient-not-activated" | "token-recipient-empty" | "fee-limit-below-estimate">;
 };
 
 // @public (undocumented)
@@ -2396,6 +2428,15 @@ type TronIndexerPath = keyof typeof TRON_INDEXER_PATHS;
 
 // @public (undocumented)
 type TronNodePath = keyof typeof TRON_NODE_PATHS;
+
+// @public
+type TronSignInput = {
+    readonly method: "tron-sign";
+    readonly origin?: DappOrigin;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly request: SignRequest;
+};
 
 // @public
 type TxBlock = {

@@ -65,8 +65,9 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    /* 131 kB with the TRON family, the extra EVM fee models and the nonce/tracking fixes. */
-    budget: 136 * 1024,
+    /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
+       deposit and the nonce/tracking fixes. */
+    budget: 144 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",
@@ -87,8 +88,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "walletconnect",
     source: "src/walletconnect/index.ts",
-    /* measured 418760 B gzipped — our glue plus WalletKit, the sign client and the core. */
-    budget: 409 * 1024,
+    /* measured 420545 B gzipped — our glue plus WalletKit, the sign client and the core. */
+    budget: 414 * 1024,
     external: WALLETCONNECT_EXTERNAL,
     forbidden: [],
   },
