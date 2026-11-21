@@ -7,6 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { decodeEvm } from "../src/evm/index.ts";
 import { isBlindIntent } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
+import { decodeSolana } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
 
 type VectorCase = {
@@ -25,11 +26,15 @@ const vectors = JSON.parse(
     resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
     "utf8",
   ),
-) as { signers: { evm: string; tron: string }; cases: VectorCase[] };
+) as { signers: { evm: string; tron: string; solana: string }; cases: VectorCase[] };
 
 /** Rehydrates the JSON-only request forms (`$bytes`, parsed typed-data doc). */
 const request = (v: VectorCase): SignRequest => {
-  if (v.request.kind === "evm.personal-message" || v.request.kind === "tron.message") {
+  if (
+    v.request.kind === "evm.personal-message" ||
+    v.request.kind === "tron.message" ||
+    v.request.kind === "solana.transaction"
+  ) {
     return {
       ...v.request,
       message: hexToBytes(v.request.message.$bytes.replace(/^0x/, "")),
@@ -47,17 +52,26 @@ const request = (v: VectorCase): SignRequest => {
 /** The decoder and signer for the request's family. */
 const familyOf = (
   kind: string,
-): { decode: typeof decodeEvm | typeof decodeTron; signer: string } =>
+): {
+  decode: (request: SignRequest, signer: string) => DisplayIntent;
+  signer: string;
+} =>
   kind.startsWith("tron.")
     ? { decode: decodeTron, signer: vectors.signers.tron }
-    : { decode: decodeEvm, signer: vectors.signers.evm };
+    : kind.startsWith("solana.")
+      ? {
+          decode: (r, s) =>
+            decodeSolana(r as Extract<SignRequest, { kind: "solana.transaction" }>, s),
+          signer: vectors.signers.solana,
+        }
+      : { decode: decodeEvm, signer: vectors.signers.evm };
 
 const blindOf = (intent: DisplayIntent): string | null => intent.blind ?? null;
 
 describe("signing-classes vectors", () => {
   it("has one case per expected class and blind reason", () => {
-    expect(vectors.cases).toHaveLength(61);
-    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(61);
+    expect(vectors.cases).toHaveLength(70);
+    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(70);
   });
 
   it.each(vectors.cases)("$name", (v) => {

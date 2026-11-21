@@ -1,7 +1,8 @@
 {
   "signers": {
     "evm": "0x2222222222222222222222222222222222222222",
-    "tron": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG"
+    "tron": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+    "solana": "11111111111111111111111111111112"
   },
   "cases": [
     {
@@ -2768,6 +2769,630 @@
         "zh-Hans": {
           "title": "确认盲签",
           "description": "网络：Polygon\nPolymarket 存款钱包 0x3000000000000000000000000000000000000003 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n钱包无法核实此调用会做什么\n以本账户的全部权限执行其自身代码\n调用合约 0x3000000000000000000000000000000000000003，函数 0x095ea7b3"
+        }
+      }
+    },
+    {
+      "name": "1inch LOP v4 Order at Aggregation Router v6 (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "maker",
+                "type": "address"
+              },
+              {
+                "name": "receiver",
+                "type": "address"
+              },
+              {
+                "name": "makerAsset",
+                "type": "address"
+              },
+              {
+                "name": "takerAsset",
+                "type": "address"
+              },
+              {
+                "name": "makingAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "takingAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "makerTraits",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "1inch Aggregation Router",
+            "version": "6",
+            "chainId": 1,
+            "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+          },
+          "message": {
+            "salt": "0",
+            "maker": "0x2222222222222222222222222222222222222222",
+            "receiver": "0x00000000000000000000000000000000DeaDBeef",
+            "makerAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "takerAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+            "makingAmount": "1000000",
+            "takingAmount": "500000000000000000",
+            "makerTraits": "0"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "App: 1inch Aggregation Router\nNetwork: Ethereum\nVerifying contract 0x111111125421cA6dc452d289314280a0f8842A65\nType: Order\n1inch order by 0x2222222222222222222222222222222222222222\nGive at most 1 USDC\n0x00000000000000000000000000000000DeaDBeef receives at least 500000000000000000 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nNo expiry\nCan be filled in parts at the same rate"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "应用：1inch Aggregation Router\n网络：Ethereum\n验证合约 0x111111125421cA6dc452d289314280a0f8842A65\n类型：Order\n1inch 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 1 USDC\n0x00000000000000000000000000000000DeaDBeef 至少收到 500000000000000000 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n无到期时间\n可按同一价格分批成交"
+        }
+      }
+    },
+    {
+      "name": "UniswapX V3DutchOrder Permit2 witness (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TokenPermissions": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256"
+              }
+            ],
+            "PermitWitnessTransferFrom": [
+              {
+                "name": "permitted",
+                "type": "TokenPermissions"
+              },
+              {
+                "name": "spender",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "witness",
+                "type": "V3DutchOrder"
+              }
+            ],
+            "OrderInfo": [
+              {
+                "name": "reactor",
+                "type": "address"
+              },
+              {
+                "name": "swapper",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "uint256"
+              },
+              {
+                "name": "deadline",
+                "type": "uint256"
+              },
+              {
+                "name": "additionalValidationContract",
+                "type": "address"
+              },
+              {
+                "name": "additionalValidationData",
+                "type": "bytes"
+              }
+            ],
+            "V3DutchOrder": [
+              {
+                "name": "info",
+                "type": "OrderInfo"
+              },
+              {
+                "name": "cosigner",
+                "type": "address"
+              },
+              {
+                "name": "startingBaseFee",
+                "type": "uint256"
+              },
+              {
+                "name": "baseInput",
+                "type": "V3DutchInput"
+              },
+              {
+                "name": "baseOutputs",
+                "type": "V3DutchOutput[]"
+              }
+            ],
+            "V3DutchInput": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "curve",
+                "type": "NonlinearDutchDecay"
+              },
+              {
+                "name": "maxAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "adjustmentPerGweiBaseFee",
+                "type": "uint256"
+              }
+            ],
+            "V3DutchOutput": [
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "curve",
+                "type": "NonlinearDutchDecay"
+              },
+              {
+                "name": "recipient",
+                "type": "address"
+              },
+              {
+                "name": "minAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "adjustmentPerGweiBaseFee",
+                "type": "uint256"
+              }
+            ],
+            "NonlinearDutchDecay": [
+              {
+                "name": "relativeBlocks",
+                "type": "uint256"
+              },
+              {
+                "name": "relativeAmounts",
+                "type": "int256[]"
+              }
+            ]
+          },
+          "primaryType": "PermitWitnessTransferFrom",
+          "domain": {
+            "name": "Permit2",
+            "chainId": 1,
+            "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+          },
+          "message": {
+            "permitted": {
+              "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+              "amount": "100"
+            },
+            "spender": "0x0000000015757c461808EA25Eb309638B62681cf",
+            "nonce": "0",
+            "deadline": "2000000000",
+            "witness": {
+              "info": {
+                "reactor": "0x0000000015757c461808EA25Eb309638B62681cf",
+                "swapper": "0x2222222222222222222222222222222222222222",
+                "nonce": "0",
+                "deadline": "2000000000",
+                "additionalValidationContract": "0x0000000000000000000000000000000000000000",
+                "additionalValidationData": "0x"
+              },
+              "cosigner": "0x00000000000000000000000000000000000BAd00",
+              "startingBaseFee": "0",
+              "baseInput": {
+                "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                "startAmount": "1",
+                "curve": {
+                  "relativeBlocks": "10",
+                  "relativeAmounts": [
+                    "0"
+                  ]
+                },
+                "maxAmount": "9",
+                "adjustmentPerGweiBaseFee": "0"
+              },
+              "baseOutputs": [
+                {
+                  "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                  "startAmount": "2000000",
+                  "curve": {
+                    "relativeBlocks": "10",
+                    "relativeAmounts": [
+                      "0"
+                    ]
+                  },
+                  "recipient": "0x2222222222222222222222222222222222222222",
+                  "minAmount": "1000000",
+                  "adjustmentPerGweiBaseFee": "0"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm swap",
+          "description": "App: Permit2\nNetwork: Ethereum\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x0000000015757c461808EA25Eb309638B62681cf to take 100 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 once via Permit2 until 2033-05-18 (UTC)\nUniswapX order by 0x2222222222222222222222222222222222222222\nGive at most 9 base units of unverified token 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n0x2222222222222222222222222222222222222222 receives at least 1 USDC\nValid until 2033-05-18 03:33 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认兑换",
+          "description": "应用：Permit2\n网络：Ethereum\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x0000000015757c461808EA25Eb309638B62681cf 一次性转走 100 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2） 经 Permit2 至 2033-05-18（UTC）\nUniswapX 订单，挂单方 0x2222222222222222222222222222222222222222\n最多付出 9 个最小单位（未验证代币 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2）\n0x2222222222222222222222222222222222222222 至少收到 1 USDC\n有效期至 2033-05-18 03:33（UTC）"
+        }
+      }
+    },
+    {
+      "name": "Snapshot Vote (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              }
+            ],
+            "Vote": [
+              {
+                "name": "from",
+                "type": "string"
+              },
+              {
+                "name": "space",
+                "type": "string"
+              },
+              {
+                "name": "timestamp",
+                "type": "uint64"
+              },
+              {
+                "name": "proposal",
+                "type": "string"
+              },
+              {
+                "name": "choice",
+                "type": "uint32"
+              },
+              {
+                "name": "reason",
+                "type": "string"
+              },
+              {
+                "name": "app",
+                "type": "string"
+              },
+              {
+                "name": "metadata",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Vote",
+          "domain": {
+            "name": "snapshot",
+            "version": "0.1.4"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "space": "example.eth",
+            "timestamp": "1700000000",
+            "proposal": "0xabababababababababababababababababababababababababababababababab",
+            "choice": "1",
+            "reason": "",
+            "app": "snapshot",
+            "metadata": "{}"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: snapshot\nNetwork: Ethereum\nType: Vote\nThe wallet cannot verify what this signature authorises\n· from = 0x2222222222222222222222222222222222222222\n· space = example.eth\n· timestamp = 1700000000\n· proposal = 0xabababababababababababababababababababababababababababababababab\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：snapshot\n网络：Ethereum\n类型：Vote\n钱包无法核实此签名授权的内容\n· from = 0x2222222222222222222222222222222222222222\n· space = example.eth\n· timestamp = 1700000000\n· proposal = 0xabababababababababababababababababababababababababababababababab\n· choice = 1\n· reason = \n· app = snapshot\n· metadata = {}"
+        }
+      }
+    },
+    {
+      "name": "0x Exchange Proxy order shape (claim near miss)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "anything",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "ZeroEx",
+            "version": "1.0.0",
+            "chainId": 1,
+            "verifyingContract": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF"
+          },
+          "message": {
+            "anything": "1"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: ZeroEx\nNetwork: Ethereum\nVerifying contract 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· anything = 1"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：ZeroEx\n网络：Ethereum\n验证合约 0xDef1C0ded9bec7F1a1670819833240f027b25EfF\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· anything = 1"
+        }
+      }
+    },
+    {
+      "name": "solana SPL Token Transfer (unchecked)",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010400000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9000000000000000000000000000000000000000000000000000000000000000001030302010009030500000000000000"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Solana\nThere may be other outflows\nSend 5 base units of the token in account So11111111111111111111111111111111111111112 to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 发送 5 个最小单位到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana SPL Token Burn",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "010002040000000000000000000000000000000000000000000000000000000000000001069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001040404040404040404040404040404040404040404040404040404040404040406ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9000000000000000000000000000000000000000000000000000000000000000001030301020009080500000000000000"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Solana\nThere may be other outflows\nBurn 5 base units of unverified token GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq from token account So11111111111111111111111111111111111111112; it is destroyed\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 销毁 5 个最小单位（未验证代币 GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq），永久消失\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana Stake Split",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010400000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202080808080808080808080808080808080808080808080808080808080808080806a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000000000000000000000000000000000000000000000000000000000000000000000103030201000c030000000700000000000000"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm staking",
+          "description": "Network: Solana\nSplit 0.000000007 SOL from stake account YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf into 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认质押",
+          "description": "网络：Solana\n从质押账户 YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf 拆分 0.000000007 SOL 到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana unknown program taking the signer",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100020500000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f00000000001034b048d53599f9694507e418864615ef2fff40429c2e8ac4b947c700000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a900000000000000000000000000000000000000000000000000000000000000000103040002010409000500000000000000"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana program-authority blind (13 writable accounts)",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100010f000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202090909090909090909090909090909090909090909090909090909090909090903030303030303030303030303030303030303030303030303030303030303030a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a04040404040404040404040404040404040404040404040404040404040404040b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b05050505050505050505050505050505050505050505050505050505050505050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c06060606060606060606060606060606060606060606060606060606060606060d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d07070707070707070707070707070707070707070707070707070707070707070808080808080808080808080808080808080808080808080808080808080808034b048d53599f9694507e418864615ef2fff40429c2e8ac4b947c70000000000000000000000000000000000000000000000000000000000000000000000000010e0e0001020406080a0c0d030507090b09000500000000000000"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "program-authority",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
         }
       }
     },
