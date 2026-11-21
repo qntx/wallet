@@ -288,6 +288,9 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
     });
     await approveAgent(group, flow, owner, agent);
     const builderOk = await approveBuilder(group, flow, owner);
+    /* `require` filters the verified list — the agent created above is only kernel-known until a
+       refresh lands it there; without this, trading right after enable threw not-enabled. */
+    await provider.agents.refresh();
     provider.agents.markEnabled(agent.address);
     flow.write({
       status: "enabled",
@@ -558,6 +561,9 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         });
         return;
       }
+      /* Same rule as the flow: the registry's verified list must see the agent before
+         markEnabled, or `require` reports not-enabled for an enabled group. */
+      await provider.agents.refresh();
       provider.agents.markEnabled(newest.address);
       flow.write({
         status: "enabled",

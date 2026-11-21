@@ -167,8 +167,14 @@ export class AppsController extends Controller<AppsState> {
       });
     }
     for (const provider of this.deps.providers.values()) {
+      /* A lock mid-init turns the kernel enumeration into an error — groups() fails closed and
+         the post-init vault check (transition) runs the lock path. */
       // oxlint-disable-next-line eslint/no-await-in-loop -- providers enumerate in order.
-      for (const group of await provider.groups()) {
+      const discovered = await provider.groups().catch((error: unknown): AppGroup[] => {
+        this.deps.logger.warn(`apps groups ${provider.id} failed`, error);
+        return [];
+      });
+      for (const group of discovered) {
         union.set(groupKey(group), group);
       }
     }
@@ -427,9 +433,9 @@ export function createApps(options: CreateAppsOptions): {
      during an unlock's init cannot interleave. */
   let started = false;
   let chain: Promise<void> = Promise.resolve();
+  const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
   const transition = async (): Promise<void> => {
-    const unlocked = options.wallet.getSnapshot().vault === "unlocked";
-    if (unlocked && !started) {
+    if (unlocked() && !started) {
       started = true;
       try {
         await provider.agents.refresh();
@@ -438,7 +444,10 @@ export function createApps(options: CreateAppsOptions): {
         started = false;
         options.logger.warn("apps init failed", error);
       }
-    } else if (!unlocked && started) {
+    }
+    /* Not `else if`: a lock that lands while init is in flight must still close the store —
+       init observes the lock only through its own failure, so the vault is re-read here. */
+    if (!unlocked() && started) {
       started = false;
       /* Session marks (enabled/rejected) are per-unlock — the next reconcile re-derives. */
       provider.agents.reset();
