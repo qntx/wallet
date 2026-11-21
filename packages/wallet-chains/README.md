@@ -2,7 +2,7 @@
 
 Chain semantics for the qntx wallet: wire-safe `SignRequest` types, request
 normalization, display decoding (verifiability, outflows, fee caps) and signing
-for three families, plus public-key account derivation.
+for four families, plus public-key account derivation.
 
 ## Entries
 
@@ -15,6 +15,8 @@ for three families, plus public-key account derivation.
 | `./solana/sign`  | `signSolanaMessage` (ed25519, 64-byte signature)                                                                                                                  |
 | `./bitcoin`      | `normalizeBitcoin`, `decodeBitcoinPsbt`/`verifiabilityBitcoin`, `bitcoinAddressFromXpub`, `BITCOIN_NETWORKS`                                                      |
 | `./bitcoin/sign` | `signBitcoinPsbt` (P2WPKH/P2SH-P2WPKH/P2PKH/P2TR key path), `signBitcoinMessage` (BIP-322 simple, legacy)                                                         |
+| `./tron`         | `normalizeTron`, `decodeTron`, `decodeTronRawData`/`encodeTronTransaction`, `tronRawDataFromJson`, `parseTronTypedData`/`tronTypedDataFromArgs`/`tronTypedDataDigest` (TIP-712), `isTronAddress`, `tronAddressFromPublicKey`, `TRON_PERMIT2`, `TRON_NETWORKS`, token table |
+| `./tron/sign`    | `signTronTransaction` (canonical `raw_data` bytes), `signTronMessage` (TIP-191), `signTronTypedData` (TIP-712)                                                    |
 | `./networks`     | `NetworkMeta`, `BUILT_IN_NETWORKS`, `networkMeta`, `withNativeAmountMeta`                                                                                         |
 
 `/sign` subpaths are for the signer kernel only — the host runtime uses the
