@@ -113,15 +113,18 @@ React Native the device owner proves presence before anything is erased.
 - Blind signing is a vault setting, off by default. A request is blind only when the chain
   decoder marks it so: a raw-byte or digest-shaped message (exactly 32 bytes, hidden or
   deceptive characters, or text that encodes raw bytes), typed data too large or misformed
-  to show or whose every leaf is a commitment hash, typed data a recognised family claims in an unknown shape
-  or a Seaport order over the item limit, a call into an unrecognised function of a listed
-  token, calldata that runs the signing account's own code, an undecoded instruction of a
-  core Solana program the signer signs, or a Safe delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
+  to show or carrying a hash or raw-bytes leaf the signature does not name, typed data a
+  recognised family claims in an unknown shape or a Seaport order over the item limit, a call
+  into an unrecognised function of a listed token, calldata that runs the signing account's own
+  code, an undecoded instruction of a core Solana program the signer signs, an undecoded Solana
+  program handed the signature whose reachable accounts cannot be listed, or a Safe
+  delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
   `blind-signing-disabled` — before any verification — until `vault.setBlindSigning(true, verify)`;
   `snapshot.blindSigning` reports the setting. Requests the wallet can describe but not verify —
   an unknown contract call, readable unrecognised typed data that fits the display budget,
-  an unknown Solana program or a core instruction the signer does not sign, a multi-party
-  PSBT — sign without the setting and their prompt carries a "cannot verify" line. Through the dApp surface the engine still creates the pending request
+  a decoded 1inch, UniswapX or CoW order, an unknown Solana program or a core instruction the
+  signer does not sign, a multi-party PSBT — sign without the setting and their prompt carries
+  a "cannot verify" line. Through the dApp surface the engine still creates the pending request
   and `requests.approve` throws `BlindSigningDisabledError` while the setting is off — enable it
   and approve the same request again. Which requests are blind follows the rules above;
   blind never means hidden — readable message text is shown, and 32-byte,
