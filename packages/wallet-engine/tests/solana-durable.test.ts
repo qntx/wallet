@@ -1,10 +1,17 @@
 /**
- * A Solana transaction whose first instruction advances a durable nonce has no blockhash expiry:
- * it is tracked without `lastValidBlockHeight` and the poll proves `dropped` from the nonce
- * account's finalized value — advanced (or gone) plus no entry on a bank at least as fresh. While
- * the nonce still holds the transaction's value it is rebroadcast like any live transaction.
+ * A Solana transaction whose first instruction advances a durable nonce has no blockhash expiry: it
+ * is tracked without `lastValidBlockHeight` and the poll proves `dropped` from the nonce account's
+ * finalized value — advanced (or gone) plus no entry on a bank at least as fresh. While the nonce
+ * still holds the transaction's value it is rebroadcast like any live transaction.
  */
 import { base64 } from "@scure/base";
+import {
+  getAdvanceNonceAccountInstruction,
+  getNonceEncoder,
+  getTransferSolInstruction,
+  NonceState,
+  SYSTEM_PROGRAM_ADDRESS,
+} from "@solana-program/system";
 import {
   address,
   appendTransactionMessageInstructions,
@@ -23,23 +30,16 @@ import {
   compileTransactionMessage,
 } from "@solana/kit";
 import type { Nonce } from "@solana/kit";
-import {
-  getAdvanceNonceAccountInstruction,
-  getNonceEncoder,
-  getTransferSolInstruction,
-  NonceState,
-  SYSTEM_PROGRAM_ADDRESS,
-} from "@solana-program/system";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 
 import type { SolanaRpc } from "../src/networks/controller.ts";
+import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, TrackedTransaction } from "../src/transactions/route.ts";
 import { durableNonceOfMessage, pollSolana, submitDappSolana } from "../src/transactions/solana.ts";
-import { NetworkController } from "../src/networks/controller.ts";
 import { idleNetworkDeps } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
@@ -75,10 +75,7 @@ const durableWire = async (): Promise<{ wire: Uint8Array; nonceAccount: string }
           amount: 1000,
         }),
       ],
-      setTransactionMessageFeePayerSigner(
-        payer,
-        createTransactionMessage({ version: 0 }),
-      ),
+      setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 })),
     ),
   );
   const wire = new Uint8Array(
@@ -135,7 +132,7 @@ const mockRpc = (
   const calls: string[] = [];
   return {
     calls,
-    call: (method, _params) => {
+    call: async (method, _params) => {
       calls.push(method);
       switch (method) {
         case "sendTransaction":
@@ -196,17 +193,25 @@ const fakeCtx = (rpc: MockRpc) => {
 const trackTx = async (
   rpc: MockRpc,
   wire: Uint8Array,
-): Promise<{ ctx: RouteContext; tx: TrackedTransaction; rows: Map<string, TrackedTransaction> }> => {
+): Promise<{
+  ctx: RouteContext;
+  tx: TrackedTransaction;
+  rows: Map<string, TrackedTransaction>;
+  sig: string;
+}> => {
   const { ctx, rows } = fakeCtx(rpc);
-  await submitDappSolana(ctx, {
+  const sig = await submitDappSolana(ctx, {
     network: NETWORK,
     walletId: "w",
     wire,
-    lastValidBlockHeight: 1n,
+    lastValidBlockHeight: 1000n,
     intent: DAPP_INTENT,
   });
   const tx = rows.get("tx-1");
-  return { ctx, tx: tx as TrackedTransaction, rows };
+  if (tx === undefined) {
+    throw new Error("the dApp send did not track its transaction");
+  }
+  return { ctx, tx, rows, sig };
 };
 
 describe("a durable-nonce transaction is tracked without a height bound", () => {
@@ -220,25 +225,17 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       // The tip is far past any bound the caller could have stamped.
       tip: { slot: 9_000_000, height: 9_000_000 },
     });
-    const { ctx, rows } = fakeCtx(rpc);
-    const sig = await submitDappSolana(ctx, {
-      network: NETWORK,
-      walletId: "w",
-      wire,
-      // A caller-computed bound — meaningless for a durable nonce.
-      lastValidBlockHeight: 1000n,
-      intent: DAPP_INTENT,
-    });
+    // A caller-computed bound (1000 in trackTx) — meaningless for a durable nonce.
+    const { ctx, tx, sig } = await trackTx(rpc, wire);
     expect(sig).toBe(signature);
-    const tx = rows.get("tx-1");
-    expect(tx?.durableNonce).toStrictEqual({ account: nonceAccount, value: NONCE_VALUE });
-    expect(tx?.lastValidBlockHeight).toBeUndefined();
+    expect(tx.durableNonce).toStrictEqual({ account: nonceAccount, value: NONCE_VALUE });
+    expect(tx.lastValidBlockHeight).toBeUndefined();
 
     const before = rpc.calls.filter((c) => c === "sendTransaction").length;
-    const state = await pollSolana(ctx, tx as TrackedTransaction);
+    const state = await pollSolana(ctx, tx);
     expect(state).toBeUndefined();
     // Still ours: rebroadcast, never a tip read — a durable tx has no height bound.
-    expect(rpc.calls.filter((c) => c === "sendTransaction").length).toBe(before + 1);
+    expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(before + 1);
     expect(rpc.calls).not.toContain("getEpochInfo");
     // The finalized nonce read precedes the status read — an advance between them is never
     // finalised `dropped` from a stale-bank status.
@@ -252,13 +249,16 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     const signature = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
     const rpc = mockRpc(signature, {
       account: {
-        value: { owner: SYSTEM_PROGRAM_ADDRESS, data: [nonceAccountValue(ADVANCED_VALUE), "base64"] },
+        value: {
+          owner: SYSTEM_PROGRAM_ADDRESS,
+          data: [nonceAccountValue(ADVANCED_VALUE), "base64"],
+        },
         slot: 5000,
       },
       status: { entry: null, slot: 5000 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    expect(await pollSolana(ctx, tx)).toStrictEqual({ kind: "ended", state: "dropped" });
+    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({ kind: "ended", state: "dropped" });
   });
 
   it("an advanced nonce on a status bank behind the finalized read proves nothing", async () => {
@@ -266,13 +266,16 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     const signature = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
     const rpc = mockRpc(signature, {
       account: {
-        value: { owner: SYSTEM_PROGRAM_ADDRESS, data: [nonceAccountValue(ADVANCED_VALUE), "base64"] },
+        value: {
+          owner: SYSTEM_PROGRAM_ADDRESS,
+          data: [nonceAccountValue(ADVANCED_VALUE), "base64"],
+        },
         slot: 5000,
       },
       status: { entry: null, slot: 4999 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    expect(await pollSolana(ctx, tx)).toBeUndefined();
+    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
     // No rebroadcast either: the nonce may already be consumed.
     expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(1);
   });
@@ -282,12 +285,15 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     const signature = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
     const rpc = mockRpc(signature, {
       account: {
-        value: { owner: SYSTEM_PROGRAM_ADDRESS, data: [nonceAccountValue(ADVANCED_VALUE), "base64"] },
+        value: {
+          owner: SYSTEM_PROGRAM_ADDRESS,
+          data: [nonceAccountValue(ADVANCED_VALUE), "base64"],
+        },
       },
       status: { entry: { confirmationStatus: "processed", err: null, slot: 5000 }, slot: 5000 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    expect(await pollSolana(ctx, tx)).toBeUndefined();
+    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
   });
 
   it("a confirmed entry lands the transaction even while the nonce still holds", async () => {
@@ -300,7 +306,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: { confirmationStatus: "confirmed", err: null, slot: 5100 }, slot: 5100 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    expect(await pollSolana(ctx, tx)).toStrictEqual({
+    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({
       kind: "included",
       state: "confirmed",
       block: { height: 5100 },
@@ -316,7 +322,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: null, slot: 5000 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    expect(await pollSolana(ctx, tx)).toStrictEqual({ kind: "ended", state: "dropped" });
+    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({ kind: "ended", state: "dropped" });
   });
 
   it("an unreadable nonce account keeps the poll open — the error is not a drop", async () => {
@@ -347,6 +353,80 @@ describe("durableNonceOfMessage", () => {
     expect(durableNonceOfMessage(plainBytes)).toBeUndefined();
   });
 
+  it("a nonce account loaded from a lookup table is still durable — the account reads as undefined", () => {
+    // A v0 message whose AdvanceNonceAccount index resolves past the static keys, into the
+    // lookup-table space: on chain that IS the nonce account, so the message is durable even
+    // though the account itself cannot be read back from the wire.
+    const payer = address("4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM");
+    const table = address("7yWWGStvkEG1Zmhx6uasJtWCJziofM4uQeVj5tqViQh");
+    const compiled = new Uint8Array(
+      getCompiledTransactionMessageEncoder().encode({
+        version: 0,
+        header: {
+          numSignerAccounts: 1,
+          numReadonlySignerAccounts: 0,
+          numReadonlyNonSignerAccounts: 1,
+        },
+        staticAccounts: [payer, SYSTEM_PROGRAM_ADDRESS],
+        lifetimeToken: blockhash(NONCE_VALUE),
+        instructions: [
+          {
+            programAddressIndex: 1,
+            // Index 2 == staticAccounts.length → resolves into the lookup space.
+            accountIndices: [2, 0],
+            data: new Uint8Array([4, 0, 0, 0]),
+          },
+        ],
+        addressTableLookups: [
+          { lookupTableAddress: table, writableIndexes: [0], readonlyIndexes: [] },
+        ],
+      }),
+    );
+    expect(durableNonceOfMessage(compiled)).toStrictEqual({
+      account: undefined,
+      value: NONCE_VALUE,
+    });
+  });
+
+  it("a lookup-loaded nonce account is never read and never dropped — only landing settles it", async () => {
+    const { wire } = await durableWire();
+    const signature = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
+    const rpc = mockRpc(signature, { status: { entry: null, slot: 5000 } });
+    const { ctx } = fakeCtx(rpc);
+    const tx: TrackedTransaction = {
+      id: "tx-1",
+      family: "solana",
+      network: NETWORK,
+      account: "w",
+      hash: signature,
+      state: "submitted",
+      nonce: 0,
+      durableNonce: { account: undefined, value: NONCE_VALUE },
+      raw: base64.encode(wire),
+      intent: undefined,
+      error: undefined,
+      submittedAt: 1,
+    };
+
+    const before = rpc.calls.filter((c) => c === "sendTransaction").length;
+    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
+    // No nonce account to read — only the status; and the wire keeps going out.
+    expect(rpc.calls).not.toContain("getAccountInfo");
+    expect(rpc.calls).not.toContain("getEpochInfo");
+    expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(before + 1);
+    // A confirmed status still settles it.
+    const confirmed = mockRpc(signature, {
+      status: { entry: { slot: 5100, err: null, confirmationStatus: "confirmed" }, slot: 5100 },
+    });
+    const { ctx: ctx2 } = fakeCtx(confirmed);
+    await expect(pollSolana(ctx2, tx)).resolves.toStrictEqual({
+      kind: "included",
+      state: "confirmed",
+      block: { height: 5100 },
+      final: false,
+    });
+  });
+
   it("AdvanceNonceAccount that is not instruction 0 does not make the message durable", async () => {
     const payer = await generateKeyPairSigner();
     const nonceAccount = await generateKeyPairSigner();
@@ -366,10 +446,7 @@ describe("durableNonceOfMessage", () => {
       ],
       setTransactionMessageLifetimeUsingBlockhash(
         { blockhash: blockhash(NONCE_VALUE), lastValidBlockHeight: 1000n },
-        setTransactionMessageFeePayerSigner(
-          payer,
-          createTransactionMessage({ version: 0 }),
-        ),
+        setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 })),
       ),
     );
     const compiled = new Uint8Array(

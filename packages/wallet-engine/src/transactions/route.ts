@@ -48,8 +48,8 @@ export type TxBlock = {
 /**
  * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
  * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
- * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says
- * why the transaction cannot land yet, `undefined` clears an earlier note.
+ * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says why
+ * the transaction cannot land yet, `undefined` clears an earlier note.
  */
 export type TxPoll =
   | {
@@ -117,9 +117,11 @@ export type TrackedTransaction = {
   readonly lastValidBlockHeight?: number;
   /**
    * Solana only — a durable-nonce transaction has no block-height expiry: `account` is the nonce
-   * account and `value` the nonce its first instruction advances, read back on each poll.
+   * account and `value` the nonce its first instruction advances, read back on each poll. `account`
+   * is undefined when the message loads it from a lookup table: nothing to read on it, so the
+   * transaction is never dropped — only resolved by landing.
    */
-  readonly durableNonce?: { readonly account: string; readonly value: string };
+  readonly durableNonce?: { readonly account: string | undefined; readonly value: string };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */

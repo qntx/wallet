@@ -1,15 +1,15 @@
 import { base58, base64 } from "@scure/base";
 import {
+  getAdvanceNonceAccountDiscriminatorBytes,
+  SYSTEM_PROGRAM_ADDRESS,
+} from "@solana-program/system";
+import {
   address,
   createAddressWithSeed,
   getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
 } from "@solana/kit";
-import {
-  getAdvanceNonceAccountDiscriminatorBytes,
-  SYSTEM_PROGRAM_ADDRESS,
-} from "@solana-program/system";
 
 import type { StakeAction } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
@@ -111,35 +111,36 @@ const NONCE_DISCRIMINATOR = getAdvanceNonceAccountDiscriminatorBytes();
 /**
  * The durable-nonce lifetime a compiled message carries: only when instruction 0 is System
  * AdvanceNonceAccount is the transaction durable — anything else is blockhash-lifetime. The nonce
- * account is that instruction's first account and the nonce it holds is the message's lifetime
- * token. Account indices into lookup tables are not resolved, so such a message reads as
- * blockhash-lifetime.
+ * account is that instruction's first account — or undefined when its index resolves into a lookup
+ * table, which on chain it still does — and the nonce it holds is the message's lifetime token.
  */
 export const durableNonceOfMessage = (
   messageBytes: Uint8Array,
-): { readonly account: string; readonly value: string } | undefined => {
+): { readonly account: string | undefined; readonly value: string } | undefined => {
   const compiled = getCompiledTransactionMessageDecoder().decode(messageBytes);
   if (!("instructions" in compiled)) {
     return undefined;
   }
-  const first = compiled.instructions[0];
+  const [first] = compiled.instructions;
   const data = first?.data;
   const accountIndices = first?.accountIndices;
   if (first === undefined || data === undefined || accountIndices === undefined) {
     return undefined;
   }
   const program = compiled.staticAccounts[first.programAddressIndex];
-  const nonceIndex = accountIndices[0];
+  const [nonceIndex] = accountIndices;
   const nonceAccount = nonceIndex === undefined ? undefined : compiled.staticAccounts[nonceIndex];
   if (
     program !== SYSTEM_PROGRAM_ADDRESS ||
-    nonceAccount === undefined ||
     data.length < NONCE_DISCRIMINATOR.length ||
     NONCE_DISCRIMINATOR.some((byte, index) => data[index] !== byte)
   ) {
     return undefined;
   }
-  return { account: String(nonceAccount), value: String(compiled.lifetimeToken) };
+  return {
+    account: nonceAccount === undefined ? undefined : String(nonceAccount),
+    value: compiled.lifetimeToken,
+  };
 };
 
 /** The blockhash a persisted wire commits to; `undefined` when it cannot be decoded. */
@@ -149,7 +150,7 @@ const lifetimeTokenOf = (raw: string): string | undefined => {
     const compiled = getCompiledTransactionMessageDecoder().decode(
       new Uint8Array(getTransactionDecoder().decode(wire).messageBytes),
     );
-    return String(compiled.lifetimeToken);
+    return compiled.lifetimeToken;
   } catch {
     return undefined;
   }
@@ -827,8 +828,12 @@ export const pollSolana = async (
   if (tx.durableNonce !== undefined) {
     /* A durable nonce never expires by height — the nonce account's current value is the proof.
        It is read at finalized before the status, so a value that advanced between the reads can
-       never be finalised `dropped` by an answer a stale bank produced. */
-    const nonce = await solana.nonceValue(rpc, tx.durableNonce.account);
+       never be finalised `dropped` by an answer a stale bank produced. A lookup-loaded account
+       cannot be read back, so that transaction is only ever settled by landing. */
+    const nonce =
+      tx.durableNonce.account === undefined
+        ? undefined
+        : await solana.nonceValue(rpc, tx.durableNonce.account);
     const status = await solana.signatureStatus(rpc, tx.hash);
     const { entry } = status;
     if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
@@ -842,8 +847,9 @@ export const pollSolana = async (
     /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
        read has no entry at any commitment: the nonce was consumed by something else — `dropped`
        proven. Anything else — the value still ours, a processed-only entry, a status bank behind
-       the nonce read — proves nothing and stays tracked. */
+       the nonce read, an unreadable account — proves nothing and stays tracked. */
     if (
+      nonce !== undefined &&
       nonce.value !== tx.durableNonce.value &&
       status.entry === undefined &&
       status.slot !== undefined &&
@@ -852,7 +858,8 @@ export const pollSolana = async (
     ) {
       return { kind: "ended", state: "dropped" };
     }
-    if (nonce.value === tx.durableNonce.value && tx.raw !== undefined) {
+    const consumed = nonce !== undefined && nonce.value !== tx.durableNonce.value;
+    if (!consumed && tx.raw !== undefined) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
@@ -865,12 +872,12 @@ export const pollSolana = async (
      the authoritative check, and a raw that cannot be decoded proves nothing. */
   const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
   const expired = tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0);
-  const validity = !expired
-    ? undefined
-    : await (async () => {
+  const validity = expired
+    ? await (async () => {
         const hash = tx.raw === undefined ? undefined : lifetimeTokenOf(tx.raw);
         return hash === undefined ? undefined : solana.blockhashValid(rpc, hash);
-      })();
+      })()
+    : undefined;
   const status = await solana.signatureStatus(rpc, tx.hash);
   const { entry } = status;
   if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
@@ -891,7 +898,12 @@ export const pollSolana = async (
        along as the tip and the validity read: `dropped` proven. Anything else — a stale-bank
        status, a processed-only entry — stays tracked and is not rebroadcast: a dead blockhash
        can only hit "already processed" or nothing. A still-valid one keeps the wire going out. */
-    if (!validity.valid && status.entry === undefined && status.slot !== undefined && status.slot >= bankFloor) {
+    if (
+      !validity.valid &&
+      status.entry === undefined &&
+      status.slot !== undefined &&
+      status.slot >= bankFloor
+    ) {
       return { kind: "ended", state: "dropped" };
     }
     if (validity.valid && tx.raw !== undefined) {

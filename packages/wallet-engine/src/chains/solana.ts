@@ -28,9 +28,9 @@ import {
  * Compute-unit headroom is simulated-units x 1.1; the priority fee comes from
  * getRecentPrioritizationFees percentiles (p50/p75/p90) over the writable accounts. Broadcast is
  * sendTransaction(skipPreflight:false, maxRetries:0) re-sent every 2 s while the blockhash is live;
- * an expired lastValidBlockHeight without confirmation is `dropped` only once `isBlockhashValid`
- * on the same endpoint says the hash is dead — a bound read from a lagging endpoint is never
- * enough. A 1232-byte compiled message is rejected before signing.
+ * an expired lastValidBlockHeight without confirmation is `dropped` only once `isBlockhashValid` on
+ * the same endpoint says the hash is dead — a bound read from a lagging endpoint is never enough. A
+ * 1232-byte compiled message is rejected before signing.
  */
 import {
   address,

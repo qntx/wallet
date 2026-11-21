@@ -171,10 +171,9 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
 type DurableNonceRecord = NonNullable<TrackedTransaction["durableNonce"]>;
 const isDurableNonceRecord = (v: unknown): v is DurableNonceRecord =>
   isObject(v) &&
-  typeof v["account"] === "string" &&
-  v["account"] !== "" &&
   typeof v["value"] === "string" &&
-  v["value"] !== "";
+  v["value"] !== "" &&
+  (v["account"] === undefined || (typeof v["account"] === "string" && v["account"] !== ""));
 
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
@@ -434,7 +433,7 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   private routeCtx(): RouteContext {
-    const generation = this.generation;
+    const { generation } = this;
     /* Stale means another session is live: while the vault is still locked there is no store to
        reach anyway, and the locked path's own warnings stay accurate. */
     const stale = (): boolean => generation !== this.generation && !this.locked;
@@ -790,7 +789,7 @@ export class TransactionController extends Controller<TransactionControllerState
    * marking this replaced, a reload) means the row moved on and the next poll decides.
    */
   private async pollOnce(id: string): Promise<void> {
-    const generation = this.generation;
+    const { generation } = this;
     const tx = this.getState().txs[id];
     if (tx === undefined) {
       this.untrack(id);
@@ -805,6 +804,7 @@ export class TransactionController extends Controller<TransactionControllerState
         continue;
       }
       try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one row at a time, in id order
         await this.persist(row);
         this.unsaved.delete(unsavedId);
       } catch {
