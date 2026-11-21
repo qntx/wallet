@@ -12,7 +12,11 @@ export type FeeModel =
   /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
   | { readonly kind: "execution" }
   /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
-  | { readonly kind: "op-stack" };
+  | {
+      readonly kind: "op-stack";
+      /** `getL1Fee` is ETH-denominated and charged in the gas token at `tokenRatio()` (Mantle). */
+      readonly tokenRatio: boolean;
+    };
 
 /** The chain families this registry serves. */
 export type EngineFamily = "evm" | "solana" | "bitcoin";
@@ -69,9 +73,9 @@ export const EVM_FACTS: Readonly<
   Record<number, { readonly multicall3: string; readonly feeModel: FeeModel }>
 > = {
   1: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  8453: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  8453: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   42161: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  10: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  10: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   137: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   56: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   999: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
@@ -80,29 +84,29 @@ export const EVM_FACTS: Readonly<
   143: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   5042: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   9745: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  196: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  196: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   1672: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  5000: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  5000: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: true } },
   25: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   100: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   988: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  747474: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  747474: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   80094: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  480: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
-  130: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  480: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
+  130: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   1329: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   59144: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  42220: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  42220: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   146: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   324: { multicall3: MULTICALL3_ZKSYNC, feeModel: { kind: "execution" } },
-  1868: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
-  4326: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  1868: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
+  4326: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   8217: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   33139: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   11155111: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  84532: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  84532: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   421614: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  11155420: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  11155420: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   80002: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   97: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   998: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
@@ -110,16 +114,16 @@ export const EVM_FACTS: Readonly<
   46630: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   10143: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   5042002: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  1952: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
-  5003: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  1952: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
+  5003: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: true } },
   10200: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  1301: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  1301: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   1328: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   59141: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
-  11142220: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  11142220: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   14601: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
   300: { multicall3: MULTICALL3_ZKSYNC, feeModel: { kind: "execution" } },
-  1946: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  1946: { multicall3: MULTICALL3, feeModel: { kind: "op-stack", tokenRatio: false } },
   33111: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
 };
 

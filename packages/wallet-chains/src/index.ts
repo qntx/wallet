@@ -587,8 +587,9 @@ export type DisplayIntent = {
     readonly amount: AssetAmount;
   }>;
   /**
-   * `l1Data`: OP Stack L1 data fee plus operator fee, estimated by the engine and charged on top of
-   * `max`; not decodable from the transaction, so the kernel's own decode never sets it.
+   * `l1Data`: an upper bound the engine computes — the L1 data fee estimate times the fee model's
+   * safety margin, in the gas token, plus the operator fee at the full gas limit — charged on top
+   * of `max`; not decodable from the transaction, so the kernel's own decode never sets it.
    */
   readonly fee: { readonly max: AssetAmount; readonly l1Data?: AssetAmount } | undefined;
   /**

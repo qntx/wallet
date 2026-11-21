@@ -944,9 +944,10 @@ export const createEvmRoute = (): EvmRoute => {
     tx: EvmUnsignedTransaction,
     flags: Array<RequestCheckCode | undefined>,
   ): Promise<bigint | undefined> => {
-    switch (ctx.options.networks.info(network).feeModel?.kind) {
+    const model = ctx.options.networks.info(network).feeModel;
+    switch (model?.kind) {
       case "op-stack":
-        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t));
+        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t, model));
       case "execution":
       case undefined:
         return undefined;

@@ -141,7 +141,7 @@ describe("EvmChainAdapter", () => {
     await expect(a.blockHashAt(tipless, 5)).resolves.toBeUndefined();
   });
 
-  it("sums the L1 data fee and the operator fee read from the GasPriceOracle", async () => {
+  it("sums the margined L1 data fee and the operator fee read from the GasPriceOracle", async () => {
     const calls: Array<{ to: string; data: string }> = [];
     const operatorAbi = parseAbi([
       "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
@@ -153,19 +153,23 @@ describe("EvmChainAdapter", () => {
     });
     const oracle = oracleClient(calls, operatorCall);
     const a = new EvmChainAdapter();
-    const fee = await a.opStackFee(oracle, {
-      family: "evm",
-      network: "eip155:8453",
-      from: `0x${"1".repeat(40)}`,
-      to: `0x${"2".repeat(40)}`,
-      value: 5n,
-      data: "0x",
-      nonce: 0,
-      gas: 21_000n,
-      maxFeePerGas: 4n,
-      maxPriorityFeePerGas: 2n,
-    });
-    expect(fee).toBe(1040n);
+    const fee = await a.opStackFee(
+      oracle,
+      {
+        family: "evm",
+        network: "eip155:8453",
+        from: `0x${"1".repeat(40)}`,
+        to: `0x${"2".repeat(40)}`,
+        value: 5n,
+        data: "0x",
+        nonce: 0,
+        gas: 21_000n,
+        maxFeePerGas: 4n,
+        maxPriorityFeePerGas: 2n,
+      },
+      { tokenRatio: false },
+    );
+    expect(fee).toBe(1290n);
     expect(calls).toHaveLength(2);
     expect(calls.map((c) => c.to.toLowerCase())).toStrictEqual([
       OP_GAS_PRICE_ORACLE.toLowerCase(),

@@ -1022,6 +1022,7 @@ export type FeeModel =
 /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
     {
     readonly kind: "op-stack";
+    readonly tokenRatio: boolean;
 };
 
 // @public

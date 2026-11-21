@@ -114,7 +114,16 @@ export const ERC20_ABI = [
 export const OP_GAS_PRICE_ORACLE = "0x420000000000000000000000000000000000000F";
 const OP_GAS_PRICE_ORACLE_ABI = parseAbi([
   "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
+  "function tokenRatio() view returns (uint256)",
 ]);
+
+/**
+ * Safety margin on the OP Stack L1 data fee. The oracle prices the unsigned encoding at the state
+ * the wallet reads, before inclusion; over 2,800+ real transactions on 13 OP Stack chains
+ * (2026-11-21) the fee charged in block N was at most 1.13× the estimate read at block N-1 (p99.9
+ * 1.12), so 5/4 bounds it with headroom.
+ */
+const OP_STACK_L1_FEE_MARGIN = { numerator: 5n, denominator: 4n } as const;
 
 const checkedAddress = (v: string): `0x${string}` => {
   if (!isAddress(v)) {
@@ -237,11 +246,17 @@ export class EvmChainAdapter {
   }
 
   /**
-   * OP Stack fees charged on top of gas × gas price: the L1 data fee of the serialized transaction
-   * plus the operator fee at the full gas limit (worst case).
+   * OP Stack fees charged on top of gas × gas price: the gas-token-denominated upper bound of the
+   * L1 data fee — the oracle estimate at the chain's `tokenRatio` when the model prices it in
+   * another token (Mantle), scaled by {@link OP_STACK_L1_FEE_MARGIN} — plus the operator fee at the
+   * full gas limit (worst case).
    */
-  async opStackFee(client: PublicClient, tx: EvmUnsignedTransaction): Promise<bigint> {
-    const [l1, operator] = await Promise.all([
+  async opStackFee(
+    client: PublicClient,
+    tx: EvmUnsignedTransaction,
+    model: { readonly tokenRatio: boolean },
+  ): Promise<bigint> {
+    const [l1, operator, ratio] = await Promise.all([
       estimateL1Fee(client, {
         chain: null,
         account: checkedAddress(tx.from),
@@ -255,8 +270,20 @@ export class EvmChainAdapter {
         functionName: "getOperatorFee",
         args: [tx.gas],
       }),
+      model.tokenRatio
+        ? readContract(client, {
+            address: OP_GAS_PRICE_ORACLE,
+            abi: OP_GAS_PRICE_ORACLE_ABI,
+            functionName: "tokenRatio",
+          })
+        : Promise.resolve(1n),
     ]);
-    return l1 + operator;
+    const margined = l1 * ratio * OP_STACK_L1_FEE_MARGIN.numerator;
+    return (
+      margined / OP_STACK_L1_FEE_MARGIN.denominator +
+      (margined % OP_STACK_L1_FEE_MARGIN.denominator === 0n ? 0n : 1n) +
+      operator
+    );
   }
 
   /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */

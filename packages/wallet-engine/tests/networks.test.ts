@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 
 import { NetworkController } from "../src/networks/controller.ts";
+import type { FeeModel, NetworkInfo } from "../src/networks/registry.ts";
 import {
   BITCOIN_NETWORKS,
   DELEGATOR_CODE_HASHES,
@@ -50,6 +51,17 @@ describe("network registry", () => {
     ).toStrictEqual([
       10, 130, 196, 480, 1301, 1868, 1946, 1952, 4326, 5000, 5003, 8453, 42220, 84532, 747474,
       11142220, 11155420,
+    ]);
+  });
+
+  it("sets tokenRatio exactly on the Mantle chains", () => {
+    const opStack = NETWORKS.filter(
+      (n): n is NetworkInfo & { readonly feeModel: Extract<FeeModel, { kind: "op-stack" }> } =>
+        n.feeModel?.kind === "op-stack",
+    );
+    expect(opStack.filter((n) => n.feeModel.tokenRatio).map((n) => n.id)).toStrictEqual([
+      "eip155:5000",
+      "eip155:5003",
     ]);
   });
 
