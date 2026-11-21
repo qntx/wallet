@@ -124,3 +124,45 @@ describe("engine surface", () => {
     expectTypeOf<BitcoinEvent["accounts"][number]>().toEqualTypeOf<BitcoinWalletAccount>();
   });
 });
+
+describe("host-visible state is deeply read-only", () => {
+  it("no state object can be assigned or deleted through the facade", () => {
+    // Never invoked — the assertions are the @ts-expect-error type errors.
+    const edits = (engine: WalletEngine): void => {
+      // @ts-expect-error the transactions record is readonly
+      engine.transactions.getState().txs = {};
+      // @ts-expect-error a tracked row's fields are readonly
+      engine.transactions.getState().txs["t"] = undefined;
+      // @ts-expect-error deleting through the facade is a type error
+      delete engine.transactions.getState().txs["t"];
+      // @ts-expect-error the requests record is readonly
+      engine.requests.getState().requests["r"] = undefined;
+      const request = engine.requests.getState().requests["r"];
+      if (request !== undefined) {
+        // @ts-expect-error nested fields are readonly too
+        request.stage = "failed";
+      }
+      // @ts-expect-error the balances record is readonly
+      engine.assets.getState().balances["w1"] = undefined;
+      // @ts-expect-error address book entries are readonly
+      engine.addressBook.getState().entries["a"] = undefined;
+      // @ts-expect-error custom RPC lists are readonly
+      engine.networks.getState().customRpc["eip155:1"] = [];
+      // @ts-expect-error a custom RPC array is a ReadonlyArray — no push
+      engine.networks.getState().customRpc["eip155:1"]?.push("http://x");
+    };
+    void edits;
+  });
+
+  it("the store's subscribe listener receives the same read-only state", () => {
+    const edits = (engine: WalletEngine): void => {
+      engine.transactions.store.subscribe((state) => {
+        // @ts-expect-error listener state is readonly
+        delete state.txs["t"];
+      });
+      // @ts-expect-error getInitialState is readonly too
+      engine.transactions.store.getInitialState().txs = {};
+    };
+    void edits;
+  });
+});

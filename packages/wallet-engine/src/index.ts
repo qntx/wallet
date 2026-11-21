@@ -148,7 +148,13 @@ export type {
 export type { AcrossBridgeQuote, AcrossBridgeStatus } from "./swaps/bridge.ts";
 export type { WatchAccount } from "./accounts/watch.ts";
 export { createWalletEngine } from "./engine.ts";
-export type { EngineOptions, HostController, ReadonlyStore, WalletEngine } from "./engine.ts";
+export type {
+  DeepReadonly,
+  EngineOptions,
+  HostController,
+  ReadonlyStore,
+  WalletEngine,
+} from "./engine.ts";
 export { BackupController } from "./backup/controller.ts";
 export type { BackupControllerState } from "./backup/controller.ts";
 export { BackupControllerError } from "./backup/errors.ts";
