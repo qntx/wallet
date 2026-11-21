@@ -1943,6 +1943,22 @@ describe("typed-data near misses of decoded families are blind", () => {
     }
   });
 
+  it("a claimed contract blinds a document whose domain name does not match", () => {
+    /* The 0x row's contracts claim: the domain name is wrong, the contract is the Exchange
+       Proxy's — the document is a near miss of the family, not an undecoded message. */
+    const request = simpleDoc(
+      "Foo",
+      [{ name: "x", type: "uint256" }],
+      {
+        name: "Not ZeroEx",
+        chainId: 1,
+        verifyingContract: "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+      },
+      { x: "1" },
+    );
+    expect(decodeEvm(request, SIGNER).blind).toBe("typed-data-variant");
+  });
+
   it("a variant without showable fields is still variant-blind", () => {
     const huge = `0x${"ab".repeat(4000)}`;
     const intent = decodeEvm(
