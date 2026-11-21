@@ -247,6 +247,17 @@ const env = (
     },
     random: () => new Uint8Array(8).fill(0x11),
     availability,
+
+    socket: () => ({
+      readyState: 0,
+      send: () => undefined,
+      close: () => undefined,
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    }),
+    logger: { warn: () => undefined },
   });
   return {
     provider,
@@ -712,6 +723,16 @@ it("masks the salt to 53 bits — it always serializes as an exact JSON number",
     },
     random: () => new Uint8Array(8).fill(0xff),
     availability: () => "available",
+    socket: () => ({
+      readyState: 0,
+      send: () => undefined,
+      close: () => undefined,
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    }),
+    logger: { warn: () => undefined },
   });
   const placed = await provider.trade.place(group, LIMIT_BUY);
   await w.approve(placed.requestId);

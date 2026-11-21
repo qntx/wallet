@@ -1376,6 +1376,13 @@ export type PolymarketAccount = {
 };
 
 // @public (undocumented)
+export type PolymarketAccountLiveData = {
+    readonly wallet: `0x${string}`;
+    readonly openOrders: ReadonlyArray<PolymarketOrder>;
+    readonly positions: ReadonlyArray<PolymarketPosition>;
+};
+
+// @public (undocumented)
 export type PolymarketAccountReads = {
     readonly locate: (group: AppGroup) => Promise<PolymarketAccount>;
     readonly credentials: (group: AppGroup) => Promise<PolymarketCredentialsInfo | undefined>;
@@ -1462,6 +1469,21 @@ export type PolymarketBook = {
     readonly negRisk: boolean;
     readonly timestamp: string;
     readonly hash: string;
+};
+
+// @public (undocumented)
+export type PolymarketBookData = {
+    readonly bids: ReadonlyArray<PolymarketBookLevel>;
+    readonly asks: ReadonlyArray<PolymarketBookLevel>;
+    readonly tickSize: string | undefined;
+    readonly timestamp: string | undefined;
+    readonly hash: string | undefined;
+};
+
+// @public (undocumented)
+export type PolymarketBookLevel = {
+    readonly price: string;
+    readonly size: string;
 };
 
 // @public
@@ -1582,6 +1604,30 @@ export type PolymarketExchangeDomain = {
 };
 
 // @public (undocumented)
+export type PolymarketFunding = {
+    readonly deposit: (group: AppGroup, params: {
+        readonly amount: bigint;
+        readonly fee: EvmFeeTier;
+    }) => Promise<{
+        readonly requestId: string;
+        readonly outcome: Promise<PolymarketFundingOutcome>;
+    }>;
+    readonly withdraw: (group: AppGroup, params: {
+        readonly amount: bigint;
+    }) => Promise<{
+        readonly requestId: string;
+        readonly outcome: Promise<PolymarketFundingOutcome>;
+    }>;
+};
+
+// @public (undocumented)
+export type PolymarketFundingOutcome = {
+    readonly kind: "ok";
+} | {
+    readonly kind: "unknown";
+};
+
+// @public (undocumented)
 export type PolymarketHistoryParams = {
     readonly startTs?: number;
     readonly endTs?: number;
@@ -1595,6 +1641,27 @@ export type PolymarketLimitParams = {
     readonly side: PolymarketSide;
     readonly price: string;
     readonly size: string;
+};
+
+// @public (undocumented)
+export type PolymarketLive = {
+    readonly book: (assetId: string) => PolymarketLiveView<PolymarketMarketData>;
+    readonly account: (group: AppGroup) => PolymarketLiveView<PolymarketAccountLiveData>;
+};
+
+// @public
+export type PolymarketLiveState<T> = {
+    readonly status: "connecting" | "live" | "stale";
+    readonly data: T | undefined;
+    readonly error: string | undefined;
+    readonly updatedAt: number | undefined;
+};
+
+// @public (undocumented)
+export type PolymarketLiveView<T> = {
+    readonly getState: () => PolymarketLiveState<T>;
+    readonly subscribe: (listener: (state: PolymarketLiveState<T>) => void) => () => void;
+    readonly close: () => Promise<void>;
 };
 
 // @public (undocumented)
@@ -1621,6 +1688,25 @@ export type PolymarketMarket = {
         readonly makerBaseFee?: number;
         readonly takerBaseFee?: number;
     };
+};
+
+// @public (undocumented)
+export type PolymarketMarketData = {
+    readonly book?: PolymarketBookData | undefined;
+    readonly lastTrade?: {
+        readonly price: string;
+        readonly size: string;
+        readonly side: "BUY" | "SELL";
+    } | undefined;
+    readonly bestBidAsk?: {
+        readonly bestBid: string;
+        readonly bestAsk: string;
+        readonly spread: string;
+    } | undefined;
+    readonly resolved?: {
+        readonly winningAssetId: string;
+        readonly winningOutcome: string;
+    } | undefined;
 };
 
 // @public (undocumented)
@@ -1824,6 +1910,8 @@ export type PolymarketProvider = {
     readonly markets: PolymarketMarkets;
     readonly account: PolymarketAccountReads;
     readonly trade: PolymarketTrading;
+    readonly live: PolymarketLive;
+    readonly fund: PolymarketFunding;
     readonly builder?: PolymarketBuilder;
 };
 

@@ -135,3 +135,13 @@ export type {
   PolymarketRejectReason,
   PolymarketTrading,
 } from "./polymarket/trade.ts";
+export type {
+  PolymarketAccountLiveData,
+  PolymarketBookData,
+  PolymarketBookLevel,
+  PolymarketLive,
+  PolymarketLiveState,
+  PolymarketLiveView,
+  PolymarketMarketData,
+} from "./polymarket/live.ts";
+export type { PolymarketFunding, PolymarketFundingOutcome } from "./polymarket/funding.ts";

@@ -7,28 +7,28 @@ import type { Wallet } from "@qntx/wallet";
  */
 import { chains } from "@qntx/wallet/chains";
 
+import type { EngineLogger } from "../../events.ts";
 import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
 import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
+import type { AppSocket } from "../socket.ts";
 import type { AppGroup } from "../types.ts";
 import { createPolymarketAccount } from "./account.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PolymarketError } from "./errors.ts";
+import { createPolymarketFunding } from "./funding.ts";
+import type { PolymarketFunding } from "./funding.ts";
 import { createPolymarketHttp } from "./http.ts";
 import { createPolymarketL2 } from "./l2.ts";
+import { createPolymarketLive } from "./live.ts";
+import type { PolymarketLive } from "./live.ts";
 import { createPolymarketMarkets } from "./markets.ts";
 import type { PolymarketMarkets } from "./markets.ts";
+import { createPolymarketRelayer } from "./relayer.ts";
+import type { PolymarketBuilderHeaders } from "./relayer.ts";
 import { createPolymarketTrade } from "./trade.ts";
 import type { PolymarketTrading } from "./trade.ts";
 import { createPolymarketWallets } from "./wallets.ts";
-
-/** The four `POLY_BUILDER_*` headers the host's builder signer returns (research.md §2/§9). */
-export type PolymarketBuilderHeaders = {
-  readonly POLY_BUILDER_API_KEY: string;
-  readonly POLY_BUILDER_PASSPHRASE: string;
-  readonly POLY_BUILDER_SIGNATURE: string;
-  readonly POLY_BUILDER_TIMESTAMP: string;
-};
 
 /**
  * The host-injected Remote Builder Signing surface (invariant 9): the host's server holds the
@@ -57,6 +57,9 @@ export type PolymarketProviderOptions = {
   readonly random: (length: number) => Uint8Array;
   /** The gateway availability for `polymarket` — `undefined` refuses BUY orders (fail closed). */
   readonly availability: () => AppAvailability | undefined;
+  /** The WebSocket factory live views stream over — `(url) => new WebSocket(url)`. */
+  readonly socket: (url: string) => AppSocket;
+  readonly logger: EngineLogger;
   /** Stored for the enable/relayer layers — validated by `createApps`. */
   readonly builder?: PolymarketBuilder;
 };
@@ -65,12 +68,16 @@ export type PolymarketProvider = {
   readonly markets: PolymarketMarkets;
   readonly account: PolymarketAccountReads;
   readonly trade: PolymarketTrading;
+  readonly live: PolymarketLive;
+  readonly fund: PolymarketFunding;
   /** The configured builder, when the host supplied one — nothing else reads it yet. */
   readonly builder?: PolymarketBuilder;
 };
 
 const isEvmAddress = (address: string): address is `0x${string}` =>
   /^0x[0-9a-fA-F]{40}$/.test(address);
+
+export type { PolymarketBuilderHeaders };
 
 export function createPolymarketProvider(options: PolymarketProviderOptions): PolymarketProvider {
   const http = createPolymarketHttp({
@@ -112,10 +119,35 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     availability: options.availability,
     ...(options.builder === undefined ? {} : { builder: options.builder }),
   });
+  const relayer = createPolymarketRelayer({
+    http,
+    setTimer: options.setTimer,
+    now: options.now,
+    ...(options.builder === undefined ? {} : { builder: options.builder }),
+  });
+  const live = createPolymarketLive({
+    account,
+    socket: options.socket,
+    setTimer: options.setTimer,
+    now: options.now,
+    random: options.random,
+    wallet: options.wallet,
+    logger: options.logger,
+  });
+  const fund = createPolymarketFunding({
+    account,
+    relayer,
+    requests: options.requests,
+    ...(options.builder === undefined ? {} : { builder: options.builder }),
+    now: options.now,
+    setTimer: options.setTimer,
+  });
   return {
     markets,
     account,
     trade,
+    live,
+    fund,
     ...(options.builder === undefined ? {} : { builder: options.builder }),
   };
 }

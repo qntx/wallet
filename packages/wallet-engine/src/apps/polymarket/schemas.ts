@@ -456,3 +456,86 @@ export const clobCancelResponse = z.looseObject({
     ]),
   ),
 });
+
+/* ---- Market-channel WebSocket events (asyncapi.json #/components/schemas) ---- */
+
+/** A `{"price","size"}` book level — `OrderSummary` in the spec. */
+const wsLevel = z.looseObject({
+  price: z.string().check(z.maxLength(64)),
+  size: z.string().check(z.maxLength(64)),
+});
+
+const wsAssetId = z.string().check(z.minLength(1), z.maxLength(80));
+const wsTimestamp = z.optional(z.string().check(z.maxLength(20)));
+
+/** `book` — a full orderbook snapshot for one asset. */
+export const wsBookEvent = z.looseObject({
+  event_type: z.literal("book"),
+  asset_id: wsAssetId,
+  market: z.string().check(z.maxLength(80)),
+  bids: z.array(wsLevel).check(z.maxLength(1000)),
+  asks: z.array(wsLevel).check(z.maxLength(1000)),
+  timestamp: wsTimestamp,
+  hash: z.optional(z.string().check(z.maxLength(200))),
+  tick_size: z.optional(z.string().check(z.maxLength(64))),
+});
+
+/** `price_change` — level deltas; `size` "0" removes the level. */
+export const wsPriceChangeEvent = z.looseObject({
+  event_type: z.literal("price_change"),
+  market: z.string().check(z.maxLength(80)),
+  price_changes: z
+    .array(
+      z.looseObject({
+        asset_id: wsAssetId,
+        price: z.string().check(z.maxLength(64)),
+        size: z.string().check(z.maxLength(64)),
+        side: z.enum(["BUY", "SELL"]),
+      }),
+    )
+    .check(z.maxLength(1000)),
+  timestamp: wsTimestamp,
+});
+
+/** `last_trade_price` — the last matched trade on one asset. */
+export const wsLastTradePriceEvent = z.looseObject({
+  event_type: z.literal("last_trade_price"),
+  asset_id: wsAssetId,
+  market: z.string().check(z.maxLength(80)),
+  price: z.string().check(z.maxLength(64)),
+  size: z.string().check(z.maxLength(64)),
+  side: z.enum(["BUY", "SELL"]),
+  timestamp: wsTimestamp,
+});
+
+/** `best_bid_ask` — needs `custom_feature_enabled` on subscribe. */
+export const wsBestBidAskEvent = z.looseObject({
+  event_type: z.literal("best_bid_ask"),
+  asset_id: wsAssetId,
+  market: z.string().check(z.maxLength(80)),
+  best_bid: z.string().check(z.maxLength(64)),
+  best_ask: z.string().check(z.maxLength(64)),
+  spread: z.string().check(z.maxLength(64)),
+  timestamp: wsTimestamp,
+});
+
+/** `tick_size_change` — the market's minimum tick moved. */
+export const wsTickSizeChangeEvent = z.looseObject({
+  event_type: z.literal("tick_size_change"),
+  asset_id: wsAssetId,
+  market: z.string().check(z.maxLength(80)),
+  old_tick_size: z.string().check(z.maxLength(64)),
+  new_tick_size: z.string().check(z.maxLength(64)),
+  timestamp: wsTimestamp,
+});
+
+/** `market_resolved` — needs `custom_feature_enabled` on subscribe. */
+export const wsMarketResolvedEvent = z.looseObject({
+  event_type: z.literal("market_resolved"),
+  id: z.optional(z.string().check(z.maxLength(80))),
+  market: z.string().check(z.maxLength(80)),
+  assets_ids: z.array(wsAssetId).check(z.maxLength(100)),
+  winning_asset_id: z.string().check(z.maxLength(80)),
+  winning_outcome: z.string().check(z.maxLength(200)),
+  timestamp: wsTimestamp,
+});

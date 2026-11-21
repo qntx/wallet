@@ -13,7 +13,6 @@ import type { SetTimer } from "../../timer.ts";
 import { DEPOSIT_WALLET_FACTORY, RELAYER_HOST } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketHttp } from "./http.ts";
-import type { PolymarketBuilderHeaders } from "./provider.ts";
 import { relayerNonce, relayerSubmitResponse, relayerTransactions } from "./schemas.ts";
 
 /** `/transaction` is polled every 2 s for up to 120 s (docs trading/wallets-auth.md §Deploy). */
@@ -22,6 +21,14 @@ const POLL_TIMEOUT_MS = 120_000;
 
 /** The relayer's stale-nonce refusal (SDK `Ts()` — research.md §1). */
 const NONCE_MISMATCH = /batch nonce\s+\d+\s+does not match on-chain nonce\s+\d+/i;
+
+/** The four `POLY_BUILDER_*` headers the host's builder signer returns (research.md §2/§9). */
+export type PolymarketBuilderHeaders = {
+  readonly POLY_BUILDER_API_KEY: string;
+  readonly POLY_BUILDER_PASSPHRASE: string;
+  readonly POLY_BUILDER_SIGNATURE: string;
+  readonly POLY_BUILDER_TIMESTAMP: string;
+};
 
 export type RelayerCall = {
   readonly target: `0x${string}`;

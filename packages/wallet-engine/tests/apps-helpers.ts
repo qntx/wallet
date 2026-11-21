@@ -184,6 +184,49 @@ export const hlFetch =
     return Response.json(response, { headers });
   };
 
+const rpcString = (value: string): string => {
+  const bytes = [...value]
+    .map((c) => (c.codePointAt(0) ?? 0).toString(16).padStart(2, "0"))
+    .join("");
+  return `0x${"00".repeat(31)}20${value.length.toString(16).padStart(64, "0")}${bytes.padEnd(64, "0")}`;
+};
+
+/* Polygon — the Polymarket `send` deposit resolves pUSD metadata + gas over this endpoint. */
+const polyRpc = async (init?: RequestInit): Promise<Response> => {
+  const body = bodyJson(init);
+  await Promise.resolve();
+  const rpcParams: unknown = body["params"];
+  const callData =
+    body["method"] === "eth_call" &&
+    Array.isArray(rpcParams) &&
+    typeof rpcParams[0] === "object" &&
+    rpcParams[0] !== null &&
+    "data" in rpcParams[0]
+      ? String(rpcParams[0].data)
+      : "";
+  const result =
+    body["method"] === "eth_chainId"
+      ? "0x89"
+      : body["method"] === "eth_blockNumber"
+        ? "0x1"
+        : body["method"] === "eth_call" && callData.startsWith("0x313ce567")
+          ? `0x${"00".repeat(31)}06`
+          : body["method"] === "eth_call" && callData.startsWith("0x95d89b41")
+            ? rpcString("pUSD")
+            : body["method"] === "eth_call" && callData.startsWith("0x06fdde03")
+              ? rpcString("Polymarket USD")
+              : body["method"] === "eth_call"
+                ? `0x${"00".repeat(32)}`
+                : body["method"] === "eth_getTransactionCount"
+                  ? "0x0"
+                  : body["method"] === "eth_estimateGas"
+                    ? "0x5208"
+                    : body["method"] === "eth_feeHistory"
+                      ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
+                      : "0x0";
+  return Response.json({ jsonrpc: "2.0", id: 1, result });
+};
+
 const arbRpc = async (init?: RequestInit): Promise<Response> => {
   const body = bodyJson(init);
   await Promise.resolve();
@@ -331,9 +374,15 @@ export const world = async (
     ...idleNetworkDeps,
     fetch: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      return url === "https://arb-sepolia.test/rpc" ? arbRpc(init) : fetch(input, init);
+      if (url === "https://arb-sepolia.test/rpc") {
+        return arbRpc(init);
+      }
+      return url === "https://polygon.test/rpc" ? polyRpc(init) : fetch(input, init);
     },
-    rpc: { "eip155:421614": ["https://arb-sepolia.test/rpc"] },
+    rpc: {
+      "eip155:421614": ["https://arb-sepolia.test/rpc"],
+      "eip155:137": ["https://polygon.test/rpc"],
+    },
     openStore: async () => {
       await Promise.resolve();
       return createMemoryEngineStore();

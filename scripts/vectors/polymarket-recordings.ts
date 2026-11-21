@@ -438,3 +438,55 @@ await save(
   ),
   fetchedAt,
 );
+
+/* --- Market-channel WebSocket capture: the subscribe echo plus every frame for a few seconds
+   of the primary asset — replayed by tests/polymarket-live.test.ts. Needs Node ≥ 22 (global
+   WebSocket) or bun. */
+{
+  const primaryAsset = picks.primary?.assetId;
+  if (primaryAsset !== undefined) {
+    const frames: unknown[] = [];
+    const subscription = {
+      assets_ids: [primaryAsset],
+      type: "market",
+      custom_feature_enabled: true,
+    };
+    await new Promise<void>((resolve) => {
+      const socket = new WebSocket("wss://ws-subscriptions-clob.polymarket.com/ws/market");
+      const timer = setTimeout(() => {
+        socket.close();
+        resolve();
+      }, 15_000);
+      /* oxlint-disable unicorn/prefer-add-event-listener -- the AppSocket property-handler subset */
+      socket.onopen = () => {
+        socket.send(JSON.stringify(subscription));
+      };
+      socket.onmessage = (event) => {
+        if (typeof event.data !== "string" || event.data === "PONG") {
+          return;
+        }
+        try {
+          frames.push(JSON.parse(event.data));
+        } catch {
+          /* not JSON — drop */
+        }
+      };
+      socket.onclose = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      /* oxlint-enable unicorn/prefer-add-event-listener */
+    });
+    await save(
+      "ws-market",
+      "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+      Promise.resolve({ subscription, recordedAt: Date.now(), frames }),
+      fetchedAt,
+    );
+    console.log(`ws-market: ${frames.length} frames`);
+  }
+}

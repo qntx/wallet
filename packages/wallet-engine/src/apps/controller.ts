@@ -606,6 +606,8 @@ export function createApps(options: CreateAppsOptions): {
       wallet: options.wallet,
       requests: options.requests,
       random: options.random,
+      socket: options.socket,
+      logger: options.logger,
       /* The last ready eligibility answer's per-app availability — `undefined` (unknown or
          stale) fails BUY orders closed. */
       availability: () => {

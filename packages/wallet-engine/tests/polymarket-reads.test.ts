@@ -100,6 +100,16 @@ const provider = () =>
     requests: NO_REQUESTS,
     random: () => new Uint8Array(8),
     availability: () => "available",
+    socket: () => ({
+      readyState: 0,
+      send: () => undefined,
+      close: () => undefined,
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    }),
+    logger: { warn: () => undefined },
   }).markets;
 
 describe("polymarket market reads", () => {
