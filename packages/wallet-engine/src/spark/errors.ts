@@ -10,6 +10,8 @@ export type SparkErrorCategory =
   | "rejected"
   /** The payment may have committed; `payment` is its open record. */
   | "unknown"
+  /** An open `unknown` record already holds this payment's intent — resending risks a double pay. */
+  | "duplicate"
   | "internal";
 
 export class SparkControllerError extends Error {
