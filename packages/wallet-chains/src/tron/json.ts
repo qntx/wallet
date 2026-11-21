@@ -124,7 +124,7 @@ const assetId = (value: unknown, visible: boolean): string => {
 const RESOURCE_CODES: Readonly<Record<string, number>> = {
   BANDWIDTH: 0,
   ENERGY: 1,
-  TRON_POWER: 3,
+  TRON_POWER: 2,
 };
 
 const resourceCode = (value: unknown): number => {
@@ -133,6 +133,16 @@ const resourceCode = (value: unknown): number => {
     return refuse("resource is not BANDWIDTH, ENERGY or TRON_POWER");
   }
   return code;
+};
+
+const boolField = (value: unknown, what: string): boolean => {
+  if (value === undefined) {
+    return false;
+  }
+  if (typeof value !== "boolean") {
+    return refuse(`${what} is not a boolean`);
+  }
+  return value;
 };
 
 /** The value object's keys are exactly `required` ∪ `optional` — nothing else, nothing missing. */
@@ -279,7 +289,7 @@ const contractValue = (type: string, value: unknown, visible: boolean): TronCont
         receiver: ownerAddress(json["receiver_address"], "receiver_address", visible),
         balance: json["balance"] === undefined ? 0n : int64(json["balance"], "balance"),
         resource: json["resource"] === undefined ? 0 : resourceCode(json["resource"]),
-        lock: json["lock"] === true,
+        lock: boolField(json["lock"], "lock"),
         lockPeriod:
           json["lock_period"] === undefined ? 0n : int64(json["lock_period"], "lock_period"),
       };

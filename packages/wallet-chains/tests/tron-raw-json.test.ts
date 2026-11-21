@@ -18,9 +18,15 @@ import { tronRawDataFromJson } from "../src/tron/json.ts";
 import { mainnetVectors } from "./tron.ts";
 
 const req = createRequire(import.meta.url);
-const { txCheck } = req("tronweb/utils") as {
+const { txCheck, txJsonToPb, txPbToRawDataHex } = req("tronweb/utils") as {
   txCheck: (transaction: unknown) => boolean;
+  txJsonToPb: (transaction: unknown) => unknown;
+  txPbToRawDataHex: (pb: unknown) => string;
 };
+
+/** Tronweb's own JSON → protobuf encoder: the byte-level oracle for `tronRawDataFromJson`. */
+const oracleHex = (raw: RawData, visible: boolean): string =>
+  txPbToRawDataHex(txJsonToPb({ raw_data: raw, visible })).toLowerCase();
 
 type RawData = Record<string, unknown>;
 const clone = (v: RawData): RawData => structuredClone(v);
@@ -83,6 +89,32 @@ describe("tronRawDataFromJson mainnet vectors", () => {
 
   it.each(vectors)("$type $txid: base58 mode re-encodes to raw_data_hex", (t) => {
     expect(bytesToHex(tronRawDataFromJson(toVisible(t.raw_data), true))).toBe(t.raw_data_hex);
+  });
+
+  it.each(["FreezeBalanceV2Contract", "UnfreezeBalanceV2Contract"] as const)(
+    "a TRON_POWER %s encodes exactly like txJsonToPb",
+    (type) => {
+      const raw = first(type);
+      value(raw)["resource"] = "TRON_POWER";
+      expect(bytesToHex(tronRawDataFromJson(raw, false))).toBe(oracleHex(raw, false));
+      const vt = toVisible(raw);
+      expect(bytesToHex(tronRawDataFromJson(vt, true))).toBe(oracleHex(vt, true));
+    },
+  );
+
+  it("a TRON_POWER DelegateResourceContract encodes exactly like txJsonToPb", () => {
+    const raw = first("DelegateResourceContract");
+    value(raw)["resource"] = "TRON_POWER";
+    value(raw)["lock"] = true;
+    expect(bytesToHex(tronRawDataFromJson(raw, false))).toBe(oracleHex(raw, false));
+  });
+
+  it("refuses a non-boolean DelegateResourceContract.lock", () => {
+    for (const lock of ["true", 5, ""]) {
+      const raw = first("DelegateResourceContract");
+      value(raw)["lock"] = lock;
+      refuse(raw, false, /lock is not a boolean/);
+    }
   });
 
   it("refuses AccountPermissionUpdateContract", () => {
@@ -256,6 +288,8 @@ const STRICTER = new Set([
   "contract:bad-type_url",
   "contract:missing-type_url",
   "header:extra-key",
+  /* txCheck coerces a truthy non-boolean lock to 1 — we refuse it outright. */
+  "value:lock-string",
 ]);
 
 type Mutation = { readonly name: string; readonly apply: (raw: RawData) => void };
@@ -341,6 +375,24 @@ const mutations: ReadonlyArray<Mutation> = [
         }
       }
       delete v["owner_address"];
+    },
+  },
+  {
+    name: "value:resource-tron-power",
+    apply: (raw) => {
+      const v = value(raw);
+      if ("resource" in v) {
+        v["resource"] = "TRON_POWER";
+      }
+    },
+  },
+  {
+    name: "value:lock-string",
+    apply: (raw) => {
+      const v = value(raw);
+      if ("lock" in v) {
+        v["lock"] = "true";
+      }
     },
   },
   {

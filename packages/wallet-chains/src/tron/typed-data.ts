@@ -84,7 +84,8 @@ const looseInt = (value: unknown): bigint | undefined => {
   if (typeof value === "bigint") {
     return value;
   }
-  if (typeof value === "number" && Number.isInteger(value)) {
+  /* TronWeb feeds numbers through ethers' getBigInt, which overflows on non-safe integers. */
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
     return BigInt(value);
   }
   if (typeof value === "string" && (/^-?[0-9]+$/.test(value) || /^0x[0-9a-fA-F]+$/.test(value))) {
@@ -522,7 +523,9 @@ const domainArg = (name: string, value: unknown): unknown => {
       if (v === undefined || v < 0n) {
         return fail("domain.chainId is not a non-negative integer");
       }
-      /* TronWeb's canonical JSON emits chainId as a 0x quantity, matching the parser. */
+      /* domainChecks.chainId looks like it emits a JSON number when safe
+         (Number.isSafeInteger), but its input is getBigInt's bigint, so the branch is
+         dead and getPayload always emits a 0x quantity. */
       return `0x${v.toString(16)}`;
     }
     case "verifyingContract": {

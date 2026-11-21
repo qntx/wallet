@@ -314,6 +314,18 @@ describe("parseTronTypedData malformed inputs", () => {
 });
 
 describe("tronTypedDataFromArgs", () => {
+  it("rejects a non-safe-integer number leaf like TronWeb's getBigInt", () => {
+    refuse(
+      () =>
+        tronTypedDataFromArgs(
+          { name: "X", chainId: 728126428 },
+          { Ping: [{ name: "n", type: "uint64" }] },
+          { n: 2 ** 60 },
+        ),
+      "invalid-typed-data",
+    );
+  });
+
   it("rejects non-record arguments", () => {
     refuse(() => tronTypedDataFromArgs(null, {}, {}), "invalid-typed-data");
     refuse(() => tronTypedDataFromArgs({}, null, {}), "invalid-typed-data");
