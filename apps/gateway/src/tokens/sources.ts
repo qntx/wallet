@@ -57,11 +57,14 @@ const tokenListDoc =
 
 /**
  * ERC-20 addresses that shadow the native coin's balance — listing them would double count it.
- * Celo's CELO: https://docs.celo.org/build/tools/contracts/core-contracts (GoldToken/CeloToken) and
- * https://docs.celo.org/learn/protocol/celo-token (token duality).
+ * Celo's CELO: https://docs.celo.org/contracts/core-contracts (GoldToken/CeloToken); Arc's USDC:
+ * https://docs.arc.network/arc/references/contract-addresses; Stable's USDT0:
+ * https://docs.stable.xyz/en/explanation/usdt0-behavior.
  */
-const NATIVE_ALIASES: Readonly<Record<string, ReadonlySet<string>>> = {
+export const NATIVE_ALIASES: Readonly<Record<string, ReadonlySet<string>>> = {
   "eip155:42220": new Set(["0x471ece3750da237f93b8e339c536989b8978a438"]),
+  "eip155:5042": new Set(["0x3600000000000000000000000000000000000000"]),
+  "eip155:988": new Set(["0x779ded0c9e1022225f8e0630b35a9b54be713736"]),
 };
 
 // tokens.uniswap.org (v22.34.0, read 2026-11-20/21) carries entries for every chain id below.

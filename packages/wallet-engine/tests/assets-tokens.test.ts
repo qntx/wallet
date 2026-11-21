@@ -66,6 +66,10 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
 const OP_USDC = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" as `0x${string}`;
+const CELO = "eip155:42220";
+const CELO_USDC = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
+const CELO_USDT = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
+const CELO_ALIAS = "0x471EcE3750Da237f93B8E339c536989b8978a438";
 
 const enc = (v: bigint): `0x${string}` => `0x${v.toString(16).padStart(64, "0")}`;
 
@@ -283,6 +287,27 @@ describe("AssetsController built-in tokens", () => {
     expect(balances.tokens.map((t) => t.address)).toStrictEqual([OP_USDC]);
     expect(balances.tokens[0]?.verified).toBe(true);
     expect(balances.tokens[0]?.balance).toBe("42");
+  });
+
+  it("Celo's native alias is not a token balance — native balance only, still tracked", async () => {
+    const calls: Call[] = [];
+    const c = evmClient(
+      new Map([
+        [CELO_USDC.toLowerCase(), { balance: 7n }],
+        [CELO_ALIAS.toLowerCase(), { balance: 9n }],
+      ]),
+      calls,
+    );
+    const assets = make(c, { chainId: 42220, multicall3: MULTICALL3 });
+    await assets.init();
+    // Still a built-in: tracked, and addToken short-circuits instead of persisting a custom.
+    expect(assets.isTracked(CELO, CELO_ALIAS)).toBe(true);
+    await assets.addToken(CELO, CELO_ALIAS);
+    const balances = await assets.refresh(OWNER, CELO);
+    expect(balances.native).toBe("0");
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([CELO_USDC, CELO_USDT]);
+    const agg = decodedAggregate(calls);
+    expect(agg.args[0].map((call) => call.target)).toStrictEqual([CELO_USDC, CELO_USDT]);
   });
 
   it("a network with no table entries shows only customs", async () => {

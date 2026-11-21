@@ -211,13 +211,18 @@ const makeEvm = (
     readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
     readonly store?: ReturnType<typeof createMemoryEngineStore>;
+    readonly chainId?: number;
   } = {},
 ) =>
   new AssetsController({
     ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
-      info: () => ({ family: "evm", chainId: 1, multicall3: MULTICALL3 }),
+      info: () => ({
+        family: "evm",
+        chainId: options.chainId ?? 1,
+        multicall3: MULTICALL3,
+      }),
     } as never,
     chains,
     openStore: async () => Promise.resolve(options.store ?? createMemoryEngineStore()),
@@ -293,6 +298,34 @@ describe("AssetsController EVM list discovery", () => {
     expect(again.args[0].map((call) => call.target.toLowerCase())).toStrictEqual(
       [USDC, USDT, LISTED].map((a) => a.toLowerCase()),
     );
+  });
+
+  it("a list entry at a native-alias address is a table token, never discovered", async () => {
+    // Celo's CELO alias: the table row is a balance shadow, so discovery must not re-add it.
+    const alias = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+    const celoUsdc = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
+    const celoUsdt = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
+    const calls: Call[] = [];
+    const c = evmClient(
+      new Map<string, TokenStub>([[alias.toLowerCase(), { balance: 9n, decimals: 18 }]]),
+      calls,
+    );
+    const assets = makeEvm(c, {
+      chainId: 42220,
+      gateway: GATEWAY,
+      fetch: listFetch(
+        [
+          {
+            status: 200,
+            body: listDoc("eip155:42220", 1, [evmEntry(alias, "CELO", "Celo native asset", 18)]),
+          },
+        ],
+        [],
+      ),
+    });
+    await assets.init();
+    const balances = await assets.refresh(OWNER, "eip155:42220");
+    expect(balances.tokens.map((t) => t.address)).toStrictEqual([celoUsdc, celoUsdt]);
   });
 
   it("a list token impersonating a table symbol is never eligible for discovery", async () => {

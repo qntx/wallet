@@ -8,6 +8,12 @@ export type EvmToken = {
   readonly symbol: string;
   readonly decimals: number;
   readonly name?: string;
+  /**
+   * "native-alias": an ERC-20 view that moves the chain's native balance — its calls are described
+   * like any listed token's, but it is never counted as a separate balance nor offered by
+   * discovery. "wrapped-native": a WETH9-style deposit/withdraw contract.
+   */
+  readonly role?: "native-alias" | "wrapped-native";
 };
 
 export type EvmTokenTable = Readonly<Record<string, Readonly<Record<string, EvmToken>>>>;
@@ -15,15 +21,31 @@ export type EvmTokenTable = Readonly<Record<string, Readonly<Record<string, EvmT
 // Circle USDC (native issuance, 6 decimals), from
 // https://developers.circle.com/stablecoins/usdc-contract-addresses (reviewed 2026-11-20/21). BNB
 // Chain has no Circle-issued USDC (the Binance-pegged token is a different issuer), so it is
-// absent. Arc's USDC at 0x3600…0000 is the native coin's ERC-20 view — listing it would double
-// count the native balance — and the other chains on Circle's list (Scroll, …) are not built-in
-// networks.
+// absent. Arc's USDC at 0x3600…0000 is the native coin's ERC-20 view — listed below as a native
+// alias rather than a Circle issuance — and Scroll on Circle's list is a different deployment.
 const USDC: EvmToken = Object.freeze({ symbol: "USDC", decimals: 6, name: "USD Coin" });
 
 // Tether USDT (6 decimals), from https://tether.to/en/supported-protocols/ (reviewed 2026-11-20):
 // Tether lists USD₮ on Ethereum, Avalanche, Celo and Kaia among our networks; USDT0 and bridged or
 // third-party USDT on other chains are different issuers and are absent.
 const USDT: EvmToken = Object.freeze({ symbol: "USDT", decimals: 6, name: "Tether USD" });
+
+// Native aliases — an ERC-20 front for the chain's own coin; balanceOf mirrors the native
+// balance, checked live 2026-11-21.
+// https://docs.celo.org/contracts/core-contracts (GoldToken/CeloToken).
+const CELO_ALIAS: EvmToken = Object.freeze({
+  symbol: "CELO",
+  decimals: 18,
+  name: "Celo native asset",
+  role: "native-alias",
+});
+// https://docs.arc.network/arc/references/contract-addresses.
+const ARC_USDC_ALIAS: EvmToken = Object.freeze({
+  symbol: "USDC",
+  decimals: 6,
+  name: "USDC",
+  role: "native-alias",
+});
 
 /** The built-in table. */
 export const evmTokenTable: EvmTokenTable = Object.freeze({
@@ -41,9 +63,20 @@ export const evmTokenTable: EvmTokenTable = Object.freeze({
   "324": Object.freeze({ "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4": USDC }),
   // Circle's page prints a non-EIP-55 casing; this is the checksummed form.
   "480": Object.freeze({ "0x79A02482A880bCE3F13e09Da970dC34db4CD24d1": USDC }),
+  // https://docs.stable.xyz/en/explanation/usdt0-behavior — balanceOf mirrors the native balance,
+  // checked live 2026-11-21.
+  "988": Object.freeze({
+    "0x779Ded0c9e1022225f8E0630b35a9b54bE713736": Object.freeze({
+      symbol: "USDT0",
+      decimals: 6,
+      name: "USDT0",
+      role: "native-alias",
+    }),
+  }),
   "999": Object.freeze({ "0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC }),
   "1329": Object.freeze({ "0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": USDC }),
   "1672": Object.freeze({ "0xC879C018dB60520F4355C26eD1a6D572cdAC1815": USDC }),
+  "5042": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
   "8217": Object.freeze({ "0xd077A400968890Eacc75cdc901F0356c943e4fDb": USDT }),
   "8453": Object.freeze({ "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC }),
   "9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC }),
@@ -51,6 +84,7 @@ export const evmTokenTable: EvmTokenTable = Object.freeze({
   "42220": Object.freeze({
     "0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC,
     "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e": USDT,
+    "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS,
   }),
   "43114": Object.freeze({
     "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC,
@@ -58,6 +92,10 @@ export const evmTokenTable: EvmTokenTable = Object.freeze({
   }),
   "57073": Object.freeze({ "0x2D270e6886d130D724215A266106e6832161EAEd": USDC }),
   "59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC }),
+  "5042002": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
+  "11142220": Object.freeze({
+    "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS,
+  }),
 });
 
 export const lookupEvmToken = (

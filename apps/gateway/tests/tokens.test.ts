@@ -6,7 +6,7 @@ import { parseWith, tokenListResponse } from "@qntx/wallet-engine/gateway/contra
 import type { TokenListResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { buildTokenLists } from "../src/tokens/build.ts";
-import { tokenListSources } from "../src/tokens/sources.ts";
+import { NATIVE_ALIASES, tokenListSources } from "../src/tokens/sources.ts";
 import type { RawToken, TokenListUpstream } from "../src/tokens/sources.ts";
 import {
   DEVNET,
@@ -151,6 +151,18 @@ describe("source parsers", () => {
       "eip155:8453",
     ]);
     expect(entriesOf(parsed, "eip155:1").map((t) => t.symbol)).toStrictEqual(["0G", "USDC"]);
+  });
+
+  it("shadows exactly the engine table's mainnet native aliases", () => {
+    expect(
+      Object.fromEntries(
+        Object.entries(NATIVE_ALIASES).map(([id, set]) => [id, [...set].toSorted()]),
+      ),
+    ).toStrictEqual({
+      "eip155:42220": ["0x471ece3750da237f93b8e339c536989b8978a438"],
+      "eip155:5042": ["0x3600000000000000000000000000000000000000"],
+      "eip155:988": ["0x779ded0c9e1022225f8e0630b35a9b54be713736"],
+    });
   });
 
   it("drops Celo's native-alias CELO but keeps its real tokens", () => {

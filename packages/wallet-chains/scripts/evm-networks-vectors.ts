@@ -16,6 +16,8 @@ const SIGNER = "0x2222222222222222222222222222222222222222";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
 const MONAD_USDC = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
 const INK_USDC = "0x2D270e6886d130D724215A266106e6832161EAEd";
+const CELO_ALIAS = "0x471EcE3750Da237f93B8E339c536989b8978a438";
+const ARC_USDC_ALIAS = "0x3600000000000000000000000000000000000000";
 
 const account = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" };
 const tx = (chainId: number, over: { to?: string; data?: string; value?: string }) => ({
@@ -92,6 +94,46 @@ const cases = [
   native(534352, "Scroll", "ETH"),
   native(167000, "Taiko", "ETH"),
   native(46630, "Robinhood Chain Testnet", "ETH"),
+  {
+    // The CELO alias is a listed token to the decoder: a `transfer` reads like any listed one.
+    name: "Celo CELO alias transfer",
+    request: tx(42220, {
+      to: CELO_ALIAS,
+      data: encodeFunctionData({
+        abi: parseAbi(["function transfer(address,uint256)"]),
+        args: [TO, 2_500_000_000_000_000_000n],
+      }),
+    }),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      `Network: Celo\nSend 2.5 CELO to ${TO}\nMax fee ${FEE} CELO`,
+      `网络：Celo\n发送 2.5 CELO 到 ${TO}\n最高手续费 ${FEE} CELO`,
+    ),
+  },
+  {
+    // Arc's USDC alias likewise: an `approve` gets the listed-token approval lines.
+    name: "Arc USDC alias approve",
+    request: tx(5042, {
+      to: ARC_USDC_ALIAS,
+      data: encodeFunctionData({
+        abi: parseAbi(["function approve(address,uint256)"]),
+        args: [TO, 5_000_000n],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm approval",
+        description: `Network: Arc\nThere may be other outflows\nAllow ${TO} to spend 5 USDC\nMax fee ${FEE} USDC`,
+      },
+      "zh-Hans": {
+        title: "确认授权",
+        description: `网络：Arc\n可能还有其他转出\n授权 ${TO} 使用 5 USDC\n最高手续费 ${FEE} USDC`,
+      },
+    },
+  },
   {
     // opBNB prices legacy: the Max fee line comes out of gas × gasPrice.
     name: "opBNB native BNB transfer",

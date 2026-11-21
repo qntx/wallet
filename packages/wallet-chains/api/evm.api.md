@@ -228,6 +228,7 @@ export type EvmToken = {
     readonly symbol: string;
     readonly decimals: number;
     readonly name?: string;
+    readonly role?: "native-alias" | "wrapped-native";
 };
 
 // @public (undocumented)
