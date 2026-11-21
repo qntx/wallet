@@ -56,7 +56,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Measured 8491 B: the controller + shared socket core — no provider ships in this entry. */
+    /* Measured 8866 B: the controller (incl. the app storage + prune) + shared socket core —
+       no provider ships in this entry. */
     budget: 9 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
@@ -72,7 +73,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-polymarket",
     source: "src/apps/polymarket/index.ts",
-    /* Measured 39326 B: the full Polymarket client (markets, account, L2 signing + credential
+    /* Measured 39341 B: the full Polymarket client (markets, account, L2 signing + credential
        store, orders, relayer, enable, live market + user channels, funding) incl. viem hashing. */
     budget: 40 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
