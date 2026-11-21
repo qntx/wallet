@@ -421,6 +421,18 @@ describe("prepareTron", () => {
     expect(prepared.intent.tron?.contractType).toBe("TransferAssetContract");
   });
 
+  it("fractional node balances truncate instead of throwing", async () => {
+    const w = world();
+    w.accounts.set(FROM, {
+      address: FROM,
+      balance: 100_000_000.9,
+      assetV2: [{ key: TRC10, value: 50_000.9 }],
+    });
+    const prepared = await prepareTron(ctx(w).ctx, params({ token: TRC10, amount: 1000n }));
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).not.toBe("failed");
+  });
+
   it("refuses a TRC-10 send over the assetV2 balance", async () => {
     const w = world();
     await expect(

@@ -268,6 +268,19 @@ describe("tron readers", () => {
     );
   });
 
+  it("chainParams truncates a fractional node value rather than throwing", async () => {
+    const body = {
+      chainParameter: [
+        { key: "getTransactionFee", value: 1000.9 },
+        ...CHAIN_PARAMETER_BODY.chainParameter.filter((e) => e.key !== "getTransactionFee"),
+      ],
+    };
+    await expect(chainParams(api({ "/wallet/getchainparameters": body }))).resolves.toStrictEqual({
+      ...PARAMS,
+      transactionFee: 1000n,
+    });
+  });
+
   it("constantCall returns the success shape with energy and constant_result bytes", async () => {
     const outcome = await constantCall(
       api({

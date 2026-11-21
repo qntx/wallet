@@ -107,7 +107,10 @@ type Feed = {
   oldest: number;
 };
 
-const hexBytesOf = (hex: string): Uint8Array => {
+const hexBytesOf = (hex: string): Uint8Array | undefined => {
+  if (!/^([0-9a-fA-F]{2})+$/.test(hex)) {
+    return undefined;
+  }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {
     out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -138,8 +141,9 @@ const assetIdOf = (name: string | undefined): string | undefined => {
   if (/^\d+$/.test(name)) {
     return name;
   }
-  if (/^([0-9a-fA-F]{2})+$/.test(name)) {
-    const decoded = new TextDecoder().decode(hexBytesOf(name));
+  const bytes = hexBytesOf(name);
+  if (bytes !== undefined) {
+    const decoded = new TextDecoder().decode(bytes);
     return /^\d+$/.test(decoded) ? decoded : undefined;
   }
   return undefined;
@@ -325,6 +329,9 @@ const transferLog = (
   if (contract === undefined || from === undefined || to === undefined) {
     return undefined;
   }
+  if (log.data !== undefined && log.data !== "" && !/^[0-9a-fA-F]{1,64}$/.test(log.data)) {
+    return undefined; // a non-hex data word is not a decodable Transfer — classify, never throw
+  }
   return {
     contract,
     from,
@@ -385,13 +392,13 @@ const verifyEntry = async (
   });
   if (transfers.length > 0) {
     // The sha256 pin + the phase-1 decoder make the contract check byte-for-byte, not field-shaped.
-    const hex = body?.raw_data_hex;
-    if (hex === undefined) {
+    const raw = body?.raw_data_hex === undefined ? undefined : hexBytesOf(body.raw_data_hex);
+    if (raw === undefined) {
       checkable = false;
-    } else if (bytesToHex(sha256(hexBytesOf(hex))) === group.txid) {
+    } else if (bytesToHex(sha256(raw)) === group.txid) {
       let contract: TronContract | undefined;
       try {
-        const slot = decodeTronRawData(hexBytesOf(hex)).contract;
+        const slot = decodeTronRawData(raw).contract;
         contract = decodeTronContract(slot.typeId, slot.value)?.contract;
       } catch {
         checkable = false; // bytes the local decoder cannot model — uncheckable, not wrong

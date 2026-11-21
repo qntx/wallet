@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildTronRawData, tronAddressToHex } from "@qntx/wallet-chains/tron";
@@ -243,6 +244,8 @@ const stream = (options: {
   return { stream: s, requests };
 };
 
+const flagsOf = (e: HistoryEntry | undefined): ReadonlyArray<string> => e?.flags ?? [];
+
 const drain = async (s: {
   next: () => Promise<{ items: ReadonlyArray<HistoryEntry>; done: boolean }>;
 }): Promise<HistoryEntry[]> => {
@@ -368,6 +371,96 @@ describe("tronHistoryStream", () => {
     const [entry] = await drain(s);
     expect(entry?.flags).toContain("chain-mismatch");
     expect(entry?.verified).toBe(false);
+  });
+
+  it("a non-hex log data word is not a Transfer — the claim mismatches, the stream never throws", async () => {
+    const txid = "a3".repeat(32);
+    const row = trc20Row(txid, { ts: 2000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000002,
+      ts: 2000,
+      logs: [
+        {
+          address: DDYS_HEX20,
+          topics: [
+            TRANSFER_TOPIC,
+            `000000000000000000000000${SENDER_HEX20}`,
+            `000000000000000000000000${OWNER_HEX20}`,
+          ],
+          data: "not-hex!",
+        },
+      ],
+    });
+    const { stream: s } = stream({
+      trc20: [page([row])],
+      api: nodeApi({ [txid]: { info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.flags).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
+  });
+
+  it("a non-hex raw_data_hex leaves the entry unverified instead of throwing", async () => {
+    const made = trxBody({ from: SENDER, to: OWNER, amount: 5n, block: 87000001, ts: 1000 });
+    const row = txRow(made.txid, {
+      ts: 1000,
+      from: SENDER_HEX20,
+      to: OWNER_HEX20,
+      amount: 5,
+    });
+    const { stream: s } = stream({
+      tx: [page([row])],
+      api: nodeApi({
+        [made.txid]: { tx: { ...made.body, raw_data_hex: "zz-not-hex" }, info: made.info },
+      }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.verified).toBe(false);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("arbitrary node strings in Transfer logs and raw_data_hex classify, never throw", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.string(), fc.string(), async (data, hex) => {
+        const txid = "b1".repeat(32);
+        const row = trc20Row(txid, { ts: 2000, from: SENDER, to: OWNER, value: "7" });
+        const info = trc20Info({
+          block: 87000002,
+          ts: 2000,
+          logs: [
+            {
+              address: DDYS_HEX20,
+              topics: [
+                TRANSFER_TOPIC,
+                `000000000000000000000000${SENDER_HEX20}`,
+                `000000000000000000000000${OWNER_HEX20}`,
+              ],
+              data,
+            },
+          ],
+        });
+        const { stream: s1 } = stream({
+          trc20: [page([row])],
+          api: nodeApi({ [txid]: { info } }),
+        });
+        await expect(drain(s1)).resolves.toHaveLength(1);
+        const made = trxBody({ from: SENDER, to: OWNER, amount: 5n, block: 87000001, ts: 1000 });
+        const trx = txRow(made.txid, {
+          ts: 1000,
+          from: SENDER_HEX20,
+          to: OWNER_HEX20,
+          amount: 5,
+        });
+        const { stream: s2 } = stream({
+          tx: [page([trx])],
+          api: nodeApi({
+            [made.txid]: { tx: { ...made.body, raw_data_hex: hex }, info: made.info },
+          }),
+        });
+        await expect(drain(s2)).resolves.toHaveLength(1);
+      }),
+      { numRuns: 25 },
+    );
   });
 
   it("flags a zero-value TRC-20 leg and still verifies it on the node", async () => {

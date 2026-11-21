@@ -262,7 +262,7 @@ export const chainParams = async (api: TronApi): Promise<TronChainParams> => {
     if (value === undefined) {
       throw new Error(`${path}: missing ${key}`);
     }
-    return BigInt(value);
+    return BigInt(Math.trunc(value));
   };
   return {
     transactionFee: take("getTransactionFee"),
@@ -298,7 +298,7 @@ export const stakeParams = async (api: TronApi): Promise<TronStakeParams> => {
     if (value === undefined) {
       throw new Error(`${path}: missing ${key}`);
     }
-    return BigInt(value);
+    return BigInt(Math.trunc(value));
   };
   return {
     maxDelegateLockPeriod: take("getMaxDelegateLockPeriod"),
@@ -671,7 +671,10 @@ export const tronFeeQuote = (input: {
         "the transaction is too large to activate the recipient",
       );
     }
-    if (BigInt(stakedAvailable) >= BigInt(bytes) * params.createNewAccountBandwidthRate) {
+    if (
+      BigInt(Math.trunc(stakedAvailable)) >=
+      BigInt(bytes) * params.createNewAccountBandwidthRate
+    ) {
       source = "activation-staked";
     } else {
       source = "activation-fee";
@@ -697,7 +700,8 @@ export const tronFeeQuote = (input: {
   if (input.energy !== undefined) {
     const feeLimit = tronFeeLimit(input.energy.used, params.energyFee, params.maxFeeLimit);
     const available = Math.max(0, input.resources.energyLimit - input.resources.energyUsed);
-    energyExpected = BigInt(Math.max(0, input.energy.used - available)) * params.energyFee;
+    energyExpected =
+      BigInt(Math.trunc(Math.max(0, input.energy.used - available))) * params.energyFee;
     energyMax = feeLimit;
     energy = {
       used: input.energy.used,
