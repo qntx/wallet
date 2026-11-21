@@ -47,8 +47,9 @@ networks it serves, and the only source of prices, swap and bridge quotes and EV
 engine sends it a fresh `x-client-id` per session and per scope.
 
 The engine follows the wallet's lock state: unlocking opens the encrypted `EngineStore` and starts
-the selected account group; locking flushes pending writes, closes every Spark client and clears
-in-memory state.
+the selected account group; locking flushes pending writes, closes every Spark client, stops
+polling, and ignores late results from the old session. Transaction and request state stays
+readable until the next unlock reloads it.
 
 ## Surface
 
