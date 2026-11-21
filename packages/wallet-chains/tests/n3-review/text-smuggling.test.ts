@@ -106,4 +106,23 @@ describe("hidden text the display checks pass", () => {
     expect(intent.blind).toBeUndefined();
     expect(fieldAt(intent, "text")).toBe(tagged);
   });
+
+  it("a flag tag run without the U+E007F terminator is caught", () => {
+    expect(messageTextHazard(`a${TAG_FLAG}${tags("x")}`)).toBe("hidden-characters");
+  });
+
+  it("stray tag characters after the cancel tag are caught", () => {
+    const text = `a${TAG_FLAG}${tags("x")}${TAG_END}${tags("y")}`;
+    expect(messageTextHazard(text)).toBe("hidden-characters");
+  });
+
+  it.each([0x2066, 0x2067, 0x2068, 0x2069])(
+    "bidi isolate U+%s is caught and shown as U+FFFD",
+    (cp) => {
+      const text = `send ${String.fromCodePoint(cp)}everything${String.fromCodePoint(0x2069)}`;
+      expect(messageTextHazard(text)).toBe("hidden-characters");
+      const [line] = displayExcerpt(text, 1, 400).lines;
+      expect(line).toContain("�");
+    },
+  );
 });

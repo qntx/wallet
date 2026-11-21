@@ -55,6 +55,16 @@ const bytesField = (value: ProtocolValue, key: string): Uint8Array => {
   }
   return v;
 };
+const objField = (value: ProtocolValue, key: string): ProtocolValue => {
+  if (typeof value !== "object" || value === null || Symbol.iterator in value) {
+    throw new Error("expected object");
+  }
+  const v = value[key];
+  if (v === undefined) {
+    throw new Error(`${key} missing`);
+  }
+  return v;
+};
 
 const setup = async () => {
   const h = createHarness({ start: T0 });
@@ -65,7 +75,7 @@ const setup = async () => {
   return {
     h,
     session: strField(res, "session"),
-    walletId: strField((res as Record<string, ProtocolValue>)["wallet"] ?? {}, "walletId"),
+    walletId: strField(objField(res, "wallet"), "walletId"),
   };
 };
 
