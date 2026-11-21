@@ -18,9 +18,9 @@ import { EsploraError } from "../../src/chains/bitcoin.ts";
 import type { Esplora } from "../../src/chains/bitcoin.ts";
 import type { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
-import { bombedStore } from "../send-helpers.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
 import type { SignParams, TrackedTransaction, TxState } from "../../src/transactions/route.ts";
+import { bombedStore } from "../send-helpers.ts";
 import { manualTimers } from "./timers.ts";
 import type { ManualTimers } from "./timers.ts";
 

@@ -715,3 +715,161 @@ describe("MetaSyncController", () => {
     );
   });
 });
+
+describe("a pull that outlives its session", () => {
+  /** Parks each successive decrypt call on its own gate; calls beyond `gates` pass through. */
+  const gatedDecrypts = (
+    calls: { count: number },
+    gates: ReadonlyArray<Promise<void>>,
+  ): ((s: WalletSyncSigner) => WalletSyncSigner) =>
+    (inner) => ({
+      getPublicKey: async () => inner.getPublicKey(),
+      signEvent: async (e) => inner.signEvent(e),
+      encrypt: async (text) => inner.encrypt(text),
+      decrypt: async (payload) => {
+        calls.count += 1;
+        const gate = gates[calls.count - 1];
+        if (gate !== undefined) {
+          await gate;
+        }
+        return inner.decrypt(payload);
+      },
+    });
+
+  const remoteDoc = async (
+    signer: WalletSyncSigner,
+    body: string,
+    createdAt: number,
+  ): Promise<Event> => {
+    const pubkey = await signer.getPublicKey();
+    return signer.signEvent({
+      pubkey,
+      kind: META_SYNC_KIND,
+      created_at: createdAt,
+      tags: [["d", TAG]],
+      content: await signer.encrypt(body),
+    });
+  };
+
+  it("a decrypt that resolves after lock→unlock merges nothing into the new session", async () => {
+    const calls = { count: 0 };
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const r = await rig({ syncSignerWrap: gatedDecrypts(calls, [gate]) });
+    const created = await vaultWithMnemonic(r.wallet);
+    await nostr(r.wallet).deriveKey(created.walletId, 0);
+    // The remote the dead session will decode carries a marker contact.
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
+    const stale = await remoteDoc(
+      signer,
+      JSON.stringify({
+        v: 2,
+        wallet: { updatedAt: 9 },
+        groups: [],
+        contacts: [
+          {
+            id: "c-stale",
+            name: "Stale",
+            family: "evm",
+            address: "0x52908400098527886E0F7030069857D2E4169EE7",
+            createdAt: 1,
+            updatedAt: 9,
+          },
+        ],
+      }),
+      1_700_000_700,
+    );
+    r.relay.events.push(stale);
+    await r.accounts.init();
+    await r.addressBook.init();
+
+    // The first session's pull reaches the decrypt — and parks there.
+    const first = r.metaSync.init();
+    await vi.waitFor(
+      () => {
+        expect(calls.count).toBe(1);
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+
+    // Lock → unlock starts a new session; an empty relay leaves it nothing to merge.
+    await r.metaSync.lock();
+    r.relay.events.length = 0;
+    await r.metaSync.init();
+    expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("synced");
+
+    // The dead session's decrypt now lands: the doc decodes but must never merge.
+    release();
+    await first;
+    await vi.waitFor(
+      () => {
+        expect(calls.count).toBe(1); // the new session never read a remote — nothing decoded
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+    expect(r.addressBook.getState().entries["c-stale"]).toBeUndefined();
+    expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("synced");
+    await r.metaSync.destroy();
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  }, 60_000);
+
+  it("the dead pull's cleanup keeps the new session's in-flight marker — a second pull dedupes", async () => {
+    const calls = { count: 0 };
+    let releaseA = (): void => {};
+    let releaseB = (): void => {};
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    const r = await rig({ syncSignerWrap: gatedDecrypts(calls, [gateA, gateB]) });
+    const created = await vaultWithMnemonic(r.wallet);
+    await nostr(r.wallet).deriveKey(created.walletId, 0);
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
+    r.relay.events.push(
+      await remoteDoc(
+        signer,
+        JSON.stringify({ v: 2, wallet: { updatedAt: 1 }, groups: [], contacts: [] }),
+        1_700_000_700,
+      ),
+    );
+    await r.accounts.init();
+    await r.addressBook.init();
+
+    // Session one parks inside its decrypt.
+    const first = r.metaSync.init();
+    await vi.waitFor(
+      () => {
+        expect(calls.count).toBe(1);
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+
+    // Lock → unlock: session two's pull parks inside its own decrypt.
+    await r.metaSync.lock();
+    const second = r.metaSync.init();
+    await vi.waitFor(
+      () => {
+        expect(calls.count).toBe(2);
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+
+    // The dead session's pull finishes — its finally must leave the live session's entry.
+    releaseA();
+    await first;
+    await r.metaSync.sync(); // a concurrent pull for the same wallet dedupes — no third fetch
+    expect(r.relay.fetchCalls).toBe(2);
+
+    releaseB();
+    await second;
+    expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("synced");
+    await r.metaSync.destroy();
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  }, 60_000);
+});
