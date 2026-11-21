@@ -756,8 +756,8 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      params.commit();
       await this.requireSats(client, params.amountSats);
+      params.commit();
       const transfer = await this.recorded(
         ledger,
         {
@@ -947,8 +947,8 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      params.commit();
       await this.requireSats(client, amountSats + params.maxFeeSats);
+      params.commit();
       const payment = await this.recorded(
         ledger,
         {
@@ -1042,8 +1042,8 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      params.commit();
       await this.requireSats(client, amountSats);
+      params.commit();
       const result = await this.recorded(
         ledger,
         {
@@ -1195,8 +1195,8 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      params.commit();
       await this.requireSats(client, exitSats);
+      params.commit();
       const exit = await this.recorded(
         ledger,
         {

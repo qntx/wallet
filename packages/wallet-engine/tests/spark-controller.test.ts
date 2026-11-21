@@ -1598,7 +1598,8 @@ describe("commit before the client send", () => {
   };
 
   async function setup(calls: string[], approvals: unknown[]) {
-    const { c, client } = controller(calls, approvals);
+    // A balance that always covers the send so the preflight passes and `commit` is what throws.
+    const { c, client } = controller(calls, approvals, { balanceSats: 1_000_000 });
     c.setAccounts([REF]);
     c.setStore(createMemoryEngineStore());
     await c.init();
