@@ -8,7 +8,7 @@ import {
   servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
-import { ipPrefix } from "../src/middleware/rate-limit.ts";
+import { ipKeys } from "../src/middleware/rate-limit.ts";
 import type { RateLimiter } from "../src/types.ts";
 import {
   DEVNET,
@@ -1072,7 +1072,8 @@ describe("rate limiting", () => {
     });
     expect(rpc.keys).toStrictEqual([
       `${CLIENT_ID}:203.0.113.0/24`,
-      `${CLIENT_ID}:2001:0db8:abcd::/48`,
+      // The per-install key uses the most specific IP key — the /64, not the /48.
+      `${CLIENT_ID}:2001:0db8:abcd:1234::/64`,
     ]);
     expect(dflt.keys).toHaveLength(0);
   });
@@ -1216,13 +1217,103 @@ describe("rate limiting", () => {
     expect(rpc.keys).toHaveLength(0);
   });
 
-  it("derives /24 and /48 prefixes", () => {
-    expect(ipPrefix("198.51.100.200")).toBe("198.51.100.0/24");
-    expect(ipPrefix("2001:db8::1")).toBe("2001:0db8:0000::/48");
-    expect(ipPrefix("fe80::1:2:3:4")).toBe("fe80:0000:0000::/48");
-    expect(ipPrefix("2001:db8:1:2:3:4:5:6")).toBe("2001:0db8:0001::/48");
-    expect(ipPrefix(undefined)).toBe("unknown");
-    expect(ipPrefix("nonsense")).toBe("unknown");
+  it("derives /24 and IPv6 /64+/48 keys", () => {
+    expect(ipKeys("198.51.100.200")).toStrictEqual(["198.51.100.0/24"]);
+    expect(ipKeys("2001:db8::1")).toStrictEqual([
+      "2001:0db8:0000:0000::/64",
+      "2001:0db8:0000::/48",
+    ]);
+    expect(ipKeys("fe80::1:2:3:4")).toStrictEqual([
+      "fe80:0000:0000:0000::/64",
+      "fe80:0000:0000::/48",
+    ]);
+    expect(ipKeys("2001:db8:1:2:3:4:5:6")).toStrictEqual([
+      "2001:0db8:0001:0002::/64",
+      "2001:0db8:0001::/48",
+    ]);
+    expect(ipKeys(undefined)).toStrictEqual(["unknown"]);
+    expect(ipKeys("nonsense")).toStrictEqual(["unknown"]);
+  });
+});
+
+describe("IPv6 aggregation", () => {
+  const V64 = "2001:0db8:abcd:1234::/64";
+  const V48 = "2001:0db8:abcd::/48";
+  const v6Post = (ip: string) => ({
+    ...post(call("eth_chainId")),
+    headers: headers({
+      "content-type": "application/json",
+      "cf-connecting-ip": ip,
+      "x-client-id": "b".repeat(32),
+    }),
+  });
+
+  it("charges every key of an IPv6 address on the flood and share limiters", async () => {
+    const ip = recordingLimiter();
+    const rpc = recordingLimiter();
+    const share = recordingLimiter();
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc, default: allowAll, share },
+    });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post("2001:db8:abcd:1234::1"));
+    expect(res.status).toBe(200);
+    expect(ip.keys).toStrictEqual([V64, V48]);
+    expect(share.keys).toStrictEqual([`a:${V64}`, `a:${V48}`]);
+  });
+
+  it("counts two /64s separately but shares their /48 budget", async () => {
+    const ip = countBefore(100);
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    for (const ipAddr of ["2001:db8:abcd:1::1", "2001:db8:abcd:1::2", "2001:db8:abcd:2::1"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post(ipAddr));
+      expect(res.status).toBe(200);
+    }
+    expect(ip.counts.get("2001:0db8:abcd:0001::/64")).toBe(2);
+    expect(ip.counts.get("2001:0db8:abcd:0002::/64")).toBe(1);
+    expect(ip.counts.get("2001:0db8:abcd::/48")).toBe(3);
+  });
+
+  it("refuses the second /64 once the shared /48 flood budget is spent", async () => {
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip: countBefore(2), rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    const statuses: number[] = [];
+    for (const ipAddr of ["2001:db8:abcd:1::1", "2001:db8:abcd:2::1", "2001:db8:abcd:3::1"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, v6Post(ipAddr));
+      statuses.push(res.status);
+    }
+    expect(statuses).toStrictEqual([200, 200, 429]);
+  });
+
+  it("does not let client-id rotation escape the IPv6 keys", async () => {
+    const ip = countBefore(2);
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc: allowAll, default: allowAll, share: allowAll },
+    });
+    const statuses: number[] = [];
+    for (const id of ["a", "b", "c"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, {
+        ...post(call("eth_chainId")),
+        headers: headers({
+          "content-type": "application/json",
+          "cf-connecting-ip": "2001:db8:abcd:1234::1",
+          "x-client-id": id.repeat(32),
+        }),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses).toStrictEqual([200, 200, 429]);
+    expect(ip.counts.get(V64)).toBe(2);
+    expect(ip.counts.get(V48)).toBe(2);
   });
 });
 
