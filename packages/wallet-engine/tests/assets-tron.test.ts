@@ -16,9 +16,8 @@ import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { AssetsController } from "../src/assets/controller.ts";
 import type { AccountBalances } from "../src/assets/controller.ts";
-import { parseTronJson } from "../src/chains/tron-json.ts";
 import type { TronApi } from "../src/chains/tron.ts";
-import { nativeAssetId, tokenAssetId } from "../src/gateway/contract/index.ts";
+import { parseTronJson, nativeAssetId, tokenAssetId } from "../src/gateway/contract/index.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
 const logger = { warn: () => {} };

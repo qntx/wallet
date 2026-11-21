@@ -6,7 +6,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { isTronAddress, tronAddressFromHex } from "@qntx/wallet-chains/tron";
 
-import { parseTronJson } from "../src/chains/tron-json.ts";
 import {
   account,
   blockId,
@@ -19,6 +18,7 @@ import {
   tronLogAddress,
 } from "../src/chains/tron.ts";
 import type { TronApi, TronCallOutcome } from "../src/chains/tron.ts";
+import { parseTronJson } from "../src/gateway/contract/index.ts";
 import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { AccountRef, RouteContext, SendParams } from "../src/transactions/route.ts";
 import { prepareTron } from "../src/transactions/tron.ts";

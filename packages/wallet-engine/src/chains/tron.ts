@@ -13,6 +13,7 @@ import { ChainError } from "@qntx/wallet-chains";
 import { tronAddressFromHex } from "@qntx/wallet-chains/tron";
 
 import {
+  parseTronJson,
   parseWith,
   tronAccountResponse,
   tronAccountResource,
@@ -36,7 +37,6 @@ import type {
   TronMaybeTransaction,
   TronNodePath,
 } from "../gateway/contract/index.ts";
-import { parseTronJson } from "./tron-json.ts";
 
 /** TRON HTTP client: POSTs an allow-listed path to each endpoint in order. */
 export type TronApi = {

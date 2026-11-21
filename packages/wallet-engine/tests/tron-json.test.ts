@@ -7,8 +7,8 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import { TronJsonParseError, parseTronJson } from "../src/chains/tron-json.ts";
 import { account, chainParams, tronCaller } from "../src/chains/tron.ts";
+import { TronJsonParseError, parseTronJson } from "../src/gateway/contract/index.ts";
 
 const MAX_SAFE = "9007199254740991";
 const TWO53 = "9007199254740992";

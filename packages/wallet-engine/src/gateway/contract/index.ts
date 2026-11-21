@@ -4,6 +4,7 @@ export * from "./health.ts";
 export * from "./eligibility.ts";
 export * from "./rpc.ts";
 export * from "./tron.ts";
+export * from "./tron-json.ts";
 export * from "./esplora.ts";
 export * from "./networks.ts";
 export * from "./served.ts";
