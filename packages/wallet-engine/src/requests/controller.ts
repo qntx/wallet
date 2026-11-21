@@ -24,6 +24,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
 import { normalizeAddress } from "../addresses/normalize.ts";
+import type { TronFeeQuote } from "../chains/tron.ts";
 import type { SignInFields } from "../connect/siws.ts";
 import { utf8Text } from "../connect/text.ts";
 import { Controller } from "../controller.ts";
@@ -481,6 +482,8 @@ export type PendingRequest = {
   readonly risk: ReadonlyArray<RiskFinding>;
   /** Present for simulated requests: sends and dApp transactions; absent otherwise. */
   readonly simulation?: SimulationOutcome;
+  /** The TRON fee quote a tron send built — bandwidth, activation and energy detail. */
+  readonly tronFee?: TronFeeQuote;
   /** When `simulation` was produced (ms); one older than {@link RESIMULATE_AFTER_MS} re-runs. */
   readonly simulatedAt?: number;
   readonly createdAt: number;
@@ -629,6 +632,8 @@ type Built = {
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly simulation?: SimulationOutcome;
+  /** The TRON fee quote — set only by a tron send build. */
+  readonly tronFee?: TronFeeQuote;
   /** Present when `simulation` can be re-run at approval. */
   readonly resimulation?: Resimulation;
   readonly run: Run;
@@ -922,6 +927,7 @@ export class RequestController extends Controller<RequestControllerState> {
       ...(built.simulation === undefined
         ? {}
         : { simulation: built.simulation, simulatedAt: createdAt }),
+      ...(built.tronFee === undefined ? {} : { tronFee: built.tronFee }),
       createdAt,
       expiresAt: createdAt + REQUEST_TTL_MS,
     };
@@ -1381,9 +1387,10 @@ export class RequestController extends Controller<RequestControllerState> {
       ]),
       risk:
         input.method === "send" || internal
-          ? this.chainRisk(prepared.intent)
+          ? mergeRisk(this.chainRisk(prepared.intent), prepared.risk ?? [])
           : this.blindRisk(prepared.intent),
       run: { ...prepared, factor: "required" },
+      ...(prepared.tronFee === undefined ? {} : { tronFee: prepared.tronFee }),
     };
     return input.method === "send" || internal
       ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)

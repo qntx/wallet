@@ -42,6 +42,7 @@ import {
   prepareSolanaSwap,
   submitDappSolana,
 } from "./solana.ts";
+import { pollTron, prepareTron } from "./tron.ts";
 
 export type {
   AccountRef,
@@ -168,6 +169,13 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   );
 };
 
+type TronRecord = NonNullable<TrackedTransaction["tron"]>;
+const isTronRecord = (v: unknown): v is TronRecord =>
+  isObject(v) &&
+  typeof v["expiration"] === "number" &&
+  Number.isSafeInteger(v["expiration"]) &&
+  typeof v["from"] === "string";
+
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
   isObject(v) &&
@@ -219,13 +227,14 @@ const decode = (
     raw: signedRaw,
     evm,
     btc,
+    tron,
     sparkDeposit,
     submittedAt,
     error,
   } = parsed;
   if (
     typeof id !== "string" ||
-    (family !== "evm" && family !== "solana" && family !== "bitcoin") ||
+    (family !== "evm" && family !== "solana" && family !== "bitcoin" && family !== "tron") ||
     typeof network !== "string" ||
     typeof account !== "string" ||
     !isTxState(state) ||
@@ -262,6 +271,14 @@ const decode = (
           return {};
         })()),
     ...(isBtcRecord(btc) ? { btc } : {}),
+    ...(isTronRecord(tron)
+      ? { tron }
+      : (() => {
+          if (tron !== undefined) {
+            warn(`dropping malformed tron build record on transaction ${id}`);
+          }
+          return {};
+        })()),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
     error: typeof error === "string" ? error : undefined,
@@ -423,6 +440,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const ctx = this.routeCtx();
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
+    }
+    if (info.family === "tron") {
+      return prepareTron(ctx, params);
     }
     if (info.family === "bitcoin") {
       return this.bitcoinRoute.prepare(ctx, params, requestId, sparkDeposit);
@@ -739,9 +759,11 @@ export class TransactionController extends Controller<TransactionControllerState
     const answer =
       tx.family === "solana"
         ? await pollSolana(ctx, tx)
-        : tx.family === "bitcoin"
-          ? await this.bitcoinRoute.poll(ctx, tx)
-          : await this.evmRoute.poll(ctx, tx);
+        : tx.family === "tron"
+          ? await pollTron(ctx, tx)
+          : tx.family === "bitcoin"
+            ? await this.bitcoinRoute.poll(ctx, tx)
+            : await this.evmRoute.poll(ctx, tx);
     if (answer === undefined || this.locked) {
       return;
     }
@@ -754,6 +776,7 @@ export class TransactionController extends Controller<TransactionControllerState
         state: answer.state,
         block: answer.block,
         final: answer.final,
+        ...(answer.error === undefined ? {} : { error: answer.error }),
       });
       if (firstInclusion) {
         this.settle(updated);
