@@ -1,10 +1,16 @@
-// Enforces the AGENTS.md package and layer boundaries on resolved module paths. Every import,
-// re-export and literal dynamic import in library src, the native kernel entry and the gateway is
-// resolved to the workspace file it loads — whatever its spelling: a package name, `./`, `..`, a
-// path into another package — or to an external package or Node builtin, and the rules below
-// judge the resolved target. A boundary that only matched specifier text could be walked around
-// by spelling the same file differently.
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+// Enforces the AGENTS.md package and layer boundaries on resolved module paths — the fast,
+// source-first of two layers (check-bundles.ts judges what the bundles actually load, catching
+// spellings a source scan cannot see: require(), .js/.cts payloads, symlinks, package.json
+// `imports`, tsconfig `paths`, absolute imports, import.meta.glob). Every import, re-export and
+// literal dynamic import in library src, the native kernel entry and the gateway is resolved to
+// the workspace file it loads — whatever its spelling: a package name, `./`, `..`, a path into
+// another package — or to an external package or Node builtin, and the rules below judge the
+// resolved target. A boundary that only matched specifier text could be walked around by
+// spelling the same file differently. Discovery is fail-closed too: symlinks in governed trees,
+// non-TypeScript code files, package `imports`, tsconfig `paths`/`baseUrl` aliasing, absolute
+// and `file:` specifiers, require()/createRequire()/import.meta.glob() calls and `export {}
+// from` edges are all findings on their own.
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -34,7 +40,7 @@ export type Edge = {
 export type Violation = { readonly edge: Edge; readonly rule: string; readonly message: string };
 
 /** `path` is `zone` or lies under it. */
-const within = (path: string, ...zones: ReadonlyArray<string>): boolean =>
+export const within = (path: string, ...zones: ReadonlyArray<string>): boolean =>
   zones.some((zone) => path === zone || path.startsWith(`${zone}/`));
 
 const packageDirOf = (path: string): string | undefined =>
@@ -104,6 +110,20 @@ type Rule = {
 };
 
 const RULES: ReadonlyArray<Rule> = [
+  {
+    id: "package-imports",
+    check: (edge) =>
+      edge.specifier.startsWith("#")
+        ? "package.json `imports` aliases resolve modules behind opaque names — import by path"
+        : undefined,
+  },
+  {
+    id: "absolute-specifier",
+    check: (edge) =>
+      edge.specifier.startsWith("/") || edge.specifier.startsWith("file:")
+        ? "an absolute or file: specifier bypasses module resolution — import by path or name"
+        : undefined,
+  },
   {
     id: "resolvable",
     check: (edge) => (edge.target.kind === "unresolved" ? edge.target.reason : undefined),
@@ -355,16 +375,16 @@ const enclaveClosureViolations = (edges: ReadonlyArray<Edge>): Violation[] => {
   return violations;
 };
 
-type Workspace = {
+export type Workspace = {
   readonly packages: ReadonlyMap<string, { readonly dir: string; readonly exports: unknown }>;
   /** Per package dir: built entry name → its source file (from the package's `pack.entry`). */
   readonly entries: ReadonlyMap<string, ReadonlyMap<string, string>>;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const packEntries = (pack: unknown): Array<[string, string]> => {
+export const packEntries = (pack: unknown): Array<[string, string]> => {
   const configs = Array.isArray(pack) ? (pack as unknown[]) : [pack];
   return configs.flatMap((config) =>
     isRecord(config) && isRecord(config["entry"])
@@ -375,7 +395,7 @@ const packEntries = (pack: unknown): Array<[string, string]> => {
   );
 };
 
-async function loadWorkspace(root: string): Promise<Workspace> {
+export async function loadWorkspace(root: string): Promise<Workspace> {
   const packages = new Map<string, { dir: string; exports: unknown }>();
   const entries = new Map<string, Map<string, string>>();
   const dirs = ["packages", "apps"].flatMap((parent) =>
@@ -404,7 +424,7 @@ async function loadWorkspace(root: string): Promise<Workspace> {
   return { packages, entries };
 }
 
-const exportTarget = (exports: unknown, subpath: string): string | undefined => {
+export const exportTarget = (exports: unknown, subpath: string): string | undefined => {
   const entry = isRecord(exports) ? exports[subpath] : subpath === "." ? exports : undefined;
   if (typeof entry === "string") {
     return entry;
@@ -416,21 +436,33 @@ const exportTarget = (exports: unknown, subpath: string): string | undefined => 
   return undefined;
 };
 
+const realpath = (absolute: string): string => {
+  try {
+    return realpathSync(absolute);
+  } catch {
+    return absolute;
+  }
+};
+
 const asFile = (absolute: string): string | undefined => {
   const candidates = absolute.endsWith(".js")
     ? [`${absolute.slice(0, -3)}.ts`, absolute]
     : [absolute, `${absolute}.ts`, `${absolute}.tsx`, join(absolute, "index.ts")];
-  return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+  const found = candidates.find(
+    (candidate) => existsSync(candidate) && statSync(candidate).isFile(),
+  );
+  // The rules judge the real file, not the link or the path through a symlinked directory.
+  return found === undefined ? undefined : realpath(found);
 };
 
-const splitPackage = (specifier: string): { name: string; subpath: string } => {
+export const splitPackage = (specifier: string): { name: string; subpath: string } => {
   const parts = specifier.split("/");
   const size = specifier.startsWith("@") ? 2 : 1;
   const rest = parts.slice(size).join("/");
   return { name: parts.slice(0, size).join("/"), subpath: rest === "" ? "." : `./${rest}` };
 };
 
-function resolveSpecifier(
+export function resolveSpecifier(
   root: string,
   workspace: Workspace,
   from: string,
@@ -468,37 +500,235 @@ function resolveSpecifier(
 }
 
 const SOURCE_FILE = /\.(?:ts|tsx|mts)$/;
-const SKIPPED_DIRS: ReadonlySet<string> = new Set(["node_modules", "dist", "generated"]);
+/** Non-code assets a scoped tree legitimately keeps today (test fixtures, nested tsconfigs). */
+const ASSET_FILE = /\.(?:json)$/;
+/** Committed generated output — checked by build-kernel.ts, not by the source rules. */
+const GENERATED = `${NATIVE_KERNEL}/generated`;
 
-const walk = (root: string, dir: string): string[] => {
+/** A boundary finding that is not an import edge (file discovery, tsconfig, symlink). */
+const fileViolation = (
+  file: string,
+  rule: string,
+  specifier: string,
+  message: string,
+): Violation => ({
+  edge: {
+    from: file,
+    specifier,
+    typeOnly: false,
+    line: 1,
+    target: { kind: "unresolved", reason: "" },
+  },
+  rule,
+  message,
+});
+
+const walk = (
+  root: string,
+  dir: string,
+  out: { files: string[]; violations: Violation[] },
+): void => {
   const absolute = join(root, dir);
   if (!existsSync(absolute)) {
-    return [];
+    return;
   }
-  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
+  // Dirent entries are lstat results: a symlink is reported as such, never followed — a link in a
+  // scoped tree is a boundary smell whatever it points at (resolveSpecifier realpaths the target).
+  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) {
-      return SKIPPED_DIRS.has(entry.name) ? [] : walk(root, path);
+    if (entry.isSymbolicLink()) {
+      out.violations.push(
+        fileViolation(
+          path,
+          "symlink",
+          path,
+          "a symlinked module hides its real target — no symlinks in governed trees",
+        ),
+      );
+      continue;
     }
-    return SOURCE_FILE.test(entry.name) && !entry.name.endsWith(".d.ts") ? [path] : [];
-  });
+    if (entry.isDirectory()) {
+      // Only the package-root dist/node_modules and the committed kernel bundle are skipped —
+      // and the scoped roots never contain the former, so a nested dist/generated/node_modules
+      // directory is walked like any other.
+      if (path !== GENERATED) {
+        walk(root, path, out);
+      }
+      continue;
+    }
+    if (SOURCE_FILE.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+      out.files.push(path);
+      continue;
+    }
+    if (entry.name.endsWith(".d.ts") || ASSET_FILE.test(entry.name)) {
+      continue;
+    }
+    out.violations.push(
+      fileViolation(
+        path,
+        "source-extension",
+        entry.name,
+        "non-TypeScript payload in a governed tree — .js/.cts/.mjs code escapes the source rules",
+      ),
+    );
+  }
 };
 
-/** The files the boundaries govern: library src, the native kernel entry, the gateway. */
-const scopedFiles = (root: string): string[] => [
-  ...readdirSync(join(root, "packages")).flatMap((name) => walk(root, `packages/${name}/src`)),
-  ...walk(root, NATIVE_KERNEL),
-  ...["src", "tests", "scripts"].flatMap((dir) => walk(root, `${GATEWAY}/${dir}`)),
-];
+/** The files the boundaries govern and the discovery violations under them. */
+const scopedTrees = (root: string): { files: string[]; violations: Violation[] } => {
+  const out: { files: string[]; violations: Violation[] } = { files: [], violations: [] };
+  for (const name of readdirSync(join(root, "packages"))) {
+    walk(root, `packages/${name}/src`, out);
+  }
+  walk(root, NATIVE_KERNEL, out);
+  for (const dir of ["src", "tests", "scripts"]) {
+    walk(root, `${GATEWAY}/${dir}`, out);
+  }
+  return out;
+};
+
+/**
+ * `paths`/`baseUrl` aliasing in a tsconfig that can govern bundled or governed source reroutes a
+ * module behind an opaque name — the bundler honours it silently (R4 tsconfig-paths proof), so its
+ * presence anywhere under a package root, a package's src or the gateway app is a violation.
+ * Test-only programs (packages/*\/tests/**, tests/migration) are out of scope.
+ */
+const tsconfigViolations = (root: string): Violation[] => {
+  const files: string[] = [];
+  for (const name of readdirSync(join(root, "packages"))) {
+    const dir = join(root, "packages", name);
+    for (const entry of readdirSync(dir)) {
+      if (/^tsconfig.*\.json$/.test(entry)) {
+        files.push(`packages/${name}/${entry}`);
+      }
+    }
+    const src = join(dir, "src");
+    if (existsSync(src)) {
+      const deep: string[] = [];
+      const collect = (subdir: string): void => {
+        for (const entry of readdirSync(subdir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            collect(join(subdir, entry.name));
+          } else if (/^tsconfig.*\.json$/.test(entry.name)) {
+            deep.push(relative(root, join(subdir, entry.name)).replaceAll("\\", "/"));
+          }
+        }
+      };
+      collect(src);
+      files.push(...deep);
+    }
+  }
+  const gatewayTsconfigs: string[] = [];
+  const collectGateway = (subdir: string): void => {
+    for (const entry of readdirSync(subdir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        collectGateway(join(subdir, entry.name));
+      } else if (/^tsconfig.*\.json$/.test(entry.name)) {
+        gatewayTsconfigs.push(relative(root, join(subdir, entry.name)).replaceAll("\\", "/"));
+      }
+    }
+  };
+  collectGateway(join(root, GATEWAY));
+  files.push(...gatewayTsconfigs);
+  return files.flatMap((file): Violation[] => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(
+        readFileSync(join(root, file), "utf8")
+          .replaceAll(/\/\/[^\n]*/g, "")
+          .replaceAll(/\/\*[\s\S]*?\*\//g, ""),
+      );
+    } catch {
+      return [
+        fileViolation(
+          file,
+          "tsconfig-paths",
+          file,
+          "tsconfig does not parse — cannot verify it carries no path aliasing",
+        ),
+      ];
+    }
+    const options =
+      isRecord(parsed) && isRecord(parsed["compilerOptions"]) ? parsed["compilerOptions"] : {};
+    if (options["paths"] === undefined && options["baseUrl"] === undefined) {
+      return [];
+    }
+    return [
+      fileViolation(
+        file,
+        "tsconfig-paths",
+        file,
+        "paths/baseUrl aliases resolve modules behind opaque names — remove the alias and import by path",
+      ),
+    ];
+  });
+};
 
 const lineAt = (source: string, offset: number): number =>
   source.slice(0, offset).split("\n").length;
 
 const STRING_LITERAL = /^(["'])(.*)\1$/s;
 
-function fileEdges(root: string, workspace: Workspace, from: string): Edge[] {
+type AstNode = { readonly type: string } & Record<string, unknown>;
+
+const isAstNode = (value: unknown): value is AstNode =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { type?: unknown }).type === "string";
+
+const isIdentifier = (value: unknown, name: string): boolean =>
+  isAstNode(value) && value.type === "Identifier" && value["name"] === name;
+
+const isImportMeta = (value: unknown): boolean =>
+  isAstNode(value) &&
+  value.type === "MetaProperty" &&
+  isIdentifier(value["meta"], "import") &&
+  isIdentifier(value["property"], "meta");
+
+const literalOf = (node: AstNode): string | undefined => {
+  if (node.type === "Literal" && typeof node["value"] === "string") {
+    return node["value"];
+  }
+  const { expression } = node;
+  return isAstNode(expression) &&
+    expression.type === "Literal" &&
+    typeof expression["value"] === "string"
+    ? expression["value"]
+    : undefined;
+};
+
+/** The CJS/glob call spellings that load modules outside the module record (rule commonjs-or-glob). */
+const forbiddenCall = (node: AstNode): string | undefined => {
+  if (node.type !== "CallExpression") {
+    return undefined;
+  }
+  const { callee } = node;
+  if (!isAstNode(callee)) {
+    return undefined;
+  }
+  if (isIdentifier(callee, "require")) {
+    return "require";
+  }
+  if (isIdentifier(callee, "createRequire")) {
+    return "createRequire";
+  }
+  if (callee.type !== "MemberExpression") {
+    return undefined;
+  }
+  if (isIdentifier(callee["object"], "module") && isIdentifier(callee["property"], "require")) {
+    return "module.require";
+  }
+  return isImportMeta(callee["object"]) && isIdentifier(callee["property"], "glob")
+    ? "import.meta.glob"
+    : undefined;
+};
+
+type Findings = { readonly edges: Edge[]; readonly violations: Violation[] };
+
+function fileFindings(root: string, workspace: Workspace, from: string): Findings {
   const source = readFileSync(join(root, from), "utf8");
-  const { module } = parseSync(from, source);
+  const { module, program } = parseSync(from, source);
+  const violations: Violation[] = [];
   const edge = (specifier: string, typeOnly: boolean, offset: number): Edge => ({
     from,
     specifier,
@@ -506,48 +736,141 @@ function fileEdges(root: string, workspace: Workspace, from: string): Edge[] {
     line: lineAt(source, offset),
     target: resolveSpecifier(root, workspace, from, specifier),
   });
-  return [
-    ...module.staticImports.map((entry) =>
-      edge(
-        entry.moduleRequest.value,
-        entry.entries.length > 0 && entry.entries.every((binding) => binding.isType),
-        entry.start,
-      ),
-    ),
-    ...module.staticExports.flatMap((entry) => {
-      const bindings = entry.entries.filter((binding) => binding.moduleRequest !== null);
-      const [first] = bindings;
-      return first?.moduleRequest === null || first === undefined
-        ? []
-        : [
-            edge(
-              first.moduleRequest.value,
-              bindings.every((binding) => binding.isType),
-              entry.start,
-            ),
-          ];
-    }),
-    ...module.dynamicImports.map((entry): Edge => {
-      const text = source.slice(entry.moduleRequest.start, entry.moduleRequest.end);
-      const literal = STRING_LITERAL.exec(text)?.[2];
-      return literal === undefined
-        ? {
-            from,
-            specifier: text,
-            typeOnly: false,
-            line: lineAt(source, entry.start),
-            target: { kind: "unresolved", reason: "a computed dynamic import cannot be checked" },
+  // The module record has no entry for these spellings; the AST still names them:
+  //   export {} from "x"        — evaluates the module (no module-record edge, bundler may keep it)
+  //   import x = require("y")   — TS import-equals loads the target at runtime
+  const extraEdges: Edge[] = [];
+  const visit = (node: AstNode): void => {
+    const call = forbiddenCall(node);
+    if (call !== undefined) {
+      const start = typeof node["start"] === "number" ? node["start"] : 0;
+      violations.push({
+        edge: {
+          from,
+          specifier: call,
+          typeOnly: false,
+          line: lineAt(source, start),
+          target: { kind: "unresolved", reason: "" },
+        },
+        rule: "commonjs-or-glob",
+        message: `${call}() loads modules the module record cannot see — use a static import`,
+      });
+      // A literal require target is judged by the boundary rules like any other load.
+      if (call === "require" || call === "module.require") {
+        const callArgs: unknown = node["arguments"];
+        const argument: unknown = Array.isArray(callArgs) ? callArgs[0] : undefined;
+        if (isAstNode(argument)) {
+          const literal = literalOf(argument);
+          if (literal !== undefined) {
+            extraEdges.push(edge(literal, false, start));
           }
-        : edge(literal, false, entry.start);
-    }),
-  ];
+        }
+      }
+    }
+    if (
+      node.type === "TSImportEqualsDeclaration" &&
+      isAstNode(node["moduleReference"]) &&
+      node["moduleReference"].type === "TSExternalModuleReference"
+    ) {
+      const literal = literalOf(node["moduleReference"]);
+      const importEquals = edge(
+        literal ?? "?",
+        false,
+        typeof node["start"] === "number" ? node["start"] : 0,
+      );
+      extraEdges.push(importEquals);
+      violations.push({
+        edge: importEquals,
+        rule: "commonjs-or-glob",
+        message:
+          "import = require() loads modules the module record cannot see — use a static import",
+      });
+    }
+    if (
+      node.type === "ExportNamedDeclaration" &&
+      isAstNode(node["source"]) &&
+      Array.isArray(node["specifiers"]) &&
+      node["specifiers"].length === 0
+    ) {
+      const literal = literalOf(node["source"]);
+      if (literal !== undefined) {
+        extraEdges.push(
+          edge(
+            literal,
+            node["exportKind"] === "type",
+            typeof node["start"] === "number" ? node["start"] : 0,
+          ),
+        );
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (isAstNode(item)) {
+            visit(item);
+          }
+        }
+      } else if (isAstNode(value)) {
+        visit(value);
+      }
+    }
+  };
+  for (const statement of (program as { body?: unknown[] }).body ?? []) {
+    if (isAstNode(statement)) {
+      visit(statement);
+    }
+  }
+  return {
+    violations,
+    edges: [
+      ...module.staticImports.map((entry) =>
+        edge(
+          entry.moduleRequest.value,
+          entry.entries.length > 0 && entry.entries.every((binding) => binding.isType),
+          entry.start,
+        ),
+      ),
+      ...module.staticExports.flatMap((entry) => {
+        const bindings = entry.entries.filter((binding) => binding.moduleRequest !== null);
+        const [first] = bindings;
+        return first?.moduleRequest === null || first === undefined
+          ? []
+          : [
+              edge(
+                first.moduleRequest.value,
+                bindings.every((binding) => binding.isType),
+                entry.start,
+              ),
+            ];
+      }),
+      ...module.dynamicImports.map((entry): Edge => {
+        const text = source.slice(entry.moduleRequest.start, entry.moduleRequest.end);
+        const literal = STRING_LITERAL.exec(text)?.[2];
+        return literal === undefined
+          ? {
+              from,
+              specifier: text,
+              typeOnly: false,
+              line: lineAt(source, entry.start),
+              target: { kind: "unresolved", reason: "a computed dynamic import cannot be checked" },
+            }
+          : edge(literal, false, entry.start);
+      }),
+      ...extraEdges,
+    ],
+  };
 }
 
 /** Every boundary violation in the repository at `root`. */
 export async function boundaryViolations(root: string = ROOT): Promise<Violation[]> {
   const workspace = await loadWorkspace(root);
-  const edges = scopedFiles(root).flatMap((file) => fileEdges(root, workspace, file));
+  const scoped = scopedTrees(root);
+  const findings = scoped.files.map((file) => fileFindings(root, workspace, file));
+  const edges = findings.flatMap((finding) => finding.edges);
   return [
+    ...scoped.violations,
+    ...tsconfigViolations(root),
+    ...findings.flatMap((finding) => finding.violations),
     ...edges.flatMap((edge) =>
       RULES.flatMap((rule): Violation[] => {
         const message = rule.check(edge);
