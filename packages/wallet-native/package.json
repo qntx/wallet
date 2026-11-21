@@ -48,18 +48,18 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@qntx/nostr": "0.15.4",
-    "@qntx/nostr-native": "0.15.4",
+    "@qntx/nostr": "0.16.0",
+    "@qntx/nostr-native": "0.16.0",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-native": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
     "@scure/base": "2.4.0",
-    "nitrogen": "0.37.1",
+    "nitrogen": "0.37.2",
     "publint": "0.3.25",
-    "react-native-nitro-modules": "0.37.1"
+    "react-native-nitro-modules": "0.37.2"
   },
   "peerDependencies": {
-    "@qntx/nostr-native": "0.15.4",
+    "@qntx/nostr-native": "0.16.0",
     "@qntx/spark-native": "0.5.2",
     "@qntx/wallet": "0.13.0",
     "react-native": "~0.88.0",
