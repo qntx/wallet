@@ -22,6 +22,7 @@ import type { PolymarketHttp } from "./http.ts";
 import type { PolymarketL2 } from "./l2.ts";
 import type { clobTrade } from "./schemas.ts";
 import {
+  clobApiKeyDelete,
   clobBalanceAllowance,
   clobClosedOnly,
   clobOpenOrder,
@@ -229,6 +230,8 @@ export type PolymarketAccountReads = {
   ) => Promise<PolymarketBalance>;
   /** `false` also when the address has no ban record (the documented 404). */
   readonly closedOnly: (group: AppGroup) => Promise<boolean>;
+  /** `DELETE /auth/api-key` — revokes the group's API key on the CLOB (L2-signed). */
+  readonly revokeApiKey: (group: AppGroup) => Promise<void>;
 };
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -411,7 +414,13 @@ export function createPolymarketAccount(options: {
       pending = run();
       located.set(key, pending);
     }
-    return pending;
+    const account = await pending;
+    /* Only a deployed wallet is a permanent fact — an undeployed result goes stale the moment a
+       deploy confirms, so it is dropped once settled and the next call re-probes. */
+    if (!account.deployed && located.get(key) === pending) {
+      located.delete(key);
+    }
+    return account;
   };
 
   return {
@@ -616,6 +625,15 @@ export function createPolymarketAccount(options: {
         .request(group, { method: "GET", path: "/auth/ban-status/closed-only" }, clobClosedOnly)
         .catch(absentOn404);
       return answer === "absent" ? false : answer.closed_only;
+    },
+
+    revokeApiKey: async (group) => {
+      /* The answer is the bare string "OK" — nothing to parse. */
+      await options.l2.request(
+        group,
+        { method: "DELETE", path: "/auth/api-key" },
+        clobApiKeyDelete,
+      );
     },
   };
 }

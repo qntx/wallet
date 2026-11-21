@@ -304,6 +304,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
 
   return {
     id: "hyperliquid",
+    error: (category, message) => new HyperliquidError(category, message),
     groups: async () => {
       const listed = await wallet().listAgents();
       const seen = new Map<string, AppGroup>();

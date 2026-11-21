@@ -15,7 +15,12 @@ import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
 
 import { createApps } from "../src/apps/index.ts";
-import type { AppsController } from "../src/apps/index.ts";
+import type {
+  AppsController,
+  AppsHyperliquidConfig,
+  AppsPolymarketConfig,
+} from "../src/apps/index.ts";
+import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -266,6 +271,8 @@ export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }
 export type World = {
   wallet: Wallet;
   provider: Awaited<ReturnType<typeof createApps>>["hyperliquid"];
+  /** The configured Polymarket provider — `undefined` unless `options.polymarket` was set. */
+  pm: PolymarketProvider | undefined;
   walletId: string;
   apps: AppsController;
   destroy: () => Promise<void>;
@@ -278,6 +285,8 @@ export type World = {
   /** Logger warnings collected for the world (diagnostics). */
   warns: string[];
   state: () => AppGroupState | undefined;
+  /** The group's `polymarket` app state — undefined until a flow or reconcile writes it. */
+  pmState: () => AppGroupState | undefined;
   approve: (id: string) => Promise<void>;
 };
 
@@ -289,17 +298,35 @@ export const world = async (
     openStore?: () => Promise<EngineStore>;
     hl?: Partial<HlState>;
     builder?: { address: string; feeRateTenthsBps: number };
+    /** Enable the Polymarket lane (provider + enable state machine) with this config. */
+    polymarket?: AppsPolymarketConfig;
+    /** `false` omits the Hyperliquid lane entirely (Polymarket-only worlds). */
+    hyperliquid?: AppsHyperliquidConfig | false;
+    /**
+     * Replaces `hlFetch` for the apps composition — the Polymarket tests script every host
+     * (relayer, CLOB, Data API, eligibility) themselves.
+     */
+    fetch?: typeof globalThis.fetch;
+    /** A caller-anchored clock — Polymarket's kernel-signed L2 ops need real-time alignment. */
+    timers?: ReturnType<typeof manualTimer>;
+    /**
+     * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
+     * documents the flows prepare (approvals still go through `w.requests`).
+     */
+    wrapRequests?: (
+      requests: RequestController,
+    ) => Pick<RequestController, "prepare" | "outcome" | "reject">;
   } = {},
 ): Promise<World> => {
   const { wallet, walletId } = await nodeWallet();
   // A previous test may have locked the shared wallet — restore the unlocked precondition.
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const posted: Posted[] = [];
-  const timers = manualTimer();
+  const timers = options.timers ?? manualTimer();
   const warns: string[] = [];
   const logger = { warn: (...args: unknown[]) => warns.push(String(args[0])) };
   const hl: HlState = { listed: new Map(), maxBuilderFee: 0, role: "user", ...options.hl };
-  const fetch = hlFetch(posted, timers, hl);
+  const fetch = options.fetch ?? hlFetch(posted, timers, hl);
   const networks = new NetworkController({
     ...idleNetworkDeps,
     fetch: async (input, init) => {
@@ -371,10 +398,11 @@ export const world = async (
   const {
     controller,
     hyperliquid: provider,
+    polymarket,
     destroy,
   } = createApps({
     wallet,
-    requests,
+    requests: options.wrapRequests === undefined ? requests : options.wrapRequests(requests),
     fetch,
     /* Advances 1 ms per read — two clock reads never agree, which is exactly what the
        revoke binding's single-read `validUntil` protects against. */
@@ -399,11 +427,18 @@ export const world = async (
     }),
     /* Every existing test enables apps → the stub answers "available" unless overridden. */
     gateway: { url: "https://gateway.test" },
-    hyperliquid: {
-      network: "Testnet",
-      agentName: options.agentName ?? "qntx-test",
-      ...(options.builder === undefined ? {} : { builder: options.builder }),
-    },
+    /* `undefined!` keeps the conditional overload resolving `provider` — only worlds built with
+       `hyperliquid: false` get undefined at runtime, and they never read `provider`. */
+    ...(options.hyperliquid === false
+      ? {}
+      : {
+          hyperliquid: options.hyperliquid ?? {
+            network: "Testnet",
+            agentName: options.agentName ?? "qntx-test",
+            ...(options.builder === undefined ? {} : { builder: options.builder }),
+          },
+        }),
+    ...(options.polymarket === undefined ? {} : { polymarket: options.polymarket }),
   });
   await networks.init();
   await transactions.init();
@@ -415,6 +450,8 @@ export const world = async (
   const gkey = `${walletId}/${groupIndex}`;
   const state = (): AppGroupState | undefined =>
     controller.getState().groups[gkey]?.["hyperliquid"];
+  const pmState = (): AppGroupState | undefined =>
+    controller.getState().groups[gkey]?.["polymarket"];
   const approve = async (id: string): Promise<void> => {
     try {
       await requests.approve(id, "evm-sign", { verify: VERIFY });
@@ -432,7 +469,15 @@ export const world = async (
   return {
     wallet,
     walletId,
-    provider,
+    /* `provider` types as `undefined` for worlds built with `hyperliquid: false` — they never
+       read it, and the getter makes that misuse loud rather than a silent undefined. */
+    get provider(): Awaited<ReturnType<typeof createApps>>["hyperliquid"] {
+      if (provider === undefined) {
+        throw new Error("the world was built with hyperliquid: false");
+      }
+      return provider;
+    },
+    pm: polymarket as PolymarketProvider | undefined,
     apps: controller,
     destroy,
     requests,
@@ -443,6 +488,7 @@ export const world = async (
     group,
     warns,
     state,
+    pmState,
     approve,
   };
 };

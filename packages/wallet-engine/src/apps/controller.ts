@@ -20,11 +20,11 @@ import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
 import type { HyperliquidGroup } from "./hyperliquid/agents.ts";
 import { createHyperliquidEnable } from "./hyperliquid/enable.ts";
-import { HyperliquidError } from "./hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
 import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
 import type { AppSocket } from "./hyperliquid/socket.ts";
+import { createPolymarketEnable } from "./polymarket/enable.ts";
 import { createPolymarketProvider } from "./polymarket/provider.ts";
 import type { PolymarketBuilder, PolymarketProvider } from "./polymarket/provider.ts";
 import { isAppId } from "./types.ts";
@@ -127,6 +127,7 @@ const isGroupState = (value: unknown): value is AppGroupState =>
     value.status === "enabling" ||
     value.status === "enabled" ||
     value.status === "needs-reauthorization" ||
+    value.status === "needs-migration" ||
     value.status === "unavailable");
 
 export type AppsControllerDeps = {
@@ -176,7 +177,8 @@ export class AppsController extends Controller<AppsState> {
       const stored = raw === undefined ? undefined : parseRecord(raw);
       const slash = key.lastIndexOf("/");
       const group = key.slice(0, slash);
-      const app = key.slice(slash + 1) === "hyperliquid" ? ("hyperliquid" as const) : undefined;
+      const suffix = key.slice(slash + 1);
+      const app = isAppId(suffix) ? suffix : undefined;
       if (stored === undefined || app === undefined) {
         this.deps.logger.warn(`apps record ${key} skipped: malformed`);
       } else {
@@ -245,9 +247,9 @@ export class AppsController extends Controller<AppsState> {
     return provider;
   }
 
-  private requireUnlocked(): void {
+  private requireUnlocked(app: AppId): void {
     if (this.getState().locked) {
-      throw new HyperliquidError("unlock-required", "the vault is locked");
+      throw this.providerFor(app).error("unlock-required", "the vault is locked");
     }
   }
 
@@ -258,20 +260,26 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /**
-   * `enable`/`renew` gate: unless eligibility is `ready` and the app is `available`, the flow must
-   * not start — `unknown`/`error` refuse too (a jurisdiction gate fails closed). This is a UI
+   * `enable`/`renew` gate: unless eligibility is `ready` and the app is enabled for the
+   * jurisdiction, the flow must not start — `unknown`/`error` refuse too (a jurisdiction gate fails
+   * closed). Hyperliquid needs `available`; Polymarket also enables under `close-only` — its users
+   * need credentials to sell, and the trade path gates opening positions itself. This is a UI
    * boundary only: `disable`/`cancel`/trading are not gated, and the platform enforces its own
-   * restrictions.
+   * restrictions. The thrown error is the app's own type.
    */
   private requireAvailable(app: AppId): void {
     const availability = this.availability(app);
-    if (availability !== "available") {
+    const open =
+      app === "polymarket"
+        ? availability === "available" || availability === "close-only"
+        : availability === "available";
+    if (!open) {
       const { country, region } = this.getState().eligibility;
       const where =
         country === undefined || country === null
           ? "an unverified"
           : `your (${[country, region].filter(Boolean).join("-")})`;
-      throw new HyperliquidError(
+      throw this.providerFor(app).error(
         "unavailable",
         `this app is not available in ${where} jurisdiction`,
       );
@@ -419,7 +427,7 @@ export class AppsController extends Controller<AppsState> {
 
   /** Persisted terms acknowledgement — survives lock/unlock; never supersedes a running flow. */
   async acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void> {
-    this.requireUnlocked();
+    this.requireUnlocked(app);
     this.view(this.groupOf(group), app).write({ termsAcknowledged: true });
     await Promise.resolve();
   }
@@ -429,12 +437,12 @@ export class AppsController extends Controller<AppsState> {
     app: AppId,
     run: (provider: AppProvider, flow: AppFlow) => Promise<void>,
   ): Promise<void> {
-    this.requireUnlocked();
+    this.requireUnlocked(app);
     const gkey = groupKey(group);
-    if (this.busy.has(gkey)) {
-      throw new HyperliquidError("busy", "an enablement flow is already running");
-    }
     const provider = this.providerFor(app);
+    if (this.busy.has(gkey)) {
+      throw provider.error("busy", "an enablement flow is already running");
+    }
     const view = this.start(this.groupOf(group), app);
     this.busy.add(gkey);
     try {
@@ -460,7 +468,7 @@ export class AppsController extends Controller<AppsState> {
 
   /** Abort the running flow: supersede it (its writes die), then reject and clean up. */
   async cancel(group: HyperliquidGroup, app: AppId): Promise<void> {
-    this.requireUnlocked();
+    this.requireUnlocked(app);
     const provider = this.providerFor(app);
     const view = this.start(this.groupOf(group), app);
     await provider.cancel(this.groupOf(group), view);
@@ -606,6 +614,19 @@ export function createApps(options: CreateAppsOptions): {
       },
       ...(builder === undefined ? {} : { builder }),
     });
+    providers.set(
+      "polymarket",
+      createPolymarketEnable({
+        wallet: options.wallet,
+        account: polymarketProvider.account,
+        requests: options.requests,
+        fetch: options.fetch,
+        setTimer: options.setTimer,
+        now: options.now,
+        ...(builder === undefined ? {} : { builder }),
+        logger: options.logger,
+      }),
+    );
     deferredControllers.push((controller) => {
       controllerRef.current = controller;
     });

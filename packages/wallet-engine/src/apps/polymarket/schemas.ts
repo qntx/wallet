@@ -324,6 +324,43 @@ export const clobOpenOrder = z.looseObject({
   created_at: z.number(),
 });
 
+/** `DELETE /auth/api-key` answers the bare string "OK" (specs/clob-openapi.yaml /auth/api-key). */
+export const clobApiKeyDelete = z.string().check(z.maxLength(64));
+
+/**
+ * `POST`/`GET /auth/api-key|derive-api-key` — the L1 credentials answer (specs/clob-openapi.yaml
+ * `ApiKeyResponse`; getting-started/api.md §Create or Derive API Keys). Held only until
+ * `importCredentials` seals it — never logged or stored.
+ */
+export const clobApiKeyResponse = z.looseObject({
+  apiKey: z.string().check(z.maxLength(64)),
+  secret: z.string().check(z.maxLength(256)),
+  passphrase: z.string().check(z.maxLength(128)),
+});
+
+/* ------------------------------------------------------------- relayer --- */
+
+/** `POST /submit` — the immediate `{transactionID, state}` (specs/relayer-openapi.yaml). */
+export const relayerSubmitResponse = z.looseObject({
+  transactionID: z.string().check(z.maxLength(64)),
+  state: z.string().check(z.maxLength(32)),
+});
+
+/** `GET /transaction?id=` row — the array the poll reads (specs/relayer-openapi.yaml). */
+const relayerTransaction = z.looseObject({
+  transactionID: z.string().check(z.maxLength(64)),
+  state: z.string().check(z.maxLength(32)),
+  transactionHash: z.optional(z.string().check(z.maxLength(80))),
+  proxyAddress: z.optional(evmAddress),
+});
+
+export const relayerTransactions = z.array(relayerTransaction).check(z.maxLength(16));
+
+/** `GET /nonce?type=WALLET` — the wallet's batch nonce (specs/relayer-openapi.yaml). */
+export const relayerNonce = z.looseObject({
+  nonce: z.string().check(z.maxLength(32)),
+});
+
 /** `OrdersResponse` — `next_cursor` is empty when the page is the last. */
 export const clobOrdersPage = z.looseObject({
   limit: z.number(),

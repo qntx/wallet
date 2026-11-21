@@ -57,7 +57,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* Polymarket market reads joined at layer 2 (30772 B); the layer-3 account lane — CREATE2
        derivation, L2 client, account reads — measured 41732 B. */
     /* Layer 4 (Polymarket orders/trading) measured 47208 B. */
-    budget: 48 * 1024,
+    /* Layer 5 (enable state machine + relayer + controller wiring) measured 50061 B. */
+    budget: 52 * 1024,
     external: [
       "@qntx/wallet",
       "@qntx/wallet/chains",

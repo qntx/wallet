@@ -25,6 +25,8 @@ export type PolymarketErrorCategory =
   | "busy"
   /** The account or jurisdiction may only close positions, not open them. */
   | "close-only"
+  /** A blocked jurisdiction, or an unknown/error eligibility answer — the gate fails closed. */
+  | "blocked"
   /** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
   | "needs-migration";
 

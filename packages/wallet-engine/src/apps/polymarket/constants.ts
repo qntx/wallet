@@ -64,3 +64,17 @@ export const NEG_RISK_EXCHANGE_V2: `0x${string}` = "0xe2222d279d744050d28e005200
 
 /** CTF Exchange v3 — `version: "v2"` markets (docs §Order Domain; contracts.md). */
 export const CTF_EXCHANGE_V3: `0x${string}` = "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa";
+
+/* ------------------------------------------------------ token contracts --- */
+
+/** PUSD — the 6-decimal collateral every approval batch approves first (concepts/pusd.md). */
+export const PUSD: `0x${string}` = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+
+/** PositionManager — V2 outcome-token ledger (trading/wallets-auth.md §Set Up Trading Approvals). */
+export const POSITION_MANAGER: `0x${string}` = "0x006F54F7f9A22e0000CC2AB60031000000ae9fEF";
+
+/** Conditional Tokens — V1 outcome-token ledger (trading/wallets-auth.md; contracts.md). */
+export const CONDITIONAL_TOKENS: `0x${string}` = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+
+/** Neg Risk Adapter — converts/merges neg-risk positions (trading/wallets-auth.md; contracts.md). */
+export const NEG_RISK_ADAPTER: `0x${string}` = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";

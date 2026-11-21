@@ -11,8 +11,21 @@ export type AppId = "hyperliquid" | "polymarket";
 export const isAppId = (value: string): value is AppId =>
   value === "hyperliquid" || value === "polymarket";
 
-/** The resumable enablement step a group is in; absent when `status` is terminal. */
-export type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
+/**
+ * The resumable enablement step a group is in; absent when `status` is terminal. The
+ * `create-agent`/`approve-*` steps are Hyperliquid's; `locate-wallet`/`deploy-wallet`/
+ * `credentials`/`approvals` are Polymarket's; `verify`/`revoke` are shared.
+ */
+export type AppStep =
+  | "create-agent"
+  | "approve-agent"
+  | "approve-builder"
+  | "locate-wallet"
+  | "deploy-wallet"
+  | "credentials"
+  | "approvals"
+  | "verify"
+  | "revoke";
 
 export type AppAgent = {
   readonly address: string;
@@ -34,7 +47,14 @@ export type AppGroupState = {
    * the caller's jurisdiction. `enabled`/`enabling` groups keep their status so the user can still
    * disable/cancel — the overlay never hides an existing position.
    */
-  readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" | "unavailable";
+  readonly status:
+    | "disabled"
+    | "enabling"
+    | "enabled"
+    | "needs-reauthorization"
+    /** Polymarket only: the group resolves to a legacy Safe — read-only until migrated. */
+    | "needs-migration"
+    | "unavailable";
   /** `acknowledgeTerms` persists this across lock/unlock. */
   readonly termsAcknowledged: boolean;
   /** The agent the group is enabling or enabled with. */
@@ -47,6 +67,13 @@ export type AppGroupState = {
   readonly renewalDue: boolean;
   /** Set once `maxBuilderFee(owner, builder) >= f` was confirmed on Hyperliquid. */
   readonly builder?: "approved";
+  /** The located Polymarket account — positions/balance reads scope to `wallet`. */
+  readonly account?: {
+    readonly wallet: string;
+    readonly kind: "deposit-wallet" | "safe";
+    readonly deployed: boolean;
+    readonly legacySafe?: string;
+  };
   /** The last failure — keeps `enabling`/`disabled` resumable. */
   readonly error?: AppError;
 };
@@ -97,6 +124,11 @@ export type AppGroup = {
 /** What the controller asks a per-app provider for — Hyperliquid implements it today. */
 export type AppProvider = {
   readonly id: AppId;
+  /**
+   * The app's own error type for the controller's generic failures: `busy` and `unlock-required`
+   * keep their category; `unavailable` is the jurisdiction gate (Polymarket reports `blocked`).
+   */
+  readonly error: (category: "busy" | "unlock-required" | "unavailable", message: string) => Error;
   /** The groups that carry kernel-side app state — Hyperliquid's agents on this network. */
   readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
   /** Re-derive the group's app state from kernel agents and Hyperliquid reads. */

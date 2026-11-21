@@ -198,13 +198,21 @@ type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | 
 
 // @public
 export type AppGroupState = {
-    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" | "unavailable";
+    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" |
+    /** Polymarket only: the group resolves to a legacy Safe — read-only until migrated. */
+    "needs-migration" | "unavailable";
     readonly termsAcknowledged: boolean;
     readonly agent?: AppAgent;
     readonly step?: AppStep;
     readonly requestId?: string;
     readonly renewalDue: boolean;
     readonly builder?: "approved";
+    readonly account?: {
+        readonly wallet: string;
+        readonly kind: "deposit-wallet" | "safe";
+        readonly deployed: boolean;
+        readonly legacySafe?: string;
+    };
     readonly error?: AppError;
 };
 
@@ -214,6 +222,7 @@ export type AppId = "hyperliquid" | "polymarket";
 // @public
 type AppProvider = {
     readonly id: AppId;
+    readonly error: (category: "busy" | "unlock-required" | "unavailable", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
     readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
@@ -315,7 +324,7 @@ export type AppsState = {
 };
 
 // @public
-type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
+type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "locate-wallet" | "deploy-wallet" | "credentials" | "approvals" | "verify" | "revoke";
 
 // @public
 type AssetChange = {
@@ -1384,6 +1393,7 @@ export type PolymarketAccountReads = {
         readonly tokenId?: string;
     }) => Promise<PolymarketBalance>;
     readonly closedOnly: (group: AppGroup) => Promise<boolean>;
+    readonly revokeApiKey: (group: AppGroup) => Promise<void>;
 };
 
 // @public (undocumented)
@@ -1538,6 +1548,8 @@ export type PolymarketErrorCategory =
 "busy" |
 /** The account or jurisdiction may only close positions, not open them. */
 "close-only" |
+/** A blocked jurisdiction, or an unknown/error eligibility answer — the gate fails closed. */
+"blocked" |
 /** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
 "needs-migration";
 
