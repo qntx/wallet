@@ -126,8 +126,8 @@ const accountStub = (): PolymarketAccountReads =>
 
 /* The account poll awaits locate → two reads — a handful of microtask turns settles it. */
 const flush = async (): Promise<void> => {
-  // oxlint-disable-next-line eslint/no-await-in-loop -- each turn must settle before the next.
   for (let i = 0; i < 12; i += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- each turn must settle before the next.
     await Promise.resolve();
   }
 };

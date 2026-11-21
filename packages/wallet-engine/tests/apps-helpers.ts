@@ -185,7 +185,8 @@ export const hlFetch =
   };
 
 const rpcString = (value: string): string => {
-  const bytes = [...value]
+  // oxlint-disable-next-line unicorn/prefer-spread -- iterates code points, not UTF-16 units.
+  const bytes = Array.from(value)
     .map((c) => (c.codePointAt(0) ?? 0).toString(16).padStart(2, "0"))
     .join("");
   return `0x${"00".repeat(31)}20${value.length.toString(16).padStart(64, "0")}${bytes.padEnd(64, "0")}`;
@@ -196,13 +197,13 @@ const polyRpc = async (init?: RequestInit): Promise<Response> => {
   const body = bodyJson(init);
   await Promise.resolve();
   const rpcParams: unknown = body["params"];
+  const firstParam: unknown = Array.isArray(rpcParams) ? rpcParams[0] : undefined;
   const callData =
     body["method"] === "eth_call" &&
-    Array.isArray(rpcParams) &&
-    typeof rpcParams[0] === "object" &&
-    rpcParams[0] !== null &&
-    "data" in rpcParams[0]
-      ? String(rpcParams[0].data)
+    typeof firstParam === "object" &&
+    firstParam !== null &&
+    "data" in firstParam
+      ? String(firstParam.data)
       : "";
   const result =
     body["method"] === "eth_chainId"

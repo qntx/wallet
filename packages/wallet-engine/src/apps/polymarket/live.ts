@@ -393,7 +393,7 @@ export function createPolymarketLive(options: {
           view.listeners.delete(listener);
         };
       },
-      close: () => {
+      close: async () => {
         const owners = views.get(assetId);
         owners?.delete(view);
         if (owners !== undefined && owners.size === 0) {
@@ -405,7 +405,7 @@ export function createPolymarketLive(options: {
         if (views.size === 0 && accountViews.size === 0) {
           core.close();
         }
-        return Promise.resolve();
+        await Promise.resolve();
       },
     };
   };
@@ -441,7 +441,8 @@ export function createPolymarketLive(options: {
   const followLock = (): void => {
     unsubscribeWallet ??= options.wallet.subscribe(() => {
       if (options.wallet.getSnapshot().vault !== "unlocked") {
-        for (const view of [...accountViews]) {
+        // oxlint-disable-next-line unicorn/prefer-spread -- the loop removes views from the set; a snapshot is required.
+        for (const view of Array.from(accountViews)) {
           stopAccountView(view, "unlock-required");
         }
       }
@@ -508,9 +509,9 @@ export function createPolymarketLive(options: {
           view.listeners.delete(listener);
         };
       },
-      close: () => {
+      close: async () => {
         stopAccountView(view, view.state.error);
-        return Promise.resolve();
+        await Promise.resolve();
       },
     };
   };
