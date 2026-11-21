@@ -585,6 +585,79 @@ describe("Spark duplicate refusal", () => {
   });
 });
 
+describe("Spark payment archive", () => {
+  /** A token record without its spent output ids — `unknown` and never reconcilable. */
+  const unresolvable = async (store?: EngineStore) => {
+    const r = rig({
+      ...(store === undefined ? {} : { store }),
+      script: { token: [new SparkError("weird")] },
+    });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    return r;
+  };
+
+  it("archives an open record the operator can never answer for", async () => {
+    const r = await unresolvable();
+    r.c.archivePayment(REF, TID);
+    expect(r.records()[TID]).toMatchObject({ kind: "token", state: "archived" });
+    await expect(storedRecord(r.store, TID)).resolves.toMatchObject({ state: "archived" });
+    await r.c.destroy();
+  });
+
+  it("an archived record survives a restart unreconciled", async () => {
+    const store = createMemoryEngineStore();
+    const r = await unresolvable(store);
+    r.c.archivePayment(REF, TID);
+    await r.c.destroy();
+    const fresh = rig({ store });
+    await fresh.c.init();
+    expect(fresh.records()[TID]?.state).toBe("archived");
+    expect(fresh.warnings).not.toContain("spark payment record ignored: unreadable");
+    await fresh.c.destroy();
+  });
+
+  it("refuses to archive a record that does not exist", async () => {
+    const r = rig();
+    await r.c.init();
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a submitted record — the operator can still answer", async () => {
+    const r = rig();
+    await r.c.init();
+    await send(r.c);
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a reconcilable record — its outputs still answer", async () => {
+    const lost = new SparkTokenBroadcastError("lost", { inputOutputIds: ["a:0"] });
+    const r = rig({ script: { token: [lost, lost, lost, lost] } });
+    await r.c.init();
+    await failure(sendToken(r.c));
+    expect(r.records()[TID]?.state).toBe("unknown");
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("refuses to archive a final record", async () => {
+    const r = rig();
+    await r.c.init();
+    await sendToken(r.c);
+    expect(() => r.c.archivePayment(REF, TID)).toThrow(/cannot be archived/);
+    await r.c.destroy();
+  });
+
+  it("an archived record neither blocks a re-send nor holds the token", async () => {
+    const r = await unresolvable();
+    r.c.archivePayment(REF, TID);
+    await expect(sendToken(r.c, "01936f00-2222-7222-8222-222222222222")).resolves.toBe("tok-hash");
+    await r.c.destroy();
+  });
+});
+
 describe("Spark payment reconciliation", () => {
   const open = (overrides: Partial<SparkPaymentRecord> = {}): SparkPaymentRecord => ({
     id: TID,
@@ -1093,6 +1166,33 @@ describe("Spark payment records in history", () => {
     operator = [payment(TID, "completed")];
     await h.load({ walletId: "w1", groupIndex: 0 });
     expect(entries()).toMatchObject([
+      { id: `spark:regtest:${TID}`, status: "confirmed", origin: "chain" },
+    ]);
+    h.lock();
+    await r.c.destroy();
+  });
+
+  it("lists an archived record as pending flagged unresolved until the operator answers", async () => {
+    let operator: ReadonlyArray<SparkPayment> = [];
+    const r = rig({ script: { token: [new SparkError("weird")] } });
+    await r.c.init();
+    const h = history(r.c, () => operator);
+    await h.init();
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    await failure(sendToken(r.c));
+    r.c.archivePayment(REF, TID);
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    expect(h.getState().groups["w1:0"]?.entries).toMatchObject([
+      {
+        id: `spark:regtest:${TID}`,
+        status: "pending",
+        origin: "local",
+        flags: ["unresolved"],
+      },
+    ]);
+    operator = [payment(TID, "completed")];
+    await h.load({ walletId: "w1", groupIndex: 0 });
+    expect(h.getState().groups["w1:0"]?.entries).toMatchObject([
       { id: `spark:regtest:${TID}`, status: "confirmed", origin: "chain" },
     ]);
     h.lock();

@@ -1095,6 +1095,22 @@ export class SparkController extends Controller<SparkControllerState> {
     await this.guarded(async () => this.clientFor(ref).deposits.claim({ transaction }));
   }
 
+  /**
+   * Archives an open payment record the operator can never answer for — a token send whose
+   * broadcast failed before its spent outputs were known. The archived outcome stays genuinely
+   * unknown forever: it stops blocking re-sends and `holdsToken`, and history flags it
+   * `unresolved`. The host must obtain the user's confirmation first.
+   */
+  archivePayment(ref: SparkAccountRef, id: string): void {
+    const { ledger } = this.connection(ref);
+    if (ledger.archive(id) === undefined) {
+      throw new SparkControllerError(
+        "rejected",
+        `payment ${id} cannot be archived: it is missing, reconcilable, or already final`,
+      );
+    }
+  }
+
   /** The account's last-synced balance — a cached snapshot, not a fresh query. */
   accountBalance(ref: SparkAccountRef): number | undefined {
     return this.getState().accounts[key(ref)]?.balanceSats;

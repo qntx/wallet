@@ -20,9 +20,10 @@ export type SparkPaymentKind = "transfer" | "lightning" | "exit" | "token";
 /**
  * `submitted`: persisted before the commit call, and kept after it returned until the operator
  * reports a final status. `unknown`: the commit response was lost — it may have committed.
- * `settled` and `failed` are the operator's final answer.
+ * `settled` and `failed` are the operator's final answer. `archived`: the user gave up on an
+ * outcome the operator can never answer for — kept, never reconciled, never blocking.
  */
-export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed" | "archived";
 
 /** One wallet-initiated Spark payment, from just before its commit call to the operator's answer. */
 export type SparkPaymentRecord = {
@@ -73,7 +74,7 @@ const reconcilable = (record: SparkPaymentRecord): boolean =>
 const recordSchema = z.object({
   id: z.string(),
   kind: z.enum(["transfer", "lightning", "exit", "token"]),
-  state: z.enum(["submitted", "unknown"]),
+  state: z.enum(["submitted", "unknown", "archived"]),
   receiver: z.string(),
   amount: z.string().check(z.regex(/^[0-9]+$/)),
   tokenIdentifier: z.optional(z.string()),
@@ -229,6 +230,18 @@ export class SparkPaymentLedger {
     return Object.values(this.records).some(
       (record) => record.tokenIdentifier === tokenIdentifier && reconcilable(record),
     );
+  }
+
+  /**
+   * Gives up on an outcome the operator can never answer: only an open record that is not
+   * reconcilable — a token send whose broadcast failed before its spent outputs were known — may be
+   * archived. Returns the archived record, `undefined` when refused.
+   */
+  archive(id: string): SparkPaymentRecord | undefined {
+    const record = this.records[id];
+    return record !== undefined && isOpen(record) && !reconcilable(record)
+      ? this.resolve(record, { state: "archived" })
+      : undefined;
   }
 
   /** Persists the record before the commit call; a failed write throws and nothing may be sent. */
@@ -389,9 +402,10 @@ export class SparkPaymentLedger {
     const { collection, logger } = this.options;
     const write = async (): Promise<void> => {
       try {
-        await (isOpen(record)
-          ? collection.put(record.id, encodePaymentRecord(record))
-          : collection.delete(record.id));
+        /* Open and archived records keep their row — a final one deletes it. */
+        await (record.state === "settled" || record.state === "failed"
+          ? collection.delete(record.id)
+          : collection.put(record.id, encodePaymentRecord(record)));
       } catch (error) {
         // The row keeps its previous open state, so the next session reconciles it again.
         logger.warn("spark payment record write failed", error);
