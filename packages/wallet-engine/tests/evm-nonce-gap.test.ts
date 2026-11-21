@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { hexToBytes, keccak256, serializeTransaction } from "viem";
-import type { Hex } from "viem";
+import type { Hex, Signature } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -20,6 +20,8 @@ import {
   requestsFor,
   send,
   simulateV1Result,
+  txHash,
+  txKey,
 } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
@@ -81,7 +83,11 @@ const accept = (node: Node, raw: string): string => {
   return hash;
 };
 
-const SIG = { r: `0x${"11".repeat(32)}` as Hex, s: `0x${"22".repeat(32)}` as Hex, yParity: 0 as const };
+const SIG: Signature = {
+  r: `0x${"11".repeat(32)}`,
+  s: `0x${"22".repeat(32)}`,
+  yParity: 0,
+};
 
 /** A real serialized envelope — the 7702 variant carries the authorization `rebuild` inspects. */
 const evmRaw = (request: SignRequest): Uint8Array => {
@@ -329,12 +335,26 @@ const until = async <T>(probe: () => T | undefined, what: string): Promise<T> =>
     if (found !== undefined) {
       return found;
     }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- a fixed-interval probe stays sequential
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
   }
   throw new Error(`timed out waiting for ${what}`);
 };
+
+/** Probe for `until`: the Nth appended attempt, once the list is exactly that long. */
+const attemptAt =
+  <T>(attempts: ReadonlyArray<T>, n: number) =>
+  (): T | undefined =>
+    attempts.length === n + 1 ? attempts[n] : undefined;
+
+/** Probe for `until`: true once the flag's predicate holds. */
+const raised = (probe: () => boolean) => (): true | undefined => (probe() ? true : undefined);
+
+/** The 7702 world answer: delegation code only on the delegator address. */
+const delegatorCode = (address: string): string =>
+  address.toLowerCase() === EVM_DELEGATOR.address.toLowerCase() ? DELEGATOR_CODE : "0x";
 
 const LIVE_STATES = new Set(["signed", "submitted", "pending"]);
 
@@ -348,20 +368,14 @@ describe("a released lower nonce is filled by the next send", () => {
     w.armSendGate();
     const sendA = send(ctl, SEND);
     void sendA.catch(() => undefined);
-    await until(
-      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
-      "A's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 0), "A's broadcast attempt");
     const [a] = Object.values(ctl.getState().txs);
     expect(a?.nonce).toBe(0);
     expect(a?.state).toBe("signed");
 
     // B is sent while A still holds nonce 0: it reserves 1 and waits at the same gate.
     const sendB = send(ctl, SEND);
-    await until(
-      () => (node.attempts.length === 2 ? node.attempts[1] : undefined),
-      "B's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 1), "B's broadcast attempt");
 
     // The node refuses A's exact bytes for good: A fails and nonce 0 is freed.
     node.refuse = {
@@ -374,14 +388,14 @@ describe("a released lower nonce is filled by the next send", () => {
     const b = await sendB;
     expect(b.state).toBe("submitted");
     expect(b.nonce).toBe(1);
-    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("failed");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("failed");
 
     // Geth semantics: a gapped account's pending nonce equals the state nonce — still 0.
     node.pending = 0;
     const c = await send(ctl, SEND);
     expect(c.state).toBe("submitted");
     expect(c.nonce).toBe(0); // the freed nonce is re-issued, never left as a hole
-    expect(node.known.has(c.hash ?? "")).toBe(true);
+    expect(node.known.has(txHash(c))).toBe(true);
   });
 
   it("an unknown lower nonce dropped after 30 min is re-filled the same way", async () => {
@@ -399,7 +413,7 @@ describe("a released lower nonce is filled by the next send", () => {
     node.dropSend = false;
     const b = await send(ctl, SEND);
     expect(b.nonce).toBe(1);
-    expect(node.known.has(b.hash ?? "")).toBe(true);
+    expect(node.known.has(txHash(b))).toBe(true);
     // A's bytes still never propagate, however often the tracker rebroadcasts them.
     node.dropSend = true;
 
@@ -425,10 +439,7 @@ describe("a released lower nonce is filled by the next send", () => {
     w.armSendGate();
     const sendA = send(ctl, SEND);
     void sendA.catch(() => undefined);
-    await until(
-      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
-      "A's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 0), "A's broadcast attempt");
 
     // B is prepared while A still holds nonce 0: the build takes nonce 1.
     const { verify: _verify, ...sendParams } = SEND;
@@ -444,9 +455,7 @@ describe("a released lower nonce is filled by the next send", () => {
     w.releaseSendGate();
     await expect(sendA).rejects.toThrow(/insufficient funds/);
 
-    await expect(
-      requests.approve(bRequest.id, "send", approval(bRequest, VERIFY)),
-    ).rejects.toThrow(
+    await expect(requests.approve(bRequest.id, "send", approval(bRequest, VERIFY))).rejects.toThrow(
       "nonce 0 is free again — an earlier transaction was not sent; start over",
     );
     // B was retired before the signer ran — only A's request was ever signed, so only A's
@@ -467,15 +476,9 @@ describe("a released lower nonce is filled by the next send", () => {
     w.armSendGate();
     const sendA = send(ctl, SEND);
     void sendA.catch(() => undefined);
-    await until(
-      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
-      "A's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 0), "A's broadcast attempt");
     const sendB = send(ctl, SEND);
-    await until(
-      () => (node.attempts.length === 2 ? node.attempts[1] : undefined),
-      "B's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 1), "B's broadcast attempt");
     node.refuse = {
       code: -32000,
       message: "insufficient funds for gas * price + value",
@@ -506,8 +509,7 @@ describe("a signed 7702 holds both its nonces across lock and unlock", () => {
   it("a self-sponsored 7702 reloaded at unlock still owns its authorization nonce", async () => {
     // The account carries no code (delegation state "none") and the delegator contract verifies.
     const w = world({
-      code: (address) =>
-        address.toLowerCase() === EVM_DELEGATOR.address.toLowerCase() ? DELEGATOR_CODE : "0x",
+      code: delegatorCode,
       realRaw: true,
     });
     const { ctl } = await w.boot();
@@ -529,7 +531,7 @@ describe("a signed 7702 holds both its nonces across lock and unlock", () => {
     // Lock, then unlock over the same store: the row reloads and its holds are re-anchored.
     ctl.lock();
     await ctl.init();
-    const reloaded = ctl.getState().txs[submitted?.id ?? ""];
+    const reloaded = ctl.getState().txs[txKey(submitted)];
     expect(reloaded?.state).toBe("submitted");
 
     const c = await send(ctl, SEND);
@@ -547,18 +549,15 @@ describe("a stale session's late answer cannot write", () => {
     w.armSendGate();
     const sendA = send(ctl, SEND);
     void sendA.catch(() => undefined);
-    await until(
-      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
-      "A's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 0), "A's broadcast attempt");
     const [a] = Object.values(ctl.getState().txs);
-    const { hash } = a ?? {};
+    const hash = a?.hash;
 
     // Lock then re-unlock on the same backing: A reloads, re-holds nonce 0 and is tracked again.
     ctl.lock();
     await ctl.init();
-    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("submitted");
-    expect(ctl.getState().txs[a?.id ?? ""]?.hash).toBe(hash);
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("submitted");
+    expect(ctl.getState().txs[txKey(a)]?.hash).toBe(hash);
 
     // The stale session's submit now settles with a definite refusal: its transitions and nonce
     // release reach the dead session's route — nothing lands in the new one.
@@ -572,11 +571,12 @@ describe("a stale session's late answer cannot write", () => {
     // The new session's own rebroadcasts never propagate either — A stays unknown to it.
     node.dropSend = true;
 
-    const after = ctl.getState().txs[a?.id ?? ""];
+    const after = ctl.getState().txs[txKey(a)];
     expect(after?.state).toBe("submitted");
     expect(after?.hash).toBe(hash);
     expect(after?.raw).toBeDefined();
-    expect((await w.persistedTx(a?.id ?? ""))?.["state"]).toBe("submitted");
+    const aRow = await w.persistedTx(txKey(a));
+    expect(aRow?.["state"]).toBe("submitted");
 
     // Still live and holding nonce 0, so the next send takes 1 — not 0 without a hash behind it.
     const b = await send(ctl, SEND);
@@ -586,7 +586,7 @@ describe("a stale session's late answer cannot write", () => {
     await timers.fire(POLL_MS);
     w.clock.t += UNKNOWN_DROP_MS + 1;
     await timers.fire(POLL_MS);
-    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
     const c = await send(ctl, SEND);
     expect(c.nonce).toBe(0);
   });
@@ -599,10 +599,7 @@ describe("a stale session's late answer cannot write", () => {
     w.armSendGate(1);
     const sendA = send(ctl, SEND);
     void sendA.catch(() => undefined);
-    await until(
-      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
-      "A's broadcast attempt",
-    );
+    await until(attemptAt(node.attempts, 0), "A's broadcast attempt");
     const [a] = Object.values(ctl.getState().txs);
 
     ctl.lock();
@@ -614,7 +611,7 @@ describe("a stale session's late answer cannot write", () => {
     await timers.fire(POLL_MS);
     w.clock.t += UNKNOWN_DROP_MS + 1;
     await timers.fire(POLL_MS);
-    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
     expect(timers.armed(POLL_MS)).toBe(0);
 
     node.dropSend = false;
@@ -622,8 +619,9 @@ describe("a stale session's late answer cannot write", () => {
     const late = await sendA;
     expect(late.state).toBe("submitted"); // the old request reports what it saw…
     // …but the dead session rewrites nothing: the row stays dropped and no poll re-arms.
-    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
-    expect((await w.persistedTx(a?.id ?? ""))?.["state"]).toBe("dropped");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
+    const droppedRow = await w.persistedTx(txKey(a));
+    expect(droppedRow?.["state"]).toBe("dropped");
     expect(timers.armed(POLL_MS)).toBe(0);
   });
 
@@ -633,13 +631,13 @@ describe("a stale session's late answer cannot write", () => {
     const node = w.primary;
 
     const a = await send(ctl, SEND);
-    const hash = a.hash ?? "";
+    const hash = txHash(a);
     expect(timers.armed(POLL_MS)).toBe(1);
 
     // The poll's receipt read is in flight when the session ends.
     w.armPollGate();
     const fired = timers.fire(POLL_MS);
-    await until(() => (w.pollGateAwaited() ? true : undefined), "the poll's receipt read");
+    await until(raised(w.pollGateAwaited), "the poll's receipt read");
 
     ctl.lock();
     /* With no store row to reload, the in-memory row keeps its identity across init — the case
@@ -659,7 +657,7 @@ describe("a stale session's late answer cannot write", () => {
 
     // The old session's `included` applies nowhere: state, store and timers are untouched.
     expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
-    expect(await w.persistedTx(a.id)).toBeUndefined();
+    await expect(w.persistedTx(a.id)).resolves.toBeUndefined();
     expect(timers.armed(POLL_MS)).toBe(0);
   });
 });

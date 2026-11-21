@@ -290,7 +290,7 @@ const erc1155Check = (log: Log | undefined, t: HistoryTransfer): boolean => {
   const id = BigInt(t.tokenId);
   const amount = BigInt(t.amount);
   if (event?.eventName === "TransferSingle") {
-    const {value} = event.args;
+    const { value } = event.args;
     return (
       sameAddress(event.args["from"], t.from) &&
       sameAddress(event.args["to"], t.to) &&
@@ -303,15 +303,15 @@ const erc1155Check = (log: Log | undefined, t: HistoryTransfer): boolean => {
     if (!sameAddress(event.args["from"], t.from) || !sameAddress(event.args["to"], t.to)) {
       return false;
     }
-    const {ids} = event.args;
-    const {values} = event.args;
+    const { ids } = event.args;
+    const { values } = event.args;
     if (!Array.isArray(ids) || !Array.isArray(values) || ids.length !== values.length) {
       return false;
     }
     let sum = 0n;
     let found = false;
     for (let i = 0; i < ids.length; i += 1) {
-      const value = values[i];
+      const value: unknown = values[i];
       if (ids[i] === id && typeof value === "bigint") {
         sum += value;
         found = true;
@@ -393,44 +393,15 @@ const mapPool = async <T, R>(items: ReadonlyArray<T>, n: number, run: (t: T) => 
 };
 
 /**
- * One wallet-touching movement the chain proves, with the content it carries: an ERC-20 leg
- * `{logIndex, contract, from, to, value}`, an ERC-721 leg plus its `tokenId`, an ERC-1155 leg — one
- * per (logIndex, id), a TransferBatch's repeated ids summed — or the tx's native value leg. `key`
- * is the movement's claim binding.
+ * One wallet-touching movement the chain proves: an ERC-20 leg, an ERC-721 leg, an ERC-1155 leg —
+ * one per (logIndex, id), a TransferBatch's repeated ids summed — or the tx's native value leg.
+ * `key` is the movement's claim binding: a claim at the same key must decode from the same log to
+ * match, so the decoded content itself does not have to ride along here.
  */
-type OwnMove =
-  | {
-      readonly kind: "erc20";
-      readonly key: string;
-      readonly contract: string;
-      readonly from: string;
-      readonly to: string;
-      readonly value: bigint;
-    }
-  | {
-      readonly kind: "erc721";
-      readonly key: string;
-      readonly contract: string;
-      readonly from: string;
-      readonly to: string;
-      readonly tokenId: bigint;
-    }
-  | {
-      readonly kind: "erc1155";
-      readonly key: string;
-      readonly contract: string;
-      readonly from: string;
-      readonly to: string;
-      readonly id: bigint;
-      readonly value: bigint;
-    }
-  | {
-      readonly kind: "native";
-      readonly key: "native";
-      readonly from: string;
-      readonly to: string | null;
-      readonly value: bigint;
-    };
+type OwnMove = {
+  readonly kind: "erc20" | "erc721" | "erc1155" | "native";
+  readonly key: string;
+};
 
 /**
  * Every movement that touched the wallet in this transaction, decoded from the receipt's logs and
@@ -462,14 +433,7 @@ const ownMovements = (
         if (typeof from !== "string" || typeof to !== "string" || typeof value !== "bigint") {
           provable = false;
         } else if (touches(from, to)) {
-          moves.push({
-            kind: "erc20",
-            key: `erc20:${logIndex}`,
-            contract: log.address,
-            from,
-            to,
-            value,
-          });
+          moves.push({ kind: "erc20", key: `erc20:${logIndex}` });
         }
       }
       continue;
@@ -481,8 +445,8 @@ const ownMovements = (
     const from = multi?.args["from"];
     const to = multi?.args["to"];
     if (multi?.eventName === "TransferSingle") {
-      const {id} = multi.args;
-      const {value} = multi.args;
+      const { id } = multi.args;
+      const { value } = multi.args;
       if (
         typeof from !== "string" ||
         typeof to !== "string" ||
@@ -491,21 +455,13 @@ const ownMovements = (
       ) {
         provable = false;
       } else if (touches(from, to)) {
-        moves.push({
-          kind: "erc1155",
-          key: `erc1155:${logIndex}:${id}`,
-          contract: log.address,
-          from,
-          to,
-          id,
-          value,
-        });
+        moves.push({ kind: "erc1155", key: `erc1155:${logIndex}:${id}` });
       }
       continue;
     }
     if (multi?.eventName === "TransferBatch") {
-      const {ids} = multi.args;
-      const {values} = multi.args;
+      const { ids } = multi.args;
+      const { values } = multi.args;
       const legible =
         typeof from === "string" &&
         typeof to === "string" &&
@@ -527,16 +483,8 @@ const ownMovements = (
             sums.set(id, (sums.get(id) ?? 0n) + value);
           }
         }
-        for (const [id, value] of sums) {
-          moves.push({
-            kind: "erc1155",
-            key: `erc1155:${logIndex}:${id}`,
-            contract: log.address,
-            from,
-            to,
-            id,
-            value,
-          });
+        for (const id of sums.keys()) {
+          moves.push({ kind: "erc1155", key: `erc1155:${logIndex}:${id}` });
         }
       }
       continue;
@@ -549,14 +497,7 @@ const ownMovements = (
       if (typeof efrom !== "string" || typeof eto !== "string" || typeof tokenId !== "bigint") {
         provable = false;
       } else if (touches(efrom, eto)) {
-        moves.push({
-          kind: "erc721",
-          key: `erc721:${logIndex}`,
-          contract: log.address,
-          from: efrom,
-          to: eto,
-          tokenId,
-        });
+        moves.push({ kind: "erc721", key: `erc721:${logIndex}` });
       }
     }
   }
@@ -566,13 +507,7 @@ const ownMovements = (
     BigInt(tx.value) > 0n &&
     touches(tx.from, tx.to)
   ) {
-    moves.push({
-      kind: "native",
-      key: "native",
-      from: tx.from,
-      to: tx.to,
-      value: BigInt(tx.value),
-    });
+    moves.push({ kind: "native", key: "native" });
   }
   return { moves, provable };
 };

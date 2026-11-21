@@ -60,8 +60,8 @@ export const broadcastOutcome = async (attempt: BroadcastAttempt): Promise<Broad
 };
 
 /**
- * The node refused the signed bytes it was shown: nothing went out, so the request may fail.
- * Every other error `submitSigned` can raise happens before the broadcast.
+ * The node refused the signed bytes it was shown: nothing went out, so the request may fail. Every
+ * other error `submitSigned` can raise happens before the broadcast.
  */
 export class BroadcastRefusedError extends Error {
   constructor(nodeError: unknown) {

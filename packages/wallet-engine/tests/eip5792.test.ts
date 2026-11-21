@@ -22,9 +22,11 @@ import {
   bombedStore,
   bookDeps,
   idleNetworkDeps,
+  mapSize,
   simulateSolanaStub,
   simulateV1Result,
   tokensStub,
+  txRowPut,
 } from "./send-helpers.ts";
 
 const DELEGATOR = EVM_DELEGATOR.address;
@@ -720,16 +722,14 @@ describe("a post-broadcast store failure", () => {
       params: [record.id],
     })) as { atomic: boolean; status: number };
     expect(status.atomic).toBe(false);
-    expect(w.backing.collections.get("call-batches")?.size ?? 0).toBe(0);
+    expect(mapSize(w.backing.collections.get("call-batches"))).toBe(0);
   });
 
   it("eth_sendTransaction resolves its hash when the submitted write fails", async () => {
     const w = world();
     await w.start();
     await w.connect();
-    w.bomb.fail = (collection, _key, bytes) =>
-      collection === "transactions" &&
-      new TextDecoder().decode(bytes).includes('"state":"submitted"');
+    w.bomb.fail = txRowPut(['"state":"submitted"']);
     const done = w.handler.handle(SITE, {
       method: "eth_sendTransaction",
       params: [{ from: ADDR, chainId: 1, to: TARGET, data: "0x", value: "0x1" }],

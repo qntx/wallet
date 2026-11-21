@@ -117,7 +117,9 @@ const make = (options: {
         if (method === "eth_getTransactionByHash") {
           const block = blockOf.get(params[0] as string);
           return Promise.resolve(
-            block === undefined ? null : { from: OTHER, to: OWNER, value: options.txValue ?? "0x0" },
+            block === undefined
+              ? null
+              : { from: OTHER, to: OWNER, value: options.txValue ?? "0x0" },
           );
         }
         const block = blockOf.get(params[0] as string);

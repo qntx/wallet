@@ -19,10 +19,10 @@ type LiveTx = {
 type Prepared = { readonly nonce: number; readonly base: number };
 
 /**
- * Model state for an account whose chain executes contiguously: `chainNonce` is the account's
- * mined count, `live` the tracked transactions, `mined` the confirmed ones a reorg can return to
- * the pool and `consumed` the nonce records `consume`/`spend` would leave — `final` mined rows are
- * what an unlock forgets.
+ * Model state for an account whose chain executes contiguously: `chainNonce` is the account's mined
+ * count, `live` the tracked transactions, `mined` the confirmed ones a reorg can return to the pool
+ * and `consumed` the nonce records `consume`/`spend` would leave — `final` mined rows are what an
+ * unlock forgets.
  */
 type Model = {
   chainNonce: number;
@@ -64,7 +64,10 @@ const commandArb = fc.oneof(
     }),
   },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant("commit" as const), pick: fc.nat() }) },
-  { weight: 1, arbitrary: fc.record({ kind: fc.constant("broadcastOk" as const), pick: fc.nat() }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({ kind: fc.constant("broadcastOk" as const), pick: fc.nat() }),
+  },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("refuse" as const), pick: fc.nat() }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("unknown" as const), pick: fc.nat() }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("drop" as const), pick: fc.nat() }) },
@@ -127,17 +130,17 @@ const runCommand = (env: { nonces: EvmNonces }, m: Model, cmd: Command): void =>
       }
       if (taken || gap) {
         // RESERVE GUARD: a build prepared above a freed or spent lower nonce must not sign.
-        expect(() => nonces.reserve(id, NET, FROM, [p.nonce], false, p.base)).toThrow();
+        expect(() => nonces.reserve(id, NET, FROM, [p.nonce], false, p.base)).toThrow(/nonce/);
         break;
       }
       nonces.reserve(id, NET, FROM, [p.nonce], false, p.base);
       m.live.set(id, { id, nonce: p.nonce, own: true, unknown: false });
       break;
     }
-    case "broadcastOk": {
+    case "broadcastOk":
       // The node accepted the bytes — nothing about the holds changes.
       break;
-    }
+
     case "refuse": {
       const tx = pick(
         [...m.live.values()].filter((t) => t.own),
@@ -189,7 +192,12 @@ const runCommand = (env: { nonces: EvmNonces }, m: Model, cmd: Command): void =>
       break;
     }
     case "reorg": {
-      const index = m.mined.map((t, i) => (t.final ? -1 : i)).reduce((a, b) => Math.max(a, b), -1);
+      let index = -1;
+      for (const [i, t] of m.mined.entries()) {
+        if (!t.final) {
+          index = Math.max(index, i);
+        }
+      }
       if (index < 0) {
         break;
       }
@@ -232,7 +240,7 @@ const runCommand = (env: { nonces: EvmNonces }, m: Model, cmd: Command): void =>
       }
       break;
     }
-    case "unlock": {
+    case "unlock":
       // Lock drops the whole in-memory tracker; unlock re-anchors every reloaded row the way
       // `createEvmRoute().resume` does: live holds shared at their nonce, rows already in a
       // block are spent — and finalized rows are never re-anchored at all.
@@ -247,7 +255,6 @@ const runCommand = (env: { nonces: EvmNonces }, m: Model, cmd: Command): void =>
         env.nonces.reserve(tx.id, NET, FROM, [tx.nonce], true, tx.nonce);
       }
       break;
-    }
   }
 };
 
@@ -283,54 +290,49 @@ const settleAll = (env: { nonces: EvmNonces }, m: Model): void => {
           m.live.delete(other.id);
         }
       }
-      m.live.delete(tx.id);
     } else {
       env.nonces.release(tx.id);
-      m.live.delete(tx.id);
     }
+    m.live.delete(tx.id);
   }
 };
 
 describe("EvmNonces model", () => {
-  it(
-    "a released lower nonce is re-filled before any higher one signs",
-    { timeout: 60_000 },
-    () => {
-      fc.assert(
-        fc.property(fc.array(commandArb, { minLength: 0, maxLength: 60 }), (commands) => {
-          const env = { nonces: new EvmNonces() };
-          const m = model();
-          for (const cmd of commands) {
-            runCommand(env, m, cmd);
-            checkInvariant(env, m);
-          }
-          settleAll(env, m);
-          // MEMORY: everything settled leaves nothing held and the next send at the chain nonce.
-          expect(m.live.size).toBe(0);
-          expect(env.nonces.next(NET, FROM, m.chainNonce)).toBe(m.chainNonce);
-          for (let n = m.chainNonce; n <= m.chainNonce + 3; n += 1) {
-            expect(env.nonces.taken(NET, FROM, n)).toBe(false);
-          }
-        }),
-        {
-          numRuns: 2000,
-          seed: 7,
-          // A send holds 0, a second send holds 1, the first dies — nonce 0 must be signed again.
-          examples: [
+  it("a released lower nonce is re-filled before any higher one signs", { timeout: 60_000 }, () => {
+    fc.assert(
+      fc.property(fc.array(commandArb, { minLength: 0, maxLength: 60 }), (commands) => {
+        const env = { nonces: new EvmNonces() };
+        const m = model();
+        for (const cmd of commands) {
+          runCommand(env, m, cmd);
+          checkInvariant(env, m);
+        }
+        settleAll(env, m);
+        // MEMORY: everything settled leaves nothing held and the next send at the chain nonce.
+        expect(m.live.size).toBe(0);
+        expect(env.nonces.next(NET, FROM, m.chainNonce)).toBe(m.chainNonce);
+        for (let n = m.chainNonce; n <= m.chainNonce + 3; n += 1) {
+          expect(env.nonces.taken(NET, FROM, n)).toBe(false);
+        }
+      }),
+      {
+        numRuns: 2000,
+        seed: 7,
+        // A send holds 0, a second send holds 1, the first dies — nonce 0 must be signed again.
+        examples: [
+          [
             [
-              [
-                { kind: "prepare", lag: 0 },
-                { kind: "commit", pick: 0 },
-                { kind: "prepare", lag: 0 },
-                { kind: "commit", pick: 0 },
-                { kind: "drop", pick: 0 },
-              ] as Command[],
-            ],
+              { kind: "prepare", lag: 0 },
+              { kind: "commit", pick: 0 },
+              { kind: "prepare", lag: 0 },
+              { kind: "commit", pick: 0 },
+              { kind: "drop", pick: 0 },
+            ] as Command[],
           ],
-        },
-      );
-    },
-  );
+        ],
+      },
+    );
+  });
 
   it("a refused send frees its nonce — the next send re-issues it", () => {
     const nonces = new EvmNonces();

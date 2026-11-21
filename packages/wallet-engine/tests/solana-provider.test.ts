@@ -34,8 +34,8 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import type { SolanaWalletAccount } from "../src/connect/solana.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
-import { bombedStore } from "./send-helpers.ts";
 import { approval } from "./approval.ts";
+import { bombedStore, txRowPut } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -644,18 +644,7 @@ describe("solana provider over a real kernel", () => {
       const second = await signAndSendInput(account);
 
       const batch = async (nth: number) => {
-        let seen = 0;
-        failPut.fail = (collection, _key, bytes) => {
-          if (collection !== "transactions") {
-            return false;
-          }
-          const row = new TextDecoder().decode(bytes);
-          if (!row.includes('"state":"submitted"')) {
-            return false;
-          }
-          seen += 1;
-          return seen === nth;
-        };
+        failPut.fail = txRowPut(['"state":"submitted"'], nth);
         const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
           transactions: [first, second],
           chains: ["solana:mainnet", "solana:mainnet"],
@@ -681,25 +670,13 @@ describe("solana provider over a real kernel", () => {
     }
   });
 
-  
   it("a durable write failure stops the batch and names what went out, not a refusal", async () => {
     const r = await rig();
     try {
       const account = await connect(r);
       resetMock();
       // Item 1's durable (pre-broadcast) write throws — item 1 never reaches the node.
-      let seen = 0;
-      failPut.fail = (collection, _key, bytes) => {
-        if (collection !== "transactions") {
-          return false;
-        }
-        const row = new TextDecoder().decode(bytes);
-        if (!row.includes('"state":"signed"') || !row.includes('"hash":"')) {
-          return false;
-        }
-        seen += 1;
-        return seen === 2;
-      };
+      failPut.fail = txRowPut(['"state":"signed"', '"hash":"'], 2);
       const first = await signAndSendInput(account);
       const second = await signAndSendInput(account);
       const { settled, approve } = await call(r, "solana:signAndSendTransaction", {

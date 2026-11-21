@@ -119,7 +119,7 @@ const verifiedStream = (options: { items: HistoryItem[]; answers: Record<string,
       },
     },
   };
-  const fetch = ( async () =>
+  const fetch = (async () =>
     Promise.resolve(
       Response.json({ items: options.items, cursor: null, truncated: false }),
     )) as typeof globalThis.fetch;
@@ -216,13 +216,15 @@ describe("claims verify one-to-one against the chain", () => {
       });
     // One occurrence of the id's value: the chain moved 1001, not 1 — a mismatch.
     const under = verifiedStream({ items: [item(hash, 0x1937402, [claimAt("1")])], answers });
-    const underEntry = entryOf((await under.next()).items, hash);
+    const underPage = await under.next();
+    const underEntry = entryOf(underPage.items, hash);
     expect(underEntry?.verified).toBe(false);
     expect(underEntry?.flags).toContain("chain-mismatch");
 
     // The per-id sum binds the movement and the entry shows what actually moved.
     const full = verifiedStream({ items: [item(hash, 0x1937402, [claimAt("1001")])], answers });
-    const fullEntry = entryOf((await full.next()).items, hash);
+    const fullPage = await full.next();
+    const fullEntry = entryOf(fullPage.items, hash);
     expect(fullEntry?.verified).toBe(true);
     expect(fullEntry?.changes).toStrictEqual([
       expect.objectContaining({ direction: "out", tokenId: "7", amount: "1001" }),

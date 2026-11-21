@@ -1,3 +1,4 @@
+import { base58, base64 } from "@scure/base";
 /**
  * Once bytes may have left the device the request never resolves as failed: a store write that
  * fails after the broadcast — the `submitted` bookkeeping row, an `included` receipt row — is
@@ -6,7 +7,6 @@
  */
 import { keccak256 } from "viem";
 import type { Hex } from "viem";
-import { base58, base64 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -17,7 +17,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { bombedStore, fakeSignedEvm, idleNetworkDeps, requestsFor, send } from "./send-helpers.ts";
-import { world as btcWorld } from "./support/btc-world.ts";
+import { persistedTx as persistedBtcTx, world as btcWorld } from "./support/btc-world.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const POLL_MS = 4000;
@@ -49,8 +49,7 @@ const rowBomb = (
   state: string,
 ): void => {
   bomb.fail = (collection, _key, bytes) =>
-    collection === "transactions" &&
-    new TextDecoder().decode(bytes).includes(`"state":"${state}"`);
+    collection === "transactions" && new TextDecoder().decode(bytes).includes(`"state":"${state}"`);
 };
 
 type EvmNode = {
@@ -80,7 +79,13 @@ const evmAnswer = (node: EvmNode, method: string, params: unknown[]): unknown =>
     case "eth_estimateGas":
       return "0x5208";
     case "eth_feeHistory":
-      return { baseFeePerGas: ["0x1", "0x1"], reward: [["0x1", "0x2"], ["0x1", "0x2"]] };
+      return {
+        baseFeePerGas: ["0x1", "0x1"],
+        reward: [
+          ["0x1", "0x2"],
+          ["0x1", "0x2"],
+        ],
+      };
     case "eth_blockNumber":
       return "0x2";
     case "eth_getBlockByNumber": {
@@ -133,7 +138,9 @@ const evmWorld = () => {
         return { result: evmAnswer(primary, body.method, body.params ?? []) };
       } catch (error) {
         const e = error as Error;
-        return { error: { code: e.message.startsWith("unmocked") ? -32601 : -1, message: e.message } };
+        return {
+          error: { code: e.message.startsWith("unmocked") ? -32601 : -1, message: e.message },
+        };
       }
     })();
     return Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, ...reply }));
@@ -142,8 +149,7 @@ const evmWorld = () => {
   const apis = {
     account: async () =>
       Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: ADDR }),
-    sign: async ({ request }: { request: SignRequest }) =>
-      Promise.resolve(fakeSignedEvm(request)),
+    sign: async ({ request }: { request: SignRequest }) => Promise.resolve(fakeSignedEvm(request)),
   } as unknown as ReturnType<typeof chains>;
 
   const boot = async () => {
@@ -157,8 +163,7 @@ const evmWorld = () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: { warn: () => {} },
       }),
-      openStore: async () =>
-        Promise.resolve(bombedStore(createMemoryEngineStore(backing), bomb)),
+      openStore: async () => Promise.resolve(bombedStore(createMemoryEngineStore(backing), bomb)),
       random: (n) => {
         tag += 1;
         return new Uint8Array(n).fill(tag);
@@ -213,7 +218,9 @@ const solWorld = () => {
   const answerMethod = (method: string, params: unknown[]): unknown => {
     switch (method) {
       case "getLatestBlockhash":
-        return { value: { blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 100_000 } };
+        return {
+          value: { blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 100_000 },
+        };
       case "getRecentPrioritizationFees":
         return [];
       case "getMultipleAccounts":
@@ -222,7 +229,9 @@ const solWorld = () => {
         const cfg = isObject(params[1]) ? params[1] : undefined;
         const accounts = isObject(cfg?.["accounts"]) ? cfg["accounts"] : undefined;
         const watch = Array.isArray(accounts?.["addresses"]) ? accounts["addresses"] : [];
-        return { value: { err: null, logs: [], unitsConsumed: 6000, accounts: watch.map(() => null) } };
+        return {
+          value: { err: null, logs: [], unitsConsumed: 6000, accounts: watch.map(() => null) },
+        };
       }
       case "getBlockHeight":
         return env.blockHeight;
@@ -285,8 +294,7 @@ const solWorld = () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: { warn: () => {} },
       }),
-      openStore: async () =>
-        Promise.resolve(bombedStore(createMemoryEngineStore(backing), bomb)),
+      openStore: async () => Promise.resolve(bombedStore(createMemoryEngineStore(backing), bomb)),
       random: (n) => {
         tag += 1;
         return new Uint8Array(n).fill(tag);
@@ -327,12 +335,12 @@ describe("an EVM send whose post-broadcast write fails", () => {
     expect(request?.stage).toBe("submitted");
     // The tracker is armed even though the row never reached the store.
     expect(timers.armed(POLL_MS)).toBe(1);
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "signed", hash });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "signed", hash });
 
     // The failed write is retried before the poll's own work — once the bomb is spent it lands.
     w.bomb.fail = undefined;
     await timers.fire(POLL_MS);
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "submitted", hash });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "submitted", hash });
     expect(w.warnings.some((m) => m.includes("not persisted; the next poll retries"))).toBe(true);
   });
 
@@ -352,13 +360,13 @@ describe("an EVM send whose post-broadcast write fails", () => {
     expect(memory?.state).toBe("confirmed");
     expect(memory?.block?.height).toBe(1);
     // The durable trail still says submitted; the poll loop retries it.
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "submitted", hash });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "submitted", hash });
     // Confirmed-not-final rows poll at the finality interval.
     expect(timers.armed(POLL_MS * 15)).toBe(1);
 
     w.bomb.fail = undefined;
     await timers.fire(POLL_MS * 15);
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "confirmed", hash });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "confirmed", hash });
   });
 });
 
@@ -370,14 +378,17 @@ describe("a Solana send whose post-broadcast write fails", () => {
 
     const tx = await send(ctl, SOL_SEND);
     expect(tx.state).toBe("submitted");
-    expect(tx.hash).toBe(tx.raw === undefined ? "" : tx.hash);
+    expect(tx.hash).not.toBe("");
     expect(w.wires).toHaveLength(1);
     expect(timers.armed(POLL_MS)).toBe(1);
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "signed" });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "signed" });
 
     w.bomb.fail = undefined;
     await timers.fire(POLL_MS);
-    expect(await w.persistedTx(tx.id)).toMatchObject({ state: "submitted", hash: tx.hash });
+    await expect(w.persistedTx(tx.id)).resolves.toMatchObject({
+      state: "submitted",
+      hash: tx.hash,
+    });
   });
 });
 
@@ -385,9 +396,7 @@ describe("a Bitcoin send whose post-broadcast write fails", () => {
   it("the send resolves submitted and tracked; the next poll retries the write", async () => {
     const w = btcWorld();
     w.fund(1, 50_000);
-    w.bomb.fail = (collection, _key, bytes) =>
-      collection === "transactions" &&
-      new TextDecoder().decode(bytes).includes('"state":"submitted"');
+    rowBomb(w.bomb, "submitted");
     const booted = await w.boot();
 
     const tx = await w.send(booted, 10_000n, "req-1");
@@ -397,13 +406,9 @@ describe("a Bitcoin send whose post-broadcast write fails", () => {
 
     w.bomb.fail = undefined;
     await booted.polls(1);
-    const raw = await createMemoryEngineStore(booted.backing)
-      .collection("transactions")
-      .get(tx.id);
-    const row = JSON.parse(new TextDecoder().decode(raw ?? new Uint8Array())) as Record<
-      string,
-      unknown
-    >;
-    expect(row).toMatchObject({ state: "submitted", hash: tx.hash });
+    await expect(persistedBtcTx(booted.backing, tx.id)).resolves.toMatchObject({
+      state: "submitted",
+      hash: tx.hash,
+    });
   });
 });

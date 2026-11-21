@@ -27,11 +27,12 @@ import { TransactionController } from "../src/transactions/controller.ts";
 import { approval } from "./approval.ts";
 import {
   bookDeps,
+  idleNetworkDeps,
   replaceVia,
   send,
   simulateSolanaStub,
   tokensStub,
-  idleNetworkDeps,
+  txKey,
 } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 import type { ManualTimers } from "./support/timers.ts";
@@ -1029,7 +1030,7 @@ const sendGate = () => {
   let refused = 0;
   let drop = false;
   const fetch = (async (...args: Parameters<typeof globalThis.fetch>) => {
-    const init = args[1];
+    const [, init] = args;
     const body =
       typeof init?.body === "string"
         ? (JSON.parse(init.body) as { method?: string; id?: unknown })
@@ -1099,7 +1100,7 @@ describe.runIf(RUN)("anvil e2e: a released lower nonce is re-filled", () => {
       const b = await bSend;
       expect(b.state).toBe("submitted");
       expect(b.nonce).toBe(1);
-      expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("failed");
+      expect(ctl.getState().txs[txKey(a)]?.state).toBe("failed");
       const c = await sendE2e(ctl, acct);
       expect(c.state).toBe("submitted");
       expect(c.nonce).toBe(0);
@@ -1175,7 +1176,7 @@ describe.runIf(RUN)("anvil e2e: a released lower nonce is re-filled", () => {
       await expect(aSend).rejects.toThrow(/insufficient funds/);
       const b = await bSend;
       expect(b.state).toBe("submitted");
-      expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("failed");
+      expect(ctl.getState().txs[txKey(a)]?.state).toBe("failed");
       await timers.fire();
       const note =
         "nonce 0 below this transaction was never sent — the next send from this account fills it";

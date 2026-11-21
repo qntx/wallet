@@ -2,15 +2,15 @@
  * Nonce ownership per (network, sender). Every live transaction holds its nonces under its own id
  * from the moment its request commits until settlement, so an overlapping send can never sign a
  * nonce another transaction already carries, a refused send frees its nonce for reuse — `next`
- * answers the lowest nonce at or above the chain's count that nothing holds, so a freed lower
- * nonce is filled before anything higher and `reserve` refuses to sign above such a gap (the same
- * check that staleness uses to retire a prepared build) — and a consumed nonce stays spent even
- * when an endpoint's pending count lags behind. A replacement shares its nonce with the original
- * it may displace (`shared`); a self-sponsored EIP-7702 transaction also holds its
- * authorization's nonce. `consumed` records the nonces of in-block transactions per id rather
- * than one floor so a reorg can un-consume exactly its own: with A@5 and C@6 both consumed and
- * only A's reorg seen, the floor stays 7 (C still counts) until C reopens too. All state is in
- * memory: a route is dropped at lock and `resume` re-anchors every tracked transaction at unlock.
+ * answers the lowest nonce at or above the chain's count that nothing holds, so a freed lower nonce
+ * is filled before anything higher and `reserve` refuses to sign above such a gap (the same check
+ * that staleness uses to retire a prepared build) — and a consumed nonce stays spent even when an
+ * endpoint's pending count lags behind. A replacement shares its nonce with the original it may
+ * displace (`shared`); a self-sponsored EIP-7702 transaction also holds its authorization's nonce.
+ * `consumed` records the nonces of in-block transactions per id rather than one floor so a reorg
+ * can un-consume exactly its own: with A@5 and C@6 both consumed and only A's reorg seen, the floor
+ * stays 7 (C still counts) until C reopens too. All state is in memory: a route is dropped at lock
+ * and `resume` re-anchors every tracked transaction at unlock.
  */
 
 type Account = {
@@ -50,11 +50,11 @@ export class EvmNonces {
   }
 
   /**
-   * Holds `nonces` for transaction `id`. Throws when one is below the settled floor, when —
-   * unless `shared` (a replacement, or a reload at unlock) — one is held by another transaction,
-   * or when a nonce below the hold is free again since `base`: signing above it would widen the
-   * gap an earlier transaction left. Synchronous: call it in the same sync segment as the
-   * request's commit.
+   * Holds `nonces` for transaction `id`. Throws when one is below the settled floor, when — unless
+   * `shared` (a replacement, or a reload at unlock) — one is held by another transaction, or when a
+   * nonce below the hold is free again since `base`: signing above it would widen the gap an
+   * earlier transaction left. Synchronous: call it in the same sync segment as the request's
+   * commit.
    */
   reserve(
     id: string,
@@ -75,7 +75,8 @@ export class EvmNonces {
         throw nonceTaken(nonce);
       }
     }
-    const gap = nonces.length === 0 ? undefined : this.gap(network, from, base, Math.min(...nonces));
+    const gap =
+      nonces.length === 0 ? undefined : this.gap(network, from, base, Math.min(...nonces));
     if (gap !== undefined) {
       throw new Error(
         `nonce ${String(gap)} is free again — an earlier transaction was not sent; start over`,

@@ -22,8 +22,8 @@ import { chains } from "@qntx/wallet/chains";
 import type { BitcoinEvent, BitcoinWalletAccount } from "../src/connect/bitcoin.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
-import { bombedStore } from "./send-helpers.ts";
 import { approval } from "./approval.ts";
+import { bombedStore, txRowPut } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -576,18 +576,7 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       await connect(r, ["payment"]);
       resetBroadcastMock();
       const batch = async (nth: number) => {
-        let seen = 0;
-        failPut.fail = (collection, _key, bytes) => {
-          if (collection !== "transactions") {
-            return false;
-          }
-          const row = new TextDecoder().decode(bytes);
-          if (!row.includes('"state":"submitted"')) {
-            return false;
-          }
-          seen += 1;
-          return seen === nth;
-        };
+        failPut.fail = txRowPut(['"state":"submitted"'], nth);
         const first = dappPsbt({
           from: BIP84_FIRST,
           to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -602,16 +591,22 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
         const { settled, approve } = await signPsbt(
           r,
           [
-            { psbt: first, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
-            { psbt: second, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+            {
+              psbt: first,
+              chain: "bitcoin:mainnet",
+              inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+            },
+            {
+              psbt: second,
+              chain: "bitcoin:mainnet",
+              inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+            },
           ],
           "bitcoin:signAndSendTransaction",
         );
         await approve();
         const done = (await settled) as { value: Array<{ txId: string }> };
-        const txids = broadcasts.map((body) =>
-          Transaction.fromRaw(hex.decode(String(body))).id,
-        );
+        const txids = broadcasts.map((body) => Transaction.fromRaw(hex.decode(body)).id);
         expect(txids).toHaveLength(2);
         expect(done.value).toStrictEqual(txids.map((txId) => ({ txId })));
       };
@@ -625,25 +620,13 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
     }
   });
 
-  
   it("a durable write failure stops the batch and names what went out, not a refusal", async () => {
     const r = await rig();
     try {
       await connect(r, ["payment"]);
       resetBroadcastMock();
       // Item 1's durable (pre-broadcast) write throws — it never reaches the endpoint.
-      let seen = 0;
-      failPut.fail = (collection, _key, bytes) => {
-        if (collection !== "transactions") {
-          return false;
-        }
-        const row = new TextDecoder().decode(bytes);
-        if (!row.includes('"state":"signed"') || !row.includes('"hash":"')) {
-          return false;
-        }
-        seen += 1;
-        return seen === 2;
-      };
+      failPut.fail = txRowPut(['"state":"signed"', '"hash":"'], 2);
       const first = dappPsbt({
         from: BIP84_FIRST,
         to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -658,8 +641,16 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       const { settled, approve } = await signPsbt(
         r,
         [
-          { psbt: first, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
-          { psbt: second, chain: "bitcoin:mainnet", inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+          {
+            psbt: first,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+          {
+            psbt: second,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
         ],
         "bitcoin:signAndSendTransaction",
       );

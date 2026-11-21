@@ -347,3 +347,35 @@ export const bombedStore = (
     };
   },
 });
+
+/** The transactions-row key of a transaction that may not exist — `""` for none. */
+export const txKey = (tx: { readonly id: string } | undefined): string => tx?.id ?? "";
+
+/** The broadcast hash of a transaction that may not have one — `""` for none. */
+export const txHash = (tx: { readonly hash?: string | undefined } | undefined): string =>
+  tx?.hash ?? "";
+
+/**
+ * A `bombedStore` matcher: true for the Nth "transactions" row containing every fragment — with
+ * `nth` omitted it matches every such row.
+ */
+export const txRowPut = (
+  fragments: ReadonlyArray<string>,
+  nth?: number,
+): ((collection: string, key: string, bytes: Uint8Array) => boolean) => {
+  let seen = 0;
+  return (collection, _key, bytes) => {
+    if (collection !== "transactions") {
+      return false;
+    }
+    const row = new TextDecoder().decode(bytes);
+    if (!fragments.every((fragment) => row.includes(fragment))) {
+      return false;
+    }
+    seen += 1;
+    return nth === undefined || seen === nth;
+  };
+};
+
+/** `map.size`, zero for none — keeps `??` out of test bodies. */
+export const mapSize = (map: { readonly size: number } | undefined): number => map?.size ?? 0;

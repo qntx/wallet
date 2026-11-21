@@ -228,8 +228,8 @@ type EvmWire = {
   /** A replacement shares its nonce with the live original instead of owning it alone. */
   readonly shared: boolean;
   /**
-   * The chain count the build computed its nonce against (the original's nonce for a
-   * replacement): `reserve` refuses to sign when a lower nonce is free again below the hold.
+   * The chain count the build computed its nonce against (the original's nonce for a replacement):
+   * `reserve` refuses to sign when a lower nonce is free again below the hold.
    */
   readonly base: number;
 };
