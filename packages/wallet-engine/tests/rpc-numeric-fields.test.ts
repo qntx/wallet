@@ -103,16 +103,34 @@ describe("solana RPC numeric fields", () => {
     ).rejects.toThrow(/lastValidBlockHeight/);
   });
 
-  it("rent-exemption rejects a missing value instead of building with 0 rent", async () => {
+  it("stake-delegate builds from the intent's rent without a second RPC read", async () => {
+    /* No rent answer is mocked: any `getMinimumBalanceForRentExemption` call throws `unmocked`. */
     await expect(
-      solana.build(rpc(answers({ getMinimumBalanceForRentExemption: {} })), NET, FROM, {
-        kind: "stake-delegate",
-        seed: "stake:0",
-        stakeAccount: TO,
-        lamports: 1n,
-        vote: VOTE,
-      }),
-    ).rejects.toThrow(/getMinimumBalanceForRentExemption/);
+      solana.build(
+        rpc(
+          answers({
+            getLatestBlockhash: {
+              value: {
+                blockhash: "11111111111111111111111111111111",
+                lastValidBlockHeight: 100_000,
+              },
+            },
+            getRecentPrioritizationFees: [],
+            simulateTransaction: { value: { err: null, logs: [], unitsConsumed: 5000 } },
+          }),
+        ),
+        NET,
+        FROM,
+        {
+          kind: "stake-delegate",
+          seed: "stake:0",
+          stakeAccount: TO,
+          lamports: 1n,
+          rent: 2_282_880n,
+          vote: VOTE,
+        },
+      ),
+    ).resolves.toBeDefined();
   });
 
   it("a simulation account missing lamports is unavailable, never a silent zero", async () => {

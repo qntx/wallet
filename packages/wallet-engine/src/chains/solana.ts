@@ -156,8 +156,10 @@ export type SolanaIntent =
       readonly kind: "stake-delegate";
       readonly seed: string;
       readonly stakeAccount: string;
-      /** Delegated lamports; the create instruction funds this plus the rent reserve. */
+      /** Delegated lamports; the create instruction funds this plus `rent`. */
       readonly lamports: bigint;
+      /** Rent-exempt reserve the create instruction funds on top of `lamports`. */
+      readonly rent: bigint;
       readonly vote: string;
     }
   | { readonly kind: "stake-deactivate"; readonly stakeAccount: string }
@@ -230,12 +232,6 @@ export class SolanaChainAdapter {
     return rpc.call(method, params);
   }
 
-  /** Rent-exempt reserve for a stake account; the result is a bare u64 or context-wrapped. */
-  private async rentExempt(rpc: SolanaRpc): Promise<bigint> {
-    const result = await this.rpc(rpc, "getMinimumBalanceForRentExemption", [STAKE_ACCOUNT_BYTES]);
-    return rpcInt("getMinimumBalanceForRentExemption", "value", obj(result)?.["value"] ?? result);
-  }
-
   private async instructions(
     rpc: SolanaRpc,
     from: string,
@@ -256,14 +252,13 @@ export class SolanaChainAdapter {
     if (intent.kind === "stake-delegate") {
       const stake = address(intent.stakeAccount);
       const authority = createNoopSigner(address(from));
-      const rent = await this.rentExempt(rpc);
       return [
         getCreateAccountWithSeedInstruction({
           payer: authority,
           newAccount: stake,
           base: address(from),
           seed: intent.seed,
-          amount: intent.lamports + rent,
+          amount: intent.lamports + intent.rent,
           space: BigInt(STAKE_ACCOUNT_BYTES),
           programAddress: address(PROGRAM_IDS.stake),
         }),
