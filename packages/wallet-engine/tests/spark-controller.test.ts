@@ -1248,12 +1248,15 @@ describe("history and notes", () => {
     details: undefined,
   };
 
-  async function started(payments: unknown[] = [{ payments: [PAYMENT], nextOffset: undefined }]) {
+  async function started(
+    payments: unknown[] = [{ payments: [PAYMENT], nextOffset: undefined }],
+    wrapStore: (store: EngineStore) => EngineStore = (store) => store,
+  ) {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const sendArgs: unknown[] = [];
     const { client } = fakeClient(calls, sendArgs, [], { historyPages: payments });
-    const store = createMemoryEngineStore();
+    const store = wrapStore(createMemoryEngineStore());
     const warns: string[] = [];
     const c = new SparkController({
       setTimer: realTimer,
@@ -1311,6 +1314,44 @@ describe("history and notes", () => {
     expect(warns.some((w) => w.includes("malformed"))).toBe(true);
     // The warn never names the payment or echoes the note bytes — the id could link to a tx.
     expect(warns.every((w) => !w.includes("t1"))).toBe(true);
+  });
+
+  it("a settled send resolves even when its record write fails after the commit", async () => {
+    let bombed = false;
+    const { c, warns } = await started(
+      [{ payments: [{ ...PAYMENT, id: TID }], nextOffset: undefined }],
+      (store) => ({
+        close: store.close,
+        collection: (name) => {
+          const col = store.collection(name);
+          return {
+            ...col,
+            delete: async (key: string) => {
+              if (name.startsWith("spark-payments:") && bombed) {
+                throw new Error("engine store is on fire");
+              }
+              await col.delete(key);
+            },
+          };
+        },
+      }),
+    );
+    const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+    bombed = true;
+    // The commit reaches the operator; the settled record's delete fails on the next observe.
+    const result = await c.send(REF, {
+      receiver,
+      amountSats: 10,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+    expect(result).toBeDefined();
+    await until(
+      () => warns.some((w) => w.includes("spark payment record write failed")),
+      (v) => v === true,
+    );
+    await c.destroy();
   });
 
   it("refreshes recent after send and refresh failures keep the previous page", async () => {

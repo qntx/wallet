@@ -59,11 +59,29 @@ export const broadcastOutcome = async (attempt: BroadcastAttempt): Promise<Broad
       };
 };
 
+/**
+ * The node refused the signed bytes it was shown: nothing went out, so the request may fail.
+ * Every other error `submitSigned` can raise happens before the broadcast.
+ */
+export class BroadcastRefusedError extends Error {
+  constructor(nodeError: unknown) {
+    super(errorMessage(nodeError), { cause: nodeError });
+    this.name = "BroadcastRefusedError";
+  }
+}
+
 export type SubmittedBatch = {
-  /** Ids of the transactions that went out (accepted or outcome unknown), in input order. */
+  /**
+   * Ids of exactly the transactions that went out (accepted or outcome unknown), in input order.
+   * The stopped one and everything after it were not sent.
+   */
   readonly ids: ReadonlyArray<string>;
-  /** The transaction the node refused; nothing after it was sent. */
-  readonly refused?: { readonly index: number; readonly error: string };
+  /** Where the batch stopped: `refused` only when the node itself rejected the bytes. */
+  readonly stopped?: {
+    readonly index: number;
+    readonly reason: "refused" | "not-sent";
+    readonly error: string;
+  };
 };
 
 /**
@@ -85,7 +103,14 @@ export const submitInOrder = async (
       if (index === 0) {
         throw error;
       }
-      return { ids, refused: { index, error: errorMessage(error) } };
+      return {
+        ids,
+        stopped: {
+          index,
+          reason: error instanceof BroadcastRefusedError ? "refused" : "not-sent",
+          error: errorMessage(error),
+        },
+      };
     }
   }
   return { ids };
@@ -105,7 +130,8 @@ export type SignedBroadcast = BroadcastAttempt & {
 /**
  * Persists the signed bytes and id on `tx` — throwing, with nothing sent, when the vault locked
  * first — holds what it consumes, then broadcasts. Accepted or unknown → `submitted` and tracked;
- * refused → `failed`, released, and the node's error thrown.
+ * refused → `failed`, released, and a `BroadcastRefusedError` thrown. That refusal is the only
+ * error allowed out once the send was attempted: anything else here happens before bytes leave.
  */
 export const submitSigned = async (
   ctx: RouteContext,
@@ -140,7 +166,7 @@ export const submitSigned = async (
       raw: undefined,
       error: errorMessage(outcome.error),
     });
-    throw outcome.error;
+    throw new BroadcastRefusedError(outcome.error);
   }
   if (outcome.kind === "unknown") {
     ctx.options.logger.warn(

@@ -267,8 +267,8 @@ export const prepareDappPsbts = async (
 /**
  * Signs the prepared PSBTs one after another (each prompts). With `send`, every signed PSBT must
  * finalize — a PSBT with inputs this wallet did not sign cannot be broadcast — before any is
- * broadcast. Broadcasts run in order through `submitInOrder`: a refusal past the first returns it
- * as `refused` with the txids already out, since a later PSBT may depend on the refused one.
+ * broadcast. Broadcasts run in order through `submitInOrder`: a stop past the first returns it as
+ * `stopped` with the txids already out, since a later PSBT may depend on the unsent one.
  */
 export const signDappPsbts = async (
   apis: Pick<ChainsApi, "sign">,
@@ -280,7 +280,7 @@ export const signDappPsbts = async (
 ): Promise<{
   signedPsbts: Uint8Array[];
   txids: string[];
-  refused?: SubmittedBatch["refused"];
+  stopped?: SubmittedBatch["stopped"];
 }> => {
   const results: SignResult[] = [];
   for (const { request } of prepared) {
@@ -318,6 +318,6 @@ export const signDappPsbts = async (
   return {
     signedPsbts,
     txids: [...batch.ids],
-    ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+    ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
   };
 };

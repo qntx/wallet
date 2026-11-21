@@ -304,8 +304,8 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     if (!("kind" in outcome) || outcome.kind !== "bitcoin.psbts") {
       throw new ProviderError(-32603, "the bitcoin-sign request settled unexpectedly");
     }
-    if (send && outcome.refused !== undefined) {
-      throw broadcastRefused(outcome.refused, outcome.txids);
+    if (send && outcome.stopped !== undefined) {
+      throw broadcastRefused(outcome.stopped, outcome.txids);
     }
     return send
       ? outcome.txids.map((txId) => ({ txId }))

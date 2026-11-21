@@ -282,6 +282,8 @@ export class TransactionController extends Controller<TransactionControllerState
    */
   private generation = 0;
   private readonly batches = new Map<string, BatchRecord>();
+  /** Ids whose last bookkeeping write failed; each `pollOnce` retries them. */
+  private readonly unsaved = new Set<string>();
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -353,7 +355,12 @@ export class TransactionController extends Controller<TransactionControllerState
       this.options.logger.warn(`call batch ${record.id} not persisted: vault locked`);
       return;
     }
-    await store.collection("call-batches").put(key, encodeBatch(record));
+    try {
+      await store.collection("call-batches").put(key, encodeBatch(record));
+    } catch (error) {
+      // Runs after the batch's transactions were broadcast — bookkeeping only.
+      this.options.logger.warn(`call batch ${record.id} record write failed`, error);
+    }
   }
 
   /** The bundle `origin` asked for, or `undefined` when it is not theirs (or is gone). */
@@ -373,6 +380,7 @@ export class TransactionController extends Controller<TransactionControllerState
       stop();
     }
     this.timers.clear();
+    this.unsaved.clear();
     this.engineStore = undefined;
     this.evmRoute = createEvmRoute();
     this.bitcoinRoute.lock();
@@ -398,7 +406,20 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const updated: TrackedTransaction = { ...tx, ...next };
     this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: updated } }));
-    await this.persist(updated);
+    try {
+      await this.persist(updated);
+    } catch (error) {
+      /* A durable write must not fail silently — its caller has not broadcast yet. Anything
+         else is bookkeeping: keep the row in memory and let the next poll retry it. */
+      if (durable) {
+        throw error;
+      }
+      this.unsaved.add(tx.id);
+      this.options.logger.warn(
+        `transaction ${tx.id} (${updated.state}) not persisted; the next poll retries`,
+        error,
+      );
+    }
     return updated;
   }
 
@@ -764,6 +785,21 @@ export class TransactionController extends Controller<TransactionControllerState
     if (tx === undefined) {
       this.untrack(id);
       return;
+    }
+    /* Rows whose bookkeeping write failed are retried before the next answer applies; a row
+       already gone means its fate was settled elsewhere. */
+    for (const unsavedId of this.unsaved) {
+      const row = this.getState().txs[unsavedId];
+      if (row === undefined) {
+        this.unsaved.delete(unsavedId);
+        continue;
+      }
+      try {
+        await this.persist(row);
+        this.unsaved.delete(unsavedId);
+      } catch {
+        // Still failing — the row stays in memory and a later poll retries.
+      }
     }
     const ctx = this.routeCtx();
     const answer =

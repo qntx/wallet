@@ -224,8 +224,8 @@ export class SolanaWalletHandler implements SolanaHandler {
     if (!("kind" in outcome) || outcome.kind !== "solana.transactions") {
       throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
     }
-    if (send && outcome.refused !== undefined) {
-      throw broadcastRefused(outcome.refused, outcome.signatures ?? []);
+    if (send && outcome.stopped !== undefined) {
+      throw broadcastRefused(outcome.stopped, outcome.signatures ?? []);
     }
     return send
       ? { signatures: (outcome.signatures ?? []).map((signature) => base58.decode(signature)) }

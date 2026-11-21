@@ -611,7 +611,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           kind: "solana.transactions" as const,
           send: true,
           signatures: batch.ids,
-          ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+          ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
         };
       }
       normalizeSolana(
@@ -654,7 +654,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids, refused } = await signDappPsbts(
+      const { signedPsbts, txids, stopped } = await signDappPsbts(
         chains(options.wallet),
         prepared,
         send,
@@ -666,7 +666,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         kind: "bitcoin.psbts" as const,
         signedPsbts,
         txids,
-        ...(refused === undefined ? {} : { refused }),
+        ...(stopped === undefined ? {} : { stopped }),
       };
     },
     bitcoinSign: async (account, network, request, verify) => {

@@ -235,7 +235,7 @@ describe("submitInOrder", () => {
     expect(submitted).toStrictEqual([0, 1]);
     expect(batch).toStrictEqual({
       ids: ["id-0"],
-      refused: { index: 1, error: "the node refused" },
+      stopped: { index: 1, reason: "not-sent", error: "the node refused" },
     });
   });
 });

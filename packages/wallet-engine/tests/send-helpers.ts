@@ -9,6 +9,7 @@ import type { EsploraDeps } from "../src/chains/bitcoin.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
 import type { BitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, SendParams, TrackedTransaction } from "../src/transactions/route.ts";
@@ -319,3 +320,30 @@ export const fakeSignedEvm = (
         );
   return { kind: "evm.transaction", signedTransaction: hexToBytes(raw) };
 };
+
+/**
+ * A store whose `put` throws `engine store is on fire` whenever `bomb.fail` matches — a test-only
+ * fault injector for post-broadcast persistence failures.
+ */
+export const bombedStore = (
+  store: EngineStore,
+  bomb: {
+    fail: ((collection: string, key: string, bytes: Uint8Array) => boolean) | undefined;
+  },
+): EngineStore => ({
+  close: store.close,
+  collection: (name) => {
+    const col = store.collection(name);
+    return {
+      get: col.get,
+      put: async (key, bytes) => {
+        if (bomb.fail?.(name, key, bytes) === true) {
+          throw new Error("engine store is on fire");
+        }
+        await col.put(key, bytes);
+      },
+      delete: col.delete,
+      list: col.list,
+    };
+  },
+});
