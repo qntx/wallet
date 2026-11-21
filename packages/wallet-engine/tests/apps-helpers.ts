@@ -15,11 +15,12 @@ import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
 
 import { createApps } from "../src/apps/index.ts";
-import type {
-  AppsController,
-  AppsHyperliquidConfig,
-  AppsPolymarketConfig,
-} from "../src/apps/index.ts";
+import type { AppsController } from "../src/apps/index.ts";
+import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
+import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
+import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
+import { polymarket as polymarketApp } from "../src/apps/polymarket/app.ts";
+import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
 import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
@@ -314,7 +315,7 @@ export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }
 
 export type World = {
   wallet: Wallet;
-  provider: Awaited<ReturnType<typeof createApps>>["hyperliquid"];
+  provider: HyperliquidProvider;
   /** The configured Polymarket provider — `undefined` unless `options.polymarket` was set. */
   pm: PolymarketProvider | undefined;
   walletId: string;
@@ -445,12 +446,23 @@ export const world = async (
       await Promise.resolve();
       return store;
     });
-  const {
-    controller,
-    hyperliquid: provider,
-    polymarket,
-    destroy,
-  } = createApps({
+  const definitions = [
+    /* Only worlds built with `hyperliquid: false` omit the Hyperliquid lane, and they never
+       read `provider`. */
+    ...(options.hyperliquid === false
+      ? []
+      : [
+          hyperliquidApp(
+            options.hyperliquid ?? {
+              network: "Testnet",
+              agentName: options.agentName ?? "qntx-test",
+              ...(options.builder === undefined ? {} : { builder: options.builder }),
+            },
+          ),
+        ]),
+    ...(options.polymarket === undefined ? [] : [polymarketApp(options.polymarket)]),
+  ];
+  const created = createApps({
     wallet,
     requests: options.wrapRequests === undefined ? requests : options.wrapRequests(requests),
     fetch,
@@ -477,19 +489,13 @@ export const world = async (
     }),
     /* Every existing test enables apps → the stub answers "available" unless overridden. */
     gateway: { url: "https://gateway.test" },
-    /* `undefined!` keeps the conditional overload resolving `provider` — only worlds built with
-       `hyperliquid: false` get undefined at runtime, and they never read `provider`. */
-    ...(options.hyperliquid === false
-      ? {}
-      : {
-          hyperliquid: options.hyperliquid ?? {
-            network: "Testnet",
-            agentName: options.agentName ?? "qntx-test",
-            ...(options.builder === undefined ? {} : { builder: options.builder }),
-          },
-        }),
-    ...(options.polymarket === undefined ? {} : { polymarket: options.polymarket }),
+    apps: definitions,
   });
+  const { controller, destroy } = created;
+  /* The `AppApis` surface claims every listed definition's api — a world built with
+     `hyperliquid: false` still lacks `hyperliquid` at runtime. */
+  const provider: HyperliquidProvider | undefined = created.hyperliquid;
+  const polymarket: PolymarketProvider | undefined = created.polymarket;
   await networks.init();
   await transactions.init();
   await requests.init();
@@ -519,15 +525,15 @@ export const world = async (
   return {
     wallet,
     walletId,
-    /* `provider` types as `undefined` for worlds built with `hyperliquid: false` — they never
-       read it, and the getter makes that misuse loud rather than a silent undefined. */
-    get provider(): Awaited<ReturnType<typeof createApps>>["hyperliquid"] {
+    /* `provider` is `undefined` for worlds built with `hyperliquid: false` — they never read
+       it, and the getter makes that misuse loud rather than a silent undefined. */
+    get provider(): HyperliquidProvider {
       if (provider === undefined) {
         throw new Error("the world was built with hyperliquid: false");
       }
       return provider;
     },
-    pm: polymarket as PolymarketProvider | undefined,
+    pm: polymarket,
     apps: controller,
     destroy,
     requests,

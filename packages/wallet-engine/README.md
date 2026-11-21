@@ -191,13 +191,15 @@ dApp provider — there is no `engine.tronWallet` like `eip1193`/`solanaWallet`.
 
 ## Hyperliquid
 
-`@qntx/wallet-engine/apps` is a separate entry point: the app providers (Hyperliquid today) and
-their controller. A host that never touches it pays nothing — the SDK, the WebSocket transport
-and the eligibility client live only in this entry's bundle.
+`@qntx/wallet-engine/apps` is a separate entry point: the `AppsController` and the composition
+host apps build on. Each provider ships in its own sub-entry —
+`@qntx/wallet-engine/apps/hyperliquid`, `@qntx/wallet-engine/apps/polymarket` — so a host bundles
+only the apps it lists.
 
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
+import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 
 const engine = createWalletEngine({/* … */});
 const apps = await createApps({
@@ -216,11 +218,13 @@ const apps = await createApps({
   socket: (url) => new WebSocket(url), // browser, RN or Node ≥ 22 — one socket for all views
   gateway: { url: "https://api.example.com" },
   // the wallet gateway — /v1/eligibility is fetched here
-  hyperliquid: {
-    network: "Mainnet", // or "Testnet"
-    agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
-    builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
-  },
+  apps: [
+    hyperliquid({
+      network: "Mainnet", // or "Testnet"
+      agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
+      builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
+    }),
+  ],
 });
 await apps.destroy();
 ```
@@ -320,11 +324,11 @@ signature allow-list covers only the owner account's actions.
 
 ## Polymarket
 
-Polymarket support lives under `apps.polymarket` when `createApps` is given a `polymarket` config.
-The provider trades from the account's **deposit wallet** — a Polymarket smart contract wallet the
-relayer deploys to a deterministic CREATE2 address derived from the group's `evm.bip44` signer.
-Everything else is discovered, not persisted: credentials live in the kernel vault, deployment is
-read from the relayer, approvals from the Data API.
+Polymarket support lives under `apps.polymarket` when `createApps` lists `polymarket(config)` from
+`@qntx/wallet-engine/apps/polymarket`. The provider trades from the account's **deposit wallet** —
+a Polymarket smart contract wallet the relayer deploys to a deterministic CREATE2 address derived
+from the group's `evm.bip44` signer. Everything else is discovered, not persisted: credentials
+live in the kernel vault, deployment is read from the relayer, approvals from the Data API.
 
 ```ts
 const apps = createApps({
@@ -338,13 +342,16 @@ const apps = createApps({
   openStore,
   socket,
   gateway: { url },
-  polymarket: {
-    // The host's Remote Builder Signing oracle — see "Builder signing" below.
-    builder: {
-      code: "0x…", // optional attribution written into orders; absent = zero code
-      sign: async ({ method, path, body }) => postToYourBuilderEndpoint({ method, path, body }),
-    },
-  },
+  apps: [
+    polymarket({
+      // The host's Remote Builder Signing oracle — see "Builder signing" below.
+      builder: {
+        code: "0x…", // optional attribution written into orders; absent = zero code
+        sign: async ({ method, path, body }) =>
+          postToYourBuilderEndpoint({ method, path, body }),
+      },
+    }),
+  ],
 });
 ```
 

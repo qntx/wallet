@@ -7,14 +7,13 @@
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qntx/wallet-engine";
 import { createWalletEngine } from "@qntx/wallet-engine";
+import type { AppGroup, AppsController, AppSocket } from "@qntx/wallet-engine/apps";
+import { createApps } from "@qntx/wallet-engine/apps";
 import type {
-  AppGroup,
-  AppsController,
-  AppSocket,
   PolymarketBuilder,
   PolymarketProvider,
-} from "@qntx/wallet-engine/apps";
-import { createApps } from "@qntx/wallet-engine/apps";
+} from "@qntx/wallet-engine/apps/polymarket";
+import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
 const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
 const setTimer = (ms: number, fn: () => void): (() => void) => {
@@ -99,7 +98,7 @@ export function createHost(params: {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every platform's WebSocket is an AppSocket; the DOM types just won't say so.
     socket: (url) => new WebSocket(url) as AppSocket,
     gateway: { url: gatewayUrl },
-    polymarket: { builder: remoteBuilder(params.builderEndpoint, params.builderCode) },
+    apps: [polymarket({ builder: remoteBuilder(params.builderEndpoint, params.builderCode) })],
   });
   return { engine, apps };
 }

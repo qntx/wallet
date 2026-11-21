@@ -3,7 +3,13 @@
  * their own module so `apps/hyperliquid/enable.ts` and `apps/controller.ts` do not import each
  * other. See design.md §公开类型 / §启用状态机.
  */
+import type { Wallet } from "@qntx/wallet";
+
+import type { EngineLogger } from "../events.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
+import type { RequestController } from "../requests/controller.ts";
+import type { SetTimer } from "../timer.ts";
+import type { AppSocket } from "./socket.ts";
 
 /** The apps the controller knows; unimplemented ids are typed, never stubbed. */
 export type AppId = "hyperliquid" | "polymarket";
@@ -148,4 +154,51 @@ export type AppProvider = {
   ) => Promise<void>;
   /** Abandon an in-flight flow: reject its request, clean orphans, back to `disabled`. */
   readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+};
+
+/**
+ * What `createApps` hands every app definition's `create` — the host-injected I/O plus a lazy
+ * read of the controller's state. The controller only exists after every `create` ran, so
+ * `state` is a thunk: gates (the Hyperliquid builder gate, the Polymarket availability gate) read
+ * it per call, never at construction.
+ */
+export type AppContext = {
+  readonly wallet: Wallet;
+  readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  readonly fetch: typeof globalThis.fetch;
+  readonly now: () => number;
+  readonly setTimer: SetTimer;
+  readonly random: (length: number) => Uint8Array;
+  readonly logger: EngineLogger;
+  readonly socket: (url: string) => AppSocket;
+  /** The controller state — `undefined` until `createApps` returns. */
+  readonly state: () => AppsState | undefined;
+};
+
+/** What an app definition's `create` hands back: the public api, the provider, lifecycle hooks. */
+export type AppInstance<Api> = {
+  /** The app surface `createApps` returns under the definition's id. */
+  readonly api: Api;
+  /** The enablement state machine the controller drives. */
+  readonly provider: AppProvider;
+  /** Runs on every unlock before `controller.init` — Hyperliquid refreshes its agents here. */
+  readonly unlock?: () => Promise<void>;
+  /** Runs on every lock before `controller.lock` — Hyperliquid resets its session marks here. */
+  readonly lock?: () => void;
+  /** Runs on destroy before `controller.lock` — Hyperliquid closes its shared socket here. */
+  readonly close?: () => void;
+};
+
+/**
+ * One app, declared: `createApps` calls `create` with the shared context and registers the
+ * instance under `id` — a duplicate `id` throws.
+ */
+export type AppDefinition<Id extends AppId, Api> = {
+  readonly id: Id;
+  readonly create: (context: AppContext) => AppInstance<Api>;
+};
+
+/** The per-app api surface `createApps` returns next to the controller — keyed by app id. */
+export type AppApis<A extends ReadonlyArray<AppDefinition<AppId, unknown>>> = {
+  readonly [D in A[number] as D["id"]]: D extends AppDefinition<AppId, infer Api> ? Api : never;
 };

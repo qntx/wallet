@@ -13,6 +13,8 @@
       "@qntx/wallet-engine": ["../../packages/wallet-engine/src/index.ts"],
       "@qntx/wallet-engine/connect": ["../../packages/wallet-engine/src/connect/index.ts"],
       "@qntx/wallet-engine/apps": ["../../packages/wallet-engine/src/apps/index.ts"],
+      "@qntx/wallet-engine/apps/hyperliquid": ["../../packages/wallet-engine/src/apps/hyperliquid/index.ts"],
+      "@qntx/wallet-engine/apps/polymarket": ["../../packages/wallet-engine/src/apps/polymarket/index.ts"],
       "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"]
     }
   },

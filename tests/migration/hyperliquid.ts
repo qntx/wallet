@@ -7,13 +7,13 @@
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qntx/wallet-engine";
 import { createWalletEngine } from "@qntx/wallet-engine";
+import type { AppsController, AppSocket } from "@qntx/wallet-engine/apps";
+import { createApps } from "@qntx/wallet-engine/apps";
 import type {
-  AppsController,
-  AppSocket,
   HyperliquidGroup,
   HyperliquidProvider,
-} from "@qntx/wallet-engine/apps";
-import { createApps } from "@qntx/wallet-engine/apps";
+} from "@qntx/wallet-engine/apps/hyperliquid";
+import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { chains } from "@qntx/wallet/chains";
 
 const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
@@ -68,13 +68,15 @@ export function createHost(params: {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every platform's WebSocket is an AppSocket; the DOM types just won't say so.
     socket: (url) => new WebSocket(url) as AppSocket,
     gateway: { url: gatewayUrl },
-    hyperliquid: {
-      network: "Mainnet",
-      agentName: "example-app",
-      // Optional builder fee: 10 tenths of a basis point = 1 bp, attached only after the user
-      // approves it on Hyperliquid and this session confirms the cap still covers it.
-      builder: { address: "0x0000000000000000000000000000000000000001", feeRateTenthsBps: 10 },
-    },
+    apps: [
+      hyperliquid({
+        network: "Mainnet",
+        agentName: "example-app",
+        // Optional builder fee: 10 tenths of a basis point = 1 bp, attached only after the user
+        // approves it on Hyperliquid and this session confirms the cap still covers it.
+        builder: { address: "0x0000000000000000000000000000000000000001", feeRateTenthsBps: 10 },
+      }),
+    ],
   });
   return { engine, apps };
 }
@@ -231,4 +233,4 @@ export async function fundAndWithdraw(
   await deposit.outcome;
 }
 
-export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps";
+export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps/hyperliquid";

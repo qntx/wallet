@@ -6,8 +6,10 @@
  *   engine's own code — what a host that never touches apps pays. The bundle must also stay free of
  *   apps markers (the Hyperliquid base URL and the `@nktkas/hyperliquid` specifier survive
  *   minification), proving the apps entry never leaks into the main one.
- * - `apps`: the `@qntx/wallet-engine/apps` entry with `@qntx/*` workspace packages external (they are
- *   the host's peer deps) and the Hyperliquid SDK bundled — the apps entry's own incremental cost.
+ * - `apps`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core entry and
+ *   the two provider sub-entries, each with `@qntx/*` workspace packages external (they are the
+ *   host's peer deps). The core must stay free of both venues' markers — providers only reach a
+ *   bundle through their own sub-entry.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -54,16 +56,42 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Measured 52777 B: the Hyperliquid SDK client + zod/mini + the full Polymarket client
-       (markets, account, L2, orders, relayer, enable, live, funding) incl. viem hashing. */
-    budget: 52 * 1024,
+    /* Measured 8491 B: the controller + shared socket core — no provider ships in this entry. */
+    budget: 9 * 1024,
     external: [
       "@qntx/wallet",
       "@qntx/wallet/chains",
       "@qntx/wallet/hyperliquid",
       "@qntx/wallet/polymarket",
     ],
-    forbidden: [],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
+  },
+  {
+    name: "apps-hyperliquid",
+    source: "src/apps/hyperliquid/index.ts",
+    /* Measured 17859 B: the Hyperliquid SDK client + zod/mini + the provider. */
+    budget: 18 * 1024,
+    external: [
+      "@qntx/wallet",
+      "@qntx/wallet/chains",
+      "@qntx/wallet/hyperliquid",
+      "@qntx/wallet/polymarket",
+    ],
+    forbidden: ["polymarket.com"],
+  },
+  {
+    name: "apps-polymarket",
+    source: "src/apps/polymarket/index.ts",
+    /* Measured 33296 B: the full Polymarket client (markets, account, L2, orders, relayer,
+       enable, live, funding) incl. viem hashing. */
+    budget: 33 * 1024,
+    external: [
+      "@qntx/wallet",
+      "@qntx/wallet/chains",
+      "@qntx/wallet/hyperliquid",
+      "@qntx/wallet/polymarket",
+    ],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
   },
 ];
 

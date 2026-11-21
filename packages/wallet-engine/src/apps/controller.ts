@@ -1,11 +1,11 @@
 /**
- * `createApps` — the app-enablement composition: a Hyperliquid provider wired to the request
- * pipeline, an `AppsController` that persists each group's terms flag and last-enabled agent
- * through lock/unlock, and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
- * `wallet.subscribe`).
+ * `createApps` — the app-enablement composition: the host lists the app definitions it wants
+ * (`apps: [hyperliquid({…}), polymarket({…})]`), each built over one shared `AppContext`; an
+ * `AppsController` persists each group's terms flag and last-enabled agent through lock/unlock;
+ * and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
+ * `wallet.subscribe`) drives every app's `unlock`/`lock`/`close` hooks.
  */
 import type { Wallet } from "@qntx/wallet";
-import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -18,17 +18,20 @@ import type { RequestController } from "../requests/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
-import type { HyperliquidGroup } from "./hyperliquid/agents.ts";
-import { createHyperliquidEnable } from "./hyperliquid/enable.ts";
-import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
-import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
-import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
-import type { AppSocket } from "./hyperliquid/socket.ts";
-import { createPolymarketEnable } from "./polymarket/enable.ts";
-import { createPolymarketProvider } from "./polymarket/provider.ts";
-import type { PolymarketBuilder, PolymarketProvider } from "./polymarket/provider.ts";
+import type { AppSocket } from "./socket.ts";
 import { isAppId } from "./types.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
+import type {
+  AppApis,
+  AppContext,
+  AppDefinition,
+  AppFlow,
+  AppGroup,
+  AppGroupState,
+  AppId,
+  AppInstance,
+  AppProvider,
+  AppsState,
+} from "./types.ts";
 
 const COLLECTION = "apps";
 
@@ -43,29 +46,6 @@ type StoredGroup = {
   readonly termsAcknowledged: boolean;
   /** The last agent that reached `enabled` — `enabledAgent` chooses the reconciled status. */
   readonly enabledAgent?: string;
-};
-
-export type AppsBuilderConfig = {
-  /** The builder address the trades attach once `maxBuilderFee` confirms `feeRateTenthsBps`. */
-  readonly address: string;
-  /** Tenths of a basis point: 1..100 (the perps cap is 0.1 %). */
-  readonly feeRateTenthsBps: number;
-};
-
-export type AppsHyperliquidConfig = {
-  readonly network: HyperliquidNetwork;
-  /** The agent name — `^[A-Za-z0-9._-]{1,16}$`, the exchange's limit. */
-  readonly agentName: string;
-  readonly builder?: AppsBuilderConfig;
-};
-
-export type AppsPolymarketConfig = {
-  /**
-   * The host's Remote Builder Signing oracle — its server holds the builder secret and HMACs
-   * relayer submissions (design.md 不变量 9). `code` is the bytes32 builder code written into orders;
-   * absent means the zero code.
-   */
-  readonly builder?: PolymarketBuilder;
 };
 
 export type CreateAppsOptions = {
@@ -84,8 +64,6 @@ export type CreateAppsOptions = {
   readonly socket: (url: string) => AppSocket;
   /** The gateway base URL — eligibility is fetched through the engine's gateway client. */
   readonly gateway: { readonly url: string };
-  readonly hyperliquid?: AppsHyperliquidConfig;
-  readonly polymarket?: AppsPolymarketConfig;
 };
 
 const recordKey = (group: AppGroup, app: AppId): string =>
@@ -426,14 +404,14 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /** Persisted terms acknowledgement — survives lock/unlock; never supersedes a running flow. */
-  async acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async acknowledgeTerms(group: AppGroup, app: AppId): Promise<void> {
     this.requireUnlocked(app);
     this.view(this.groupOf(group), app).write({ termsAcknowledged: true });
     await Promise.resolve();
   }
 
   private async flow(
-    group: HyperliquidGroup,
+    group: AppGroup,
     app: AppId,
     run: (provider: AppProvider, flow: AppFlow) => Promise<void>,
   ): Promise<void> {
@@ -452,22 +430,22 @@ export class AppsController extends Controller<AppsState> {
     }
   }
 
-  async enable(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async enable(group: AppGroup, app: AppId): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.enable(group, view));
   }
 
-  async renew(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async renew(group: AppGroup, app: AppId): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.renew(group, view));
   }
 
-  async disable(group: HyperliquidGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
+  async disable(group: AppGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
     await this.flow(group, app, async (provider, view) => provider.disable(group, options, view));
   }
 
   /** Abort the running flow: supersede it (its writes die), then reject and clean up. */
-  async cancel(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async cancel(group: AppGroup, app: AppId): Promise<void> {
     this.requireUnlocked(app);
     const provider = this.providerFor(app);
     const view = this.start(this.groupOf(group), app);
@@ -491,147 +469,40 @@ export class AppsController extends Controller<AppsState> {
 }
 
 /**
- * The apps composition: validates each configured app, builds its provider, and drives the
- * controller's lifecycle off the wallet's lock state — the same `transition`/`schedule` chain
- * engine.ts serializes on `wallet.subscribe`. Only configured apps appear in the return value; the
- * controller's providers map gets no Polymarket entry until its enable flow lands.
+ * The apps composition: runs each listed definition's `create` over one shared `AppContext`,
+ * registers its provider under its id (a duplicate id throws), and drives the controller's
+ * lifecycle off the wallet's lock state — the same `transition`/`schedule` chain engine.ts
+ * serializes on `wallet.subscribe`. The returned surface mirrors the listed definitions: only
+ * their apis appear next to `controller`/`destroy`.
  */
-export function createApps<O extends CreateAppsOptions>(
-  options: O,
-): {
-  readonly controller: AppsController;
-  readonly hyperliquid: O["hyperliquid"] extends AppsHyperliquidConfig
-    ? HyperliquidProvider
-    : undefined;
-  readonly polymarket: O["polymarket"] extends AppsPolymarketConfig
-    ? PolymarketProvider
-    : undefined;
-  readonly destroy: () => Promise<void>;
-};
-/* Callers always match the conditional overload above; this fallback exists so
-   `ReturnType<typeof createApps>` reflects the fully-configured shape. */
-export function createApps(options: CreateAppsOptions): {
-  readonly controller: AppsController;
-  readonly hyperliquid: HyperliquidProvider;
-  readonly polymarket: PolymarketProvider;
-  readonly destroy: () => Promise<void>;
-};
-export function createApps(options: CreateAppsOptions): {
-  readonly controller: AppsController;
-  readonly hyperliquid: HyperliquidProvider | undefined;
-  readonly polymarket: PolymarketProvider | undefined;
-  readonly destroy: () => Promise<void>;
-} {
+export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, unknown>>>(
+  options: CreateAppsOptions & { readonly apps: A },
+): { readonly controller: AppsController; readonly destroy: () => Promise<void> } & AppApis<A> {
+  /* `state` is lazy: definitions capture it at `create`, but the controller only exists once
+     every definition ran — gates read it per call. */
+  const controllerRef: { current: AppsController | undefined } = { current: undefined };
+  const context: AppContext = {
+    wallet: options.wallet,
+    requests: options.requests,
+    fetch: options.fetch,
+    now: options.now,
+    setTimer: options.setTimer,
+    random: options.random,
+    logger: options.logger,
+    socket: options.socket,
+    state: () => controllerRef.current?.getState(),
+  };
   const providers = new Map<AppId, AppProvider>();
-  let socket: ReturnType<typeof createHyperliquidSocket> | undefined;
-  let provider: ReturnType<typeof createHyperliquidProvider> | undefined;
-  /* Wire the controller back into provider-side gates after construction (the Hyperliquid
-     builder gate and the Polymarket availability gate). */
-  const deferredControllers: Array<(controller: AppsController) => void> = [];
-
-  if (options.hyperliquid !== undefined) {
-    const { network, agentName, builder } = options.hyperliquid;
-    if (!/^[A-Za-z0-9._-]{1,16}$/.test(agentName)) {
-      throw new Error("hyperliquid agentName must match ^[A-Za-z0-9._-]{1,16}$");
+  const instances: Array<AppInstance<unknown>> = [];
+  const apis: Record<string, unknown> = {};
+  for (const definition of options.apps) {
+    if (providers.has(definition.id)) {
+      throw new Error(`app ${definition.id} is defined twice`);
     }
-    if (builder !== undefined) {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(builder.address)) {
-        throw new Error("hyperliquid builder.address must be a 20-byte hex address");
-      }
-      if (
-        !Number.isInteger(builder.feeRateTenthsBps) ||
-        builder.feeRateTenthsBps < 1 ||
-        builder.feeRateTenthsBps > 100
-      ) {
-        throw new Error("hyperliquid builder.feeRateTenthsBps must be an integer in 1..100");
-      }
-    }
-
-    const controllerRef: { current: AppsController | undefined } = { current: undefined };
-    socket = createHyperliquidSocket({
-      network,
-      socket: options.socket,
-      setTimer: options.setTimer,
-      random: options.random,
-    });
-    provider = createHyperliquidProvider({
-      wallet: options.wallet,
-      network,
-      fetch: options.fetch,
-      setTimer: options.setTimer,
-      now: options.now,
-      random: options.random,
-      logger: options.logger,
-      requests: options.requests,
-      socket,
-      builderFor: (group) => {
-        /* Trades carry the builder only while the controller confirmed the fee this session —
-           a lock or a stale approval makes it return undefined and the field is omitted. */
-        if (builder === undefined) {
-          return undefined;
-        }
-        const state = controllerRef.current?.getState().groups[groupKey(group)]?.hyperliquid;
-        return state?.builder === "approved" ? builder : undefined;
-      },
-    });
-    const enable = createHyperliquidEnable({
-      wallet: options.wallet,
-      provider,
-      userSigned: provider.userSigned,
-      requests: options.requests,
-      network,
-      agentName,
-      ...(builder === undefined ? {} : { builder }),
-      now: options.now,
-      setTimer: options.setTimer,
-      logger: options.logger,
-    });
-    providers.set("hyperliquid", enable);
-    deferredControllers.push((controller) => {
-      controllerRef.current = controller;
-    });
-  }
-
-  let polymarketProvider: PolymarketProvider | undefined;
-  if (options.polymarket !== undefined) {
-    const { builder } = options.polymarket;
-    if (builder?.code !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(builder.code)) {
-      throw new Error("polymarket builder.code must be a 32-byte hex string");
-    }
-    const controllerRef: { current: AppsController | undefined } = { current: undefined };
-    polymarketProvider = createPolymarketProvider({
-      fetch: options.fetch,
-      setTimer: options.setTimer,
-      now: options.now,
-      wallet: options.wallet,
-      requests: options.requests,
-      random: options.random,
-      socket: options.socket,
-      logger: options.logger,
-      /* The last ready eligibility answer's per-app availability — `undefined` (unknown or
-         stale) fails BUY orders closed. */
-      availability: () => {
-        const state = controllerRef.current?.getState().eligibility;
-        return state?.status === "ready" ? state.apps?.["polymarket"] : undefined;
-      },
-      ...(builder === undefined ? {} : { builder }),
-    });
-    providers.set(
-      "polymarket",
-      createPolymarketEnable({
-        wallet: options.wallet,
-        account: polymarketProvider.account,
-        requests: options.requests,
-        fetch: options.fetch,
-        setTimer: options.setTimer,
-        now: options.now,
-        ...(builder === undefined ? {} : { builder }),
-        logger: options.logger,
-      }),
-    );
-    deferredControllers.push((controller) => {
-      controllerRef.current = controller;
-    });
+    const instance = definition.create(context);
+    providers.set(definition.id, instance.provider);
+    instances.push(instance);
+    apis[definition.id] = instance.api;
   }
 
   /* `gatewayScope("/v1/eligibility")` is "service" — a fixed client id keeps the whole contract
@@ -659,9 +530,7 @@ export function createApps(options: CreateAppsOptions): {
     openStore: options.openStore,
     logger: options.logger,
   });
-  for (const deferred of deferredControllers) {
-    deferred(controller);
-  }
+  controllerRef.current = controller;
 
   /* Serialized lifecycle: every wallet status change queues behind the previous one, so a lock
      during an unlock's init cannot interleave. */
@@ -672,7 +541,10 @@ export function createApps(options: CreateAppsOptions): {
     if (unlocked() && !started) {
       started = true;
       try {
-        await provider?.agents.refresh();
+        for (const instance of instances) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- apps unlock in list order.
+          await instance.unlock?.();
+        }
         await controller.init();
       } catch (error) {
         started = false;
@@ -684,7 +556,9 @@ export function createApps(options: CreateAppsOptions): {
     if (!unlocked() && started) {
       started = false;
       /* Session marks (enabled/rejected) are per-unlock — the next reconcile re-derives. */
-      provider?.agents.reset();
+      for (const instance of instances) {
+        instance.lock?.();
+      }
       await controller.lock();
     }
   };
@@ -701,16 +575,19 @@ export function createApps(options: CreateAppsOptions): {
   };
   const unsubscribe = options.wallet.subscribe(schedule);
   schedule();
-  /* The conditional overload mirrors at the type level which configs were supplied. */
-  return {
-    controller,
-    hyperliquid: provider,
-    polymarket: polymarketProvider,
-    destroy: async () => {
-      unsubscribe();
-      socket?.close();
-      await controller.lock();
-      await chain;
-    },
+  const destroy = async (): Promise<void> => {
+    unsubscribe();
+    for (const instance of instances) {
+      instance.close?.();
+    }
+    await controller.lock();
+    await chain;
   };
+  /* Each key in `apis` is the `id` of a definition in `A` holding that definition's `Api` — the
+     mapped type says exactly that; the runtime object is built dynamically. */
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `apis` is the dynamic build of the static `AppApis<A>` shape.
+  return { controller, ...apis, destroy } as {
+    readonly controller: AppsController;
+    readonly destroy: () => Promise<void>;
+  } & AppApis<A>;
 }

@@ -18,6 +18,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 
 import { createApps } from "../src/apps/index.ts";
+import { polymarket as polymarketApp } from "../src/apps/polymarket/index.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
 import type { AppSocket } from "../src/apps/socket.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -229,7 +230,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("polymarket e2e: enable + rest + c
       socket: (url) => new WebSocket(url) as AppSocket,
       gateway: { url: "https://gateway.test" },
       /* No builder: the account is already deployed + approved — enable only does credentials. */
-      polymarket: {},
+      apps: [polymarketApp()],
     });
     await networks.init();
     await transactions.init();
