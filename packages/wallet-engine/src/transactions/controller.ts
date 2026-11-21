@@ -168,6 +168,14 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   );
 };
 
+type DurableNonceRecord = NonNullable<TrackedTransaction["durableNonce"]>;
+const isDurableNonceRecord = (v: unknown): v is DurableNonceRecord =>
+  isObject(v) &&
+  typeof v["account"] === "string" &&
+  v["account"] !== "" &&
+  typeof v["value"] === "string" &&
+  v["value"] !== "";
+
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
 const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
   isObject(v) &&
@@ -214,6 +222,7 @@ const decode = (
     block,
     final,
     lastValidBlockHeight,
+    durableNonce,
     replaces,
     parentId,
     raw: signedRaw,
@@ -250,6 +259,7 @@ const decode = (
     ...(typeof lastValidBlockHeight === "number" && Number.isSafeInteger(lastValidBlockHeight)
       ? { lastValidBlockHeight }
       : {}),
+    ...(isDurableNonceRecord(durableNonce) ? { durableNonce } : {}),
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
     ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),

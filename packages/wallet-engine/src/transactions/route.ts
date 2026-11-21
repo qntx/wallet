@@ -115,6 +115,11 @@ export type TrackedTransaction = {
   readonly final?: boolean | undefined;
   /** Solana only — the blockhash expiry that turns an unconfirmed tx `dropped`. */
   readonly lastValidBlockHeight?: number;
+  /**
+   * Solana only — a durable-nonce transaction has no block-height expiry: `account` is the nonce
+   * account and `value` the nonce its first instruction advances, read back on each poll.
+   */
+  readonly durableNonce?: { readonly account: string; readonly value: string };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */

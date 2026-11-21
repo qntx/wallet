@@ -2,9 +2,14 @@ import { base58, base64 } from "@scure/base";
 import {
   address,
   createAddressWithSeed,
+  getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
 } from "@solana/kit";
+import {
+  getAdvanceNonceAccountDiscriminatorBytes,
+  SYSTEM_PROGRAM_ADDRESS,
+} from "@solana-program/system";
 
 import type { StakeAction } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
@@ -99,6 +104,42 @@ const signatureSeen = async (rpc: SolanaRpc, signature: string): Promise<boolean
     await rpc.call("getSignatureStatuses", [[signature], { searchTransactionHistory: true }]),
   );
   return obj(arr(result?.["value"])?.[0]) !== undefined;
+};
+
+const NONCE_DISCRIMINATOR = getAdvanceNonceAccountDiscriminatorBytes();
+
+/**
+ * The durable-nonce lifetime a compiled message carries: only when instruction 0 is System
+ * AdvanceNonceAccount is the transaction durable — anything else is blockhash-lifetime. The nonce
+ * account is that instruction's first account and the nonce it holds is the message's lifetime
+ * token. Account indices into lookup tables are not resolved, so such a message reads as
+ * blockhash-lifetime.
+ */
+export const durableNonceOfMessage = (
+  messageBytes: Uint8Array,
+): { readonly account: string; readonly value: string } | undefined => {
+  const compiled = getCompiledTransactionMessageDecoder().decode(messageBytes);
+  if (!("instructions" in compiled)) {
+    return undefined;
+  }
+  const first = compiled.instructions[0];
+  const data = first?.data;
+  const accountIndices = first?.accountIndices;
+  if (first === undefined || data === undefined || accountIndices === undefined) {
+    return undefined;
+  }
+  const program = compiled.staticAccounts[first.programAddressIndex];
+  const nonceIndex = accountIndices[0];
+  const nonceAccount = nonceIndex === undefined ? undefined : compiled.staticAccounts[nonceIndex];
+  if (
+    program !== SYSTEM_PROGRAM_ADDRESS ||
+    nonceAccount === undefined ||
+    data.length < NONCE_DISCRIMINATOR.length ||
+    NONCE_DISCRIMINATOR.some((byte, index) => data[index] !== byte)
+  ) {
+    return undefined;
+  }
+  return { account: String(nonceAccount), value: String(compiled.lifetimeToken) };
 };
 
 export const prepareSolana = async (
@@ -252,6 +293,7 @@ const finishPrepared = async (
     verify: SendParams["verify"],
     commit: () => void,
   ): Promise<TrackedTransaction> => {
+    const durable = durableNonceOfMessage(new Uint8Array(messageBytes));
     let tx: TrackedTransaction = {
       id,
       family: "solana",
@@ -261,7 +303,9 @@ const finishPrepared = async (
       state: "draft",
       intent,
       nonce: 0,
-      lastValidBlockHeight: Number(unsigned.lastValidBlockHeight),
+      ...(durable === undefined
+        ? { lastValidBlockHeight: Number(unsigned.lastValidBlockHeight) }
+        : { durableNonce: durable }),
       submittedAt: ctx.options.now(),
       error: undefined,
     };
@@ -708,7 +752,9 @@ export const submitDappSolana = async (
 ): Promise<string> => {
   const { network, walletId, wire, lastValidBlockHeight, intent } = params;
   const rpc = ctx.options.networks.solanaRpc(network);
-  const signature: string = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
+  const compiled = getTransactionDecoder().decode(wire);
+  const signature: string = getSignatureFromTransaction(compiled);
+  const durable = durableNonceOfMessage(new Uint8Array(compiled.messageBytes));
   let tx: TrackedTransaction = {
     id: ctx.newId(),
     family: "solana",
@@ -718,7 +764,9 @@ export const submitDappSolana = async (
     state: "signed",
     intent,
     nonce: 0,
-    lastValidBlockHeight: Number(lastValidBlockHeight),
+    ...(durable === undefined
+      ? { lastValidBlockHeight: Number(lastValidBlockHeight) }
+      : { durableNonce: durable }),
     submittedAt: ctx.options.now(),
     error: undefined,
   };
@@ -762,6 +810,39 @@ export const pollSolana = async (
       (entry === undefined || entry.slot !== tx.block.height)
       ? { kind: "reorged" }
       : undefined;
+  }
+  if (tx.durableNonce !== undefined) {
+    /* A durable nonce never expires by height — the nonce account's current value is the proof.
+       It is read at finalized before the status, so a value that advanced between the reads can
+       never be finalised `dropped` by an answer a stale bank produced. */
+    const nonce = await solana.nonceValue(rpc, tx.durableNonce.account);
+    const status = await solana.signatureStatus(rpc, tx.hash);
+    const { entry } = status;
+    if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+      return {
+        kind: "included",
+        state: entry.failed ? "failed" : "confirmed",
+        block: { height: entry.slot },
+        final: entry.commitment === "finalized",
+      };
+    }
+    /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
+       read has no entry at any commitment: the nonce was consumed by something else — `dropped`
+       proven. Anything else — the value still ours, a processed-only entry, a status bank behind
+       the nonce read — proves nothing and stays tracked. */
+    if (
+      nonce.value !== tx.durableNonce.value &&
+      status.entry === undefined &&
+      status.slot !== undefined &&
+      nonce.slot !== undefined &&
+      status.slot >= nonce.slot
+    ) {
+      return { kind: "ended", state: "dropped" };
+    }
+    if (nonce.value === tx.durableNonce.value && tx.raw !== undefined) {
+      await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
+    }
+    return undefined;
   }
   /* With a blockhash bound the tip is read before the status, so a transaction landing between
      the reads can never be finalised `dropped` by an answer a stale bank produced. */
