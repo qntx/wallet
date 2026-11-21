@@ -502,7 +502,7 @@ describe("blind signing policy", () => {
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeMessage\n` +
           "It signs only hashes or raw bytes; the wallet cannot see what they commit to\n" +
           `The wallet cannot verify what this signature authorises\n` +
-          `message: 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
+          `· message = 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
       }),
     ],
     [
@@ -571,8 +571,8 @@ describe("blind signing policy", () => {
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeTx\n` +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `to: ${OTHER}\nvalue: 0\ndata: 0x\noperation: 0\nsafeTxGas: 0\ndataGas: 0\ngasPrice: 0\n` +
-          `gasToken: ${ZERO}\nrefundReceiver: ${ZERO}\nnonce: 7`,
+          `· to = ${OTHER}\n· value = 0\n· data = 0x\n· operation = 0\n· safeTxGas = 0\n· dataGas = 0\n· gasPrice = 0\n` +
+          `· gasToken = ${ZERO}\n· refundReceiver = ${ZERO}\n· nonce = 7`,
       }),
     ],
     [
@@ -603,7 +603,7 @@ describe("blind signing policy", () => {
           "Type: TransferWithAuthorization\n" +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `from: 0x2222222222222222222222222222222222222222\nto: ${OTHER}\nvalue: 1`,
+          `· from = 0x2222222222222222222222222222222222222222\n· to = ${OTHER}\n· value = 1`,
       }),
     ],
     [
@@ -765,9 +765,9 @@ describe("described dApp requests on a fresh vault", () => {
       description:
         `App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n` +
         `The wallet cannot verify what this signature authorises\n` +
-        `sellToken: ${USDC}\nbuyToken: ${WETH}\nreceiver: ${address}\nsellAmount: 1000000\nbuyAmount: 1\n` +
-        `validTo: 2000000000\nappData: 0x${"00".repeat(32)}\nfeeAmount: 0\nkind: sell\n` +
-        `partiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20`,
+        `· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${address}\n· sellAmount = 1000000\n· buyAmount = 1\n` +
+        `· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n` +
+        `· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
     });
     const signature = `0x${bytesToHex(bytesField(ok(response), "signature"))}`;
     const recovered = recoverTypedSignature({

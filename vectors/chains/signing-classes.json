@@ -225,11 +225,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nThe wallet cannot verify what this signature authorises\nsellToken: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver: 0x2222222222222222222222222222222222222222\nsellAmount: 1000000\nbuyAmount: 1\nvalidTo: 2000000000\nappData: 0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount: 0\nkind: sell\npartiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20"
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nThe wallet cannot verify what this signature authorises\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n钱包无法核实此签名授权的内容\nsellToken：0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken：0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver：0x2222222222222222222222222222222222222222\nsellAmount：1000000\nbuyAmount：1\nvalidTo：2000000000\nappData：0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount：0\nkind：sell\npartiallyFillable：false\nsellTokenBalance：erc20\nbuyTokenBalance：erc20"
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n钱包无法核实此签名授权的内容\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
         }
       }
     },
@@ -498,11 +498,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "App: Ether Mail\nNetwork: Ethereum\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\nThe wallet cannot verify what this signature authorises\nfrom.name: Cow\nfrom.wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name: Bob\nto.wallet: 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents: Hello, Bob!"
+          "description": "App: Ether Mail\nNetwork: Ethereum\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\nThe wallet cannot verify what this signature authorises\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "应用：Ether Mail\n网络：Ethereum\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n钱包无法核实此签名授权的内容\nfrom.name：Cow\nfrom.wallet：0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name：Bob\nto.wallet：0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents：Hello, Bob!"
+          "description": "应用：Ether Mail\n网络：Ethereum\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n钱包无法核实此签名授权的内容\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!"
         }
       }
     },
@@ -626,11 +626,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThe wallet cannot verify what this signature authorises\nf0: 1\nf1: 1\nf2: 1\nf3: 1\nf4: 1\nf5: 1\nf6: 1\nf7: 1\nf8: 1\nf9: 1\nf10: 1\nf11: 1\nf12: 1\nf13: 1\nf14: 1\nf15: 1"
+          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThe wallet cannot verify what this signature authorises\n· f0 = 1\n· f1 = 1\n· f2 = 1\n· f3 = 1\n· f4 = 1\n· f5 = 1\n· f6 = 1\n· f7 = 1\n· f8 = 1\n· f9 = 1\n· f10 = 1\n· f11 = 1\n· f12 = 1\n· f13 = 1\n· f14 = 1\n· f15 = 1"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n钱包无法核实此签名授权的内容\nf0：1\nf1：1\nf2：1\nf3：1\nf4：1\nf5：1\nf6：1\nf7：1\nf8：1\nf9：1\nf10：1\nf11：1\nf12：1\nf13：1\nf14：1\nf15：1"
+          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n钱包无法核实此签名授权的内容\n· f0 = 1\n· f1 = 1\n· f2 = 1\n· f3 = 1\n· f4 = 1\n· f5 = 1\n· f6 = 1\n· f7 = 1\n· f8 = 1\n· f9 = 1\n· f10 = 1\n· f11 = 1\n· f12 = 1\n· f13 = 1\n· f14 = 1\n· f15 = 1"
         }
       }
     },
@@ -896,11 +896,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nmessage: 0xabababababababababababababababababababababababababababababababab"
+          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· message = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nmessage：0xabababababababababababababababababababababababababababababababab"
+          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· message = 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -984,11 +984,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nfrom: 0x2222222222222222222222222222222222222222\nto: 0x00000000000000000000000000000000000BAd00\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: 0xabababababababababababababababababababababababababababababababab"
+          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nfrom：0x2222222222222222222222222222222222222222\nto：0x00000000000000000000000000000000000BAd00\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：0xabababababababababababababababababababababababababababababababab"
+          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -1556,11 +1556,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Testnet\nsigners: [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce: 1700000001600"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Testnet\n· signers = [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\n· nonce = 1700000001600"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Testnet\nsigners：[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce：1700000001600"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Testnet\n· signers = [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\n· nonce = 1700000001600"
         }
       }
     },
@@ -1642,11 +1642,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000"
         }
       }
     },
@@ -1722,11 +1722,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000"
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000"
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000"
         }
       }
     },
@@ -1790,11 +1790,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         }
       }
     },
@@ -2338,11 +2338,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xE111180000d2663C0091e4f400237545B87B996B\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xE111180000d2663C0091e4f400237545B87B996B\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xE111180000d2663C0091e4f400237545B87B996B\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xE111180000d2663C0091e4f400237545B87B996B\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2451,11 +2451,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0x00000000000000000000000000000000C0FfeE00\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 746666666340\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount: 50000000\ntakerAmount: 100000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777777000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0x00000000000000000000000000000000C0FfeE00\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0x00000000000000000000000000000000C0FfeE00\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：746666666340\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：21742633143463906290569050155826241533067272736897614950488156847949938836455\nmakerAmount：50000000\ntakerAmount：100000000\nside：0\nsignatureType：0\ntimestamp：1777777777000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0x00000000000000000000000000000000C0FfeE00\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 746666666340\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 21742633143463906290569050155826241533067272736897614950488156847949938836455\n· makerAmount = 50000000\n· takerAmount = 100000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777777000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2564,11 +2564,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nsalt: 800000080650\nmaker: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId: 6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount: 40000000\ntakerAmount: 80000000\nside: 0\nsignatureType: 0\ntimestamp: 1777777957000\nmetadata: 0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder: 0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\nType: Order\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· salt = 800000080650\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 6048711698446802097821302547443908381638681757684206197981905346932645477957\n· makerAmount = 40000000\n· takerAmount = 80000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777957000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nsalt：800000080650\nmaker：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\nsigner：0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\ntokenId：6048711698446802097821302547443908381638681757684206197981905346932645477957\nmakerAmount：40000000\ntakerAmount：80000000\nside：0\nsignatureType：0\ntimestamp：1777777957000\nmetadata：0x0000000000000000000000000000000000000000000000000000000000000000\nbuilder：0x0000000000000000000000000000000000000000000000000000000000000000"
+          "description": "应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 0xe3333700cA9d93003F00f0F71f8515005F6c00Aa\n类型：Order\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· salt = 800000080650\n· maker = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· signer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\n· tokenId = 6048711698446802097821302547443908381638681757684206197981905346932645477957\n· makerAmount = 40000000\n· takerAmount = 80000000\n· side = 0\n· signatureType = 0\n· timestamp = 1777777957000\n· metadata = 0x0000000000000000000000000000000000000000000000000000000000000000\n· builder = 0x0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     },
@@ -2637,11 +2637,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\naddress: 0x2222222222222222222222222222222222222222\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket"
+          "description": "App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· address = 0x2222222222222222222222222222222222222222\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\naddress：0x2222222222222222222222222222222222222222\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket"
+          "description": "应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· address = 0x2222222222222222222222222222222222222222\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket"
         }
       }
     },

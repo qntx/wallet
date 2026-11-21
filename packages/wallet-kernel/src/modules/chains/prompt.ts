@@ -261,7 +261,7 @@ const zh: Catalog = {
   typedContract: (address) => `验证合约 ${address}`,
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
-  typedField: (path, value) => `${path}：${value}`,
+  typedField: (path, value) => `· ${path} = ${value}`,
   typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
   typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
@@ -480,7 +480,7 @@ const en: Catalog = {
   typedContract: (address) => `Verifying contract ${address}`,
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
-  typedField: (path, value) => `${path}: ${value}`,
+  typedField: (path, value) => `· ${path} = ${value}`,
   typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
   typedVariant:
     "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",

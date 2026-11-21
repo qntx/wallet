@@ -1259,7 +1259,7 @@ describe("solana stake", () => {
         approvals: [],
         fee: undefined,
         verifiability: "partial" as const,
-        warnings: [{ kind: "platform-fee", message: "50 bps" }],
+        warnings: [{ kind: "platform-fee" as const, message: "50 bps" }],
       };
       expect(chainPrompt("zh-Hans", intent).description).toContain("Jupiter 收取平台费 50 bps");
       expect(chainPrompt("en", intent).description).toContain("Jupiter platform fee: 50 bps");
@@ -1397,7 +1397,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     });
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm signature",
-      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\nmaker: ${SIGNER}`,
+      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\n· maker = ${SIGNER}`,
     });
   });
 
@@ -1421,14 +1421,14 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       description:
         `Network: Ethereum\nVerifying contract ${safe}\nType: SafeMessage\n` +
         `It signs only hashes or raw bytes; the wallet cannot see what they commit to\n` +
-        `The wallet cannot verify what this signature authorises\nmessage: ${hash}`,
+        `The wallet cannot verify what this signature authorises\n· message = ${hash}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
       description:
         `网络：Ethereum\n验证合约 ${safe}\n类型：SafeMessage\n` +
         `只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
-        `钱包无法核实此签名授权的内容\nmessage：${hash}`,
+        `钱包无法核实此签名授权的内容\n· message = ${hash}`,
     });
   });
 
@@ -1966,7 +1966,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       chainPrompt("zh-Hans", typedIntent({ fields: [{ path: "maker", value: SIGNER }] }))
         .description,
     ).toBe(
-      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n钱包无法核实此签名授权的内容\nmaker：${SIGNER}`,
+      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n钱包无法核实此签名授权的内容\n· maker = ${SIGNER}`,
     );
     expect(chainPrompt("zh-Hans", typedIntent({ seaport: order })).description).toBe(
       [
@@ -2149,7 +2149,7 @@ describe("near-miss blind prompts", () => {
         "Type: TransferWithAuthorization\n" +
         "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
         "The wallet cannot verify what this signature authorises\n" +
-        `from: ${SIGNER}\nto: ${OTHER}\nvalue: 1`,
+        `· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
@@ -2160,7 +2160,7 @@ describe("near-miss blind prompts", () => {
         "类型：TransferWithAuthorization\n" +
         "钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n" +
         "钱包无法核实此签名授权的内容\n" +
-        `from：${SIGNER}\nto：${OTHER}\nvalue：1`,
+        `· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1`,
     });
   });
 
@@ -3058,3 +3058,36 @@ describe("decoder warnings reach the prompt", () => {
   });
 });
 
+describe("typed field lines cannot imitate kernel lines", () => {
+  const fieldIntent = (path: string, value: string): PromptIntent => ({
+    summary: "message",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    family: "evm",
+    message: {
+      kind: "typed-data",
+      primaryType: "Order",
+      domain: { chainId: 1 },
+      data: {},
+      fields: [{ path, value }],
+    },
+  });
+
+  it("a field named like a kernel line shows as a dotted field line, in both locales", () => {
+    const en = chainPrompt("en", fieldIntent("Network", "Sepolia (testnet, no value)"));
+    /* Only the kernel's own network line may start with the heading. */
+    expect(en.description.split("\n").filter((line) => line.startsWith("Network:"))).toHaveLength(
+      1,
+    );
+    expect(en.description).toContain("\n· Network = Sepolia (testnet, no value)");
+
+    const zh = chainPrompt("zh-Hans", fieldIntent("网络", "Sepolia (testnet)"));
+    expect(zh.description.split("\n").filter((line) => line.startsWith("网络："))).toHaveLength(
+      1,
+    );
+    expect(zh.description).toContain("\n· 网络 = Sepolia (testnet)");
+  });
+});

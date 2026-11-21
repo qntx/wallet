@@ -186,7 +186,6 @@ const PM_FEE_AT_MATCH_ZH = "交易手续费由 Polymarket 在撮合时设定；�
 const PM_SIGNER = getAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 const PM_ZERO32 = `0x${"0".repeat(64)}`;
 const pmLeaves = (
-  colon: string,
   salt: string,
   tokenId: string,
   makerAmount: string,
@@ -194,50 +193,34 @@ const pmLeaves = (
   timestamp: string,
 ): string =>
   [
-    `salt${colon}${salt}`,
-    `maker${colon}${PM_SIGNER}`,
-    `signer${colon}${PM_SIGNER}`,
-    `tokenId${colon}${tokenId}`,
-    `makerAmount${colon}${makerAmount}`,
-    `takerAmount${colon}${takerAmount}`,
-    `side${colon}0`,
-    `signatureType${colon}0`,
-    `timestamp${colon}${timestamp}`,
-    `metadata${colon}${PM_ZERO32}`,
-    `builder${colon}${PM_ZERO32}`,
+    `· salt = ${salt}`,
+    `· maker = ${PM_SIGNER}`,
+    `· signer = ${PM_SIGNER}`,
+    `· tokenId = ${tokenId}`,
+    `· makerAmount = ${makerAmount}`,
+    `· takerAmount = ${takerAmount}`,
+    `· side = 0`,
+    `· signatureType = 0`,
+    `· timestamp = ${timestamp}`,
+    `· metadata = ${PM_ZERO32}`,
+    `· builder = ${PM_ZERO32}`,
   ].join("\n");
 const PM_ORDER_LEAVES_1 = pmLeaves(
-  ": ",
   "746666666340",
   PM_TOKEN_ID,
   "50000000",
   "100000000",
   "1777777777000",
 );
-const PM_ORDER_LEAVES_1_ZH = pmLeaves(
-  "：",
-  "746666666340",
-  PM_TOKEN_ID,
-  "50000000",
-  "100000000",
-  "1777777777000",
-);
+const PM_ORDER_LEAVES_1_ZH = PM_ORDER_LEAVES_1;
 const PM_ORDER_LEAVES_2 = pmLeaves(
-  ": ",
   "800000080650",
   PM_TOKEN_ID_2,
   "40000000",
   "80000000",
   "1777777957000",
 );
-const PM_ORDER_LEAVES_2_ZH = pmLeaves(
-  "：",
-  "800000080650",
-  PM_TOKEN_ID_2,
-  "40000000",
-  "80000000",
-  "1777777957000",
-);
+const PM_ORDER_LEAVES_2_ZH = PM_ORDER_LEAVES_2;
 
 const p = (title: string, titleZh: string, en: string, zh: string) => ({
   en: { title, description: en },
@@ -259,11 +242,9 @@ const bigDoc = (n: number) => ({
   message: Object.fromEntries(leaves(n).map((f) => [f.name, "1"])),
 });
 const fields16 = leaves(16)
-  .map((f) => `${f.name}: 1`)
+  .map((f) => `· ${f.name} = 1`)
   .join("\n");
-const fields16Zh = leaves(16)
-  .map((f) => `${f.name}：1`)
-  .join("\n");
+const fields16Zh = fields16;
 
 const hash32 = `0x${"ab".repeat(32)}`;
 const bytes100 = "cd".repeat(100);
@@ -401,8 +382,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm signature",
       "确认签名",
-      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCaveat}\nsellToken: ${USDC}\nbuyToken: ${WETH}\nreceiver: ${SIGNER}\nsellAmount: 1000000\nbuyAmount: 1\nvalidTo: 2000000000\nappData: 0x${"00".repeat(32)}\nfeeAmount: 0\nkind: sell\npartiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20`,
-      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCaveatZh}\nsellToken：${USDC}\nbuyToken：${WETH}\nreceiver：${SIGNER}\nsellAmount：1000000\nbuyAmount：1\nvalidTo：2000000000\nappData：0x${"00".repeat(32)}\nfeeAmount：0\nkind：sell\npartiallyFillable：false\nsellTokenBalance：erc20\nbuyTokenBalance：erc20`,
+      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCaveat}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
+      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCaveatZh}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
     ),
   },
   {
@@ -521,8 +502,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm signature",
       "确认签名",
-      `App: Ether Mail\n${net}\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\n${typedCaveat}\nfrom.name: Cow\nfrom.wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name: Bob\nto.wallet: 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents: Hello, Bob!`,
-      `应用：Ether Mail\n${netZh}\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n${typedCaveatZh}\nfrom.name：Cow\nfrom.wallet：0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name：Bob\nto.wallet：0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents：Hello, Bob!`,
+      `App: Ether Mail\n${net}\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\n${typedCaveat}\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!`,
+      `应用：Ether Mail\n${netZh}\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n${typedCaveatZh}\n· from.name = Cow\n· from.wallet = 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\n· to.name = Bob\n· to.wallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\n· contents = Hello, Bob!`,
     ),
   },
   {
@@ -601,8 +582,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${net}\nVerifying contract ${SAFE}\nType: SafeMessage\n${typedCommitment}\n${typedCaveat}\nmessage: ${hash32}`,
-      `${netZh}\n验证合约 ${SAFE}\n类型：SafeMessage\n${typedCommitmentZh}\n${typedCaveatZh}\nmessage：${hash32}`,
+      `${net}\nVerifying contract ${SAFE}\nType: SafeMessage\n${typedCommitment}\n${typedCaveat}\n· message = ${hash32}`,
+      `${netZh}\n验证合约 ${SAFE}\n类型：SafeMessage\n${typedCommitmentZh}\n${typedCaveatZh}\n· message = ${hash32}`,
     ),
   },
   {
@@ -640,8 +621,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\nfrom: ${SIGNER}\nto: ${OTHER}\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: ${hash32}`,
-      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\nfrom：${SIGNER}\nto：${OTHER}\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：${hash32}`,
+      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
     ),
   },
   {
@@ -769,8 +750,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum Sepolia\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Testnet\nsigners: ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce: 1700000001600`,
-      `${HL_APP_ZH}\n网络：Arbitrum Sepolia\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Testnet\nsigners：["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce：1700000001600`,
+      `${HL_APP_EN}\nNetwork: Arbitrum Sepolia\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Testnet\n· signers = ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\n· nonce = 1700000001600`,
+      `${HL_APP_ZH}\n网络：Arbitrum Sepolia\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Testnet\n· signers = ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\n· nonce = 1700000001600`,
     ),
   },
   {
@@ -781,8 +762,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000`,
-      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000`,
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 2.5\n· time = 1700000000000`,
     ),
   },
   {
@@ -793,8 +774,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000`,
-      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000`,
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\n· hyperliquidChain = Mainnet\n· destination = 0x5e9ee1089755c3435139848e47e6635505d5a13a\n· amount = 1e3\n· time = 1700000000000`,
     ),
   },
   {
@@ -805,8 +786,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
-      `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+      `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+      `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
     ),
   },
   /* Polymarket: documents come from vectors/chains/polymarket.json (oracle: clob-client-v2
@@ -936,8 +917,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\n${typedVariant}\n${typedCaveat}\naddress: ${SIGNER}\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket`,
-      `应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n${typedVariantZh}\n${typedCaveatZh}\naddress：${SIGNER}\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket`,
+      `App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\n${typedVariant}\n${typedCaveat}\n· address = ${SIGNER}\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket`,
+      `应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n${typedVariantZh}\n${typedCaveatZh}\n· address = ${SIGNER}\n· timestamp = 10000000\n· nonce = 23\n· message = Sign in to Polymarket`,
     ),
   },
   {
