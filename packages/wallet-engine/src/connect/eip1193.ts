@@ -5,18 +5,12 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
  * page's origin (computed from the WebView's top-level URL, never from the page) and a JSON-RPC
  * call; signing goes through the request pipeline and waits for the host's approval by id.
  */
-import { ChainError } from "@qntx/wallet-chains";
 import type { SignRequest } from "@qntx/wallet-chains";
 
 import { EVM_RPC_METHODS, logsFilterViolation } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
-import {
-  InvalidTokenError,
-  OriginBusyError,
-  RequestEndedError,
-  SignInOriginError,
-} from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
+import type { WalletConnectOrigin } from "../requests/types.ts";
 import type {
   AccountRef,
   BatchRecord,
@@ -24,21 +18,34 @@ import type {
   TrackedTransaction,
 } from "../transactions/route.ts";
 import { EVM_BATCH_LIMIT } from "../transactions/route.ts";
-import type { AccountGroup, ConnectionController, ConnectionSession } from "./controller.ts";
+import type {
+  AccountGroup,
+  ConnectionController,
+  ConnectionOrigin,
+  ConnectionSession,
+} from "./controller.ts";
 import { evmChainId } from "./controller.ts";
 import {
   ProviderError,
   internalError,
   invalidParams,
   limitExceeded,
+  toProviderError,
   unauthorized,
   unrecognizedChain,
   unsupportedMethod,
-  userRejectedRequest,
 } from "./errors.ts";
 import { SessionEvents } from "./subscription.ts";
 
-export type Eip1193Request = { readonly method: string; readonly params?: unknown };
+export type Eip1193Request = {
+  readonly method: string;
+  readonly params?: unknown;
+  /**
+   * The CAIP-2 network the call targets — a WalletConnect request names it; the in-app-browser
+   * bridge never sets it (the page has no say), so its calls use the session's current network.
+   */
+  readonly network?: string;
+};
 
 export type Eip1193Event =
   | { readonly name: "connect"; readonly origin: string; readonly chainId: string }
@@ -144,12 +151,12 @@ export class Eip1193Handler {
     return this.events.subscribe(listener);
   }
 
-  async handle(origin: string, request: Eip1193Request): Promise<unknown> {
+  async handle(origin: string | WalletConnectOrigin, request: Eip1193Request): Promise<unknown> {
     const { connections } = this.options;
-    connections.checkOrigin(origin);
+    const caller = connections.checkOrigin(origin);
     const { method } = request;
     if (method === "wallet_watchAsset") {
-      return this.watchAsset(origin, request.params);
+      return this.watchAsset(caller, request.network, request.params);
     }
     const params = paramList(request.params);
     if (REFUSED.has(method)) {
@@ -157,39 +164,39 @@ export class Eip1193Handler {
     }
     switch (method) {
       case "eth_accounts":
-        return this.accounts(origin);
+        return this.accounts(caller.origin);
       case "eth_chainId":
         return hexChainId(
-          connections.session(origin)?.currentNetwork ?? this.options.defaultNetwork(),
+          connections.session(caller.origin)?.currentNetwork ?? this.options.defaultNetwork(),
         );
       case "eth_requestAccounts":
-        return this.requestAccounts(origin);
+        return this.requestAccounts(caller.origin);
       case "wallet_requestPermissions":
-        await this.requestAccounts(origin);
-        return this.permissions(origin);
+        await this.requestAccounts(caller.origin);
+        return this.permissions(caller.origin);
       case "wallet_getPermissions":
-        return this.permissions(origin);
+        return this.permissions(caller.origin);
       case "wallet_revokePermissions":
-        await connections.revoke(origin);
+        await connections.revoke(caller.origin);
         return null;
       case "wallet_switchEthereumChain":
-        return this.switchChain(origin, params[0]);
+        return this.switchChain(caller.origin, params[0]);
       case "wallet_addEthereumChain":
-        return this.addChain(origin, params[0]);
+        return this.addChain(caller.origin, params[0]);
       case "personal_sign":
-        return this.personalSign(origin, params);
+        return this.personalSign(caller, request.network, params);
       case "eth_signTypedData_v4":
-        return this.typedData(origin, params);
+        return this.typedData(caller, request.network, params);
       case "eth_sendTransaction":
-        return this.sendTransaction(origin, params[0]);
+        return this.sendTransaction(caller, request.network, params[0]);
       case "wallet_getCapabilities":
-        return this.getCapabilities(origin, params);
+        return this.getCapabilities(caller.origin, params);
       case "wallet_sendCalls":
-        return this.sendCalls(origin, params);
+        return this.sendCalls(caller, request.network, params);
       case "wallet_getCallsStatus":
-        return this.callsStatus(origin, params, false);
+        return this.callsStatus(caller.origin, params, false);
       case "wallet_showCallsStatus":
-        return this.callsStatus(origin, params, true);
+        return this.callsStatus(caller.origin, params, true);
       default:
         break;
     }
@@ -200,7 +207,7 @@ export class Eip1193Handler {
       }
     }
     if (READ_ONLY.has(method)) {
-      return this.read(origin, method, params);
+      return this.read(caller.origin, method, params);
     }
     throw new ProviderError(-32601, `${method} does not exist`);
   }
@@ -303,9 +310,13 @@ export class Eip1193Handler {
   }
 
   /** EIP-747 (ERC-20 only): `symbol`, `decimals` and `image` from the page are never used. */
-  private async watchAsset(origin: string, arg: unknown): Promise<boolean> {
+  private async watchAsset(
+    caller: ConnectionOrigin,
+    network: string | undefined,
+    arg: unknown,
+  ): Promise<boolean> {
     const { connections, requests } = this.options;
-    const session = this.signingSession(origin, "wallet_watchAsset");
+    const session = this.signingSession(caller, "wallet_watchAsset", network);
     if (!isObject(arg) || arg["type"] !== "ERC20" || !isObject(arg["options"])) {
       throw invalidParams("params must be { type: 'ERC20', options: { address } }");
     }
@@ -314,27 +325,26 @@ export class Eip1193Handler {
     if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
       throw invalidParams("options.address must be an EVM address");
     }
-    const { currentNetwork: network } = session;
-    if (chainId !== undefined && Number(chainId) !== evmChainId(network)) {
+    if (chainId !== undefined && Number(chainId) !== evmChainId(session.currentNetwork)) {
       throw invalidParams("options.chainId does not match the session network");
     }
-    if (this.options.isTracked(network, address)) {
+    if (this.options.isTracked(session.currentNetwork, address)) {
       return true;
     }
-    const binding = connections.sessionAccounts(origin, session.currentNetwork);
+    const binding = connections.sessionAccounts(caller.origin, session.currentNetwork);
     if (binding === undefined) {
       throw unauthorized("no account is bound to the session network");
     }
     try {
       const pending = await requests.prepare({
         method: "watch-asset",
-        origin: { kind: "browser", origin },
+        origin: caller,
         account: { kind: "hd", ...binding.group, template: "evm.bip44" },
-        network,
+        network: session.currentNetwork,
         address,
       });
       await requests.outcome(pending.id);
-      await connections.touch(origin);
+      await connections.touch(caller.origin);
       return true;
     } catch (error) {
       throw toProviderError(error);
@@ -362,11 +372,15 @@ export class Eip1193Handler {
     return { group: binding.group, address: wanted };
   }
 
-  private async personalSign(origin: string, params: ReadonlyArray<unknown>): Promise<string> {
-    const session = this.signingSession(origin, "personal_sign");
+  private async personalSign(
+    caller: ConnectionOrigin,
+    network: string | undefined,
+    params: ReadonlyArray<unknown>,
+  ): Promise<string> {
+    const session = this.signingSession(caller, "personal_sign", network);
     const { group } = this.authorizedAccount(session, params[1]);
     const message = textBytes(params[0]);
-    return this.sign(origin, session, group, (account) => ({
+    return this.sign(caller, session, group, (account) => ({
       kind: "evm.personal-message",
       network: session.currentNetwork,
       account,
@@ -374,12 +388,16 @@ export class Eip1193Handler {
     }));
   }
 
-  private async typedData(origin: string, params: ReadonlyArray<unknown>): Promise<string> {
-    const session = this.signingSession(origin, "eth_signTypedData_v4");
+  private async typedData(
+    caller: ConnectionOrigin,
+    network: string | undefined,
+    params: ReadonlyArray<unknown>,
+  ): Promise<string> {
+    const session = this.signingSession(caller, "eth_signTypedData_v4", network);
     const { group } = this.authorizedAccount(session, params[0]);
     const [, source] = params;
     const typedData = typeof source === "string" ? source : JSON.stringify(source);
-    return this.sign(origin, session, group, (account) => ({
+    return this.sign(caller, session, group, (account) => ({
       kind: "evm.typed-data",
       network: session.currentNetwork,
       account,
@@ -387,8 +405,12 @@ export class Eip1193Handler {
     }));
   }
 
-  private async sendTransaction(origin: string, arg: unknown): Promise<string> {
-    const session = this.signingSession(origin, "eth_sendTransaction");
+  private async sendTransaction(
+    caller: ConnectionOrigin,
+    network: string | undefined,
+    arg: unknown,
+  ): Promise<string> {
+    const session = this.signingSession(caller, "eth_sendTransaction", network);
     if (!isObject(arg)) {
       throw invalidParams("transaction must be an object");
     }
@@ -409,7 +431,7 @@ export class Eip1193Handler {
       throw invalidParams("to must be an address");
     }
     // Only to, value, data and gas survive; nonce and fees are placeholders the pipeline replaces.
-    return this.sign(origin, session, group, (account) => ({
+    return this.sign(caller, session, group, (account) => ({
       kind: "evm.transaction",
       network: session.currentNetwork,
       account,
@@ -441,17 +463,30 @@ export class Eip1193Handler {
     };
   }
 
-  private signingSession(origin: string, method: string): ConnectionSession {
+  /**
+   * The session authorized for `method` on the request's target network (`network` overrides the
+   * session's current one for a WalletConnect call); the returned session's `currentNetwork` is the
+   * target so every downstream use — the account binding, the chainId checks — hits it.
+   */
+  private signingSession(
+    caller: ConnectionOrigin,
+    method: string,
+    network?: string,
+  ): ConnectionSession {
     const { connections } = this.options;
-    const session = connections.session(origin);
+    const session = connections.session(caller.origin);
     if (session === undefined) {
       throw unauthorized();
     }
-    return connections.authorize(origin, session.currentNetwork, method);
+    const target = network ?? session.currentNetwork;
+    const authorized = connections.authorize(caller.origin, target, method);
+    return authorized.currentNetwork === target
+      ? authorized
+      : { ...authorized, currentNetwork: target };
   }
 
   private async sign(
-    origin: string,
+    caller: ConnectionOrigin,
     session: ConnectionSession,
     group: AccountGroup,
     build: (account: AccountRef) => SignRequest,
@@ -461,13 +496,13 @@ export class Eip1193Handler {
     try {
       const pending = await requests.prepare({
         method: "evm-sign",
-        origin: { kind: "browser", origin },
+        origin: caller,
         account,
         network: session.currentNetwork,
         request: build(account),
       });
       const result = await requests.outcome(pending.id);
-      await connections.touch(origin);
+      await connections.touch(caller.origin);
       if ("signature" in result && result.signature instanceof Uint8Array) {
         return `0x${bytesToHex(result.signature)}`;
       }
@@ -542,8 +577,12 @@ export class Eip1193Handler {
   }
 
   /** `wallet_sendCalls` (EIP-5792 v2.0.0): atomic batch, sequential fallback or 5760. */
-  private async sendCalls(origin: string, params: ReadonlyArray<unknown>): Promise<unknown> {
-    const session = this.signingSession(origin, "wallet_sendCalls");
+  private async sendCalls(
+    caller: ConnectionOrigin,
+    network: string | undefined,
+    params: ReadonlyArray<unknown>,
+  ): Promise<unknown> {
+    const session = this.signingSession(caller, "wallet_sendCalls", network);
     const [arg] = params;
     if (!isObject(arg)) {
       throw invalidParams("params must be a sendCalls object");
@@ -615,23 +654,22 @@ export class Eip1193Handler {
       if (typeof rawId !== "string" || rawId.length === 0 || rawId.length > 4096) {
         throw invalidParams("id must be a string of at most 4096 characters");
       }
-      if (this.options.batches.get(origin, rawId) !== undefined) {
+      if (this.options.batches.get(caller.origin, rawId) !== undefined) {
         throw new ProviderError(5720, `bundle id ${rawId} is already used`);
       }
       id = rawId;
     }
     const { atomicRequired } = arg;
-    const network = session.currentNetwork;
     const txIds: string[] = [];
     /* Atomic for the one-call and the batch paths; a sequential fallback is not atomic. */
     let atomic = true;
     try {
       const [first] = calls;
       if (calls.length === 1 && first !== undefined) {
-        const tracked = await this.submitCall(origin, session, account, first);
+        const tracked = await this.submitCall(caller, session, account, first);
         txIds.push(tracked.id);
       } else {
-        const status = await this.options.delegationState(account, network);
+        const status = await this.options.delegationState(account, session.currentNetwork);
         /*
          * A delegated account always batches; an undelegated one upgrades only when the page
          * requires atomicity — a `none` account with `atomicRequired: false` stays sequential.
@@ -640,7 +678,7 @@ export class Eip1193Handler {
           status.state === "ours" ||
           (status.supported && status.state === "none" && atomicRequired)
         ) {
-          const tracked = await this.submitBatch(origin, session, account, calls);
+          const tracked = await this.submitBatch(caller, session, account, calls);
           txIds.push(tracked.id);
         } else if (atomicRequired) {
           throw new ProviderError(5760, "atomicity is not supported on this account");
@@ -649,7 +687,7 @@ export class Eip1193Handler {
           for (const [index, tx] of calls.entries()) {
             try {
               // oxlint-disable-next-line eslint/no-await-in-loop -- each call is approved separately, in order
-              const tracked = await this.submitCall(origin, session, account, tx);
+              const tracked = await this.submitCall(caller, session, account, tx);
               txIds.push(tracked.id);
             } catch (error) {
               if (index === 0) {
@@ -664,9 +702,9 @@ export class Eip1193Handler {
       throw toProviderError(error);
     }
     await this.options.batches.record({
-      origin,
+      origin: caller.origin,
       id,
-      network,
+      network: session.currentNetwork,
       atomic,
       txIds,
       /* One atomic transaction for the batch/single paths; one per call for sequential. */
@@ -678,7 +716,7 @@ export class Eip1193Handler {
 
   /** One call through the `evm-sign` transaction path — its own approval. */
   private async submitCall(
-    origin: string,
+    caller: ConnectionOrigin,
     session: ConnectionSession,
     account: AccountRef,
     call: { to: string; data: string; value: string },
@@ -686,7 +724,7 @@ export class Eip1193Handler {
     const chainId = evmChainId(session.currentNetwork);
     const pending = await this.options.requests.prepare({
       method: "evm-sign",
-      origin: { kind: "browser", origin },
+      origin: caller,
       account,
       network: session.currentNetwork,
       request: {
@@ -702,7 +740,7 @@ export class Eip1193Handler {
       },
     });
     const result = await this.options.requests.outcome(pending.id);
-    await this.options.connections.touch(origin);
+    await this.options.connections.touch(caller.origin);
     if (!("id" in result)) {
       throw internalError("the transaction has no tracked id");
     }
@@ -711,21 +749,21 @@ export class Eip1193Handler {
 
   /** ≥2 calls through `evm-batch` with the page's origin. */
   private async submitBatch(
-    origin: string,
+    caller: ConnectionOrigin,
     session: ConnectionSession,
     account: AccountRef,
     calls: ReadonlyArray<{ to: string; data: string; value: string }>,
   ): Promise<TrackedTransaction> {
     const pending = await this.options.requests.prepare({
       method: "evm-batch",
-      origin: { kind: "browser", origin },
+      origin: caller,
       account,
       network: session.currentNetwork,
       calls: calls.map((c) => ({ to: c.to, value: BigInt(c.value), data: c.data })),
       fee: "normal",
     });
     const result = await this.options.requests.outcome(pending.id);
-    await this.options.connections.touch(origin);
+    await this.options.connections.touch(caller.origin);
     if (!("id" in result)) {
       throw internalError("the batch has no tracked id");
     }
@@ -819,27 +857,6 @@ const notOnChain = (tx: TrackedTransaction): boolean =>
 
 const reverted = (tx: TrackedTransaction): boolean =>
   tx.state === "failed" && tx.hash !== undefined;
-
-function toProviderError(error: unknown): ProviderError {
-  if (error instanceof ProviderError) {
-    return error;
-  }
-  if (error instanceof InvalidTokenError || error instanceof SignInOriginError) {
-    return invalidParams(error.message);
-  }
-  if (error instanceof OriginBusyError) {
-    return userRejectedRequest(error.message);
-  }
-  if (error instanceof RequestEndedError) {
-    return error.stage === "failed"
-      ? internalError(error.message)
-      : userRejectedRequest(error.message);
-  }
-  if (error instanceof ChainError) {
-    return invalidParams(error.message);
-  }
-  return internalError(error instanceof Error ? error.message : String(error));
-}
 
 function currentAccounts(session: ConnectionSession): ReadonlyArray<string> {
   return (

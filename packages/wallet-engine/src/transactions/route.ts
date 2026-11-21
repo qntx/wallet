@@ -18,6 +18,7 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
+import type { DappOrigin } from "../requests/types.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AcrossBridgeQuote } from "../swaps/bridge.ts";
 import type { JupiterSwapQuote, ZeroExSwapQuote } from "../swaps/index.ts";
@@ -199,28 +200,11 @@ export type SendParams = {
 
 export type PrepareParams = Omit<SendParams, "verify">;
 
-export type ChainRequestMethod =
-  | "send"
-  | "speed-up"
-  | "cancel"
-  | "cpfp"
-  | "evm-delegation"
-  | "evm-batch"
-  | "evm-approve"
-  | "evm-cctp"
-  | "evm-swap"
-  | "evm-bridge"
-  | "evm-nft-send"
-  | "solana-core-send"
-  | "evm-lido"
-  | "solana-stake"
-  | "solana-swap"
-  | "tron-stake"
-  | "tron-approve";
+export type { ChainRequestMethod } from "../requests/types.ts";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
-  | ({ readonly method: "send" } & PrepareParams)
+  | ({ readonly method: "send"; readonly origin?: DappOrigin } & PrepareParams)
   | { readonly method: "speed-up" | "cancel"; readonly txId: string }
   | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number }
   | {
@@ -241,7 +225,7 @@ export type ChainRequestInput =
       }>;
       readonly fee: PrepareParams["fee"];
       /** A page asking for the batch (`wallet_sendCalls`); absent means the wallet itself. */
-      readonly origin?: { readonly kind: "browser"; readonly origin: string };
+      readonly origin?: DappOrigin;
     }
   | {
       readonly method: "evm-approve";

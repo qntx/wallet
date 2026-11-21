@@ -1,8 +1,13 @@
 import { verifyEvent } from "@qntx/nostr";
 import type { UnlockFactor, VerifyFactor } from "@qntx/wallet";
-import { createWalletEngine } from "@qntx/wallet-engine";
-import type { PaymentOption } from "@qntx/wallet-engine";
+import { createWalletEngine, requiredAcknowledgement } from "@qntx/wallet-engine";
+import type { PaymentOption, PendingRequest } from "@qntx/wallet-engine";
 import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "@qntx/wallet-engine/idb";
+import type {
+  WalletConnect,
+  WalletConnectProposal,
+  WalletConnectStorage,
+} from "@qntx/wallet-engine/walletconnect";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
@@ -266,6 +271,189 @@ action("withdrawBtn", "withdraw", async (engine) => {
   );
 });
 
+// --- walletconnect: created on the first Pair click, so the page loads without any WC network. ---
+const envProjectId: unknown = import.meta.env["VITE_WALLETCONNECT_PROJECT_ID"];
+input("wcProjectId").value = typeof envProjectId === "string" ? envProjectId : "";
+
+const WC_PREFIX = "wc.";
+const readKey = (key: string): unknown => {
+  const raw = localStorage.getItem(`${WC_PREFIX}${key}`);
+  return raw === null ? undefined : (JSON.parse(raw) as unknown);
+};
+const wcKeys = (): string[] =>
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith(WC_PREFIX))
+    .map((key) => key.slice(WC_PREFIX.length));
+/* oxlint-disable typescript/require-await -- the storage contract is async; localStorage is synchronous */
+const wcStorage: WalletConnectStorage = {
+  getKeys: async () => wcKeys(),
+  getEntries: async () => wcKeys().map((key): [string, unknown] => [key, readKey(key)]),
+  getItem: async (key) => readKey(key),
+  setItem: async (key, value) => {
+    localStorage.setItem(`${WC_PREFIX}${key}`, JSON.stringify(value));
+  },
+  removeItem: async (key) => {
+    localStorage.removeItem(`${WC_PREFIX}${key}`);
+  },
+};
+/* oxlint-enable typescript/require-await */
+
+const wcD = deferred<WalletConnect>();
+const wcP = wcD.promise;
+let wcStarted = false;
+const startWc = async (projectId: string): Promise<WalletConnect> => {
+  const { createWalletConnect } = await import("@qntx/wallet-engine/walletconnect");
+  const wc = await createWalletConnect({
+    projectId,
+    metadata: {
+      name: "qntx playground",
+      description: "qntx spark playground",
+      url: location.origin,
+      icons: [],
+    },
+    storage: wcStorage,
+    wallet: await walletP,
+    engine: await engineP,
+    now: () => Date.now(),
+    logger: { warn: (m: string, e?: unknown) => void [m, e] },
+  });
+  wcStarted = true;
+  wc.store.subscribe(() => renderWcProposals(wc));
+  wcD.resolve(wc);
+  return wc;
+};
+
+const renderWcProposals = (wc: WalletConnect): void => {
+  const box = el("wcProposals");
+  box.innerHTML = "";
+  for (const p of Object.values(wc.getState().proposals)) {
+    const row = document.createElement("div");
+    const risk =
+      p.risk.length === 0 ? "none" : p.risk.map((f) => `${f.level}:${f.code}`).join(", ");
+    row.textContent =
+      `proposal ${p.id}: ${p.peer.name} <${p.peer.url}> ` +
+      `verify=${p.verify.validation}${p.verify.isScam ? " scam" : ""} risk=${risk} ` +
+      `nets=${p.networks.join(" ")}`;
+    const approve = document.createElement("button");
+    approve.textContent = "approve";
+    approve.addEventListener("click", () => {
+      void approveWcProposal(wc, p);
+    });
+    const reject = document.createElement("button");
+    reject.textContent = "reject";
+    reject.addEventListener("click", () => {
+      void (async () => {
+        try {
+          await wc.reject(p.id);
+        } catch (error) {
+          say(`reject failed: ${String(error)}`, true);
+        }
+      })();
+    });
+    row.append(approve, reject);
+    box.append(row);
+  }
+};
+
+const approveWcProposal = async (wc: WalletConnect, p: WalletConnectProposal): Promise<void> => {
+  const danger = p.risk.filter((f) => f.level === "danger").map((f) => f.code);
+  // oxlint-disable-next-line eslint/no-alert -- the playground's danger review is a confirm()
+  if (danger.length > 0 && !confirm(`danger findings: ${danger.join(", ")} — approve anyway?`)) {
+    return;
+  }
+  say("approving session…");
+  try {
+    const session = await wc.approve(p.id, {
+      networks: [...p.networks],
+      acknowledged: danger,
+    });
+    say(`session ${session.origin.origin}`);
+  } catch (error) {
+    say(`approve failed: ${String(error)}`, true);
+  }
+};
+
+const renderWcRequests = (engine: Awaited<typeof engineP>): void => {
+  const box = el("wcRequests");
+  box.innerHTML = "";
+  for (const request of Object.values(engine.requests.getState().requests)) {
+    if (request.stage !== "awaiting-approval" || request.origin.kind !== "walletconnect") {
+      continue;
+    }
+    const row = document.createElement("div");
+    const { origin } = request;
+    row.textContent = `${request.method} from ${origin.name} <${origin.url}>`;
+    const approve = document.createElement("button");
+    approve.textContent = "approve";
+    approve.addEventListener("click", () => {
+      void (async () => {
+        try {
+          await approveWcRequest(engine, request);
+          say("approved");
+        } catch (error) {
+          say(`approve failed: ${String(error)}`, true);
+        }
+      })();
+    });
+    const reject = document.createElement("button");
+    reject.textContent = "reject";
+    reject.addEventListener("click", () => {
+      try {
+        engine.requests.reject(request.id);
+      } catch (error) {
+        say(`reject failed: ${String(error)}`, true);
+      }
+    });
+    row.append(approve, reject);
+    box.append(row);
+  }
+};
+
+const approveWcRequest = async (
+  engine: Awaited<typeof engineP>,
+  request: PendingRequest,
+): Promise<unknown> => {
+  const options = { verify: verify(), acknowledged: requiredAcknowledgement(request) };
+  switch (request.method) {
+    case "send":
+      return engine.requests.approve(request.id, "send", options);
+    case "evm-batch":
+      return engine.requests.approve(request.id, "evm-batch", options);
+    case "evm-sign":
+      return engine.requests.approve(request.id, "evm-sign", options);
+    case "solana-sign":
+      return engine.requests.approve(request.id, "solana-sign", options);
+    case "bitcoin-sign":
+      return engine.requests.approve(request.id, "bitcoin-sign", options);
+    case "watch-asset":
+      return engine.requests.approve(request.id, "watch-asset", options);
+    default:
+      throw new Error(`the playground cannot approve ${request.method}`);
+  }
+};
+
+button("wcPair").addEventListener("click", () => {
+  void (async () => {
+    say("pairing…");
+    try {
+      const engine = await engineP;
+      const parsed = engine.payments.parse(input("wcUri").value.trim(), ref(engine).network);
+      if (parsed.kind !== "walletconnect") {
+        throw new Error("not a wc: uri");
+      }
+      const projectId = input("wcProjectId").value.trim();
+      if (projectId.length === 0) {
+        throw new Error("a reown project id is required");
+      }
+      const wc = wcStarted ? await wcP : await startWc(projectId);
+      await wc.pair(parsed.uri);
+      say("paired — waiting for the proposal");
+    } catch (error) {
+      say(`pair failed: ${String(error)}`, true);
+    }
+  })();
+});
+
 // Boot resolves the deferreds; every handler registered above queues behind these promises.
 try {
   const wallet = await createWebWallet({
@@ -304,6 +492,7 @@ try {
   const engine = await engineP;
   engine.accounts.store.subscribe(() => renderGroups(engine));
   engine.accounts.store.subscribe(() => tick(engine));
+  engine.requests.store.subscribe(() => renderWcRequests(engine));
 } catch (error) {
   el("error").textContent = `wallet init failed: ${String(error)}`;
   throw error instanceof Error ? error : new Error(String(error));

@@ -120,7 +120,8 @@ export type BrowserBridgeOptions = {
   readonly now: () => number;
 };
 
-const MAX_MESSAGE_BYTES = 128 * 1024;
+/** The largest JSON message a transport accepts — the WalletConnect entry applies the same limit. */
+export const MAX_MESSAGE_BYTES = 128 * 1024;
 const RATE_LIMIT_PER_MINUTE = 120;
 const RATE_WINDOW_MS = 60_000;
 const DISCONNECT = { code: 4900, message: "disconnected" };

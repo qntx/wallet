@@ -2,7 +2,8 @@ import { defineConfig } from "vite-plus";
 
 const CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
-  "connect-src 'self' https://*.spark.lightspark.com https://api.lightspark.com; " +
+  "connect-src 'self' https://*.spark.lightspark.com https://api.lightspark.com " +
+  "https://relay.walletconnect.org wss://relay.walletconnect.org https://verify.walletconnect.org; " +
   "style-src 'self' 'unsafe-inline'";
 
 export default defineConfig({

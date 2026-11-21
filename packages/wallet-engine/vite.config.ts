@@ -10,9 +10,12 @@ const config: UserConfig = defineConfig({
         connect: "src/connect/index.ts",
         "gateway-contract": "src/gateway/contract/index.ts",
         apps: "src/apps/index.ts",
+        walletconnect: "src/walletconnect/index.ts",
       },
       tsconfig: "tsconfig.src.json",
-      deps: { onlyBundle: [] },
+      // Keep dependencies external in declarations too — the walletconnect entry's
+      // @walletconnect/@reown dts pull in pino's CJS declarations, which cannot be inlined.
+      deps: { onlyBundle: [], dts: { neverBundle: true } },
       dts: { generator: "tsgo" },
       sourcemap: true,
     },

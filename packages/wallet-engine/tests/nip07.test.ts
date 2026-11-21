@@ -57,7 +57,7 @@ const rig = (
   const connected = opts.connected !== false;
   const identity = "identity" in opts ? opts.identity : REF;
   const connections: Connections = {
-    checkOrigin: (origin) => ({ kind: "browser", origin }),
+    checkOrigin: (origin) => (typeof origin === "string" ? { kind: "browser", origin } : origin),
     authorize: () => session(opts.policy),
     session: () => (connected ? session(opts.policy) : undefined),
     nostrIdentity: () =>

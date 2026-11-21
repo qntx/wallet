@@ -13,10 +13,12 @@ import {
 import type { SparkClient, SparkEvent, SparkPayment, SparkTokenOutput } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
+import type { ConnectionOrigin } from "../src/connect/controller.ts";
 import { PAYMENT_PENDING_CODE } from "../src/connect/errors.ts";
 import { WeblnHandler } from "../src/connect/webln.ts";
 import { HistoryController } from "../src/history/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
+import type { WalletConnectOrigin } from "../src/requests/types.ts";
 import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
 import { SparkControllerError } from "../src/spark/errors.ts";
 import {
@@ -38,6 +40,9 @@ const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest"
 const KEY = "w1:0:regtest";
 const COLLECTION = `spark-payments:${KEY}`;
 const VERIFY = { kind: "password", password: new Uint8Array([1]) } as never;
+
+const browserOnly = (origin: string | WalletConnectOrigin): ConnectionOrigin =>
+  typeof origin === "string" ? { kind: "browser", origin } : origin;
 const TID = "01936f00-1111-7111-8111-111111111111";
 const NOW = 1_800_000_000_000;
 const RECEIVER = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
@@ -1081,7 +1086,7 @@ describe("WebLN payments past the preimage poll budget", () => {
     await requests.init();
     const webln = new WeblnHandler({
       connections: {
-        checkOrigin: (origin) => ({ kind: "browser", origin }),
+        checkOrigin: browserOnly,
         authorize: () => ({ id: "s1" }) as never,
         session: () => ({ id: "s1" }) as never,
         sessionAccounts: () => ({ group: { walletId: "w1", groupIndex: 0 }, addresses: [] }),

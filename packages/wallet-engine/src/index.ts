@@ -81,6 +81,7 @@ export type {
   BitcoinSignInput,
   BitcoinSignResult,
   BrowserOrigin,
+  DappOrigin,
   EvmSignInput,
   LightningInvoiceDisplay,
   NostrDisplay,
@@ -108,10 +109,13 @@ export type {
   TokenWatchDisplay,
   TokenWatchResult,
   WatchAssetInput,
+  WalletConnectOrigin,
+  WalletConnectVerify,
   WeblnInvoiceInput,
   WeblnInvoiceResult,
   ZapInput,
 } from "./requests/controller.ts";
+export { dappUrl, walletConnectKey } from "./requests/types.ts";
 export type { AssetChange, SimulationOutcome } from "./requests/simulation.ts";
 export type {
   AccountRef,
