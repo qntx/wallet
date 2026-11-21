@@ -169,6 +169,19 @@ describe("hyperliquid live", () => {
     await book.close();
   });
 
+  it("a user close reports stale too — the view never stays live on a dead socket", async () => {
+    const { live, socket, sockets, confirm } = rig();
+    const book = live.book("BTC");
+    const s = sockets[0]!;
+    s.open();
+    confirm(s, s.frames("subscribe")[0]);
+    s.push({ channel: "l2Book", data: { coin: "BTC", time: 1, levels: [[], []] } });
+    expect(book.getState().status).toBe("live");
+    socket.close();
+    expect(book.getState().status).toBe("stale");
+    await book.close();
+  });
+
   it("keeps data but reports stale on disconnect, live again after a fresh snapshot", async () => {
     const { live, sockets, confirm, runNext } = rig();
     const book = live.book("BTC");

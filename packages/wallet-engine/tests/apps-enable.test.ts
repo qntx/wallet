@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import {
@@ -11,6 +13,7 @@ import {
   kernelAgents,
   pumpUntil,
   requestId,
+  restartableStore,
   restoredStatus,
   swallow,
   tick,
@@ -19,6 +22,21 @@ import {
   world,
 } from "./apps-helpers.ts";
 import type { HlState } from "./apps-helpers.ts";
+
+const fixture = (name: string): { response: unknown } =>
+  JSON.parse(
+    readFileSync(new URL(`fixtures/hyperliquid/testnet/${name}.json`, import.meta.url), "utf8"),
+  ) as { response: unknown };
+
+/** `hl.info` override answering both meta calls from fixtures; anything else falls through. */
+const metaInfo = (body: Record<string, unknown>): unknown => {
+  const { type } = body;
+  return type === "metaAndAssetCtxs"
+    ? fixture("metaAndAssetCtxs").response
+    : type === "spotMetaAndAssetCtxs"
+      ? fixture("spotMetaAndAssetCtxs").response
+      : undefined;
+};
 
 describe("apps hyperliquid enablement on the node host", () => {
   it("enables through the approval request and leaves no orphan", async () => {
@@ -291,6 +309,73 @@ describe("apps hyperliquid enablement on the node host", () => {
     expect(display?.outflows?.[0]?.to?.toLowerCase()).toBe(
       "0x08cfc1b6b2dcf36a1480b99353a354aa8ac56f89",
     );
+    await w.destroy();
+  });
+  it("a mark before verify never leaks: trading stays not-enabled while the agent is unlisted", async () => {
+    /* Resume path: the kernel agent from an interrupted enable is verified-listed at unlock but
+       never enabled-marked. While the resumed flow waits in the verify window (agent unlisted on
+       Hyperliquid), trading must still throw not-enabled — the mark belongs after listing. */
+    const openStore = restartableStore();
+    const w1 = await world(40, { hl: { noAutoList: true }, openStore });
+    await w1.apps.acknowledgeTerms(w1.group, "hyperliquid");
+    const first = w1.apps.enable(w1.group, "hyperliquid");
+    void swallow(first);
+    await until(() => w1.state()?.requestId !== undefined);
+    await w1.wallet.vault.lock();
+    await w1.destroy();
+    const w2 = await world(40, { hl: { noAutoList: true }, openStore });
+    /* Meta needed for the order build below; the exchange stub's default answer never lists. */
+    w2.hl.info = metaInfo;
+    await until(() => w2.state()?.status === "enabling", 15000);
+    const second = w2.apps.enable(w2.group, "hyperliquid");
+    void swallow(second);
+    await until(() => w2.state()?.requestId !== undefined);
+    await w2.approve(requestId(w2));
+    /* Approve POST ok, agent never lists → the flow is parked inside the verify window. A mark
+       before listing would let this trade sign and post — it must throw not-enabled and post
+       nothing instead. */
+    await tick();
+    const placed = w2.provider.trade.place(w2.group, {
+      coin: "BTC",
+      side: "buy",
+      size: "0.01",
+      order: { kind: "limit", price: "57900", tif: "Gtc" },
+    });
+    void swallow(placed);
+    await tick();
+    expect(w2.posted.filter((p) => p.endpoint === "exchange").every(isApprovePost)).toBe(true);
+    await expect(placed).rejects.toMatchObject({ category: "not-enabled" });
+    await w2.destroy();
+  });
+
+  it("cancel outside an enablement flow is refused — disabled, enabled alike", async () => {
+    /* Disabled first: cancel with nothing running throws before touching kernel agents. */
+    const off = await world(41);
+    await expect(off.apps.cancel(off.group, "hyperliquid")).rejects.toMatchObject({
+      category: "invalid-input",
+    });
+    await off.destroy();
+    const w = await world(42);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await expect(w.apps.cancel(w.group, "hyperliquid")).rejects.toMatchObject({
+      category: "invalid-input",
+    });
+    expect(w.state()?.status).toBe("enabled");
+    await expect(kernelAgents(w)).resolves.toHaveLength(1);
+    await w.destroy();
+  }, 20000);
+
+  it("cancel on an enabled group is refused — the enabled agent is never at risk", async () => {
+    const w = await world(41);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await expect(w.apps.cancel(w.group, "hyperliquid")).rejects.toMatchObject({
+      category: "invalid-input",
+    });
+    /* Status and the enabled agent are untouched — the group still trades. */
+    expect(w.state()?.status).toBe("enabled");
+    await expect(kernelAgents(w)).resolves.toHaveLength(1);
     await w.destroy();
   });
 });

@@ -452,6 +452,43 @@ describe("builder approval flow", () => {
     expect(w2.state()?.builder).toBe("approved");
     await w2.destroy();
   });
+
+  it("a renew cancel restores the confirmed builder on the wire too", async () => {
+    /* Renew → cancel restores the old agent's enabled state; this session already confirmed the
+       fee, so `builder` survives the restore and keeps attaching to trades. */
+    const w = await world(36, { builder: BUILDER });
+    withMeta(w);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid");
+    void swallow(done);
+    await until(() => w.state()?.requestId !== undefined);
+    await w.approve(requestId(w));
+    await awaitStep(w, "approve-builder");
+    await w.approve(requestId(w));
+    await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
+    await done;
+    expect(w.state()?.builder).toBe("approved");
+    // Renew stalls on the new agent's ApproveAgent request; cancel restores the old agent.
+    const renewing = w.apps.renew(w.group, "hyperliquid");
+    void swallow(renewing);
+    await until(() => w.state()?.requestId !== undefined);
+    const cancelled = w.apps.cancel(w.group, "hyperliquid");
+    await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
+    await cancelled;
+    expect(w.state()?.builder).toBe("approved");
+    await w.provider.trade.place(w.group, {
+      coin: "BTC",
+      side: "buy",
+      size: "0.01",
+      order: { kind: "limit", price: "57900", tif: "Gtc" },
+    });
+    const orderPost = postedAction(w, "order");
+    expect((orderPost["action"] as Record<string, unknown>)["builder"]).toEqual({
+      b: BUILDER.address.toLowerCase(),
+      f: BUILDER.feeRateTenthsBps,
+    });
+    await w.destroy();
+  }, 20000);
 });
 
 describe("enable failure and lifecycle gaps", () => {
