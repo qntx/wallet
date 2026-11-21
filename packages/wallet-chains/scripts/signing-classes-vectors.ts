@@ -65,6 +65,14 @@ const typedData = (doc: unknown) => ({
   account,
   typedData: doc,
 });
+const solanaMessage = (hex: string) => ({
+  kind: "solana.message",
+  network: SOL_MAINNET,
+  account: SOL_ACCOUNT,
+  message: { $bytes: hex },
+  format: "raw",
+});
+
 const personal = (hex: string) => ({
   kind: "evm.personal-message",
   network: "eip155:1",
@@ -339,6 +347,13 @@ const bytes100 = "cd".repeat(100);
 const SAFE = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
 const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
 const GROUND_DIGEST = "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79";
+const TEXT32 = "Sign this harmless text, please!";
+const toHex = (bytes: Uint8Array) =>
+  `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+const TEXT32_HEX = toHex(utf8(TEXT32));
+const BOM32_HEX = toHex(
+  new Uint8Array([0xef, 0xbb, 0xbf, ...utf8("sign this digest for me now!!")]),
+);
 const hexText = `0x${"ab".repeat(32)}`;
 
 const seaportItemFields = [
@@ -775,8 +790,32 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
-      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x${GROUND_DIGEST}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x${GROUND_DIGEST}`,
+    ),
+  },
+  {
+    name: "personal_sign 32-byte text",
+    request: personal(TEXT32_HEX),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+    ),
+  },
+  {
+    name: "personal_sign BOM-prefixed 32-byte",
+    request: personal(BOM32_HEX),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${BOM32_HEX}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${BOM32_HEX}`,
     ),
   },
   {
@@ -1353,6 +1392,30 @@ const cases: VectorCase[] = [
       `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
     ),
   },
+  {
+    name: "solana message 32-byte text",
+    request: solanaMessage(TEXT32_HEX.slice(2)),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+    ),
+  },
+  {
+    name: "solana message 32 bytes",
+    request: solanaMessage("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    ),
+  },
 ];
 
 const TRON_TX_EXPECTED: Readonly<
@@ -1739,12 +1802,29 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm blind signing",
         description:
-          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      },
+    },
+  },
+  "tron message 32-byte text": {
+    verifiability: "opaque",
+    blind: "message-bytes",
+    messageHex: "5369676e2074686973206861726d6c65737320746578742c20706c6561736521",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description:
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!",
       },
     },
   },

@@ -41,7 +41,7 @@ const refuse = (what: string): never => {
   throw new ChainError("invalid-request", what);
 };
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** All TRX amounts carry the native asset id, 6 decimals and the network's symbol. */
 const sun = (amount: bigint, symbol: string): AssetAmount => ({

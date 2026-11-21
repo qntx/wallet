@@ -5,11 +5,12 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, SignRequest } from "@qntx/wallet-chains";
+import { messageContent } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import { decodeSolana } from "@qntx/wallet-chains/solana";
 import { decodeTron } from "@qntx/wallet-chains/tron";
 
-import { chainPrompt } from "../src/modules/chains/prompt.ts";
+import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
 import type { KeystorePrompt } from "../src/platform.ts";
 
 type VectorCase = {
@@ -33,7 +34,8 @@ const request = (v: VectorCase): SignRequest => {
   if (
     v.request.kind === "evm.personal-message" ||
     v.request.kind === "tron.message" ||
-    v.request.kind === "solana.transaction"
+    v.request.kind === "solana.transaction" ||
+    v.request.kind === "solana.message"
   ) {
     return {
       ...v.request,
@@ -51,6 +53,10 @@ const request = (v: VectorCase): SignRequest => {
 
 const intentOf = (v: VectorCase): DisplayIntent => {
   const req = request(v);
+  if (v.request.kind === "solana.message") {
+    const message = req as Extract<SignRequest, { kind: "solana.message" }>;
+    return messagePromptIntent(messageContent(message.message, "solana")) as DisplayIntent;
+  }
   return v.request.kind.startsWith("tron.")
     ? decodeTron(req, vectors.signers.tron)
     : v.request.kind.startsWith("solana.")

@@ -2485,17 +2485,70 @@ describe("blind text prompts", () => {
     });
   });
 
-  it("a 32-byte text shows under the digest-length hazard, in both locales", () => {
+  it("a 32-byte text shows its bytes and text under the digest-length hazard, in both locales", () => {
     const text = "Sign in to app.example.org #4821";
+    const hex = `0x${[...new TextEncoder().encode(text)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
     const intent = personal(text);
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n${text}`,
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}\nMessage:\n${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n${text}`,
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}\n消息：\n${text}`,
+    });
+  });
+
+  it("a non-printable 32-byte text shows only its bytes under the digest-length hazard", () => {
+    const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
+    const intent = decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: bytes,
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBe("message-bytes");
+    const hex = `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}`,
+    });
+  });
+
+  it("a BOM-prefixed 32-byte message stays blind instead of decoding to 29 bytes", () => {
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode("sign this digest for me now!!"),
+    ]);
+    expect(bytes).toHaveLength(32);
+    const intent = decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: bytes,
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBe("message-bytes");
+    const hex = `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}`,
     });
   });
 

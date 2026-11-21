@@ -1,4 +1,4 @@
-import { hexToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 /**
  * The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
@@ -9,7 +9,12 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
  * excerpt.
  */
-import { displayExcerpt, messageBlindReason, messageTextHazard } from "@qntx/wallet-chains";
+import {
+  displayExcerpt,
+  hasHiddenCharacters,
+  messageBlindReason,
+  messageTextHazard,
+} from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
@@ -1073,6 +1078,12 @@ function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
   return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
 }
 
+const CONTROL_CHAR = /\p{Cc}/u;
+
+/** Every code point prints plainly: no control characters, nothing hidden or reordering. */
+const isPlainText = (text: string): boolean =>
+  !CONTROL_CHAR.test(text) && !hasHiddenCharacters(text);
+
 /** The zero address in an order's `zone`: no zone contract gates fulfilment. */
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -1426,6 +1437,11 @@ function messagePrompt(
     };
   }
   const hazard = intent.blind === undefined ? undefined : messageTextHazard(message.text);
+  /* A digest-length text shows the signed bytes it could be a hash of, then the text only when
+     every code point prints plainly — a digest hiding control or invisible characters does not
+     get to pose as a message. */
+  const digest =
+    hazard === "digest-length" ? `0x${bytesToHex(utf8ToBytes(message.text))}` : undefined;
   return {
     title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
@@ -1438,7 +1454,10 @@ function messagePrompt(
         : hazard === undefined
           ? []
           : [catalog.textHazard[hazard]]),
-      ...textLines(catalog, message.text),
+      ...(digest === undefined ? [] : [catalog.bytesData(digest)]),
+      ...(digest !== undefined && !isPlainText(message.text)
+        ? []
+        : textLines(catalog, message.text)),
     ]),
   };
 }

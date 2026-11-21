@@ -587,7 +587,7 @@ export type MessageContent =
       readonly fields?: ReadonlyArray<TypedDataLeaf>;
     };
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const utf8Encode = new TextEncoder();
 
 const bytesContent = (bytes: Uint8Array): MessageContent => ({
