@@ -119,6 +119,16 @@ const postedAction = (w: World, type: string): Record<string, unknown> => {
   return post?.body ?? {};
 };
 
+const lastPostedAction = (w: World, type: string): Record<string, unknown> => {
+  const posts = w.posted.filter(
+    (p) =>
+      p.endpoint === "exchange" && (p.body["action"] as Record<string, unknown>)["type"] === type,
+  );
+  const post = posts.at(-1);
+  expect(post).toBeDefined();
+  return post?.body ?? {};
+};
+
 const hlKind = (w: World, id: string): unknown =>
   (
     w.requests.getState().requests[id] as {
@@ -156,6 +166,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const actionOf = (body: Record<string, unknown>): Record<string, unknown> => {
   const { action } = body;
   return isRecord(action) ? action : {};
+};
+
+const withMeta = (w: World): void => {
+  w.hl.exchange = (body) => {
+    const action = body["action"] as Record<string, unknown>;
+    return action["type"] === "order"
+      ? {
+          status: "ok",
+          response: { type: "order", data: { statuses: [{ resting: { oid: 987654321 } }] } },
+        }
+      : undefined;
+  };
+  w.hl.info = (body) =>
+    body["type"] === "metaAndAssetCtxs"
+      ? fixture("metaAndAssetCtxs").response
+      : body["type"] === "spotMetaAndAssetCtxs"
+        ? fixture("spotMetaAndAssetCtxs").response
+        : body["type"] === "allMids"
+          ? { BTC: "57957.5" }
+          : undefined;
 };
 
 /** The typed-data fields the action must carry, in the SDK's declared order. */
@@ -317,60 +347,38 @@ const builderFailure = async (group: number, mode: "err" | "timeout"): Promise<v
 };
 
 describe("builder approval flow", () => {
-  const withMeta = (w: World): void => {
-    w.hl.exchange = (body) => {
-      const action = body["action"] as Record<string, unknown>;
-      return action["type"] === "order"
-        ? {
-            status: "ok",
-            response: { type: "order", data: { statuses: [{ resting: { oid: 987654321 } }] } },
-          }
-        : undefined;
-    };
-    w.hl.info = (body) =>
-      body["type"] === "metaAndAssetCtxs"
-        ? fixture("metaAndAssetCtxs").response
-        : body["type"] === "spotMetaAndAssetCtxs"
-          ? fixture("spotMetaAndAssetCtxs").response
-          : body["type"] === "allMids"
-            ? { BTC: "57957.5" }
-            : undefined;
-  };
-
-  it("confirmed builder lands on trade actions; rejection stays resumable", async () => {
+  it("confirmed builder lands on trade actions; a refusal enables without it", async () => {
     const w = await world(32, { builder: BUILDER });
     withMeta(w);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     const done = w.apps.enable(w.group, "hyperliquid");
-    void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
-    // Reject the builder request: the agent is HL-approved and kept; the flow errors resumably.
+    // Reject the builder request: the agent is HL-approved and kept; the flow enables declined.
     await awaitStep(w, "approve-builder");
     w.requests.reject(requestId(w));
-    await until(() => w.state()?.error !== undefined);
-    await expect(done).rejects.toBeInstanceOf(Error);
-    expect(w.state()?.status).toBe("enabling");
-    expect(w.state()?.step).toBe("approve-builder");
-    // The HL-approved agent is still in the kernel — not deleted on a builder failure.
+    await until(() => w.state()?.status === "enabled");
+    await done;
+    expect(w.state()?.builder).toBe("declined");
+    // The HL-approved agent is still in the kernel — not deleted on a builder refusal.
     await expect(kernelAgents(w)).resolves.toHaveLength(1);
-    // Trading is still refused — the builder step never confirmed.
-    await expect(
-      w.provider.trade.place(w.group, {
-        coin: "BTC",
-        side: "buy",
-        size: "0.01",
-        order: { kind: "limit", price: "57900", tif: "Gtc" },
-      }),
-    ).rejects.toMatchObject({ category: "not-enabled" });
-    // Resume: enable again re-requests only the builder step (no new agent).
-    const resumed = w.apps.enable(w.group, "hyperliquid");
+    // Trading works — the order just carries no builder.
+    await w.provider.trade.place(w.group, {
+      coin: "BTC",
+      side: "buy",
+      size: "0.01",
+      order: { kind: "limit", price: "57900", tif: "Gtc" },
+    });
+    expect(
+      (postedAction(w, "order")["action"] as Record<string, unknown>)["builder"],
+    ).toBeUndefined();
+    // A later approval attaches the builder without a new agent.
+    const approving = w.apps.approveBuilder(w.group, "hyperliquid");
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
-    await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
-    await resumed;
+    await pumpUntil(w.timers, () => w.state()?.builder === "approved", 80);
+    await approving;
     await expect(kernelAgents(w)).resolves.toHaveLength(1);
-    expect(w.state()?.builder).toBe("approved");
     // The next trade carries the confirmed builder field.
     await w.provider.trade.place(w.group, {
       coin: "BTC",
@@ -378,7 +386,7 @@ describe("builder approval flow", () => {
       size: "0.01",
       order: { kind: "limit", price: "57900", tif: "Gtc" },
     });
-    const orderPost = postedAction(w, "order");
+    const orderPost = lastPostedAction(w, "order");
     expect((orderPost["action"] as Record<string, unknown>)["builder"]).toStrictEqual({
       b: BUILDER.address.toLowerCase(),
       f: BUILDER.feeRateTenthsBps,
@@ -702,5 +710,116 @@ describe("enable failure and lifecycle gaps", () => {
     agents = await api.listAgents();
     expect(hasAgent(agents, stale, 45)).toBe(false);
     await w.destroy();
+  }, 20000);
+});
+
+describe("declined builder", () => {
+  const declineBuilder = async (w: World): Promise<Promise<void>> => {
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid");
+    await until(() => w.state()?.requestId !== undefined);
+    await w.approve(requestId(w));
+    await awaitStep(w, "approve-builder");
+    w.requests.reject(requestId(w));
+    return done;
+  };
+
+  it("declining the builder during enable finishes enabled without it", async () => {
+    const w = await world(40, { builder: BUILDER });
+    withMeta(w);
+    const done = declineBuilder(w);
+    await until(() => w.state()?.status === "enabled");
+    await done;
+    expect(w.state()?.builder).toBe("declined");
+    // The agent is enabled — orders go out, just with no builder attached.
+    await w.provider.trade.place(w.group, {
+      coin: "BTC",
+      side: "buy",
+      size: "0.01",
+      order: { kind: "limit", price: "57900", tif: "Gtc" },
+    });
+    const orderPost = postedAction(w, "order");
+    expect((orderPost["action"] as Record<string, unknown>)["builder"]).toBeUndefined();
+    await w.destroy();
+  }, 20000);
+
+  it("restart reconciles to enabled+declined without opening a request", async () => {
+    const openStore = restartableStore();
+    const w1 = await world(41, { builder: BUILDER, openStore });
+    const done = declineBuilder(w1);
+    await until(() => w1.state()?.status === "enabled");
+    await done;
+    const agent = agentAddress(w1);
+    await w1.destroy();
+
+    const w2 = await world(41, { builder: BUILDER, openStore });
+    // Init's first reconcile ran before the agent was listed — let it settle to its resumable
+    // step, then list the agent and reconcile again as a restart would.
+    await until(() => w2.state()?.status === "enabling", 15000);
+    w2.hl.listed.set(agent, {
+      address: agent,
+      name: "qntx-test",
+      validUntil: w2.timers.time + 179 * DAY,
+    });
+    // The fee is still not confirmed — a declined flag skips the approve-builder step.
+    const requestsBefore = Object.keys(w2.requests.getState().requests).length;
+    await w2.apps.reconcile(w2.group);
+    await until(() => w2.state()?.status === "enabled", 15000);
+    expect(w2.state()?.builder).toBe("declined");
+    expect(Object.keys(w2.requests.getState().requests).length).toBe(requestsBefore);
+    await w2.destroy();
+  }, 20000);
+
+  it("approveBuilder approves later; declining it again stays declined", async () => {
+    const w = await world(42, { builder: BUILDER });
+    withMeta(w);
+    const done = declineBuilder(w);
+    await until(() => w.state()?.status === "enabled");
+    await done;
+    expect(w.state()?.builder).toBe("declined");
+
+    const approving = w.apps.approveBuilder(w.group, "hyperliquid");
+    await until(() => w.state()?.requestId !== undefined);
+    expect(hlKind(w, requestId(w))).toBe("approve-builder-fee");
+    await w.approve(requestId(w));
+    await pumpUntil(w.timers, () => w.state()?.builder === "approved", 80);
+    await approving;
+    await w.provider.trade.place(w.group, {
+      coin: "BTC",
+      side: "buy",
+      size: "0.01",
+      order: { kind: "limit", price: "57900", tif: "Gtc" },
+    });
+    const orderPost = postedAction(w, "order");
+    expect((orderPost["action"] as Record<string, unknown>)["builder"]).toStrictEqual({
+      b: BUILDER.address.toLowerCase(),
+      f: BUILDER.feeRateTenthsBps,
+    });
+
+    // Hyperliquid reverted the confirmed fee — the request asks again.
+    w.hl.maxBuilderFee = 0;
+    const declining = w.apps.approveBuilder(w.group, "hyperliquid");
+    await until(() => w.state()?.requestId !== undefined);
+    w.requests.reject(requestId(w));
+    await declining;
+    expect(w.state()?.builder).toBe("declined");
+    await w.destroy();
+  }, 20000);
+
+  it("approveBuilder requires an enabled group with a configured builder", async () => {
+    const w = await world(43, { builder: BUILDER });
+    await expect(w.apps.approveBuilder(w.group, "hyperliquid")).rejects.toMatchObject({
+      category: "invalid-input",
+    });
+    await w.destroy();
+
+    const plain = await world(44);
+    await plain.apps.acknowledgeTerms(plain.group, "hyperliquid");
+    const enabled = plain.apps.enable(plain.group, "hyperliquid");
+    await finishFlow(plain, enabled, "enabled");
+    await expect(plain.apps.approveBuilder(plain.group, "hyperliquid")).rejects.toMatchObject({
+      category: "invalid-input",
+    });
+    await plain.destroy();
   }, 20000);
 });

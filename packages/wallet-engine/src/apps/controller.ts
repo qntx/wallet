@@ -41,6 +41,8 @@ type StoredGroup = {
   readonly termsAcknowledged: boolean;
   /** The last agent that reached `enabled` — `enabledAgent` chooses the reconciled status. */
   readonly enabledAgent?: string;
+  /** The user declined the builder approval — persisted while `builder` is `declined`. */
+  readonly builderDeclined?: true;
 };
 
 export type AppsBuilderConfig = {
@@ -87,7 +89,11 @@ const parseRecord = (raw: Uint8Array): StoredGroup | undefined => {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
-  if (Object.keys(value).some((k) => k !== "termsAcknowledged" && k !== "enabledAgent")) {
+  if (
+    Object.keys(value).some(
+      (k) => k !== "termsAcknowledged" && k !== "enabledAgent" && k !== "builderDeclined",
+    )
+  ) {
     return undefined;
   }
   if (!("termsAcknowledged" in value) || value.termsAcknowledged !== true) {
@@ -99,10 +105,16 @@ const parseRecord = (raw: Uint8Array): StoredGroup | undefined => {
   ) {
     return undefined;
   }
+  if ("builderDeclined" in value && value.builderDeclined !== true) {
+    return undefined;
+  }
   return {
     termsAcknowledged: true,
     ...("enabledAgent" in value && typeof value.enabledAgent === "string"
       ? { enabledAgent: value.enabledAgent }
+      : {}),
+    ...("builderDeclined" in value && value.builderDeclined === true
+      ? { builderDeclined: true as const }
       : {}),
   };
 };
@@ -144,6 +156,8 @@ export class AppsController extends Controller<AppsState> {
   private readonly pendingRequests = new Set<string>();
   /** The last agent each record saw reach `enabled` — reconcile's status hint. */
   private readonly enabledAgents = new Map<string, string>();
+  /** Records whose builder approval the user declined — reconcile's declined-state hint. */
+  private readonly declinedBuilders = new Set<string>();
 
   constructor(deps: AppsControllerDeps) {
     super({
@@ -174,6 +188,9 @@ export class AppsController extends Controller<AppsState> {
         };
         if (stored.enabledAgent !== undefined) {
           this.enabledAgents.set(key, stored.enabledAgent);
+        }
+        if (stored.builderDeclined === true) {
+          this.declinedBuilders.add(key);
         }
       }
     }
@@ -348,6 +365,7 @@ export class AppsController extends Controller<AppsState> {
       current,
       stale,
       wasEnabledAgent: () => this.enabledAgents.get(key),
+      wasBuilderDeclined: () => this.declinedBuilders.has(key),
       write: (patch) => {
         if (stale()) {
           return;
@@ -385,10 +403,17 @@ export class AppsController extends Controller<AppsState> {
           ...state,
           groups: { ...state.groups, [gkey]: { ...state.groups[gkey], [app]: next } },
         }));
+        /* The decline survives `enabling` rewrites until an approval replaces it. */
+        if (next.builder === "declined") {
+          this.declinedBuilders.add(key);
+        } else if (next.builder === "approved") {
+          this.declinedBuilders.delete(key);
+        }
         const enabledAgent = this.enabledAgents.get(key);
         persist({
           termsAcknowledged: next.termsAcknowledged,
           ...(enabledAgent === undefined ? {} : { enabledAgent }),
+          ...(this.declinedBuilders.has(key) ? { builderDeclined: true as const } : {}),
         });
       },
     };
@@ -440,6 +465,16 @@ export class AppsController extends Controller<AppsState> {
   async renew(group: HyperliquidGroup, app: AppId): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.renew(group, view));
+  }
+
+  /** Ask an enabled group for the builder fee approval — the provider refuses when none exists. */
+  async approveBuilder(group: HyperliquidGroup, app: AppId): Promise<void> {
+    await this.flow(group, app, async (provider, view) => {
+      if (view.current().status !== "enabled") {
+        throw new HyperliquidError("invalid-input", "the group is not enabled");
+      }
+      await provider.approveBuilder(group, view);
+    });
   }
 
   async disable(group: HyperliquidGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
