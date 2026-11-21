@@ -298,6 +298,14 @@ export type AppSocket = {
     onerror: (() => void) | null;
 };
 
+// @public
+type AppSocketStatus = "connecting" | "open" | "closed";
+
+// @public (undocumented)
+export type AppsPolymarketConfig = {
+    readonly builder?: PolymarketBuilder;
+};
+
 // @public (undocumented)
 export type AppsState = {
     readonly locked: boolean;
@@ -585,9 +593,18 @@ type ControllerOptions<S> = {
 };
 
 // @public
+export function createApps<O extends CreateAppsOptions>(options: O): {
+    readonly controller: AppsController;
+    readonly hyperliquid: O["hyperliquid"] extends AppsHyperliquidConfig ? HyperliquidProvider : undefined;
+    readonly polymarket: O["polymarket"] extends AppsPolymarketConfig ? PolymarketProvider : undefined;
+    readonly destroy: () => Promise<void>;
+};
+
+// @public (undocumented)
 export function createApps(options: CreateAppsOptions): {
     readonly controller: AppsController;
     readonly hyperliquid: HyperliquidProvider;
+    readonly polymarket: PolymarketProvider;
     readonly destroy: () => Promise<void>;
 };
 
@@ -605,7 +622,8 @@ export type CreateAppsOptions = {
     readonly gateway: {
         readonly url: string;
     };
-    readonly hyperliquid: AppsHyperliquidConfig;
+    readonly hyperliquid?: AppsHyperliquidConfig;
+    readonly polymarket?: AppsPolymarketConfig;
 };
 
 // @public
@@ -1006,8 +1024,8 @@ export type HyperliquidSocket = ISubscriptionTransport & {
     readonly close: () => void;
 };
 
-// @public
-export type HyperliquidSocketStatus = "connecting" | "open" | "closed";
+// @public (undocumented)
+export type HyperliquidSocketStatus = AppSocketStatus;
 
 // @public (undocumented)
 export type HyperliquidTrade = {
@@ -1337,6 +1355,207 @@ type PhishingState = {
 
 // @public
 type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
+
+// @public (undocumented)
+export type PolymarketBook = {
+    readonly assetId: string;
+    readonly conditionId: string;
+    readonly version: "v1" | "v2";
+    readonly bids: ReadonlyArray<{
+        readonly price: string;
+        readonly size: string;
+    }>;
+    readonly asks: ReadonlyArray<{
+        readonly price: string;
+        readonly size: string;
+    }>;
+    readonly tickSize: string;
+    readonly minOrderSize: string;
+    readonly negRisk: boolean;
+    readonly timestamp: string;
+    readonly hash: string;
+};
+
+// @public
+export type PolymarketBuilder = {
+    readonly code?: `0x${string}`;
+    readonly sign: (request: {
+        readonly method: string;
+        readonly path: string;
+        readonly body: string;
+    }) => Promise<PolymarketBuilderHeaders>;
+};
+
+// @public
+export type PolymarketBuilderHeaders = {
+    readonly POLY_BUILDER_API_KEY: string;
+    readonly POLY_BUILDER_PASSPHRASE: string;
+    readonly POLY_BUILDER_SIGNATURE: string;
+    readonly POLY_BUILDER_TIMESTAMP: string;
+};
+
+// @public (undocumented)
+export type PolymarketClobMarket = {
+    readonly conditionId?: string;
+    readonly tokens: ReadonlyArray<{
+        readonly assetId: string;
+        readonly outcome?: string;
+    }>;
+    readonly minOrderSize?: string;
+    readonly tickSize?: string;
+    readonly acceptingOrders?: boolean;
+    readonly buyOnly?: boolean;
+    readonly version: "v1" | "v2";
+    readonly blockaidEnabled?: boolean;
+    readonly rewards?: {
+        readonly enabled?: boolean;
+        readonly minIncentiveSize?: string;
+        readonly maxIncentiveRate?: string;
+        readonly minOrderAgeSec?: number;
+    };
+};
+
+// @public (undocumented)
+export class PolymarketError extends Error {
+    constructor(category: PolymarketErrorCategory, message: string, cause?: unknown);
+    // (undocumented)
+    readonly category: PolymarketErrorCategory;
+}
+
+// @public
+export type PolymarketErrorCategory =
+/** The request may have reached the server; an L2 post's outcome is unknown. */
+"network" | "timeout" |
+/** The server answered with a non-2xx status. */
+"unavailable" |
+/** The answer did not satisfy its schema — nothing was accepted into state. */
+"malformed" |
+/** The device clock disagrees with the CLOB `/time` beyond the signing window. */
+"clock-skew" |
+/** A caller input fails validation before any request. */
+"invalid-input" |
+/** The CLOB rejected the request itself (a failed L2 action). */
+"rejected" |
+/** The vault is locked — the kernel refused to sign; nothing was posted. */
+"unlock-required" |
+/** The group has no enabled Polymarket credentials — enable first. */
+"not-enabled" |
+/** The step needs the relayer, which requires the host's builder signer. */
+"builder-required" |
+/** The user refused, or the approval request expired or was invalidated. */
+"approval-rejected" |
+/** An enablement flow is already running for the group — wait or cancel it. */
+"busy" |
+/** The account or jurisdiction may only close positions, not open them. */
+"close-only" |
+/** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
+"needs-migration";
+
+// @public (undocumented)
+export type PolymarketEvent = {
+    readonly id: string;
+    readonly slug: string;
+    readonly title: string;
+    readonly active: boolean;
+    readonly closed: boolean;
+    readonly negRisk?: boolean;
+    readonly endDate?: string;
+    readonly markets: ReadonlyArray<PolymarketMarket>;
+};
+
+// @public (undocumented)
+export type PolymarketEventsParams = {
+    readonly limit?: number;
+    readonly offset?: number;
+    readonly closed?: boolean;
+    readonly order?: string;
+    readonly ascending?: boolean;
+    readonly tag_id?: number;
+};
+
+// @public (undocumented)
+export type PolymarketHistoryParams = {
+    readonly startTs?: number;
+    readonly endTs?: number;
+    readonly interval?: "max" | "all" | "1m" | "1w" | "1d" | "6h" | "1h";
+    readonly fidelity?: number;
+};
+
+// @public (undocumented)
+export type PolymarketMarket = {
+    readonly id: string;
+    readonly conditionId: string;
+    readonly questionId?: string;
+    readonly question: string;
+    readonly slug: string;
+    readonly outcomes: ReadonlyArray<string>;
+    readonly assetIds: ReadonlyArray<string>;
+    readonly version: "v1" | "v2";
+    readonly negRisk: boolean;
+    readonly tickSize: string;
+    readonly minOrderSize: string;
+    readonly acceptingOrders: boolean;
+    readonly active: boolean;
+    readonly closed: boolean;
+    readonly endDate?: string;
+    readonly outcomePrices?: ReadonlyArray<string>;
+    readonly volume?: string;
+    readonly liquidity?: string;
+    readonly fees?: {
+        readonly makerBaseFee?: number;
+        readonly takerBaseFee?: number;
+    };
+};
+
+// @public (undocumented)
+export type PolymarketMarkets = {
+    readonly events: (params?: PolymarketEventsParams) => Promise<ReadonlyArray<PolymarketEvent>>;
+    readonly event: (slug: string) => Promise<PolymarketEvent>;
+    readonly markets: (params?: PolymarketEventsParams) => Promise<ReadonlyArray<PolymarketMarket>>;
+    readonly market: (slug: string) => Promise<PolymarketMarket>;
+    readonly search: (query: string) => Promise<ReadonlyArray<PolymarketEvent>>;
+    readonly book: (assetId: string) => Promise<PolymarketBook>;
+    readonly price: (assetId: string, side: "BUY" | "SELL") => Promise<string>;
+    readonly midpoint: (assetId: string) => Promise<string>;
+    readonly history: (assetId: string, params?: PolymarketHistoryParams) => Promise<ReadonlyArray<PolymarketPricePoint>>;
+    readonly clobMarket: (conditionId: string) => Promise<PolymarketClobMarket>;
+    readonly feeRate: (assetId: string) => Promise<number>;
+    readonly resolution: (conditionId: string) => Promise<ReadonlyArray<PolymarketResolution>>;
+    readonly time: () => Promise<PolymarketServerTime>;
+};
+
+// @public (undocumented)
+export type PolymarketPricePoint = {
+    readonly t: number;
+    readonly p: string;
+};
+
+// @public (undocumented)
+export type PolymarketProvider = {
+    readonly markets: PolymarketMarkets;
+    readonly builder?: PolymarketBuilder;
+};
+
+// @public (undocumented)
+export type PolymarketResolution = {
+    readonly conditionId?: string;
+    readonly questionId?: string;
+    readonly status: string;
+    readonly resolved: boolean;
+    readonly marketType?: string;
+    readonly reporter?: string;
+    readonly wasDisputed: boolean;
+    readonly extendedReview: boolean;
+    readonly resolvedAt?: string;
+    readonly payouts?: ReadonlyArray<number>;
+    readonly price?: string;
+};
+
+// @public (undocumented)
+type PolymarketServerTime = {
+    readonly serverSeconds: number;
+    readonly skewMs: number;
+};
 
 export { PortfolioResponse }
 

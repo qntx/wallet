@@ -49,13 +49,14 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* 131 kB with the TRON family, the extra EVM fee models and the nonce/tracking fixes. */
     budget: 136 * 1024,
     external: true,
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
-    budget: 26 * 1024,
+    /* Polymarket market reads join the Hyperliquid stack: measured 30772 B at the layer-2
+       landing (was 25640 B). */
+    budget: 32 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
     forbidden: [],
   },

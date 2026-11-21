@@ -12,7 +12,12 @@
  */
 export { createApps } from "./controller.ts";
 export type { AppsController } from "./controller.ts";
-export type { AppsBuilderConfig, AppsHyperliquidConfig, CreateAppsOptions } from "./controller.ts";
+export type {
+  AppsBuilderConfig,
+  AppsHyperliquidConfig,
+  AppsPolymarketConfig,
+  CreateAppsOptions,
+} from "./controller.ts";
 export type { AppGroup, AppGroupState, AppId, AppsState } from "./types.ts";
 export { HyperliquidError } from "./hyperliquid/errors.ts";
 export type { HyperliquidErrorCategory } from "./hyperliquid/errors.ts";
@@ -74,3 +79,21 @@ export type {
   UserRateLimitResponse,
   UserRoleResponse,
 } from "./hyperliquid/account.ts";
+export { PolymarketError } from "./polymarket/errors.ts";
+export type { PolymarketErrorCategory } from "./polymarket/errors.ts";
+export type {
+  PolymarketBuilder,
+  PolymarketBuilderHeaders,
+  PolymarketProvider,
+} from "./polymarket/provider.ts";
+export type {
+  PolymarketBook,
+  PolymarketClobMarket,
+  PolymarketEvent,
+  PolymarketEventsParams,
+  PolymarketHistoryParams,
+  PolymarketMarket,
+  PolymarketMarkets,
+  PolymarketPricePoint,
+  PolymarketResolution,
+} from "./polymarket/markets.ts";

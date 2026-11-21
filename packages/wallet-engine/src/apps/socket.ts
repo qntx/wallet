@@ -40,8 +40,8 @@ export type AppSocketHeartbeat = {
   /** The frame text sent every interval — `{"method":"ping"}` or a plain `PING`. */
   readonly ping: string;
   /**
-   * Checked against the raw frame text before `onMessage`: a pong clears the pending pong wait
-   * and is never delivered to the protocol layer.
+   * Checked against the raw frame text before `onMessage`: a pong clears the pending pong wait and
+   * is never delivered to the protocol layer.
    */
   readonly isPong: (raw: string) => boolean;
 };
@@ -60,8 +60,8 @@ export type AppSocketCoreOptions = {
   readonly onMessage?: (raw: string) => void;
   /**
    * Runs inside `close()` once the user-close flag and reconnect cancellation are in place but
-   * before the socket drops — the protocol fails its pendings here so a reentrant call still
-   * sees `closedByUser() === true` and the live socket.
+   * before the socket drops — the protocol fails its pendings here so a reentrant call still sees
+   * `closedByUser() === true` and the live socket.
    */
   readonly onUserClose?: () => void;
 };

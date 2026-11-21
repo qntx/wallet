@@ -25,6 +25,8 @@ import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
 import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
 import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
 import type { AppSocket } from "./hyperliquid/socket.ts";
+import { createPolymarketProvider } from "./polymarket/provider.ts";
+import type { PolymarketBuilder, PolymarketProvider } from "./polymarket/provider.ts";
 import { isAppId } from "./types.ts";
 import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
 
@@ -57,6 +59,15 @@ export type AppsHyperliquidConfig = {
   readonly builder?: AppsBuilderConfig;
 };
 
+export type AppsPolymarketConfig = {
+  /**
+   * The host's Remote Builder Signing oracle — its server holds the builder secret and HMACs
+   * relayer submissions (design.md 不变量 9). `code` is the bytes32 builder code written into orders;
+   * absent means the zero code.
+   */
+  readonly builder?: PolymarketBuilder;
+};
+
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
@@ -73,7 +84,8 @@ export type CreateAppsOptions = {
   readonly socket: (url: string) => AppSocket;
   /** The gateway base URL — eligibility is fetched through the engine's gateway client. */
   readonly gateway: { readonly url: string };
-  readonly hyperliquid: AppsHyperliquidConfig;
+  readonly hyperliquid?: AppsHyperliquidConfig;
+  readonly polymarket?: AppsPolymarketConfig;
 };
 
 const recordKey = (group: AppGroup, app: AppId): string =>
@@ -471,78 +483,127 @@ export class AppsController extends Controller<AppsState> {
 }
 
 /**
- * The apps composition: validates `hyperliquid` config, builds the provider, and drives the
+ * The apps composition: validates each configured app, builds its provider, and drives the
  * controller's lifecycle off the wallet's lock state — the same `transition`/`schedule` chain
- * engine.ts serializes on `wallet.subscribe`.
+ * engine.ts serializes on `wallet.subscribe`. Only configured apps appear in the return value; the
+ * controller's providers map gets no Polymarket entry until its enable flow lands.
  */
+export function createApps<O extends CreateAppsOptions>(
+  options: O,
+): {
+  readonly controller: AppsController;
+  readonly hyperliquid: O["hyperliquid"] extends AppsHyperliquidConfig
+    ? HyperliquidProvider
+    : undefined;
+  readonly polymarket: O["polymarket"] extends AppsPolymarketConfig
+    ? PolymarketProvider
+    : undefined;
+  readonly destroy: () => Promise<void>;
+};
+/* Callers always match the conditional overload above; this fallback exists so
+   `ReturnType<typeof createApps>` reflects the fully-configured shape. */
 export function createApps(options: CreateAppsOptions): {
   readonly controller: AppsController;
   readonly hyperliquid: HyperliquidProvider;
+  readonly polymarket: PolymarketProvider;
+  readonly destroy: () => Promise<void>;
+};
+export function createApps(options: CreateAppsOptions): {
+  readonly controller: AppsController;
+  readonly hyperliquid: HyperliquidProvider | undefined;
+  readonly polymarket: PolymarketProvider | undefined;
   readonly destroy: () => Promise<void>;
 } {
-  const { network, agentName, builder } = options.hyperliquid;
-  if (!/^[A-Za-z0-9._-]{1,16}$/.test(agentName)) {
-    throw new Error("hyperliquid agentName must match ^[A-Za-z0-9._-]{1,16}$");
-  }
-  if (builder !== undefined) {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(builder.address)) {
-      throw new Error("hyperliquid builder.address must be a 20-byte hex address");
+  const providers = new Map<AppId, AppProvider>();
+  let socket: ReturnType<typeof createHyperliquidSocket> | undefined;
+  let provider: ReturnType<typeof createHyperliquidProvider> | undefined;
+  /* Wires the controller back into the Hyperliquid builder gate after construction. */
+  let deferredController: ((controller: AppsController) => void) | undefined;
+
+  if (options.hyperliquid !== undefined) {
+    const { network, agentName, builder } = options.hyperliquid;
+    if (!/^[A-Za-z0-9._-]{1,16}$/.test(agentName)) {
+      throw new Error("hyperliquid agentName must match ^[A-Za-z0-9._-]{1,16}$");
     }
-    if (
-      !Number.isInteger(builder.feeRateTenthsBps) ||
-      builder.feeRateTenthsBps < 1 ||
-      builder.feeRateTenthsBps > 100
-    ) {
-      throw new Error("hyperliquid builder.feeRateTenthsBps must be an integer in 1..100");
+    if (builder !== undefined) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(builder.address)) {
+        throw new Error("hyperliquid builder.address must be a 20-byte hex address");
+      }
+      if (
+        !Number.isInteger(builder.feeRateTenthsBps) ||
+        builder.feeRateTenthsBps < 1 ||
+        builder.feeRateTenthsBps > 100
+      ) {
+        throw new Error("hyperliquid builder.feeRateTenthsBps must be an integer in 1..100");
+      }
     }
+
+    const controllerRef: { current: AppsController | undefined } = { current: undefined };
+    socket = createHyperliquidSocket({
+      network,
+      socket: options.socket,
+      setTimer: options.setTimer,
+      random: options.random,
+    });
+    provider = createHyperliquidProvider({
+      wallet: options.wallet,
+      network,
+      fetch: options.fetch,
+      setTimer: options.setTimer,
+      now: options.now,
+      random: options.random,
+      logger: options.logger,
+      requests: options.requests,
+      socket,
+      builderFor: (group) => {
+        /* Trades carry the builder only while the controller confirmed the fee this session —
+           a lock or a stale approval makes it return undefined and the field is omitted. */
+        if (builder === undefined) {
+          return undefined;
+        }
+        const state = controllerRef.current?.getState().groups[groupKey(group)]?.hyperliquid;
+        return state?.builder === "approved" ? builder : undefined;
+      },
+    });
+    const enable = createHyperliquidEnable({
+      wallet: options.wallet,
+      provider,
+      userSigned: provider.userSigned,
+      requests: options.requests,
+      network,
+      agentName,
+      ...(builder === undefined ? {} : { builder }),
+      now: options.now,
+      setTimer: options.setTimer,
+      logger: options.logger,
+    });
+    providers.set("hyperliquid", enable);
+    deferredController = (controller) => {
+      controllerRef.current = controller;
+    };
   }
 
-  const controllerRef: { current: AppsController | undefined } = { current: undefined };
-  const socket = createHyperliquidSocket({
-    network,
-    socket: options.socket,
-    setTimer: options.setTimer,
-    random: options.random,
-  });
-  const provider = createHyperliquidProvider({
-    wallet: options.wallet,
-    network,
-    fetch: options.fetch,
-    setTimer: options.setTimer,
-    now: options.now,
-    random: options.random,
-    logger: options.logger,
-    requests: options.requests,
-    socket,
-    builderFor: (group) => {
-      /* Trades carry the builder only while the controller confirmed the fee this session —
-         a lock or a stale approval makes it return undefined and the field is omitted. */
-      if (builder === undefined) {
-        return undefined;
-      }
-      const state = controllerRef.current?.getState().groups[groupKey(group)]?.hyperliquid;
-      return state?.builder === "approved" ? builder : undefined;
-    },
-  });
-  const enable = createHyperliquidEnable({
-    wallet: options.wallet,
-    provider,
-    userSigned: provider.userSigned,
-    requests: options.requests,
-    network,
-    agentName,
-    ...(builder === undefined ? {} : { builder }),
-    now: options.now,
-    setTimer: options.setTimer,
-    logger: options.logger,
-  });
+  let polymarketProvider: PolymarketProvider | undefined;
+  if (options.polymarket !== undefined) {
+    const { builder } = options.polymarket;
+    if (builder?.code !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(builder.code)) {
+      throw new Error("polymarket builder.code must be a 32-byte hex string");
+    }
+    polymarketProvider = createPolymarketProvider({
+      fetch: options.fetch,
+      setTimer: options.setTimer,
+      now: options.now,
+      ...(builder === undefined ? {} : { builder }),
+    });
+  }
+
   /* `gatewayScope("/v1/eligibility")` is "service" — a fixed client id keeps the whole contract
      table (which `gatewayFetch` needs for per-route scopes) out of this entry. */
   const clientId = gatewaySession(options.gateway.url, options.random).clientIds.service;
   const eligibilityFetch = async (input: URL): Promise<Response> =>
     options.fetch(input, { headers: { [CLIENT_ID_HEADER]: clientId } });
   const controller = new AppsController({
-    providers: new Map<AppId, AppProvider>([["hyperliquid", enable]]),
+    providers,
     wallet: options.wallet,
     fetchEligibility: async (): Promise<EligibilityResponse> => {
       const url = new URL(eligibilityContract.path, options.gateway.url);
@@ -561,7 +622,7 @@ export function createApps(options: CreateAppsOptions): {
     openStore: options.openStore,
     logger: options.logger,
   });
-  controllerRef.current = controller;
+  deferredController?.(controller);
 
   /* Serialized lifecycle: every wallet status change queues behind the previous one, so a lock
      during an unlock's init cannot interleave. */
@@ -572,7 +633,7 @@ export function createApps(options: CreateAppsOptions): {
     if (unlocked() && !started) {
       started = true;
       try {
-        await provider.agents.refresh();
+        await provider?.agents.refresh();
         await controller.init();
       } catch (error) {
         started = false;
@@ -584,7 +645,7 @@ export function createApps(options: CreateAppsOptions): {
     if (!unlocked() && started) {
       started = false;
       /* Session marks (enabled/rejected) are per-unlock — the next reconcile re-derives. */
-      provider.agents.reset();
+      provider?.agents.reset();
       await controller.lock();
     }
   };
@@ -601,12 +662,14 @@ export function createApps(options: CreateAppsOptions): {
   };
   const unsubscribe = options.wallet.subscribe(schedule);
   schedule();
+  /* The conditional overload mirrors at the type level which configs were supplied. */
   return {
     controller,
     hyperliquid: provider,
+    polymarket: polymarketProvider,
     destroy: async () => {
       unsubscribe();
-      socket.close();
+      socket?.close();
       await controller.lock();
       await chain;
     },

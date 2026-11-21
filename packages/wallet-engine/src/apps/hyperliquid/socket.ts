@@ -12,9 +12,9 @@ import type { ISubscription, ISubscriptionTransport } from "@nktkas/hyperliquid"
 
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
+import type { SetTimer } from "../../timer.ts";
 import { createAppSocketCore } from "../socket.ts";
 import type { AppSocket, AppSocketStatus } from "../socket.ts";
-import type { SetTimer } from "../../timer.ts";
 
 /* AppSocket moved to the shared core — re-exported for the paths tests and apps/index.ts import. */
 export type { AppSocket } from "../socket.ts";
