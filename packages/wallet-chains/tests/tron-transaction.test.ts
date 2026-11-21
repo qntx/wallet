@@ -15,6 +15,8 @@ import {
   buildTronRawData,
   trc20ApproveContract,
   trc20TransferContract,
+  TRON_MEMO_MAX_BYTES,
+  tronMemoBytes,
 } from "../src/tron/builders.ts";
 import { decodeTronContract, encodeTronContract } from "../src/tron/contracts.ts";
 import type { TronPermissionWire } from "../src/tron/contracts.ts";
@@ -242,6 +244,27 @@ describe("buildTronRawData validation", () => {
     expect(() =>
       buildTronRawData({ ...header, refBlock: { ...header.refBlock, id: "zz" } }, contract),
     ).toThrow(ChainError);
+  });
+});
+
+describe("tronMemoBytes", () => {
+  it("returns the exact UTF-8 bytes at the bounds", () => {
+    expect(tronMemoBytes("x")).toStrictEqual(new Uint8Array([0x78]));
+    expect(tronMemoBytes("é")).toStrictEqual(new Uint8Array([0xc3, 0xa9]));
+    expect(tronMemoBytes("m".repeat(TRON_MEMO_MAX_BYTES))).toHaveLength(TRON_MEMO_MAX_BYTES);
+  });
+
+  it("refuses empty, oversized, newline and hidden inputs", () => {
+    for (const bad of [
+      "",
+      "m".repeat(TRON_MEMO_MAX_BYTES + 1),
+      "a\nb",
+      "a\rb",
+      "a\u200Bb",
+      "a\u202Eb",
+    ]) {
+      expect(() => tronMemoBytes(bad)).toThrow(ChainError);
+    }
   });
 });
 

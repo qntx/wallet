@@ -33,6 +33,11 @@ export type FamilyClaim =
       readonly domainName: string;
       readonly contracts: ReadonlyArray<string>;
     }
+  | { readonly surface: "tron.typed-data"; readonly primaryType: RegExp }
+  | {
+      readonly surface: "tron.typed-data";
+      readonly verifyingContract: "token-table" | "permit2";
+    }
   | { readonly surface: "solana.instruction"; readonly program: keyof typeof PROGRAM_IDS };
 
 export type RecognisedFamily = {
@@ -332,6 +337,23 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
         "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069",
       ],
     },
+    nearMiss: "typed-data-variant",
+  },
+  /* The TIP-712 permits the TRON decoder recognises: EIP-2612 and DAI Permit on any contract, and
+     the Permit2 forms when addressed to the TRON Permit2 deployment. */
+  {
+    family: "TRON permit",
+    claim: { surface: "tron.typed-data", primaryType: /^Permit/ },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "TRON Permit2",
+    claim: { surface: "tron.typed-data", verifyingContract: "permit2" },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "built-in TRC-20 signature",
+    claim: { surface: "tron.typed-data", verifyingContract: "token-table" },
     nearMiss: "typed-data-variant",
   },
   /* Transfer, CreateAccount, CreateAccountWithSeed and AdvanceNonceAccount of the System program. */

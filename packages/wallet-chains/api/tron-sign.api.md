@@ -10,6 +10,9 @@ export const signTronMessage: (message: Uint8Array, privateKey: Uint8Array) => U
 // @public
 export const signTronTransaction: (rawData: Uint8Array, privateKey: Uint8Array) => Uint8Array;
 
+// @public
+export const signTronTypedData: (typedData: string, privateKey: Uint8Array) => Uint8Array;
+
 // (No @packageDocumentation comment for this package)
 
 ```

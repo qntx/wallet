@@ -4,7 +4,11 @@ import { HDKey } from "@scure/bip32";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
 import { decodeTron, normalizeTron, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
-import { signTronMessage, signTronTransaction } from "@qntx/wallet-chains/tron/sign";
+import {
+  signTronMessage,
+  signTronTransaction,
+  signTronTypedData,
+} from "@qntx/wallet-chains/tron/sign";
 
 import { KernelError } from "../../errors.ts";
 import type { ExecuteResult, TronKeySource, TronRequest } from "./shared.ts";
@@ -68,6 +72,12 @@ const tronBody = (
     return {
       kind: "tron.transaction",
       signature: signTronTransaction(request.rawData, priv),
+    };
+  }
+  if (request.kind === "tron.typed-data") {
+    return {
+      kind: "tron.typed-data",
+      signature: signTronTypedData(request.typedData, priv),
     };
   }
   return {

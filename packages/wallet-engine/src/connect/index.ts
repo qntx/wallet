@@ -14,6 +14,7 @@ import { ProviderError } from "./errors.ts";
 import { PROVIDER_SCRIPT } from "./inject.generated.ts";
 import type { Nip07Handler } from "./nip07.ts";
 import type { SolanaEvent, SolanaHandler } from "./solana.ts";
+import type { TronEvent, TronHandler } from "./tron.ts";
 import type { WeblnHandler } from "./webln.ts";
 
 export type { ConnectionController, ConnectionSession } from "./controller.ts";
@@ -22,6 +23,8 @@ export type { Nip07Request } from "./nip07.ts";
 export type { WeblnRequest } from "./webln.ts";
 export type { SolanaRequest, SolanaEvent, SolanaWalletAccount } from "./solana.ts";
 export { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./solana.ts";
+export type { TronRequest, TronEvent, TronProviderState, TronProviderAddress } from "./tron.ts";
+export { TronWalletHandler } from "./tron.ts";
 export type { BitcoinRequest, BitcoinEvent, BitcoinWalletAccount } from "./bitcoin.ts";
 export { BitcoinWalletHandler, BITCOIN_CHAIN_IDS } from "./bitcoin.ts";
 export { WeblnHandler } from "./webln.ts";
@@ -110,6 +113,7 @@ export type BrowserBridgeOptions = {
   readonly webln: Pick<WeblnHandler, "handle">;
   readonly solana: Pick<SolanaHandler, "handle" | "subscribe">;
   readonly bitcoin: Pick<BitcoinHandler, "handle" | "subscribe">;
+  readonly tron: Pick<TronHandler, "handle" | "subscribe">;
   readonly connections: Pick<ConnectionController, "checkOrigin" | "invalidateOrigin">;
   /** The host's `webview.injectJavaScript`. */
   readonly inject: (script: string) => void;
@@ -145,7 +149,7 @@ const errorData = (error: unknown): { code: number; message: string } =>
     : { code: -32603, message: "internal error" };
 
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge {
-  const { eip1193, nip07, webln, solana, bitcoin, connections, inject, now } = options;
+  const { eip1193, nip07, webln, solana, bitcoin, tron, connections, inject, now } = options;
   let topOrigin: string | undefined;
   /** The current document's id; a same-origin reload's first message switches it. */
   let topDocument: string | undefined;
@@ -212,6 +216,12 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
       data: { event: "change", params: { accounts: event.accounts } },
     });
   });
+  const unsubscribeTron = tron.subscribe((event: TronEvent) => {
+    if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
+      return;
+    }
+    toPage({ event: "tron", data: event.state });
+  });
 
   const message = (topUrl: string, data: string): void => {
     if (disposed || data.length > MAX_MESSAGE_BYTES) {
@@ -262,7 +272,9 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
               ? solana
               : provider === "bitcoin"
                 ? bitcoin
-                : undefined;
+                : provider === "tron"
+                  ? tron
+                  : undefined;
     if (handler === undefined) {
       return;
     }
@@ -311,6 +323,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     unsubscribe();
     unsubscribeSolana();
     unsubscribeBitcoin();
+    unsubscribeTron();
     if (topOrigin !== undefined) {
       connections.invalidateOrigin(topOrigin);
       topOrigin = undefined;

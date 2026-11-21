@@ -101,6 +101,7 @@ const PARAMS: TronChainParams = {
   maxFeeLimit: 15_000_000_000n,
   createNewAccountBandwidthRate: 1n,
   maxCreateAccountTxSize: 1000n,
+  memoFee: 1_000_000n,
 };
 
 const CHAIN_PARAMETER_BODY = {
@@ -112,6 +113,7 @@ const CHAIN_PARAMETER_BODY = {
     { key: "getMaxFeeLimit", value: 15_000_000_000 },
     { key: "getCreateNewAccountBandwidthRate", value: 1 },
     { key: "getMaxCreateAccountTxSize", value: 1000 },
+    { key: "getMemoFee", value: 1_000_000 },
     { key: "getUnrelatedParameter", value: 7 },
   ],
 };
@@ -340,7 +342,12 @@ describe("tron readers", () => {
       }),
       { owner: HOLDER, contract: HOLDER, data: new Uint8Array([0xa9, 0x05]) },
     );
-    expect(outcome).toStrictEqual({ ok: false, message: "REVERT opcode executed" });
+    expect(outcome).toStrictEqual({
+      ok: false,
+      message: "REVERT opcode executed",
+      energyUsed: 0,
+      energyPenalty: 0,
+    });
   });
 
   it("constantCall passes a non-hex failure message through verbatim", async () => {
@@ -355,6 +362,8 @@ describe("tron readers", () => {
     expect(outcome).toStrictEqual({
       ok: false,
       message: "Not enough energy for 'SSTORE' operation",
+      energyUsed: 0,
+      energyPenalty: 0,
     });
   });
 
@@ -644,6 +653,46 @@ describe("tronFeeQuote", () => {
       ChainError,
     );
   });
+
+  it("a fixed feeLimit replaces the estimate-derived one — and is never refused", () => {
+    const energy = { used: 64285, penalty: 0 };
+    const quote = tronFeeQuote({ ...base, energy, feeLimit: 7_000_000n });
+    expect(quote.energy?.feeLimit).toBe("7000000");
+    // max = bandwidth burn + the dApp's own fee_limit.
+    expect(quote.max).toBe(String(334000 + 7_000_000));
+    expect(quote.warnings).toStrictEqual([]);
+
+    // An estimate above the chain cap refuses only when the fee_limit is computed; a fixed
+    // one is used as given.
+    const huge = tronFeeQuote({ ...base, energy: { used: 200_000_000, penalty: 0 }, feeLimit: 1n });
+    expect(huge.energy?.feeLimit).toBe("1");
+  });
+
+  it("warns fee-limit-below-estimate when the estimate's cost beats the fixed fee_limit", () => {
+    const energy = { used: 64285, penalty: 0 };
+    // 64285 × 100 = 6 428 500 > limit → warning at and above, not below.
+    expect(tronFeeQuote({ ...base, energy, feeLimit: 6_428_499n }).warnings).toStrictEqual([
+      "fee-limit-below-estimate",
+    ]);
+    expect(tronFeeQuote({ ...base, energy, feeLimit: 6_428_500n }).warnings).toStrictEqual([]);
+  });
+
+  it("a memo adds getMemoFee to expected and max and reports it", () => {
+    const quote = tronFeeQuote({ ...base, memo: true });
+    expect(quote.memo).toBe("1000000");
+    // Free bandwidth covers the bytes, so expected is the memo fee alone.
+    expect(quote.expected).toBe("1000000");
+    expect(quote.max).toBe(String(334000 + 1_000_000));
+    const energy = tronFeeQuote({ ...base, memo: true, energy: { used: 1, penalty: 0 } });
+    expect(energy.expected).toBe(String(100 + 1_000_000));
+  });
+
+  it("without memo or feeLimit the output shape is unchanged", () => {
+    const quote = tronFeeQuote({ ...base, energy: { used: 64285, penalty: 0 } });
+    expect("memo" in quote).toBe(false);
+    expect(quote.energy?.feeLimit).toBe("9642750");
+    expect(quote.max).toBe(String(334000 + 9642750));
+  });
 });
 
 describe("fuzz", () => {
@@ -657,6 +706,7 @@ describe("fuzz", () => {
     maxFeeLimit: fc.bigInt({ min: 0n, max: 10n ** 12n }),
     createNewAccountBandwidthRate: fc.bigInt({ min: 0n, max: 10n ** 3n }),
     maxCreateAccountTxSize: fc.bigInt({ min: 0n, max: 10n ** 6n }),
+    memoFee: fc.bigInt({ min: 0n, max: 10n ** 9n }),
   });
   const resourcesArb = fc.record({
     freeNetLimit: fc.nat({ max: 10 ** 7 }),
@@ -678,6 +728,7 @@ describe("fuzz", () => {
       { nil: undefined },
     ),
     tokenRecipientEmpty: fc.boolean(),
+    memo: fc.boolean(),
   });
 
   it("tronFeeQuote's max never undershoots its expected", () => {

@@ -37,6 +37,7 @@ import { createBrowserBridge, injectedScript } from "../../src/connect/index.ts"
 import type { ProviderInfo } from "../../src/connect/index.ts";
 import { Nip07Handler } from "../../src/connect/nip07.ts";
 import { SolanaWalletHandler } from "../../src/connect/solana.ts";
+import { TronWalletHandler } from "../../src/connect/tron.ts";
 import { WeblnHandler } from "../../src/connect/webln.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { RequestController } from "../../src/requests/controller.ts";
@@ -60,6 +61,8 @@ const NOSTR_PUBKEY = NOSTR_KEYS.publicKey;
 const SOL_SECRET = new Uint8Array(32).fill(3);
 const SOL_PUBKEY = ed25519.getPublicKey(SOL_SECRET);
 const SOL_ADDR = solanaAddressFromPublicKey(SOL_PUBKEY);
+const TRON_ADDR = "TUDfYqdjmd8fM7n3Q9a9Y4Z5Z6Z7Z8Z9Z0x";
+const TRON_NET = "tron:728126428";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const BTC_NET = "bip122:000000000019d6689c085ae165831e93";
 const solanaSignBytes = (message: Uint8Array): Uint8Array => ed25519.sign(message, SOL_SECRET);
@@ -289,6 +292,10 @@ async function engineRig() {
       await Promise.resolve();
       return SOL_ADDR;
     },
+    tronAddress: async (_group: { walletId: string; groupIndex: number }, _network: string) => {
+      await Promise.resolve();
+      return TRON_ADDR;
+    },
     nostrPubkey: async (ref) => {
       await Promise.resolve(ref);
       return NOSTR_PUBKEY;
@@ -359,8 +366,16 @@ async function engineRig() {
     bitcoinAccount,
     bitcoinNetwork: () => BTC_NET,
   });
+  const tron = new TronWalletHandler({
+    connections,
+    requests,
+    transactions,
+    tronNetworks: () => [TRON_NET],
+    tronNetwork: () => TRON_NET,
+    isTracked: () => false,
+  });
   await connections.setActiveIdentity(NOSTR_REF);
-  return { connections, requests, eip1193, nip07, webln, solana, bitcoin, addressAt };
+  return { connections, requests, eip1193, nip07, webln, solana, bitcoin, tron, addressAt };
 }
 
 async function openConnect(context: BrowserContext) {
@@ -372,6 +387,7 @@ async function openConnect(context: BrowserContext) {
     webln: rig.webln,
     solana: rig.solana,
     bitcoin: rig.bitcoin,
+    tron: rig.tron,
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
@@ -428,16 +444,25 @@ test("each document announces a different uuid, and a foreign doc's reply settle
 
   // eth_requestAccounts stays pending until approval, so only the injected replies can settle it.
   const outcome = await first.page.evaluate(`(async () => {
+    // The id space is shared with every injected provider (TRON's install-time
+    // tron_getProviderState takes id 1), so read the id this request actually got.
+    let requestId;
+    const post = window.ReactNativeWebView.postMessage.bind(window.ReactNativeWebView);
+    window.ReactNativeWebView.postMessage = (json) => {
+      const message = JSON.parse(json);
+      if (message.method === "eth_requestAccounts") requestId = message.id;
+      return post(json);
+    };
     const pending = window.ethereum.request({ method: "eth_requestAccounts" });
     globalThis.__qntxReceive(JSON.stringify({
-      doc: "00000000-0000-4000-8000-000000000000", id: 1, result: "WRONG",
+      doc: "00000000-0000-4000-8000-000000000000", id: requestId, result: "WRONG",
     }));
     const afterForeign = await Promise.race([
       pending.then(() => "settled"),
       new Promise((resolve) => setTimeout(() => resolve("pending"), 200)),
     ]);
     globalThis.__qntxReceive(JSON.stringify({
-      doc: ${JSON.stringify(String(uuidA))}, id: 1, result: "0x1",
+      doc: ${JSON.stringify(String(uuidA))}, id: requestId, result: "0x1",
     }));
     return [afterForeign, await pending];
   })()`);

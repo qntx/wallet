@@ -8,6 +8,7 @@ import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { normalizeSolana } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
 import { normalizeTron } from "../src/tron/index.ts";
+import { tronRawDataFromJson } from "../src/tron/json.ts";
 import { decodeTronRawData, encodeTronRawData } from "../src/tron/raw.ts";
 import { attempt } from "./fuzz.ts";
 import { ACCOUNT, OWNER, tronVectors } from "./tron.ts";
@@ -261,6 +262,44 @@ describe("TRON decode/normalize fuzz", () => {
             ),
           ),
         ).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
+  it("tron.typed-data inputs throw only a ChainError, never hang", () => {
+    const td = (typedData: unknown): SignRequest =>
+      ({
+        kind: "tron.typed-data",
+        network: TRON_NET,
+        account: ACCOUNT,
+        typedData,
+      }) as SignRequest;
+    fc.assert(
+      fc.property(fc.string({ maxLength: 4096 }), (text) => {
+        expect(okOrChainError(attempt(() => normalizeTron(td(text))))).toBe(true);
+      }),
+      { numRuns },
+    );
+    fc.assert(
+      fc.property(fc.string({ maxLength: 64 }), (prefix) => {
+        const doc = `{"types":${prefix}`;
+        expect(okOrChainError(attempt(() => normalizeTron(td(doc))))).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
+  it("tronRawDataFromJson on arbitrary JSON throws only a ChainError", () => {
+    fc.assert(
+      fc.property(fc.jsonValue({ maxDepth: 4 }), fc.boolean(), (raw, visible) => {
+        expect(okOrChainError(attempt(() => tronRawDataFromJson(raw, visible)))).toBe(true);
+      }),
+      { numRuns },
+    );
+    fc.assert(
+      fc.property(fc.string({ maxLength: 2048 }), fc.boolean(), (text, visible) => {
+        expect(okOrChainError(attempt(() => tronRawDataFromJson(text, visible)))).toBe(true);
       }),
       { numRuns },
     );

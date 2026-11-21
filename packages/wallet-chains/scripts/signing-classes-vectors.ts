@@ -115,6 +115,12 @@ const tronMessage = (hex: string) => ({
   account: tronAccount,
   message: { $bytes: hex },
 });
+const tronTypedData = (typedData: string) => ({
+  kind: "tron.typed-data",
+  network: "tron:728126428",
+  account: tronAccount,
+  typedData,
+});
 
 /* Solana fixtures: the same legacy-message compiler the solana tests use — the fee payer signs,
    the blockhash is the all-1s address. Addresses are test literals. */
@@ -195,6 +201,27 @@ const solanaTx = (messageHex: string) => ({
 const TRON_VECTORS = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/tron.json"), "utf8"),
 ) as { transactions: Array<{ name: string; rawDataHex: string }> };
+
+/** TRON typed-data documents: the oracle-checked canonical JSON from tron-typed-data.json. */
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the generated vector file has a fixed shape
+const TRON_TD_VECTORS = JSON.parse(
+  readFileSync(
+    resolve(import.meta.dirname, "../../../vectors/chains/tron-typed-data.json"),
+    "utf8",
+  ),
+) as {
+  cases: Array<{ name: string; typedData: string }>;
+  blind: Array<{ name: string; typedData: string }>;
+};
+const tronTdDoc = (name: string): string => {
+  const found =
+    TRON_TD_VECTORS.cases.find((c) => c.name === name) ??
+    TRON_TD_VECTORS.blind.find((c) => c.name === name);
+  if (found === undefined) {
+    throw new Error(`tron-typed-data.json has no case named "${name}"`);
+  }
+  return found.typedData;
+};
 
 /* Hyperliquid documents come from the oracle-checked vectors file (vectors/chains/hyperliquid.ts
    builds it; do not duplicate action literals here). */
@@ -1947,6 +1974,90 @@ for (const [name, row] of Object.entries(TRON_MSG_CASES)) {
   cases.push({
     name: `tron ${name}`,
     request: tronMessage(row.messageHex),
+    verifiability: row.verifiability,
+    blind: row.blind,
+    prompt: row.prompt,
+  });
+}
+
+const TRON_TD_CASES = {
+  "typed-data permit2": {
+    doc: "permit2-single",
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm approval",
+        description:
+          "App: Permit2\n" +
+          "Network: TRON\n" +
+          "Verifying contract TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9\n" +
+          "Type: PermitSingle\n" +
+          "There may be other outflows\n" +
+          "Allow T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn to spend 1 USDT via Permit2 until 2033-05-18 (UTC)",
+      },
+      "zh-Hans": {
+        title: "确认授权",
+        description:
+          "应用：Permit2\n" +
+          "网络：TRON\n" +
+          "验证合约 TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9\n" +
+          "类型：PermitSingle\n" +
+          "可能还有其他转出\n" +
+          "授权 T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn 使用 1 USDT 经 Permit2 至 2033-05-18（UTC）",
+      },
+    },
+  },
+  "typed-data trctoken": {
+    doc: "trctoken",
+    verifiability: "opaque",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm signature",
+        description:
+          "App: TRC10\n" +
+          "Network: TRON\n" +
+          "Type: Send\n" +
+          "The wallet cannot verify what this signature authorises\n" +
+          "· asset = 1002000\n· to = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\n· amount = 42",
+      },
+      "zh-Hans": {
+        title: "确认签名",
+        description:
+          "应用：TRC10\n" +
+          "网络：TRON\n" +
+          "类型：Send\n" +
+          "钱包无法核实此签名授权的内容\n" +
+          "· asset = 1002000\n· to = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t\n· amount = 42",
+      },
+    },
+  },
+  "typed-data oversize": {
+    doc: "oversize",
+    verifiability: "opaque",
+    blind: "typed-data-oversize",
+    prompt: {
+      en: {
+        title: "Confirm blind signing",
+        description:
+          "App: Big\n" +
+          "Network: TRON\n" +
+          "Type: Wide\n" +
+          "This typed data is too large to show in full",
+      },
+      "zh-Hans": {
+        title: "确认盲签",
+        description: "应用：Big\n网络：TRON\n类型：Wide\n此类型数据过大，无法完整显示",
+      },
+    },
+  },
+};
+
+for (const [name, row] of Object.entries(TRON_TD_CASES)) {
+  cases.push({
+    name: `tron ${name}`,
+    request: tronTypedData(tronTdDoc(row.doc)),
     verifiability: row.verifiability,
     blind: row.blind,
     prompt: row.prompt,

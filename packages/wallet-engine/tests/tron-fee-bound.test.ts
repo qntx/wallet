@@ -48,6 +48,7 @@ const PARAMS: TronChainParams = {
   maxFeeLimit: BigInt(Math.trunc(cp["getMaxFeeLimit"] ?? 0)),
   createNewAccountBandwidthRate: BigInt(Math.trunc(cp["getCreateNewAccountBandwidthRate"] ?? 0)),
   maxCreateAccountTxSize: BigInt(Math.trunc(cp["getMaxCreateAccountTxSize"] ?? 0)),
+  memoFee: BigInt(Math.trunc(cp["getMemoFee"] ?? 0)),
 };
 const ZERO: TronResources = {
   freeNetLimit: 0,
@@ -68,7 +69,11 @@ const KINDS = [
   "freeze",
   "vote",
   "delegate",
+  "trx-memo",
 ];
+/** Kinds scarcer on-chain than the 50-sample target keep their own floor. */
+const MIN_SAMPLES: Readonly<Record<string, number>> = { "trx-memo": 25 };
+const minSamples = (kind: string): number => MIN_SAMPLES[kind] ?? 50;
 const isUsdt = (kind: string): boolean => kind.startsWith("usdt");
 
 const bytesOf = (s: Sample): number => tronBandwidthBytes(s.rawDataHex.length / 2);
@@ -89,6 +94,7 @@ const quoteOf = (s: Sample) =>
     params: PARAMS,
     resources: ZERO,
     activates: s.kind === "trx-new",
+    memo: s.kind === "trx-memo",
     ...(isUsdt(s.kind) && s.energyReplay !== undefined
       ? { energy: { used: s.energyReplay.energyUsed, penalty: s.energyReplay.energyPenalty } }
       : {}),
@@ -115,8 +121,10 @@ const median = (xs: ReadonlyArray<number>): number => {
 };
 
 describe("tron-fees oracle", () => {
-  it.each(KINDS)("has at least 50 %s samples", (kind) => {
-    expect(vector.samples.filter((s) => s.kind === kind).length).toBeGreaterThanOrEqual(50);
+  it.each(KINDS)("has enough %s samples", (kind) => {
+    expect(vector.samples.filter((s) => s.kind === kind).length).toBeGreaterThanOrEqual(
+      minSamples(kind),
+    );
   });
 
   it.each(vector.samples)("the bandwidth rule matches the receipt for $kind $txid", (s) => {
@@ -131,6 +139,13 @@ describe("tron-fees oracle", () => {
     "the energy replay equals energy_usage_total for $kind $txid",
     (s) => {
       expect(energyReplayMatch(s)).toBe(true);
+    },
+  );
+
+  it.each(vector.samples.filter((s) => s.kind === "trx-memo"))(
+    "the memo fee is the whole non-bandwidth fee for $txid",
+    (s) => {
+      expect(BigInt(s.fee) - BigInt(s.receipt.netFee)).toBe(PARAMS.memoFee);
     },
   );
 
@@ -151,6 +166,6 @@ describe("tron-fees oracle", () => {
     for (const line of lines) {
       console.log(line);
     }
-    expect(lines).toHaveLength(8);
+    expect(lines).toHaveLength(9);
   });
 });

@@ -130,8 +130,14 @@ export type TrackedTransaction = {
   /**
    * TRON build record — `raw_data.expiration` bounds drop proofs (past it the network can never
    * include the transaction); `from` is the sender, for group membership like `evm.from`.
+   * `dappSignature` is set on a dApp-observed entry: the wallet-signed signature (lowercase hex)
+   * `submitDappTron` later matches against the bytes the dApp broadcasts.
    */
-  readonly tron?: { readonly expiration: number; readonly from: string };
+  readonly tron?: {
+    readonly expiration: number;
+    readonly from: string;
+    readonly dappSignature?: string;
+  };
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */
@@ -186,6 +192,8 @@ export type SendParams = {
    * selection. Naming an inscription-protected output opts into spending it.
    */
   readonly inputs?: ReadonlyArray<string>;
+  /** TRON only — the `raw_data.data` memo; refused on every other family. */
+  readonly memo?: string;
   readonly verify: SignParams["verify"];
 };
 
@@ -424,7 +432,7 @@ export type PreparedRequest = {
 };
 
 export type SignatureResult = {
-  readonly kind: "evm.personal-message" | "evm.typed-data";
+  readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
   readonly signature: Uint8Array;
 };
 

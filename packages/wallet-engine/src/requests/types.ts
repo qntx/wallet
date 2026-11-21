@@ -16,6 +16,7 @@ export type RequestMethod =
   | "pay"
   | "zap"
   | "evm-sign"
+  | "tron-sign"
   | "evm-delegation"
   | "evm-batch"
   | "nostr-sign"

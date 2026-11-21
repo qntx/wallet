@@ -42,6 +42,8 @@ export type ConnectionSession = {
   readonly identity?: NostrKeyRef;
   /** The session's current EVM network; only dApp sessions have one. */
   readonly currentNetwork: string;
+  /** The session's current TRON network; set when a `tron` namespace is granted. */
+  readonly tronNetwork?: string;
   /** The origin's Nostr policy — set when the host approves a `nostr` connection. */
   readonly nostrPolicy?: NostrPolicy;
   /** The origin's Lightning policy — set when the host approves a `lightning` connection. */
@@ -79,7 +81,7 @@ export type PendingConnection = {
    * Which namespace the connection is for — `eip155` (EVM), `nostr` (NIP-07) or `lightning`
    * (WebLN).
    */
-  readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122";
+  readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122" | "tron";
   readonly network?: string;
   /** `false` for a `network` request that adds the network without making it current. */
   readonly activate?: boolean;
@@ -121,6 +123,8 @@ export type ConnectionControllerOptions = {
   readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
   /** The group's Solana address on `network` (a CAIP-2 `solana:<genesis>` chain). */
   readonly solanaAddress: (group: AccountGroup, network: string) => Promise<string>;
+  /** The group's TRON address (base58) on `network` (a `tron:<chain>` CAIP-2 chain). */
+  readonly tronAddress: (group: AccountGroup, network: string) => Promise<string>;
   /** The group's fixed dApp-facing Bitcoin address of `purpose` on `network` (`bip122:<genesis>`). */
   readonly bitcoinAddress: (
     group: AccountGroup,
@@ -207,6 +211,21 @@ export const BITCOIN_METHODS: ReadonlyArray<string> = [
 /** `payment` is the group's `btc.bip84` address, `ordinals` its `btc.bip86` one. */
 export type BitcoinPurpose = "payment" | "ordinals";
 
+/** The `tron` namespace scope's granted methods — the TronLink surface. */
+export const TRON_METHODS: ReadonlyArray<string> = [
+  "eth_requestAccounts",
+  "tron_requestAccounts",
+  "wallet_switchEthereumChain",
+  "wallet_watchAsset",
+  "tron_signTransaction",
+  "tron_sendRawTransaction",
+  "tron_signMessageV2",
+  "tron_signTypedData",
+];
+
+/** The `tron` namespace scope's notifications. */
+export const TRON_NOTIFICATIONS: ReadonlyArray<string> = ["accountsChanged", "chainChanged"];
+
 /** The order of a `bip122` scope's two accounts. */
 export const BITCOIN_PURPOSES: ReadonlyArray<BitcoinPurpose> = ["payment", "ordinals"];
 
@@ -247,6 +266,7 @@ export const isSession = (value: unknown): value is ConnectionSession => {
     value["origin"]["kind"] === "browser" &&
     typeof value["origin"]["origin"] === "string" &&
     typeof value["currentNetwork"] === "string" &&
+    (value["tronNetwork"] === undefined || typeof value["tronNetwork"] === "string") &&
     typeof value["createdAt"] === "number" &&
     typeof value["lastUsedAt"] === "number" &&
     (value["group"] === undefined || isGroup(value["group"])) &&
@@ -310,7 +330,8 @@ const isChainScope = (network: string): boolean =>
   network === "lightning" ||
   network.startsWith("eip155:") ||
   network.startsWith("solana:") ||
-  network.startsWith("bip122:");
+  network.startsWith("bip122:") ||
+  network.startsWith("tron:");
 
 type Waiter = {
   readonly resolve: (session: ConnectionSession) => void;
@@ -531,7 +552,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     return this.serial(async () => {
       const store = this.requireStore();
-      const { scopes, group, identity } = await this.grantScopes(entry, grant);
+      const { scopes, group, identity, tronNetwork } = await this.grantScopes(entry, grant);
       if (this.getState().pending[id] === undefined) {
         throw new Error(`connection request ${id} is no longer pending`);
       }
@@ -548,6 +569,7 @@ export class ConnectionController extends Controller<ConnectionState> {
         : { ...existing?.scopes };
       const sessionGroup = group ?? existing?.group;
       const sessionIdentity = identity ?? existing?.identity;
+      const sessionTronNetwork = tronNetwork ?? existing?.tronNetwork;
       /* A later grant (e.g. an added network) keeps the policies an earlier grant set. */
       const nostrPolicy = grant.nostr?.policy ?? existing?.nostrPolicy;
       const lightningPolicy = grant.lightning?.policy ?? existing?.lightningPolicy;
@@ -563,6 +585,7 @@ export class ConnectionController extends Controller<ConnectionState> {
             : grant.network,
         ...(sessionGroup === undefined ? {} : { group: sessionGroup }),
         ...(sessionIdentity === undefined ? {} : { identity: sessionIdentity }),
+        ...(sessionTronNetwork === undefined ? {} : { tronNetwork: sessionTronNetwork }),
         ...(nostrPolicy === undefined ? {} : { nostrPolicy }),
         ...(lightningPolicy === undefined ? {} : { lightningPolicy }),
         createdAt: existing?.createdAt ?? now,
@@ -620,6 +643,19 @@ export class ConnectionController extends Controller<ConnectionState> {
         throw unauthorized();
       }
       await this.persist(store, { ...session, currentNetwork: network });
+      this.options.invalidate(origin);
+    });
+  }
+
+  /** Switches the session's TRON network; the origin's unfinished requests are void. */
+  async setTronNetwork(origin: string, network: string): Promise<void> {
+    await this.serial(async () => {
+      const store = this.requireStore();
+      const session = this.session(origin);
+      if (session === undefined || session.scopes[network] === undefined) {
+        throw unauthorized();
+      }
+      await this.persist(store, { ...session, tronNetwork: network });
       this.options.invalidate(origin);
     });
   }
@@ -786,6 +822,10 @@ export class ConnectionController extends Controller<ConnectionState> {
             const address = await this.options.solanaAddress(target, network);
             return [network, { ...scope, accounts: [caip10(network, address)] }];
           }
+          if (network.startsWith("tron:")) {
+            const address = await this.options.tronAddress(target, network);
+            return [network, { ...scope, accounts: [caip10(network, address)] }];
+          }
           if (network.startsWith("eip155:")) {
             const address = await this.options.evmAddress(target, network);
             return [network, { ...scope, accounts: [caip10(network, address.toLowerCase())] }];
@@ -811,6 +851,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     readonly scopes: Record<string, ConnectionScope>;
     readonly group?: AccountGroup;
     readonly identity?: NostrKeyRef;
+    readonly tronNetwork?: string;
   }> {
     const scopes: Record<string, ConnectionScope> = {};
     if (entry.namespace === "nostr") {
@@ -869,6 +910,27 @@ export class ConnectionController extends Controller<ConnectionState> {
       );
       Object.assign(scopes, Object.fromEntries(solanaEntries));
       return { scopes, group };
+    }
+    if (entry.namespace === "tron") {
+      const tronNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("tron:"));
+      if (!tronNetworks.includes(grant.network)) {
+        throw invalidParams(`${grant.network} is not an enabled TRON network`);
+      }
+      const tronEntries = await Promise.all(
+        tronNetworks.map(async (network): Promise<[string, ConnectionScope]> => {
+          const address = await this.options.tronAddress(group, network);
+          return [
+            network,
+            {
+              accounts: [caip10(network, address)],
+              methods: TRON_METHODS,
+              notifications: TRON_NOTIFICATIONS,
+            },
+          ];
+        }),
+      );
+      Object.assign(scopes, Object.fromEntries(tronEntries));
+      return { scopes, group, tronNetwork: grant.network };
     }
     if (entry.namespace === "bip122") {
       const bitcoinNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("bip122:"));

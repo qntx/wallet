@@ -71,6 +71,7 @@ describe("controller init over a non-JSON row", () => {
       invalidateAll: () => undefined,
       evmAddress: async () => Promise.resolve(""),
       solanaAddress: async () => Promise.resolve(""),
+      tronAddress: async () => Promise.resolve(""),
       bitcoinAddress: async () => Promise.resolve(""),
       enabledNetworks: () => [],
       nostrPubkey: async () => Promise.resolve(""),

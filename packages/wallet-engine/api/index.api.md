@@ -542,11 +542,11 @@ export type BitcoinWalletAccount = {
 
 // @public
 export class BitcoinWalletHandler implements BitcoinHandler {
-    constructor(options: Options$1_2);
+    constructor(options: Options$2);
     // (undocumented)
     handle(origin: string, request: BitcoinRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options$1_2;
+    readonly options: Options$2;
     // (undocumented)
     subscribe(listener: (event: BitcoinEvent) => void): () => void;
 }
@@ -777,6 +777,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     sessionAccounts(origin: string, network: string): SessionAccounts | undefined;
     setActiveIdentity(ref: NostrKeyRef | undefined): Promise<void>;
     setCurrentNetwork(origin: string, network: string): Promise<void>;
+    setTronNetwork(origin: string, network: string): Promise<void>;
     // (undocumented)
     touch(origin: string): Promise<void>;
 }
@@ -791,6 +792,7 @@ type ConnectionControllerOptions = {
     readonly selectedGroup: () => ConnectionAccountGroup | undefined;
     readonly evmAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
     readonly solanaAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
+    readonly tronAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
     readonly bitcoinAddress: (group: ConnectionAccountGroup, network: string, purpose: BitcoinPurpose) => Promise<string>;
     readonly enabledNetworks: () => ReadonlyArray<string>;
     readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
@@ -830,6 +832,7 @@ export type ConnectionSession = {
     readonly group?: ConnectionAccountGroup;
     readonly identity?: NostrKeyRef;
     readonly currentNetwork: string;
+    readonly tronNetwork?: string;
     readonly nostrPolicy?: NostrPolicy;
     readonly lightningPolicy?: LightningPolicy;
     readonly createdAt: number;
@@ -1506,6 +1509,20 @@ type Options$1 = {
 
 // @public (undocumented)
 type Options$1_2 = {
+    readonly connections: SolanaConnections;
+    readonly requests: SolanaRequests;
+    readonly solanaAccount: (group: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string) => Promise<{
+        readonly address: string;
+        readonly publicKey: Uint8Array;
+    }>;
+    readonly solanaNetwork: () => string;
+};
+
+// @public (undocumented)
+type Options$2 = {
     readonly connections: BitcoinConnections;
     readonly requests: BitcoinRequests;
     readonly bitcoinAccount: (group: {
@@ -1546,16 +1563,12 @@ type Options_2 = {
 
 // @public (undocumented)
 type Options_3 = {
-    readonly connections: SolanaConnections;
-    readonly requests: SolanaRequests;
-    readonly solanaAccount: (group: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-    }, network: string) => Promise<{
-        readonly address: string;
-        readonly publicKey: Uint8Array;
-    }>;
-    readonly solanaNetwork: () => string;
+    readonly connections: TronConnections;
+    readonly requests: TronRequests;
+    readonly transactions: Pick<TransactionController, "submitDappTron">;
+    readonly tronNetworks: () => ReadonlyArray<string>;
+    readonly tronNetwork: () => string;
+    readonly isTracked: (network: string, address: string) => boolean;
 };
 
 // @public
@@ -1673,7 +1686,7 @@ export type PendingConnection = {
     readonly id: string;
     readonly origin: ConnectionOrigin;
     readonly kind: "connect" | "network";
-    readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122";
+    readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122" | "tron";
     readonly network?: string;
     readonly activate?: boolean;
     readonly createdAt: number;
@@ -1917,7 +1930,7 @@ export class RequestController extends Controller<RequestControllerState> {
     // (undocumented)
     approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
     // (undocumented)
-    approve(id: string, method: "evm-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
     // (undocumented)
     approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
     // (undocumented)
@@ -1993,10 +2006,10 @@ export class RequestEndedError extends Error {
 }
 
 // @public (undocumented)
-export type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput | NostrSignInput | WeblnInvoiceInput | WatchAssetInput | SolanaSignInput | BitcoinSignInput | SparkDepositInput | SparkExitInput;
+export type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput | TronSignInput | NostrSignInput | WeblnInvoiceInput | WatchAssetInput | SolanaSignInput | BitcoinSignInput | SparkDepositInput | SparkExitInput;
 
 // @public (undocumented)
-export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "evm-delegation" | "evm-batch" | "nostr-sign" | "webln-invoice" | "watch-asset" | "solana-sign" | "bitcoin-sign" | "spark-deposit" | "spark-exit";
+export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sign" | "evm-delegation" | "evm-batch" | "nostr-sign" | "webln-invoice" | "watch-asset" | "solana-sign" | "bitcoin-sign" | "spark-deposit" | "spark-exit";
 
 // @public (undocumented)
 export type RequestOrigin = {
@@ -2025,7 +2038,7 @@ export function resolvePayment(input: string, options: ResolveOptions): Promise<
 
 // @public
 export type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate";
     readonly level: "warning" | "danger";
 };
 
@@ -2039,6 +2052,7 @@ export type SendParams = {
     readonly fee: EvmFeeTier | SolanaFeeTier;
     readonly decimals?: number;
     readonly inputs?: ReadonlyArray<string>;
+    readonly memo?: string;
     readonly verify: SignParams["verify"];
 };
 
@@ -2053,7 +2067,7 @@ type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 export type SignatureResult = {
-    readonly kind: "evm.personal-message" | "evm.typed-data";
+    readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
@@ -2215,11 +2229,11 @@ export type SolanaWalletAccount = {
 
 // @public
 export class SolanaWalletHandler implements SolanaHandler {
-    constructor(options: Options_3);
+    constructor(options: Options$1_2);
     // (undocumented)
     handle(origin: string, request: SolanaRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options_3;
+    readonly options: Options$1_2;
     subscribe(listener: (event: SolanaEvent) => void): () => void;
 }
 
@@ -2564,6 +2578,7 @@ export type TrackedTransaction = {
     readonly tron?: {
         readonly expiration: number;
         readonly from: string;
+        readonly dappSignature?: string;
     };
     readonly replaces?: string;
     readonly parentId?: string;
@@ -2614,6 +2629,7 @@ export class TransactionController extends Controller<TransactionControllerState
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
@@ -2645,6 +2661,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
     submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
+    submitDappTron(network: string, rawData: Uint8Array, signature: Uint8Array): Promise<TrackedTransaction>;
     txById(id: string): TrackedTransaction | undefined;
 }
 
@@ -2900,6 +2917,8 @@ const TRON_NODE_PATHS: {
                 code: z.ZodMiniOptional<z.ZodMiniString<string>>;
                 message: z.ZodMiniOptional<z.ZodMiniString<string>>;
             }, z.core.$loose>;
+            energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+            energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
         }, z.core.$loose>]>;
     };
     readonly "/wallet/broadcasthex": {
@@ -3038,6 +3057,16 @@ type TronApi = {
 };
 
 // @public (undocumented)
+type TronConnections = Pick<ConnectionController, "checkOrigin" | "session" | "authorize" | "sessionAccounts" | "setTronNetwork" | "request" | "touch" | "revoke" | "getState" | "store">;
+
+// @public (undocumented)
+type TronEvent = {
+    readonly name: "tronStateChanged";
+    readonly origin: string;
+    readonly state: TronProviderState;
+};
+
+// @public (undocumented)
 export type TronFeeQuote = {
     readonly expected: string;
     readonly max: string;
@@ -3056,7 +3085,14 @@ export type TronFeeQuote = {
         readonly burn: string;
         readonly feeLimit: string;
     };
-    readonly warnings: ReadonlyArray<"recipient-not-activated" | "token-recipient-empty">;
+    readonly memo?: string;
+    readonly warnings: ReadonlyArray<"recipient-not-activated" | "token-recipient-empty" | "fee-limit-below-estimate">;
+};
+
+// @public (undocumented)
+type TronHandler = {
+    readonly handle: (origin: string, request: TronRequest) => Promise<unknown>;
+    readonly subscribe: (listener: (event: TronEvent) => void) => () => void;
 };
 
 // @public (undocumented)
@@ -3064,6 +3100,47 @@ type TronIndexerPath = keyof typeof TRON_INDEXER_PATHS;
 
 // @public (undocumented)
 type TronNodePath = keyof typeof TRON_NODE_PATHS;
+
+// @public
+type TronProviderAddress = {
+    readonly base58: string;
+    readonly hex: string;
+};
+
+// @public
+type TronProviderState = {
+    readonly address: TronProviderAddress | false;
+    readonly chainId: string;
+    readonly genesis: string;
+};
+
+// @public
+type TronRequest = {
+    readonly method: string;
+    readonly params?: unknown;
+};
+
+// @public (undocumented)
+type TronRequests = Pick<RequestController, "prepare" | "outcome">;
+
+// @public
+type TronSignInput = {
+    readonly method: "tron-sign";
+    readonly origin?: BrowserOrigin;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly request: SignRequest;
+};
+
+// @public
+class TronWalletHandler implements TronHandler {
+    constructor(options: Options_3);
+    // (undocumented)
+    handle(origin: string, request: TronRequest): Promise<unknown>;
+    // (undocumented)
+    readonly options: Options_3;
+    subscribe(listener: (event: TronEvent) => void): () => void;
+}
 
 // @public
 export type TxBlock = {
@@ -3104,12 +3181,13 @@ export type WalletEngine = {
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
-    readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy">;
+    readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "setTronNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy">;
     readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
     readonly nip07: Pick<Nip07Handler, "handle">;
     readonly webln: Pick<WeblnHandler, "handle">;
     readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
     readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
+    readonly tronWallet: Pick<TronWalletHandler, "handle" | "subscribe">;
     readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
     readonly spark: HostController<SparkController, "history" | "accountBalance" | "archivePayment" | "receiveAddress" | "createInvoice" | "newDepositAddress" | "paymentStatus" | "quoteExit" | "registerLightningAddress" | "unregisterLightningAddress">;
     readonly accounts: HostController<AccountTreeController, "imported" | "addGroup" | "addGroups" | "renameWallet" | "renameGroup" | "setHidden" | "select" | "bind" | "unbind" | "bindingOf" | "discoverSpark" | "discoverGroups" | "refreshTotals">;

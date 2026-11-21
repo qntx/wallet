@@ -49,6 +49,7 @@ const KINDS = [
   "freeze",
   "vote",
   "delegate",
+  "trx-memo",
 ] as const;
 
 type Kind = (typeof KINDS)[number];
@@ -155,8 +156,7 @@ type Candidate = { readonly kind: Kind | "trx" | "usdt"; readonly tx: Json; read
 function classify(tx: Json): Candidate | undefined {
   const raw = tx["raw_data"];
   const sigs = tx["signature"];
-  // The engine never builds a memo (`raw_data.data`), so memo-paying transactions are not its shape.
-  if (!isObj(raw) || !Array.isArray(sigs) || sigs.length !== 1 || raw["data"] !== undefined) {
+  if (!isObj(raw) || !Array.isArray(sigs) || sigs.length !== 1) {
     return undefined;
   }
   const contracts = raw["contract"];
@@ -169,6 +169,10 @@ function classify(tx: Json): Candidate | undefined {
   const value = isObj(parameter) && isObj(parameter["value"]) ? parameter["value"] : undefined;
   if (value === undefined || num(contract["Permission_id"]) !== 0) {
     return undefined;
+  }
+  // A memo'd TRX transfer is its own kind; a memo on any other contract is not the engine's shape.
+  if (raw["data"] !== undefined) {
+    return contract["type"] === "TransferContract" ? { kind: "trx-memo", tx, value } : undefined;
   }
   switch (contract["type"]) {
     case "TransferContract":
@@ -203,11 +207,24 @@ const samples: Record<Kind, Sample[]> = {
   freeze: [],
   vote: [],
   delegate: [],
+  "trx-memo": [],
 };
 const unmatched: Array<{ txid: string; actual: number; holder: number; fresh: number }> = [];
 let reverted = 0;
 
-const full = (kind: Kind): boolean => samples[kind].length >= TARGET;
+const TARGETS: Record<Kind, number> = {
+  "trx-existing": TARGET,
+  "trx-new": TARGET,
+  trc10: TARGET,
+  "usdt-holder": TARGET,
+  "usdt-non-holder": TARGET,
+  freeze: TARGET,
+  vote: TARGET,
+  delegate: TARGET,
+  "trx-memo": 25,
+};
+
+const full = (kind: Kind): boolean => samples[kind].length >= TARGETS[kind];
 
 async function main(): Promise<void> {
   const chain = await params();
@@ -306,6 +323,16 @@ async function record(
     },
     fee: num(info["fee"]),
   };
+  if (candidate.kind === "trx-memo") {
+    const created = await accountCreated(String(value["to_address"]));
+    const paid =
+      base.fee - base.receipt.netFee >= num(chain["getCreateNewAccountFeeInSystemContract"]);
+    const fresh = created !== undefined && created >= blockTimestamp - 60_000 && paid;
+    if (!fresh && !full("trx-memo")) {
+      samples["trx-memo"].push({ kind: "trx-memo", ...base });
+    }
+    return;
+  }
   if (candidate.kind === "trx" || candidate.kind === "trc10") {
     const created = await accountCreated(String(value["to_address"]));
     const paid =

@@ -96,8 +96,8 @@ the package root.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).
 - `engine.eip1193`, `engine.nip07`, `engine.webln`, `engine.solanaWallet`,
-  `engine.bitcoinWallet` — the injected provider handlers for each wallet standard (`handle`, and
-  `subscribe` where the standard has events).
+  `engine.bitcoinWallet`, `engine.tronWallet` — the injected provider handlers for each wallet
+  standard (`handle`, and `subscribe` where the standard has events).
 - `engine.phishing` — the phishing list (`check`, `sync`, `trust`, `untrust`); its lifecycle is
   independent of the lock state.
 - `engine.spark` — Spark reads and receives, with token balances (`SparkAccountState.tokens`); it
@@ -166,7 +166,9 @@ cross-checked against a second provider before anything is built or signed, and 
 `reads-unverified` flag marks a prepare whose cross-check could not run.
 
 Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
-TRC-10 decimal id or a TRC-20 `T…` address; `tron-stake` carries one action — `freeze`,
+TRC-10 decimal id or a TRC-20 `T…` address and an optional `memo` (1–256 UTF-8 bytes, no line
+breaks or hidden characters — it becomes `raw_data.data` and costs the chain's flat memo fee,
+quoted as `tronFee.memo`); `tron-stake` carries one action — `freeze`,
 `unfreeze`, `withdraw-expired`, `cancel-unfreeze`, `delegate` (with an optional `lockBlocks`),
 `undelegate`, `vote` or `claim-rewards` — checked against the java-tron actuator rules before
 signing; `tron-approve` builds the TRC-20 `approve` call (amount `0n` revokes). A pending request
@@ -174,6 +176,35 @@ carries `tronFee`, a `TronFeeQuote` with the expected and maximum burn, the band
 (`staked`/`free`/`burn`/`activation-staked`/`activation-fee`), energy details for contract
 calls, the activation charge for a first send to an absent account, and warnings
 (`recipient-not-activated`, `token-recipient-empty`).
+
+A built TRON request is fresh for 20 seconds before its `expiration`: approve with less left — or
+after the reference block left the solidified chain — and the route rebuilds the same contract on
+a fresh head before signing, never signing stale bytes; a rebuild whose fee bound grows is refused
+instead. DApp-built transactions get no rebuild: under 20 seconds they are refused and the dApp
+must build again.
+
+The in-app browser gets the TronLink surface — `window.tron`, `window.tronLink` and
+`window.tronWeb`, installed immutable in the top frame only and announced over TIP-6963.
+`tronWeb` covers what real dApps call: `defaultAddress`, `ready`, `trx.sign`,
+`trx.signMessageV2`, `_signTypedData`/`signTypedData`, `trx.sendRawTransaction`,
+`getBlockByNumber(0)` (the network genesis), `addressChanged` and the node setters as no-ops;
+every other member — `transactionBuilder`, `utils`, `event`, `plugin`, the rest of `trx` — is a
+refusal that rejects with code `4200` rather than a wrong answer, and there are no `isTronLink`
+flags. `trx.sign` on a hex string is refused: a digest is signed with `signMessageV2`, and
+multi-signature is not offered.
+
+A dApp transaction is signed only when it can be shown exactly: `raw_data` must bind the session's
+own account as owner, a single modeled contract, `Permission_id` 0, an `expiration` between 20
+seconds and 24 hours out, and a reference block proven on the chain (full node or, within its
+head, the solidity node, cross-checked against the independent endpoint when one is configured);
+the page's `txID` must be sha256 of `raw_data` and a supplied `raw_data` JSON must re-encode to the
+same bytes. The wallet never broadcasts a dApp transaction itself — approve creates a `submitted`
+entry carrying `tron.dappSignature` and no `raw`, so the poll can only observe: when the dApp's
+broadcast lands the entry goes `confirmed`/`final`, and if the head passes `expiration` with no
+inclusion it is `dropped`. `trx.sendRawTransaction` hands the wallet-signed bytes back through
+`submitDappTron` — the signature must match the observed entry's — for the one wallet broadcast.
+`tron_signMessageV2` signs TIP-191 bytes, `tron_signTypedData` a TIP-712 document the page
+supplies as `domain`/`types`/`message`, and `wallet_watchAsset` accepts TRC-20 only.
 
 Tracking follows the chain's own rule: the signed bytes bind to the solidified head and stay
 `submitted` — rebroadcast as needed — until the solidified node reports them (solidified
@@ -186,8 +217,7 @@ the node (the raw data hash must equal the txid and every claimed leg must decod
 — an entry the node contradicts is flagged `chain-mismatch`, one it cannot prove stays
 unverified.
 
-Not offered: `AccountPermissionUpdate` (multi-sig/permission changes), transaction memos, and a
-dApp provider — there is no `engine.tronWallet` like `eip1193`/`solanaWallet`.
+Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
 
 ## Hyperliquid
 

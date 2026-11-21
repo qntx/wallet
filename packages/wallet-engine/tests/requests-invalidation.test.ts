@@ -244,6 +244,7 @@ async function rig() {
     enabledNetworks: () => [MAINNET, SEPOLIA],
     bitcoinAddress: async () => Promise.resolve("bc1qunused"),
     solanaAddress: async () => Promise.resolve("SoLaNaUnused"),
+    tronAddress: async () => Promise.resolve("TTronAddUnused123"),
     nostrPubkey: async () => Promise.resolve("a".repeat(64)),
     invalidate: (origin: string) => {
       requests.invalidateOrigin(origin);

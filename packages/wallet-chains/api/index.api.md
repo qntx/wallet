@@ -489,6 +489,11 @@ export type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly message: Uint8Array;
+} | {
+    readonly kind: "tron.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
 };
 
 // @public

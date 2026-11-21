@@ -12,6 +12,7 @@ import * as Signature from "ox/Signature";
 import { ChainError } from "../index.ts";
 import { tronMessageDigest } from "./message.ts";
 import { decodeTronRawData } from "./raw.ts";
+import { parseTronTypedData, tronTypedDataDigest } from "./typed-data.ts";
 
 const key = (privateKey: Uint8Array): `0x${string}` => {
   if (privateKey.length !== 32) {
@@ -42,3 +43,7 @@ export const signTronMessage = (message: Uint8Array, privateKey: Uint8Array): Ui
   }
   return sign(tronMessageDigest(message), key(privateKey));
 };
+
+/** TIP-712 typed-data signing; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+export const signTronTypedData = (typedData: string, privateKey: Uint8Array): Uint8Array =>
+  sign(tronTypedDataDigest(parseTronTypedData(typedData).json), key(privateKey));

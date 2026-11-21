@@ -64,6 +64,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "pay",
   "zap",
   "evm-sign",
+  "tron-sign",
   "nostr-sign",
   "webln-invoice",
   "watch-asset",
