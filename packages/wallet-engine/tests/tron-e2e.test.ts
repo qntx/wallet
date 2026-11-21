@@ -16,7 +16,7 @@ import { join } from "node:path";
 
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { describe, expect, it } from "vite-plus/test";
+import { beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
@@ -390,76 +390,94 @@ const waitDropped = async (
   return waitDropped(ctl, id, tickFn, deadline);
 };
 
-describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
+describe.runIf(RUN)("tron e2e: TRE devnet", () => {
+  let tre0: Uint8Array;
+  let tre0Addr: string;
+  let tre1Addr: string;
+  let ticker: () => Promise<string>;
+  let wallet: Wallet;
+  let walletId: string;
+  let account: AccountRef;
+  let A: string;
+  let C: string;
+  let networks: NetworkController;
+  let transactions: TransactionController;
+  let requests: Awaited<ReturnType<typeof requestsFor>>;
+  let assets: AssetsController;
+  let activation: string;
+  let energyFee: bigint;
+  let maxFeeLimit: bigint;
+
+  beforeAll(async () => {
+    const [first, second] = await trePair();
+    tre0 = first;
+    tre0Addr = addressOf(first);
+    tre1Addr = addressOf(second);
+    ticker = async (): Promise<string> => tick(tre0, tre0Addr, tre1Addr);
+
+    wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    const info = await wallet.wallets.importMnemonic({
+      mnemonic: MNEMONIC,
+      factor: { kind: "password", password: PASSWORD },
+    });
+    ({ walletId } = info);
+    account = { kind: "hd", walletId, groupIndex: 0, template: "tron.bip44" };
+    A = await deriveAddress(wallet, walletId);
+
+    networks = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: globalThis.fetch.bind(globalThis),
+      rpc: { [NILE]: [BASE] },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      logger: { warn: () => undefined },
+    });
+    transactions = new TransactionController({
+      wallet,
+      networks,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      random: (n) => randomBytes(n),
+      setTimer: realTimer,
+      now: () => Date.now(),
+      logger: { warn: () => undefined },
+      pollMs: 500,
+    });
+    await transactions.init();
+    requests = await requestsFor(transactions);
+    assets = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
+      networks,
+      chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      setTimer: () => () => {},
+      logger: { warn: () => undefined },
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
+    });
+    await assets.init();
+
+    const params = await liveChainParameters();
+    activation = String(param(params, "getCreateNewAccountFeeInSystemContract"));
+    energyFee = param(params, "getEnergyFee");
+    maxFeeLimit = param(params, "getMaxFeeLimit");
+  }, 120_000);
+
   it(
-    "funds, sends, deploys a TRC-20, stakes, fails out-of-energy, drops on expiry, lists local history",
-    { timeout: 290_000 },
+    "funds the derived account and refresh shows TRX with the resources view",
+    { timeout: 180_000 },
     async () => {
-      const [tre0, tre1] = await trePair();
-      const tre0Addr = addressOf(tre0);
-      const tre1Addr = addressOf(tre1);
-      const ticker = async (): Promise<string> => tick(tre0, tre0Addr, tre1Addr);
-
-      const wallet: Wallet = await createNodeWallet({
-        verifyEvent,
-        passkey: {
-          rpId: "qntx.test",
-          rpName: "qntx",
-          walletSalt: "qntx/wallet",
-          backupSalt: "qntx/backup",
-          vaultSalt: "qntx/vault",
-        },
-        autoLock: { platform: "web", idleMinutes: 15 },
-        authenticator: createSoftwarePasskey(randomBytes(32)),
-        kernelUrl: KERNEL_URL,
-      });
-      const info = await wallet.wallets.importMnemonic({
-        mnemonic: MNEMONIC,
-        factor: { kind: "password", password: PASSWORD },
-      });
-      const { walletId } = info;
-      const account: AccountRef = {
-        kind: "hd",
-        walletId,
-        groupIndex: 0,
-        template: "tron.bip44",
-      };
-      const A = await deriveAddress(wallet, walletId);
-      const B = addressOf(randomBytes(32));
-
-      const networks = new NetworkController({
-        ...idleNetworkDeps,
-        fetch: globalThis.fetch.bind(globalThis),
-        rpc: { [NILE]: [BASE] },
-        openStore: async () => Promise.resolve(createMemoryEngineStore()),
-        logger: { warn: () => undefined },
-      });
-      const transactions = new TransactionController({
-        wallet,
-        networks,
-        openStore: async () => Promise.resolve(createMemoryEngineStore()),
-        random: (n) => randomBytes(n),
-        setTimer: realTimer,
-        now: () => Date.now(),
-        logger: { warn: () => undefined },
-        pollMs: 500,
-      });
-      await transactions.init();
-      const requests = await requestsFor(transactions);
-      const assets = new AssetsController({
-        ownBitcoinTxids: () => new Set(),
-        networks,
-        chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
-        openStore: async () => Promise.resolve(createMemoryEngineStore()),
-        setTimer: () => () => {},
-        logger: { warn: () => undefined },
-        gateway: undefined,
-        fetch: globalThis.fetch,
-        now: () => Date.now(),
-      });
-      await assets.init();
-
-      // ── Scenario 1: fund A, refresh shows TRX + the tron resources view ──────────────
       await setupTx(tre0, {
         type: "TransferContract",
         owner: tre0Addr,
@@ -470,12 +488,14 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       expect(funded.tron).toBeDefined();
       expect(funded.tron?.energy.limit).toBeDefined();
       expect(funded.tron?.bandwidth.free.limit).toBeDefined();
+    },
+  );
 
-      // ── Scenario 2: TRX send to a fresh address — activation warning, final, bytes match ──
-      const params = await liveChainParameters();
-      const activation = String(param(params, "getCreateNewAccountFeeInSystemContract"));
-      const energyFee = param(params, "getEnergyFee");
-      const maxFeeLimit = param(params, "getMaxFeeLimit");
+  it(
+    "sends TRX to a fresh address — activation warning, signed bytes match the preview, final",
+    { timeout: 300_000 },
+    async () => {
+      const B = addressOf(randomBytes(32));
       const pending = await requests.prepare({
         method: "send",
         account,
@@ -497,8 +517,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       const sentInfo = await txInfo(hashOf(sent));
       expect(infoFee(sentInfo)).toBe(BigInt(tronFeeOf(pending).expected));
       expect(infoFee(sentInfo)).toBeLessThanOrEqual(BigInt(tronFeeOf(pending).max));
+    },
+  );
 
-      // ── Scenario 3: deploy TestToken, custom-token add, TRC-20 send with energy ──────
+  it(
+    "deploys a TRC-20 and sends it with a live energy quote and fee limit",
+    { timeout: 600_000 },
+    async () => {
       const token = await deployContract(
         tre0Addr,
         tre0,
@@ -512,7 +537,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
         Date.now() + 120_000,
       );
       await assets.addToken(NILE, token);
-      const C = addressOf(randomBytes(32));
+      C = addressOf(randomBytes(32));
       await setupTx(tre0, {
         type: "TransferContract",
         owner: tre0Addr,
@@ -539,8 +564,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       expect(energyTotal(tokenInfo) * 2n).toBeLessThanOrEqual(used * 3n);
       const refreshed = await assets.refresh(A, NILE);
       expect(refreshed.tokens.some((t) => t.address === token)).toBe(true);
+    },
+  );
 
-      // ── Scenario 4: freeze for energy, unfreeze part — the resources view reflects it ─
+  it(
+    "freezes and unfreezes TRX for energy — the resources view reflects both",
+    { timeout: 600_000 },
+    async () => {
       const freeze = await requests.prepare({
         method: "tron-stake",
         account,
@@ -565,8 +595,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       await waitFinal(transactions, unfrozen.id, Date.now() + 240_000);
       const afterUnfreeze = await assets.refresh(A, NILE);
       expect(unfreezingCount(afterUnfreeze)).toBeGreaterThan(0);
+    },
+  );
 
-      // ── Scenario 5: real cost passes the estimate ⇒ on-chain OUT_OF_ENERGY ──────────
+  it(
+    "a real cost above the estimate fails on-chain with OUT_OF_ENERGY",
+    { timeout: 600_000 },
+    async () => {
       // ParityBomb.transfer costs one SSTORE loop on even blocks and LOOPS on odd ones. TRE's
       // mempool admission executes the call against the current head, so the estimate and the
       // admission check both see the cheap path at an even head — the transaction then lands
@@ -597,8 +632,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       expect(failedFinal.state).toBe("failed");
       expect(failedFinal.error).toContain("OUT_OF_ENERGY");
       expect(failedFinal.error).toContain("burned");
+    },
+  );
 
-      // ── Scenario 6: broadcast blocked ⇒ submitted until the head passes expiration ────
+  it(
+    "a blocked broadcast stays submitted until the head passes expiration, then drops",
+    { timeout: 400_000 },
+    async () => {
       const blockedNetworks = new NetworkController({
         ...idleNetworkDeps,
         fetch: blockedFetch,
@@ -639,8 +679,13 @@ describe.runIf(RUN)("tron e2e: TRE devnet", { timeout: 300_000 }, () => {
       expect(stateOf(blockedTxs, blocked.id)).toBe("submitted");
       // The head only passes expiration while other transactions keep landing — tick it.
       await waitDropped(blockedTxs, blocked.id, ticker, Date.now() + 240_000);
+    },
+  );
 
-      // ── Scenario 7: history lists the local sends only — TRE has no /v1 indexer ──────
+  it(
+    "history lists the local sends only — TRE serves no /v1 indexer",
+    { timeout: 60_000 },
+    async () => {
       const history = new HistoryController({
         networks: {
           enabled: tronOnly,
