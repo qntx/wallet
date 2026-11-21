@@ -1,7 +1,3 @@
-import { hmac } from "@noble/hashes/hmac.js";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { base64url } from "@scure/base";
 /**
  * The polymarket.* handlers: sealed CLOB L2 credentials and the HMAC request signature (design.md
  * §内核, research.md §2).
@@ -11,6 +7,10 @@ import { base64url } from "@scure/base";
  * api secret is never live in the kernel beyond one call and never reaches the main runtime after
  * import (design.md §不变量 1).
  */
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { base64url } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
