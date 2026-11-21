@@ -17,6 +17,7 @@ import type {
   DisplayIntent,
   HyperliquidAction,
   IntentSummary,
+  IntentWarningKind,
   MessageContent,
   MessageTextHazard,
   SafeTransaction,
@@ -140,7 +141,6 @@ type Catalog = {
   readonly networkLine: (label: string) => string;
   readonly unknownEvmChain: (chainId: number) => string;
   readonly unverifiedToken: (amount: string, asset: string) => string;
-  readonly sighashSingle: string;
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
   readonly stakeLines: (action: StakeAction, sol: (lamports: string) => string) => string[];
@@ -163,7 +163,7 @@ type Catalog = {
   readonly tronFeeLimit: (fee: string) => string;
   readonly tronBandwidthFee: string;
   readonly tronResource: Readonly<Record<TronResource, string>>;
-  readonly platformFee: (message: string) => string;
+  readonly warnings: Readonly<Record<IntentWarningKind, (message: string) => string>>;
   readonly bridgeLine: (
     network: string,
     amount: string,
@@ -294,8 +294,12 @@ const zh: Catalog = {
   networkLine: (label) => `网络：${label}`,
   unknownEvmChain: (chainId) => `EVM 链 ${chainId}`,
   unverifiedToken: (amount, asset) => `${amount} 个最小单位（未验证代币 ${asset}）`,
-  sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
-  platformFee: (message) => `Jupiter 收取平台费 ${message}`,
+  warnings: {
+    "platform-fee": (message) => `Jupiter 收取平台费 ${message}`,
+    "stake-lockup": () => "该质押账户已锁定：锁定期结束前资金无法转出",
+    "sighash-single-anyonecanpay": () => "已签输入只绑定同序号输出，交易其余部分可被改动",
+    "permit2-witness": () => "此许可附带附加条款（witness）",
+  },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
   delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -511,9 +515,14 @@ const en: Catalog = {
   networkLine: (label) => `Network: ${label}`,
   unknownEvmChain: (chainId) => `EVM chain ${chainId}`,
   unverifiedToken: (amount, asset) => `${amount} base units of unverified token ${asset}`,
-  sighashSingle:
-    "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
-  platformFee: (message) => `Jupiter platform fee: ${message}`,
+  warnings: {
+    "platform-fee": (message) => `Jupiter platform fee: ${message}`,
+    "stake-lockup": () =>
+      "The stake account is locked: its funds cannot move until the lockup expires",
+    "sighash-single-anyonecanpay": () =>
+      "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+    "permit2-witness": () => "This permit carries further terms (a witness)",
+  },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
   delegateTo: (name, version) =>
@@ -663,7 +672,7 @@ const en: Catalog = {
   tronResource: { bandwidth: "Bandwidth", energy: "Energy", "tron-power": "TRON Power" },
 };
 
-const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
+export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
 
 /**
  * `0.05 ETH` with known decimals (symbol, else the asset id); an amount with no decimals and no
@@ -939,15 +948,17 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         : intent.fee === undefined
           ? catalog.feeUnknown
           : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
-      ...warnings
-        .filter((w) => w.kind === "platform-fee")
-        .map((w) => catalog.platformFee(w.message)),
-      ...(warnings.some((w) => w.kind === "sighash-single-anyonecanpay")
-        ? [catalog.sighashSingle]
-        : []),
+      ...warningLines(catalog, warnings),
     ]),
   };
 }
+
+/** Every decoder warning line, in the order the decoder raised them. */
+const warningLines = (
+  catalog: Catalog,
+  warnings: PromptIntent["warnings"],
+): ReadonlyArray<string> =>
+  (warnings ?? []).map((w) => catalog.warnings[w.kind](w.message));
 
 function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<string> {
   if (signIn.status === "malformed") {
@@ -1248,6 +1259,7 @@ function typedDataLines(
     ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
     catalog.typedType(field(message.primaryType)),
     ...typedContentLines(catalog, intent, message),
+    ...warningLines(catalog, intent.warnings),
   ];
 }
 

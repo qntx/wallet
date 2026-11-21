@@ -324,8 +324,15 @@ export type StakeAction =
       readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: string }>;
     };
 
+/** The closed set of decoder warnings the prompt knows how to render. */
+export type IntentWarningKind =
+  | "platform-fee"
+  | "stake-lockup"
+  | "sighash-single-anyonecanpay"
+  | "permit2-witness";
+
 export type IntentWarning = {
-  readonly kind: string;
+  readonly kind: IntentWarningKind;
   readonly message: string;
 };
 

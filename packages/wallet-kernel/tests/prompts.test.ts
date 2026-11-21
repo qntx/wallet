@@ -8,14 +8,14 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { DisplayIntent } from "@qntx/wallet-chains";
+import type { DisplayIntent, IntentWarningKind } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import { buildTronRawData, decodeTron } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../src/errors.ts";
-import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
+import { CATALOGS, chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
 import { backupCredentialName, corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
@@ -2882,3 +2882,179 @@ describe("polymarket prompts", () => {
     });
   });
 });
+
+describe("decoder warnings reach the prompt", () => {
+  const WITNESS_SPENDER = "0x1111111254EEB25477B68fb85Ed929f73A960582";
+
+  const txIntent = (warnings: PromptIntent["warnings"]): PromptIntent => ({
+    summary: "swap",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "partial",
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    family: "solana",
+    ...(warnings === undefined ? {} : { warnings }),
+  });
+
+  const typedIntent = (warnings: PromptIntent["warnings"]): PromptIntent => ({
+    summary: "approve",
+    outflows: [],
+    approvals: [
+      {
+        kind: "allowance",
+        spender: WITNESS_SPENDER,
+        amount: { asset: USDC, amount: "1000000", decimals: 6, symbol: "USDC" },
+        change: "set",
+        unlimited: false,
+        verified: true,
+      },
+    ],
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    family: "evm",
+    message: { kind: "typed-data", primaryType: "Permit", domain: {}, data: {} },
+    ...(warnings === undefined ? {} : { warnings }),
+  });
+
+  it("every catalog warning renders in a transaction prompt, in order, in both locales", () => {
+    const kinds = Object.keys(CATALOGS.en.warnings) as IntentWarningKind[];
+    expect(kinds.length).toBeGreaterThan(0);
+    for (const kind of kinds) {
+      for (const locale of ["en", "zh-Hans"] as const) {
+        const prompt = chainPrompt(locale, txIntent([{ kind, message: "50 bps" }]));
+        const lines = prompt.description.split("\n");
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(
+          CATALOGS[locale].warnings[kind]("50 bps"),
+        );
+      }
+    }
+    /* Two warnings keep their order. */
+    const ordered = chainPrompt(
+      "en",
+      txIntent([
+        { kind: "platform-fee", message: "50 bps" },
+        { kind: "sighash-single-anyonecanpay", message: "m" },
+      ]),
+    ).description;
+    const feeLine = CATALOGS.en.warnings["platform-fee"]("50 bps");
+    const sighashLine = CATALOGS.en.warnings["sighash-single-anyonecanpay"]("m");
+    expect(ordered.indexOf(feeLine)).toBeGreaterThan(-1);
+    expect(ordered.indexOf(feeLine)).toBeLessThan(ordered.indexOf(sighashLine));
+  });
+
+  it("every catalog warning renders after the content lines of a typed-data prompt", () => {
+    const kinds = Object.keys(CATALOGS.en.warnings) as IntentWarningKind[];
+    for (const kind of kinds) {
+      for (const locale of ["en", "zh-Hans"] as const) {
+        const prompt = chainPrompt(locale, typedIntent([{ kind, message: "50 bps" }]));
+        const lines = prompt.description.split("\n");
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(
+          CATALOGS[locale].warnings[kind]("50 bps"),
+        );
+      }
+    }
+  });
+
+  it("a Permit2 witness order prompts the witness warning", () => {
+    const REACTOR = "0x00000000000000000000000000000000C0FFEE01";
+    const doc = {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        PermitWitnessTransferFrom: [
+          { name: "permitted", type: "TokenPermissions" },
+          { name: "spender", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "witness", type: "ExclusiveDutchOrder" },
+        ],
+        TokenPermissions: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+        ExclusiveDutchOrder: [
+          { name: "info", type: "OrderInfo" },
+          { name: "decayStartTime", type: "uint256" },
+          { name: "decayEndTime", type: "uint256" },
+          { name: "exclusiveFiller", type: "address" },
+          { name: "exclusivityOverrideBps", type: "uint256" },
+          { name: "inputToken", type: "address" },
+          { name: "inputStartAmount", type: "uint256" },
+          { name: "inputEndAmount", type: "uint256" },
+          { name: "outputs", type: "DutchOutput[]" },
+        ],
+        OrderInfo: [
+          { name: "reactor", type: "address" },
+          { name: "swapper", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "additionalValidationContract", type: "address" },
+          { name: "additionalValidationData", type: "bytes" },
+        ],
+        DutchOutput: [
+          { name: "token", type: "address" },
+          { name: "startAmount", type: "uint256" },
+          { name: "endAmount", type: "uint256" },
+          { name: "recipient", type: "address" },
+        ],
+      },
+      primaryType: "PermitWitnessTransferFrom",
+      domain: {
+        name: "Permit2",
+        chainId: 1,
+        verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      },
+      message: {
+        permitted: { token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", amount: "1000000000" },
+        spender: REACTOR,
+        nonce: "1",
+        deadline: "2000000000",
+        witness: {
+          info: {
+            reactor: REACTOR,
+            swapper: "0x52908400098527886E0F7030069857D2E4169EE7",
+            nonce: "1",
+            deadline: "2000000000",
+            additionalValidationContract: "0x0000000000000000000000000000000000000000",
+            additionalValidationData: "0x",
+          },
+          decayStartTime: "0",
+          decayEndTime: "0",
+          exclusiveFiller: "0x00000000000000000000000000000000DeaDBeef",
+          exclusivityOverrideBps: "0",
+          inputToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          inputStartAmount: "1000000000",
+          inputEndAmount: "1000000000",
+          outputs: [
+            {
+              token: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+              startAmount: "1",
+              endAmount: "1",
+              recipient: "0x00000000000000000000000000000000DeaDBeef",
+            },
+          ],
+        },
+      },
+    };
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
+        typedData: JSON.stringify(doc),
+      },
+      "0x52908400098527886E0F7030069857D2E4169EE7",
+    );
+    expect(intent.warnings.map((w) => w.kind)).toStrictEqual(["permit2-witness"]);
+    expect(chainPrompt("en", intent).description).toContain(
+      "This permit carries further terms (a witness)",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toContain("此许可附带附加条款（witness）");
+  });
+});
+
