@@ -1283,3 +1283,41 @@ The compiled host snippet is `tests/migration/tron.ts`.
 
 - Production needs the secrets `TRONGRID_API_KEY` and `TATUM_API_KEY` (`wrangler secret put`).
   Staging serves Nile keyless.
+
+## 23. Hyperliquid app provider
+
+### `requests.prepare({ method: "evm-sign" })` — `origin` is optional
+
+`EvmSignInput.origin` is now `origin?: BrowserOrigin`. Absent means the request is the wallet's
+own (`PendingRequest.origin` is `{ kind: "internal" }`), and only `request.kind ===
+"evm.typed-data"` is accepted — a personal message or a transaction still needs a page origin
+(sign-in and phishing checks run on it). Existing callers that pass an origin are unaffected. The
+apps entry uses this for Hyperliquid user-signed actions; hosts showing approval screens must be
+ready for an `evm-sign` request with an internal origin (show it as the wallet's own request; the
+prompt content is the kernel's decode of the typed data, `display.message.hyperliquid`).
+
+### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/hyperliquid`
+
+Opt-in entries; a host that does not import them bundles nothing new. The complete host
+composition (engine + apps, terms, enable with the approval request, orders with quote previews,
+a live book, close, withdraw, Bridge2 deposit) is the typechecked file
+`tests/migration/hyperliquid.ts`, compiled by `bun run typecheck`
+(`tsc --noEmit -p tests/migration`). The engine README's "Hyperliquid" section describes every
+option.
+
+Host checklist:
+
+- Pass `requests: engine.requests`, a separate `openStore` (its own EngineStore namespace), a
+  `socket: (url) => new WebSocket(url)` factory, the wallet `gateway` URL, and
+  `hyperliquid: { network, agentName, builder? }` (no defaults; `builder.feeRateTenthsBps` 1..100).
+- Render `AppsController` state: `status` (`disabled | enabling | enabled | needs-reauthorization
+  | unavailable`), `step` + `requestId` (show that request's approval screen), `renewalDue`,
+  `error`, and `eligibility` (call `refreshEligibility()` on foreground — display only).
+- Market orders return the slippage cap they will post; show it before confirming.
+- Order outcomes include `not-placed` and `unknown` (after a lost POST); nothing is re-sent.
+
+### Gateway
+
+New route `GET /v1/eligibility` (client id required, 1 rate-limit unit, `cache-control: private,
+no-store`); contract `eligibility` in `@qntx/wallet-engine/gateway/contract`. Deploying the gateway
+is required before hosts enable apps: without a `ready` eligibility answer `enable` refuses.

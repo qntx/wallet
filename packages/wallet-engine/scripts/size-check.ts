@@ -46,7 +46,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    budget: 120 * 1024,
+    /* 131 kB with the TRON family, the extra EVM fee models and the nonce/tracking fixes. */
+    budget: 136 * 1024,
     external: true,
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
   },

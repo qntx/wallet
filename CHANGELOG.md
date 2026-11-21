@@ -331,6 +331,31 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   Tatum on mainnet, TronGrid then NileEx on Nile) with schema-checked answers and broadcast
   no-double-relay; TronGrid `/v1/accounts` indexer for history and discovery. New production
   secrets `TRONGRID_API_KEY`, `TATUM_API_KEY`. CoinGecko/DefiLlama price rows for TRX and TRC-20.
+- `@qntx/wallet/hyperliquid`: `hyperliquid(wallet)` exposes the kernel-held Hyperliquid agent
+  methods (`createAgent`, `listAgents`, `deleteAgent`, `signL1`) the way `spark(wallet)` and
+  `nostr(wallet)` expose theirs.
+- `@qntx/wallet-engine/apps`: a separate entry (hosts that do not import it bundle nothing new).
+  `createApps({ wallet, requests, fetch, socket, now, setTimer, random, logger, openStore, gateway,
+  hyperliquid: { network, agentName, builder? } })` returns an `AppsController` and a
+  `HyperliquidProvider`:
+  - `AppsController`: per account group and app state (`disabled`, `enabling`, `enabled`,
+    `needs-reauthorization`, `unavailable`), terms acknowledgement, gateway eligibility, and a
+    resumable enable flow (kernel agent → `ApproveAgent` request → optional `ApproveBuilderFee`
+    request → verification on Hyperliquid); renew and disable (with optional deregistration on
+    Hyperliquid). Agents created but never approved are deleted.
+  - `HyperliquidProvider`: market and account reads, live views (order book, trades, candles,
+    account, spot balances, open orders, fills) with reconnect, resubscribe and stale marking,
+    order placement (limit, market with a computed slippage cap, stop/take-profit, attached and
+    position TP/SL, reduce-only, post-only, TWAP), modify, cancel, cancel-all, scheduled cancel,
+    leverage, isolated margin, close position, perp↔spot transfers, `usdSend`, `spotSend`,
+    `withdraw3`, and USDC deposits from Arbitrum through Hyperliquid's bridge.
+  - L1 actions are signed by the account's own kernel-held agent without a per-order prompt;
+    user-signed actions go through the request pipeline as kernel-described typed data. A lost
+    order POST is reconciled by client order id and never re-sent.
+- Gateway `GET /v1/eligibility`: per-app availability (`available`, `close-only`, `blocked`) from
+  the request country/region against sourced restricted-jurisdiction lists for Hyperliquid and
+  Polymarket. Display only — not a security boundary. Contract: `eligibility` in
+  `@qntx/wallet-engine/gateway/contract`.
 
 ### Changed
 
@@ -640,6 +665,8 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - The OP Stack and Scroll L1 data fee shown in `DisplayIntent.fee.l1Data` (and used for the `fee-exceeds-amount` check) is now an upper bound: the oracle estimate × 5/4, sized from 5,600+ real transactions where the charge never exceeded 1.14× the estimate read one block earlier. Displayed maximum fees on Base, OP Mainnet and the other OP Stack networks increase accordingly.
 - `@qntx/wallet-engine`: `GatewayScope` gains `"tron"` — TRON gateway traffic carries its own
   per-session client id. `GatewayConfig` and `GatewayScope` are now exported from the package root.
+- `requests.prepare({ method: "evm-sign" })`: `origin` is optional; without it the request is the
+  wallet's own and only `evm.typed-data` is accepted.
 
 ### Removed
 
