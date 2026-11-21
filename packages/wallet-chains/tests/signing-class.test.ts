@@ -1027,6 +1027,21 @@ describe("Snapshot Vote documents are recognised", () => {
     expect(intent.blind).toBe("typed-data-variant");
   });
 
+  it("a Vote with a third declared type is a variant", () => {
+    const document = voteDoc({ name: "choice", type: "uint32" }, 1);
+    const intent = decodeEvm(
+      typed({
+        ...document,
+        types: {
+          ...document.types,
+          Extra: [{ name: "x", type: "uint256" }],
+        },
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
   it("a Vote outside the snapshot domain is generic, and its hash leaf blinds it", () => {
     const document = voteDoc({ name: "choice", type: "uint32" }, 1);
     const intent = decodeEvm(

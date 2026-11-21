@@ -1281,6 +1281,24 @@ describe("everyday token and stake instructions decode", () => {
        undecoded + the signer takes part ⇒ core-instruction */
     expect(intent.blind).toBe("core-instruction");
   });
+
+  it("a Stake Split naming another staker shows no split action", () => {
+    const intent = decodeSolana(
+      req(
+        compile([
+          ix(
+            PROGRAM_IDS.stake,
+            [w0(STAKE_ACCT), w0(DEST), sgn(OTHER_KEY)],
+            cat(u32le(3), u64le(7n)),
+          ),
+        ]),
+      ) as never,
+      FEE_PAYER,
+    );
+    /* The staker is OTHER_KEY, who did not sign this request — the split is not attributed. */
+    expect(intent.staking).toBeUndefined();
+    expect(intent.blind).toBeUndefined();
+  });
 });
 
 describe("program-authority: an unknown program taking the signer", () => {
