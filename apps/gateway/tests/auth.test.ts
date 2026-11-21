@@ -6,6 +6,8 @@ import { networkById } from "@qntx/wallet-engine/gateway/contract";
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
+import { gatewayFor } from "../src/worker.ts";
+import type { WorkerEnv } from "../src/worker.ts";
 import {
   allowAll,
   call,
@@ -32,6 +34,36 @@ const BTCNET = {
   id: "bip122:00000008819873e925422c1ff0f99f7c",
   providers: [{ id: "bs", url: "https://bs.test/api", auth: "blockstream" as const }],
 };
+/** The dRPC → Ankr provider pair the new production rows use, on a registered id. */
+const FLARE = {
+  id: "eip155:11155111",
+  providers: [
+    { id: "drpc", url: "https://lb.drpc.live/flare", auth: "drpc" as const },
+    { id: "ankr", url: "https://rpc.ankr.com/flare", auth: "ankr" as const },
+  ],
+};
+
+/** A full production env; the networks swap to FLARE so the real auth wiring answers Ankr. */
+const productionEnv = (): WorkerEnv =>
+  ({
+    RISK: {
+      get: async () => Promise.resolve(null),
+      put: async () => Promise.resolve(),
+    } as unknown as KVNamespace,
+    IP_LIMITER: allowAll,
+    RPC_LIMITER: allowAll,
+    DEFAULT_LIMITER: allowAll,
+    CORS_ORIGINS: "",
+    NETWORKS: "production",
+    ZEROX_API_KEY: "z",
+    JUPITER_API_KEY: "j",
+    ALCHEMY_API_KEY: "a",
+    DRPC_API_KEY: "d",
+    ANKR_API_KEY: "ankr-secret",
+    BLOCKSTREAM_CLIENT_ID: "id",
+    BLOCKSTREAM_CLIENT_SECRET: "sec",
+    COINGECKO_API_KEY: "cg",
+  }) as WorkerEnv;
 
 describe("upstream auth", () => {
   it("sends the provider's auth headers on rpc and esplora requests", async () => {
@@ -101,15 +133,35 @@ describe("upstream auth", () => {
           await Promise.resolve();
           return new Response();
         },
-        networks: [NET],
+        networks: [NET, FLARE],
         limiters,
         corsOrigins: [],
         risk,
         tokens: memoryRiskStore(),
         prices,
-        auth: {},
+        auth: { alchemy: bearer("k1"), drpc: header("Drpc-Key", "d") },
       }),
-    ).toThrow('unconfigured auth "alchemy"');
+    ).toThrow('unconfigured auth "ankr"');
+  });
+
+  it("fails over from a 5xx dRPC to Ankr, keying it by header and never the URL", async () => {
+    const { fetch, callsTo } = fakeFetch({
+      "https://lb.drpc.live/flare": () => new Response("boom", { status: 502 }),
+      "https://rpc.ankr.com/flare": () =>
+        Response.json({ jsonrpc: "2.0", id: 1, result: "0xe" }),
+    });
+    const app = createGateway({ ...gatewayFor(productionEnv()), fetch, networks: [FLARE] });
+    const r = await app.fetch(
+      new Request("https://gw.test/v1/rpc/eip155:11155111", post(call("eth_chainId"))),
+    );
+    expect(r.status).toBe(200);
+    expect(await r.json()).toStrictEqual({ jsonrpc: "2.0", id: 1, result: "0xe" });
+    const ankr = callsTo("https://rpc.ankr.com")[0];
+    expect(ankr?.url).toBe("https://rpc.ankr.com/flare");
+    expect(ankr?.url).not.toContain("ankr-secret");
+    const sent = ankr?.headers as Record<string, string>;
+    expect(sent["x-api-key"]).toBe("ankr-secret");
+    expect(sent["Drpc-Key"]).toBeUndefined();
   });
 });
 

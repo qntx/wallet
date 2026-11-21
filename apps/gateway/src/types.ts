@@ -13,7 +13,7 @@ export type Limiters = {
 };
 
 /** The provider account an upstream authenticates against, by name — never a secret. */
-export type UpstreamAuthId = "alchemy" | "drpc" | "blockstream";
+export type UpstreamAuthId = "alchemy" | "drpc" | "blockstream" | "ankr";
 
 /** One upstream endpoint for a network: a JSON-RPC URL (EVM, Solana) or an Esplora base URL. */
 export type UpstreamProvider = {

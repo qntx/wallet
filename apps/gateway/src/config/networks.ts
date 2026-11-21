@@ -298,9 +298,10 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
 ];
 
 /**
- * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; Bitcoin
- * uses Blockstream Enterprise's Esplora (the engine falls back to the host's own endpoints on a
- * 503). Keys ride in headers — URLs carry no key material.
+ * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; chains
+ * Alchemy does not serve use dRPC, falling back to Ankr. Bitcoin uses Blockstream Enterprise's
+ * Esplora (the engine falls back to the host's own endpoints on a 503). Keys ride in headers —
+ * URLs carry no key material.
  */
 export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
   {

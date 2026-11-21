@@ -64,6 +64,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
       auth: {
         alchemy: bearer(env.ALCHEMY_API_KEY),
         drpc: header("Drpc-Key", env.DRPC_API_KEY),
+        ankr: header("x-api-key", env.ANKR_API_KEY),
         blockstream: blockstreamAuth({
           fetch: async (input, init) => fetch(input, init),
           clientId: env.BLOCKSTREAM_CLIENT_ID,

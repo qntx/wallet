@@ -36,6 +36,7 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     JUPITER_API_KEY: "j",
     ALCHEMY_API_KEY: "a",
     DRPC_API_KEY: "d",
+    ANKR_API_KEY: "n",
     BLOCKSTREAM_CLIENT_ID: "id",
     BLOCKSTREAM_CLIENT_SECRET: "sec",
     COINGECKO_API_KEY: "cg",
@@ -43,10 +44,15 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   }) as WorkerEnv;
 
 describe("gatewayFor", () => {
-  it("production yields mainnets and all three provider auths", () => {
+  it("production yields mainnets and all four provider auths", () => {
     const options = gatewayFor(production());
     expect(options.networks).toBe(PRODUCTION_NETWORKS);
-    expect(Object.keys(options.auth).toSorted()).toStrictEqual(["alchemy", "blockstream", "drpc"]);
+    expect(Object.keys(options.auth).toSorted()).toStrictEqual([
+      "alchemy",
+      "ankr",
+      "blockstream",
+      "drpc",
+    ]);
     expect(options.corsOrigins).toStrictEqual([]);
     expect(gatewayFor(production({ CORS_ORIGINS: "" })).corsOrigins).toStrictEqual([]);
     expect(options.jupiter).toStrictEqual({ apiKey: "j" });
