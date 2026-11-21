@@ -81,7 +81,8 @@ const normalize = (value: unknown): unknown => {
   }
   if (typeof value === "object" && value !== null) {
     const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value).toSorted(([a], [b]) => (a < b ? -1 : 1))) {
+    const entries: Array<[string, unknown]> = Object.entries(value);
+    for (const [key, item] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
       out[key] = normalize(item);
     }
     return out;

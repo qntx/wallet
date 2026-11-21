@@ -1,1 +1,92 @@
-{"subscription":{"type":"clearinghouseState","user":"0x5f50aae47299df2066f5d0b4fb76cb685807eaec"},"recordedAt":1795260854426,"echo":{"method":"subscribe","subscription":{"type":"clearinghouseState","dex":"","user":"0x5f50aae47299df2066f5d0b4fb76cb685807eaec"}},"frames":[{"channel":"clearinghouseState","data":{"dex":"","user":"0x5f50aae47299df2066f5d0b4fb76cb685807eaec","clearinghouseState":{"marginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMarginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMaintenanceMarginUsed":"0.0","withdrawable":"27.531402","assetPositions":[],"time":1795260847881}}},{"channel":"clearinghouseState","data":{"dex":"","user":"0x5f50aae47299df2066f5d0b4fb76cb685807eaec","clearinghouseState":{"marginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMarginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMaintenanceMarginUsed":"0.0","withdrawable":"27.531402","assetPositions":[],"time":1795260848958}}},{"channel":"clearinghouseState","data":{"dex":"","user":"0x5f50aae47299df2066f5d0b4fb76cb685807eaec","clearinghouseState":{"marginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMarginSummary":{"accountValue":"27.531402","totalNtlPos":"0.0","totalRawUsd":"27.531402","totalMarginUsed":"0.0"},"crossMaintenanceMarginUsed":"0.0","withdrawable":"27.531402","assetPositions":[],"time":1795260853978}}}]}
+{
+  "subscription": {
+    "type": "clearinghouseState",
+    "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec"
+  },
+  "recordedAt": 1795260854426,
+  "echo": {
+    "method": "subscribe",
+    "subscription": {
+      "type": "clearinghouseState",
+      "dex": "",
+      "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec"
+    }
+  },
+  "frames": [
+    {
+      "channel": "clearinghouseState",
+      "data": {
+        "dex": "",
+        "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec",
+        "clearinghouseState": {
+          "marginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMarginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMaintenanceMarginUsed": "0.0",
+          "withdrawable": "27.531402",
+          "assetPositions": [],
+          "time": 1795260847881
+        }
+      }
+    },
+    {
+      "channel": "clearinghouseState",
+      "data": {
+        "dex": "",
+        "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec",
+        "clearinghouseState": {
+          "marginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMarginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMaintenanceMarginUsed": "0.0",
+          "withdrawable": "27.531402",
+          "assetPositions": [],
+          "time": 1795260848958
+        }
+      }
+    },
+    {
+      "channel": "clearinghouseState",
+      "data": {
+        "dex": "",
+        "user": "0x5f50aae47299df2066f5d0b4fb76cb685807eaec",
+        "clearinghouseState": {
+          "marginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMarginSummary": {
+            "accountValue": "27.531402",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "27.531402",
+            "totalMarginUsed": "0.0"
+          },
+          "crossMaintenanceMarginUsed": "0.0",
+          "withdrawable": "27.531402",
+          "assetPositions": [],
+          "time": 1795260853978
+        }
+      }
+    }
+  ]
+}

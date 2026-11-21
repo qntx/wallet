@@ -6,8 +6,8 @@
  * frames — so socket/live tests replay real wire shapes instead of hand-made frames.
  *
  * Market channels (l2Book/trades/candle) subscribe for BTC; user channels reuse the account the
- * HTTP recordings picked (`_account.json` beside the fixtures). Needs Node ≥ 22 (global
- * WebSocket) or bun.
+ * HTTP recordings picked (`_account.json` beside the fixtures). Needs Node ≥ 22 (global WebSocket)
+ * or bun.
  *
  * Run from the repo root: bun scripts/vectors/hyperliquid-ws-recordings.ts
  */
@@ -38,9 +38,14 @@ type Recorded = {
 const accountOf = (network: string): string => {
   const path = resolve(OUT, network, "_account.json");
   if (existsSync(path)) {
-    const user = (JSON.parse(readFileSync(path, "utf8")) as { user?: string }).user;
-    if (typeof user === "string") {
-      return user;
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "user" in parsed &&
+      typeof parsed.user === "string"
+    ) {
+      return parsed.user;
     }
   }
   throw new Error(`no recorded account for ${network} — run hyperliquid-recordings.ts first`);
@@ -55,27 +60,30 @@ const subscriptionsFor = (user: string): ReadonlyArray<readonly [string, unknown
   ["userFills", { type: "userFills", user }],
 ];
 
+const typeOf = (value: unknown): unknown =>
+  typeof value === "object" && value !== null && "type" in value ? value.type : undefined;
+
 const record = async (url: string, user: string): Promise<Map<string, Recorded>> => {
   const out = new Map<string, Recorded>();
   const ws = new WebSocket(url);
   const echoes = new Map<string, unknown>();
   const frames = new Map<string, unknown[]>();
   const pending = subscriptionsFor(user).map(([name, payload]) => ({ name, payload }));
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const deadline = setTimeout(() => {
+  await new Promise<void>((resolve, reject) => {
+    setTimeout(() => {
       ws.close();
-      resolvePromise(); // the window closed — record whatever arrived
+      resolve(); // the window closed — record whatever arrived
     }, WINDOW_MS);
-    ws.onopen = () => {
+    ws.addEventListener("open", () => {
       for (const { payload } of pending) {
         ws.send(JSON.stringify({ method: "subscribe", subscription: payload }));
       }
-    };
-    ws.onerror = () => rejectPromise(new Error("websocket error"));
-    ws.onclose = () => {
-      resolvePromise(); // an early close records whatever arrived
-    };
-    ws.onmessage = (event) => {
+    });
+    ws.addEventListener("error", () => reject(new Error("websocket error")));
+    ws.addEventListener("close", () => {
+      resolve(); // an early close records whatever arrived
+    });
+    ws.addEventListener("message", (event) => {
       let frame: unknown;
       try {
         frame = JSON.parse(String(event.data));
@@ -85,24 +93,19 @@ const record = async (url: string, user: string): Promise<Map<string, Recorded>>
       if (typeof frame !== "object" || frame === null || !("channel" in frame)) {
         return;
       }
-      const channel = (frame as { channel: string }).channel;
-      const data = (frame as { data?: unknown }).data;
+      const channel = "channel" in frame ? frame.channel : undefined;
+      const data = "data" in frame ? frame.data : undefined;
+      if (typeof channel !== "string") {
+        return;
+      }
       if (channel === "subscriptionResponse") {
         /* Match the echo back to its pending payload by subset containment, like the
            transport does — the echo's `subscription` field carries the wire shape. */
         const echoSub =
-          typeof data === "object" && data !== null
-            ? (data as { subscription?: unknown }).subscription
+          typeof data === "object" && data !== null && "subscription" in data
+            ? data.subscription
             : undefined;
-        const hit = pending.find(
-          ({ payload }) =>
-            typeof payload === "object" &&
-            payload !== null &&
-            (payload as { type?: string }).type ===
-              (typeof echoSub === "object" && echoSub !== null
-                ? (echoSub as { type?: string }).type
-                : undefined),
-        );
+        const hit = pending.find(({ payload }) => typeOf(payload) === typeOf(echoSub));
         if (hit !== undefined) {
           echoes.set(hit.name, data);
         }
@@ -126,7 +129,7 @@ const record = async (url: string, user: string): Promise<Map<string, Recorded>>
           frames: frames.get(channel) ?? [],
         });
       }
-    };
+    });
   });
   /* Every channel that echoed a subscriptionResponse is written, even with no data frames. */
   for (const { name, payload } of pending) {
@@ -144,6 +147,7 @@ const record = async (url: string, user: string): Promise<Map<string, Recorded>>
 
 for (const [network, url] of Object.entries(NETWORKS)) {
   const user = accountOf(network);
+  // oxlint-disable-next-line eslint/no-await-in-loop -- one network's socket at a time.
   const recorded = await record(url, user);
   for (const [name, fixture] of recorded) {
     const path = resolve(OUT, network, `ws-${name}.json`);
