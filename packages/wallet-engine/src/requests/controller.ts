@@ -152,7 +152,7 @@ export type EvmSignInput = {
 export type TronSignInput = {
   readonly method: "tron-sign";
   /** A page asking for the signature; absent means the wallet itself. */
-  readonly origin?: BrowserOrigin;
+  readonly origin?: DappOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;

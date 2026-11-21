@@ -1267,7 +1267,7 @@ export const prepareDappTron = async (
     ...(raw.feeLimit === undefined ? {} : { feeLimit: raw.feeLimit }),
     ...(raw.memo === undefined ? {} : { memo: true }),
   });
-  const balance = BigInt(Math.trunc(fromRow?.balance ?? 0));
+  const balance = BigInt(fromRow?.balance ?? 0);
   if (balance < outflow + BigInt(quote.expected)) {
     throw new ChainError(
       "invalid-request",

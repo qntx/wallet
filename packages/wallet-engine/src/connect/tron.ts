@@ -17,6 +17,7 @@ import {
   SignInOriginError,
 } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
+import type { DappOrigin } from "../requests/types.ts";
 import { BroadcastRefusedError } from "../transactions/broadcast.ts";
 import type { TransactionController } from "../transactions/controller.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
@@ -209,10 +210,7 @@ export class TronWalletHandler implements TronHandler {
    * message}` result instead of rejecting — 200 on success, 4001 when the user refused, 4000 for
    * anything else (TronLink's own convention).
    */
-  private async requestAccounts(
-    checked: { readonly kind: "browser"; readonly origin: string },
-    legacy: boolean,
-  ): Promise<unknown> {
+  private async requestAccounts(checked: DappOrigin, legacy: boolean): Promise<unknown> {
     try {
       const session = this.options.connections.session(checked.origin);
       const network = session?.tronNetwork;
@@ -251,7 +249,7 @@ export class TronWalletHandler implements TronHandler {
 
   /** The session's current TRON network and its binding — every signing method requires both. */
   private signingSession(
-    checked: { readonly kind: "browser"; readonly origin: string },
+    checked: DappOrigin,
     method: string,
   ): {
     readonly network: string;
@@ -274,10 +272,7 @@ export class TronWalletHandler implements TronHandler {
    * A `wallet_switchEthereumChain` on `window.tron` switches the session's TRON network: a chain id
    * that names no enabled TRON network is 4902, no session is 4100.
    */
-  private async switchChain(
-    checked: { readonly kind: "browser"; readonly origin: string },
-    params: unknown,
-  ): Promise<unknown> {
+  private async switchChain(checked: DappOrigin, params: unknown): Promise<unknown> {
     const param: unknown = Array.isArray(params) ? params[0] : undefined;
     const chainId = isObject(param) ? param["chainId"] : undefined;
     if (typeof chainId !== "string" || !/^0x[0-9a-fA-F]+$/.test(chainId)) {
@@ -297,10 +292,7 @@ export class TronWalletHandler implements TronHandler {
   }
 
   /** The TRC-20 `wallet_watchAsset`: other token kinds are 4200, malformed params invalid. */
-  private async watchAsset(
-    checked: { readonly kind: "browser"; readonly origin: string },
-    params: unknown,
-  ): Promise<void> {
+  private async watchAsset(checked: DappOrigin, params: unknown): Promise<void> {
     if (!isObject(params) || params["type"] !== "trc20" || !isObject(params["options"])) {
       if (isObject(params) && (params["type"] === "trc10" || params["type"] === "trc721")) {
         throw unsupportedMethod(`${params["type"]} watch-asset`);
@@ -399,7 +391,7 @@ export class TronWalletHandler implements TronHandler {
   }
 
   private async tronSign(
-    checked: { readonly kind: "browser"; readonly origin: string },
+    checked: DappOrigin,
     network: string,
     binding: NonNullable<ReturnType<TronConnections["sessionAccounts"]>>,
     request: Parameters<TronRequests["prepare"]>[0] extends infer I
@@ -424,7 +416,7 @@ export class TronWalletHandler implements TronHandler {
 
   /** `trx.sign(tx)` — signs the exact `raw_data` bytes; the page broadcasts them itself. */
   private async signTransaction(
-    checked: { readonly kind: "browser"; readonly origin: string },
+    checked: DappOrigin,
     params: unknown,
   ): Promise<Record<string, unknown>> {
     const { transaction, rawData } = this.transactionOf(params, "absent");
@@ -445,7 +437,7 @@ export class TronWalletHandler implements TronHandler {
 
   /** `trx.sendRawTransaction(tx)` — broadcasts a transaction this wallet already signed. */
   private async sendRawTransaction(
-    checked: { readonly kind: "browser"; readonly origin: string },
+    checked: DappOrigin,
     params: unknown,
   ): Promise<Record<string, unknown>> {
     const { transaction, rawData, signature } = this.transactionOf(params, "one");
@@ -466,10 +458,7 @@ export class TronWalletHandler implements TronHandler {
   }
 
   /** `trx.signMessageV2(m)` — a TIP-191 personal-sign of arbitrary bytes. */
-  private async signMessage(
-    checked: { readonly kind: "browser"; readonly origin: string },
-    params: unknown,
-  ): Promise<string> {
+  private async signMessage(checked: DappOrigin, params: unknown): Promise<string> {
     const message = isObject(params) ? params["message"] : undefined;
     if (message === undefined) {
       throw invalidParams("params must be { message }");
@@ -489,10 +478,7 @@ export class TronWalletHandler implements TronHandler {
   }
 
   /** `trx.signTypedData`/`_signTypedData` — a TIP-712 typed-data signature. */
-  private async signTypedData(
-    checked: { readonly kind: "browser"; readonly origin: string },
-    params: unknown,
-  ): Promise<string> {
+  private async signTypedData(checked: DappOrigin, params: unknown): Promise<string> {
     if (
       !isObject(params) ||
       !isObject(params["domain"]) ||

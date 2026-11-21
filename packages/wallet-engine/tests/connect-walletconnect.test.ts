@@ -114,6 +114,7 @@ function rig(options: { noGroup?: boolean; failEvm?: boolean } = {}) {
     bitcoinAddress: async (group, _network, purpose) =>
       Promise.resolve(`btc-${String(group.groupIndex)}-${purpose}`),
     solanaAddress: async (group) => Promise.resolve(`sol-${String(group.groupIndex)}`),
+    tronAddress: async (group) => Promise.resolve(`tron-${String(group.groupIndex)}`),
     nostrPubkey: async () => Promise.resolve("a".repeat(64)),
     invalidate: (origin) => {
       invalidated.push(origin);
