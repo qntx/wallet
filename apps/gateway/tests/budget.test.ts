@@ -59,6 +59,7 @@ describe("localBudget", () => {
     test: {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 10, seconds: 10 }],
+      clientShare: 0.05,
     },
   };
 
@@ -115,6 +116,7 @@ describe("durableBudget", () => {
     test: {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 1000, seconds: 60 }],
+      clientShare: 0.05,
     },
   };
 

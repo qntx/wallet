@@ -30,7 +30,11 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
 /** The production Alchemy row: its window refills 40,000 units every 5 s → 480,000 a minute. */
 const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 40_000, seconds: 5 }] },
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 40_000, seconds: 5 }],
+    clientShare: 0.05,
+  },
 };
 const PER_MINUTE = 40_000 * (60 / 5);
 /** The share limiter sells one IP at most 5 % of the account's per-minute budget. */
@@ -108,7 +112,11 @@ describe("provider-cost metering", () => {
     // the ceiling check refuses before the limiter is even asked.
     const tiny: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 60, seconds: 60 }] },
+      alchemy: {
+        costs: ALCHEMY_COSTS,
+        budget: [{ units: 60, seconds: 60 }],
+        clientShare: 0.05,
+      },
     };
     const share = recordingLimiter();
     const up = fakeFetch({ [ALCHEMY]: () => rpcOk("0x1") });

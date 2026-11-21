@@ -105,22 +105,27 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
           fork: {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
             budget: [{ units: 1_000_000, seconds: 60 }],
+            clientShare: 0.05,
           },
           "0x": {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
             budget: [{ units: 1_000_000, seconds: 60 }],
+            clientShare: 0.05,
           },
           jupiter: {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
             budget: [{ units: 1_000_000, seconds: 60 }],
+            clientShare: 0.05,
           },
           across: {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
             budget: [{ units: 1_000_000, seconds: 60 }],
+            clientShare: 0.05,
           },
           defillama: {
             costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
             budget: [{ units: 1_000_000, seconds: 60 }],
+            clientShare: 0.05,
           },
         },
         limiters,

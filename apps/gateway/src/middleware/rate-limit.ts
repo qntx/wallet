@@ -15,12 +15,33 @@ export const RATE_LIMIT_RETRY_AFTER_SECONDS = 10;
 export const SHARE_LIMIT = 1000;
 /** Matches the binding's 60-second period. */
 export const SHARE_RETRY_AFTER_SECONDS = 60;
-/** Fraction of an account's slowest per-minute budget one IP may consume. */
-const SHARE_OF_ACCOUNT = 0.05;
+/** The share binding's longest period: only windows at this scale price the per-prefix share. */
+export const SHARE_WINDOW_MAX_SECONDS = 60;
 
-/** The slowest of an account's windows, expressed as units per minute. */
-const perMinute = (account: Account): number =>
-  Math.min(...account.budget.map((window) => (window.units * 60) / window.seconds));
+/**
+ * The per-minute capacity one client prefix may spend of `account`: `clientShare` of its
+ * minute-scale budget. Windows longer than a minute stay out — day/month quotas are enforced by the
+ * global budget (the provider-budget Durable Object), not per prefix. Throws when the account has
+ * no minute-scale window or a `clientShare` outside (0, 1].
+ */
+export function sharePerMinute(account: Account): number {
+  if (!(account.clientShare > 0) || account.clientShare > 1) {
+    throw new Error(
+      `provider account clientShare must be inside (0, 1], got ${account.clientShare}`,
+    );
+  }
+  const windows = account.budget.filter((window) => window.seconds <= SHARE_WINDOW_MAX_SECONDS);
+  if (windows.length === 0) {
+    throw new Error("provider account has no minute-scale budget window for the client share");
+  }
+  return (
+    account.clientShare * Math.min(...windows.map((window) => (window.units * 60) / window.seconds))
+  );
+}
+
+/** The share-limiter units one call costing `units` account units is charged on each IP key. */
+export const shareDelta = (account: Account, units: number): number =>
+  Math.max(1, Math.ceil((units * SHARE_LIMIT) / sharePerMinute(account)));
 
 /**
  * The counter keys an address is charged against, most specific first: IPv4 → its /24, IPv6 → its
@@ -110,11 +131,8 @@ export const rateLimit =
         // Resolved providers carry a configured account; reaching this is a construction bug.
         throw new Error(`provider account "${account}" is not configured`);
       }
-      // One IP buys at most SHARE_OF_ACCOUNT of the account's slowest per-minute window.
-      const delta = Math.max(
-        1,
-        Math.ceil((units * SHARE_LIMIT) / (SHARE_OF_ACCOUNT * perMinute(found))),
-      );
+      // One IP buys at most clientShare of the account's minute-scale budget.
+      const delta = shareDelta(found, units);
       if (delta > SHARE_LIMIT) {
         throw new GatewayHttpError(413, "too-costly");
       }

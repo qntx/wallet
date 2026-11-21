@@ -5,6 +5,8 @@ import { accepts } from "@qntx/wallet-engine/gateway/contract";
 import { createGateway } from "../src/app.ts";
 import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { Account } from "../src/config/accounts.ts";
+import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
+import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { TokenListStore } from "../src/tokens/build.ts";
 import type {
@@ -14,6 +16,7 @@ import type {
   ProviderBudget,
   RateLimiter,
   ResolvedProvider,
+  UpstreamAuthId,
 } from "../src/types.ts";
 
 export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
@@ -67,10 +70,15 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
       {
         costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
         budget: [{ units: 1_000_000, seconds: 60 }],
+        clientShare: 0.05,
       } satisfies Account,
     ]),
   ),
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 1_000_000, seconds: 60 }] },
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 1_000_000, seconds: 60 }],
+    clientShare: 0.05,
+  },
 };
 
 /** A code-built provider fake: id is its account, one request credit per call. */
@@ -175,6 +183,32 @@ export function countBefore(limit: number): RateLimiter & {
   };
 }
 
+/**
+ * The binding's real behaviour that `countBefore` omits: counters live inside a fixed period and
+ * reset when the clock crosses a period boundary. Same count-before-add semantics (a request is
+ * refused only when the window's count is already at the limit, then charged its delta anyway).
+ */
+export const windowedCountBefore = (
+  limit: number,
+  periodMs: number,
+  now: () => number,
+): RateLimiter => {
+  const state = new Map<string, { window: number; count: number }>();
+  return {
+    limit: async ({ key, delta = 1 }: { key: string; delta?: number }) => {
+      await Promise.resolve();
+      const window = Math.floor(now() / periodMs);
+      const entry = state.get(key);
+      const count = entry === undefined || entry.window !== window ? 0 : entry.count;
+      if (count >= limit) {
+        return { success: false };
+      }
+      state.set(key, { window, count: count + delta });
+      return { success: true };
+    },
+  };
+};
+
 export function memoryRiskStore(): RiskStore & { readonly data: Map<string, string> } {
   const data = new Map<string, string>();
   return {
@@ -257,6 +291,64 @@ export const headers = (extra: Record<string, string> = {}): Record<string, stri
   "x-client-id": CLIENT_ID,
   ...extra,
 });
+
+const UPSTREAM_AUTH_IDS: ReadonlyArray<UpstreamAuthId> = [
+  "alchemy",
+  "drpc",
+  "blockstream",
+  "ankr",
+  "trongrid",
+  "tatum",
+];
+
+const noAuthInit = async (): Promise<Record<string, never>> => {
+  await Promise.resolve();
+  return {};
+};
+
+/** Every upstream auth id resolves to no headers — the keyed endpoints stay construction-valid. */
+const noAuth = (): NonNullable<Parameters<typeof gateway>[0]["auth"]> =>
+  Object.fromEntries(UPSTREAM_AUTH_IDS.map((id) => [id, noAuthInit]));
+
+/** A minimal `getnowblock` body satisfying the TRON node schema. */
+export const TRON_BLOCK = {
+  blockID: "a".repeat(64),
+  block_header: { raw_data: { number: 1, timestamp: 1 } },
+};
+
+export type ProductionGatewayOptions = {
+  readonly fetch: typeof globalThis.fetch;
+  readonly share?: RateLimiter;
+  readonly budget?: ProviderBudget;
+  readonly now?: () => number;
+};
+
+/**
+ * The production gateway wiring in-process: real production networks and account table, fake auth,
+ * scripted upstreams and faithful share-limit fakes, so tests exercise the configured provider rows
+ * rather than a parallel fixture.
+ */
+export const productionGateway = (options: ProductionGatewayOptions): ReturnType<typeof gateway> =>
+  gateway({
+    fetch: options.fetch,
+    networks: PRODUCTION_NETWORKS,
+    accounts: PRODUCTION_ACCOUNTS,
+    auth: noAuth(),
+    limiters: {
+      ip: allowAll,
+      rpc: allowAll,
+      default: allowAll,
+      share: options.share ?? countBefore(1000),
+    },
+    jupiter: { apiKey: "gateway-test" },
+    prices: {
+      cache: memoryPriceCache(),
+      // Enables the CoinGecko source so the non-USD path runs; the key is fake.
+      coingecko: { apiKey: "gateway-test" },
+    },
+    ...(options.budget === undefined ? {} : { budget: options.budget }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
 
 export const post = (body: unknown): RequestInit => ({
   method: "POST",

@@ -7,7 +7,7 @@ import { requireClientId } from "./middleware/client-id.ts";
 import type { ClientIdVariables } from "./middleware/client-id.ts";
 import { mapError, notFound } from "./middleware/errors.ts";
 import { indexNetworks } from "./middleware/network.ts";
-import { rateLimit } from "./middleware/rate-limit.ts";
+import { rateLimit, sharePerMinute } from "./middleware/rate-limit.ts";
 import type { RateLimitVariables } from "./middleware/rate-limit.ts";
 import { requestLog } from "./middleware/request-log.ts";
 import { ACROSS_PROVIDER } from "./providers/across.ts";
@@ -38,6 +38,17 @@ export type { GatewayOptions } from "./types.ts";
 export function createGateway(
   options: GatewayOptions,
 ): Hono<{ Variables: ClientIdVariables & RateLimitVariables }> {
+  // A misconfigured account row fails at startup, not at request time.
+  for (const [id, account] of Object.entries(options.accounts)) {
+    try {
+      sharePerMinute(account);
+    } catch (error) {
+      throw new Error(
+        `provider account "${id}": ${error instanceof Error ? error.message : "invalid"}`,
+        { cause: error },
+      );
+    }
+  }
   const served = indexNetworks(options.networks, options.auth, options.accounts);
   /** Resolves a code-built provider's billing account (`provider.id`) into the provider itself. */
   const priced = (provider: { readonly id: string; readonly url: string }): ResolvedProvider => {

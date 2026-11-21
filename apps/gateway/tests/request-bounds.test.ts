@@ -32,8 +32,12 @@ const DRPC_NETWORKS: ReadonlyArray<GatewayNetwork> = [
 /** The production account rows: alchemy 40k units / 5 s, drpc 8k / 5 s, public endpoints 20 / 2 s. */
 const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 40_000, seconds: 5 }] },
-  drpc: { costs: DRPC_COSTS, budget: [{ units: 8000, seconds: 5 }] },
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 40_000, seconds: 5 }],
+    clientShare: 0.05,
+  },
+  drpc: { costs: DRPC_COSTS, budget: [{ units: 8000, seconds: 5 }], clientShare: 0.05 },
 };
 
 const post = (body: unknown): RequestInit => ({
@@ -100,7 +104,11 @@ describe("per-request parameter bounds", () => {
     // a delta of 1,667 share units — more than the whole 1,000-unit window.
     const tiny: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 60, seconds: 60 }] },
+      alchemy: {
+        costs: ALCHEMY_COSTS,
+        budget: [{ units: 60, seconds: 60 }],
+        clientShare: 0.05,
+      },
     };
     const share = countBefore(1000);
     const up = fakeFetch({ [ALCHEMY]: () => rpcOk({}) });

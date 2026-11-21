@@ -157,7 +157,7 @@ describe("upstream throttling load", () => {
 
     const accounts: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      alchemy: { costs: ALCHEMY_COSTS, budget: [GATEWAY_BUDGET] },
+      alchemy: { costs: ALCHEMY_COSTS, budget: [GATEWAY_BUDGET], clientShare: 0.05 },
     };
     const lines: string[] = [];
     const app = gateway({
