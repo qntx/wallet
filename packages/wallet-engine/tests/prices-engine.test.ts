@@ -35,6 +35,7 @@ const MAINNET = "eip155:1";
 const ETH = `${MAINNET}/slip44:60`;
 const USDC_ASSET = `${MAINNET}/erc20:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48`;
 const USDT_ASSET = `${MAINNET}/erc20:0xdac17f958d2ee523a2206206994597c13d831ec7`;
+const WETH_ASSET = `${MAINNET}/erc20:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2`;
 
 /** Mainnet token balances the fake node's Multicall3 answers, per contract address. */
 const TOKEN_BALANCES: Readonly<Record<string, bigint>> = {
@@ -223,10 +224,11 @@ describe("prices over a real kernel", () => {
       expect(state.quotes[ETH]?.price).toBe("1810.44");
       expect(state.quotes[USDC_ASSET]?.price).toBe("0.9998");
       expect(state.errors[USDT_ASSET]).toBe("unpriced");
+      expect(state.errors[WETH_ASSET]).toBe("unpriced");
       expect(state.failure).toBeNull();
       expect(r.priceCalls.length).toBeGreaterThanOrEqual(1);
       for (const call of r.priceCalls) {
-        expect(call.assets).toStrictEqual([USDC_ASSET, USDT_ASSET, ETH]);
+        expect(call.assets).toStrictEqual([USDC_ASSET, WETH_ASSET, USDT_ASSET, ETH]);
         expect(call.currency).toBe("usd");
       }
 
@@ -237,8 +239,13 @@ describe("prices over a real kernel", () => {
       // 1.5 ETH at 1810.44 + 2.5 USDC at 0.9998 = 2715.66 + 2.4995, exact.
       expect(valuation.total).toBe("2718.1595");
       expect(valuation.currency).toBe("usd");
-      expect(valuation.unpriced).toBe(1); // the zero-balance USDT the gateway never priced
-      expect(valuation.holdings.map((h) => h.asset)).toStrictEqual([ETH, USDC_ASSET, USDT_ASSET]);
+      expect(valuation.unpriced).toBe(2); // the zero-balance USDT and WETH the gateway never priced
+      expect(valuation.holdings.map((h) => h.asset)).toStrictEqual([
+        ETH,
+        USDC_ASSET,
+        USDT_ASSET,
+        WETH_ASSET,
+      ]);
 
       await r.wallet.vault.lock();
       await until(() => Object.keys(r.engine.prices.getState().quotes).length === 0);
