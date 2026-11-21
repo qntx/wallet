@@ -220,3 +220,34 @@ export async function fundAndWithdraw(
 }
 
 export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps";
+
+/**
+ * The builder fee is optional now: `AppGroupState.builder` is `"approved" | "declined"` — a refusal
+ * during enable finishes `enabled` and trades without the builder. The host offers `approveBuilder`
+ * for a later consent; a second refusal stays declined and resolves normally.
+ */
+export async function offerBuilder(
+  apps: Awaited<ReturnType<typeof createApps>>,
+  group: HyperliquidGroup,
+): Promise<"approved" | "declined" | "unconfigured"> {
+  const state =
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
+  if (state?.builder === "approved") {
+    return "approved";
+  }
+  if (state?.status !== "enabled") {
+    throw new Error("the group is not enabled");
+  }
+  try {
+    await apps.controller.approveBuilder(group, "hyperliquid");
+  } catch (error) {
+    if (error instanceof Error && error.name === "HyperliquidError") {
+      return "unconfigured";
+    }
+    throw error;
+  }
+  return (
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid
+      ?.builder ?? "declined"
+  );
+}
