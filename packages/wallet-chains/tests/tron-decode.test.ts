@@ -1193,7 +1193,10 @@ describe("call_token_value on a verified token call", () => {
           { field: 1, bytes: requiredBytesField(1, raw.refBlockBytes) },
           { field: 4, bytes: requiredBytesField(4, raw.refBlockHash) },
           { field: 8, bytes: varintField(8, raw.expiration) },
-          { field: 11, bytes: requiredBytesField(11, contractSlot(31, "TriggerSmartContract", value)) },
+          {
+            field: 11,
+            bytes: requiredBytesField(11, contractSlot(31, "TriggerSmartContract", value)),
+          },
           { field: 14, bytes: varintField(14, TS) },
           { field: 18, bytes: varintField(18, 1_000_000n) },
         ]),

@@ -87,9 +87,9 @@ export type LidoDecode = {
 /**
  * Lido staking on Ethereum mainnet: `submit` to stETH, the four withdrawal-request forms and
  * `claimWithdrawals` on the queue. The minted stETH shares and the checkpointed claim amounts
- * cannot be read exactly from calldata, so every recognised call is verifiability-partial.
- * `caller` is the account the call runs as — msg.sender at the queue (the signer for a
- * transaction, the Safe or deposit wallet for an inner call); a zero owner resolves to it.
+ * cannot be read exactly from calldata, so every recognised call is verifiability-partial. `caller`
+ * is the account the call runs as — msg.sender at the queue (the signer for a transaction, the Safe
+ * or deposit wallet for an inner call); a zero owner resolves to it.
  */
 export const decodeLido = (
   chainId: number,

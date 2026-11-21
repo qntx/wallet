@@ -44,9 +44,9 @@ const argUint = (args: ReadonlyArray<unknown>, index: number): bigint => {
 };
 
 /**
- * `caller` is the account the call runs as — msg.sender at `call.to`: the signer for a
- * transaction or batch call, the Safe or deposit wallet for an inner call. Minted or
- * withdrawn assets go to it.
+ * `caller` is the account the call runs as — msg.sender at `call.to`: the signer for a transaction
+ * or batch call, the Safe or deposit wallet for an inner call. Minted or withdrawn assets go to
+ * it.
  */
 export const decodeWrappedNative = (
   chainId: number,

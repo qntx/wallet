@@ -471,9 +471,7 @@ describe("decodeEvm: Safe inner-call recipients", () => {
   const LIDO_QUEUE = "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1";
   const DEPOSIT = AbiFunction.from("function deposit() payable");
   const WITHDRAW = AbiFunction.from("function withdraw(uint256 wad)");
-  const REQUEST = AbiFunction.from(
-    "function requestWithdrawals(uint256[] amounts, address owner)",
-  );
+  const REQUEST = AbiFunction.from("function requestWithdrawals(uint256[] amounts, address owner)");
 
   it("a WETH deposit credits the wrapped coin to the Safe, not the signer", () => {
     const call = safeOf(
