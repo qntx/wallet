@@ -9,8 +9,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeSolana } from "../src/solana/index.ts";
 import type { BlindReason } from "../src/index.ts";
+import { decodeSolana } from "../src/solana/index.ts";
 
 const MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "solana" } as const;
@@ -71,28 +71,33 @@ const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   "5CM9JJCdwqzt": [undefined, 1],
 };
 
+const want = (signature: string): readonly [BlindReason | undefined, number] =>
+  expected[signature.slice(0, 12)] ?? [undefined, -1];
+
+const authorityCount = (intent: ReturnType<typeof decodeSolana>): number =>
+  intent.programAuthority?.length ?? 0;
+
+type LookupTable = { readonly address: string; readonly addresses: ReadonlyArray<string> };
+
+const tables = (fixture: Fixture): LookupTable[] => [...(fixture.lookupTables ?? [])];
+
 describe("solana mainnet fixtures decode to their pinned class", () => {
   it("the expectation table covers every fixture", () => {
     expect(Object.keys(expected)).toHaveLength(fixtures.length);
   });
+
   it.each(fixtures)("$label $signature", (fixture) => {
-    const want = expected[fixture.signature.slice(0, 12)];
-    if (want === undefined) {
-      throw new Error(`no expectation pinned for ${fixture.signature}`);
-    }
     const intent = decodeSolana(
       {
         kind: "solana.transaction",
         network: MAINNET,
         account: ACCOUNT,
         message: Uint8Array.from(Buffer.from(fixture.message, "base64")),
-        ...(fixture.lookupTables === undefined || fixture.lookupTables.length === 0
-          ? {}
-          : { lookupTables: fixture.lookupTables }),
+        lookupTables: tables(fixture),
       },
       fixture.signer,
     );
-    expect(intent.blind).toBe(want[0]);
-    expect(intent.programAuthority ?? []).toHaveLength(want[1]);
+    expect(intent.blind).toBe(want(fixture.signature)[0]);
+    expect(authorityCount(intent)).toBe(want(fixture.signature)[1]);
   });
 });

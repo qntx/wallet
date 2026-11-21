@@ -1,0 +1,1266 @@
+[
+  {
+    "label": "1inch-lop-v2-1",
+    "chainId": 1,
+    "address": "0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
+    "codePresent": true,
+    "separator": "0xac727df7e426c0ff0f48e0e09974c6211accea154746140423b72713e6cd46fa",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "1inch-lop-v2-10",
+    "chainId": 10,
+    "address": "0x11431a89893025D2a48dCA4EddC396f8C8117187",
+    "codePresent": true,
+    "separator": "0xcb3d0a895913df3bb271a1beace2b2b46a6b3e10070dd87f7ef2305d2c628437",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "1inch-lop-v2-137",
+    "chainId": 137,
+    "address": "0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
+    "codePresent": true,
+    "separator": "0xc78ddd286a11d8859cf5f148d386df5ded5c69eeb3ac6106bc7d0da17f325055",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "1inch-lop-v2-42161",
+    "chainId": 42161,
+    "address": "0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9",
+    "codePresent": true,
+    "separator": "0x076055e6d39ad67389e67f0a2296f77935b06fe3fa8764b71089768788c0a53d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "1inch-lop-v2-56",
+    "chainId": 56,
+    "address": "0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
+    "codePresent": true,
+    "separator": "0x253b2ae0fba81f26b1cc99d41b81f2276833ee82b1c98e50bffefff8d4055070",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 1,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 10,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 56,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 100,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 137,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 8217,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 8453,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 42161,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v5",
+    "chainId": 43114,
+    "address": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+    "codePresent": true
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 1,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 1,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 10,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 10,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 25,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 25,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 56,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 56,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 100,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 100,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 130,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 130,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 137,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 137,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 143,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 143,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 146,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 146,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 8217,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 8217,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 8453,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 8453,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 42161,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 42161,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 43114,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 43114,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6",
+    "chainId": 59144,
+    "address": "0x111111125421cA6dc452d289314280a0f8842A65",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 59144,
+      "verifyingContract": "0x111111125421cA6dc452d289314280a0f8842A65"
+    }
+  },
+  {
+    "label": "1inch-v6-zksync",
+    "chainId": 324,
+    "address": "0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "1inch Aggregation Router",
+      "version": "6",
+      "chainId": 324,
+      "verifyingContract": "0x6fd4383cB451173D5f9304F041C7BCBf27d561fF"
+    }
+  },
+  {
+    "label": "augustus-rfq-1",
+    "chainId": 1,
+    "address": "0xe92b586627ccA7a83dC919cc7127196d70f55a06",
+    "codePresent": true
+  },
+  {
+    "label": "augustus-rfq-bsc",
+    "chainId": 56,
+    "address": "0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
+    "codePresent": true
+  },
+  {
+    "label": "augustus-rfq-op-arb",
+    "chainId": 10,
+    "address": "0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
+    "codePresent": true
+  },
+  {
+    "label": "augustus-rfq-op-arb",
+    "chainId": 42161,
+    "address": "0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
+    "codePresent": true
+  },
+  {
+    "label": "augustus-rfq-polygon",
+    "chainId": 137,
+    "address": "0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043",
+    "codePresent": true
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 1,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x1131508dd63d6df5c732341da8d2f2c65a4f3e48588770496e3abaa206718b00",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 10,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x30b4971b037accf5f21893beb4e179a24c277defe893c0fa552278d1b2353291",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 56,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x76a9f229d76107a56cc05ceaf48acad673472cbbd938b7259e8f70ef4719764a",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 137,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x9f256b702e4d07d3253cbbfae1f19f337f95efe7de232f2db3b13965e5cf20be",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 8453,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x7372b5f327859d51d088b75009d906bd3330bbd2bb75b077b38b19381305cbc4",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 42161,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0xe7839e863523fdeef08b25128e2f7874554ad6287129b8fe65f9c96d6f5f7c39",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-jam",
+    "chainId": 43114,
+    "address": "0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b",
+    "codePresent": true,
+    "separator": "0x9f3aad60878756a7d94f2c0c6eb481a0f01438dcf85b038f58f2dd12ee8da664",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 1,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0x31e9fc520926ab5a9e3842dc84bce011b96c3158dfd9cde10e518472a052d470",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 10,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0x380fba9e310d7cf9e7bc625136a5c79a9482519818cdc44cd25ba776a0aa40c3",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 56,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0x792e693642910bb7d1375b098046cb4c77728c898b0a19543044c88d2df0410d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 137,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0xcf9bd40256f36941f7ab71cef820630ed13d96f4709324d9a7d4e71985ac2e8d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 999,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0x492ca9f2703100829dc48f5173de006dd48df38ed1f703f7cb5ae9710e7aa648",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 8453,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0xf5ed2056dd873383f937bdc18560d67ccf50cc832056e8708e6c0062d1599084",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 42161,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0xa3af5eb61917811b23ec8ea198747fb2cd1cdc5bafd5acc3a23e74fb078d5b30",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 43114,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0xc41ff53af28082723e7bacff2fc5f5a97e6f046bbbce6c2884ea46b4f4cfdb9f",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "bebop-settlement",
+    "chainId": 80094,
+    "address": "0xbbbbbBB520d69a9775E85b458C58c648259FAD5F",
+    "codePresent": true,
+    "separator": "0xd154226106128c3f07ef82f9cade4c5baf89ea1958d5339dad5f8bcfe82b0cf4",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "blend",
+    "chainId": 1,
+    "address": "0x29469395eAf6f95920E59F858042f0e28D98a20B",
+    "codePresent": true
+  },
+  {
+    "label": "blur-v1",
+    "chainId": 1,
+    "address": "0x000000000000Ad05Ccc4F10045630fb830B95127",
+    "codePresent": true
+  },
+  {
+    "label": "blur-v2",
+    "chainId": 1,
+    "address": "0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
+    "codePresent": true
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 1,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0xc078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 10,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x8b0a8cfae2cbc58abe282d60702b062e70dbad06155abb1a82edf0cdbeb1f404",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 56,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x0cbb18dfca28d2ceac8c72a17289168e03c1ad121338f5573e3b0c3255207fc7",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 100,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x8f05589c4b810bc2f706854508d66d447cd971f8354a4bb0b3471ceb0a466bc7",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 130,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0xbc0d1cf88cfd8a39ad17f2fe365b39b428bbf98b4c83573ca6659d7469f709ca",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 137,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x132e0e39721b0cb53216fc42764f69c300d4d21e0caf24e0713b1e3e11120dc2",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 143,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x0b54e1a8bfe4c14d71ceb55892defbb1eb27b1bdeebd7f809afde64374501bd5",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 5000,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x9919dc5214c6e7f40dca59b1e6f6abad701bd4579cd3eb0868b05e52dd912174",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 8453,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 9745,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0xe1f9c97768e45812440cd3317c07069178cc2f69971fb204c0211d8bfb1f8e76",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 42161,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x69d78e7a7cafcaf924483f99f65e8f4e303a99a446db7ab319f9d40e940bced2",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 43114,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0x81fd4ff99b8f80b96c946c146cd5b79181aaf08ecb5808eeee1d047c1de267a5",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "cow-settlement",
+    "chainId": 59144,
+    "address": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    "codePresent": true,
+    "separator": "0xb219bb2b8733b80b7ebef0229e7f0c91436f9a0a5b9705fa519237ae0493addb",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 1,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x6be3ed8321cd445839be95cf41496dbcf9e0521c8d780de0e2f49307215eca61",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 10,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x8522d2316f0129ec6a531de44b29d02499a60ebe5da5abe33e4ea5ecee3f59db",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 25,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x8eca0b3af20ccc47a63a3d430d544f32d924070332b67b4668e9e174e1320943",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 56,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x687b7a9f0037f191698bec8400788b5a15cd124b7d067b2403604cac80300ac5",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 130,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0xd54c01207f741fa4ec27cd8e7e8944763b59399a5b10aba8eb5ccd3bf3874cf7",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 137,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x6d290d753e14510893eab2942542172fc905bb5812afb58041fded60dcf3fe9f",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 143,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x55ac57c409bc6146eefe2795c5add711ff7cf068681f6185c29b503b76312e7d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 146,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x9b23bf191f05671eff06e02d051a7b605f82460f560e879a82d386e32fc72da7",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 196,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x8851c0020f5b4d7f8e05a064d055525ebb3a06a4537e49558d83a1dad0ce8fff",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 999,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x7dc41117f44039a568403b6901ffd439e5ee1d1c26564fb50b618d8b8b9accab",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 4326,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x1cd0f6783eaf2ab1adc5c45c57211ad788e85394e96e7f6726b298a279393c5d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 5000,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x48023fbc6b4d6fb8da8a2f52ee6895d0530ab8176eb6dd8cf828705c5c14d90f",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 8453,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x0fbbe9de427ae362f96246370596a2f1a9bdbae21c4e14a338a7e7408dca8afe",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 9745,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x801a968a2a17820842cf36ef87cbb10250c19515512c2ef49729ed16acd211fe",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 42161,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x17b0726ecaec3b501ccef043d5ad43dc5716f687c1eb52d87ccb1d1042fad1ae",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 43114,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x6e6b6d30b8c1cd07869255e0615189bec6d6db2e878fa5ea9c58b0f635d7b14b",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 59144,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x01cbd3ccb584e526c6a6de27060e408b95665f6679651e83fedaa4ab05eadccb",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-dslo",
+    "chainId": 80094,
+    "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
+    "codePresent": true,
+    "separator": "0x5698c614b9a8f9f37eb89d1014d806038ee9105a95ad32cb3b9612266ee3c424",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 1,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x2f873882566676bfbb3b1badd5709249d823d75bfacf5987c8726b429a26a487",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 10,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x44d475c21aacdc31715e5e1826c2e075254dc46e4e5574aeab314396db832e0c",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 25,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x1e03fc4ba2ff6518256abbb8492961a956244dbf179ddc539ac474798d6598cd",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 56,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0xb80e141825fe1130b441377990c11accc59ed9e8b16c7510c2c2869289dc3816",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 137,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x34e723ed4d7ad31880d1e36618f316d6c8a47db58d1763f3893491ae9755f1e4",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 42161,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x2e087909d0360a9815b77da5f63f937edb7260cbbcd9372c92d03857c006126a",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "kyber-lo",
+    "chainId": 43114,
+    "address": "0x227B0c196eA8db17A665EA6824D972A64202E936",
+    "codePresent": true,
+    "separator": "0x70fd83d02009e12ed6af405b78d89344adf3a9590eaef15a9e9b628bb32798f5",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "looksrare-v2",
+    "chainId": 1,
+    "address": "0x0000000000E655fAe4d56241588680F86E3b2377",
+    "codePresent": true,
+    "separator": "0x13be80cb8c4239588caab638256c555b825f3fbead883414b042fd375781040c",
+    "separatorFn": "domainSeparator"
+  },
+  {
+    "label": "odos-lo-1",
+    "chainId": 1,
+    "address": "0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 1,
+      "verifyingContract": "0x5F79636fa7bc622eA48802E6cf80A5dae814daE1"
+    }
+  },
+  {
+    "label": "odos-lo-10",
+    "chainId": 10,
+    "address": "0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 10,
+      "verifyingContract": "0xcbF3822A63B7867cD602317fB4aE3ca864826ef8"
+    }
+  },
+  {
+    "label": "odos-lo-137",
+    "chainId": 137,
+    "address": "0x93052961c75c92Fd5d6362655936C239EF2D5336",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 137,
+      "verifyingContract": "0x93052961c75c92Fd5d6362655936C239EF2D5336"
+    }
+  },
+  {
+    "label": "odos-lo-146",
+    "chainId": 146,
+    "address": "0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 146,
+      "verifyingContract": "0xB9CBD870916e9Ffc52076Caa714f85a022B7f330"
+    }
+  },
+  {
+    "label": "odos-lo-324",
+    "chainId": 324,
+    "address": "0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 324,
+      "verifyingContract": "0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73"
+    }
+  },
+  {
+    "label": "odos-lo-42161",
+    "chainId": 42161,
+    "address": "0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 42161,
+      "verifyingContract": "0x7432657cDda02226ac2aAc9d8f552Ee9613B064e"
+    }
+  },
+  {
+    "label": "odos-lo-43114",
+    "chainId": 43114,
+    "address": "0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 43114,
+      "verifyingContract": "0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e"
+    }
+  },
+  {
+    "label": "odos-lo-5000",
+    "chainId": 5000,
+    "address": "0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 5000,
+      "verifyingContract": "0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB"
+    }
+  },
+  {
+    "label": "odos-lo-56",
+    "chainId": 56,
+    "address": "0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 56,
+      "verifyingContract": "0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2"
+    }
+  },
+  {
+    "label": "odos-lo-59144",
+    "chainId": 59144,
+    "address": "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 59144,
+      "verifyingContract": "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
+    }
+  },
+  {
+    "label": "odos-lo-8453",
+    "chainId": 8453,
+    "address": "0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "OdosLimitOrderRouter",
+      "version": "1",
+      "chainId": 8453,
+      "verifyingContract": "0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A"
+    }
+  },
+  {
+    "label": "oo-1",
+    "chainId": 1,
+    "address": "0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
+    "codePresent": true,
+    "separator": "0xc79997a492b11d61a942a4431d2e34ed3712b37e725cd6ae55ebb69f4cee3403",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-1329",
+    "chainId": 1329,
+    "address": "0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "openocean Limit Order Protocol",
+      "version": "2",
+      "chainId": 1329,
+      "verifyingContract": "0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3"
+    },
+    "separator": "0x6b47b0b1b8449528d78fda2a3cbebebeefa06ddff7bf3d53819ba44d8a203f0d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-137",
+    "chainId": 137,
+    "address": "0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
+    "codePresent": true,
+    "separator": "0xb8e98967bf62fdd64cfaaf84f5bf554aceb296f99251f94fb5057228d500720e",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-146",
+    "chainId": 146,
+    "address": "0xB45373129B4220160b92bd2320869f44d48eCd01",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "openocean Limit Order Protocol",
+      "version": "2",
+      "chainId": 146,
+      "verifyingContract": "0xB45373129B4220160b92bd2320869f44d48eCd01"
+    },
+    "separator": "0x4512dd7b08e8871beaaae1ee980658aea109d0bd680065e05d5bf72a39596050",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-324",
+    "chainId": 324,
+    "address": "0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
+    "codePresent": true,
+    "separator": "0xadfacab6cfb7f6a6bd56937917e69c2218c624cb57f75e40f4f0c97ee4b424c8",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-42161",
+    "chainId": 42161,
+    "address": "0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
+    "codePresent": true,
+    "separator": "0x3831b8daeabcb11666bfabdbb540093e8e48d51a6aa25bbd5c19a200b2ffa968",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-43114",
+    "chainId": 43114,
+    "address": "0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
+    "codePresent": true,
+    "separator": "0x25e4a85fcbdf26a53711a16078b0588007d8882be15e0c5c708067f11183682c",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-56",
+    "chainId": 56,
+    "address": "0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
+    "codePresent": true,
+    "separator": "0x58031473859a559ba99f5226e117b62804c00cbdd65828d78d55382eef6c1756",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-59144",
+    "chainId": 59144,
+    "address": "0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
+    "codePresent": true,
+    "separator": "0x509c7238c155a8eaa90a159aa7d3ed42b91c988fc978ad35e6b9643b3a62cb9a",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-80094",
+    "chainId": 80094,
+    "address": "0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "openocean Limit Order Protocol",
+      "version": "2",
+      "chainId": 80094,
+      "verifyingContract": "0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74"
+    },
+    "separator": "0xd561d958003d17301f74ae0edb7010c81dbe1208f891d06f59b0e90dc1a2cf84",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-8453",
+    "chainId": 8453,
+    "address": "0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
+    "codePresent": true,
+    "separator": "0x9bee57ac61aee7e2eea1adb043ce6f4f4952dcb088919716912224c3feb228f1",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-c0a6",
+    "chainId": 10,
+    "address": "0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+    "codePresent": true,
+    "separator": "0x9687ba070ad8ff3c80009a0881cc852eacbc9ccc408b77392f2c3b7a81d14cc5",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-c0a6",
+    "chainId": 25,
+    "address": "0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+    "codePresent": true,
+    "separator": "0x42f7db1d4104dd55998022a0aa9feef33966e9346706627a4e08da464857f97f",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "oo-c0a6",
+    "chainId": 100,
+    "address": "0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+    "codePresent": true,
+    "separator": "0x10d7f09886fbfb6b42fe3ea72a87f49e0ac5dc36b67425aa755e2daaf7fa5c0d",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "uniswapx-exclusive-1",
+    "chainId": 1,
+    "address": "0x6000da47483062A0D734Ba3dc7576Ce6A0B645C4",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-exclusive-1",
+    "chainId": 137,
+    "address": "0x6000da47483062A0D734Ba3dc7576Ce6A0B645C4",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-priority-base",
+    "chainId": 8453,
+    "address": "0x000000001Ec5656dcdB24D90DFa42742738De729",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v2dutch-1",
+    "chainId": 1,
+    "address": "0x00000011F84B9aa48e5f8aA8B9897600006289Be",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-arbitrum",
+    "chainId": 42161,
+    "address": "0xB274d5F4b833b61B340b654d600A864fB604a87c",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-avalanche",
+    "chainId": 43114,
+    "address": "0x00000000862cCF095823fc7576Fa6C7e6b7385ef",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-base",
+    "chainId": 8453,
+    "address": "0x000000008a8330B5d1F43A62Bf4C673A49f27ba0",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-bsc",
+    "chainId": 56,
+    "address": "0x00000000a55e50C71b70Db3C8B58749cd1E18eB2",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-celo",
+    "chainId": 42220,
+    "address": "0x00000000B8077fdf2281A80bE96f6c282B5d943A",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-monad",
+    "chainId": 143,
+    "address": "0x000000000Ac008F7e07210CFb6648e40249232c2",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-op",
+    "chainId": 10,
+    "address": "0x000000000923439A92daE8930613568824108631",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-polygon",
+    "chainId": 137,
+    "address": "0x00000000bAB6E234db8AD638B6A6395b7c499Bc4",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-unichain-xlayer-soneium",
+    "chainId": 130,
+    "address": "0x000000005aF66799D1a6317714D66800f9CA1406",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-unichain-xlayer-soneium",
+    "chainId": 196,
+    "address": "0x000000005aF66799D1a6317714D66800f9CA1406",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-unichain-xlayer-soneium",
+    "chainId": 1868,
+    "address": "0x000000005aF66799D1a6317714D66800f9CA1406",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3-world",
+    "chainId": 480,
+    "address": "0x00000000d714EA34028930b762E96bFBe50F42C2",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3dutch-1",
+    "chainId": 1,
+    "address": "0x0000000015757c461808EA25Eb309638B62681cf",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 1,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x82ee5d4af512b33859c08c96ea6f73fe0a641013fbf1174cf13a1a2b6c9ead75",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 10,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x87ba71ba36c4b9c4a2e46d61b493c7dddab46fd88a8df1abca913546cc8e3868",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 56,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x0bd890e2f705d20044836938c5ae41104363ceb28e79057eeaccfbd11fe710b2",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 130,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0xed46f9135e869caab8bcdbd97505f504b2cb9c6810229d511005ddf3b5c70a87",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 137,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x9ba7d2eb018e7043ec9f5d47535f507ec74fcc7a2bd7eba1ca9deb00cdf21b2c",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 8453,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x456655464cb9c6f9614885c9a1b26d6b66144224a4f428f36da646af34aedd8f",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "velora-portikus",
+    "chainId": 42161,
+    "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
+    "codePresent": true,
+    "separator": "0x39584b24d4e57903452c6a1eecdf69039dd46e08aa8cd17b244e301017984335",
+    "separatorFn": "DOMAIN_SEPARATOR"
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 1,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 56,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 137,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 8453,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 42161,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 42220,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4",
+    "chainId": 43114,
+    "address": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+    "codePresent": true
+  },
+  {
+    "label": "zeroex-v4-op",
+    "chainId": 10,
+    "address": "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10",
+    "codePresent": true
+  }
+]

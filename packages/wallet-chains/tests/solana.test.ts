@@ -1347,10 +1347,7 @@ describe("program-authority: an unknown program taking the signer", () => {
       {
         program: DRAINER,
         sol: true,
-        accounts: [
-          { address: ata, token: { mint: USDC_MINT, symbol: "USDC" } },
-          { address: DEST },
-        ],
+        accounts: [{ address: ata, token: { mint: USDC_MINT, symbol: "USDC" } }, { address: DEST }],
       },
     ]);
   });
@@ -1381,7 +1378,7 @@ describe("program-authority: an unknown program taking the signer", () => {
     [12, undefined],
     [13, "program-authority"],
   ] as const)("%i writable accounts ⇒ blind %s", (count, blind) => {
-    const accounts = [sgn(FEE_PAYER)];
+    const accounts: Array<ReturnType<typeof w0>> = [sgn(FEE_PAYER)];
     for (let i = 0; i < count; i++) {
       accounts.push(w0(address(solanaAddressFromPublicKey(new Uint8Array(32).fill(i + 1)))));
     }

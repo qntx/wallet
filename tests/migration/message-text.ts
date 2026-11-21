@@ -5,12 +5,12 @@ import { messageTextHazard } from "@qntx/wallet-chains";
 export function messageIsTextBefore(message: Uint8Array): boolean {
   // oxlint-disable typescript/no-unsafe-call -- demonstrates the removed 0.13.0 helpers
   // @ts-expect-error -- isReadableText is removed
-  if (!isReadableText(message)) {
+  if (isReadableText(message) !== true) {
     return false;
   }
   const text = new TextDecoder().decode(message);
   // @ts-expect-error -- isHexRendering is removed
-  return !isHexRendering(text);
+  return isHexRendering(text) !== true;
   // oxlint-enable typescript/no-unsafe-call
 }
 
@@ -47,5 +47,10 @@ export function describeWarning(warning: IntentWarning): string {
       return "the token charges a transfer fee";
     case "token-2022-extension":
       return "the token carries a Token-2022 extension";
+    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
   }
 }

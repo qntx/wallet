@@ -25,7 +25,7 @@ import type { TypedDataInput } from "./typed-data.ts";
 export const GPV2_SETTLEMENT = "0x9008d19f58aabd9ed0d60971565aa8510560ab41";
 
 /** The chains the settlement's `domainSeparator()` was verified on (`evidence/onchain/out1.json`). */
-const GPV2_CHAINS: ReadonlySet<number> = new Set([
+export const GPV2_CHAINS: ReadonlySet<number> = new Set([
   1, 10, 56, 100, 130, 137, 143, 5000, 8453, 9745, 42161, 43114, 59144,
 ]);
 

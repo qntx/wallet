@@ -1161,8 +1161,8 @@ describe("Eip1193Handler", () => {
     expect(pending?.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
     const display = pending?.display as DisplayIntent;
     // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing display variant
-    const fields = display.message?.kind === "typed-data" ? display.message.fields : undefined;
-    expect(fields).toHaveLength(12);
+    const order = display.message?.kind === "typed-data" ? display.message.order : undefined;
+    expect(order?.protocol).toBe("cow");
     await r.approveNext();
     const { EIP712Domain: _domain, ...types } = doc.types;
     await expect(

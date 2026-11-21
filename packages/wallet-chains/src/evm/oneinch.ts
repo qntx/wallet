@@ -35,9 +35,9 @@ const ORDER_FIELDS = [
 ] as const;
 
 /* The verified Aggregation Router v6 deployments (`evidence/onchain/out{1,2}.json`). */
-const V6_ROUTER = "0x111111125421ca6dc452d289314280a0f8842a65";
-const V6_ZKSYNC_ROUTER = "0x6fd4383cb451173d5f9304f041c7bcbf27d561ff";
-const V6_CHAINS: ReadonlySet<number> = new Set([
+export const V6_ROUTER = "0x111111125421ca6dc452d289314280a0f8842a65";
+export const V6_ZKSYNC_ROUTER = "0x6fd4383cb451173d5f9304f041c7bcbf27d561ff";
+export const V6_CHAINS: ReadonlySet<number> = new Set([
   1, 10, 25, 56, 100, 130, 137, 143, 146, 8217, 8453, 42161, 43114, 59144,
 ]);
 const v6Router = (chainId: number): string | undefined =>

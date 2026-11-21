@@ -146,7 +146,7 @@ const PERMIT2_TYPES: Record<string, ReadonlyArray<string>> = {
  * Addresses"; `evidence/onchain/reactors.txt` — code present, `permit2()` = the Permit2 address).
  * Chains whose deployment could not be verified are left out, so their orders fall back.
  */
-const REACTORS: Readonly<Record<number, Partial<Record<WitnessType, string>>>> = {
+export const REACTORS: Readonly<Record<number, Partial<Record<WitnessType, string>>>> = {
   1: {
     ExclusiveDutchOrder: "0x6000da47483062a0d734ba3dc7576ce6a0b645c4",
     V2DutchOrder: "0x00000011f84b9aa48e5f8aa8b9897600006289be",
