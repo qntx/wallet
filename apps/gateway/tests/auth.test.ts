@@ -175,7 +175,6 @@ describe("upstream auth", () => {
         risk,
         tokens: memoryRiskStore(),
         tokenNetworks: new Set(),
-        tokenNetworks: new Set(),
         prices,
         auth: {},
       }),

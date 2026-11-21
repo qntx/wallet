@@ -128,7 +128,12 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         risk,
         tokens: risk,
         prices: { cache: priceCache },
-        budget: { take: () => Promise.resolve({ ok: true as const }) },
+        budget: {
+          take: async () => {
+            await Promise.resolve();
+            return { ok: true as const };
+          },
+        },
         auth: {},
         zeroEx: { apiKey: KEY ?? "" },
         log: () => undefined,
