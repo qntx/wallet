@@ -647,15 +647,28 @@ type EvmSignInput = {
 
 // @public
 type FeeModel =
-/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+/** Nothing beyond gas: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
     {
     readonly kind: "execution";
+    readonly pricing: GasPricing;
 } |
 /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
     {
     readonly kind: "op-stack";
+    readonly pricing: GasPricing;
+    readonly operatorFee: boolean;
     readonly tokenRatio: boolean;
 };
+
+// @public
+type GasPricing =
+/** EIP-1559 caps from eth_feeHistory (maxFeePerGas = 2 × next base fee + the tier's reward). */
+"eip1559" |
+/**
+* A legacy (type-0) price from eth_gasPrice, for chains whose EIP-1559 caps would come out zero
+* or whose primary upstream lacks eth_feeHistory.
+*/
+"legacy";
 
 // @public (undocumented)
 type GatewayConfig = {

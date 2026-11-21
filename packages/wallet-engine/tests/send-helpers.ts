@@ -315,7 +315,7 @@ export const fakeSignedEvm = (
         )
       : serializeTransaction(
           { ...common, type: "legacy", gasPrice: BigInt("gasPrice" in tx ? tx.gasPrice : "0x0") },
-          signature,
+          { r, s: sigS, v: BigInt(tx.chainId) * 2n + 35n },
         );
   return { kind: "evm.transaction", signedTransaction: hexToBytes(raw) };
 };

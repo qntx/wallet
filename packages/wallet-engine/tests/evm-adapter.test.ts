@@ -59,7 +59,7 @@ describe("EvmChainAdapter", () => {
         ],
       },
     });
-    const [slow, normal, fast] = await a.estimateFee(c);
+    const [slow, normal, fast] = await a.estimateFee(c, "eip1559");
     expect(slow?.maxFeePerGas).toBe(2n * 0x14n + 0x4n);
     expect(normal?.maxFeePerGas).toBe(2n * 0x14n + 0x5n);
     expect(fast?.maxFeePerGas).toBe(2n * 0x14n + 0x6n);
@@ -74,9 +74,28 @@ describe("EvmChainAdapter", () => {
       },
       eth_gasPrice: "0x3b9aca00",
     });
-    const quotes = await a.estimateFee(c);
+    const quotes = await a.estimateFee(c, "eip1559");
     expect(quotes.every((q) => q.maxFeePerGas === 0x3b9aca00n)).toBe(true);
     expect(quotes[0]?.maxPriorityFeePerGas).toBeUndefined();
+  });
+
+  it("legacy pricing quotes eth_gasPrice without asking feeHistory", async () => {
+    const a = new EvmChainAdapter();
+    const called: string[] = [];
+    const c = rpc({
+      eth_feeHistory: () => {
+        called.push("eth_feeHistory");
+        throw new Error("feeHistory must not be called");
+      },
+      eth_gasPrice: () => {
+        called.push("eth_gasPrice");
+        return "0x7";
+      },
+    });
+    const quotes = await a.estimateFee(c, "legacy");
+    expect(quotes.every((q) => q.maxFeePerGas === 7n)).toBe(true);
+    expect(quotes[0]?.maxPriorityFeePerGas).toBeUndefined();
+    expect(called).toStrictEqual(["eth_gasPrice"]);
   });
 
   it("produces a normalized eip1559 sign request", async () => {
@@ -167,7 +186,7 @@ describe("EvmChainAdapter", () => {
         maxFeePerGas: 4n,
         maxPriorityFeePerGas: 2n,
       },
-      { tokenRatio: false },
+      { operatorFee: true, tokenRatio: false },
     );
     expect(fee).toBe(1290n);
     expect(calls).toHaveLength(2);
@@ -176,5 +195,28 @@ describe("EvmChainAdapter", () => {
       OP_GAS_PRICE_ORACLE.toLowerCase(),
     ]);
     expect(calls.map((c) => c.data)).toContain(operatorCall);
+  });
+
+  it("skips the operator fee on a model without it", async () => {
+    const calls: Array<{ to: string; data: string }> = [];
+    const oracle = oracleClient(calls, "0x");
+    const a = new EvmChainAdapter();
+    const fee = await a.opStackFee(
+      oracle,
+      {
+        family: "evm",
+        network: "eip155:204",
+        from: `0x${"1".repeat(40)}`,
+        to: `0x${"2".repeat(40)}`,
+        value: 5n,
+        data: "0x",
+        nonce: 0,
+        gas: 21_000n,
+        gasPrice: 4n,
+      },
+      { operatorFee: false, tokenRatio: false },
+    );
+    expect(fee).toBe(1250n);
+    expect(calls).toHaveLength(1);
   });
 });

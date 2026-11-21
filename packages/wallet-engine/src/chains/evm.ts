@@ -1,8 +1,9 @@
 /**
  * EVM chain adapter: native transfers through a viem PublicClient injected by NetworkController.
  * Fee tiers come from eth_feeHistory (20 blocks, p10/p50/p90 → slow/normal/fast, maxFee = 2×baseFee +
- * priority); networks that cannot answer feeHistory fall back to eth_gasPrice. gas = estimateGas ×
- * 1.2 (ceil). Finalization uses the `finalized` block tag; receipts with status 0 fail.
+ * priority) unless the chain's pricing is `legacy`, which quotes eth_gasPrice for every tier;
+ * feeHistory failures fall back to it too. gas = estimateGas × 1.2 (ceil). Finalization uses the
+ * `finalized` block tag; receipts with status 0 fail.
  */
 import { encodeFunctionData, isAddress, isHex, keccak256, numberToHex, parseAbi } from "viem";
 import type { PublicClient } from "viem";
@@ -22,6 +23,7 @@ import {
 
 import { TOKEN_SYMBOL_MAX, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
+import type { GasPricing } from "../networks/registry.ts";
 import { boundedSimulation } from "../requests/simulation.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 
@@ -249,12 +251,12 @@ export class EvmChainAdapter {
    * OP Stack fees charged on top of gas × gas price: the gas-token-denominated upper bound of the
    * L1 data fee — the oracle estimate at the chain's `tokenRatio` when the model prices it in
    * another token (Mantle), scaled by {@link OP_STACK_L1_FEE_MARGIN} — plus the operator fee at the
-   * full gas limit (worst case).
+   * full gas limit where the oracle prices one (pre-Isthmus oracles revert on it).
    */
   async opStackFee(
     client: PublicClient,
     tx: EvmUnsignedTransaction,
-    model: { readonly tokenRatio: boolean },
+    model: { readonly operatorFee: boolean; readonly tokenRatio: boolean },
   ): Promise<bigint> {
     const [l1, operator, ratio] = await Promise.all([
       estimateL1Fee(client, {
@@ -264,12 +266,14 @@ export class EvmChainAdapter {
         value: tx.value,
         data: checkedHex(tx.data),
       }),
-      readContract(client, {
-        address: OP_GAS_PRICE_ORACLE,
-        abi: OP_GAS_PRICE_ORACLE_ABI,
-        functionName: "getOperatorFee",
-        args: [tx.gas],
-      }),
+      model.operatorFee
+        ? readContract(client, {
+            address: OP_GAS_PRICE_ORACLE,
+            abi: OP_GAS_PRICE_ORACLE_ABI,
+            functionName: "getOperatorFee",
+            args: [tx.gas],
+          })
+        : Promise.resolve(0n),
       model.tokenRatio
         ? readContract(client, {
             address: OP_GAS_PRICE_ORACLE,
@@ -353,7 +357,22 @@ export class EvmChainAdapter {
     };
   }
 
-  async estimateFee(client: PublicClient): Promise<ReadonlyArray<EvmFeeQuote>> {
+  async estimateFee(
+    client: PublicClient,
+    pricing: GasPricing,
+  ): Promise<ReadonlyArray<EvmFeeQuote>> {
+    const gasPrice = async (): Promise<ReadonlyArray<EvmFeeQuote>> => {
+      const price = BigInt(await evmRpcHex(client, "eth_gasPrice", []));
+      return (["slow", "normal", "fast"] as const).map((name) => ({
+        tier: name,
+        wei: price,
+        maxFeePerGas: price,
+        maxPriorityFeePerGas: undefined,
+      }));
+    };
+    if (pricing === "legacy") {
+      return gasPrice();
+    }
     try {
       const history: unknown = await evmRpc(client, "eth_feeHistory", [
         "0x14",
@@ -388,13 +407,7 @@ export class EvmChainAdapter {
       };
       return [tier(0, "slow"), tier(1, "normal"), tier(2, "fast")];
     } catch {
-      const price = BigInt(await evmRpcHex(client, "eth_gasPrice", []));
-      return (["slow", "normal", "fast"] as const).map((name) => ({
-        tier: name,
-        wei: price,
-        maxFeePerGas: price,
-        maxPriorityFeePerGas: undefined,
-      }));
+      return gasPrice();
     }
   }
 
