@@ -50,6 +50,13 @@ const event = await signer.signEvent({
 });
 ```
 
+`@qntx/wallet/hyperliquid` manages the kernel-held Hyperliquid agent keys:
+`hyperliquid(wallet).createAgent` derives a secp256k1 key inside the enclave for one HD account on
+one network and returns its address, `listAgents`/`deleteAgent` manage the set, and
+`signL1` produces the agent's signature over an allow-listed L1 action. The agent only
+becomes valid once the owner approves it on Hyperliquid — the kernel binds that signature's
+`agentName` to the recorded validity window — and the private key never leaves the enclave.
+
 ### React
 
 `getSnapshot` and `subscribe` are bound properties, safe to pass unbound:
