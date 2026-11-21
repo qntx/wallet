@@ -483,6 +483,14 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
       if (!located.deployed) {
         throw new PolymarketError("not-enabled", "the account wallet is not deployed yet");
       }
+      /* A record written for another signer must never reach the approval — the L2 POST would
+         refuse it anyway, but the user would already have signed the order. */
+      if (creds.owner.toLowerCase() !== located.signer.toLowerCase()) {
+        throw new PolymarketError(
+          "not-enabled",
+          "the stored credentials belong to another signer — re-enable the account",
+        );
+      }
       if (params.side === "BUY") {
         await assertOpenable(group);
       }

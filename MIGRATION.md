@@ -1298,12 +1298,9 @@ prompt content is the kernel's decode of the typed data, `display.message.hyperl
 
 ### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/hyperliquid`
 
-Opt-in entries; a host that does not import them bundles nothing new. `@qntx/wallet-engine/apps`
-carries the controller and `createApps`; each provider ships in its own sub-entry
-(`@qntx/wallet-engine/apps/hyperliquid`, `@qntx/wallet-engine/apps/polymarket`) and is listed as a
-definition — `createApps({ …io, apps: [hyperliquid({ network, agentName, builder? })] })`. The
-complete host composition (engine + apps, terms, enable with the approval request, orders with
-quote previews, a live book, close, withdraw, Bridge2 deposit) is the typechecked file
+Opt-in entries; a host that does not import them bundles nothing new. The complete host
+composition (engine + apps, terms, enable with the approval request, orders with quote previews,
+a live book, close, withdraw, Bridge2 deposit) is the typechecked file
 `tests/migration/hyperliquid.ts`, compiled by `bun run typecheck`
 (`tsc --noEmit -p tests/migration`). The engine README's "Hyperliquid" section describes every
 option.
@@ -1311,9 +1308,8 @@ option.
 Host checklist:
 
 - Pass `requests: engine.requests`, a separate `openStore` (its own EngineStore namespace), a
-  `socket: (url) => new WebSocket(url)` factory, the wallet `gateway` URL, and the app definitions
-  — `hyperliquid({ network, agentName, builder? })` (no defaults; `builder.feeRateTenthsBps`
-  1..100).
+  `socket: (url) => new WebSocket(url)` factory, the wallet `gateway` URL, and
+  `hyperliquid: { network, agentName, builder? }` (no defaults; `builder.feeRateTenthsBps` 1..100).
 - Render `AppsController` state: `status` (`disabled | enabling | enabled | needs-reauthorization
   | unavailable`), `step` + `requestId` (show that request's approval screen), `renewalDue`,
   `error`, and `eligibility` (call `refreshEligibility()` on foreground — display only).

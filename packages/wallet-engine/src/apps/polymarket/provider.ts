@@ -16,8 +16,8 @@ import type { SetTimer } from "../../timer.ts";
 import type { AppSocket } from "../socket.ts";
 import type { AppGroup } from "../types.ts";
 import { createPolymarketAccount } from "./account.ts";
-import type { PolymarketCredentialStore } from "./credentials.ts";
 import type { PolymarketAccountReads } from "./account.ts";
+import type { PolymarketCredentialStore } from "./credentials.ts";
 import { PolymarketError } from "./errors.ts";
 import { createPolymarketFunding } from "./funding.ts";
 import type { PolymarketFunding } from "./funding.ts";
@@ -89,8 +89,6 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     now: options.now,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   });
-  /* Deferred so a provider built for reads only does not need a live wallet object — the first
-     L2 or locate call resolves it (the Hyperliquid provider defers the same way). */
   const signerOf = async (group: AppGroup): Promise<`0x${string}`> => {
     /* The signature chain names the group account: Polygon. */
     let resolved;

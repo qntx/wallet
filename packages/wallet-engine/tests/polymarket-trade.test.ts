@@ -199,6 +199,8 @@ type Env = {
   readonly timers: ReturnType<typeof manualTimer>;
   /** The typed-data document string the prepared request carried. */
   typedData: () => string;
+  /** How many approvals `place` opened — a refuse path must keep this at zero. */
+  readonly prepares: () => number;
   readonly posts: () => ReadonlyArray<Captured>;
   approve: (id: string) => Promise<void>;
   /** Mutable — set `orderID` after place() so the POST answer can echo it. */
@@ -224,6 +226,7 @@ const env = (
 ): Env => {
   const requests: Captured[] = [];
   let typedData = "";
+  let prepares = 0;
   /* A per-env clock anchored to the real time — the L2 skew gate compares `POLY_TIMESTAMP` to
      `/time`, so a shared manual timer pumped past request TTLs would skew every later signature.
      The request pipeline's own timers (w.timers) stay unpumped. */
@@ -236,6 +239,7 @@ const env = (
     credentials: w.credentials,
     requests: {
       prepare: async (input) => {
+        prepares += 1;
         if (input.method === "evm-sign" && input.request.kind === "evm.typed-data") {
           ({ typedData } = input.request);
         }
@@ -262,6 +266,7 @@ const env = (
     requests,
     timers,
     typedData: () => typedData,
+    prepares: () => prepares,
     posts: () => requests.filter((r) => r.method === "POST" && r.url.pathname === "/order"),
     approve: w.approve,
     state,
@@ -513,6 +518,20 @@ describe("polymarket trade — place", () => {
       await placed.outcome.catch(() => undefined);
     },
   );
+
+  it("refuses a record owned by another signer before an approval or a post", async () => {
+    await w.credentials.put(group, { owner: accountAt(1).address, ...API });
+    try {
+      const e = env();
+      await expect(e.provider.trade.place(group, LIMIT_BUY)).rejects.toMatchObject({
+        category: "not-enabled",
+      });
+      expect(e.prepares()).toBe(0);
+      expect(e.posts()).toHaveLength(0);
+    } finally {
+      await w.credentials.put(group, { owner: accountAt(0).address, ...API });
+    }
+  });
 
   it("refuses a locked vault after approval with zero posts", async () => {
     const e = env();
