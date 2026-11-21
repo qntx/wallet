@@ -813,7 +813,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         return;
       }
       this.mints.set(`${network}:${address}`, facts);
-      await this.persistToken(network, address, generation);
+      await this.persistToken(network, address);
       return;
     }
     const table = evmTokenTable[String(info.chainId)] ?? {};
@@ -825,13 +825,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     this.meta.set(`${network}:${address.toLowerCase()}`, meta);
-    await this.persistToken(network, address, generation);
+    await this.persistToken(network, address);
   }
 
-  private async persistToken(network: string, address: string, generation: number): Promise<void> {
-    if (generation !== this.generation) {
-      return;
-    }
+  private async persistToken(network: string, address: string): Promise<void> {
     const existing = this.customTokens.get(network) ?? [];
     const evm = this.options.networks.info(network).family === "evm";
     const wanted = evm ? address.toLowerCase() : address;
