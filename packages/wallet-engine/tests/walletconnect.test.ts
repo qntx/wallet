@@ -658,6 +658,37 @@ describe("walletconnect proposals", () => {
       await r.wc.dispose();
     },
   );
+
+  it(
+    "holds a proposal that arrives while locked and judges it after unlock",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      await r.wallet.vault.lock();
+      await until(() => !r.engine.connections.getState().ready);
+      const { uri, approval } = await client.connect({
+        requiredNamespaces: { eip155: eip155Namespace([EVM1]) },
+      });
+      if (uri === undefined) {
+        throw new Error("connect produced no uri");
+      }
+      const settled = approval();
+      settled.catch(() => undefined);
+      await r.wc.pair(uri);
+      // The proposal is held: never rejected to the peer, not yet in the wallet's state.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(r.wc.getState().proposals).toStrictEqual({});
+      await r.wallet.vault.unlock(PW);
+      await until(() => Object.keys(r.wc.getState().proposals).length === 1);
+      const proposal = soleProposal(r.wc);
+      await r.wc.approve(proposal.id, { networks: [...proposal.networks] });
+      const live = await settled;
+      expect(live.namespaces["eip155"]?.chains).toStrictEqual([EVM1]);
+      await r.wc.dispose();
+    },
+  );
 });
 
 describe("walletconnect session requests", () => {

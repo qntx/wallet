@@ -1258,16 +1258,6 @@ type MetaSyncWalletStatus = {
 };
 
 // @public (undocumented)
-export type NamespaceRow = {
-    readonly namespace: string;
-    readonly methods: Readonly<Record<string, ReadonlyArray<string>>>;
-    readonly events: ReadonlyArray<string>;
-    readonly serves: (network: string) => boolean;
-    readonly accounts: (scope: ConnectionScope) => ReadonlyArray<string>;
-    readonly dispatch: (call: WalletConnectCall, engine: WalletConnectEngine) => Promise<unknown>;
-};
-
-// @public (undocumented)
 class NetworkController extends Controller<NetworkControllerState> {
     constructor(options: Options$1);
     addRpc(network: string, url: string): Promise<void>;
@@ -2861,14 +2851,6 @@ export type WalletConnect = {
     }) => Promise<ConnectionSession>;
     readonly reject: (id: number) => Promise<void>;
     readonly dispose: () => Promise<void>;
-};
-
-// @public
-export type WalletConnectCall = {
-    readonly origin: WalletConnectOrigin;
-    readonly network: string;
-    readonly method: string;
-    readonly params: unknown;
 };
 
 // @public

@@ -15,4 +15,4 @@ export type {
 } from "./client.ts";
 export { WalletConnectError } from "./errors.ts";
 export type { WalletConnectErrorCode } from "./errors.ts";
-export type { NamespaceRow, WalletConnectCall, WalletConnectEngine } from "./namespaces.ts";
+export type { WalletConnectEngine } from "./namespaces.ts";

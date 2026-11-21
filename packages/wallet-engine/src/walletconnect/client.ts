@@ -21,6 +21,7 @@ import type { EngineLogger } from "../events.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { WalletConnectOrigin, WalletConnectVerify } from "../requests/types.ts";
 import { walletConnectKey } from "../requests/types.ts";
+import { bip122Addresses, bip122Row } from "./bip122.ts";
 import { eip155Row } from "./eip155.ts";
 import { WalletConnectError, requestError } from "./errors.ts";
 import type { NamespaceRow, WalletConnectEngine } from "./namespaces.ts";
@@ -28,6 +29,7 @@ import { sameNamespaces, sessionNamespaces } from "./namespaces.ts";
 import { judgeProposal, metadataOrigin, verifyOf } from "./proposals.ts";
 import type { SessionRequestItem } from "./queue.ts";
 import { SessionRequestQueue } from "./queue.ts";
+import { solanaRow } from "./solana.ts";
 
 export type WalletConnectStorage = {
   readonly getKeys: () => Promise<string[]>;
@@ -96,9 +98,11 @@ export type WalletConnect = {
   readonly dispose: () => Promise<void>;
 };
 
-/** One row per CAIP namespace the wallet serves — solana and bip122 join as files + rows. */
+/** One row per CAIP namespace the wallet serves. */
 const ROWS: Readonly<Record<string, NamespaceRow>> = {
   eip155: eip155Row,
+  solana: solanaRow,
+  bip122: bip122Row,
 };
 
 /** A session within this much of its expiry is extended on every reconcile. */
@@ -124,6 +128,10 @@ type JudgedProposal = Extract<ReturnType<typeof judgeProposal>, { readonly ok: t
 class WalletConnectController extends Controller<WalletConnectState> implements WalletConnect {
   private readonly queue: SessionRequestQueue;
   private readonly judged = new Map<number, JudgedProposal>();
+  private readonly held = new Map<
+    number,
+    { readonly proposal: ProposalTypes.Struct; readonly verify: Promise<WalletConnectVerify> }
+  >();
   private readonly lastNetwork = new Map<string, string>();
   private readonly gone = new Set<string>();
   private chain: Promise<void> = Promise.resolve();
@@ -206,6 +214,8 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     } catch (error) {
       this.options.logger.warn("walletconnect transport close failed", error);
     }
+    this.judged.clear();
+    this.held.clear();
     this.update(() => ({ proposals: {} }));
   }
 
@@ -311,11 +321,38 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
         scopes,
         async (bound) => this.settle(id, proposal, judged, bound),
       );
+      if (
+        session.origin.kind === "walletconnect" &&
+        judged.offer.namespaces["bip122"]?.events.includes("bip122_addressesChanged") === true
+      ) {
+        for (const network of grant.networks.filter((n) => n.startsWith("bip122:"))) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- events go out in grant order
+          await this.emitBip122Addresses(session.origin, session.origin.topic, network);
+        }
+      }
       this.removeProposal(id);
       return session;
     } finally {
       this.establishing -= 1;
       this.scheduleReconcile();
+    }
+  }
+
+  /** One `bip122_addressesChanged` — failures are logged, never thrown. */
+  private async emitBip122Addresses(
+    origin: WalletConnectOrigin,
+    topic: string,
+    chainId: string,
+  ): Promise<void> {
+    try {
+      const data = await bip122Addresses(this.options.engine, origin, chainId);
+      await this.kit.emitSessionEvent({
+        topic,
+        event: { name: "bip122_addressesChanged", data },
+        chainId,
+      });
+    } catch (error) {
+      this.options.logger.warn("walletconnect event failed", error);
     }
   }
 
@@ -392,6 +429,13 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     resolveVerify: () => WalletConnectVerify | Promise<WalletConnectVerify>,
   ): Promise<void> {
     const { engine } = this.options;
+    if (!this.ready()) {
+      // Locked: the enabled set is empty, so judging now would wrongly refuse every chain. The
+      // proposal waits — not rejected, not shown — until connections are ready; its Verify
+      // resolution already runs.
+      this.held.set(proposal.id, { proposal, verify: Promise.resolve(resolveVerify()) });
+      return;
+    }
     const verify = await resolveVerify();
     const verdict = judgeProposal(proposal, verify, {
       phishing: (url) => engine.phishing.check(url),
@@ -559,6 +603,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
   };
 
   private readonly onProposalExpire = (event: { id: number }): void => {
+    this.held.delete(event.id);
     this.removeProposal(event.id);
   };
 
@@ -596,8 +641,17 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     }
     if (!wasReady) {
       this.queue.setReady(true);
+      this.drainHeld();
     }
     this.scheduleReconcile();
+  }
+
+  /** Proposals held while locked get judged now, in arrival order. */
+  private drainHeld(): void {
+    for (const [id, held] of this.held) {
+      this.held.delete(id);
+      this.serialized(async () => this.offerProposal(held.proposal, async () => held.verify));
+    }
   }
 
   /** Async lifecycle work runs strictly serial so repoints and deletions never interleave. */
@@ -714,6 +768,15 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
             .catch((error: unknown) => {
               this.options.logger.warn("walletconnect event failed", error);
             });
+        }
+        if (
+          session.origin.kind === "walletconnect" &&
+          chainId.startsWith("bip122:") &&
+          offered !== undefined &&
+          offered.events.includes("bip122_addressesChanged")
+        ) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- events go out in chain order
+          await this.emitBip122Addresses(session.origin, topic, chainId);
         }
       }
     }
