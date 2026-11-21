@@ -58,6 +58,7 @@
     "vite-plus": "1.4.0"
   },
   "overrides": {
+    "axios": "1.20.0",
     "minimatch": "11.0.4",
     "uuid": "11.1.1"
   },
