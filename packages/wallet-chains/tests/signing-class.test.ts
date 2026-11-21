@@ -784,7 +784,7 @@ describe("typed data that signs only hashes is blind", () => {
         typed(doc("Root", { s }, { Root: [{ name: "s", type: "string" }] })),
         SIGNER,
       );
-      expect(intent.blind, s.slice(0, 24)).toBe("typed-data-commitment");
+      expect(intent.blind).toBe("typed-data-commitment");
     }
     /* A two-line encoding cannot be shown on one field line, so the document blinds as
        unshowable rather than as a commitment — still blind either way. */
@@ -805,7 +805,7 @@ describe("typed data that signs only hashes is blind", () => {
         typed(doc("Root", { s }, { Root: [{ name: "s", type: "string" }] })),
         SIGNER,
       );
-      expect(intent.blind, s.slice(0, 24)).toBeUndefined();
+      expect(intent.blind).toBeUndefined();
       expect(isBlindIntent(intent)).toBe(false);
     }
   });

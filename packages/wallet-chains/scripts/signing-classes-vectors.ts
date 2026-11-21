@@ -686,8 +686,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
-      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
+      "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
+      "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
     ),
   },
   {
@@ -1318,11 +1318,13 @@ const TRON_MSG_CASES = {
     prompt: {
       en: {
         title: "Confirm blind signing",
-        description: "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
+        description:
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
       },
       "zh-Hans": {
         title: "确认盲签",
-        description: "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
+        description:
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n消息：\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\n\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
       },
     },
   },

@@ -299,6 +299,9 @@ const zh: Catalog = {
     "stake-lockup": () => "该质押账户已锁定：锁定期结束前资金无法转出",
     "sighash-single-anyonecanpay": () => "已签输入只绑定同序号输出，交易其余部分可被改动",
     "permit2-witness": () => "此许可附带附加条款（witness）",
+    "delegation-replaced": (message) => message,
+    "token-2022-transfer-fee": (message) => message,
+    "token-2022-extension": (message) => message,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -522,6 +525,9 @@ const en: Catalog = {
     "sighash-single-anyonecanpay": () =>
       "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
     "permit2-witness": () => "This permit carries further terms (a witness)",
+    "delegation-replaced": (message) => message,
+    "token-2022-transfer-fee": (message) => message,
+    "token-2022-extension": (message) => message,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -957,8 +963,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
 const warningLines = (
   catalog: Catalog,
   warnings: PromptIntent["warnings"],
-): ReadonlyArray<string> =>
-  (warnings ?? []).map((w) => catalog.warnings[w.kind](w.message));
+): ReadonlyArray<string> => (warnings ?? []).map((w) => catalog.warnings[w.kind](w.message));
 
 function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<string> {
   if (signIn.status === "malformed") {

@@ -5,16 +5,17 @@
  * marks, interlinear annotation anchors, default-ignorable characters outside the format set and
  * tag characters outside a valid emoji tag sequence — mean what the owner reads is not what was
  * signed (`hasHiddenCharacters`); they render as U+FFFD. Format ones — joiners, direction marks,
- * the soft hyphen, the combining grapheme joiner, variation selectors and emoji tag sequences —
- * are ordinary text; joiners display only where they actually join, direction marks and the soft
- * hyphen display as U+FFFD so they stay visible, the rest pass through. Everything else is text.
+ * the soft hyphen, the combining grapheme joiner, variation selectors and emoji tag sequences — are
+ * ordinary text; joiners display only where they actually join, direction marks and the soft hyphen
+ * display as U+FFFD so they stay visible, the rest pass through. Everything else is text.
  */
 
 const DECEPTIVE = /[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069\uFFF9-\uFFFB]/u;
 const IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
-const FORMAT = /[\u200C\u200D\u200E\u200F\u061C\u00AD\u034F\p{Variation_Selector}]/u;
-const JOINER = /[\u200C\u200D]/u;
-const JOINER_PREV = /[\p{L}\p{M}\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Variation_Selector}]/u;
+const FORMAT = /\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|\u034F|\p{Variation_Selector}/u;
+const JOINER = /\u200C|\u200D/u;
+const JOINER_PREV =
+  /[\p{L}\p{M}\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Variation_Selector}]/u;
 const JOINER_NEXT = /[\p{L}\p{M}\p{Extended_Pictographic}]/u;
 const MARK_VISIBLE = new Set([0x200e, 0x200f, 0x061c, 0x00ad]);
 
@@ -26,9 +27,17 @@ const TAG_BODY_LAST = 0xe007e;
 
 const codePoint = (char: string | undefined): number => char?.codePointAt(0) ?? 0;
 
+const codePointsOf = (text: string): string[] => {
+  const chars: string[] = [];
+  for (const char of text) {
+    chars.push(char);
+  }
+  return chars;
+};
+
 /**
- * Whether the tag character at `i` is part of a valid emoji tag sequence: U+1F3F4, then one or
- * more of U+E0020–U+E007E, terminated by U+E007F.
+ * Whether the tag character at `i` is part of a valid emoji tag sequence: U+1F3F4, then one or more
+ * of U+E0020–U+E007E, terminated by U+E007F.
  */
 const inEmojiTagSequence = (chars: ReadonlyArray<string>, i: number): boolean => {
   let start = i;
@@ -58,11 +67,11 @@ const isDeceptive = (char: string, codePoint: number): boolean =>
   (IGNORABLE.test(char) && !FORMAT.test(char));
 
 /**
- * Whether `text` holds a deceptive code point — one that hides, reorders or fakes content. TAB,
- * LF and CR are the only control characters ordinary text may carry.
+ * Whether `text` holds a deceptive code point — one that hides, reorders or fakes content. TAB, LF
+ * and CR are the only control characters ordinary text may carry.
  */
 export const hasHiddenCharacters = (text: string): boolean => {
-  const chars = Array.from(text);
+  const chars = codePointsOf(text);
   for (const [i, char] of chars.entries()) {
     const cp = codePoint(char);
     if (cp >= TAG_FIRST && cp <= TAG_LAST ? !inEmojiTagSequence(chars, i) : isDeceptive(char, cp)) {
@@ -73,15 +82,15 @@ export const hasHiddenCharacters = (text: string): boolean => {
 };
 
 /**
- * Whether `text` is the rendering of raw bytes, not a description of what the signature
- * authorises: hex with or without a `0x` prefix of either case, optionally separated by
- * whitespace, colons, dashes or commas, past 40 digits — 40 digits is an address written as text,
- * which stays readable — or a single base64/base64url/base58 token of 43 or more characters (≥ 32
- * bytes) mixing at least two of its character classes.
+ * Whether `text` is the rendering of raw bytes, not a description of what the signature authorises:
+ * hex with or without a `0x` prefix of either case, optionally separated by whitespace, colons,
+ * dashes or commas, past 40 digits — 40 digits is an address written as text, which stays readable
+ * — or a single base64/base64url/base58 token of 43 or more characters (≥ 32 bytes) mixing at least
+ * two of its character classes.
  */
 export const isEncodedBytes = (text: string): boolean => {
   const trimmed = text.trim();
-  const squashed = trimmed.replace(/^0x/i, "").replace(/[\s:,-]+/g, "");
+  const squashed = trimmed.replace(/^0x/i, "").replaceAll(/[\s:,-]+/g, "");
   if (squashed.length > 40 && /^[0-9a-fA-F]+$/.test(squashed)) {
     return true;
   }
@@ -99,12 +108,12 @@ const REPLACEMENT = "\uFFFD";
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
 
 /**
- * The code points of one line: tabs as spaces, trimmed; deceptive characters, misplaced joiners
- * and the always-visible marks (LRM, RLM, ALM, SHY) as U+FFFD; tag characters only inside a valid
- * emoji tag sequence.
+ * The code points of one line: tabs as spaces, trimmed; deceptive characters, misplaced joiners and
+ * the always-visible marks (LRM, RLM, ALM, SHY) as U+FFFD; tag characters only inside a valid emoji
+ * tag sequence.
  */
 const safeLine = (line: string): ReadonlyArray<string> => {
-  const chars = Array.from(line.replaceAll("\t", " ").trim());
+  const chars = codePointsOf(line.replaceAll("	", " ").trim());
   return chars.map((char, i) => {
     const cp = codePoint(char);
     if (cp >= TAG_FIRST && cp <= TAG_LAST) {

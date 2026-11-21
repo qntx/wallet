@@ -2925,9 +2925,7 @@ describe("decoder warnings reach the prompt", () => {
       for (const locale of ["en", "zh-Hans"] as const) {
         const prompt = chainPrompt(locale, txIntent([{ kind, message: "50 bps" }]));
         const lines = prompt.description.split("\n");
-        expect(lines.at(-1), `${locale} ${kind}`).toBe(
-          CATALOGS[locale].warnings[kind]("50 bps"),
-        );
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
       }
     }
     /* Two warnings keep their order. */
@@ -2950,9 +2948,7 @@ describe("decoder warnings reach the prompt", () => {
       for (const locale of ["en", "zh-Hans"] as const) {
         const prompt = chainPrompt(locale, typedIntent([{ kind, message: "50 bps" }]));
         const lines = prompt.description.split("\n");
-        expect(lines.at(-1), `${locale} ${kind}`).toBe(
-          CATALOGS[locale].warnings[kind]("50 bps"),
-        );
+        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
       }
     }
   });
@@ -3085,9 +3081,7 @@ describe("typed field lines cannot imitate kernel lines", () => {
     expect(en.description).toContain("\n· Network = Sepolia (testnet, no value)");
 
     const zh = chainPrompt("zh-Hans", fieldIntent("网络", "Sepolia (testnet)"));
-    expect(zh.description.split("\n").filter((line) => line.startsWith("网络："))).toHaveLength(
-      1,
-    );
+    expect(zh.description.split("\n").filter((line) => line.startsWith("网络："))).toHaveLength(1);
     expect(zh.description).toContain("\n· 网络 = Sepolia (testnet)");
   });
 });

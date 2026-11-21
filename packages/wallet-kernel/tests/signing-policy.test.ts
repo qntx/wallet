@@ -370,7 +370,7 @@ describe("blind signing policy", () => {
       () => ({
         title: "Confirm blind signing",
         description:
-          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\ufffd\uf860\ufffdN4ǵH\ufffdTP`M\ufffdtI\ufffd\ufffd1\ufffd2ܽtaɮ;y",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nMessage:\nW\uFFFD\uF860\uFFFDN4ǵH\uFFFDTP`M\uFFFDtI\uFFFD\uFFFD1\uFFFD2ܽtaɮ;y",
       }),
     ],
     [

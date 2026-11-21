@@ -324,12 +324,15 @@ export type StakeAction =
       readonly votes: ReadonlyArray<{ readonly witness: string; readonly count: string }>;
     };
 
-/** The closed set of decoder warnings the prompt knows how to render. */
+/** The closed set of warnings the prompt knows how to render. */
 export type IntentWarningKind =
   | "platform-fee"
   | "stake-lockup"
   | "sighash-single-anyonecanpay"
-  | "permit2-witness";
+  | "permit2-witness"
+  | "delegation-replaced"
+  | "token-2022-transfer-fee"
+  | "token-2022-extension";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
@@ -556,8 +559,8 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
 
 /**
  * Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex — every
- * valid UTF-8 input is text, including 32-byte and hidden-character texts (`messageTextHazard`
- * says which of those is blind); only a message that fails UTF-8 decoding is bytes.
+ * valid UTF-8 input is text, including 32-byte and hidden-character texts (`messageTextHazard` says
+ * which of those is blind); only a message that fails UTF-8 decoding is bytes.
  */
 export const messageContent = (
   bytes: Uint8Array,
@@ -672,9 +675,9 @@ export type MessageTextHazard = "digest-length" | "hidden-characters" | "encoded
 /**
  * Why text `text` cannot be read as what the signature authorises, in precedence order: a UTF-8
  * length of exactly 32 bytes is a digest — Safe's eth_sign path (`v > 30`) and EIP-191 digest
- * verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message has
- * that preimage, so no display can tell a 32-byte text from a digest that happens to be UTF-8;
- * a deceptive code point means what the owner reads is not what was signed; and an encoded-bytes
+ * verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message has that
+ * preimage, so no display can tell a 32-byte text from a digest that happens to be UTF-8; a
+ * deceptive code point means what the owner reads is not what was signed; and an encoded-bytes
  * rendering shows the encoding, not the bytes it encodes.
  */
 export const messageTextHazard = (text: string): MessageTextHazard | undefined => {
@@ -692,8 +695,8 @@ export const messageTextHazard = (text: string): MessageTextHazard | undefined =
 
 /**
  * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when it
- * carries a `messageTextHazard`. Checking the content again here gives callers that build
- * `{ kind: "text" }` themselves the same verdict.
+ * carries a `messageTextHazard`. Checking the content again here gives callers that build `{ kind:
+ * "text" }` themselves the same verdict.
  */
 export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
   message.kind === "bytes"

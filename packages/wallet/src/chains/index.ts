@@ -219,7 +219,6 @@ const checkBitcoinMessage = async (
  * account. The switch is exhaustive over the request union; a trailing return is unreachable
  * (TS7027).
  */
-// oxlint-disable-next-line typescript/consistent-return
 const checkResult = async (
   internals: WalletInternals,
   request: ChainSignRequest,

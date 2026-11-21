@@ -106,7 +106,7 @@ describe("code point classes against an independent definition", () => {
      selectors), or a tag character — a lone tag char is never inside a valid emoji tag sequence. */
   const DECEPTIVE = /[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069\uFFF9-\uFFFB]/u;
   const IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
-  const FORMAT = /[\u200C\u200D\u200E\u200F\u061C\u00AD\u034F\p{Variation_Selector}]/u;
+  const FORMAT = /\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|\u034F|\p{Variation_Selector}/u;
   const expectHidden = (char: string, cp: number): boolean =>
     cp >= 0xe0000 && cp <= 0xe007f
       ? true
@@ -114,12 +114,15 @@ describe("code point classes against an independent definition", () => {
         (IGNORABLE.test(char) && !FORMAT.test(char));
 
   it("every code point 0..0x10FFFF agrees with the oracle", { timeout: 120_000 }, () => {
-    for (let cp = 0; cp <= 0x10ffff; cp++) {
-      if (cp >= 0xd800 && cp <= 0xdfff) {
-        continue;
+    const ranges: ReadonlyArray<readonly [number, number]> = [
+      [0, 0xd7ff],
+      [0xe000, 0x10ffff],
+    ];
+    for (const [lo, hi] of ranges) {
+      for (let cp = lo; cp <= hi; cp++) {
+        const char = String.fromCodePoint(cp);
+        expect(hasHiddenCharacters(char)).toBe(expectHidden(char, cp));
       }
-      const char = String.fromCodePoint(cp);
-      expect(hasHiddenCharacters(char), `U+${cp.toString(16)}`).toBe(expectHidden(char, cp));
     }
   });
 });
@@ -141,7 +144,7 @@ describe("isEncodedBytes", () => {
       `0x${"ab".repeat(21)}`,
       `0x${"ab".repeat(31)}`,
     ]) {
-      expect(isEncodedBytes(text), text.slice(0, 24)).toBe(true);
+      expect(isEncodedBytes(text)).toBe(true);
     }
   });
 
@@ -234,9 +237,7 @@ describe("messageTextHazard", () => {
     }
     expect(messageTextHazard("hello world")).toBeUndefined();
     /* The ground digest: a keccak output that happens to be valid UTF-8. */
-    const digest = hexToBytes(
-      "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79",
-    );
+    const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
     expect(() => utf8s.decode(digest)).not.toThrow();
     expect(messageTextHazard(utf8s.decode(digest))).toBe("digest-length");
   });
@@ -289,23 +290,28 @@ describe("messageBlindReason", () => {
 });
 
 describe("corpus message texts", () => {
-  const texts: ReadonlyArray<readonly [string, string, "digest-length" | undefined]> = [
-    ["32-byte ASCII login", "Sign in to app.example.org #4821", "digest-length"],
-    ["32-char hex nonce", "9f86d081884c7d659a2feaa0c55ad015", "digest-length"],
-    ["32-byte CJK login", "请签名以登录示例网站12", "digest-length"],
-    ["ZWJ emoji", "Welcome back 👨\u200D💻 — sign to log in", undefined],
-    ["ZWJ flag", "Sign in to Pride DAO 🏳️\u200D🌈", undefined],
-    ["England flag tag sequence", ENGLAND, undefined],
-    ["Persian ZWNJ", "برای ورود به حساب کاربری می\u200Cخواهم امضا کنم", undefined],
-    ["Hebrew RLM", "התחברות לאתר\u200F 2026", undefined],
-    ["Arabic ALM", "\u061Cمرحبا، تسجيل الدخول إلى حسابي", undefined],
-    ["soft hyphen", "Sign in to Ex\u00ADample", undefined],
+  const texts: ReadonlyArray<
+    readonly [string, string, "digest-length" | undefined, "message-bytes" | undefined]
+  > = [
+    ["32-byte ASCII login", "Sign in to app.example.org #4821", "digest-length", "message-bytes"],
+    ["32-char hex nonce", "9f86d081884c7d659a2feaa0c55ad015", "digest-length", "message-bytes"],
+    ["32-byte CJK login", "请签名以登录示例网站12", "digest-length", "message-bytes"],
+    ["ZWJ emoji", "Welcome back 👨\u200D💻 — sign to log in", undefined, undefined],
+    ["ZWJ flag", "Sign in to Pride DAO 🏳️\u200D🌈", undefined, undefined],
+    ["England flag tag sequence", ENGLAND, undefined, undefined],
+    ["Persian ZWNJ", "برای ورود به حساب کاربری می\u200Cخواهم امضا کنم", undefined, undefined],
+    ["Hebrew RLM", "התחברות לאתר\u200F 2026", undefined, undefined],
+    ["Arabic ALM", "\u061Cمرحبا، تسجيل الدخول إلى حسابي", undefined, undefined],
+    ["soft hyphen", "Sign in to Ex\u00ADample", undefined, undefined],
   ];
 
-  it.each(texts)("%s is text, and blind exactly when digest-length", (_name, text, hazard) => {
-    const content = messageContent(utf8(text), "evm");
-    expect(content.kind).toBe("text");
-    expect(messageTextHazard(text)).toBe(hazard);
-    expect(messageBlindReason(content)).toBe(hazard === undefined ? undefined : "message-bytes");
-  });
+  it.each(texts)(
+    "%s is text, and blind exactly when digest-length",
+    (_name, text, hazard, blind) => {
+      const content = messageContent(utf8(text), "evm");
+      expect(content.kind).toBe("text");
+      expect(messageTextHazard(text)).toBe(hazard);
+      expect(messageBlindReason(content)).toBe(blind);
+    },
+  );
 });
