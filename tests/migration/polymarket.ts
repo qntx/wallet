@@ -177,12 +177,21 @@ export async function tradeAndWatch(
       void live.close();
     }
   });
+  /* The account view streams the user channel: `source` is "stream" while the authenticated
+     socket feeds it and "poll" while the REST fallback covers a disconnect. */
+  const account = pm.live.account(group);
+  const drop = account.subscribe((state) => {
+    if (state.status === "live" && state.data?.source === "stream") {
+      drop();
+      void account.close();
+    }
+  });
 }
 
 /**
- * Disable the group: `revoke` asks the CLOB to delete the API key first, then the kernel drops the
- * sealed credentials. A local delete alone is not a revoke — the same wallet re-derives the same
- * credentials, so always pass `revoke: true` to cut off the key server-side too.
+ * Disable the group: `revoke` asks the CLOB to delete the API key first, then the engine drops the
+ * stored credential record. A local delete alone is not a revoke — the same wallet re-derives the
+ * same credentials, so always pass `revoke: true` to cut off the key server-side too.
  */
 export async function disableGroup(
   apps: ReturnType<typeof createHost>["apps"],

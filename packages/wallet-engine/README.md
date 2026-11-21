@@ -200,6 +200,7 @@ only the apps it lists.
 import { createWalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
+import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
 const engine = createWalletEngine({/* … */});
 const apps = await createApps({
@@ -223,6 +224,9 @@ const apps = await createApps({
       network: "Mainnet", // or "Testnet"
       agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
       builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
+    }),
+    polymarket({
+      builder: { code: "0x…", sign: myBuilderEndpoint }, // Remote Builder Signing — see below
     }),
   ],
 });
@@ -408,15 +412,17 @@ credentials to sell and withdraw); `blocked` and unknown/error answers fail clos
 ### Credential custody
 
 The `apiKey`/`secret`/`passphrase` the CLOB answers are written into the app's encrypted
-collection on the session store (`apps.polymarket`, key `<walletId>/<groupIndex>/eip155:137`) —
-closed with the vault, pruned when the wallet is deleted, and never surfaced in controller state,
-snapshots, logs, or error strings. Every later authenticated request is HMAC'd by the engine
-itself (`l2Headers`) with a ±30 s timestamp window, after checking the stored `owner` still
-equals the group's `evm.bip44` signer. There is no authenticated WebSocket channel: account live
-views poll the Data API and L2 reads instead. Residual risk: while the vault is unlocked the
-engine holds the secret — a compromised main runtime can HMAC the CLOB requests it already may
-(cancel orders, read account data) or exfiltrate the record; every order is still a
-kernel-described user approval.
+collection on the session store (`apps.polymarket`, key `<walletId>/<groupIndex>/eip155:137`,
+encrypted under the data key the host's `openStore` holds) — unavailable while locked, pruned when
+the wallet is deleted, cleared on `disable`, and never surfaced in controller state, snapshots,
+logs, or error strings. Every later authenticated request is HMAC'd by the engine itself
+(`l2Headers`) with a ±30 s timestamp window, after checking the stored `owner` still equals the
+group's `evm.bip44` signer. The authenticated `/ws/user` channel receives the same credentials in
+its subscription frame for live order/trade events. Residual risk: a compromised main runtime
+while the wallet is unlocked can read the CLOB credentials: it can cancel orders and read private
+CLOB data (orders, trades) until the user disables Polymarket with revoke (server-side
+`DELETE /auth/api-key`). It cannot place orders — every order needs a signature the kernel decodes
+and the user approves — and cannot move funds (no CLOB path withdraws or transfers).
 
 ### Trading
 
@@ -454,8 +460,11 @@ wrapping paths belong to the swap/bridge lanes, not this app.
 `live.book(assetId)` streams the public market channel (`custom_feature_enabled` for
 best-bid/ask and resolution events): a `book` snapshot turns the view `live`, `price_change`
 deltas apply only on top of it (size `"0"` removes the level), and every disconnect marks the view
-`stale` while keeping the last data. `live.account(group)` polls open orders + positions every
-10 s and stops on lock or a fatal category.
+`stale` while keeping the last data. `live.account(group)` streams the authenticated user channel
+(`/ws/user`): the group's credentials go out as the first frame, order events upsert/remove the
+open-orders list and trade events debounce into a REST re-read. A disconnect keeps the data as
+`stale` and falls back to a 10 s REST poll (`source: "poll"`) until the socket reconnects and the
+view returns to `live`/`stream`; a lock or a missing-credential stop closes the view for good.
 
 ## React Native hosts
 

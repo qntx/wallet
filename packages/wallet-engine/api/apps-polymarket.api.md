@@ -919,6 +919,8 @@ export type PolymarketAccountLiveData = {
     readonly wallet: `0x${string}`;
     readonly openOrders: ReadonlyArray<PolymarketOrder>;
     readonly positions: ReadonlyArray<PolymarketPosition>;
+    readonly trades: ReadonlyArray<PolymarketTrade>;
+    readonly source: "stream" | "poll";
 };
 
 // @public (undocumented)
