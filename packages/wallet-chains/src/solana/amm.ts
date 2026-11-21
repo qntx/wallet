@@ -18,17 +18,12 @@ const SPL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 /* Anchor discriminators sha256("global:<name>")[0..8], computed locally. */
 const SWAP_V2 = Uint8Array.from([0x2b, 0x04, 0xed, 0x0b, 0x1a, 0xc9, 0x1e, 0x62]);
 const SWAP_BASE_INPUT = Uint8Array.from([0x8f, 0xbe, 0x5a, 0xda, 0xc4, 0x1e, 0x33, 0xde]);
-const SWAP_BASE_OUTPUT = Uint8Array.from([0x37, 0xd9, 0x62, 0x56, 0xa3, 0x4a, 0xb4, 0xad]);
 
 const u32 = getU32Decoder();
 const u64 = getU64Decoder();
 
 const startsWith = (data: Uint8Array, prefix: Uint8Array): boolean =>
   data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
-
-/** 16 little-endian bytes all zero — a u128 equal to NO_EXPLICIT_SQRT_PRICE_LIMIT (0). */
-const isZeroU128 = (data: Uint8Array, offset: number): boolean =>
-  data.subarray(offset, offset + 16).every((b) => b === 0);
 
 export type AmmSwap = {
   readonly program: string;
@@ -65,12 +60,14 @@ export const decodeAmmSwapIx = (
   };
 
   if (program === RAYDIUM_AMM_PROGRAM) {
-    /* instruction.rs unpack: tag 9 SwapBaseIn{amount_in, minimum_amount_out}, tag 11
-       SwapBaseOut{max_amount_in, amount_out}, tags 16/17 the same payloads without the orderbook
-       market accounts. The token program account must be SPL Token (processor.rs). */
+    /* instruction.rs unpack: tag 9 SwapBaseIn{amount_in, minimum_amount_out}, tag 17
+       SwapBaseOutV2{max_amount_in, amount_out}, tag 16 SwapBaseInV2 — the V2 tags carry the same
+       payloads without the orderbook market accounts. Tag 11 (orderbook base-out) does not decode:
+       no real mainnet transaction was found to pin its 17|18-account layout. The token program
+       account must be SPL Token (processor.rs). */
     const tag = data.at(0);
     const baseIn = tag === 9 || tag === 16;
-    const baseOut = tag === 11 || tag === 17;
+    const baseOut = tag === 17;
     if ((!baseIn && !baseOut) || data.length !== 17) {
       return undefined;
     }
@@ -101,9 +98,10 @@ export const decodeAmmSwapIx = (
       authority,
       sourceAccount,
       destinationAccount,
-      ...(baseIn
-        ? { maxIn: u64.decode(data, 1), minOut: u64.decode(data, 9) }
-        : { maxIn: u64.decode(data, 1), minOut: u64.decode(data, 9) }),
+      /* Both payloads put the in-bound (amount_in / max_amount_in) first and the out-bound
+         (minimum_amount_out / amount_out) second. */
+      maxIn: u64.decode(data, 1),
+      minOut: u64.decode(data, 9),
     };
   }
 
@@ -113,9 +111,12 @@ export const decodeAmmSwapIx = (
        authority(PDA), amm_config, pool_state, input_token_account, output_token_account,
        input_vault, output_vault, input_token_program, output_token_program, input_token_mint,
        output_token_mint, observation_state (swap_base_input.rs). */
-    const baseIn = startsWith(data, SWAP_BASE_INPUT);
-    const baseOut = startsWith(data, SWAP_BASE_OUTPUT);
-    if ((!baseIn && !baseOut) || data.length !== 24 || ix.accountIndices.length !== 13) {
+    /* swap_base_output does not decode: no real mainnet transaction was found to pin it. */
+    if (
+      !startsWith(data, SWAP_BASE_INPUT) ||
+      data.length !== 24 ||
+      ix.accountIndices.length !== 13
+    ) {
       return undefined;
     }
     const authority = account(0);
@@ -143,9 +144,9 @@ export const decodeAmmSwapIx = (
       sourceMint,
       destinationMint,
       destinationTokenProgram,
-      ...(baseIn
-        ? { maxIn: u64.decode(data, 8), minOut: u64.decode(data, 16) }
-        : { maxIn: u64.decode(data, 8), minOut: u64.decode(data, 16) }),
+      /* Both payloads put the in-bound first and the out-bound second. */
+      maxIn: u64.decode(data, 8),
+      minOut: u64.decode(data, 16),
     };
   }
 
@@ -154,8 +155,7 @@ export const decodeAmmSwapIx = (
        is_base_input bool}: 41 bytes, ≥13 accounts — payer(signer), amm_config, pool_state,
        input_token_account, output_token_account, input_vault, output_vault, observation_state,
        token_program, token_program_2022, memo_program, input_vault_mint, output_vault_mint, then
-       remaining tick arrays (swap_v2.rs). A base-out swap fills the whole amount only when the
-       price limit is 0 — with a limit a partial fill can deliver less, so it stays undecoded. */
+       remaining tick arrays (swap_v2.rs). */
     if (!startsWith(data, SWAP_V2) || data.length !== 41 || ix.accountIndices.length < 13) {
       return undefined;
     }
@@ -173,13 +173,9 @@ export const decodeAmmSwapIx = (
     ) {
       return undefined;
     }
-    const amount = u64.decode(data, 8);
-    const threshold = u64.decode(data, 16);
-    const baseInput = data.at(40);
-    if (baseInput !== 0 && baseInput !== 1) {
-      return undefined;
-    }
-    if (baseInput === 0 && !isZeroU128(data, 24)) {
+    /* Base-out swaps are not decoded: no real mainnet transaction with
+       is_base_input = 0 was found to pin the layout. */
+    if (data.at(40) !== 1) {
       return undefined;
     }
     return {
@@ -190,9 +186,8 @@ export const decodeAmmSwapIx = (
       destinationAccount,
       sourceMint,
       destinationMint,
-      ...(baseInput === 1
-        ? { maxIn: amount, minOut: threshold }
-        : { maxIn: threshold, minOut: amount }),
+      maxIn: u64.decode(data, 8),
+      minOut: u64.decode(data, 16),
     };
   }
 
@@ -201,9 +196,7 @@ export const decodeAmmSwapIx = (
        amount_specified_is_input bool, a_to_b bool, Option<RemainingAccountsInfo>}: ≥15 accounts —
        token_program_a, token_program_b, memo_program, token_authority(signer), whirlpool,
        token_mint_a, token_mint_b, token_owner_account_a, token_vault_a, token_owner_account_b,
-       token_vault_b, tick_array_0..2, oracle, then remaining accounts (v2/swap.rs). An exact-out
-       swap fills the whole amount only with no explicit price limit
-       (NO_EXPLICIT_SQRT_PRICE_LIMIT = 0, math/swap_math.rs). */
+       token_vault_b, tick_array_0..2, oracle, then remaining accounts (v2/swap.rs). */
     if (!startsWith(data, SWAP_V2) || data.length < 43 || ix.accountIndices.length < 15) {
       return undefined;
     }
@@ -229,9 +222,10 @@ export const decodeAmmSwapIx = (
     if (authority === undefined) {
       return undefined;
     }
+    /* Exact-out swaps are not decoded: no real mainnet transaction with
+       amount_specified_is_input = 0 was found to pin the layout. */
     const aToB = data.at(41);
-    const specifiedIsInput = data.at(40);
-    if ((aToB !== 0 && aToB !== 1) || (specifiedIsInput !== 0 && specifiedIsInput !== 1)) {
+    if ((aToB !== 0 && aToB !== 1) || data.at(40) !== 1) {
       return undefined;
     }
     const sourceIndex = aToB === 1 ? 7 : 9;
@@ -250,11 +244,6 @@ export const decodeAmmSwapIx = (
     ) {
       return undefined;
     }
-    const amount = u64.decode(data, 8);
-    const threshold = u64.decode(data, 16);
-    if (specifiedIsInput === 0 && !isZeroU128(data, 24)) {
-      return undefined;
-    }
     return {
       program,
       protocol: "orca-whirlpool",
@@ -264,9 +253,8 @@ export const decodeAmmSwapIx = (
       sourceMint,
       destinationMint,
       destinationTokenProgram,
-      ...(specifiedIsInput === 1
-        ? { maxIn: amount, minOut: threshold }
-        : { maxIn: threshold, minOut: amount }),
+      maxIn: u64.decode(data, 8),
+      minOut: u64.decode(data, 16),
     };
   }
 

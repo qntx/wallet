@@ -35,6 +35,9 @@ const fixtures = JSON.parse(
 const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   zYfMbwWqc26i: [undefined, 0],
   "4ZgGzFAQUZW2": [undefined, 0],
+  uBXCNYExECDV: [undefined, 1],
+  "3EEBc3QZhML2": [undefined, 1],
+  "5LeqC3ag5BJ3": [undefined, 0],
   "3c196gtidd98": [undefined, 1],
   "5SXmd3gsbs8m": [undefined, 0],
   "5pm4LpEeFQYz": [undefined, 0],

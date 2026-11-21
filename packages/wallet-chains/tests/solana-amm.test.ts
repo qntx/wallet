@@ -239,10 +239,9 @@ describe("Raydium AMM v4", () => {
     }
   });
 
-  it("tag 11 describes max-in / exact-out; tags 16/17 take the 8-account form", () => {
-    const intent = intentOf([ix(RAYDIUM_AMM_PROGRAM, ammV4Metas(18), ammV4Data(11, 5000n, 100n))]);
-    expect(intent.outflows[0]?.amount.amount).toBe("5000");
-    expect(intent.minimumReceived?.[0]?.amount.amount).toBe("100");
+  it("tag 11 falls back (no mainnet fixture); tags 16/17 take the 8-account form", () => {
+    const tag11 = intentOf([ix(RAYDIUM_AMM_PROGRAM, ammV4Metas(18), ammV4Data(11, 5000n, 100n))]);
+    expect(hasAuthority(tag11, RAYDIUM_AMM_PROGRAM)).toBe(true);
 
     for (const tag of [16, 17]) {
       const metas: Meta[] = [
@@ -316,18 +315,20 @@ describe("Raydium AMM v4", () => {
 });
 
 describe("Raydium CPMM", () => {
-  it("swap_base_input and swap_base_output describe the bounds", () => {
+  it("swap_base_input describes the bounds", () => {
     const intent = intentOf([
       ix(RAYDIUM_CPMM_PROGRAM, cpmmMetas(), cat(BASE_IN, u64le(5000n), u64le(100n))),
     ]);
     expect(intent.summary).toBe("swap");
     expect(intent.outflows[0]?.amount).toMatchObject({ asset: OTHER_MINT, amount: "5000" });
     expect(intent.minimumReceived?.[0]?.amount).toMatchObject({ asset: USDC, amount: "100" });
+  });
 
+  it("swap_base_output falls back (no mainnet fixture)", () => {
     const out = intentOf([
       ix(RAYDIUM_CPMM_PROGRAM, cpmmMetas(), cat(BASE_OUT, u64le(5000n), u64le(100n))),
     ]);
-    expect(out.minimumReceived?.[0]?.amount).toMatchObject({ amount: "100" });
+    expect(hasAuthority(out, RAYDIUM_CPMM_PROGRAM)).toBe(true);
   });
 
   it("falls back on a wrong account count or trailing bytes", () => {
@@ -344,7 +345,7 @@ describe("Raydium CPMM", () => {
 });
 
 describe("Raydium CLMM swap_v2", () => {
-  it("base-in bounds in and out; base-out with a zero price limit too", () => {
+  it("base-in bounds in and out; base-out falls back even with a zero price limit", () => {
     const intent = intentOf([
       ix(RAYDIUM_CLMM_PROGRAM, clmmMetas(19), clmmData(5000n, 100n, 3n, 1)),
     ]);
@@ -353,8 +354,7 @@ describe("Raydium CLMM swap_v2", () => {
     expect(intent.minimumReceived?.[0]?.amount).toMatchObject({ asset: OTHER_MINT, amount: "100" });
 
     const out = intentOf([ix(RAYDIUM_CLMM_PROGRAM, clmmMetas(13), clmmData(100n, 5000n, 0n, 0))]);
-    expect(out.outflows[0]?.amount.amount).toBe("5000");
-    expect(out.minimumReceived?.[0]?.amount.amount).toBe("100");
+    expect(hasAuthority(out, RAYDIUM_CLMM_PROGRAM)).toBe(true);
   });
 
   it("falls back for a base-out swap with a price limit, and on short account lists", () => {
@@ -383,18 +383,13 @@ describe("Orca Whirlpool swap_v2", () => {
     expect(intent.minimumReceived?.[0]?.amount).toMatchObject({ asset: "lamports", amount: "100" });
   });
 
-  it("exact-out with no explicit price limit is bounded; with a limit it falls back", () => {
-    const intent = intentOf([
-      ix(WHIRLPOOL_PROGRAM, whirlpoolMetas(15), whirlpoolData(100n, 5000n, 0n, 0, 1, NONE)),
-    ]);
-    expect(intent.summary).toBe("swap");
-    expect(intent.outflows[0]?.amount.amount).toBe("5000");
-    expect(intent.minimumReceived?.[0]?.amount.amount).toBe("100");
-
-    const limited = intentOf([
-      ix(WHIRLPOOL_PROGRAM, whirlpoolMetas(15), whirlpoolData(100n, 5000n, 5n, 0, 1, NONE)),
-    ]);
-    expect(hasAuthority(limited, WHIRLPOOL_PROGRAM)).toBe(true);
+  it("exact-out falls back with or without an explicit price limit", () => {
+    for (const limit of [0n, 5n]) {
+      const intent = intentOf([
+        ix(WHIRLPOOL_PROGRAM, whirlpoolMetas(15), whirlpoolData(100n, 5000n, limit, 0, 1, NONE)),
+      ]);
+      expect(hasAuthority(intent, WHIRLPOOL_PROGRAM)).toBe(true);
+    }
   });
 
   it("falls back on a truncated or trailing remaining-accounts option", () => {
