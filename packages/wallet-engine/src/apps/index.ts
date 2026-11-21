@@ -65,3 +65,25 @@ export type {
   UserRateLimitResponse,
   UserRoleResponse,
 } from "./hyperliquid/account.ts";
+export type { HyperliquidPendingAction, HyperliquidUserSigned } from "./hyperliquid/user-signed.ts";
+export { HYPERLIQUID_DEPOSIT } from "./hyperliquid/provider.ts";
+export type { HyperliquidDepositInfo, HyperliquidFund } from "./hyperliquid/provider.ts";
+export { AppsController, createApps } from "./controller.ts";
+export type {
+  AppsBuilderConfig,
+  AppsControllerDeps,
+  AppsHyperliquidConfig,
+  CreateAppsOptions,
+} from "./controller.ts";
+export type {
+  AppAgent,
+  AppError,
+  AppFlow,
+  AppGroup,
+  AppGroupPatch,
+  AppGroupState,
+  AppId,
+  AppProvider,
+  AppsState,
+  AppStep,
+} from "./types.ts";

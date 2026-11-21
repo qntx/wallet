@@ -1,5 +1,6 @@
 import { parseDecimal } from "../../decimal.ts";
 import type { HyperliquidAccount } from "./account.ts";
+import { deepFreeze } from "./actions.ts";
 import type {
   HyperliquidActions,
   HyperliquidModifyParams,
@@ -97,14 +98,29 @@ export function createHyperliquidTrade(options: {
   readonly exchange: HyperliquidExchange;
   readonly account: HyperliquidAccount;
   readonly registry: HyperliquidAgentRegistry;
+  /**
+   * The builder the controller confirmed for this group — `order` actions carry `builder: {b, f}`
+   * only while this returns one; never above the confirmed maximum.
+   */
+  readonly builderFor?: (
+    group: HyperliquidGroup,
+  ) => { readonly address: string; readonly feeRateTenthsBps: number } | undefined;
 }): HyperliquidTrade {
   const place = async (
     group: HyperliquidGroup,
     params: HyperliquidOrderParams,
   ): Promise<HyperliquidPlaceResult> => {
     const built = await options.actions.place(params);
+    const builder = options.builderFor?.(group);
+    const action =
+      builder === undefined
+        ? built.action
+        : deepFreeze({
+            ...built.action,
+            builder: { b: builder.address.toLowerCase(), f: builder.feeRateTenthsBps },
+          });
     return {
-      outcomes: await options.exchange.order(group, built.action),
+      outcomes: await options.exchange.order(group, action),
       price: built.price,
     };
   };

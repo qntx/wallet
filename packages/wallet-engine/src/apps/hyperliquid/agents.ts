@@ -34,6 +34,10 @@ export type HyperliquidAgentRegistry = {
    * rejected).
    */
   readonly require: (group: HyperliquidGroup) => HyperliquidAgent;
+  /** The group's `evm.bip44` address on the signature chain, lowercased — derived once. */
+  readonly owner: (group: HyperliquidGroup) => Promise<string>;
+  /** True when the exchange path latched the agent as rejected — enablement must renew it. */
+  readonly rejected: (address: string) => boolean;
 };
 
 const keyOf = (group: HyperliquidGroup): string => `${group.walletId}:${group.groupIndex}`;
@@ -68,6 +72,7 @@ export function createHyperliquidAgentRegistry(options: {
   };
 
   return {
+    owner: ownerOf,
     refresh: async () => {
       const listed = await options.agents.listAgents();
       const next: HyperliquidAgentInfo[] = [];
@@ -93,6 +98,7 @@ export function createHyperliquidAgentRegistry(options: {
     markRejected: (address) => {
       rejected.add(address.toLowerCase());
     },
+    rejected: (address) => rejected.has(address.toLowerCase()),
     require: (group) => {
       const own = verified.filter(
         (agent) => agent.walletId === group.walletId && agent.groupIndex === group.groupIndex,

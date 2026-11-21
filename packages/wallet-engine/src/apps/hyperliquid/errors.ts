@@ -16,7 +16,11 @@ export type HyperliquidErrorCategory =
   /** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
   | "reauthorization-required"
   /** The account has no enabled, owner-verified agent on this network. */
-  | "not-enabled";
+  | "not-enabled"
+  /** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
+  | "deposit-required"
+  /** The user refused, or the approval request expired or was invalidated. */
+  | "approval-rejected";
 
 export class HyperliquidError extends Error {
   readonly category: HyperliquidErrorCategory;

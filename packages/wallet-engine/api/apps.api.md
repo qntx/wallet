@@ -6,10 +6,15 @@
 
 import { AllMidsParameters } from '@nktkas/hyperliquid/api/info';
 import { AllMidsResponse } from '@nktkas/hyperliquid/api/info';
+import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
 import { CandleSnapshotParameters } from '@nktkas/hyperliquid/api/info';
 import { CandleSnapshotResponse } from '@nktkas/hyperliquid/api/info';
+import { chains } from '@qntx/wallet/chains';
 import { ClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
 import { ClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
+import { CooperativeExitResult } from '@qntx/spark';
+import { decodeEvm } from '@qntx/wallet-chains/evm';
+import { Event as Event_2 } from '@qntx/nostr';
 import { ExtraAgentsResponse } from '@nktkas/hyperliquid/api/info';
 import { FrontendOpenOrdersParameters } from '@nktkas/hyperliquid/api/info';
 import { FrontendOpenOrdersResponse } from '@nktkas/hyperliquid/api/info';
@@ -18,18 +23,38 @@ import { FundingHistoryResponse } from '@nktkas/hyperliquid/api/info';
 import { HyperliquidNetwork } from '@qntx/wallet/protocol';
 import { L2BookParameters } from '@nktkas/hyperliquid/api/info';
 import { L2BookResponse } from '@nktkas/hyperliquid/api/info';
+import { LightningInvoice } from '@qntx/spark';
+import { LightningPayment } from '@qntx/spark';
+import { LightningSendStatus } from '@qntx/spark';
+import { LnurlPayRequest } from '@qntx/spark/lnurl';
+import { LnurlWithdrawRequest } from '@qntx/spark/lnurl';
 import { MaxBuilderFeeResponse } from '@nktkas/hyperliquid/api/info';
+import { MessageContent } from '@qntx/wallet-chains';
 import { MetaAndAssetCtxsParameters } from '@nktkas/hyperliquid/api/info';
 import { MetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
+import { NetworkMeta } from '@qntx/wallet-chains/networks';
+import { NostrKeyRef } from '@qntx/wallet';
 import { OrderStatusParameters } from '@nktkas/hyperliquid/api/info';
 import { OrderStatusResponse } from '@nktkas/hyperliquid/api/info';
 import { PortfolioResponse } from '@nktkas/hyperliquid/api/info';
 import { PredictedFundingsResponse } from '@nktkas/hyperliquid/api/info';
+import { PublicClient } from 'viem';
 import { RecentTradesParameters } from '@nktkas/hyperliquid/api/info';
 import { RecentTradesResponse } from '@nktkas/hyperliquid/api/info';
+import { SignRequest } from '@qntx/wallet-chains';
+import { SparkAccountRef } from '@qntx/wallet/protocol';
+import { SparkApproveIntent } from '@qntx/wallet/protocol';
+import { SparkClient } from '@qntx/spark';
+import { SparkNetwork } from '@qntx/spark';
+import { SparkPayment } from '@qntx/spark';
+import { SparkSigner } from '@qntx/wallet/spark';
+import { SparkStore } from '@qntx/spark';
+import { SparkTransfer } from '@qntx/spark';
 import { SpotClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
 import { SpotClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
 import { SpotMetaAndAssetCtxsResponse } from '@nktkas/hyperliquid/api/info';
+import { StoreApi } from 'zustand/vanilla';
+import { UnsignedEvent } from '@qntx/nostr';
 import { UserFeesResponse } from '@nktkas/hyperliquid/api/info';
 import { UserFillsParameters } from '@nktkas/hyperliquid/api/info';
 import { UserFillsResponse } from '@nktkas/hyperliquid/api/info';
@@ -37,27 +62,550 @@ import { UserFundingParameters } from '@nktkas/hyperliquid/api/info';
 import { UserFundingResponse } from '@nktkas/hyperliquid/api/info';
 import { UserRateLimitResponse } from '@nktkas/hyperliquid/api/info';
 import { UserRoleResponse } from '@nktkas/hyperliquid/api/info';
+import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
+
+// @public (undocumented)
+type AccountRef = Exclude<SignParams["request"], {
+    kind: "bitcoin.psbt";
+}>["account"];
+
+// @public (undocumented)
+type AcrossBridgeQuote = {
+    readonly provider: "across";
+    readonly inputToken: string;
+    readonly outputToken: string;
+    readonly inputAmount: bigint;
+    readonly outputAmount: bigint;
+    readonly destinationNetwork: string;
+    readonly quoteTimestamp: number;
+    readonly fillDeadline: number;
+    readonly exclusiveRelayer: string;
+    readonly exclusivityParameter: number;
+    readonly spokePool: string;
+    readonly taker: string;
+    readonly fetchedAt: number;
+};
+
+// @public (undocumented)
+class AddressBookController extends Controller<AddressBookState> {
+    constructor(options: AddressBookOptions);
+    // (undocumented)
+    add(params: {
+        readonly name: string;
+        readonly family: AddressFamily;
+        readonly address: string;
+        readonly note?: string;
+    }): Promise<AddressBookEntry>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    merge(remote: ReadonlyArray<AddressBookRecord>): Promise<{
+        readonly changed: boolean;
+        readonly localNewer: boolean;
+    }>;
+    remove(id: string): Promise<void>;
+    // (undocumented)
+    rename(id: string, name: string): Promise<AddressBookEntry>;
+    setNote(id: string, note: string | undefined): Promise<AddressBookEntry>;
+    syncEntries(): ReadonlyArray<AddressBookRecord>;
+}
+
+// @public (undocumented)
+type AddressBookEntry = {
+    readonly id: string;
+    readonly name: string;
+    readonly family: AddressFamily;
+    readonly address: string;
+    readonly note?: string;
+    readonly createdAt: number;
+    readonly updatedAt: number;
+};
+
+// @public (undocumented)
+type AddressBookOptions = {
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (n: number) => Uint8Array;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
+type AddressBookRecord = AddressBookEntry | AddressBookTombstone;
+
+// @public (undocumented)
+type AddressBookState = {
+    readonly entries: Record<string, AddressBookEntry>;
+};
+
+// @public (undocumented)
+type AddressBookTombstone = {
+    readonly id: string;
+    readonly deleted: true;
+    readonly updatedAt: number;
+};
+
+// @public (undocumented)
+type AddressFamily = "evm" | "solana" | "bitcoin" | "spark";
 
 export { AllMidsResponse }
 
+// @public (undocumented)
+export type AppAgent = {
+    readonly address: string;
+    readonly name: string;
+    readonly validUntil: number;
+    readonly network: string;
+};
+
+// @public (undocumented)
+export type AppError = {
+    readonly category: string;
+    readonly message: string;
+};
+
+// @public
+export type AppFlow = {
+    readonly current: () => AppGroupState;
+    readonly write: (patch: AppGroupPatch) => void;
+    readonly stale: () => boolean;
+};
+
+// @public
+export type AppGroup = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+};
+
+// @public
+export type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | undefined; };
+
+// @public
+export type AppGroupState = {
+    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization";
+    readonly termsAcknowledged: boolean;
+    readonly agent?: AppAgent;
+    readonly step?: AppStep;
+    readonly requestId?: string;
+    readonly renewalDue: boolean;
+    readonly builder?: "approved";
+    readonly error?: AppError;
+};
+
+// @public
+export type AppId = "hyperliquid" | "polymarket";
+
+// @public
+export type AppProvider = {
+    readonly id: AppId;
+    readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    readonly renew: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    readonly disable: (group: AppGroup, options: {
+        readonly revoke: boolean;
+    }, flow: AppFlow) => Promise<void>;
+    readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+};
+
+// @public (undocumented)
+type ApproveOptions = {
+    readonly verify?: SendParams["verify"];
+    readonly acknowledged?: RequestAcknowledgement;
+};
+
+// @public (undocumented)
+export type AppsBuilderConfig = {
+    readonly address: string;
+    readonly feeRateTenthsBps: number;
+};
+
+// @public
+export class AppsController extends Controller<AppsState> {
+    constructor(deps: AppsControllerDeps);
+    acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void>;
+    // (undocumented)
+    cancel(group: HyperliquidGroup, app: AppId): Promise<void>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    disable(group: HyperliquidGroup, app: AppId, options: {
+        revoke: boolean;
+    }): Promise<void>;
+    // (undocumented)
+    enable(group: HyperliquidGroup, app: AppId): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    // (undocumented)
+    renew(group: HyperliquidGroup, app: AppId): Promise<void>;
+}
+
+// @public (undocumented)
+export type AppsControllerDeps = {
+    readonly providers: ReadonlyMap<AppId, AppProvider>;
+    readonly wallet: Wallet;
+    readonly requests: Pick<RequestController, "reject">;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
+export type AppsHyperliquidConfig = {
+    readonly network: HyperliquidNetwork;
+    readonly agentName: string;
+    readonly builder?: AppsBuilderConfig;
+};
+
+// @public
+export type AppsState = {
+    readonly locked: boolean;
+    readonly groups: Record<string, Readonly<Partial<Record<AppId, AppGroupState>>>>;
+};
+
+// @public
+export type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
+
+// @public
+type AssetChange = {
+    readonly asset: string;
+    readonly amount: string;
+    readonly decimals?: number;
+    readonly symbol?: string;
+    readonly verified: boolean;
+};
+
+// @public
+type BatchRecord = {
+    readonly origin: string;
+    readonly id: string;
+    readonly network: string;
+    readonly atomic: boolean;
+    readonly txIds: ReadonlyArray<string>;
+    readonly expected: number;
+    readonly createdAt: number;
+};
+
+// @public
+type BitcoinAccount = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly address: string;
+    readonly template: "btc.bip84" | "btc.bip86";
+};
+
+// @public
+type BitcoinDisplay = {
+    readonly kind: "bitcoin.sign";
+    readonly message?: MessageContent;
+    readonly psbts?: ReadonlyArray<DisplayIntent>;
+    readonly send?: boolean;
+};
+
+// @public
+type BitcoinGroup = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+};
+
+// @public
+type BitcoinPsbtInput = {
+    readonly psbt: Uint8Array;
+    readonly sign: ReadonlyArray<{
+        readonly index: number;
+        readonly sigHash: BitcoinSigHash;
+        readonly template: BitcoinAccount["template"];
+    }>;
+};
+
+// @public
+type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
+
+// @public
+type BitcoinSignInput = {
+    readonly method: "bitcoin-sign";
+    readonly origin: BrowserOrigin;
+    readonly account: BitcoinAccount;
+    readonly network: string;
+    readonly request: {
+        readonly kind: "message";
+        readonly message: string;
+    };
+} | {
+    readonly method: "bitcoin-sign";
+    readonly origin: BrowserOrigin;
+    readonly account: BitcoinGroup;
+    readonly network: string;
+    readonly request: {
+        readonly kind: "psbt";
+        readonly psbts: ReadonlyArray<BitcoinPsbtInput>;
+        readonly send: boolean;
+    };
+};
+
+// @public
+type BitcoinSignResult = {
+    readonly kind: "bitcoin.message";
+    readonly signature: string;
+} | {
+    readonly kind: "bitcoin.psbts";
+    readonly signedPsbts: ReadonlyArray<Uint8Array>;
+    readonly txids: ReadonlyArray<string>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
+};
+
+// @public
+type BrowserOrigin = {
+    readonly kind: "browser";
+    readonly origin: string;
+};
+
 export { CandleSnapshotResponse }
+
+// @public (undocumented)
+type ChainApis = ReturnType<typeof chains>;
+
+// @public
+type ChainRequestInput = ({
+    readonly method: "send";
+} & PrepareParams) | {
+    readonly method: "speed-up" | "cancel";
+    readonly txId: string;
+} | {
+    readonly method: "cpfp";
+    readonly txId: string;
+    readonly feeRate: number;
+} | {
+    readonly method: "evm-delegation";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly action: "upgrade" | "revoke";
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "evm-batch";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly calls: ReadonlyArray<{
+        readonly to: string;
+        readonly value: bigint;
+        readonly data: string;
+    }>;
+    readonly fee: PrepareParams["fee"];
+    readonly origin?: {
+        readonly kind: "browser";
+        readonly origin: string;
+    };
+} | {
+    readonly method: "evm-approve";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly token: string;
+    readonly spender: string;
+    readonly amount: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "evm-swap";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly quote: ZeroExSwapQuote;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "evm-bridge";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly quote: AcrossBridgeQuote;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "evm-nft-send";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly contract: string;
+    readonly tokenId: bigint;
+    readonly to: string;
+    readonly amount?: bigint;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "solana-core-send";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly asset: string;
+    readonly to: string;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "solana-swap";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly quote: JupiterSwapQuote;
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "evm-lido";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly action: {
+        readonly kind: "stake";
+        readonly amount: bigint;
+    } | {
+        readonly kind: "request";
+        readonly amount: bigint;
+    } | {
+        readonly kind: "claim";
+        readonly requestIds: ReadonlyArray<bigint>;
+    };
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "solana-stake";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly action: {
+        readonly kind: "delegate";
+        readonly lamports: bigint;
+        readonly vote: string;
+    } | {
+        readonly kind: "deactivate";
+        readonly stakeAccount: string;
+    } | {
+        readonly kind: "withdraw";
+        readonly stakeAccount: string;
+        readonly lamports: bigint;
+    };
+    readonly fee: PrepareParams["fee"];
+};
+
+// @public (undocumented)
+type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap";
 
 export { ClearinghouseStateResponse }
 
+// @public
+abstract class Controller<S extends Record<string, unknown>> {
+    protected constructor(options: ControllerOptions<S>);
+    // (undocumented)
+    abstract destroy(): Promise<void>;
+    // (undocumented)
+    getState(): S;
+    // (undocumented)
+    abstract init(): Promise<void>;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly store: StoreApi<S>;
+    // (undocumented)
+    protected update(recipe: (state: S) => S): void;
+}
+
+// @public (undocumented)
+type ControllerOptions<S> = {
+    readonly name: string;
+    readonly defaultState: () => S;
+};
+
+// @public
+export function createApps(options: CreateAppsOptions): {
+    readonly controller: AppsController;
+    readonly hyperliquid: HyperliquidProvider;
+    readonly destroy: () => Promise<void>;
+};
+
+// @public (undocumented)
+export type CreateAppsOptions = {
+    readonly wallet: Wallet;
+    readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly fetch: typeof globalThis.fetch;
+    readonly now: () => number;
+    readonly setTimer: SetTimer;
+    readonly random: (length: number) => Uint8Array;
+    readonly logger: EngineLogger;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly hyperliquid: AppsHyperliquidConfig;
+};
+
 // @public (undocumented)
 export function createHyperliquidProvider(options: HyperliquidProviderOptions): HyperliquidProvider;
+
+// @public
+type DelegationStatus = {
+    readonly supported: boolean;
+    readonly state: "none" | "ours" | "other";
+    readonly address?: string;
+};
+
+// @public (undocumented)
+type DisplayIntent = ReturnType<typeof decodeEvm>;
+
+// @public
+type EngineCollection = {
+    readonly get: (key: string) => Promise<Uint8Array | undefined>;
+    readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
+    readonly delete: (key: string) => Promise<void>;
+    readonly list: () => Promise<ReadonlyArray<string>>;
+};
+
+// @public
+type EngineFamily = "evm" | "solana" | "bitcoin";
 
 // @public
 type EngineLogger = {
     readonly warn: (message: string, error?: unknown) => void;
 };
 
+// @public (undocumented)
+type EngineStore = {
+    readonly collection: (name: string) => EngineCollection;
+    readonly close: () => Promise<void>;
+};
+
+// @public (undocumented)
+type Esplora = {
+    readonly get: (path: string) => Promise<unknown>;
+    readonly post: (path: string, body: string) => Promise<unknown>;
+};
+
+// @public (undocumented)
+type EvmFeeTier = "slow" | "normal" | "fast";
+
+// @public
+type EvmSignInput = {
+    readonly method: "evm-sign";
+    readonly origin?: BrowserOrigin;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly request: SignRequest;
+};
+
 export { ExtraAgentsResponse }
+
+// @public
+type FeeModel =
+/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+    {
+    readonly kind: "execution";
+} |
+/** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+    {
+    readonly kind: "op-stack";
+};
 
 export { FrontendOpenOrdersResponse }
 
 export { FundingHistoryResponse }
+
+// @public (undocumented)
+type GatewayConfig = {
+    readonly url: string;
+    readonly clientIds: Readonly<Record<GatewayScope, string>>;
+};
+
+// @public
+type GatewayScope = "evm" | "solana" | "bitcoin" | "service";
+
+// @public (undocumented)
+export const HYPERLIQUID_DEPOSIT: Record<"Mainnet" | "Testnet", HyperliquidDepositInfo>;
 
 // @public
 export type HyperliquidAccount = {
@@ -96,6 +644,8 @@ export type HyperliquidAgentRegistry = {
     readonly markEnabled: (address: string) => void;
     readonly markRejected: (address: string) => void;
     readonly require: (group: HyperliquidGroup) => HyperliquidAgent;
+    readonly owner: (group: HyperliquidGroup) => Promise<string>;
+    readonly rejected: (address: string) => boolean;
 };
 
 // @public
@@ -124,6 +674,15 @@ export type HyperliquidClock = {
     readonly nextNonce: (signer: string) => number;
 };
 
+// @public
+export type HyperliquidDepositInfo = {
+    readonly bridge: string;
+    readonly usdc: string;
+    readonly network: string;
+    readonly minimum: bigint;
+    readonly creditSeconds: number;
+};
+
 // @public (undocumented)
 export class HyperliquidError extends Error {
     constructor(category: HyperliquidErrorCategory, message: string, cause?: unknown);
@@ -148,7 +707,20 @@ export type HyperliquidErrorCategory = "network" |
 /** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
 "reauthorization-required" |
 /** The account has no enabled, owner-verified agent on this network. */
-"not-enabled";
+"not-enabled" |
+/** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
+"deposit-required" |
+/** The user refused, or the approval request expired or was invalidated. */
+"approval-rejected";
+
+// @public (undocumented)
+export type HyperliquidFund = {
+    readonly depositInfo: HyperliquidDepositInfo;
+    readonly deposit: (group: HyperliquidGroup, params: {
+        readonly amount: bigint;
+        readonly fee: EvmFeeTier;
+    }) => Promise<HyperliquidPendingAction>;
+};
 
 // @public
 export type HyperliquidGroup = {
@@ -187,7 +759,7 @@ export type HyperliquidOrderKind = {
     readonly tif?: "Gtc" | "Ioc" | "Alo";
 } | {
     readonly kind: "market";
-    readonly slippageBps?: number;
+    readonly slippageBps: number;
 } | ({
     readonly kind: "trigger";
     readonly tpsl: "tp" | "sl";
@@ -198,12 +770,13 @@ export type HyperliquidOrderOutcome = {
     readonly kind: "resting";
     readonly oid?: number | undefined;
     readonly cloid?: string | undefined;
+    readonly filledSz?: string | undefined;
 } | {
     readonly kind: "filled";
     readonly oid?: number | undefined;
     readonly cloid?: string | undefined;
     readonly totalSz: string;
-    readonly avgPx: string;
+    readonly avgPx?: string | undefined;
 } | {
     readonly kind: "rejected";
     readonly cloid?: string | undefined;
@@ -230,6 +803,12 @@ export type HyperliquidOrderParams = {
 };
 
 // @public
+export type HyperliquidPendingAction = {
+    readonly requestId: string;
+    readonly outcome: Promise<HyperliquidActionOutcome>;
+};
+
+// @public
 export type HyperliquidPlaceResult = {
     readonly outcomes: ReadonlyArray<HyperliquidOrderOutcome>;
     readonly price: string;
@@ -243,6 +822,25 @@ export type HyperliquidProvider = {
     readonly clock: HyperliquidClock;
     readonly trade: HyperliquidTrade;
     readonly agents: HyperliquidAgentRegistry;
+    readonly userSigned: HyperliquidUserSigned;
+    readonly fund: HyperliquidFund;
+    readonly transfer: {
+        readonly toSpot: (group: HyperliquidGroup, amount: string) => Promise<HyperliquidPendingAction>;
+        readonly toPerp: (group: HyperliquidGroup, amount: string) => Promise<HyperliquidPendingAction>;
+        readonly usdSend: (group: HyperliquidGroup, params: {
+            readonly destination: string;
+            readonly amount: string;
+        }) => Promise<HyperliquidPendingAction>;
+        readonly spotSend: (group: HyperliquidGroup, params: {
+            readonly destination: string;
+            readonly token: string;
+            readonly amount: string;
+        }) => Promise<HyperliquidPendingAction>;
+        readonly withdraw: (group: HyperliquidGroup, params: {
+            readonly destination: string;
+            readonly amount: string;
+        }) => Promise<HyperliquidPendingAction>;
+    };
 };
 
 // @public (undocumented)
@@ -250,6 +848,11 @@ export type HyperliquidProviderOptions = Pick<HyperliquidTransportOptions, "netw
     readonly wallet: Wallet;
     readonly random: (length: number) => Uint8Array;
     readonly logger: EngineLogger;
+    readonly requests?: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly builderFor?: (group: HyperliquidGroup) => {
+        readonly address: string;
+        readonly feeRateTenthsBps: number;
+    } | undefined;
 };
 
 // @public
@@ -324,7 +927,7 @@ export type HyperliquidTrade = {
     }) => Promise<HyperliquidActionOutcome>;
     readonly close: (group: HyperliquidGroup, params: {
         readonly coin: string;
-        readonly slippageBps?: number;
+        readonly slippageBps: number;
     }) => Promise<HyperliquidPlaceResult>;
 };
 
@@ -346,32 +949,974 @@ export type HyperliquidTriggerParams = {
     readonly slippageBps?: number;
 };
 
+// @public (undocumented)
+export type HyperliquidUserSigned = {
+    readonly approveAgent: (group: HyperliquidGroup, params: {
+        readonly agentAddress: string;
+        readonly agentName: string;
+    }) => Promise<HyperliquidPendingAction>;
+    readonly approveBuilderFee: (group: HyperliquidGroup, params: {
+        readonly builder: string;
+        readonly maxFeeRate: string;
+    }) => Promise<HyperliquidPendingAction>;
+    readonly usdClassTransfer: (group: HyperliquidGroup, params: {
+        readonly amount: string;
+        readonly toPerp: boolean;
+    }) => Promise<HyperliquidPendingAction>;
+    readonly usdSend: (group: HyperliquidGroup, params: {
+        readonly destination: string;
+        readonly amount: string;
+    }) => Promise<HyperliquidPendingAction>;
+    readonly spotSend: (group: HyperliquidGroup, params: {
+        readonly destination: string;
+        readonly token: string;
+        readonly amount: string;
+    }) => Promise<HyperliquidPendingAction>;
+    readonly withdraw: (group: HyperliquidGroup, params: {
+        readonly destination: string;
+        readonly amount: string;
+    }) => Promise<HyperliquidPendingAction>;
+};
+
+// @public
+type Independent<T> = {
+    readonly kind: "not-needed";
+} | {
+    readonly kind: "unavailable";
+} | {
+    readonly kind: "available";
+    readonly client: T;
+};
+
+// @public
+type JupiterInstruction = {
+    readonly programId: string;
+    readonly accounts: ReadonlyArray<{
+        readonly address: string;
+        readonly signer: boolean;
+        readonly writable: boolean;
+    }>;
+    readonly data: Uint8Array;
+};
+
+// @public
+type JupiterSwapQuote = {
+    readonly provider: "jupiter";
+    readonly network: string;
+    readonly taker: string;
+    readonly sell: string;
+    readonly buy: string;
+    readonly sellAmount: bigint;
+    readonly buyAmount: bigint;
+    readonly minBuyAmount: bigint;
+    readonly setup: ReadonlyArray<JupiterInstruction>;
+    readonly swap: JupiterInstruction;
+    readonly cleanup: JupiterInstruction | undefined;
+    readonly lookupTables: ReadonlyArray<string>;
+    readonly fetchedAt: number;
+};
+
 export { L2BookResponse }
+
+// @public
+type LightningInvoiceDisplay = {
+    readonly kind: "lightning.invoice";
+    readonly amountSats: number;
+    readonly memo?: string;
+};
 
 export { MaxBuilderFeeResponse }
 
 export { MetaAndAssetCtxsResponse }
 
 // @public (undocumented)
+class NetworkController extends Controller<NetworkControllerState> {
+    constructor(options: Options$1);
+    addRpc(network: string, url: string): Promise<void>;
+    // (undocumented)
+    client(network: string): PublicClient;
+    // (undocumented)
+    destroy(): Promise<void>;
+    enabled(family: "evm" | "solana" | "bitcoin"): ReadonlyArray<string>;
+    endpoints(network: string): ReadonlyArray<string>;
+    ensClient(network: string): PublicClient;
+    esplora(network: string): Esplora;
+    independentClient(network: string): Independent<PublicClient>;
+    independentEnsClient(network: string): Independent<PublicClient>;
+    // (undocumented)
+    independentEsplora(network: string): Independent<Esplora>;
+    // (undocumented)
+    independentSolanaRpc(network: string): Independent<SolanaRpc>;
+    // (undocumented)
+    info(network: string): NetworkInfo;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    solanaRpc(network: string): SolanaRpc;
+}
+
+// @public (undocumented)
+type NetworkControllerState = {
+    readonly customRpc: Record<string, ReadonlyArray<string>>;
+};
+
+// @public (undocumented)
+type NetworkInfo = Omit<NetworkMeta, "family"> & {
+    readonly family: EngineFamily;
+    readonly multicall3?: string;
+    readonly feeModel?: FeeModel;
+    readonly delegatorCodeHash?: string;
+};
+
+// @public
+type NostrDisplay = {
+    readonly kind: "nostr.event";
+    readonly eventKind: number;
+    readonly preview: string;
+    readonly tagCount: number;
+};
+
+// @public
+type NostrSignInput = {
+    readonly method: "nostr-sign";
+    readonly origin: BrowserOrigin;
+    readonly ref: NostrKeyRef;
+    readonly event: UnsignedEvent;
+};
+
+// @public
+type NostrSignResult = {
+    readonly kind: "nostr.event";
+    readonly event: Event_2;
+};
+
+// @public (undocumented)
+type Options$1 = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly logger: EngineLogger;
+    readonly gateway?: GatewayConfig | undefined;
+    readonly setTimer: SetTimer;
+    readonly random: (length: number) => Uint8Array;
+};
+
+// @public (undocumented)
+type Options = {
+    readonly wallet: Wallet;
+    readonly networks: NetworkController;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (n: number) => Uint8Array;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+    readonly pollMs?: number;
+    readonly chains?: ReturnType<typeof chains>;
+};
+
+// @public (undocumented)
 export type OrderSide = "buy" | "sell";
 
 export { OrderStatusResponse }
+
+// @public
+type PayInput = {
+    readonly method: "pay";
+    readonly origin?: BrowserOrigin;
+} & PayParams;
+
+// @public
+type PaymentNote = {
+    readonly kind: "zap";
+    readonly recipientPubkey: string;
+    readonly eventId?: string;
+    readonly comment?: string;
+    readonly lightning: string;
+};
+
+// @public (undocumented)
+type PaymentOption = {
+    readonly kind: "spark";
+    readonly address: string;
+} | {
+    readonly kind: "spark-invoice";
+    readonly invoice: string;
+    readonly amountSats?: number;
+    readonly memo?: string;
+    readonly expiresAt?: number;
+} | {
+    readonly kind: "lightning";
+    readonly invoice: string;
+    readonly amountSats?: number;
+    readonly paymentHash: string;
+    readonly description?: string;
+    readonly expiresAt: number;
+} | {
+    readonly kind: "lnurl-pay";
+    readonly request: LnurlPayRequest;
+    readonly address?: string;
+} | {
+    readonly kind: "lnurl-withdraw";
+    readonly request: LnurlWithdrawRequest;
+} | {
+    readonly kind: "bitcoin";
+    readonly address: string;
+};
+
+// @public (undocumented)
+type PayParams = {
+    readonly account: SparkAccountRef;
+    readonly option: PaymentOption;
+    readonly amountSats?: number;
+    readonly comment?: string;
+    readonly maxFeeSats?: number;
+    readonly speed?: "FAST" | "MEDIUM" | "SLOW";
+    readonly amountFromServiceMinimum?: boolean;
+    readonly token?: {
+        readonly identifier: string;
+        readonly amount: bigint;
+    };
+};
+
+// @public (undocumented)
+type PendingRequest = {
+    readonly id: string;
+    readonly origin: RequestOrigin;
+    readonly method: RequestMethod;
+    readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount | BitcoinGroup;
+    readonly network: string;
+    readonly stage: RequestStage;
+    readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay | TokenWatchDisplay | SolanaDisplay | BitcoinDisplay;
+    readonly verification: "verified" | "unverifiable";
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+    readonly risk: ReadonlyArray<RiskFinding>;
+    readonly simulation?: SimulationOutcome;
+    readonly simulatedAt?: number;
+    readonly createdAt: number;
+    readonly expiresAt: number;
+    readonly target?: string;
+    readonly txId?: string;
+    readonly error?: string;
+};
+
+// @public (undocumented)
+class PhishingController extends Controller<PhishingState> {
+    constructor(options: PhishingControllerOptions);
+    // (undocumented)
+    check(url: string): PhishingStatus;
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    sync(): Promise<void>;
+    // (undocumented)
+    trust(origin: string): Promise<void>;
+    // (undocumented)
+    untrust(origin: string): Promise<void>;
+}
+
+// @public (undocumented)
+type PhishingControllerOptions = {
+    readonly publicStore: PublicStore;
+    readonly gateway?: GatewayConfig | undefined;
+    readonly fetch: typeof globalThis.fetch;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
+type PhishingState = {
+    readonly version: number | null;
+    readonly updatedAt: number | null;
+    readonly trusted: ReadonlyArray<string>;
+};
+
+// @public
+type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
 
 export { PortfolioResponse }
 
 export { PredictedFundingsResponse }
 
+// @public
+type PreparedBitcoinPsbt = {
+    readonly request: Extract<SignRequest, {
+        kind: "bitcoin.psbt";
+    }>;
+    readonly ownScripts: ReadonlySet<string>;
+    readonly inputs: ReadonlyArray<{
+        readonly index: number;
+        readonly value: number;
+        readonly sigHash: BitcoinSigHash;
+        readonly template: BitcoinAccount["template"];
+        readonly frozen: boolean;
+    }>;
+};
+
+// @public
+type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
+    readonly signer: string;
+    readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
+};
+
+// @public
+type PreparedRequest = {
+    readonly txId: string;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly target?: string;
+    readonly intent: DisplayIntent;
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+    readonly simulation?: SimulationOutcome;
+    readonly resimulate?: () => Promise<SimulationOutcome>;
+    readonly staleReason: () => string | undefined | Promise<string | undefined>;
+    readonly submit: (verify: SendParams["verify"], commit: () => void) => Promise<TrackedTransaction>;
+    readonly release: () => void;
+};
+
+// @public
+type PreparedZap = {
+    readonly zapRequest: Event_2;
+    readonly invoice: string;
+    readonly paymentHash: string;
+    readonly expiresAt: number;
+    readonly amountSats: number;
+    readonly receiptPubkey: string;
+    readonly recipientPubkey: string;
+    readonly eventId?: string;
+    readonly comment?: string;
+    readonly lightning: string;
+};
+
+// @public (undocumented)
+type PrepareParams = Omit<SendParams, "verify">;
+
+// @public
+type PublicStore = {
+    readonly get: (key: string) => Promise<Uint8Array | undefined>;
+    readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
+};
+
 export { RecentTradesResponse }
+
+// @public
+type RequestAcknowledgement = {
+    readonly risk: ReadonlyArray<RiskFinding["code"]>;
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+};
+
+// @public (undocumented)
+type RequestCheckCode = "decode-partial" | "nonce-mismatch" | "fee-mismatch" | "reads-unverified" | "fee-above-network" | "fee-exceeds-amount" | "simulation-unavailable";
+
+// @public (undocumented)
+class RequestController extends Controller<RequestControllerState> {
+    constructor(options: RequestControllerOptions);
+    approve(id: string, method: ChainRequestMethod | "spark-deposit", options?: ApproveOptions): Promise<TrackedTransaction>;
+    // (undocumented)
+    approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
+    // (undocumented)
+    approve(id: string, method: "evm-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    // (undocumented)
+    approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
+    // (undocumented)
+    approve(id: string, method: "webln-invoice", options?: ApproveOptions): Promise<WeblnInvoiceResult>;
+    // (undocumented)
+    approve(id: string, method: "watch-asset", options?: ApproveOptions): Promise<TokenWatchResult>;
+    // (undocumented)
+    approve(id: string, method: "solana-sign", options?: ApproveOptions): Promise<SolanaSignResult>;
+    // (undocumented)
+    approve(id: string, method: "bitcoin-sign", options?: ApproveOptions): Promise<BitcoinSignResult>;
+    // (undocumented)
+    clearSignLog(): Promise<void>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    invalidateAll(): void;
+    invalidateOrigin(origin: string): void;
+    lock(): void;
+    outcome(id: string): Promise<RequestResult>;
+    // (undocumented)
+    prepare(input: RequestInput): Promise<PendingRequest>;
+    // (undocumented)
+    reject(id: string): void;
+    signLog(): Promise<ReadonlyArray<SignLogEntry>>;
+}
+
+// @public (undocumented)
+type RequestControllerOptions = {
+    readonly transactions: TransactionController;
+    readonly spark: SparkController;
+    readonly addressBook: AddressBookController;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly fetch: typeof globalThis.fetch;
+    readonly random: (n: number) => Uint8Array;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+    readonly logger: EngineLogger;
+    readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event_2>;
+    readonly phishing: Pick<PhishingController, "check">;
+    readonly tokens: {
+        readonly metadata: (network: string, address: string) => Promise<{
+            readonly symbol: string;
+            readonly decimals: number;
+        }>;
+        readonly add: (network: string, address: string) => Promise<void>;
+    };
+    readonly blindSigning: () => boolean;
+    readonly simulateSolana: (account: SolanaAccount, network: string, message: Uint8Array) => Promise<SimulationOutcome>;
+    readonly solanaSign: (account: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+        readonly address: string;
+    }, network: string, request: SolanaSignInput["request"], verify: SendParams["verify"], commit: () => void) => Promise<SolanaSignResult>;
+    readonly bitcoinSign: (account: BitcoinAccount, network: string, request: {
+        readonly kind: "message";
+        readonly message: string;
+    }, verify: SendParams["verify"]) => Promise<BitcoinSignResult>;
+    readonly bitcoinPrepare: (account: BitcoinGroup, network: string, psbts: ReadonlyArray<BitcoinPsbtInput>) => Promise<ReadonlyArray<PreparedBitcoinPsbt>>;
+    readonly bitcoinSignPsbts: (account: BitcoinGroup, network: string, prepared: ReadonlyArray<PreparedBitcoinPsbt>, send: boolean, verify: SendParams["verify"], commit: () => void) => Promise<BitcoinSignResult>;
+};
+
+// @public (undocumented)
+type RequestControllerState = {
+    readonly requests: Record<string, PendingRequest>;
+};
+
+// @public (undocumented)
+type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput | NostrSignInput | WeblnInvoiceInput | WatchAssetInput | SolanaSignInput | BitcoinSignInput | SparkDepositInput | SparkExitInput;
+
+// @public (undocumented)
+type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "evm-delegation" | "evm-batch" | "nostr-sign" | "webln-invoice" | "watch-asset" | "solana-sign" | "bitcoin-sign" | "spark-deposit" | "spark-exit";
+
+// @public (undocumented)
+type RequestOrigin = {
+    readonly kind: "internal";
+} | BrowserOrigin;
+
+// @public
+type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
+
+// @public
+type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "rejected" | "failed" | "expired" | "invalidated";
+
+// @public
+type RiskFinding = {
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing";
+    readonly level: "warning" | "danger";
+};
 
 // @public (undocumented)
 export type RoundDirection = "down" | "up";
 
+// @public (undocumented)
+type SendParams = {
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly to: string;
+    readonly amount: bigint;
+    readonly token?: string;
+    readonly fee: EvmFeeTier | SolanaFeeTier;
+    readonly decimals?: number;
+    readonly inputs?: ReadonlyArray<string>;
+    readonly verify: SignParams["verify"];
+};
+
 // @public
 type SetTimer = (ms: number, fn: () => unknown) => () => void;
+
+// @public (undocumented)
+type SignatureResult = {
+    readonly kind: "evm.personal-message" | "evm.typed-data";
+    readonly signature: Uint8Array;
+};
+
+// @public
+type SignInFields = {
+    readonly domain: string;
+    readonly address: string;
+    readonly statement?: string;
+    readonly uri?: string;
+    readonly version?: string;
+    readonly chainId?: string;
+    readonly nonce?: string;
+    readonly issuedAt?: string;
+    readonly expirationTime?: string;
+    readonly notBefore?: string;
+    readonly requestId?: string;
+    readonly resources?: ReadonlyArray<string>;
+};
+
+// @public (undocumented)
+type SignLogEntry = {
+    readonly id: string;
+    readonly at: number;
+    readonly origin: RequestOrigin;
+    readonly method: RequestMethod;
+    readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount | BitcoinGroup;
+    readonly network: string;
+    readonly summary: string;
+    readonly verification: "verified" | "unverifiable";
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+    readonly risk: ReadonlyArray<RiskFinding>;
+    readonly outcome: SignLogOutcome;
+    readonly error?: string;
+};
+
+// @public (undocumented)
+type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
+
+// @public (undocumented)
+type SignParams = Parameters<ChainApis["sign"]>[0];
+
+// @public (undocumented)
+type SignResult = Awaited<ReturnType<ChainApis["sign"]>>;
+
+// @public (undocumented)
+type SimulationOutcome = {
+    readonly status: "success";
+    readonly changes: ReadonlyArray<AssetChange>;
+} | {
+    readonly status: "reverted";
+    readonly error: string;
+} | {
+    readonly status: "unavailable";
+    readonly error: string;
+};
+
+// @public
+type SolanaAccount = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly address: string;
+};
+
+// @public
+type SolanaDisplay = {
+    readonly kind: "solana.sign";
+    readonly send: boolean;
+    readonly count: number;
+    readonly transactions: ReadonlyArray<unknown>;
+    readonly message?: MessageContent;
+    readonly signIn?: SignInFields;
+};
+
+// @public (undocumented)
+type SolanaFeeTier = "slow" | "normal" | "fast";
+
+// @public (undocumented)
+type SolanaRpc = {
+    readonly call: (method: string, params: unknown[]) => Promise<unknown>;
+};
+
+// @public
+type SolanaSignInput = {
+    readonly method: "solana-sign";
+    readonly origin: BrowserOrigin;
+    readonly account: SolanaAccount;
+    readonly network: string;
+    readonly request: {
+        readonly kind: "transactions";
+        readonly transactions: ReadonlyArray<Uint8Array>;
+        readonly send: boolean;
+    } | {
+        readonly kind: "message";
+        readonly message: Uint8Array;
+        readonly signIn?: SignInFields;
+    };
+};
+
+// @public
+type SolanaSignResult = {
+    readonly kind: "solana.transactions";
+    readonly send: boolean;
+    readonly signatures?: ReadonlyArray<string>;
+    readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
+} | {
+    readonly kind: "solana.message";
+    readonly signature: Uint8Array;
+};
+
+// @public (undocumented)
+type SparkAccountState = {
+    readonly status: "locked" | "connecting" | "ready" | "error";
+    readonly balanceSats?: number;
+    readonly identityPublicKey?: string;
+    readonly sparkAddress?: string;
+    readonly errorCategory?: string;
+    readonly recent?: ReadonlyArray<SparkActivity>;
+    readonly tokens?: ReadonlyArray<SparkTokenBalance>;
+    readonly payments?: Readonly<Record<string, SparkPaymentRecord>>;
+};
+
+// @public (undocumented)
+type SparkActivity = SparkPayment & {
+    readonly note?: PaymentNote;
+};
+
+// @public (undocumented)
+type SparkApis = {
+    readonly signer: (ref: SparkAccountRef) => SparkSigner;
+    readonly approve: (params: {
+        account: SparkAccountRef;
+        intent: SparkApproveIntent;
+        verify: VerifyFactor;
+    }) => Promise<unknown>;
+};
+
+// @public (undocumented)
+type SparkClientFactory = (options: {
+    readonly ref: SparkAccountRef;
+    readonly store: ReturnType<typeof sparkStore>;
+    readonly signer: SparkSigner;
+    readonly fetch: typeof globalThis.fetch;
+}) => SparkClient;
+
+// @public (undocumented)
+class SparkController extends Controller<SparkControllerState> {
+    constructor(options: SparkControllerOptions);
+    accountBalance(ref: SparkAccountRef): number | undefined;
+    claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void>;
+    // (undocumented)
+    createInvoice(ref: SparkAccountRef, params: {
+        amountSats: number;
+        memo?: string;
+    }): Promise<LightningInvoice>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    history(ref: SparkAccountRef, options?: {
+        readonly limit?: number;
+        readonly offset?: number;
+    }): Promise<{
+        readonly items: ReadonlyArray<SparkActivity>;
+        readonly nextOffset: number | undefined;
+    }>;
+    // (undocumented)
+    init(): Promise<void>;
+    inspect(ref: SparkAccountRef): Promise<{
+        balanceSats: number;
+        used: boolean;
+    }>;
+    lockAll(): Promise<void>;
+    newDepositAddress(ref: SparkAccountRef): Promise<string>;
+    // (undocumented)
+    payInvoice(ref: SparkAccountRef, params: {
+        invoice: string;
+        amountSats?: number;
+        maxFeeSats: number;
+        transferId: string;
+        verify: VerifyFactor;
+        commit: () => void;
+        note?: PaymentNote;
+    }): Promise<LightningPayment>;
+    paymentStatus(ref: SparkAccountRef, request: {
+        readonly requestId: string;
+        readonly paymentHash: Uint8Array;
+    }): Promise<LightningSendStatus>;
+    paySparkInvoice(ref: SparkAccountRef, params: {
+        invoice: string;
+        amountSats?: number;
+        transferId: string;
+        verify: VerifyFactor;
+        commit: () => void;
+    }): Promise<SparkTransfer>;
+    quoteExit(ref: SparkAccountRef, params: {
+        address: string;
+        amountSats: number;
+        speed: "FAST" | "MEDIUM" | "SLOW";
+    }): Promise<{
+        readonly feeSats: number;
+        readonly exitSats: number;
+    }>;
+    // (undocumented)
+    receiveAddress(ref: SparkAccountRef): Promise<string | undefined>;
+    // (undocumented)
+    registerLightningAddress(ref: SparkAccountRef, params: {
+        serverUrl: string;
+        domain: string;
+        username: string;
+        description: string;
+    }): Promise<{
+        lnurl: string;
+        lightningAddress: string;
+    }>;
+    // (undocumented)
+    send(ref: SparkAccountRef, params: {
+        receiver: string;
+        amountSats: number;
+        transferId: string;
+        verify: VerifyFactor;
+        commit: () => void;
+    }): Promise<SparkTransfer>;
+    sendToken(ref: SparkAccountRef, params: {
+        receiver: string;
+        tokenIdentifier: string;
+        amount: bigint;
+        transferId: string;
+        verify: VerifyFactor;
+        commit: () => void;
+    }): Promise<string>;
+    setAccounts(refs: ReadonlyArray<SparkAccountRef>): void;
+    setStore(store: EngineStore | undefined): void;
+    // (undocumented)
+    unregisterLightningAddress(ref: SparkAccountRef, params: {
+        serverUrl: string;
+        domain: string;
+        username: string;
+    }): Promise<void>;
+    withdraw(ref: SparkAccountRef, params: {
+        address: string;
+        amountSats: number;
+        speed: "FAST" | "MEDIUM" | "SLOW";
+        maxFeeSats: number;
+        transferId: string;
+        verify: VerifyFactor;
+        commit: () => void;
+    }): Promise<CooperativeExitResult>;
+}
+
+// @public (undocumented)
+type SparkControllerOptions = {
+    readonly spark: SparkApis;
+    readonly fetch: typeof globalThis.fetch;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly createClient: SparkClientFactory;
+};
+
+// @public (undocumented)
+type SparkControllerState = {
+    readonly accounts: Readonly<Record<string, SparkAccountState>>;
+};
+
+// @public
+type SparkDepositInput = {
+    readonly method: "spark-deposit";
+    readonly account: SparkAccountRef;
+    readonly from: AccountRef;
+    readonly amountSats: number;
+    readonly fee: PrepareParams["fee"];
+};
+
+// @public
+type SparkDepositTag = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly network: SparkNetwork;
+    readonly claimed?: boolean;
+};
+
+// @public
+type SparkDisplay = {
+    readonly family: "spark";
+    readonly network: SparkNetwork;
+    readonly kind: "transfer" | "lightning" | "exit";
+    readonly amountSats: number;
+    readonly maxFeeSats?: number;
+    readonly feeSats?: number;
+    readonly receiver: string;
+    readonly description?: string;
+} | {
+    readonly family: "spark";
+    readonly network: SparkNetwork;
+    readonly kind: "token";
+    readonly tokenIdentifier: string;
+    readonly amount: string;
+    readonly receiver: string;
+};
+
+// @public
+type SparkExitInput = {
+    readonly method: "spark-exit";
+    readonly account: SparkAccountRef;
+    readonly amountSats: number;
+    readonly maxFeeSats: number;
+    readonly speed?: "FAST" | "MEDIUM" | "SLOW";
+};
+
+// @public
+type SparkPaymentKind = "transfer" | "lightning" | "exit" | "token";
+
+// @public
+type SparkPaymentRecord = {
+    readonly id: string;
+    readonly kind: SparkPaymentKind;
+    readonly state: SparkPaymentState;
+    readonly receiver: string;
+    readonly amount: string;
+    readonly tokenIdentifier?: string;
+    readonly inputOutputIds?: ReadonlyArray<string>;
+    readonly transactionHash?: string;
+    readonly submittedAt: number;
+    readonly error?: string;
+};
+
+// @public
+type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
+
+// @public (undocumented)
+type SparkResult = {
+    readonly kind: "spark";
+    readonly transfer: SparkTransfer;
+} | {
+    readonly kind: "lightning";
+    readonly payment: LightningPayment;
+} | {
+    readonly kind: "withdraw";
+    readonly exit: CooperativeExitResult;
+} | {
+    readonly kind: "token";
+    readonly transactionHash: string;
+} |
+/**
+* The commit response was lost and the payment may have gone out: `payment` is its open record,
+* which `SparkAccountState.payments` and `engine.history` keep following until the Spark operator
+* settles or fails it.
+*/
+    {
+    readonly kind: "pending";
+    readonly payment: SparkPaymentRecord;
+};
+
+// @public
+function sparkStore(col: EngineCollection): SparkStore;
+
+// @public (undocumented)
+type SparkTokenBalance = {
+    readonly tokenIdentifier: string;
+    readonly amount: string;
+    readonly outputCount: number;
+};
 
 export { SpotClearinghouseStateResponse }
 
 export { SpotMetaAndAssetCtxsResponse }
+
+// @public
+type TokenWatchDisplay = {
+    readonly kind: "token.watch";
+    readonly network: string;
+    readonly address: string;
+    readonly symbol: string;
+    readonly decimals: number;
+    readonly verified: boolean;
+};
+
+// @public
+type TokenWatchResult = {
+    readonly kind: "token.watch";
+};
+
+// @public (undocumented)
+type TrackedTransaction = {
+    readonly id: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly network: string;
+    readonly account: string;
+    readonly hash: string | undefined;
+    readonly state: TxState;
+    readonly intent: DisplayIntent | undefined;
+    readonly nonce: number;
+    readonly block?: TxBlock | undefined;
+    readonly final?: boolean | undefined;
+    readonly lastValidBlockHeight?: number;
+    readonly replaces?: string;
+    readonly parentId?: string;
+    readonly sparkDeposit?: SparkDepositTag;
+    readonly raw?: string | undefined;
+    readonly evm?: {
+        readonly from: string;
+        readonly account: AccountRef;
+    };
+    readonly btc?: {
+        readonly inputs: ReadonlyArray<{
+            readonly txid: string;
+            readonly vout: number;
+            readonly value: number;
+            readonly address: string;
+        }>;
+        readonly outputs: ReadonlyArray<{
+            readonly address: string;
+            readonly value: number;
+            readonly own: boolean;
+        }>;
+        readonly vsize: number;
+        readonly fee: number;
+        readonly feeRate: number;
+        readonly template: BitcoinAccountTemplate;
+        readonly groupIndex: number;
+        readonly tier: "fast" | "normal" | "slow";
+    };
+    readonly submittedAt: number;
+    readonly error: string | undefined;
+};
+
+// @public (undocumented)
+class TransactionController extends Controller<TransactionControllerState> {
+    constructor(options: Options);
+    batchById(origin: string, id: string): BatchRecord | undefined;
+    delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    frozenUtxos(account: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string): ReadonlyArray<string>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    markDepositClaimed(id: string): Promise<void>;
+    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
+    prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareEvmInternal(input: Extract<ChainRequestInput, {
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+    }>, _requestId: string): Promise<PreparedRequest>;
+    prepareReplacement(input: Extract<ChainRequestInput, {
+        method: "speed-up" | "cancel" | "cpfp";
+    }>, requestId: string): Promise<PreparedRequest>;
+    prepareSend(params: PrepareParams, requestId: string, sparkDeposit?: SparkDepositTag): Promise<PreparedRequest>;
+    // (undocumented)
+    prepareSolanaCoreSend(input: Extract<ChainRequestInput, {
+        method: "solana-core-send";
+    }>, _requestId: string): Promise<PreparedRequest>;
+    prepareSolanaStake(input: Extract<ChainRequestInput, {
+        method: "solana-stake";
+    }>, _requestId: string): Promise<PreparedRequest>;
+    // (undocumented)
+    prepareSolanaSwap(input: Extract<ChainRequestInput, {
+        method: "solana-swap";
+    }>, _requestId: string): Promise<PreparedRequest>;
+    recordBatch(record: BatchRecord): Promise<void>;
+    setUtxosFrozen(account: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
+    submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
+    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
+    txById(id: string): TrackedTransaction | undefined;
+}
+
+// @public (undocumented)
+type TransactionControllerState = {
+    readonly txs: Record<string, TrackedTransaction>;
+};
+
+// @public
+type TxBlock = {
+    readonly hash?: string;
+    readonly height: number;
+};
+
+// @public (undocumented)
+type TxState = "draft" | "signed" | "submitted" | "pending" | "confirmed" | "failed" | "rejected" | "dropped" | "replaced";
 
 export { UserFeesResponse }
 
@@ -382,6 +1927,69 @@ export { UserFundingResponse }
 export { UserRateLimitResponse }
 
 export { UserRoleResponse }
+
+// @public
+type WatchAssetInput = {
+    readonly method: "watch-asset";
+    readonly origin: BrowserOrigin;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly address: string;
+};
+
+// @public
+type WeblnInvoiceInput = {
+    readonly method: "webln-invoice";
+    readonly origin: BrowserOrigin;
+    readonly ref: SparkAccountRef;
+    readonly amountSats: number;
+    readonly memo?: string;
+};
+
+// @public
+type WeblnInvoiceResult = {
+    readonly kind: "lightning.invoice";
+    readonly paymentRequest: string;
+};
+
+// @public
+type ZapInput = {
+    readonly method: "zap";
+    readonly account: SparkAccountRef;
+    readonly zap: PreparedZap;
+    readonly maxFeeSats: number;
+};
+
+// @public (undocumented)
+type ZeroExSwapQuote = {
+    readonly provider: "0x";
+    readonly network: string;
+    readonly taker: string;
+    readonly sell: string;
+    readonly buy: string;
+    readonly sellAmount: bigint;
+    readonly buyAmount: bigint;
+    readonly minBuyAmount: bigint;
+    readonly allowanceTarget: string | undefined;
+    readonly transaction: {
+        readonly to: string;
+        readonly data: string;
+        readonly value: bigint;
+        readonly gas: bigint | undefined;
+    };
+    readonly fees: {
+        readonly integrator: {
+            readonly token: string;
+            readonly amount: bigint;
+        } | undefined;
+        readonly zeroEx: {
+            readonly token: string;
+            readonly amount: bigint;
+        } | undefined;
+    };
+    readonly blockNumber: bigint;
+    readonly fetchedAt: number;
+};
 
 // (No @packageDocumentation comment for this package)
 

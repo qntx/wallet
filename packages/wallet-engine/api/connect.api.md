@@ -264,11 +264,11 @@ export type BitcoinWalletAccount = {
 
 // @public
 export class BitcoinWalletHandler implements BitcoinHandler {
-    constructor(options: Options$1);
+    constructor(options: Options$1_2);
     // (undocumented)
     handle(origin: string, request: BitcoinRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options$1;
+    readonly options: Options$1_2;
     // (undocumented)
     subscribe(listener: (event: BitcoinEvent) => void): () => void;
 }
@@ -639,7 +639,7 @@ type EvmFeeTier = "slow" | "normal" | "fast";
 // @public
 type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin: BrowserOrigin;
+    readonly origin?: BrowserOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -720,7 +720,7 @@ type LightningPolicy = {
 
 // @public (undocumented)
 class NetworkController extends Controller<NetworkControllerState> {
-    constructor(options: Options$3);
+    constructor(options: Options$1);
     addRpc(network: string, url: string): Promise<void>;
     // (undocumented)
     client(network: string): PublicClient;
@@ -810,6 +810,17 @@ type NostrSignResult = {
 
 // @public (undocumented)
 type Options$1 = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly logger: EngineLogger;
+    readonly gateway?: GatewayConfig | undefined;
+    readonly setTimer: SetTimer;
+    readonly random: (length: number) => Uint8Array;
+};
+
+// @public (undocumented)
+type Options$1_2 = {
     readonly connections: BitcoinConnections;
     readonly requests: BitcoinRequests;
     readonly bitcoinAccount: (group: {
@@ -823,7 +834,7 @@ type Options$1 = {
 };
 
 // @public (undocumented)
-type Options$2 = {
+type Options = {
     readonly wallet: Wallet;
     readonly networks: NetworkController;
     readonly openStore: () => Promise<EngineStore>;
@@ -836,18 +847,7 @@ type Options$2 = {
 };
 
 // @public (undocumented)
-type Options$3 = {
-    readonly fetch: typeof globalThis.fetch;
-    readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
-    readonly openStore: () => Promise<EngineStore>;
-    readonly logger: EngineLogger;
-    readonly gateway?: GatewayConfig | undefined;
-    readonly setTimer: SetTimer;
-    readonly random: (length: number) => Uint8Array;
-};
-
-// @public (undocumented)
-type Options = {
+type Options_2 = {
     readonly connections: SolanaConnections;
     readonly requests: SolanaRequests;
     readonly solanaAccount: (group: {
@@ -1348,11 +1348,11 @@ export type SolanaWalletAccount = {
 
 // @public
 export class SolanaWalletHandler implements SolanaHandler {
-    constructor(options: Options);
+    constructor(options: Options_2);
     // (undocumented)
     handle(origin: string, request: SolanaRequest): Promise<unknown>;
     // (undocumented)
-    readonly options: Options;
+    readonly options: Options_2;
     subscribe(listener: (event: SolanaEvent) => void): () => void;
 }
 
@@ -1669,7 +1669,7 @@ type TrackedTransaction = {
 
 // @public (undocumented)
 class TransactionController extends Controller<TransactionControllerState> {
-    constructor(options: Options$2);
+    constructor(options: Options);
     batchById(origin: string, id: string): BatchRecord | undefined;
     delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
     // (undocumented)

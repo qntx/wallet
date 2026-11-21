@@ -53,7 +53,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    budget: 16 * 1024,
+    budget: 23 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
     forbidden: [],
   },

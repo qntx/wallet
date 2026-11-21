@@ -71,7 +71,7 @@ export type HyperliquidPlacedAction = {
 /** Kernel caps action arrays at 64 entries (packages/wallet/src/protocol/apps.ts `arr(.., 64)`). */
 const BATCH_CAP = 64;
 
-const deepFreeze = <T>(value: T): T => {
+export const deepFreeze = <T>(value: T): T => {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
     for (const item of Object.values(value)) {
       deepFreeze(item);
