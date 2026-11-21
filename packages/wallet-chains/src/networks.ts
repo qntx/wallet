@@ -4,9 +4,9 @@ import type { AssetAmount, DisplayIntent } from "./index.ts";
  * Built-in network registry: the eight original EVM mainnets, the newer EVM mainnets (DefiLlama
  * chain TVL order), the eight original testnets, the newer testnets in the same order as their
  * mainnets, then the four Bitcoin networks, the two Solana clusters and the three TRON networks.
- * Each chain id was checked against the chain's official documentation (source URL per entry) and
- * a live eth_chainId probe (2026-11-20). Signing-time identifiers always come from this table,
- * never from an RPC endpoint.
+ * Each chain id was checked against the chain's official documentation (source URL per entry) and a
+ * live eth_chainId probe (2026-11-20). Signing-time identifiers always come from this table, never
+ * from an RPC endpoint.
  */
 
 export type NetworkMeta = {
