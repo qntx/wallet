@@ -13419,7 +13419,7 @@
 		return parse$1(text);
 	}
 	new Uint8Array([255, ...utf8Encode$1("solana offchain")]);
-	// packages/wallet-chains/dist/src-BAJO7wKQ.mjs
+	// packages/wallet-chains/dist/src-DMfKNa_g.mjs
 	init_defineProperty();
 	/**
 	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show, and
@@ -13626,10 +13626,7 @@
 	* Quantities are canonical `0x` hex (lowercase, no leading zeros, `0x0` for
 	* zero), token amounts are decimal strings of the smallest unit.
 	*/
-	var utf8$5 = new TextDecoder("utf-8", {
-		fatal: true,
-		ignoreBOM: true
-	});
+	var utf8$5 = new TextDecoder("utf-8", { fatal: true });
 	var utf8Encode = new TextEncoder();
 	var bytesContent = (bytes) => ({
 		kind: "bytes",
@@ -13692,7 +13689,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-B8ghHmXw.mjs
+	// packages/wallet-chains/dist/account-ref-DwUD7OAY.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -15419,7 +15416,7 @@
 			_defineProperty(this, "name", "Address.InvalidChecksumError");
 		}
 	};
-	// packages/wallet-chains/dist/address-BRq1R8w0.mjs
+	// packages/wallet-chains/dist/address-CtC83uU8.mjs
 	init_secp256k1();
 	init_utils$2();
 	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
@@ -20368,7 +20365,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-BE_LKorE.mjs
+	// packages/wallet-chains/dist/envelope-BI-2LwiX.mjs
 	init_objectSpread2();
 	/**
 	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
@@ -20830,7 +20827,7 @@
 			serialize: (signature) => serialize(envelope, { signature })
 		};
 	};
-	// packages/wallet-chains/dist/token-call-XwJ-qS4z.mjs
+	// packages/wallet-chains/dist/token-call-SU0_d3v-.mjs
 	init_objectSpread2();
 	var USDC$1 = Object.freeze({
 		symbol: "USDC",
@@ -29131,7 +29128,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/message-DHbTqPGp.mjs
+	// packages/wallet-chains/dist/message-BZj0LOAB.mjs
 	init_objectSpread2();
 	/**
 	* A strict protobuf wire reader/writer for the TRON protocol messages. Unlike the google-protobuf
@@ -29773,10 +29770,7 @@ zoo`.split("\n"));
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
 	};
-	var utf8$1$1 = new TextDecoder("utf-8", {
-		fatal: true,
-		ignoreBOM: true
-	});
+	var utf8$1$1 = new TextDecoder("utf-8", { fatal: true });
 	var stringOf = (f, what) => {
 		if (f === void 0) return "";
 		const data = bytesOf$2(f);
@@ -30265,10 +30259,7 @@ zoo`.split("\n"));
 	var refuse = (what) => {
 		throw new ChainError("invalid-request", what);
 	};
-	var utf8$2 = new TextDecoder("utf-8", {
-		fatal: true,
-		ignoreBOM: true
-	});
+	var utf8$2 = new TextDecoder("utf-8", { fatal: true });
 	/** All TRX amounts carry the native asset id, 6 decimals and the network's symbol. */
 	var sun = (amount, symbol) => ({
 		asset: "sun",
@@ -36046,7 +36037,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-ZOT446GF.mjs
+	// packages/wallet-chains/dist/message-BGULCirc.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -37123,9 +37114,6 @@ zoo`.split("\n"));
 			...omitted === 0 ? [] : [catalog.omitted(omitted)]
 		];
 	}
-	var CONTROL_CHAR = new RegExp("\\p{Cc}", "u");
-	/** Every code point prints plainly: no control characters, nothing hidden or reordering. */
-	var isPlainText = (text) => !CONTROL_CHAR.test(text) && !hasHiddenCharacters(text);
 	/** The zero address in an order's `zone`: no zone contract gates fulfilment. */
 	var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 	function orderLines(catalog, order) {
@@ -37308,14 +37296,9 @@ zoo`.split("\n"));
 			description: joinLines(signInLines(catalog, message.signIn))
 		};
 		const hazard = intent.blind === void 0 ? void 0 : messageTextHazard(message.text);
-		const digest = hazard === "digest-length" ? `0x${bytesToHex$4(utf8ToBytes$1(message.text))}` : void 0;
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
-			description: joinLines([
-				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
-				...digest === void 0 ? [] : [catalog.bytesData(digest)],
-				...digest !== void 0 && !isPlainText(message.text) ? [] : textLines(catalog, message.text)
-			])
+			description: joinLines([...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : hazard === void 0 ? [] : [catalog.textHazard[hazard]], ...textLines(catalog, message.text)])
 		};
 	}
 	function chainPrompt(locale, intent) {
