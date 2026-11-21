@@ -64,6 +64,24 @@ const apiOf = (e: Env): TronApi => ({
   },
 });
 
+/**
+ * Each info round-trip takes long enough for the solidified head to cross expiration. The head read
+ * at poll start bounds the drop proof — a later head must not retroactively drop.
+ */
+const agingApi = (e: Env): TronApi => {
+  const base = apiOf(e);
+  return {
+    post: async (path, body) => {
+      await Promise.resolve();
+      const answer = await base.post(path, body);
+      if (path.endsWith("/gettransactioninfobyid")) {
+        e.solidTime = 1_060_001;
+      }
+      return answer;
+    },
+  };
+};
+
 /** Answers `{}` for the first solidified info read, then "lands" the transaction mid-poll. */
 const landingApi = (e: Env): TronApi => {
   const base = apiOf(e);
@@ -177,6 +195,30 @@ describe("pollTron", () => {
     const answer = await pollTron(ctx(e), tx());
     expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
     expect(e.broadcasts).toHaveLength(0);
+  });
+
+  it("a solid head exactly at expiration is still inside it — no drop", async () => {
+    const e = env({ solidTime: 1_060_000 }); // == tx.tron.expiration
+    const answer = await pollTron(ctx(e), tx());
+    expect(answer).toBeUndefined();
+    expect(e.broadcasts).toStrictEqual([RAW]);
+  });
+
+  it("a head that ages past expiration during the info reads does not drop", async () => {
+    // The drop proof is bounded by the head read at poll start, not the head as it is once the
+    // info round-trips finish — reading it after them would expire a just-sent transaction.
+    const e = env();
+    const wrapped = agingApi(e);
+    const c = ctx(e);
+    const answer = await pollTron(
+      {
+        ...c,
+        options: { ...c.options, networks: { tronApi: () => wrapped } as never },
+      },
+      tx(),
+    );
+    expect(answer).toBeUndefined();
+    expect(e.broadcasts).toStrictEqual([RAW]);
   });
 
   it("a transaction landing between the head read and the info reads still wins inclusion", async () => {

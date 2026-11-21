@@ -550,6 +550,16 @@ describe("tronFeeQuote", () => {
     expect(under.bandwidth.burn).toBe("334000");
   });
 
+  it("partial staked bandwidth does not count — all-or-nothing like the node", () => {
+    const quote = tronFeeQuote({
+      ...base,
+      resources: { ...RESOURCES, netLimit: 333, freeNetLimit: 0 },
+    });
+    expect(quote.bandwidth.source).toBe("burn");
+    expect(quote.bandwidth.burn).toBe("334000");
+    expect(quote.expected).toBe("334000");
+  });
+
   it("burns bytes × transactionFee when neither covers it", () => {
     const quote = tronFeeQuote({
       ...base,
