@@ -377,7 +377,9 @@ export type RouteContext = {
   readonly options: Options;
   /**
    * Applies `next` to `tx` and persists the row. A locked vault skips the write — unless `durable`,
-   * which throws instead: signed bytes must be on disk before they leave.
+   * which throws instead: signed bytes must be on disk before they leave. The context belongs to
+   * the session that created it: after a lock→unlock its calls are ignored (`durable` still
+   * throws), so a stale async result never writes into the new session.
    */
   readonly transition: (
     tx: TrackedTransaction,

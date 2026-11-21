@@ -275,6 +275,12 @@ export class TransactionController extends Controller<TransactionControllerState
   private evmRoute = createEvmRoute();
   private bitcoinRoute = createBitcoinRoute();
   private locked = true;
+  /**
+   * Bumped on every `lock`: a `RouteContext` captures it at creation, so an async result that
+   * outlives its session — a broadcast settling after lock→unlock — is recognized as stale and
+   * never writes into the new session's state or store, and never touches its timers.
+   */
+  private generation = 0;
   private readonly batches = new Map<string, BatchRecord>();
 
   constructor(options: Options) {
@@ -362,6 +368,7 @@ export class TransactionController extends Controller<TransactionControllerState
 
   lock(): void {
     this.locked = true;
+    this.generation += 1;
     for (const stop of this.timers.values()) {
       stop();
     }
@@ -396,10 +403,32 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   private routeCtx(): RouteContext {
+    const generation = this.generation;
+    /* Stale means another session is live: while the vault is still locked there is no store to
+       reach anyway, and the locked path's own warnings stay accurate. */
+    const stale = (): boolean => generation !== this.generation && !this.locked;
     return {
       options: this.options,
-      transition: async (tx, next, durable) => this.transition(tx, next, durable),
-      track: (id, hash) => this.track(id, hash),
+      transition: async (tx, next, durable) => {
+        if (stale()) {
+          /* A durable write from a dead session must still throw — nothing was sent for it —
+             while a bookkeeping one merges in memory only, never into the live session. */
+          if (durable === true) {
+            throw new Error("transactions require an unlocked vault");
+          }
+          this.options.logger.warn(
+            `transaction ${tx.id}: an earlier session's transition was ignored`,
+          );
+          return { ...tx, ...next };
+        }
+        return this.transition(tx, next, durable);
+      },
+      track: (id, hash) => {
+        if (stale()) {
+          return;
+        }
+        this.track(id, hash);
+      },
       txs: () => this.getState().txs,
       newId: () => newId(this.options.random),
     };
@@ -730,6 +759,7 @@ export class TransactionController extends Controller<TransactionControllerState
    * marking this replaced, a reload) means the row moved on and the next poll decides.
    */
   private async pollOnce(id: string): Promise<void> {
+    const generation = this.generation;
     const tx = this.getState().txs[id];
     if (tx === undefined) {
       this.untrack(id);
@@ -742,7 +772,7 @@ export class TransactionController extends Controller<TransactionControllerState
         : tx.family === "bitcoin"
           ? await this.bitcoinRoute.poll(ctx, tx)
           : await this.evmRoute.poll(ctx, tx);
-    if (answer === undefined || this.locked) {
+    if (answer === undefined || this.locked || generation !== this.generation) {
       return;
     }
     if (this.getState().txs[id] !== tx) {

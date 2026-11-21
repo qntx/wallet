@@ -135,8 +135,8 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   const signed: SignRequest[] = [];
   let tag = 0;
-  /** Armed per test: the next sendRawTransaction waits on this gate before the node answers. */
-  let sendGate: { promise: Promise<void>; open: () => void } | undefined;
+  /** Armed per test: the first `hold` sendRawTransaction calls wait on this gate. */
+  let sendGate: { promise: Promise<void>; open: () => void; hold: number } | undefined;
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -152,7 +152,7 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
       node.attempts.push(String((body.params ?? [])[0]));
       // An armed gate holds the send until released; a released one passes through.
       const gate = sendGate;
-      if (gate !== undefined) {
+      if (gate !== undefined && node.attempts.length <= gate.hold) {
         await gate.promise;
       }
       if (node.dropSend) {
@@ -265,20 +265,29 @@ const world = (options: { code?: (address: string) => string; realRaw?: boolean 
     return { ctl, timers };
   };
 
+  const persistedTx = async (id: string): Promise<Record<string, unknown> | undefined> => {
+    const raw = await createMemoryEngineStore(backing).collection("transactions").get(id);
+    return raw === undefined
+      ? undefined
+      : (JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>);
+  };
+
   return {
     primary,
     clock,
     backing,
     signed,
     boot,
-    /** The next sendRawTransaction is held at the gate until `releaseSendGate` runs. */
-    armSendGate: () => {
+    persistedTx,
+    /** The first `hold` sendRawTransaction calls wait at the gate until `releaseSendGate`. */
+    armSendGate: (hold = Number.POSITIVE_INFINITY) => {
       let open!: () => void;
       sendGate = {
         promise: new Promise<void>((resolve) => {
           open = resolve;
         }),
         open,
+        hold,
       };
     },
     releaseSendGate: () => {
@@ -500,5 +509,95 @@ describe("a signed 7702 holds both its nonces across lock and unlock", () => {
     const c = await send(ctl, SEND);
     expect(c.state).toBe("submitted");
     expect(c.nonce).toBe(2); // nonce 1 — the authorization's — is still held, never re-issued
+  });
+});
+
+describe("a stale session's late answer cannot write", () => {
+  it("the old session's refusal lands after unlock: nothing reaches the new session", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const node = w.primary;
+
+    w.armSendGate();
+    const sendA = send(ctl, SEND);
+    void sendA.catch(() => undefined);
+    await until(
+      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
+      "A's broadcast attempt",
+    );
+    const [a] = Object.values(ctl.getState().txs);
+    const { hash } = a ?? {};
+
+    // Lock then re-unlock on the same backing: A reloads, re-holds nonce 0 and is tracked again.
+    ctl.lock();
+    await ctl.init();
+    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("submitted");
+    expect(ctl.getState().txs[a?.id ?? ""]?.hash).toBe(hash);
+
+    // The stale session's submit now settles with a definite refusal: its transitions and nonce
+    // release reach the dead session's route — nothing lands in the new one.
+    node.refuse = {
+      code: -32000,
+      message: "insufficient funds for gas * price + value",
+      record: false,
+    };
+    w.releaseSendGate();
+    await expect(sendA).rejects.toThrow(/insufficient funds/);
+    // The new session's own rebroadcasts never propagate either — A stays unknown to it.
+    node.dropSend = true;
+
+    const after = ctl.getState().txs[a?.id ?? ""];
+    expect(after?.state).toBe("submitted");
+    expect(after?.hash).toBe(hash);
+    expect(after?.raw).toBeDefined();
+    expect((await w.persistedTx(a?.id ?? ""))?.["state"]).toBe("submitted");
+
+    // Still live and holding nonce 0, so the next send takes 1 — not 0 without a hash behind it.
+    const b = await send(ctl, SEND);
+    expect(b.nonce).toBe(1);
+
+    // Only when the new session itself drops A past the unknown window is nonce 0 free again.
+    await timers.fire(POLL_MS);
+    w.clock.t += UNKNOWN_DROP_MS + 1;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
+    const c = await send(ctl, SEND);
+    expect(c.nonce).toBe(0);
+  });
+
+  it("the old session's acceptance lands after unlock: no second poll timer, no re-write", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const node = w.primary;
+
+    w.armSendGate(1);
+    const sendA = send(ctl, SEND);
+    void sendA.catch(() => undefined);
+    await until(
+      () => (node.attempts.length === 1 ? node.attempts[0] : undefined),
+      "A's broadcast attempt",
+    );
+    const [a] = Object.values(ctl.getState().txs);
+
+    ctl.lock();
+    await ctl.init();
+    expect(timers.armed(POLL_MS)).toBe(1);
+
+    // The new session settles A as dropped first — then the stale acceptance arrives.
+    node.dropSend = true;
+    await timers.fire(POLL_MS);
+    w.clock.t += UNKNOWN_DROP_MS + 1;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
+    expect(timers.armed(POLL_MS)).toBe(0);
+
+    node.dropSend = false;
+    w.releaseSendGate();
+    const late = await sendA;
+    expect(late.state).toBe("submitted"); // the old request reports what it saw…
+    // …but the dead session rewrites nothing: the row stays dropped and no poll re-arms.
+    expect(ctl.getState().txs[a?.id ?? ""]?.state).toBe("dropped");
+    expect((await w.persistedTx(a?.id ?? ""))?.["state"]).toBe("dropped");
+    expect(timers.armed(POLL_MS)).toBe(0);
   });
 });
