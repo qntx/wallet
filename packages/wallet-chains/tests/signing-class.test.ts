@@ -136,7 +136,9 @@ describe("everyday contract calls are described, not blind", () => {
     );
   });
 
-  it("a CoW order shows all twelve leaves in declaration order", () => {
+  /* The GPv2 order's appData is a hash leaf, so until a CoW decoder claims the document it is
+     blind as a commitment; its leaves still show in declaration order. */
+  it("a CoW order's appData hash blinds it until the family is decoded", () => {
     const intent = decodeEvm(
       typed({
         types: {
@@ -186,8 +188,8 @@ describe("everyday contract calls are described, not blind", () => {
       SIGNER,
     );
     expect(intent.verifiability).toBe("opaque");
-    expect(intent.blind).toBeUndefined();
-    expect(isBlindIntent(intent)).toBe(false);
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(isBlindIntent(intent)).toBe(true);
     expect(fieldsOf(intent)).toStrictEqual([
       { path: "sellToken", value: checksumEvmAddress(USDC) },
       { path: "buyToken", value: checksumEvmAddress(WETH) },
@@ -485,7 +487,9 @@ describe("typed data shows its leaves or is blind", () => {
       ),
       SIGNER,
     );
-    expect(intent.blind).toBeUndefined();
+    /* bytesN is a commitment leaf — the document is blind, but the leaves still display
+       in canonical form. */
+    expect(intent.blind).toBe("typed-data-commitment");
     expect(fieldsOf(intent)).toStrictEqual([
       { path: "u", value: "255" },
       { path: "i", value: "-3" },
@@ -506,7 +510,8 @@ describe("typed data shows its leaves or is blind", () => {
       ),
       SIGNER,
     );
-    expect(intent.blind).toBeUndefined();
+    /* The bytes leaf is a commitment and blinds the document; the leaves still show. */
+    expect(intent.blind).toBe("typed-data-commitment");
     expect(fieldsOf(intent)).toStrictEqual([
       { path: "s", value: "x".repeat(96) },
       { path: "b", value: `0x${"ab".repeat(47)}` },
@@ -810,15 +815,77 @@ describe("typed data that signs only hashes is blind", () => {
     }
   });
 
-  it("a commitment leaf beside a readable one stays described", () => {
+  /* Any commitment leaf blinds the document, readable neighbours or not: nothing bounds what the
+     hash or bytes commit the signature to. */
+  it.each([
+    [
+      "Msg(bytes32 hash, uint256 nonce)",
+      doc(
+        "Msg",
+        { hash: RAW_HASH, nonce: "0" },
+        {
+          Msg: [
+            { name: "hash", type: "bytes32" },
+            { name: "nonce", type: "uint256" },
+          ],
+        },
+      ),
+    ],
+    [
+      "Msg(address account, bytes32 hash)",
+      doc(
+        "Msg",
+        { account: SIGNER, hash: RAW_HASH },
+        {
+          Msg: [
+            { name: "account", type: "address" },
+            { name: "hash", type: "bytes32" },
+          ],
+        },
+      ),
+    ],
+    [
+      "a nested struct pairing a commitment with a readable leaf",
+      doc(
+        "Outer",
+        { inner: { digest: RAW_HASH }, tag: "ok" },
+        {
+          Outer: [
+            { name: "inner", type: "Inner" },
+            { name: "tag", type: "string" },
+          ],
+          Inner: [{ name: "digest", type: "bytes32" }],
+        },
+      ),
+    ],
+    [
+      "a commitment split into two 31-byte hex string leaves",
+      doc(
+        "Msg",
+        { a: `0x${"ab".repeat(31)}`, b: `0x${"cd".repeat(31)}` },
+        {
+          Msg: [
+            { name: "a", type: "string" },
+            { name: "b", type: "string" },
+          ],
+        },
+      ),
+    ],
+  ])("%s is blind as a commitment", (_name, document) => {
+    const intent = decodeEvm(typed(document), SIGNER);
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(isBlindIntent(intent)).toBe(true);
+  });
+
+  it("an empty bytes leaf is not a commitment; the document stays described", () => {
     const intent = decodeEvm(
       typed(
         doc(
           "Root",
-          { hash: RAW_HASH, amount: "7" },
+          { data: "0x", amount: "7" },
           {
             Root: [
-              { name: "hash", type: "bytes32" },
+              { name: "data", type: "bytes" },
               { name: "amount", type: "uint256" },
             ],
           },
@@ -827,10 +894,6 @@ describe("typed data that signs only hashes is blind", () => {
       SIGNER,
     );
     expect(intent.blind).toBeUndefined();
-    expect(fieldsOf(intent)).toStrictEqual([
-      { path: "hash", value: RAW_HASH },
-      { path: "amount", value: "7" },
-    ]);
   });
 
   const hexOf = (b: Uint8Array): string =>
@@ -841,7 +904,7 @@ describe("typed data that signs only hashes is blind", () => {
   );
   const leafValue = (type: string): fc.Arbitrary<string> =>
     type === "bytes"
-      ? fc.uint8Array({ minLength: 0, maxLength: 40 }).map(hexOf)
+      ? fc.uint8Array({ minLength: 1, maxLength: 40 }).map(hexOf)
       : fc
           .uint8Array({ minLength: Number(type.slice(5)), maxLength: Number(type.slice(5)) })
           .map(hexOf);
@@ -892,6 +955,77 @@ describe("typed data that signs only hashes is blind", () => {
       }),
       { numRuns: 100 },
     );
+  });
+});
+
+describe("Snapshot Vote documents are recognised", () => {
+  const VOTE_PREFIX: ReadonlyArray<{ name: string; type: string }> = [
+    { name: "from", type: "string" },
+    { name: "space", type: "string" },
+    { name: "timestamp", type: "uint64" },
+    { name: "proposal", type: "string" },
+  ];
+  const VOTE_TAIL: ReadonlyArray<{ name: string; type: string }> = [
+    { name: "reason", type: "string" },
+    { name: "app", type: "string" },
+    { name: "metadata", type: "string" },
+  ];
+  const voteDoc = (choice: { name: string; type: string }, value: unknown) => ({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+      ],
+      Vote: [...VOTE_PREFIX, choice, ...VOTE_TAIL],
+    },
+    primaryType: "Vote",
+    domain: { name: "snapshot", version: "0.1.4" },
+    message: {
+      from: SIGNER,
+      space: "example.eth",
+      timestamp: "1700000000",
+      proposal: `0x${"ab".repeat(32)}`,
+      choice: value,
+      reason: "",
+      app: "snapshot",
+      metadata: "{}",
+    },
+  });
+
+  it.each([
+    ["uint32 choice", { name: "choice", type: "uint32" }, 1],
+    ["uint32[] choice", { name: "choice", type: "uint32[]" }, [1, 2]],
+    ["string choice", { name: "choice", type: "string" }, "1"],
+  ])("a vote with %s is described, encoded proposal and all", (_n, choice, value) => {
+    const intent = decodeEvm(typed(voteDoc(choice, value)), SIGNER);
+    expect(intent.blind).toBeUndefined();
+    expect(isBlindIntent(intent)).toBe(false);
+    expect(fieldsOf(intent)?.map((leaf) => leaf.path)).toContain("proposal");
+  });
+
+  it("a Vote field list outside the three snapshot.js shapes is a variant", () => {
+    const document = voteDoc({ name: "choice", type: "uint32" }, 1);
+    const intent = decodeEvm(
+      typed({
+        ...document,
+        types: {
+          ...document.types,
+          Vote: [...document.types.Vote, { name: "extra", type: "uint256" }],
+        },
+        message: { ...document.message, extra: "1" },
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a Vote outside the snapshot domain is generic, and its hash leaf blinds it", () => {
+    const document = voteDoc({ name: "choice", type: "uint32" }, 1);
+    const intent = decodeEvm(
+      typed({ ...document, domain: { name: "other", version: "0.1.4" } }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
   });
 });
 
@@ -1680,6 +1814,7 @@ describe("typed-data near misses of decoded families are blind", () => {
           : (
               {
                 "^Agent$": "Agent",
+                "^Vote$": "Vote",
               } as Record<string, string | undefined>
             )[claim.primaryType.source];
       if (primaryType === undefined) {

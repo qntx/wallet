@@ -118,6 +118,17 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     claim: { surface: "evm.typed-data", verifyingContract: "seaport" },
     nearMiss: "typed-data-variant",
   },
+  /* Snapshot `Vote` documents under the snapshot 0.1.4 domain (snapshot.js
+     src/sign/{index,types}.ts). */
+  {
+    family: "Snapshot",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "snapshot",
+      primaryType: /^Vote$/,
+    },
+    nearMiss: "typed-data-variant",
+  },
   /* Transfer, CreateAccount, CreateAccountWithSeed and AdvanceNonceAccount of the System program. */
   {
     family: "System",

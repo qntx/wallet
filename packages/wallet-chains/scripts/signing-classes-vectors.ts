@@ -150,9 +150,8 @@ const blindBytes = "The wallet cannot show what this signs. Sign only if you ful
 const blindBytesZh = "钱包无法显示签署的内容。仅在完全信任该应用时签署。";
 const typedCaveat = "The wallet cannot verify what this signature authorises";
 const typedCaveatZh = "钱包无法核实此签名授权的内容";
-const typedCommitment =
-  "It signs only hashes or raw bytes; the wallet cannot see what they commit to";
-const typedCommitmentZh = "只签署哈希或原始字节；钱包无法看到它们所承诺的内容";
+const typedCommitment = "It signs a hash or raw bytes; the wallet cannot see what they commit to";
+const typedCommitmentZh = "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容";
 const typedVariant =
   "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets";
 const typedVariantZh = "钱包认识这类签名，但不认识这种形式；它可能授权转移资产";
@@ -377,13 +376,14 @@ const cases: VectorCase[] = [
         buyTokenBalance: "erc20",
       },
     }),
+    /* appData is a bytes32 commitment leaf: blind until a CoW decoder claims the document. */
     verifiability: "opaque",
-    blind: null,
+    blind: "typed-data-commitment",
     prompt: p(
-      "Confirm signature",
-      "确认签名",
-      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCaveat}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
-      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCaveatZh}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Gnosis Protocol\n${net}\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\n${typedCommitment}\n${typedCaveat}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
+      `应用：Gnosis Protocol\n${netZh}\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n${typedCommitmentZh}\n${typedCaveatZh}\n· sellToken = ${USDC}\n· buyToken = ${WETH}\n· receiver = ${SIGNER}\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x${"00".repeat(32)}\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20`,
     ),
   },
   {

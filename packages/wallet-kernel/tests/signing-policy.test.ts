@@ -500,7 +500,7 @@ describe("blind signing policy", () => {
         title: "Confirm blind signing",
         description:
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeMessage\n` +
-          "It signs only hashes or raw bytes; the wallet cannot see what they commit to\n" +
+          "It signs a hash or raw bytes; the wallet cannot see what they commit to\n" +
           `The wallet cannot verify what this signature authorises\n` +
           `· message = 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
       }),

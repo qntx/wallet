@@ -221,15 +221,15 @@
         }
       },
       "verifiability": "opaque",
-      "blind": null,
+      "blind": "typed-data-commitment",
       "prompt": {
         "en": {
-          "title": "Confirm signature",
-          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nThe wallet cannot verify what this signature authorises\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
+          "title": "Confirm blind signing",
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
         },
         "zh-Hans": {
-          "title": "确认签名",
-          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n钱包无法核实此签名授权的内容\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
+          "title": "确认盲签",
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· sellToken = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n· buyToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n· receiver = 0x2222222222222222222222222222222222222222\n· sellAmount = 1000000\n· buyAmount = 1\n· validTo = 2000000000\n· appData = 0x0000000000000000000000000000000000000000000000000000000000000000\n· feeAmount = 0\n· kind = sell\n· partiallyFillable = false\n· sellTokenBalance = erc20\n· buyTokenBalance = erc20"
         }
       }
     },
@@ -896,11 +896,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· message = 0xabababababababababababababababababababababababababababababababab"
+          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· message = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· message = 0xabababababababababababababababababababababababababababababababab"
+          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· message = 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -1790,11 +1790,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs a hash or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\n· source = a\n· connectionId = 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
         }
       }
     },

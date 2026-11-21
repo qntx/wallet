@@ -1420,14 +1420,14 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       title: "Confirm blind signing",
       description:
         `Network: Ethereum\nVerifying contract ${safe}\nType: SafeMessage\n` +
-        `It signs only hashes or raw bytes; the wallet cannot see what they commit to\n` +
+        `It signs a hash or raw bytes; the wallet cannot see what they commit to\n` +
         `The wallet cannot verify what this signature authorises\n· message = ${hash}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
       description:
         `网络：Ethereum\n验证合约 ${safe}\n类型：SafeMessage\n` +
-        `只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
+        `它签署了哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
         `钱包无法核实此签名授权的内容\n· message = ${hash}`,
     });
   });

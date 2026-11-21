@@ -8,10 +8,10 @@
  */
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+import { hasHiddenCharacters } from "../display.ts";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
-import { hasHiddenCharacters } from "../display.ts";
 import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,

@@ -157,7 +157,8 @@ export type BlindReason =
   // message content that is not readable text: non-UTF-8 bytes, or text with a hazard —
   // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering
   | "message-bytes"
-  | "typed-data-commitment" // typed data whose every leaf is a commitment (a hash or opaque bytes)
+  // unclaimed typed data carrying a hash or raw-bytes leaf the signature does not name
+  | "typed-data-commitment"
   // typed data a recognised family claims, in a shape the decoder does not recognise
   | "typed-data-variant"
   // typed data that cannot be shown in full: an unrecognised document over the leaf budget, or a

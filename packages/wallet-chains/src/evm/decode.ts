@@ -30,6 +30,7 @@ import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
 import type { SafeRecognition } from "./safe.ts";
 import { SEAPORT_ORDER_ITEMS, recognizeSeaport } from "./seaport.ts";
+import { recognizeSnapshot } from "./snapshot.ts";
 import { decodeTokenCall } from "./token-call.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
@@ -453,15 +454,14 @@ const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
 /**
  * The blind reason for a typed-data request, if any. Shown content is never truncated — an order
  * with more items than the prompt lists, or a document over the leaf budget, would silently
- * authorise what it hides, so it blinds the request instead.
+ * authorise what it hides, so it blinds the request instead. `unclaimed` is the blind the caller
+ * computed for a document no recognised family decoded.
  */
 const typedDataBlind = (
   safe: SafeRecognition | undefined,
   seaport: SeaportOrder | undefined,
   app: AppRecognition | undefined,
-  unclaimed: boolean,
-  nearMiss: BlindReason | undefined,
-  shown: NonNullable<ReturnType<typeof typedDataFields>> | undefined,
+  unclaimed: BlindReason | undefined,
 ): BlindReason | undefined => {
   if (safe !== undefined) {
     return (
@@ -478,13 +478,7 @@ const typedDataBlind = (
   if (app !== undefined) {
     return app.blind;
   }
-  if (!unclaimed || nearMiss !== undefined) {
-    return nearMiss;
-  }
-  if (shown === undefined) {
-    return "typed-data-oversize";
-  }
-  return shown.commitment ? "typed-data-commitment" : undefined;
+  return unclaimed;
 };
 
 /** What the signer can guarantee about this request (WD-065). */
@@ -556,12 +550,33 @@ export const decodeEvm = (
           }),
         )
       : undefined;
+  const snapshot =
+    permit === undefined &&
+    seaport === undefined &&
+    safe === undefined &&
+    app === undefined &&
+    recognizeSnapshot(json);
   const unclaimed =
-    permit === undefined && seaport === undefined && safe === undefined && app === undefined;
+    permit === undefined &&
+    seaport === undefined &&
+    safe === undefined &&
+    app === undefined &&
+    !snapshot;
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
-  const shown = unclaimed ? typedDataFields(json) : undefined;
+  /* A recognised vote shows its leaves like an unclaimed document — the family names `proposal`,
+     so an encoded-bytes string there is no commitment. */
+  const shown = unclaimed || snapshot ? typedDataFields(json) : undefined;
   const fields = shown?.fields;
-  const blind = typedDataBlind(safe, seaport, app, unclaimed, nearMiss, shown);
+  const unclaimedBlind =
+    nearMiss ??
+    (unclaimed || snapshot
+      ? shown === undefined
+        ? "typed-data-oversize"
+        : unclaimed && shown.hasCommitment
+          ? "typed-data-commitment"
+          : undefined
+      : undefined);
+  const blind = typedDataBlind(safe, seaport, app, unclaimedBlind);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
