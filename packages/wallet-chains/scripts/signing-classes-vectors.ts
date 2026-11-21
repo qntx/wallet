@@ -626,7 +626,7 @@ const cases: VectorCase[] = [
     ),
   },
   {
-    name: "Seaport OrderComponents, five offers (over the prompt limit)",
+    name: "Seaport OrderComponents, nine offers (over the prompt limit)",
     request: typedData({
       types: {
         EIP712Domain: [
@@ -656,7 +656,7 @@ const cases: VectorCase[] = [
       message: {
         offerer: SIGNER,
         zone: "0x0000000000000000000000000000000000000000",
-        offer: Array.from({ length: 5 }, () => seaportNativeItem),
+        offer: Array.from({ length: 9 }, () => seaportNativeItem),
         consideration: [
           { ...seaportNativeItem, startAmount: "0", endAmount: "0", recipient: SIGNER },
         ],
@@ -674,8 +674,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: Seaport\n${net}\nVerifying contract ${SEAPORT_16}\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n${SIGNER} receives 0 ETH`,
-      `应用：Seaport\n${netZh}\n验证合约 ${SEAPORT_16}\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n${SIGNER} 收到 0 ETH`,
+      `App: Seaport\n${net}\nVerifying contract ${SEAPORT_16}\nType: OrderComponents\n${"Give 1 ETH\n".repeat(8)}… 1 more items not shown\n${SIGNER} receives 0 ETH`,
+      `应用：Seaport\n${netZh}\n验证合约 ${SEAPORT_16}\n类型：OrderComponents\n${"付出 1 ETH\n".repeat(8)}… 还有 1 项未显示\n${SIGNER} 收到 0 ETH`,
     ),
   },
   {

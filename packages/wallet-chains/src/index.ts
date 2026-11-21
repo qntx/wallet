@@ -361,6 +361,25 @@ export type SeaportOrder = {
   readonly consideration: ReadonlyArray<SeaportItem & { readonly recipient: string }>;
 };
 
+/** A recognised off-chain order: what it can take from the maker and the least each recipient gets. */
+export type OffchainOrder = {
+  readonly protocol: "1inch" | "uniswapx" | "cow";
+  /** Whose funds the order spends (EIP-55). */
+  readonly maker: string;
+  /** The most the order can take from the maker. */
+  readonly give: AssetAmount;
+  /** The least each recipient receives when the order fills in full. */
+  readonly receive: ReadonlyArray<{ readonly recipient: string; readonly amount: AssetAmount }>;
+  /** Unix seconds after which it cannot fill; absent when it never expires. */
+  readonly expiry?: number;
+  /** It may fill in parts at the same rate. */
+  readonly partialFill: boolean;
+  /** 1inch: only a taker whose address ends with these 10 bytes (`0x` + 20 hex) may fill. */
+  readonly allowedSender?: string;
+  /** UniswapX: the filler with exclusive rights before decay starts. */
+  readonly exclusiveFiller?: string;
+};
+
 /** A recognized Safe `SafeTx` message. */
 export type SafeTransaction = {
   readonly safe: string;
@@ -536,6 +555,8 @@ export type MessageContent =
       readonly data: Readonly<Record<string, unknown>>;
       /** A recognized Seaport order; only the exact `OrderComponents` shape populates it. */
       readonly seaport?: SeaportOrder;
+      /** A recognised off-chain order (1inch LOP, UniswapX permit-witness, CoW GPv2). */
+      readonly order?: OffchainOrder;
       /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
       readonly safe?: SafeTransaction;
       /** A recognized Hyperliquid user-signed action under the `HyperliquidSignTransaction` domain. */

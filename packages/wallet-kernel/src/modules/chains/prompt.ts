@@ -22,13 +22,14 @@ import type {
   MessageTextHazard,
   SafeTransaction,
   PolymarketContent,
+  OffchainOrder,
   SeaportOrder,
   SignInParse,
   StakeAction,
   TronPermission,
   TronResource,
 } from "@qntx/wallet-chains";
-import { SEAPORT_ORDER_ITEMS } from "@qntx/wallet-chains/evm";
+import { ORDER_ITEMS } from "@qntx/wallet-chains/evm";
 import { networkMeta } from "@qntx/wallet-chains/networks";
 import { tronContractType } from "@qntx/wallet-chains/tron";
 
@@ -119,6 +120,14 @@ type Catalog = {
   readonly tokenInSet: (token: string, root: string) => string;
   readonly zoneRestriction: (zone: string) => string;
   readonly moreItems: (count: number) => string;
+  readonly orderHeader: (name: string, maker: string) => string;
+  readonly orderGiveAtMost: (amount: string) => string;
+  readonly orderReceiveAtLeast: (recipient: string, amount: string) => string;
+  readonly orderExpiry: (date: string) => string;
+  readonly orderNoExpiry: string;
+  readonly orderPartialFill: string;
+  readonly orderAllowedSender: (suffix: string) => string;
+  readonly orderExclusiveFiller: (filler: string) => string;
   readonly safeTransaction: (safe: string, nonce: string) => string;
   readonly safeDelegatecall: (target: string) => string;
   readonly safeRefund: (receiver: string | undefined, amount: string, price: string) => string;
@@ -271,6 +280,14 @@ const zh: Catalog = {
   tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
   zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
   moreItems: (count) => `… 还有 ${count} 项未显示`,
+  orderHeader: (name, maker) => `${name} 订单，挂单方 ${maker}`,
+  orderGiveAtMost: (amount) => `最多付出 ${amount}`,
+  orderReceiveAtLeast: (recipient, amount) => `${recipient} 至少收到 ${amount}`,
+  orderExpiry: (date) => `有效期至 ${date}（UTC）`,
+  orderNoExpiry: "无到期时间",
+  orderPartialFill: "可按同一价格分批成交",
+  orderAllowedSender: (suffix) => `只有地址以 ${suffix} 结尾的吃单方可以成交`,
+  orderExclusiveFiller: (filler) => `${filler} 拥有优先成交的独占权`,
   safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
   safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
   safeRefund: (receiver, amount, price) =>
@@ -494,6 +511,14 @@ const en: Catalog = {
   tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
   zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
   moreItems: (count) => `… ${count} more items not shown`,
+  orderHeader: (name, maker) => `${name} order by ${maker}`,
+  orderGiveAtMost: (amount) => `Give at most ${amount}`,
+  orderReceiveAtLeast: (recipient, amount) => `${recipient} receives at least ${amount}`,
+  orderExpiry: (date) => `Valid until ${date} (UTC)`,
+  orderNoExpiry: "No expiry",
+  orderPartialFill: "Can be filled in parts at the same rate",
+  orderAllowedSender: (suffix) => `Only a taker whose address ends in ${suffix} can fill it`,
+  orderExclusiveFiller: (filler) => `${filler} has the exclusive right to fill it first`,
   safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
   safeDelegatecall: (target) =>
     `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
@@ -1011,11 +1036,8 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
     return start === end ? start : `${start} → ${end}`;
   };
   const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-    lines.length > SEAPORT_ORDER_ITEMS
-      ? [
-          ...lines.slice(0, SEAPORT_ORDER_ITEMS),
-          catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS),
-        ]
+    lines.length > ORDER_ITEMS
+      ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)]
       : lines;
   return [
     ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),
@@ -1023,6 +1045,31 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
       order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item))),
     ),
     ...(order.zone === ZERO_ADDRESS ? [] : [catalog.zoneRestriction(order.zone)]),
+  ];
+}
+
+const ORDER_PROTOCOL_NAME: Readonly<Record<OffchainOrder["protocol"], string>> = {
+  "1inch": "1inch",
+  uniswapx: "UniswapX",
+  cow: "CoW Protocol",
+};
+
+/** The lines of a recognised off-chain order: header, the most it gives, the least each gets. */
+function offchainOrderLines(catalog: Catalog, order: OffchainOrder): ReadonlyArray<string> {
+  return [
+    catalog.orderHeader(ORDER_PROTOCOL_NAME[order.protocol], order.maker),
+    catalog.orderGiveAtMost(formatAmount(catalog, order.give)),
+    ...order.receive.map((leg) =>
+      catalog.orderReceiveAtLeast(leg.recipient, formatAmount(catalog, leg.amount)),
+    ),
+    order.expiry === undefined
+      ? catalog.orderNoExpiry
+      : catalog.orderExpiry(utcDateTime(order.expiry)),
+    ...(order.partialFill ? [catalog.orderPartialFill] : []),
+    ...(order.allowedSender === undefined ? [] : [catalog.orderAllowedSender(order.allowedSender)]),
+    ...(order.exclusiveFiller === undefined
+      ? []
+      : [catalog.orderExclusiveFiller(order.exclusiveFiller)]),
   ];
 }
 
@@ -1052,6 +1099,12 @@ function typedContentLines(
   intent: PromptIntent,
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
+  if (message.order !== undefined) {
+    return [
+      ...intent.approvals.map((change) => approvalLine(catalog, change)),
+      ...offchainOrderLines(catalog, message.order),
+    ];
+  }
   if (message.seaport !== undefined) {
     return orderLines(catalog, message.seaport);
   }

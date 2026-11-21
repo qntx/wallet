@@ -26,10 +26,11 @@ import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
+import { ORDER_ITEMS } from "./order.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
 import type { SafeRecognition } from "./safe.ts";
-import { SEAPORT_ORDER_ITEMS, recognizeSeaport } from "./seaport.ts";
+import { recognizeSeaport } from "./seaport.ts";
 import { recognizeSnapshot } from "./snapshot.ts";
 import { decodeTokenCall } from "./token-call.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
@@ -470,8 +471,7 @@ const typedDataBlind = (
     );
   }
   if (seaport !== undefined) {
-    return seaport.offer.length > SEAPORT_ORDER_ITEMS ||
-      seaport.consideration.length > SEAPORT_ORDER_ITEMS
+    return seaport.offer.length > ORDER_ITEMS || seaport.consideration.length > ORDER_ITEMS
       ? "typed-data-oversize"
       : undefined;
   }

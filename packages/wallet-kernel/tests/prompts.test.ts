@@ -8,7 +8,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { DisplayIntent, IntentWarningKind } from "@qntx/wallet-chains";
+import type { DisplayIntent, IntentWarningKind, OffchainOrder } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
@@ -1663,7 +1663,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
   it("every Seaport item kind renders its token, id or criteria and the zone", () => {
     fc.assert(
       fc.property(
-        fc.array(seaportItem, { minLength: 1, maxLength: 6 }),
+        fc.array(seaportItem, { minLength: 1, maxLength: 9 }),
         fc.array(seaportItem, { maxLength: 2 }),
         fc.oneof(fc.constant(ZERO_EVM_ADDR), seaportAddress),
         (offer, extra, zone) => {
@@ -1678,8 +1678,8 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
           const { description } = chainPrompt("en", typedIntent({ seaport }));
           const lines = description.split("\n");
           const gives = lines.filter((l) => l.startsWith("Give "));
-          expect(gives).toHaveLength(Math.min(offer.length, 4));
-          for (const [i, it] of offer.slice(0, 4).entries()) {
+          expect(gives).toHaveLength(Math.min(offer.length, 8));
+          for (const [i, it] of offer.slice(0, 8).entries()) {
             expectGiveLine(gives[i], it);
           }
           const last = lines.at(-1);
@@ -1928,9 +1928,154 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "Type: OrderComponents",
         "Give 0x3333333333333333333333333333333333333333 #7",
         `${SIGNER} receives 1 ETH → 0.5 ETH`,
-        ...[1, 2, 3].map(() => `${TO} receives 0.000000000000000001 ETH`),
-        "… 1 more items not shown",
+        ...[1, 2, 3, 4].map(() => `${TO} receives 0.000000000000000001 ETH`),
         `Zone ${TO} can restrict or cancel this order`,
+      ].join("\n"),
+    );
+  });
+
+  /* A recognised off-chain order: the document's approvals come first, then the order's
+     header, give, receives and bound lines — without the "other outflows" caveat. */
+  const orderAmount = {
+    asset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    amount: "1500000",
+    decimals: 6,
+    symbol: "USDC",
+  };
+  const orderIntent = (
+    order: OffchainOrder,
+    message: Record<string, unknown>,
+    approvals: PromptIntent["approvals"] = [],
+  ): PromptIntent => ({
+    summary: "swap",
+    outflows: [],
+    approvals,
+    fee: undefined,
+    verifiability: "partial",
+    network: "eip155:1",
+    message: {
+      kind: "typed-data",
+      data: {},
+      order,
+      ...message,
+    } as PromptIntent["message"] & { kind: "typed-data" },
+  });
+
+  it("a UniswapX order follows the take-once permit line", () => {
+    const intent = orderIntent(
+      {
+        protocol: "uniswapx",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: SIGNER, amount: eth("500000000000000000") }],
+        expiry: 1_700_000_000,
+        partialFill: true,
+        exclusiveFiller: TO,
+      },
+      {
+        primaryType: "PermitWitnessTransferFrom",
+        domain: {
+          name: "Permit2",
+          chainId: 1,
+          verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        },
+      },
+      [
+        {
+          kind: "allowance",
+          spender: SPENDER,
+          amount: orderAmount,
+          change: "transfer",
+          unlimited: false,
+          expiration: 0,
+          via: "permit2",
+          verified: false,
+        },
+      ],
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      [
+        "App: Permit2",
+        "Network: Ethereum",
+        "Verifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "Type: PermitWitnessTransferFrom",
+        `Allow ${SPENDER} to take 1.5 USDC once via Permit2`,
+        `UniswapX order by ${SIGNER}`,
+        "Give at most 1.5 USDC",
+        `${SIGNER} receives at least 0.5 ETH`,
+        "Valid until 2023-11-14 22:13 (UTC)",
+        "Can be filled in parts at the same rate",
+        `${TO} has the exclusive right to fill it first`,
+      ].join("\n"),
+    );
+  });
+
+  it("a 1inch order with an allowed sender and no expiry shows both bounds", () => {
+    const intent = orderIntent(
+      {
+        protocol: "1inch",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: TO, amount: eth("500000000000000000") }],
+        partialFill: false,
+        allowedSender: "0x00000000000000000001",
+      },
+      {
+        primaryType: "Order",
+        domain: {
+          name: "1inch Aggregation Router",
+          version: "6",
+          chainId: 1,
+          verifyingContract: SPENDER,
+        },
+      },
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      [
+        "App: 1inch Aggregation Router",
+        "Network: Ethereum",
+        `Verifying contract ${SPENDER}`,
+        "Type: Order",
+        `1inch order by ${SIGNER}`,
+        "Give at most 1.5 USDC",
+        `${TO} receives at least 0.5 ETH`,
+        "No expiry",
+        "Only a taker whose address ends in 0x00000000000000000001 can fill it",
+      ].join("\n"),
+    );
+  });
+
+  it("a CoW order renders the same bounds in Chinese", () => {
+    const intent = orderIntent(
+      {
+        protocol: "cow",
+        maker: SIGNER,
+        give: orderAmount,
+        receive: [{ recipient: TO, amount: eth("500000000000000000") }],
+        expiry: 1_700_000_000,
+        partialFill: true,
+      },
+      {
+        primaryType: "Order",
+        domain: {
+          name: "Gnosis Protocol",
+          version: "v2",
+          chainId: 1,
+          verifyingContract: SPENDER,
+        },
+      },
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      [
+        "应用：Gnosis Protocol",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：Order",
+        `CoW Protocol 订单，挂单方 ${SIGNER}`,
+        "最多付出 1.5 USDC",
+        `${TO} 至少收到 0.5 ETH`,
+        "有效期至 2023-11-14 22:13（UTC）",
+        "可按同一价格分批成交",
       ].join("\n"),
     );
   });
@@ -1976,8 +2121,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "类型：OrderComponents",
         "付出 0x3333333333333333333333333333333333333333 #7",
         `${SIGNER} 收到 1 ETH → 0.5 ETH`,
-        ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
-        "… 还有 1 项未显示",
+        ...[1, 2, 3, 4].map(() => `${TO} 收到 0.000000000000000001 ETH`),
         `区域合约 ${TO} 可限制或取消此订单`,
       ].join("\n"),
     );
@@ -2241,7 +2385,7 @@ describe("near-miss blind prompts", () => {
       message: {
         offerer: SIGNER,
         zone: "0x0000000000000000000000000000000000000000",
-        offer: Array.from({ length: 5 }, () => item),
+        offer: Array.from({ length: 9 }, () => item),
         consideration: [{ ...item, startAmount: "0", endAmount: "0", recipient: SIGNER }],
         orderType: 0,
         startTime: "1700000000",

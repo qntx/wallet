@@ -993,7 +993,7 @@
       }
     },
     {
-      "name": "Seaport OrderComponents, five offers (over the prompt limit)",
+      "name": "Seaport OrderComponents, nine offers (over the prompt limit)",
       "request": {
         "kind": "evm.typed-data",
         "network": "eip155:1",
@@ -1163,6 +1163,34 @@
                 "identifierOrCriteria": "0",
                 "startAmount": "1000000000000000000",
                 "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
               }
             ],
             "consideration": [
@@ -1190,11 +1218,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n0x2222222222222222222222222222222222222222 receives 0 ETH"
+          "description": "App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n0x2222222222222222222222222222222222222222 receives 0 ETH"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n0x2222222222222222222222222222222222222222 收到 0 ETH"
+          "description": "应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n0x2222222222222222222222222222222222222222 收到 0 ETH"
         }
       }
     },
