@@ -258,6 +258,9 @@ type Catalog = {
   readonly signatureDeadline: (date: string) => string;
   readonly fcAddKey: (key: string, fid: string) => string;
   readonly fcKeyRequest: (fid: string, key: string) => string;
+  readonly fiat24SendToAccount: (amount: string, account: string) => string;
+  readonly fiat24Spender: Readonly<Record<"card" | "deposit", string>>;
+  readonly fiat24Function: string;
 };
 
 const zh: Catalog = {
@@ -369,6 +372,11 @@ const zh: Catalog = {
     "delegation-replaced": (message) => message,
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
+    "fiat24-internal-account": (message) =>
+      `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+    "fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
+    "fiat24-unlimited-approval": (role) =>
+      `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -530,6 +538,11 @@ const zh: Catalog = {
   fcAddKey: (key, fid) =>
     `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
   fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`,
+  fiat24SendToAccount: (amount, account) =>
+    `发送 ${amount} 到 Fiat24 账户 #${account}（收款人是交易执行时该账户的持有者）`,
+  fiat24Spender: { card: "（Fiat24 卡）", deposit: "（Fiat24 充值与兑换）" },
+  fiat24Function:
+    "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
 };
 
 const en: Catalog = {
@@ -648,6 +661,12 @@ const en: Catalog = {
     "delegation-replaced": (message) => message,
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
+    "fiat24-internal-account": (message) =>
+      `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+    "fiat24-card-pull": () =>
+      "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
+    "fiat24-unlimited-approval": (role) =>
+      `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up"} contract take your entire balance of this token`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -822,6 +841,11 @@ const en: Catalog = {
   fcAddKey: (key, fid) =>
     `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
   fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`,
+  fiat24SendToAccount: (amount, account) =>
+    `Send ${amount} to Fiat24 account #${account} (whoever holds it when the transaction runs)`,
+  fiat24Spender: { card: " (Fiat24 card)", deposit: " (Fiat24 top-up and exchange)" },
+  fiat24Function:
+    "The wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network",
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -907,7 +931,9 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
     change.expiration === undefined || change.expiration === 0
       ? ""
       : catalog.until(utcDate(change.expiration));
-  return `${line}${via}${until}`;
+  const fiat24 =
+    change.fiat24Spender === undefined ? "" : catalog.fiat24Spender[change.fiat24Spender];
+  return `${line}${via}${until}${fiat24}`;
 }
 
 /**
@@ -987,6 +1013,9 @@ function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<st
     if (blind === "token-function") {
       lines.push(catalog.tokenFunction(contract.symbol ?? contract.address, contract.address));
     }
+    if (blind === "fiat24-function") {
+      lines.push(catalog.fiat24Function);
+    }
     if (blind === "account-code") {
       lines.push(catalog.accountCode);
     }
@@ -1050,13 +1079,15 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ...delegation,
     ...contractLines(catalog, intent),
     ...intent.outflows.map((flow) =>
-      flow.tokenAccount === undefined
-        ? flow.burn === true && intent.family === "solana"
-          ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
-          : flow.burn === true
-            ? catalog.burn(formatAmount(catalog, flow.amount))
-            : catalog.send(formatAmount(catalog, flow.amount), flow.to)
-        : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to),
+      flow.fiat24 === undefined
+        ? flow.tokenAccount === undefined
+          ? flow.burn === true && intent.family === "solana"
+            ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
+            : flow.burn === true
+              ? catalog.burn(formatAmount(catalog, flow.amount))
+              : catalog.send(formatAmount(catalog, flow.amount), flow.to)
+          : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)
+        : catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account),
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
@@ -1257,6 +1288,7 @@ function safeLines(catalog: Catalog, safe: SafeTransaction): ReadonlyArray<strin
     ...safe.calls.flatMap((call) => [
       ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
       ...effectLines(catalog, call),
+      ...warningLines(catalog, call.warnings),
     ]),
     ...(safe.refund === undefined
       ? []

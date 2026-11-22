@@ -6,6 +6,7 @@ import * as fc from "fast-check";
 import { encodeFunctionData, parseAbi, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
+import { hasFiat24Selector, isFiat24Contract } from "../src/evm/fiat24.ts";
 import {
   PERMIT2_ADDRESS,
   checksumEvmAddress,
@@ -247,22 +248,46 @@ describe("an unrecognised function of a table token is blind", () => {
     expect(intent.blind).toBeUndefined();
   });
 
+  /* The Fiat24 cash tokens claim undescribed calls with their own family reason — the
+     "token-function" near-miss applies only to tokens with no richer claim. */
+  const FIAT24_TOKENS = new Set([
+    "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62",
+    "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA",
+    "0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4",
+    "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
+  ]);
+  const tableTokens = (keep: (address: string) => boolean) =>
+    Object.entries(evmTokenTable).flatMap(([chainId, tokens]) =>
+      Object.keys(tokens)
+        .filter(keep)
+        .map((address) => [Number(chainId), address] as const),
+    );
+  const selector = fc
+    .uint8Array({ minLength: 4, maxLength: 4 })
+    .map((b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`)
+    .filter((data) => !STANDARD_SELECTORS.has(data));
+
   it("every table token's unknown selector is blind", () => {
-    const selector = fc
-      .uint8Array({ minLength: 4, maxLength: 4 })
-      .map((b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`)
-      .filter((data) => !STANDARD_SELECTORS.has(data));
-    for (const [chainId, tokens] of Object.entries(evmTokenTable)) {
-      for (const [address] of Object.entries(tokens)) {
-        fc.assert(
-          fc.property(selector, (data) => {
-            expect(decodeEvm(tx(address, data, "0x0", Number(chainId)), SIGNER).blind).toBe(
-              "token-function",
-            );
-          }),
-          { numRuns: 25 },
-        );
-      }
+    for (const [chainId, address] of tableTokens((a) => !FIAT24_TOKENS.has(a))) {
+      fc.assert(
+        fc.property(selector, (data) => {
+          expect(decodeEvm(tx(address, data, "0x0", chainId), SIGNER).blind).toBe("token-function");
+        }),
+        { numRuns: 25 },
+      );
+    }
+  });
+
+  it("a Fiat24 cash token's unknown selector is blind with the Fiat24 reason", () => {
+    for (const [chainId, address] of tableTokens((a) => FIAT24_TOKENS.has(a))) {
+      fc.assert(
+        fc.property(selector, (data) => {
+          expect(decodeEvm(tx(address, data, "0x0", chainId), SIGNER).blind).toBe(
+            "fiat24-function",
+          );
+        }),
+        { numRuns: 25 },
+      );
     }
   });
 });
@@ -1824,7 +1849,12 @@ describe("typed-data near misses of decoded families are blind", () => {
   /** A representative near-miss request for an evm row's claim surface. */
   const nearMissRequest = (claim: FamilyClaim): SignRequest => {
     if (claim.surface === "evm.call") {
-      return tx(USDC, "0xdeadbeef");
+      /* The Fiat24 row's fixture must be claimed by no other row: the cash tokens are also in
+         the token table, so the claim's own surface is the card contract with an unknown
+         selector. */
+      return claim.callee === "fiat24"
+        ? tx("0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14", "0xdeadbeef", "0x0", 42161)
+        : tx(USDC, "0xdeadbeef");
     }
     if (claim.surface === "evm.typed-data" && "domainName" in claim) {
       const pattern = "primaryType" in claim ? claim.primaryType : undefined;
@@ -1885,11 +1915,15 @@ describe("typed-data near misses of decoded families are blind", () => {
   /** The claim check `decodeEvm` runs row by row, evaluated for one request. */
   const claimsFixture = (request: SignRequest, claim: FamilyClaim): boolean => {
     if (claim.surface === "evm.call") {
-      return (
-        request.kind === "evm.transaction" &&
-        request.tx.to !== undefined &&
-        lookupEvmToken(evmTokenTable, request.tx.chainId, request.tx.to) !== undefined
-      );
+      if (request.kind !== "evm.transaction" || request.tx.to === undefined) {
+        return false;
+      }
+      if (claim.callee === "fiat24") {
+        return (
+          isFiat24Contract(request.tx.chainId, request.tx.to) || hasFiat24Selector(request.tx.data)
+        );
+      }
+      return lookupEvmToken(evmTokenTable, request.tx.chainId, request.tx.to) !== undefined;
     }
     if (claim.surface !== "evm.typed-data" || request.kind !== "evm.typed-data") {
       return false;

@@ -193,6 +193,29 @@ export const evmTokenTable: EvmTokenTable = Object.freeze({
     "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC,
     // https://docs.arbitrum.io/for-devs/useful-addresses
     "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH,
+    // Fiat24 cash tokens — issuer's own list
+    // https://docs.fiat24.com/developer/integration-guide/part-1-smart-contracts.md; Sourcify
+    // full match on each implementation and decimals() = 2 read on chain at block 526439604.
+    "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62": Object.freeze({
+      symbol: "USD24",
+      decimals: 2,
+      name: "Fiat24 USD",
+    }),
+    "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA": Object.freeze({
+      symbol: "EUR24",
+      decimals: 2,
+      name: "Fiat24 EUR",
+    }),
+    "0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4": Object.freeze({
+      symbol: "CHF24",
+      decimals: 2,
+      name: "Fiat24 CHF",
+    }),
+    "0x7288Ac74d211735374A23707D1518DCbbc0144fd": Object.freeze({
+      symbol: "CNH24",
+      decimals: 2,
+      name: "Fiat24 CNH",
+    }),
   }),
   "42220": Object.freeze({
     "0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC,

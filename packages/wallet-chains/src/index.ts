@@ -190,7 +190,10 @@ export type BlindReason =
   | "tron-permission-update"
   // a call to a chain's CCTP TokenMessengerV2 that is not a fully described Hyperliquid
   // deposit — an unrecognised burn or hook could send the minted USDC anywhere
-  | "cctp-destination";
+  | "cctp-destination"
+  // an undecoded call of a Fiat24 contract, or a Fiat24-specific selector sent to any
+  // other contract or network
+  | "fiat24-function";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -229,6 +232,11 @@ export type AssetFlow = {
    * SPL account holds, `amount.asset` is that account and the amount is in its base units.
    */
   readonly tokenAccount?: string;
+  /**
+   * The Fiat24 ledger destination the call names when `to` is a cash-token contract: `account` —
+   * the ERC-721 id whose holder when the transaction runs receives the funds.
+   */
+  readonly fiat24?: { readonly account: string };
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -251,6 +259,8 @@ export type ApprovalChange =
       /** Unix seconds after which the allowance lapses (Permit2), when it has one. */
       readonly expiration?: number;
       readonly via?: "permit2" | "allowance-holder";
+      /** The spender is a Fiat24 contract: its card authorisation or top-up/exchange deposit. */
+      readonly fiat24Spender?: "card" | "deposit";
       /** The token is in the built-in table. */
       readonly verified: boolean;
     }
@@ -359,11 +369,16 @@ export type IntentWarningKind =
   | "permit2-witness"
   | "delegation-replaced"
   | "token-2022-transfer-fee"
-  | "token-2022-extension";
+  | "token-2022-extension"
+  | "fiat24-internal-account"
+  | "fiat24-card-pull"
+  | "fiat24-unlimited-approval";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
   readonly message: string;
+  /** "danger" marks a warning for a risk the prompt words itself must carry (callers may escalate). */
+  readonly level?: "danger";
 };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */

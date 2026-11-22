@@ -6,6 +6,7 @@ import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import * as fc from "fast-check";
+import { encodeFunctionData, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, IntentWarningKind, OffchainOrder } from "@qntx/wallet-chains";
@@ -3744,6 +3745,9 @@ describe("requester text lines cannot imitate kernel lines", () => {
     signatureDeadline: ["d"],
     fcAddKey: ["k", "1"],
     fcKeyRequest: ["1", "k"],
+    fiat24SendToAccount: ["1", "10365"],
+    fiat24Spender: [],
+    fiat24Function: [],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {
@@ -3780,5 +3784,169 @@ describe("requester text lines cannot imitate kernel lines", () => {
         false,
       );
     }
+  });
+});
+
+describe("Fiat24 prompts", () => {
+  const USD24 = "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62";
+  const EUR24 = "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA";
+  const CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
+  const DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
+  const SAFE = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+
+  const TOKEN_ABI = parseAbi([
+    "function transferByAccountId(uint256 recipientAccountId, uint256 amount)",
+    "function approve(address spender, uint256 amount)",
+  ]);
+
+  const arbTx = (to: string, data: string, value = "0x0"): PromptIntent =>
+    decodeEvm(
+      {
+        kind: "evm.transaction",
+        network: "eip155:42161",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
+        tx: {
+          type: "eip1559",
+          chainId: 42161,
+          nonce: 0,
+          gas: "0x5208",
+          to,
+          value,
+          data,
+          accessList: [],
+          maxFeePerGas: "0x3b9aca00",
+          maxPriorityFeePerGas: "0x3b9aca00",
+        },
+      },
+      TO,
+    );
+
+  it("transferByAccountId names the Fiat24 account, not an address", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "transferByAccountId",
+      args: [10365n, 20000n],
+    });
+    const intent = arbTx(USD24, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm transfer",
+      description: `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #10365 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toMatchObject({
+      title: "确认转账",
+      description: `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #10365（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("an internal-account transfer carries its warning", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "transferByAccountId",
+      args: [9102n, 20000n],
+    });
+    const intent = arbTx(USD24, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH\nFiat24 account #9102 is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH\nFiat24 账户 #9102 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+    );
+  });
+
+  it("labels a card approval and warns about the pull", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "approve",
+      args: [CARD, 500000n],
+    });
+    const intent = arbTx(EUR24, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nAllow ${CARD} to spend 5000 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n授权 ${CARD} 使用 5000 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你`,
+    );
+  });
+
+  it("an unlimited deposit approval is a danger warning", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "approve",
+      args: [DEPOSIT, maxUint256],
+    });
+    const intent = arbTx(USD24, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nAllow ${DEPOSIT} to spend unlimited USD24 (Fiat24 top-up and exchange)\nMax fee 0.000021 ETH\nDanger: an unlimited allowance lets the Fiat24 top-up contract take your entire balance of this token`,
+    );
+  });
+
+  it("an undescribed Fiat24 call is refused with the Fiat24 reason", () => {
+    const intent = arbTx(CARD, "0xdeadbeef01020304");
+    const prompt = chainPrompt("en", intent);
+    expect(prompt.title).toBe("Confirm blind signing");
+    expect(prompt.description).toBe(
+      `Network: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract ${CARD}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 ${CARD}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    );
+  });
+
+  const SAFE_TX_TYPES = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
+
+  it("a Safe inner call renders its Fiat24 warnings", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "approve",
+      args: [CARD, 500000n],
+    });
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:42161",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
+        typedData: JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            SafeTx: SAFE_TX_TYPES,
+          },
+          primaryType: "SafeTx",
+          domain: { chainId: 42161, verifyingContract: SAFE },
+          message: {
+            to: EUR24,
+            value: "0",
+            data,
+            operation: 0,
+            safeTxGas: "0",
+            baseGas: "0",
+            gasPrice: "0",
+            gasToken: "0x0000000000000000000000000000000000000000",
+            refundReceiver: "0x0000000000000000000000000000000000000000",
+            nonce: "7",
+          },
+        }),
+      },
+      TO,
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nVerifying contract ${SAFE}\nType: SafeTx\nSafe ${SAFE}, transaction 7\nAllow ${CARD} to spend 5000 EUR24 (Fiat24 card)\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n验证合约 ${SAFE}\n类型：SafeTx\nSafe ${SAFE} 的第 7 笔交易\n授权 ${CARD} 使用 5000 EUR24（Fiat24 卡）\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你`,
+    );
   });
 });

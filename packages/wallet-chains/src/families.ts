@@ -15,7 +15,7 @@ import type { BlindReason } from "./index.ts";
 import type { PROGRAM_IDS } from "./solana/ids.ts";
 
 export type FamilyClaim =
-  | { readonly surface: "evm.call"; readonly callee: "token-table" }
+  | { readonly surface: "evm.call"; readonly callee: "token-table" | "fiat24" }
   | { readonly surface: "tron.call"; readonly callee: "token-table" }
   | { readonly surface: "evm.typed-data"; readonly primaryType: RegExp }
   | {
@@ -80,6 +80,14 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     family: "Polymarket deposit wallet",
     claim: { surface: "evm.typed-data", domainName: "DepositWallet" },
     nearMiss: "typed-data-variant",
+  },
+  /* An undecoded call into a pinned Fiat24 contract, or a Fiat24-specific selector sent
+     anywhere else — the claim covers wrong chains, implementations and lookalikes (the ten
+     selectors are collision-free per research §2). */
+  {
+    family: "Fiat24",
+    claim: { surface: "evm.call", callee: "fiat24" },
+    nearMiss: "fiat24-function",
   },
   /* ERC-20/721/1155 transfer, approve and setApprovalForAll selectors to a listed token. */
   {
