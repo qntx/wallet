@@ -102,17 +102,23 @@ const landingApi = (e: Env): TronApi => {
 
 const NOT_NEEDED = { kind: "not-needed" };
 
-const ctx = (e: Env, independent: unknown = NOT_NEEDED): RouteContext => ({
+const ctx = (
+  e: Env,
+  independent: unknown = NOT_NEEDED,
+  now: () => number = () => 1_000_000,
+): RouteContext => ({
   options: {
     networks: {
       tronApi: () => apiOf(e),
+      pinnedTronApi: () => apiOf(e),
       independentTronApi: () => independent,
+      independentPinnedTronApi: () => independent,
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
     random: (n: number) => new Uint8Array(n),
     setTimer: () => () => {},
-    now: () => 1_000_000,
+    now,
     logger: { warn: () => {} },
   },
   transition: async (tx, next) => Promise.resolve({ ...tx, ...next }),
@@ -148,13 +154,13 @@ const info = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
 describe("pollTron", () => {
   it("a row without a hash ends failed", async () => {
     const e = env();
-    const answer = await pollTron(ctx(e), tx({ hash: undefined }));
+    const answer = await pollTron(ctx(e), tx({ hash: undefined }), new Map());
     expect(answer).toStrictEqual({ kind: "ended", state: "failed" });
   });
 
   it("full-node info yields a non-final inclusion", async () => {
     const e = env({ fullInfo: info() });
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toStrictEqual({
       kind: "included",
       state: "confirmed",
@@ -165,7 +171,7 @@ describe("pollTron", () => {
 
   it("solidified info yields a final inclusion", async () => {
     const e = env({ solidInfo: info() });
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toStrictEqual({
       kind: "included",
       state: "confirmed",
@@ -178,7 +184,7 @@ describe("pollTron", () => {
     const e = env({
       solidInfo: info({ receipt: { result: "OUT_OF_ENERGY" }, fee: 12_345_000 }),
     });
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toStrictEqual({
       kind: "included",
       state: "failed",
@@ -190,21 +196,22 @@ describe("pollTron", () => {
 
   it("an unknown transaction is rebroadcast while the solid head is inside expiration", async () => {
     const e = env();
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toStrictEqual([RAW]);
   });
 
-  it("stops rebroadcasting and drops once the solid head passes expiration", async () => {
+  it("a single lagging-primary poll stops rebroadcasting but does not drop", async () => {
     const e = env({ solidTime: 1_060_001 });
-    const answer = await pollTron(ctx(e), tx());
-    expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
+    const answer = await pollTron(ctx(e), tx(), new Map());
+    // One upstream's "solid head past expiration, nothing known" is a claim, not a proof.
+    expect(answer).toBeUndefined();
     expect(e.broadcasts).toHaveLength(0);
   });
 
   it("a solid head exactly at expiration is still inside it — no drop", async () => {
     const e = env({ solidTime: 1_060_000 }); // == tx.tron.expiration
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toStrictEqual([RAW]);
   });
@@ -218,9 +225,18 @@ describe("pollTron", () => {
     const answer = await pollTron(
       {
         ...c,
-        options: { ...c.options, networks: { tronApi: () => wrapped } as never },
+        options: {
+          ...c.options,
+          networks: {
+            tronApi: () => wrapped,
+            pinnedTronApi: () => wrapped,
+            independentTronApi: () => NOT_NEEDED,
+            independentPinnedTronApi: () => NOT_NEEDED,
+          } as never,
+        },
       },
       tx(),
+      new Map(),
     );
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toStrictEqual([RAW]);
@@ -234,9 +250,18 @@ describe("pollTron", () => {
     const answer = await pollTron(
       {
         ...c,
-        options: { ...c.options, networks: { tronApi: () => wrapped } as never },
+        options: {
+          ...c.options,
+          networks: {
+            tronApi: () => wrapped,
+            pinnedTronApi: () => wrapped,
+            independentTronApi: () => NOT_NEEDED,
+            independentPinnedTronApi: () => NOT_NEEDED,
+          } as never,
+        },
       },
       tx(),
+      new Map(),
     );
     expect(answer).toStrictEqual({
       kind: "included",
@@ -246,13 +271,14 @@ describe("pollTron", () => {
     });
   });
 
-  it("an included row reorged off the full node returns reorged", async () => {
+  it("one poll with both infos empty past the row's block no longer reorgs", async () => {
     const e = env({ fullHead: 95 });
     const answer = await pollTron(
       ctx(e),
       tx({ block: { height: 90 }, state: "confirmed", final: false }),
+      new Map(),
     );
-    expect(answer).toStrictEqual({ kind: "reorged" });
+    expect(answer).toBeUndefined(); // a single upstream's claim needs corroboration
   });
 
   it("an included row still on the full node stays put", async () => {
@@ -260,6 +286,7 @@ describe("pollTron", () => {
     const answer = await pollTron(
       ctx(e),
       tx({ block: { height: 90 }, state: "confirmed", final: false }),
+      new Map(),
     );
     expect(answer).toBeUndefined(); // same state, same block — nothing changed
   });
@@ -269,6 +296,7 @@ describe("pollTron", () => {
     const answer = await pollTron(
       ctx(e),
       tx({ block: { height: 90 }, state: "confirmed", final: false }),
+      new Map(),
     );
     expect(answer).toBeUndefined(); // a node behind the persisted block proves nothing
   });
@@ -277,7 +305,7 @@ describe("pollTron", () => {
     const e = env({
       fullInfo: info({ receipt: { result: "REVERT" }, resMessage: "726576657274" }),
     });
-    const answer = await pollTron(ctx(e), tx());
+    const answer = await pollTron(ctx(e), tx(), new Map());
     expect(answer).toStrictEqual({
       kind: "included",
       state: "failed",
@@ -289,7 +317,7 @@ describe("pollTron", () => {
 
   it("a row without raw is not rebroadcast", async () => {
     const e = env();
-    const answer = await pollTron(ctx(e), tx({ raw: undefined }));
+    const answer = await pollTron(ctx(e), tx({ raw: undefined }), new Map());
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toHaveLength(0);
   });
@@ -297,7 +325,11 @@ describe("pollTron", () => {
   it("drops only when the independent API's solid head is past expiration and it knows nothing", async () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_001 });
-    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    const answer = await pollTron(
+      ctx(e, { kind: "available", client: apiOf(ie) }),
+      tx(),
+      new Map(),
+    );
     expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
     expect(e.broadcasts).toHaveLength(0);
   });
@@ -305,7 +337,11 @@ describe("pollTron", () => {
   it("a lagging independent head keeps the transaction submitted", async () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_000 }); // not yet past expiration
-    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    const answer = await pollTron(
+      ctx(e, { kind: "available", client: apiOf(ie) }),
+      tx(),
+      new Map(),
+    );
     expect(answer).toBeUndefined();
     // Past its expiration the bytes could never land — watched, but no longer resent.
     expect(e.broadcasts).toHaveLength(0);
@@ -314,7 +350,11 @@ describe("pollTron", () => {
   it("an independent node that knows the transaction keeps it submitted", async () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_001, solidInfo: info() });
-    const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
+    const answer = await pollTron(
+      ctx(e, { kind: "available", client: apiOf(ie) }),
+      tx(),
+      new Map(),
+    );
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toHaveLength(0);
   });
@@ -324,15 +364,21 @@ describe("pollTron", () => {
     const broken: TronApi = {
       post: async () => Promise.reject(new Error("endpoint down")),
     };
-    const answer = await pollTron(ctx(e, { kind: "available", client: broken }), tx());
+    const answer = await pollTron(ctx(e, { kind: "available", client: broken }), tx(), new Map());
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toHaveLength(0);
   });
 
-  it("an unavailable independent API preserves the primary-only proof", async () => {
+  it("an unavailable independent API falls back to repeated corroboration", async () => {
+    let now = 1_000_000;
     const e = env({ solidTime: 1_060_001 });
-    const answer = await pollTron(ctx(e, { kind: "unavailable" }), tx());
-    expect(answer).toStrictEqual({ kind: "ended", state: "dropped" });
+    const c = ctx(e, { kind: "unavailable" }, () => now);
+    const ev = new Map();
+    await expect(pollTron(c, tx(), ev)).resolves.toBeUndefined();
+    now += 30_000;
+    await expect(pollTron(c, tx(), ev)).resolves.toBeUndefined();
+    now += 30_000; // three consecutive polls spanning 60 s > one solidification period
+    await expect(pollTron(c, tx(), ev)).resolves.toStrictEqual({ kind: "ended", state: "dropped" });
     expect(e.broadcasts).toHaveLength(0);
   });
 });

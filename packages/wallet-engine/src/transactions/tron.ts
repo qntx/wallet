@@ -78,6 +78,19 @@ import type {
 const TRON_TTL_MS = 60_000;
 /** A prepared transaction whose expiry is nearer than this is rebuilt before it is signed. */
 const TRON_STALE_MS = 20_000;
+/**
+ * How long the network takes to solidify a block: java-tron's DposService sorts the active
+ * witnesses' latest block numbers and picks index `int(MAX_ACTIVE_WITNESS_NUM * (1 −
+ * SOLIDIFIED_THRESHOLD))` — `(27 × (1 − 70/100)) = 8`, so at least 19 of 27 witnesses produced
+ * after the solidified block — 19 × 3 s blocks
+ * (consensus/src/main/java/org/tron/consensus/dpos/DposService.java:159-166;
+ * common/src/main/java/org/tron/core/config/Parameter.java:67,70,72). A `dropped`/reorg proof
+ * without a host endpoint must span more than one such period: a solidified head simply lagging
+ * behind the freshest chain view looks exactly like "the transaction is gone".
+ */
+const TRON_SOLIDIFY_MS = 19 * 3000;
+/** Polls corroborating a `dropped`/`reorged` proof without a host endpoint. */
+const TRON_DROP_POLLS = 3;
 /** Keccak256("Transfer(address,address,uint256)") — the TRC-20 Transfer event topic. */
 const TRANSFER_TOPIC = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 /** `balanceOf(address)` selector; the address argument is ABI-padded to 32 bytes. */
@@ -1419,81 +1432,165 @@ export const submitDappTron = async (
 export const pollTron = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
+  evidence: TronDropEvidence,
 ): Promise<TxPoll | undefined> => {
   if (tx.hash === undefined) {
     return { kind: "ended", state: "failed" };
   }
-  const api = ctx.options.networks.tronApi(tx.network);
+  /* Every read of one poll goes through one pinned upstream: a solidified head from one node
+     mixed with infos from another would "prove" a drop or reorg that neither node alone
+     claims. */
+  const api = ctx.options.networks.pinnedTronApi(tx.network);
   const expiration = tx.tron?.expiration;
-  if (tx.block !== undefined) {
-    const head = await headNumber(api);
+  try {
+    if (tx.block !== undefined) {
+      const head = await headNumber(api);
+      const solid = await transactionInfo(api, tx.hash, true);
+      if (solid !== undefined) {
+        evidence.delete(tx.id);
+        return includedPoll(
+          tx,
+          solid.failed ? "failed" : "confirmed",
+          { height: solid.blockNumber },
+          true,
+          solid.failed ? failureMessage(solid) : undefined,
+        );
+      }
+      const info = await transactionInfo(api, tx.hash, false);
+      if (info !== undefined) {
+        evidence.delete(tx.id);
+        return includedPoll(
+          tx,
+          info.failed ? "failed" : "confirmed",
+          { height: info.blockNumber },
+          false,
+          info.failed ? failureMessage(info) : undefined,
+        );
+      }
+      if (head < tx.block.height) {
+        /* The node has not reached the persisted block yet — a lag, not a reorg. */
+        evidence.delete(tx.id);
+        return undefined;
+      }
+      /* Neither node view knows a transaction whose block the head has passed. One upstream can
+         only claim a reorg, never prove it: a configured host endpoint must agree, else the
+         observation has to repeat for a whole solidification period. */
+      const independent = ctx.options.networks.independentPinnedTronApi(tx.network);
+      if (independent.kind === "available") {
+        evidence.delete(tx.id);
+        return (await independentlyReorged(independent.client, tx.hash, tx.block.height))
+          ? { kind: "reorged" }
+          : undefined;
+      }
+      if (corroborated(ctx, evidence, tx)) {
+        evidence.delete(tx.id);
+        return { kind: "reorged" };
+      }
+      return undefined;
+    }
+    const head = await solidHead(api);
     const solid = await transactionInfo(api, tx.hash, true);
     if (solid !== undefined) {
-      return includedPoll(
-        tx,
-        solid.failed ? "failed" : "confirmed",
-        { height: solid.blockNumber },
-        true,
-        solid.failed ? failureMessage(solid) : undefined,
-      );
+      evidence.delete(tx.id);
+      return {
+        kind: "included",
+        state: solid.failed ? "failed" : "confirmed",
+        block: { height: solid.blockNumber },
+        final: true,
+        ...(solid.failed ? { error: failureMessage(solid) } : {}),
+      };
     }
     const info = await transactionInfo(api, tx.hash, false);
     if (info !== undefined) {
-      return includedPoll(
-        tx,
-        info.failed ? "failed" : "confirmed",
-        { height: info.blockNumber },
-        false,
-        info.failed ? failureMessage(info) : undefined,
-      );
+      evidence.delete(tx.id);
+      return {
+        kind: "included",
+        state: info.failed ? "failed" : "confirmed",
+        block: { height: info.blockNumber },
+        final: false,
+        ...(info.failed ? { error: failureMessage(info) } : {}),
+      };
     }
-    return head >= tx.block.height ? { kind: "reorged" } : undefined;
-  }
-  const head = await solidHead(api);
-  const solid = await transactionInfo(api, tx.hash, true);
-  if (solid !== undefined) {
-    return {
-      kind: "included",
-      state: solid.failed ? "failed" : "confirmed",
-      block: { height: solid.blockNumber },
-      final: true,
-      ...(solid.failed ? { error: failureMessage(solid) } : {}),
-    };
-  }
-  const info = await transactionInfo(api, tx.hash, false);
-  if (info !== undefined) {
-    return {
-      kind: "included",
-      state: info.failed ? "failed" : "confirmed",
-      block: { height: info.blockNumber },
-      final: false,
-      ...(info.failed ? { error: failureMessage(info) } : {}),
-    };
-  }
-  /* A transaction neither node knows is dropped only once the solidified head is past its
-     expiration — until then it may still land, so the signed bytes are rebroadcast. */
-  if (expiration !== undefined && head.timestamp > expiration) {
-    const independent = ctx.options.networks.independentTronApi(tx.network);
-    if (independent.kind !== "available") {
-      return { kind: "ended", state: "dropped" };
+    /* A transaction neither node knows is dropped only once the solidified head is past its
+       expiration — until then it may still land, so the signed bytes are rebroadcast. One
+       upstream can only claim that; the independent endpoint must agree, else the observation
+       has to repeat for a whole solidification period. */
+    if (expiration !== undefined && head.timestamp > expiration) {
+      const independent = ctx.options.networks.independentPinnedTronApi(tx.network);
+      if (independent.kind === "available") {
+        if (await independentlyDropped(independent.client, tx.hash, expiration)) {
+          evidence.delete(tx.id);
+          return { kind: "ended", state: "dropped" };
+        }
+        evidence.delete(tx.id);
+      } else if (corroborated(ctx, evidence, tx)) {
+        evidence.delete(tx.id);
+        return { kind: "ended", state: "dropped" };
+      }
+    } else {
+      evidence.delete(tx.id);
     }
-    /* A second node's word is required when one is configured: it must see a solidified head past
-       expiration too and know the transaction on neither its solidity nor its full node. Any
-       dissent or read failure means "not dropped" — the rebroadcast path continues. */
-    if (await independentlyDropped(independent.client, tx.hash, expiration)) {
-      return { kind: "ended", state: "dropped" };
+    /* Never resent bytes are only watched; live ones leave only while the transaction could still
+       be included — past its expiration the node would refuse them anyway. */
+    if (
+      tx.raw !== undefined &&
+      tx.rebroadcast !== false &&
+      (expiration === undefined || head.timestamp <= expiration)
+    ) {
+      await broadcastHex(api, tx.raw).catch(() => "");
     }
+    return undefined;
+  } catch (error) {
+    /* A failed read proves nothing — it also clears any streak the row had collected. */
+    evidence.delete(tx.id);
+    throw error;
   }
-  /* Never resent bytes are only watched; live ones leave only while the transaction could still
-     be included — past its expiration the node would refuse them anyway. */
-  if (
-    tx.raw !== undefined &&
-    tx.rebroadcast !== false &&
-    (expiration === undefined || head.timestamp <= expiration)
-  ) {
-    await broadcastHex(api, tx.raw).catch(() => "");
+};
+
+/**
+ * Corroboration state for a `dropped`/`reorged` proof that has no host endpoint: the first poll
+ * observing the ending condition starts the streak, `since` marks when it began.
+ */
+export type TronDropEvidence = Map<string, { since: number; polls: number }>;
+
+/**
+ * One poll observing the ending condition: returns whether it completes the proof. Without a host
+ * endpoint the same single-upstream picture must hold for `TRON_DROP_POLLS` consecutive polls
+ * spanning more than one solidification period — so the solid head cannot merely lag behind a chain
+ * that knows the transaction.
+ */
+const corroborated = (ctx: RouteContext, evidence: TronDropEvidence, tx: TrackedTransaction) => {
+  const now = ctx.options.now();
+  const streak = evidence.get(tx.id) ?? { since: now, polls: 0 };
+  streak.polls += 1;
+  evidence.set(tx.id, streak);
+  return streak.polls >= TRON_DROP_POLLS && now - streak.since > TRON_SOLIDIFY_MS;
+};
+
+/**
+ * Second-node reorg proof: the independent's full-node head must have passed the persisted block
+ * while neither its solidity nor its full node knows the transaction. Every failure reads as "not
+ * proven".
+ */
+const independentlyReorged = async (
+  api: TronApi,
+  hash: string,
+  height: number,
+): Promise<boolean> => {
+  try {
+    if ((await headNumber(api)) < height) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, true)) !== undefined) {
+      return false;
+    }
+    if ((await transactionInfo(api, hash, false)) !== undefined) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
   }
-  return undefined;
 };
 
 /**

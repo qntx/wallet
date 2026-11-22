@@ -121,7 +121,9 @@ const ctx = (
       options: {
         networks: {
           tronApi: () => w.api,
+          pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
+          independentPinnedTronApi: () => w.independent,
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),

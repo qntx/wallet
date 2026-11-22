@@ -257,7 +257,9 @@ const ctx = (
       options: {
         networks: {
           tronApi: () => w.api,
+          pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
+          independentPinnedTronApi: () => w.independent,
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -474,8 +476,9 @@ describe("prepareDappTron with the SUN.io fixture", () => {
 describe("submitDappTron", () => {
   const signed = async (
     w: World & { api: TronApi },
+    now?: () => number,
   ): Promise<{ ctx: RouteContext; raw: Uint8Array; tx: TrackedTransaction }> => {
-    const { ctx: route } = ctx(w);
+    const { ctx: route } = ctx(w, now);
     const raw = dappRawData();
     const prepared = await prepareDappTron(route, ACCOUNT, NET, raw);
     const tx = await prepared.submit(VERIFY, () => undefined);
@@ -541,11 +544,12 @@ describe("submitDappTron", () => {
   });
 
   it("an observed entry resolves through the poll lifecycle without ever broadcasting", async () => {
+    const now = { t: NOW };
     const w = world();
-    const { ctx: c, tx } = await signed(w);
+    const { ctx: c, tx } = await signed(w, () => now.t);
     expect(tx.raw).toBeUndefined();
     // still submitted: neither node knows the hash yet — and nothing is broadcast
-    await expect(pollTron(c, tx)).resolves.toBeUndefined();
+    await expect(pollTron(c, tx, new Map())).resolves.toBeUndefined();
     expect(w.broadcasts).toHaveLength(0);
     // the solid node proves inclusion → confirmed and final in one step
     const info = {
@@ -555,14 +559,20 @@ describe("submitDappTron", () => {
       receipt: { result: "SUCCESS" },
     };
     w.solidInfo.set(String(tx.hash), info);
-    const poll = await pollTron(c, tx);
+    const poll = await pollTron(c, tx, new Map());
     expect(poll).toMatchObject({ kind: "included", state: "confirmed", final: true });
     expect(w.broadcasts).toHaveLength(0);
     // a second entry never included and past expiration on the solidified head → dropped
     const { tx: tx2 } = await signed(w);
     w.solidInfo.clear();
     w.solidBlock = { number: 200, timestamp: EXPIRATION + 1 };
-    await expect(pollTron(c, tx2)).resolves.toMatchObject({ kind: "ended", state: "dropped" });
+    // no host endpoint configured — one poll claims, three consecutive polls prove
+    const ev = new Map();
+    await expect(pollTron(c, tx2, ev)).resolves.toBeUndefined();
+    now.t += 30_000;
+    await expect(pollTron(c, tx2, ev)).resolves.toBeUndefined();
+    now.t += 30_000;
+    await expect(pollTron(c, tx2, ev)).resolves.toMatchObject({ kind: "ended", state: "dropped" });
     expect(w.broadcasts).toHaveLength(0);
   });
 });

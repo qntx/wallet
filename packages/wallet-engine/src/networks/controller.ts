@@ -11,7 +11,7 @@ import type { CcipRequestParameters, Hex, PublicClient } from "viem";
  */
 import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
-import { tronCaller } from "../chains/tron.ts";
+import { pinnedTronCaller, tronCaller } from "../chains/tron.ts";
 import type { TronApi } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -423,6 +423,14 @@ export class NetworkController extends Controller<NetworkControllerState> {
     return this.independent(network, (hosts) => tronCaller(hosts, this.options.fetch));
   }
 
+  /**
+   * Fresh pinned host-endpoint TRON client — for proofs whose reads must all come from one
+   * upstream.
+   */
+  independentPinnedTronApi(network: string): Independent<TronApi> {
+    return this.independent(network, (hosts) => pinnedTronCaller(hosts, this.options.fetch));
+  }
+
   independentEsplora(network: string): Independent<Esplora> {
     return this.independent(network, (hosts) =>
       esploraClient(hosts, this.options.fetch, {
@@ -461,6 +469,18 @@ export class NetworkController extends Controller<NetworkControllerState> {
       throw new Error(`no rpc endpoint for ${network}`);
     }
     return tronCaller(urls, this.gatewayFetch);
+  }
+
+  /**
+   * Fresh one-upstream TRON client: failover on the first call, then pinned — for a sequence of
+   * reads that must agree with each other.
+   */
+  pinnedTronApi(network: string): TronApi {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no rpc endpoint for ${network}`);
+    }
+    return pinnedTronCaller(urls, this.gatewayFetch);
   }
 
   /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */

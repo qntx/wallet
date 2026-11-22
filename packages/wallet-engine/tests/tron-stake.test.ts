@@ -152,7 +152,9 @@ const ctx = (
       options: {
         networks: {
           tronApi: () => w.api,
+          pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
+          independentPinnedTronApi: () => w.independent,
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -569,7 +571,7 @@ describe("cross-check and tracking", () => {
       fee: 0,
       receipt: { result: "SUCCESS" },
     });
-    const first = await pollTron(c, tx);
+    const first = await pollTron(c, tx, new Map());
     expect(first).toMatchObject({ kind: "included", state: "confirmed", final: false });
     // The solidity node confirms → final.
     w.blockIds.set(104, "dd".repeat(32));
@@ -581,7 +583,7 @@ describe("cross-check and tracking", () => {
       receipt: { result: "SUCCESS" },
     });
     w.headNumber = 104;
-    const second = await pollTron(c, tx);
+    const second = await pollTron(c, tx, new Map());
     expect(second).toMatchObject({ kind: "included", final: true });
     expect(transitions.at(-1)?.tron?.expiration).toBeDefined();
   });
