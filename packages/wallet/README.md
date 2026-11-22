@@ -57,8 +57,11 @@ scheme defines — for `hyperliquid-l1-agent`, the phantom-agent signature over 
 action. A Hyperliquid agent only becomes valid once the owner approves it on Hyperliquid — the
 kernel binds that signature's `agentName` to the recorded validity window — and the private key
 never leaves the enclave. For `hyperliquid-l1-agent` every signature must carry an `expiresAfter`
-at most 60 s after it is made and a nonce within ±60 s of wall time, and a `scheduleCancel` time
-cannot outlive the session's `validUntil`.
+at most 60 s after it is made and a nonce within ±60 s, both measured on the device clock, and a
+`scheduleCancel` time cannot outlive the session's `validUntil`. The kernel has no trusted time: a
+device clock running S ahead of real time stretches the 60 s to S + 60 s of real time. The engine
+refuses to sign when the device is more than 5 s off Hyperliquid's server time, but that check runs
+in the main runtime.
 
 ### React
 
