@@ -138,10 +138,11 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
 
 /**
  * The independent-endpoint cross-check (invariant 2): the reference block id — the chain binding —
- * must be confirmed by the host endpoint, so without one the prepare is refused and its read
- * failure is refused too. The fee-model chain parameters and `extra` (recipient existence, energy
- * estimate) share the failure umbrella: a disagreement refuses the prepare, any other read failure
- * degrades to a `reads-unverified` flag.
+ * must be confirmed by the host endpoint when there is one, and its read failure is refused too.
+ * Without a host endpoint the shared rule decides: a testnet prepare is refused, a mainnet prepare
+ * proceeds flagged `reads-unverified`. The fee-model chain parameters and `extra` (recipient
+ * existence, energy estimate) share the failure umbrella: a disagreement refuses the prepare, any
+ * other read failure degrades to a `reads-unverified` flag.
  */
 const crossCheckTron = async (
   info: NetworkInfo,
@@ -150,8 +151,6 @@ const crossCheckTron = async (
   params: TronChainParams,
   extra?: (api: TronApi) => Promise<void>,
 ): Promise<"reads-unverified" | undefined> => {
-  /* The reference block binds the signed bytes to a chain: if only the gateway can vouch for it,
-     the build is refused — there is no second word. */
   /* The params and contract reads the gateway answered are uncorroborated — a mainnet build
      may proceed flagged reads-unverified, a testnet build is refused by the shared rule. */
   if (independent.kind === "unavailable") {

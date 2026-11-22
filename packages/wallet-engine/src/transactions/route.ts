@@ -500,12 +500,12 @@ export const newRequestId = (random: (n: number) => Uint8Array): string => hexId
 
 /**
  * The chain binding of signed bytes (a TRON reference block, a Solana recent blockhash) is the only
- * thing keeping a transaction off the wrong chain. On a mainnet the gateway's word can be trusted
- * for it: a binding from another chain makes the signature invalid on the mainnet, so an attacker
- * gains nothing beyond what the same signature already permits — the build goes ahead flagged
- * `reads-unverified`. On a testnet the same attack inverts: a binding taken from the mainnet
- * produces a signature valid on the mainnet and moves real value, so a gateway-only testnet build
- * is refused and a host endpoint must be configured.
+ * thing keeping a transaction off the wrong chain. On a mainnet the binding needs no second source:
+ * a binding from another chain makes the signature invalid on the mainnet, so nothing of more value
+ * than the user chose can move — the build goes ahead flagged `reads-unverified`. On a testnet the
+ * same attack inverts: a binding taken from the mainnet produces a signature valid on the mainnet
+ * and moves real value, so a gateway-only testnet build is refused and a host endpoint must be
+ * configured.
  */
 export const assertGatewayOnlyBinding = (info: NetworkInfo, binding: string): void => {
   if (info.testnet) {

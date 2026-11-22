@@ -594,9 +594,6 @@ export const prepareSolanaStake = async (
     if (!primaryVote) {
       throw new ChainError("invalid-request", `${action.vote} is not a current vote account`);
     }
-    if (independent.kind === "unavailable") {
-      flags.push("reads-unverified");
-    }
     if (independent.kind === "available") {
       try {
         if (!(await voteIsCurrent(independent.client, action.vote))) {

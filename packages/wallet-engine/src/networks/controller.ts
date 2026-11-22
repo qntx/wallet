@@ -474,11 +474,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh one-upstream TRON client: failover on the first call, then pinned — for a sequence of
-   * reads that must agree with each other.
-   */
-  /**
-   * `until` bounds throttled-read retries to the transaction's validity window; absent, a 429/503
-   * propagates like every other failure.
+   * reads that must agree with each other. `until` bounds throttled-read retries to the
+   * transaction's validity window; absent, a 429/503 propagates like every other failure.
    */
   pinnedTronApi(network: string, until?: () => number): TronApi {
     const urls = this.endpoints(network);
