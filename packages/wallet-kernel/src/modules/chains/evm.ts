@@ -21,9 +21,9 @@ import { KernelError } from "../../errors.ts";
 import type { EvmKeySource, EvmRequest, ExecuteResult } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 
-/* A Fiat24 session grant signs only with time left: the API's twenty-minute window minus slack,
-   and never an already-past deadline. `now` is the kernel wall clock in milliseconds; the check
-   runs on every pass so a prompt that outlives the window is refused on the sign pass too. */
+/* A Fiat24 session grant signs only inside the API's documented twenty-minute maximum, and never
+   past an already-past deadline. `now` is the kernel wall clock in milliseconds; the check runs on
+   every pass so a prompt that outlives the window is refused on the sign pass too. */
 const FIAT24_SESSION_WINDOW = 1200;
 
 const assertFiat24Deadline = (request: EvmRequest, now: number): void => {

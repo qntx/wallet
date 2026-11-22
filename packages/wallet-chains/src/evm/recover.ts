@@ -1,9 +1,9 @@
-import { utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * Signer recovery for `chain.sign` results: the host re-derives the signer address of the requested
  * transaction, message or typed data and compares it with the account's `wallet.accounts` address —
  * a kernel returning someone else's signature, or a signature over other content, fails closed.
  */
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import * as Authorization from "ox/Authorization";
 import * as Hex from "ox/Hex";
 import * as PersonalMessage from "ox/PersonalMessage";

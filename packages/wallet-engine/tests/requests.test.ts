@@ -1507,32 +1507,24 @@ describe("app origins", () => {
     ).rejects.toThrow("an app request needs a well-formed app id");
   });
 
-  it("an app request signs messages like a dApp one; only the internal origin is refused", async () => {
+  it("an app request may only sign typed data, like an internal one", async () => {
     const w = evmWorld({});
     await w.start();
-    const request = {
-      kind: "evm.personal-message" as const,
-      network: SEPOLIA,
-      account: ACCOUNT,
-      message: new TextEncoder().encode("hello"),
-    };
-    const pending = await w.requests.prepare(
-      {
-        method: "evm-sign",
-        account: ACCOUNT,
-        network: SEPOLIA,
-        request,
-      },
-      APP,
-    );
-    expect(pending.origin).toStrictEqual(APP);
     await expect(
-      w.requests.prepare({
-        method: "evm-sign",
-        account: ACCOUNT,
-        network: SEPOLIA,
-        request,
-      }),
+      w.requests.prepare(
+        {
+          method: "evm-sign",
+          account: ACCOUNT,
+          network: SEPOLIA,
+          request: {
+            kind: "evm.personal-message",
+            network: SEPOLIA,
+            account: ACCOUNT,
+            message: new TextEncoder().encode("hello"),
+          },
+        },
+        APP,
+      ),
     ).rejects.toThrow("an internal request can only sign typed data");
   });
 

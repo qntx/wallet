@@ -1447,10 +1447,26 @@ describe("Fiat24 session grant text", () => {
     await r.destroy();
   });
 
-  it("a raw grant from an app origin carries the blind-signing risk", async () => {
+  const APP_GRANTS = [
+    GRANT,
+    "I agree to access my Fiat24 profile. " +
+      "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+  ];
+
+  /* Apps may only sign typed data, like the internal origin — the raw grant text is refused
+     before it can ride that rule to approval. */
+  it.each(APP_GRANTS)("a raw grant from an app origin is refused: %s", async (text) => {
     const r = await rig();
-    const request = await pendingFor(r, grantRequest(r), { kind: "app", id: "fiat24-test" });
-    expect(request?.origin).toStrictEqual({ kind: "app", id: "fiat24-test" });
+    const input = grantRequest(r);
+    await expect(
+      r.requests.prepare(
+        {
+          ...input,
+          request: { ...input.request, message: new TextEncoder().encode(text) },
+        },
+        { kind: "app", id: "fiat24-test" },
+      ),
+    ).rejects.toThrow("an internal request can only sign typed data");
     await r.destroy();
   });
 
