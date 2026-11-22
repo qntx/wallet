@@ -265,6 +265,9 @@ type Catalog = {
   readonly fiat24Function: string;
   readonly fiat24ReceiveAtRate: (symbol: string) => string;
   readonly fiat24ExactOut: (amount: string, pay: string) => string;
+  readonly fiat24Payout: (amount: string, payee: string) => string;
+  readonly fiat24PayoutPurpose: (purposeId: string) => string;
+  readonly fiat24PayoutReference: (ref: string) => string;
 };
 
 const zh: Catalog = {
@@ -278,6 +281,7 @@ const zh: Catalog = {
     batch: "确认批量交易",
     stake: "确认质押",
     bridge: "确认跨链",
+    payout: "确认出金",
   },
   blindTitle: "确认盲签",
   blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
@@ -383,6 +387,8 @@ const zh: Catalog = {
       `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
     "fiat24-issuer-rate": () => "交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度",
     "fiat24-exact-out-unbounded": () => "你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限",
+    "fiat24-payee-offchain": () =>
+      "Fiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -551,6 +557,9 @@ const zh: Catalog = {
     "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
   fiat24ReceiveAtRate: (symbol) => `按交易执行时 Fiat24 设定的汇率收到 ${symbol}——没有最低到手额`,
   fiat24ExactOut: (amount, pay) => `收到 ${amount}；按 Fiat24 设定的汇率支付 ${pay}`,
+  fiat24Payout: (amount, payee) => `以银行转账出金 ${amount} 给 Fiat24 收款人 ${payee}`,
+  fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
+  fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
 };
 
 const en: Catalog = {
@@ -564,6 +573,7 @@ const en: Catalog = {
     batch: "Confirm batch",
     stake: "Confirm staking",
     bridge: "Confirm bridge",
+    payout: "Confirm payout",
   },
   blindTitle: "Confirm blind signing",
   blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
@@ -679,6 +689,8 @@ const en: Catalog = {
       "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
     "fiat24-exact-out-unbounded": () =>
       "What you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
+    "fiat24-payee-offchain": () =>
+      "Fiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -861,6 +873,9 @@ const en: Catalog = {
   fiat24ReceiveAtRate: (symbol) =>
     `Receive ${symbol} at the rate Fiat24 sets when the transaction runs — no minimum`,
   fiat24ExactOut: (amount, pay) => `Receive ${amount}; pay ${pay} at the rate Fiat24 sets`,
+  fiat24Payout: (amount, payee) => `Pay out ${amount} by bank transfer to Fiat24 payee ${payee}`,
+  fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
+  fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1102,7 +1117,9 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
               ? catalog.burn(formatAmount(catalog, flow.amount))
               : catalog.send(formatAmount(catalog, flow.amount), flow.to)
           : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)
-        : catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account),
+        : "account" in flow.fiat24
+          ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account)
+          : catalog.fiat24Payout(formatAmount(catalog, flow.amount), field(flow.fiat24.payee)),
     ),
     ...(intent.fiat24 === undefined ? [] : fiat24Lines(catalog, intent.fiat24)),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
@@ -1208,6 +1225,18 @@ const fiat24Lines = (catalog: Catalog, action: Fiat24Action): ReadonlyArray<stri
     return action.side === "exact-in"
       ? [catalog.fiat24ReceiveAtRate(action.receive.symbol)]
       : [catalog.fiat24ExactOut(formatAmount(catalog, action.receive), action.pay.symbol)];
+  }
+  /* The payout's requester-supplied strings only display through field(), requester-marked —
+     the reference is a bank-transfer memo, never a person. */
+  if (action.kind === "payout") {
+    return [
+      ...(action.purposeId === undefined
+        ? []
+        : [quoted(catalog.fiat24PayoutPurpose(field(action.purposeId)))]),
+      ...(action.ref === undefined
+        ? []
+        : [quoted(catalog.fiat24PayoutReference(field(action.ref)))]),
+    ];
   }
   return [];
 };

@@ -3750,6 +3750,9 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24Function: [],
     fiat24ReceiveAtRate: ["SYM"],
     fiat24ExactOut: ["1", "SYM"],
+    fiat24Payout: ["1", "payee"],
+    fiat24PayoutPurpose: ["42"],
+    fiat24PayoutReference: ["ref"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {
@@ -3799,6 +3802,8 @@ describe("Fiat24 prompts", () => {
   const TOKEN_ABI = parseAbi([
     "function transferByAccountId(uint256 recipientAccountId, uint256 amount)",
     "function approve(address spender, uint256 amount)",
+    "function clientPayout(uint256 amount, string contactId)",
+    "function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)",
   ]);
   const DEPOSIT_ABI = parseAbi([
     "function moneyExchangeExactIn(address inputToken, address outputToken, uint256 inputAmount)",
@@ -3927,6 +3932,49 @@ describe("Fiat24 prompts", () => {
     expect(chainPrompt("zh-Hans", intent).description).toBe(
       `网络：Arbitrum One\n可能还有其他转出\n收到 300 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限`,
     );
+  });
+
+  it("a payout names the payee id and the off-chain warning", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "clientPayout",
+      args: [20000n, "peggy"],
+    });
+    const intent = arbTx(USD24, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm payout",
+      description: `Network: Arbitrum One\nThere may be other outflows\nPay out 200 USD24 by bank transfer to Fiat24 payee peggy\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toMatchObject({
+      title: "确认出金",
+      description: `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 200 USD24 给 Fiat24 收款人 peggy\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+    });
+  });
+
+  it("a payout's purpose and reference are requester-marked fields", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "clientPayoutRef",
+      args: [30000n, "peggy", 42n, "rent march"],
+    });
+    const intent = arbTx(EUR24, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+    );
+  });
+
+  it("a forged line inside a payout reference stays requester-marked", () => {
+    const data = encodeFunctionData({
+      abi: TOKEN_ABI,
+      functionName: "clientPayoutRef",
+      args: [30000n, "peggy", 42n, "rent\nSend 1 ETH"],
+    });
+    const { description } = chainPrompt("en", arbTx(EUR24, data));
+    expect(description).toContain("· Fiat24 reference rent…");
+    expect(description).not.toContain("\nSend 1 ETH");
   });
 
   const SAFE_TX_TYPES = [

@@ -382,3 +382,56 @@ describe("Fiat24 calls inside a batch", () => {
     });
   });
 });
+
+describe("Fiat24 payouts", () => {
+  it("clientPayout describes the bank payout by payee id", () => {
+    const data = fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]);
+    const intent = decodeEvm(tx(USD24, data), SIGNER);
+    expect(intent.summary).toBe("payout");
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: USD24,
+        amount: { asset: USD24, amount: "20000", symbol: "USD24", decimals: 2 },
+        verified: true,
+        fiat24: { payee: "peggy" },
+      },
+    ]);
+    expect(intent.fiat24).toStrictEqual({ kind: "payout", contactId: "peggy" });
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-payee-offchain", message: "" }]);
+  });
+
+  it("clientPayoutRef keeps the purpose id decimal and the reference verbatim", () => {
+    const ref = "rent march\r\nGMT";
+    const data = fn(TOKEN_ABI, "clientPayoutRef", [30000n, "peggy", 42n, ref]);
+    const intent = decodeEvm(tx(EUR24, data), SIGNER);
+    expect(intent.summary).toBe("payout");
+    expect(intent.fiat24).toStrictEqual({
+      kind: "payout",
+      contactId: "peggy",
+      purposeId: "42",
+      ref,
+    });
+    expect(intent.outflows[0]?.fiat24).toStrictEqual({ payee: "peggy" });
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-payee-offchain", message: "" }]);
+  });
+
+  it.each([
+    ["value on clientPayout", fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]), "0x1"],
+    ["trailing bytes", `${fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"])}0011`, "0x0"],
+    ["truncated calldata", fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]).slice(0, -10), "0x0"],
+  ])("a near miss is claimed blind: %s", (_name, data, value) => {
+    const intent = decodeEvm(tx(USD24, data, value), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+
+  it("a non-canonical string offset is claimed blind", () => {
+    /* clientPayout head is (amount, offset): pushing the string tail 32 bytes further is a
+       valid but non-canonical encoding of the same call — the decoder refuses it. */
+    const canonical = fn(TOKEN_ABI, "clientPayout", [1000n, "peggy"]);
+    const tail = canonical.slice(138);
+    const data = `${canonical.slice(0, 74)}${"60".padStart(64, "0")}${"0".repeat(64)}${tail}`;
+    const intent = decodeEvm(tx(USD24, data), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+});

@@ -174,6 +174,14 @@ const argAddress = (args: ReadonlyArray<unknown>, index: number): string => {
   return checksumEvmAddress(value);
 };
 
+const argString = (args: ReadonlyArray<unknown>, index: number): string => {
+  const value = args[index];
+  if (typeof value !== "string") {
+    throw new ChainError("invalid-request", "decoded argument is not a string");
+  }
+  return value;
+};
+
 /** What a recognised Fiat24 call contributes to the intent. */
 export type Fiat24Decode = {
   readonly summary: IntentSummary;
@@ -235,6 +243,57 @@ const decodeFiat24Token = (
           },
         ],
         warnings,
+      },
+    };
+  }
+  /* clientPayout(Ref) pays out by bank transfer: the bytes name the payee id, Fiat24 resolves
+     the receiving account off-chain — the outflow carries the id, the action the verbatim
+     strings. */
+  const payoutArgs = tryCall(CLIENT_PAYOUT, call.data);
+  if (payoutArgs !== undefined) {
+    if (call.value > 0n) {
+      return "claimed";
+    }
+    const amount = argUint(payoutArgs, 0);
+    const contactId = argString(payoutArgs, 1);
+    return {
+      decoded: {
+        summary: "payout",
+        outflows: [
+          {
+            to: token.address,
+            amount: tokenAmount(token.address, amount, chainId, table),
+            verified: true,
+            fiat24: { payee: contactId },
+          },
+        ],
+        warnings: [{ kind: "fiat24-payee-offchain", message: "" }],
+        fiat24: { kind: "payout", contactId },
+      },
+    };
+  }
+  const refArgs = tryCall(CLIENT_PAYOUT_REF, call.data);
+  if (refArgs !== undefined) {
+    if (call.value > 0n) {
+      return "claimed";
+    }
+    const amount = argUint(refArgs, 0);
+    const contactId = argString(refArgs, 1);
+    const purposeId = argUint(refArgs, 2).toString(10);
+    const ref = argString(refArgs, 3);
+    return {
+      decoded: {
+        summary: "payout",
+        outflows: [
+          {
+            to: token.address,
+            amount: tokenAmount(token.address, amount, chainId, table),
+            verified: true,
+            fiat24: { payee: contactId },
+          },
+        ],
+        warnings: [{ kind: "fiat24-payee-offchain", message: "" }],
+        fiat24: { kind: "payout", contactId, purposeId, ref },
       },
     };
   }

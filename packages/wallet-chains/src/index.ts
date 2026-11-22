@@ -207,7 +207,8 @@ export type IntentSummary =
   | "authorization"
   | "batch"
   | "stake"
-  | "bridge";
+  | "bridge"
+  | "payout";
 
 export type AssetAmount = {
   readonly asset: string;
@@ -234,9 +235,10 @@ export type AssetFlow = {
   readonly tokenAccount?: string;
   /**
    * The Fiat24 ledger destination the call names when `to` is a cash-token contract: `account` —
-   * the ERC-721 id whose holder when the transaction runs receives the funds.
+   * the ERC-721 id whose holder when the transaction runs receives the funds; `payee` — the payee
+   * id whose bank account Fiat24 picks off-chain.
    */
-  readonly fiat24?: { readonly account: string };
+  readonly fiat24?: { readonly account: string } | { readonly payee: string };
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -374,7 +376,8 @@ export type IntentWarningKind =
   | "fiat24-card-pull"
   | "fiat24-unlimited-approval"
   | "fiat24-issuer-rate"
-  | "fiat24-exact-out-unbounded";
+  | "fiat24-exact-out-unbounded"
+  | "fiat24-payee-offchain";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
@@ -394,6 +397,12 @@ export type Fiat24Action =
       readonly side: "exact-out";
       readonly pay: Fiat24Token;
       readonly receive: AssetAmount;
+    }
+  | {
+      readonly kind: "payout";
+      readonly contactId: string;
+      readonly purposeId?: string;
+      readonly ref?: string;
     };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
