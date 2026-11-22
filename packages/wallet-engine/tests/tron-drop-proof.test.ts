@@ -252,6 +252,23 @@ describe("a dropped answer must be proven on one upstream", () => {
     expect(w.broadcasts).toHaveLength(0);
   });
 
+  it("two absent polls spanning a full solidification period still do not drop", async () => {
+    const clock = { t: 1_000_000 };
+    const w = world();
+    w.nodes.a.solidTime = EXPIRATION + 1;
+    const c = ctx(w, NOT_NEEDED, () => clock.t);
+    const evidence = ev();
+    const t = tx();
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    clock.t += SOLIDIFY_MS + 1; // a full period — but only the second observation
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    // The third consecutive observation completes the proof.
+    await expect(pollTron(c, t, evidence)).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
+  });
+
   it("three polls inside one solidification period still do not drop", async () => {
     const clock = { t: 1_000_000 };
     const w = world();

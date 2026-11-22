@@ -386,6 +386,19 @@ describe("an EVM transaction the network never sees", () => {
     expect(b2.nonce).toBe(1);
   });
 
+  it("does not turn stuck while the host endpoint knows the transaction", async () => {
+    const w = world({ gateway: true });
+    const { ctl, timers } = await w.boot();
+    const tx = await sendUnseen(w, ctl);
+    await timers.fire(POLL_MS); // the first unknown sighting starts the window
+    w.independent.known.add(hashOf(tx)); // but the host endpoint saw it land
+    w.clock.t += STUCK_AFTER_MS + 1;
+    await timers.fire(POLL_MS);
+    const row = rowOf(ctl, tx.id);
+    expect(row.state).toBe("submitted");
+    expect(row.stuck).toBeUndefined();
+  });
+
   it("a landed original confirms while its tracked re-send stays live at the next nonce", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();

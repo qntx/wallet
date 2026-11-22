@@ -202,6 +202,27 @@ describe("hyperliquid views after lock", () => {
     await fills.close();
   });
 
+  it("a closed user view's subscribers see the cleared state", async () => {
+    const { live, sockets, confirm } = rig();
+    const fills = live.fills(GROUP);
+    const seen: Array<ReturnType<typeof fills.getState>> = [];
+    fills.subscribe((state) => {
+      seen.push(state);
+    });
+    await tick();
+    const s = sockets[0]!;
+    s.open();
+    confirm(s, s.frames("subscribe")[0]);
+    s.push({
+      channel: "userFills",
+      data: { user: OWNER, fills: [{ tid: 4 }], isSnapshot: true },
+    });
+    await tick();
+    expect(seen.at(-1)?.data).toStrictEqual([{ tid: 4 }]);
+    await fills.close();
+    expect(seen.at(-1)).toStrictEqual(CLEARED);
+  });
+
   it("closing a user view clears the account data it served", async () => {
     const { live, sockets, confirm } = rig();
     const fills = live.fills(GROUP);

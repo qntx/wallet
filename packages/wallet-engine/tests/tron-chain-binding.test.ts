@@ -170,6 +170,24 @@ const hostApi = (
   },
 });
 
+/** A host api that answers everything except `getblockbynum` for one block number. */
+const hostApiFailingNum = (
+  w: World & { answerNode: (path: string, body: unknown) => Promise<unknown> },
+  num: number,
+): TronApi => ({
+  post: async (path, body) => {
+    await Promise.resolve();
+    w.hostPosts.push({ path, body });
+    if (
+      path.endsWith("getblockbynum") &&
+      Number((body as Record<string, unknown>)["num"]) === num
+    ) {
+      throw new TypeError("fetch failed");
+    }
+    return w.answerNode(path, body);
+  },
+});
+
 const ctx = (
   w: World & { api: TronApi },
   now: () => number = () => 1_000_000,
@@ -312,6 +330,16 @@ describe("the reference block must be confirmed by a host endpoint", () => {
       kind: "available",
       client: hostApi(wv, ["/wallet/getblockbynum", "/walletsolidity/getblockbynum"]),
     };
+    await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
+      /could not confirm the reference block/,
+    );
+  });
+
+  it("refuses when only the host endpoint's reference-block read fails", async () => {
+    const wv = world();
+    /* The host answers the genesis check but cannot read block 100 — a failed read is not a
+       confirmation, and flagging the build unverifiable must not let it sign. */
+    wv.independent = { kind: "available", client: hostApiFailingNum(wv, 100) };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
       /could not confirm the reference block/,
     );

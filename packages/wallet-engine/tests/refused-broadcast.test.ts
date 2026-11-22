@@ -91,6 +91,26 @@ describe("a send the node refuses for good", () => {
     expect(w.node.sent).toStrictEqual([raw]);
   });
 
+  it("persists the failed row durably before the refusal is thrown", async () => {
+    const w = evmWorld();
+    const { ctl } = await w.boot();
+    w.refuse();
+    await expect(send(ctl, EVM_SEND)).rejects.toThrow(/insufficient funds/);
+    const a = the(Object.values(ctl.getState().txs), "tracked transaction");
+    expect(a.state).toBe("failed");
+    /* The refusal's row is already durable — a crash before the next bookkeeping flush cannot
+       resurrect the signed row whose bytes the node refused. */
+    const persisted = await w.persistedTx(a.id);
+    expect(persisted).toMatchObject({ state: "failed" });
+    expect(persisted?.["hash"]).toBeUndefined();
+    expect(persisted?.["raw"]).toBeUndefined();
+    const { ctl: ctl2, timers: timers2 } = await w.boot();
+    expect(ctl2.getState().txs[a.id]?.state).toBe("failed");
+    expect(timers2.armed()).toBe(0);
+    await timers2.fire(POLL_MS);
+    expect(w.node.sent).toHaveLength(1);
+  });
+
   it("has its failed row stored by the dedicated retry when the write fails — no sibling needed", async () => {
     const w = evmWorld();
     const { ctl, timers } = await w.boot();
