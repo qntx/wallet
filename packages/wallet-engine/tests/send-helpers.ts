@@ -271,10 +271,11 @@ export const realTimer = (ms: number, fn: () => void): (() => void) => {
 export const fastTimer = (ms: number, fn: () => void): (() => void) =>
   realTimer(Math.ceil(ms / 1000), fn);
 
-/** `setTimer` and `random` for a `NetworkController` that never waits. */
+/** `setTimer`, `random` and `now` for a `NetworkController` that never waits. */
 export const idleNetworkDeps = {
   setTimer: (): (() => void) => () => undefined,
   random: (n: number): Uint8Array => new Uint8Array(n),
+  now: (): number => Date.now(),
 };
 
 const hexOf = (value: string | undefined): Hex => {
