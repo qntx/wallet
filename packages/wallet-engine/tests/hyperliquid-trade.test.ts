@@ -186,7 +186,7 @@ const rig = async (
   timers: ReturnType<typeof manualTimer>,
   answers: FetchAnswers = {},
 ): Promise<{
-  provider: HyperliquidProvider & HyperliquidProviderInternals;
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals;
   signCalls: () => number;
   wallet: Wallet;
   walletId: string;
@@ -279,7 +279,7 @@ const mustPost = (post: Posted | undefined): Posted => {
 const agents = new Map<string, string>();
 
 const createEnabledAgent = async (
-  provider: HyperliquidProvider & HyperliquidProviderInternals,
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals,
   wallet: Wallet,
   walletId: string,
   groupIndex = 0,

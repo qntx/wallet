@@ -256,7 +256,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("polymarket e2e: enable + rest + c
     await requests.init();
     const group = { walletId, groupIndex: 0 };
     const groupState = (): { status?: string; requestId?: string } | undefined =>
-      controller.getState().groups[`${walletId}/0`]?.polymarket;
+      controller.getState().groups[`${walletId}/0`]?.["polymarket"];
     const approve = async (id: string): Promise<void> => {
       try {
         await requests.approve(id, "evm-sign", { verify: VERIFY });
@@ -271,7 +271,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("polymarket e2e: enable + rest + c
       }
     };
     const unsub = controller.store.subscribe((s) => {
-      const id = s.groups[`${walletId}/0`]?.polymarket?.requestId;
+      const id = s.groups[`${walletId}/0`]?.["polymarket"]?.requestId;
       if (id !== undefined) {
         void approve(id).catch(() => undefined);
       }

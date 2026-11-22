@@ -1,4 +1,4 @@
-import { parseDecimal } from "../../decimal.ts";
+import { parseDecimal } from "../spi.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import { deepFreeze } from "./actions.ts";
 import type {

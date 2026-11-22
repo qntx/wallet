@@ -12,10 +12,8 @@
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
 
-import { EngineStoreError } from "../../errors.ts";
-import type { EngineLogger } from "../../events.ts";
-import { readJson } from "../../store/json.ts";
-import type { AppGroup, AppStorage } from "../types.ts";
+import { EngineStoreError, readJson } from "../spi.ts";
+import type { AppGroup, AppStorage, EngineLogger } from "../spi.ts";
 import { PolymarketError } from "./errors.ts";
 
 /** The record name — the signature chain's CAIP-2. */

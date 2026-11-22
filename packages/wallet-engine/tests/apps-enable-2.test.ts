@@ -40,6 +40,7 @@ import {
   finishFlow,
   it,
   kernelAgents,
+  nodeWallet,
   pumpUntil,
   requestId,
   restartableStore,
@@ -49,6 +50,17 @@ import {
   world,
 } from "./apps-helpers.ts";
 import type { World } from "./apps-helpers.ts";
+
+/** A fetch that answers one ready eligibility answer for `apps` and refuses everything else. */
+const eligibilityFetch = (apps: Record<string, string>): typeof globalThis.fetch => {
+  return async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith("/v1/eligibility")) {
+      return Response.json({ country: "US", region: null, apps });
+    }
+    return Promise.reject(new Error(`unstubbed ${url}`));
+  };
+};
 
 const fixture = (name: string): { response: unknown } =>
   JSON.parse(
@@ -385,7 +397,7 @@ describe("builder approval flow", () => {
       (postedAction(w, "order")["action"] as Record<string, unknown>)["builder"],
     ).toBeUndefined();
     // A later approval attaches the builder without a new agent.
-    const approving = w.apps.approveBuilder(w.group, "hyperliquid");
+    const approving = w.provider.approveBuilder(w.group);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
     await pumpUntil(w.timers, () => w.state()?.builder === "approved", 80);
@@ -674,7 +686,7 @@ describe("enable failure and lifecycle gaps", () => {
     // The never-enabled expired agent is deleted and lands on `disabled`, not reauth.
     await w2.apps.reconcile({ walletId: w2.walletId, groupIndex: 42 });
     await until(() => {
-      const rec = w2.apps.getState().groups[`${w2.walletId}/42`]?.["hyperliquid"];
+      const rec = w2.apps.getState().groups[`${w2.walletId}/42`]?.hyperliquid;
       return rec?.status === "disabled";
     }, 15000);
     const remaining = await sessions(w2.wallet).list();
@@ -722,7 +734,7 @@ describe("enable failure and lifecycle gaps", () => {
     });
     await w.apps.reconcile({ walletId: w.walletId, groupIndex: 45 });
     await until(() => {
-      const rec = w.apps.getState().groups[`${w.walletId}/45`]?.["hyperliquid"];
+      const rec = w.apps.getState().groups[`${w.walletId}/45`]?.hyperliquid;
       return rec?.status === "disabled";
     }, 15000);
     agents = await api.list();
@@ -869,7 +881,7 @@ describe("declined builder", () => {
     await done;
     expect(w.state()?.builder).toBe("declined");
 
-    const approving = w.apps.approveBuilder(w.group, "hyperliquid");
+    const approving = w.provider.approveBuilder(w.group);
     await until(() => w.state()?.requestId !== undefined);
     expect(hlKind(w, requestId(w))).toBe("approve-builder-fee");
     await w.approve(requestId(w));
@@ -889,7 +901,7 @@ describe("declined builder", () => {
 
     // Hyperliquid reverted the confirmed fee — the request asks again.
     w.hl.maxBuilderFee = 0;
-    const declining = w.apps.approveBuilder(w.group, "hyperliquid");
+    const declining = w.provider.approveBuilder(w.group);
     await until(() => w.state()?.requestId !== undefined);
     w.requests.reject(requestId(w));
     await declining;
@@ -899,7 +911,7 @@ describe("declined builder", () => {
 
   it("approveBuilder requires an enabled group with a configured builder", async () => {
     const w = await world(43, { builder: BUILDER });
-    await expect(w.apps.approveBuilder(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.provider.approveBuilder(w.group)).rejects.toMatchObject({
       category: "invalid-input",
     });
     await w.destroy();
@@ -908,7 +920,7 @@ describe("declined builder", () => {
     await plain.apps.acknowledgeTerms(plain.group, "hyperliquid");
     const enabled = plain.apps.enable(plain.group, "hyperliquid");
     await finishFlow(plain, enabled, "enabled");
-    await expect(plain.apps.approveBuilder(plain.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(plain.provider.approveBuilder(plain.group)).rejects.toMatchObject({
       category: "invalid-input",
     });
     await plain.destroy();
@@ -961,6 +973,7 @@ describe("app-sourced request origins", () => {
     const contexts = new Map<AppId, AppContext>();
     const stub = (id: AppId): AppDefinition<AppId, unknown> => ({
       id,
+      enableWhen: ["available"],
       create: (context) => {
         contexts.set(id, context);
         return { api: {}, provider: {} as AppProvider };
@@ -970,6 +983,7 @@ describe("app-sourced request origins", () => {
        that mutates its own id cannot re-stamp — registration captured the id beforehand. */
     const mutable: AppDefinition<"polymarket", unknown> = {
       id: "polymarket",
+      enableWhen: ["available"],
       create(context) {
         (this as { id: AppId }).id = "hyperliquid";
         contexts.set("polymarket", context);
@@ -1032,5 +1046,239 @@ describe("app-sourced request origins", () => {
       { kind: "app", id: "polymarket" },
     ]);
     await created.destroy();
+  });
+
+  it("createApps validates each definition's id and enableWhen at registration", () => {
+    const stub = (
+      id: AppId,
+      enableWhen: AppDefinition<AppId, unknown>["enableWhen"] = ["available"],
+    ): AppDefinition<AppId, unknown> => ({
+      id,
+      enableWhen,
+      create: () => ({ api: {}, provider: {} as AppProvider }),
+    });
+    /* A locked wallet never transitions — registration throws before any lifecycle runs. */
+    const options = (apps: ReadonlyArray<AppDefinition<AppId, unknown>>) => ({
+      wallet: {
+        getSnapshot: () => ({ vault: "locked", wallets: [] }),
+        subscribe: () => () => undefined,
+      } as unknown as Wallet,
+      requests: {
+        prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
+        outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
+        reject: () => undefined,
+      },
+      networks: {} as Pick<NetworkController, "client" | "independentClient">,
+      fetch: async () => Promise.reject(new Error("unused")),
+      now: () => 0,
+      setTimer: () => () => undefined,
+      random: (length: number) => new Uint8Array(length),
+      logger: { warn: () => undefined },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      socket: () => ({
+        readyState: 0,
+        send: () => undefined,
+        close: () => undefined,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      }),
+      gateway: { url: "https://gateway.test" },
+      apps,
+    });
+    expect(() => createApps(options([stub("Bad_Id")]))).toThrow(
+      "app Bad_Id must match ^[a-z][a-z0-9-]{1,31}$",
+    );
+    expect(() => createApps(options([stub("hyperliquid"), stub("hyperliquid")]))).toThrow(
+      "app hyperliquid is defined twice",
+    );
+    expect(() => createApps(options([stub("hyperliquid", [])]))).toThrow(
+      'app hyperliquid enableWhen must list "available" and/or "close-only"',
+    );
+    /* A JS caller can declare anything — the cast simulates an untyped definition, which
+       TypeScript itself forbids ("blocked" is never a start availability). */
+    const blocked = {
+      id: "hyperliquid",
+      enableWhen: ["blocked"],
+      create: stub("hyperliquid").create,
+    } as unknown as AppDefinition<AppId, unknown>;
+    expect(() => createApps(options([blocked]))).toThrow(
+      'app hyperliquid enableWhen must list "available" and/or "close-only"',
+    );
+  });
+});
+
+describe("app context accessors and guards", () => {
+  it("availability and groupState read the controller lazily; context.flow binds this app's id", async () => {
+    /* A real wallet so the lifecycle actually unlocks and init runs. The stub app's
+       reconcile writes `enabled`, the fetch stub answers a ready eligibility for it. */
+    const { wallet, walletId } = await nodeWallet();
+    await wallet.vault.unlock(VERIFY).catch(() => undefined);
+    const contexts = new Map<AppId, AppContext>();
+    const group = { walletId, groupIndex: 8 };
+    const provider: AppProvider = {
+      error: (category, message) => Object.assign(new Error(message), { category }),
+      groups: async () => Promise.resolve([group]),
+      reconcile: async (_group, flow) => {
+        await Promise.resolve();
+        flow.write({ status: "enabled" });
+      },
+      enable: async () => Promise.resolve(),
+      renew: async () => Promise.resolve(),
+      disable: async () => Promise.resolve(),
+      cancel: async () => Promise.resolve(),
+    };
+    const stub = (id: AppId): AppDefinition<AppId, unknown> => ({
+      id,
+      enableWhen: ["available"],
+      create: (context) => {
+        contexts.set(id, context);
+        return { api: {}, provider };
+      },
+    });
+    const created = createApps({
+      wallet,
+      requests: {
+        prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
+        outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
+        reject: () => undefined,
+      },
+      networks: {} as Pick<NetworkController, "client" | "independentClient">,
+      fetch: eligibilityFetch({ stubapp: "available" }),
+      now: () => 0,
+      setTimer: () => () => undefined,
+      random: (length) => new Uint8Array(length),
+      logger: { warn: () => undefined },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      socket: () => ({
+        readyState: 0,
+        send: () => undefined,
+        close: () => undefined,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      }),
+      gateway: { url: "https://gateway.test" },
+      apps: [stub("stubapp")],
+    });
+    const context = contexts.get("stubapp");
+    expect(context).toBeDefined();
+    /* Locked and no ready answer yet — the accessors are undefined and a flow refuses. */
+    expect(context!.availability()).toBeUndefined();
+    expect(context!.groupState(group)).toBeUndefined();
+    await expect(context!.flow(group, async () => Promise.resolve())).rejects.toMatchObject({
+      category: "unlock-required",
+    });
+    await until(() => !created.controller.getState().locked);
+    await until(() => created.controller.getState().eligibility.status === "ready");
+    expect(context!.availability()).toBe("available");
+    expect(context!.groupState(group)?.status).toBe("enabled");
+    expect(context!.groupState({ walletId, groupIndex: 9 })).toBeUndefined();
+
+    /* A second flow of the same app on the group is `busy`; the parked flow's writes land
+       once it releases. */
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const parked = context!.flow(group, async (flow) => {
+      flow.write({ status: "enabling" });
+      await gate;
+    });
+    await expect(context!.flow(group, async () => Promise.resolve())).rejects.toMatchObject({
+      category: "busy",
+    });
+    release();
+    await parked;
+    expect(context!.groupState(group)?.status).toBe("enabling");
+
+    /* Eligibility survives the lock — availability keeps answering the last ready value —
+       while the group state goes with the vault. */
+    await wallet.vault.lock();
+    await until(() => created.controller.getState().locked);
+    expect(context!.availability()).toBe("available");
+    expect(context!.groupState(group)).toBeUndefined();
+    await created.destroy();
+  });
+
+  it("the app api's context.flow is busy while a same-app enable runs on the group", async () => {
+    const w = await world(48);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid");
+    void swallow(done);
+    await until(() => w.state()?.requestId !== undefined);
+    /* `approveBuilder` runs through `context.flow` — the parked enable holds the group's
+       hyperliquid busy slot. */
+    await expect(w.provider.approveBuilder(w.group)).rejects.toMatchObject({
+      category: "busy",
+    });
+    await finishFlow(w, done, "enabled");
+    await w.destroy();
+  });
+});
+
+describe("malformed records", () => {
+  it("an old-format controller record with extra keys is skipped as malformed on unlock", async () => {
+    const { walletId } = await nodeWallet();
+    const collections = new Map<string, Map<string, Uint8Array>>([
+      [
+        "apps",
+        new Map<string, Uint8Array>([
+          [
+            `${walletId}/21/hyperliquid`,
+            new TextEncoder().encode(
+              JSON.stringify({
+                termsAcknowledged: true,
+                enabledAgent: "0x00000000000000000000000000000000deadbeef",
+              }),
+            ),
+          ],
+        ]),
+      ],
+    ]);
+    const w = await world(21, { openStore: restartableStore(collections) });
+    /* The exact-keys parse refuses the record — it is logged and never acknowledged, so nothing
+       ever wrote the group's state. */
+    expect(w.warns.some((m) => m.includes("skipped: malformed"))).toBe(true);
+    expect(w.state()).toBeUndefined();
+    await w.destroy();
+  });
+
+  it("a malformed enablement record reads as empty — an expired agent reconciles disabled", async () => {
+    const { walletId } = await nodeWallet();
+    const collections = new Map<string, Map<string, Uint8Array>>([
+      [
+        "apps.hyperliquid",
+        new Map<string, Uint8Array>([
+          [
+            `${walletId}/22/enablement`,
+            new TextEncoder().encode(
+              JSON.stringify({
+                enabledAgent: "0x00000000000000000000000000000000deadbeef",
+                bogus: true,
+              }),
+            ),
+          ],
+        ]),
+      ],
+    ]);
+    const w = await world(22, { openStore: restartableStore(collections) });
+    /* An expired kernel agent: with a valid enabledAgent hint this would reconcile to
+       needs-reauthorization; the malformed record reads as empty, so it lands disabled. */
+    await sessions(w.wallet).create({
+      scheme: "hyperliquid-l1-agent",
+      owner: w.group,
+      scope: "Testnet",
+      name: "qntx-test",
+      validUntil: w.timers.time + DAY,
+    });
+    w.timers.time += 180 * DAY;
+    await w.apps.reconcile(w.group);
+    await until(() => w.state()?.status === "disabled", 2000);
+    expect(w.warns.some((m) => m.includes("hyperliquid enablement"))).toBe(true);
+    await expect(kernelAgents(w)).resolves.toHaveLength(0);
+    await w.destroy();
   });
 });

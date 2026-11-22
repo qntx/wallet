@@ -1,6 +1,6 @@
 import type { HyperliquidL1Action, HyperliquidL1Order } from "@qntx/wallet/protocol";
 
-import { parseDecimal } from "../../decimal.ts";
+import { parseDecimal } from "../spi.ts";
 import { HyperliquidError } from "./errors.ts";
 import type {
   HyperliquidMarkets,

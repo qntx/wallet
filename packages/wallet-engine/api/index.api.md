@@ -899,6 +899,12 @@ export type DappOrigin = BrowserOrigin | WalletConnectOrigin;
 export const dappUrl: (origin: DappOrigin) => string;
 
 // @public (undocumented)
+export type Decimal = {
+    readonly units: bigint;
+    readonly scale: number;
+};
+
+// @public (undocumented)
 export function decodeExitChain(bytes: Uint8Array): SparkExitChain;
 
 // @public
@@ -1121,6 +1127,9 @@ const fiatCurrency: z.ZodMiniEnum<{
     sgd: "sgd";
     usd: "usd";
 }>;
+
+// @public
+export const formatDecimal: (value: Decimal) => string;
 
 // @public
 export type GasPricing =
@@ -1593,6 +1602,9 @@ export class OriginBusyError extends Error {
     constructor(origin: string);
 }
 
+// @public
+export function parseDecimal(text: string): Decimal;
+
 // @public (undocumented)
 export type ParseOptions = {
     readonly network: SparkNetwork;
@@ -1930,6 +1942,9 @@ export type PublicStore = {
 };
 
 // @public
+export const readJson: (bytes: Uint8Array) => unknown;
+
+// @public
 export type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
 
 // @public
@@ -2084,7 +2099,7 @@ export type SessionAccounts = {
 };
 
 // @public
-type SetTimer = (ms: number, fn: () => unknown) => () => void;
+export type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 export type SignatureResult = {
@@ -2551,6 +2566,13 @@ export type StakeValidator = {
 
 // @public
 export type SwapQuote = ZeroExSwapQuote | JupiterSwapQuote;
+
+// @public
+export function timeoutSignal(ms: number, setTimer: SetTimer): {
+    readonly signal: AbortSignal;
+    readonly cancel: () => void;
+    readonly abort: () => void;
+};
 
 // @public (undocumented)
 export type TokenBalance = {

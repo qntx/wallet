@@ -75,3 +75,9 @@ export type {
   PolymarketMarketData,
 } from "./live.ts";
 export type { PolymarketFunding, PolymarketFundingOutcome } from "./funding.ts";
+export type {
+  PolymarketAccountState,
+  PolymarketDetail,
+  PolymarketGroupState,
+  PolymarketStep,
+} from "./state.ts";

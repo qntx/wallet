@@ -4,10 +4,8 @@ import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 
-import type { EvmFeeTier } from "../../chains/evm.ts";
-import type { EngineLogger } from "../../events.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type { AppRequests, EngineLogger, EvmFeeTier } from "../spi.ts";
 import { createHyperliquidAccount } from "./account.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import { createHyperliquidActions } from "./actions.ts";
@@ -70,6 +68,11 @@ export type HyperliquidProvider = {
   readonly quote: HyperliquidQuote;
   /** The skew/nonce clock the transport feeds — exposed so callers can gate signing on it. */
   readonly clock: HyperliquidClock;
+  /**
+   * Ask an enabled group for the builder fee approval it declined or never gave — `invalid-input`
+   * while the group is not `enabled` or no builder is configured.
+   */
+  readonly approveBuilder: (group: HyperliquidGroup) => Promise<void>;
   /**
    * L1 trading: every method signs the exact action it posts through `sessions(wallet).sign` with
    * the group's enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
@@ -344,7 +347,7 @@ const preview = (price: string, size: string, szDecimals: number): HyperliquidQu
 
 export function createHyperliquidProvider(
   options: HyperliquidProviderOptions,
-): HyperliquidProvider & HyperliquidProviderInternals {
+): Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals {
   const clock = createHyperliquidClock(options.now);
   const transport = createHyperliquidTransport({ ...options, clock });
   const config = { transport };

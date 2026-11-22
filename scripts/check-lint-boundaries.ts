@@ -419,6 +419,31 @@ const PROBES: Probe[] = [
     expect: "clean",
   },
 
+  // An app provider reaches the engine only through src/apps/spi.ts — by path or by self-import —
+  // and nothing outside its own directory imports a provider.
+  {
+    file: "packages/wallet-engine/src/apps/hyperliquid/__lint_probe_app_spi__.ts",
+    source: importing("../../timer.ts"),
+    expect: fires(),
+  },
+  {
+    /* Two findings pin both rules that fire here: app-provider-spi and prices-display-only
+       (the engine root reaches prices). */
+    file: "packages/wallet-engine/src/apps/hyperliquid/__lint_probe_app_spi_name__.ts",
+    source: importing("@qntx/wallet-engine"),
+    expect: fires(2),
+  },
+  {
+    file: "packages/wallet-engine/src/apps/__lint_probe_app_spi_reverse__.ts",
+    source: importing("./hyperliquid/errors.ts"),
+    expect: fires(),
+  },
+  {
+    file: "packages/wallet-engine/src/apps/hyperliquid/__lint_probe_app_spi_control__.ts",
+    source: importing("../spi.ts"),
+    expect: "clean",
+  },
+
   // An import the checker cannot resolve fails closed.
   {
     file: "packages/wallet-engine/src/__lint_probe_l__.ts",

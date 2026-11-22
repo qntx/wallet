@@ -5,8 +5,8 @@
  * is injected.
  *
  * `createApps` builds the `AppsController` (enablement state, terms acknowledgement, lifecycle on
- * the wallet's lock state) over the app definitions the host lists — providers come from the
- * `apps/hyperliquid` and `apps/polymarket` sub-entries, so a host bundles only the apps it uses.
+ * the wallet's lock state) over the app definitions the host lists — providers come from per-app
+ * sub-entries, so a host bundles only the apps it uses.
  */
 export { createApps } from "./controller.ts";
 export type { AppsController, CreateAppsOptions } from "./controller.ts";
@@ -15,10 +15,22 @@ export type {
   AppApis,
   AppContext,
   AppDefinition,
+  AppDetail,
+  AppError,
+  AppFlow,
   AppGroup,
+  AppGroupBase,
+  AppGroupPatch,
+  AppGroups,
   AppGroupState,
   AppId,
   AppInstance,
+  AppNetworks,
+  AppProvider,
+  AppRequests,
+  AppsEligibility,
+  AppStates,
   AppsState,
+  AppStatus,
   AppStorage,
 } from "./types.ts";

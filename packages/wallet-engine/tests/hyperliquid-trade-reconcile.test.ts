@@ -276,7 +276,7 @@ const rig = async (
     readonly sockets?: FakeSocket[];
   } = {},
 ): Promise<{
-  provider: HyperliquidProvider & HyperliquidProviderInternals;
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals;
   wallet: Wallet;
   walletId: string;
 }> => {
@@ -327,7 +327,7 @@ const pump = async (timers: Timers, steps = 1): Promise<void> => {
 let agentAddress: string | undefined;
 
 const enable = async (
-  provider: HyperliquidProvider & HyperliquidProviderInternals,
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals,
   wallet: Wallet,
   walletId: string,
 ): Promise<{ address: string; group: { walletId: string; groupIndex: number } }> => {
@@ -1192,7 +1192,7 @@ describe("hyperliquid trade — wire actions", () => {
 
   const wire = async (
     run: (
-      provider: HyperliquidProvider & HyperliquidProviderInternals,
+      provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals,
       group: { walletId: string; groupIndex: number },
     ) => Promise<unknown>,
     answers: Parameters<typeof serve>[2] = {},

@@ -11,6 +11,9 @@ import * as z from 'zod/mini';
 export function accepts(schema: z.ZodMiniType, value: unknown): boolean;
 
 // @public
+export const APP_ID: RegExp;
+
+// @public
 export type AppAvailability = "available" | "close-only" | "blocked";
 
 // @public (undocumented)

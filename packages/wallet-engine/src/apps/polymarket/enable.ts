@@ -12,10 +12,15 @@
 
 import { toHex } from "viem";
 
-import type { EngineLogger } from "../../events.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppProvider, AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type {
+  AppFlow,
+  AppGroup,
+  AppProvider,
+  AppRequests,
+  EngineLogger,
+  SetTimer,
+} from "../spi.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import {
   CONDITIONAL_TOKENS,
@@ -35,6 +40,7 @@ import type { PolymarketBuilder } from "./provider.ts";
 import { createPolymarketRelayer, batchTypedData } from "./relayer.ts";
 import type { PolymarketRelayer, RelayerCall } from "./relayer.ts";
 import { clobApiKeyResponse } from "./schemas.ts";
+import type { PolymarketAccountState, PolymarketDetail } from "./state.ts";
 import { derivePolymarketWallets } from "./wallets.ts";
 import type { PolymarketAccount } from "./wallets.ts";
 
@@ -135,7 +141,7 @@ const accountRef = (group: AppGroup) => ({
 });
 
 /** The state's `account` view of a locate result — positions reads scope to `wallet`. */
-const stateAccount = (account: PolymarketAccount): NonNullable<AppGroupState["account"]> => ({
+const stateAccount = (account: PolymarketAccount): PolymarketAccountState => ({
   wallet: account.wallet,
   kind: account.kind,
   deployed: account.deployed,
@@ -150,13 +156,17 @@ const errorOf = (error: unknown): { category: string; message: string } =>
         message: error instanceof Error ? error.message : String(error),
       };
 
-const fail = (flow: AppFlow, category: PolymarketErrorCategory, message: string): never => {
+const fail = (
+  flow: AppFlow<PolymarketDetail>,
+  category: PolymarketErrorCategory,
+  message: string,
+): never => {
   flow.write({ error: { category, message } });
   throw new PolymarketError(category, message);
 };
 
 /** Run `body`; a stale flow stops writing but a thrown error still surfaces to the caller. */
-const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> => {
+const guard = async (flow: AppFlow<PolymarketDetail>, body: () => Promise<void>): Promise<void> => {
   try {
     await body();
   } catch (error) {
@@ -180,7 +190,9 @@ export type PolymarketEnableOptions = {
   readonly logger: EngineLogger;
 };
 
-export function createPolymarketEnable(options: PolymarketEnableOptions): AppProvider {
+export function createPolymarketEnable(
+  options: PolymarketEnableOptions,
+): AppProvider<PolymarketDetail> {
   const http = createPolymarketHttp({
     fetch: options.fetch,
     setTimer: options.setTimer,
@@ -204,7 +216,7 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
    */
   const signTypedData = async (
     group: AppGroup,
-    flow: AppFlow,
+    flow: AppFlow<PolymarketDetail>,
     typedData: string,
   ): Promise<`0x${string}`> => {
     const pending = await options.requests.prepare({
@@ -279,7 +291,7 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
   };
 
   /** The enable state machine — every step writes; a failure leaves a resumable state. */
-  const enableFlow = async (group: AppGroup, flow: AppFlow): Promise<void> => {
+  const enableFlow = async (group: AppGroup, flow: AppFlow<PolymarketDetail>): Promise<void> => {
     if (flow.current().status !== "enabling") {
       flow.write({ status: "enabling", step: "locate-wallet", error: undefined });
     }
@@ -371,7 +383,7 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
   };
 
   /** The facts-only status reconcile derives — never opens a request. */
-  const reconcileFlow = async (group: AppGroup, flow: AppFlow): Promise<void> => {
+  const reconcileFlow = async (group: AppGroup, flow: AppFlow<PolymarketDetail>): Promise<void> => {
     const account = await options.account.locate(group);
     const written = stateAccount(account);
     if (account.kind === "safe") {
@@ -415,7 +427,6 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
   };
 
   return {
-    id: "polymarket",
     error: (category, message) =>
       new PolymarketError(
         /* The controller's `unavailable` is the jurisdiction gate — Polymarket reports it as
@@ -426,13 +437,6 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
     groups: options.credentials.groups,
     reconcile: async (group, flow) => guard(flow, async () => reconcileFlow(group, flow)),
     enable: async (group, flow) => guard(flow, async () => enableFlow(group, flow)),
-    approveBuilder: async () => {
-      await Promise.resolve();
-      throw new PolymarketError(
-        "invalid-input",
-        "Polymarket has no builder fee approval — the builder is the host's relayer signer",
-      );
-    },
     renew: async () => {
       await Promise.resolve();
       throw new PolymarketError(

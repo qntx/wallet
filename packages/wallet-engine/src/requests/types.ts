@@ -6,6 +6,8 @@
  */
 import type { SignRequest } from "@qntx/wallet-chains";
 
+import { APP_ID } from "../gateway/contract/eligibility.ts";
+
 export type ChainRequestMethod =
   | "send"
   | "speed-up"
@@ -86,8 +88,6 @@ export const isDappOrigin = (value: unknown): value is DappOrigin => {
 /** The dApp origin a request origin carries, if any — an app origin is never one. */
 export const dappOf = (origin: RequestOrigin): DappOrigin | undefined =>
   origin.kind === "browser" || origin.kind === "walletconnect" ? origin : undefined;
-
-const APP_ID = /^[a-z][a-z0-9-]{1,31}$/;
 
 /** The exact persisted shape of an app origin; `prepare` also validates an `AppOrigin` with it. */
 export const isAppOrigin = (value: unknown): value is AppOrigin =>

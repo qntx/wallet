@@ -13,7 +13,7 @@
  */
 import type * as z from "zod/mini";
 
-import type { AppGroup } from "../types.ts";
+import type { AppGroup } from "../spi.ts";
 import { DATA_HOST } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketHttp } from "./http.ts";

@@ -12,12 +12,11 @@ import type { ISubscription, ISubscriptionTransport } from "@nktkas/hyperliquid"
 
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import type { SetTimer } from "../../timer.ts";
-import { createAppSocketCore } from "../socket.ts";
-import type { AppSocket, AppSocketStatus } from "../socket.ts";
+import { createAppSocketCore } from "../spi.ts";
+import type { AppSocket, AppSocketStatus, SetTimer } from "../spi.ts";
 
 /* AppSocket moved to the shared core — re-exported for the paths tests and apps/index.ts import. */
-export type { AppSocket } from "../socket.ts";
+export type { AppSocket } from "../spi.ts";
 
 export type HyperliquidSocketOptions = {
   readonly network: HyperliquidNetwork;

@@ -38,7 +38,7 @@ import type {
 
 import type { Wallet } from "@qntx/wallet";
 
-import type { SetTimer } from "../../timer.ts";
+import type { SetTimer } from "../spi.ts";
 import type { HyperliquidGroup } from "./agents.ts";
 import type { HyperliquidSocket } from "./socket.ts";
 import { payloadContains } from "./socket.ts";

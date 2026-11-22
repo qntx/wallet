@@ -9,7 +9,7 @@
  * `proxyAddress` disagrees with our own CREATE2 derivation is refused (`unavailable`): the
  * relayer's address is never adopted over ours.
  */
-import type { SetTimer } from "../../timer.ts";
+import type { SetTimer } from "../spi.ts";
 import { DEPOSIT_WALLET_FACTORY, RELAYER_HOST } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketHttp } from "./http.ts";

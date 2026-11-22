@@ -5,8 +5,8 @@ import type { Wallet } from "@qntx/wallet";
 import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
-import { formatDecimal, parseDecimal } from "../../decimal.ts";
-import type { SetTimer } from "../../timer.ts";
+import { formatDecimal, parseDecimal } from "../spi.ts";
+import type { SetTimer } from "../spi.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import type { HyperliquidAgent, HyperliquidAgentRegistry, HyperliquidGroup } from "./agents.ts";
 import { MAX_SKEW_MS } from "./clock.ts";

@@ -34,7 +34,7 @@ import {
   RELAYER_HOST,
 } from "../src/apps/polymarket/constants.ts";
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
-import type { PolymarketBuilder } from "../src/apps/polymarket/provider.ts";
+import type { PolymarketBuilder, PolymarketProvider } from "../src/apps/polymarket/provider.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { AppGroup } from "../src/apps/types.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
@@ -433,6 +433,14 @@ const record = async (w: PmWorld): Promise<Record<string, unknown>> => {
     await tick();
   }
   return {};
+};
+
+const requirePm = (w: PmWorld): PolymarketProvider => {
+  const { pm } = w;
+  if (pm === undefined) {
+    throw new Error("world has no polymarket api");
+  }
+  return pm;
 };
 
 describe("polymarket enable — happy path", () => {
@@ -954,7 +962,7 @@ describe("polymarket enable — gates and controller integration", () => {
     await w1.apps.acknowledgeTerms(w1.group, "polymarket");
     await until(() => w1.pmState()?.termsAcknowledged === true);
     /* A fresh controller over the same store must find the polymarket record — the record key
-       is parsed with isAppId, not a hard-coded app name. */
+       is checked against the registered ids, not a hard-coded app name. */
     const w2 = await pmWorld({ transactions: [], nonce: "0", approvals: [] }, { openStore });
     await until(() => w2.pmState()?.termsAcknowledged === true);
     expect(w2.pmState()?.termsAcknowledged).toBe(true);
@@ -967,32 +975,13 @@ describe("polymarket enable — gates and controller integration", () => {
     });
   });
 
-  it("approveBuilder is refused — Polymarket has no builder fee approval", async () => {
+  it("has no approveBuilder — Polymarket has no builder fee approval", async () => {
     const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
-    deployBeacon(w);
-    await importCreds(w);
-    await w.apps.reconcile(w.group);
-    await until(() => w.pmState()?.status === "enabled");
-    const calls = w.calls.length;
-    const attempt = w.apps.approveBuilder(w.group, "polymarket");
-    await expect(attempt).rejects.toBeInstanceOf(PolymarketError);
-    await expect(attempt).rejects.toMatchObject({ category: "invalid-input" });
-    /* The refusal is immediate — no HTTP, no approval request. */
-    expect(w.calls).toHaveLength(calls);
-    expect(Object.keys(w.requests.getState().requests)).toHaveLength(0);
-    await deleteCreds(w);
-  });
-
-  it("approveBuilder on a disabled group is refused before the provider runs", async () => {
-    const w = await pmWorld({ transactions: [], nonce: "0", approvals: [] });
-    const calls = w.calls.length;
-    const attempt = w.apps.approveBuilder(w.group, "polymarket");
-    await expect(attempt).rejects.toBeInstanceOf(PolymarketError);
-    await expect(attempt).rejects.toMatchObject({
-      category: "invalid-input",
-      message: "the group is not enabled",
-    });
-    expect(w.calls).toHaveLength(calls);
+    /* Neither the generic controller nor the Polymarket api exposes it — the relayer's builder
+       is the host's signer, never a user approval. */
+    expect("approveBuilder" in w.apps).toBe(false);
+    expect("approveBuilder" in requirePm(w)).toBe(false);
+    await w.destroy();
   });
 
   it("cancel rejects the open request and lands on the reconciled state", async () => {

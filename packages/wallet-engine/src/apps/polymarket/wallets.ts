@@ -29,7 +29,7 @@ import {
   padHex,
 } from "viem";
 
-import type { NetworkController } from "../../networks/controller.ts";
+import type { AppNetworks } from "../spi.ts";
 import {
   DEPOSIT_WALLET_BEACON,
   DEPOSIT_WALLET_FACTORY,
@@ -176,7 +176,7 @@ const emptyCode = (code: string | undefined): boolean =>
 
 export function createPolymarketWallets(
   http: PolymarketHttp,
-  networks: Pick<NetworkController, "client" | "independentClient">,
+  networks: AppNetworks,
 ): PolymarketWallets {
   const deployed = async (address: `0x${string}`, type: "WALLET" | "SAFE"): Promise<boolean> => {
     const answer = await http.request(

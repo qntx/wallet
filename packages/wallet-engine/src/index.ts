@@ -6,6 +6,11 @@ export { EngineStoreError } from "./errors.ts";
 export type { EngineErrorCode } from "./errors.ts";
 export type { EngineCollection, EngineStore, PublicStore } from "./store/port.ts";
 export { createMemoryEngineStore, createMemoryPublicStore } from "./store/memory.ts";
+export { formatDecimal, parseDecimal } from "./decimal.ts";
+export type { Decimal } from "./decimal.ts";
+export { readJson } from "./store/json.ts";
+export { timeoutSignal } from "./timer.ts";
+export type { SetTimer } from "./timer.ts";
 export { ConnectionController } from "./connect/controller.ts";
 export type {
   AccountGroup as ConnectionAccountGroup,

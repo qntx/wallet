@@ -20,7 +20,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64url } from "@scure/base";
 import type * as z from "zod/mini";
 
-import type { AppGroup } from "../types.ts";
+import type { AppGroup } from "../spi.ts";
 import { CLOB_HOST } from "./constants.ts";
 import { decodeSecret } from "./credentials.ts";
 import type { PolymarketCredentialStore, PolymarketCredentials } from "./credentials.ts";

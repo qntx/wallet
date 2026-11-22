@@ -20,9 +20,8 @@ import {
 
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { SignatureResult } from "../../transactions/route.ts";
-import type { AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type { AppRequests, SignatureResult } from "../spi.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import type { HyperliquidGroup } from "./agents.ts";
 import type { HyperliquidClock } from "./clock.ts";

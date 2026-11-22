@@ -64,3 +64,9 @@ export type {
   UserRateLimitResponse,
   UserRoleResponse,
 } from "./account.ts";
+export type {
+  HyperliquidDetail,
+  HyperliquidGroupAgent,
+  HyperliquidGroupState,
+  HyperliquidStep,
+} from "./state.ts";

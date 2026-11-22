@@ -269,6 +269,75 @@ unverified.
 
 Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
 
+## Writing an app provider
+
+An app provider is an `AppDefinition<Id, Api, D>`: a small factory the host lists in
+`createApps({ apps: […] })`. `tests/migration/app-provider.ts` is a complete example — a
+`"example-notes"` provider that registers a per-group handle — importing only the public
+package entries.
+
+```ts
+export const exampleNotes = (
+  config,
+): AppDefinition<"example-notes", ExampleNotesApi, ExampleNotesDetail> => ({
+  id: "example-notes", // ^[a-z][a-z0-9-]{1,31}$
+  enableWhen: ["available"],
+  create: (context) => ({ api, provider }),
+});
+```
+
+- `id` is validated at `createApps` — it must match `^[a-z][a-z0-9-]{1,31}$` — and so is
+  `enableWhen`: the eligibility answers under which `enable`/`renew` may start. `"blocked"` is
+  never allowed, and an unknown, error or absent answer refuses too (eligibility fails closed).
+- `create(context)` runs once per `createApps` and returns `{ api, provider, unlock?, lock?,
+  close? }`. `api` is whatever the host calls (`apps["example-notes"]`); `provider` is the
+  lifecycle contract below; the hooks fire on vault unlock, lock and teardown.
+
+**Group state.** The controller owns `AppGroupBase` — `status`, `termsAcknowledged`,
+`requestId`, `error` — and merges the app's detail `D` flat on top:
+`AppGroupState<D> = AppGroupBase & Partial<D>`. `D` must satisfy `AppDetail`: a detail key may
+not redefine a controller field. A `flow.write({ … })` patch may carry `undefined` to clear a
+field; `termsAcknowledged` is the host's alone — providers cannot write it. The controller
+persists only that flag per group and never reads detail; the eligibility overlay rewrites
+`disabled` ↔ `unavailable` only, so an enabled group stays enabled when a region blocks.
+
+**Provider.** `{ error, groups, reconcile, enable, renew, disable, cancel }`:
+
+- `error(category, message)` maps the controller's categories (`"unavailable"`,
+  `"unlock-required"`, `"busy"`, `"invalid-input"`) to the app's own error class.
+- `groups` lists the groups that may hold state (usually `context.storage.groups`).
+- `reconcile(group, flow)` derives status from app storage after unlock — it owns what a reload
+  cannot prove.
+- `enable(group, flow)`/`renew` run the enabling flow under `enableWhen`;
+  `disable(group, options, flow)` (`options.revoke` for server-side revocation) and
+  `cancel(group, flow)` (reject a pending `requestId`, then reconcile) are never gated.
+- Every provider method receives an `AppFlow<D>`: `flow.current()` is the live group state,
+  `flow.write(patch)` merges it, `flow.stale()` reports the flow lost the group. Only one flow
+  per group + app runs at a time — a second call throws `busy` — and a lock or a newer flow
+  silently drops a stale write.
+
+**Context.** `create` receives an `AppContext<D>` with injected I/O — `requests`, `networks`,
+`fetch`, `now`, `setTimer`, `random`, `logger`, `socket`, `storage` — so a provider touches no
+globals. Requests it opens are stamped `{ kind: "app", id }`; an app cannot choose its origin.
+`storage` is the `apps.<id>` collection of the store the host supplies: group-scoped keys
+(`get`/`put`/`delete(group, name)`), closed while the vault is locked, pruned with deleted
+wallets. `context.availability()` is the app's value under the last ready eligibility answer —
+it outlives a lock, so market views keep working — `context.groupState(group)` is the live
+`AppGroupState<D>` (`undefined` while locked or absent), and `context.flow(group, run)` runs an
+api action under the same unlock and busy guards the provider methods get.
+
+**Signing.** An app signs only through the request pipeline — requests attributed to it with
+origin `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a
+kernel session scheme; it never holds a private key. Credentials that cannot authorize moving
+value (API keys, HMAC secrets, bearer tokens) may live in `storage`.
+
+**Inside this repo** providers live under `src/apps/<app>/` and may import only
+`src/apps/spi.ts` — enforced by the check-boundaries `app-provider-spi` rule, type-only edges
+included. Every runtime value the SPI re-exports is also a public export of
+`@qntx/wallet-engine` or `@qntx/wallet-engine/apps`, so an external provider loses nothing;
+`createAppSocketCore` is the one exception and stays in-tree until the providers leave the
+package.
+
 ## Hyperliquid
 
 `@qntx/wallet-engine/apps` is a separate entry point: the `AppsController` and the composition
@@ -315,8 +384,10 @@ await apps.destroy();
 ```
 
 `apps.controller` is a `HostController<AppsState>` (the usual `store` facade) with
-`acknowledgeTerms`, `enable`, `renew`, `approveBuilder`, `disable`, `cancel` and
-`refreshEligibility`; the providers are `apps.hyperliquid` and `apps.polymarket`. The full
+`acknowledgeTerms`, `enable`, `renew`, `disable`, `cancel` and
+`refreshEligibility`; the providers are `apps.hyperliquid` and `apps.polymarket`. A group's
+entry in the controller's `groups` map is typed by the listed app —
+`HyperliquidGroupState` for Hyperliquid, `PolymarketGroupState` for Polymarket. The full
 composition — engine, apps, approvals, orders, live views — is in `tests/migration/hyperliquid.ts`
 and `tests/migration/polymarket.ts`.
 
@@ -325,13 +396,14 @@ and `tests/migration/polymarket.ts`.
 Each account group enables the app once: `acknowledgeTerms(group, "hyperliquid")` records the
 terms acknowledgement, then `enable(group, "hyperliquid")` creates a kernel-held agent key and
 opens an `ApproveAgent` approval request on `engine.requests`. The group's
-`AppGroupState` tells the host what to show:
+`HyperliquidGroupState` tells the host what to show:
 
 - `status: "enabling"` — a flow is running; `step` narrows it
   (`"approve-agent"`, `"verify"`, `"approve-builder"`) and `requestId` names the request to render.
   A flow interrupted by a lock or a reload resumes where it stopped on the next unlock.
-- `status: "enabled"` — trades sign with `agent` (address, `validUntil`, `renewalDue` when the
-  180-day validity window is close enough that a host should offer `renew`).
+- `status: "enabled"` — trades sign with `agent` (address, `validUntil`); `renewalDue`, written
+  once the group is enabled, is true when the 180-day validity window is close enough that a
+  host should offer `renew`.
 - `status: "needs-reauthorization"` — the agent is gone, expired or rejected by Hyperliquid;
   `renew` re-authorizes.
 - `status: "unavailable"` — eligibility says the app is blocked in this jurisdiction. The
@@ -405,7 +477,7 @@ An optional `hyperliquid({ builder })` attaches `{ b, f }` to signed order actio
 after the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured)
 and this session confirmed `maxBuilderFee` still covers it. Declining the approval still finishes
 `enabled` with `builder: "declined"` (orders carry no builder); the decline persists across
-unlock, renew and re-enable until `controller.approveBuilder(group, "hyperliquid")` obtains an
+unlock, renew and re-enable until `apps.hyperliquid.approveBuilder(group)` obtains an
 approval. There is no default fee, the attached rate is never above the approved one, and
 `feeRateTenthsBps` is 1–100 (tenths of a basis point, 0.1–10 bp).
 

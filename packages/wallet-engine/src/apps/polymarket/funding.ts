@@ -13,10 +13,8 @@
  */
 import { toHex } from "viem";
 
-import type { EvmFeeTier } from "../../chains/evm.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppGroup, AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type { AppGroup, AppRequests, EvmFeeTier, SetTimer } from "../spi.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PUSD } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
