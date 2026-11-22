@@ -84,6 +84,13 @@ const SOLANA_REFUSED =
   /^Transaction simulation failed|signature verification failure|precompile verification failure|^invalid transaction/i;
 
 /**
+ * The margin `submittedAt` gets when the nonce account's history must reach back before it:
+ * device-clock skew against a block's `blockTime` — the larger the margin, the more conservative
+ * the `dropped` proof.
+ */
+const SOLANA_HISTORY_SKEW_MS = 600_000;
+
+/**
  * What a failed `sendTransaction` says about the bytes. A preflight "Blockhash not found" is the
  * node lagging behind the blockhash, not the transaction: it stays unknown until the blockhash
  * expiry settles it.
@@ -886,10 +893,9 @@ export const pollSolana = async (
        It is read at finalized before the status, so a value that advanced between the reads can
        never be finalised `dropped` by an answer a stale bank produced. A lookup-loaded account
        cannot be read back, so that transaction is only ever settled by landing. */
+    const nonceAccount = tx.durableNonce.account;
     const nonce =
-      tx.durableNonce.account === undefined
-        ? undefined
-        : await solana.nonceValue(rpc, tx.durableNonce.account);
+      nonceAccount === undefined ? undefined : await solana.nonceValue(rpc, nonceAccount);
     const status = await solana.signatureStatus(rpc, tx.hash);
     const { entry } = status;
     if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
@@ -901,18 +907,40 @@ export const pollSolana = async (
       };
     }
     /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
-       read has no entry at any commitment: the nonce was consumed by something else — `dropped`
-       proven. Anything else — the value still ours, a processed-only entry, a status bank behind
-       the nonce read, an unreadable account — proves nothing and stays tracked. */
+       read has no entry at any commitment. A null status is not yet the drop: the status lookup
+       only reaches back as far as the node's ledger, so a transaction that consumed the nonce
+       long ago can still read absent. The nonce account's own signature history is the proof:
+       ours listed settles the transaction from that entry; absent is `dropped` only when the
+       listing provably reaches back before we submitted — an entry whose blockTime predates
+       `submittedAt` by more than the clock-skew margin. A short, young or blockTime-less
+       listing, or a failed read, proves nothing: keep tracking (never rebroadcast — the nonce
+       is consumed). */
     if (
       nonce !== undefined &&
       nonce.value !== tx.durableNonce.value &&
       status.entry === undefined &&
       status.slot !== undefined &&
       nonce.slot !== undefined &&
-      status.slot >= nonce.slot
+      status.slot >= nonce.slot &&
+      nonceAccount !== undefined
     ) {
-      return { kind: "ended", state: "dropped" };
+      const history = await solana.signaturesForAddress(rpc, nonceAccount).catch(() => undefined);
+      const ours = history?.find((e) => e.signature === tx.hash);
+      if (ours !== undefined) {
+        return {
+          kind: "included",
+          state: ours.err === null || ours.err === undefined ? "confirmed" : "failed",
+          block: { height: ours.slot },
+          final: ours.confirmationStatus === "finalized",
+        };
+      }
+      const coversWindow =
+        history?.some(
+          (e) =>
+            e.blockTime !== undefined &&
+            e.blockTime * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS,
+        ) === true;
+      return coversWindow ? { kind: "ended", state: "dropped" } : undefined;
     }
     const consumed = nonce !== undefined && nonce.value !== tx.durableNonce.value;
     if (!consumed && tx.raw !== undefined && tx.rebroadcast !== false) {

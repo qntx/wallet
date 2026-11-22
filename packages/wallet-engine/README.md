@@ -145,7 +145,9 @@ transaction for thirty minutes the row turns `stuck: true` — still `submitted`
 nonce or inputs, polled at the finality interval — and the host should offer `speed-up` /
 `cancel`. A row recovered from a broadcast whose outcome never settled carries
 `rebroadcast: false`: watched, never resent. TRON and Solana keep proof-based expiry (chain
-expiration, blockhash / durable-nonce validity).
+expiration, blockhash / durable-nonce validity). A durable-nonce transaction is `dropped` only
+when the nonce account's signature history provably covers the window since submission and
+still does not list the transaction — a trimmed ledger can make a landed send read absent.
 
 Chain binding on the gateway path: when the gateway serves a TRON or Solana network, the value
 that binds the signed bytes to the chain — TRON's reference block, Solana's recent blockhash —
