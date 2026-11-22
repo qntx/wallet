@@ -162,13 +162,7 @@ const recordKeys = (): Uint8Array =>
   );
 
 const freshSession = (keys: Uint8Array): Session =>
-  sessionFromKeys(
-    keys,
-    hex(vec.identity.compressed),
-    hex(vec.cert),
-    "test",
-    new Uint8Array(8),
-  );
+  sessionFromKeys(keys, hex(vec.identity.compressed), hex(vec.cert), "test", new Uint8Array(8));
 
 describe("SELECT and OPEN request", () => {
   it("encodes the SELECT APDU", () => {
@@ -184,7 +178,7 @@ describe("SELECT and OPEN request", () => {
   it("wipes invalid draws and keeps drawing", () => {
     const drawn = [new Uint8Array(32), hex(vec.hostPrivate)];
     let index = 0;
-    const { apdu, secret } = openRequest(() => drawn[index++] ?? new Uint8Array(0));
+    const { apdu, secret } = openRequest(() => requireCase(drawn[index++]));
     expect(index).toBe(2);
     expect(allZero(requireCase(drawn[0]))).toBe(true);
     expect(bytesToHex(apdu)).toBe(vec.request);
@@ -197,7 +191,7 @@ describe("SELECT and OPEN request", () => {
     let calls = 0;
     const random = () => {
       calls += 1;
-      return drawn[(calls - 1) % drawn.length] ?? new Uint8Array(0);
+      return requireCase(drawn[(calls - 1) % drawn.length]);
     };
     expect(cardError(() => openRequest(random))).toBe("invalid-input");
     expect(calls).toBe(8);
@@ -262,6 +256,14 @@ describe("openResponse (oracle)", () => {
       openResponse(hex(open.hostPrivate), hex(open.request), hex(v.response), [oracleAnchor], []),
     );
     expect(error?.code).toBe("card-not-genuine");
+  });
+
+  it("rejects a sub-2-byte OPEN response without a status word", () => {
+    const error = capture(() =>
+      openResponse(hex(open.hostPrivate), hex(open.request), hex("90"), [oracleAnchor], []),
+    );
+    expect(error?.code).toBe("card-not-genuine");
+    expect(error?.sw).toBeUndefined();
   });
 
   it("passes the outer status word through on a non-9000 OPEN response", () => {
@@ -347,29 +349,23 @@ describe("record layer (record.json)", () => {
     session.close();
   });
 
-  it.each(record.rejectedCommands)(
-    "never produces the card-side reject $name",
-    (v) => {
-      const session = freshSession(recordKeys());
-      const apdu = session.wrap(statusInner());
-      expect(bytesToHex(apdu)).not.toBe(v.apdu);
-      session.close();
-    },
-  );
+  it.each(record.rejectedCommands)("never produces the card-side reject $name", (v) => {
+    const session = freshSession(recordKeys());
+    const apdu = session.wrap(statusInner());
+    expect(bytesToHex(apdu)).not.toBe(v.apdu);
+    session.close();
+  });
 
-  it.each(record.rejectedResponses)(
-    "$name breaks the session and wipes the keys",
-    (v) => {
-      const keys = recordKeys();
-      const session = freshSession(keys);
-      wrapTo(session, v.ctr + 1);
-      unwrapTo(session, keys, v.ctr);
-      const error = capture(() => session.unwrap(hex(v.rapdu)));
-      expect(error?.code).toBe("session-broken");
-      expect(session.closed).toBe(true);
-      expect(allZero(keys)).toBe(true);
-    },
-  );
+  it.each(record.rejectedResponses)("$name breaks the session and wipes the keys", (v) => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    wrapTo(session, v.ctr + 1);
+    unwrapTo(session, keys, v.ctr);
+    const error = capture(() => session.unwrap(hex(v.rapdu)));
+    expect(error?.code).toBe("session-broken");
+    expect(session.closed).toBe(true);
+    expect(allZero(keys)).toBe(true);
+  });
 
   it("passes the outer status word through session-broken", () => {
     const keys = recordKeys();
@@ -401,13 +397,24 @@ describe("session lifecycle", () => {
     expect(cardError(() => session.unwrap(hex("9000")))).toBe("session-broken");
   });
 
+  it.each([
+    ["one-byte response", "90"],
+    ["status-only response", "9000"],
+    ["ciphertext not a multiple of 16", "ff".repeat(27)],
+  ])("rejects a malformed %s", (_name, raw) => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    expect(cardError(() => session.unwrap(hex(raw)))).toBe("session-broken");
+    expect(session.closed).toBe(true);
+    expect(allZero(keys)).toBe(true);
+  });
+
   it("tears down after an inner 6F00 response", () => {
     const keys = recordKeys();
     const session = freshSession(keys);
     session.wrap(statusInner());
-    const { data, sw } = session.unwrap(
-      responseRecord(keys, 0, new Uint8Array(0), 0x6f00),
-    );
+    const { data, sw } = session.unwrap(responseRecord(keys, 0, new Uint8Array(0), 0x6f00));
     expect(sw).toBe(0x6f00);
     expect(data).toHaveLength(0);
     expect(session.closed).toBe(true);
@@ -430,29 +437,37 @@ describe("session lifecycle", () => {
   });
 
   it.each([
-    ["short keys", new Uint8Array(63), hex(vec.identity.compressed), hex(vec.cert), new Uint8Array(8)],
+    [
+      "short keys",
+      new Uint8Array(63),
+      hex(vec.identity.compressed),
+      hex(vec.cert),
+      new Uint8Array(8),
+    ],
     ["short identity", recordKeys(), new Uint8Array(32), hex(vec.cert), new Uint8Array(8)],
-    ["short cert", recordKeys(), hex(vec.identity.compressed), new Uint8Array(96), new Uint8Array(8)],
+    [
+      "short cert",
+      recordKeys(),
+      hex(vec.identity.compressed),
+      new Uint8Array(96),
+      new Uint8Array(8),
+    ],
     ["short tag", recordKeys(), hex(vec.identity.compressed), hex(vec.cert), new Uint8Array(7)],
   ])("rejects sessionFromKeys with %s", (_name, keys, identity, cert, tag) => {
     expect(cardError(() => sessionFromKeys(keys, identity, cert, "t", tag))).toBe("invalid-input");
   });
 
-  it(
-    "tears down after the response that consumes ctr 0xFFFF",
-    { timeout: 120_000 },
-    () => {
-      const keys = recordKeys();
-      const session = freshSession(keys);
-      for (let i = 0; i <= 0xffff; i += 1) {
-        session.wrap(statusInner());
-        session.unwrap(responseRecord(keys, i, new Uint8Array(0), 0x9000));
-      }
-      expect(session.closed).toBe(true);
-      expect(allZero(keys)).toBe(true);
-      expect(cardError(() => session.wrap(statusInner()))).toBe("session-broken");
-    },
-  );
+  it("tears down after the response that consumes ctr 0xFFFF", { timeout: 120_000 }, () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    for (let i = 0; i <= 0xffff; i += 1) {
+      session.wrap(statusInner());
+      session.unwrap(responseRecord(keys, i, new Uint8Array(0), 0x9000));
+    }
+    expect(session.closed).toBe(true);
+    expect(allZero(keys)).toBe(true);
+    expect(cardError(() => session.wrap(statusInner()))).toBe("session-broken");
+  });
 
   it("rejects the wrap after ctr 0xFFFF", { timeout: 60_000 }, () => {
     const keys = recordKeys();

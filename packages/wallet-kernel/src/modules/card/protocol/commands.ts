@@ -79,9 +79,6 @@ const PATH_HARDENED = 0x80000000;
 const CHUNK = 236;
 
 function inner(name: CommandName, p1: number, p2: number, data: Uint8Array): Inner {
-  if (data.length > CHUNK) {
-    throw new CardError("invalid-input", "inner command data exceeds 236 bytes");
-  }
   return { name, ins: INS[name], p1, p2, data };
 }
 

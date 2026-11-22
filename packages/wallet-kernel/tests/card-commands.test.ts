@@ -543,27 +543,51 @@ describe("oracle transcript", () => {
     expect(info.members.map(bytesToHex)).toStrictEqual(transcript.walletInfo.members);
 
     const secp = run("public-key-secp256k1");
-    expect(bytesToHex(decode.publicKey(result(secp.inner, secp.response)).publicKey)).toBe(
-      transcript.ecdsa.publicKey,
-    );
+    const ecdsaKey = decode.publicKey(result(secp.inner, secp.response)).publicKey;
+    expect(bytesToHex(ecdsaKey)).toBe(transcript.ecdsa.publicKey);
 
-    run("sign-ecdsa");
+    const signed = run("sign-ecdsa");
+    const ecdsaResult = decode.ecdsa(
+      result(signed.inner, signed.response),
+      hex(transcript.ecdsa.digest),
+      ecdsaKey,
+      [],
+    );
+    expect(bytesToHex(ecdsaResult.signature)).toBe(transcript.ecdsa.signature);
 
     const taproot = run("public-key-taproot");
-    expect(bytesToHex(decode.publicKey(result(taproot.inner, taproot.response)).publicKey)).toBe(
-      transcript.bip340.internalKey,
-    );
+    const taprootKey = decode.publicKey(result(taproot.inner, taproot.response)).publicKey;
+    expect(bytesToHex(taprootKey)).toBe(transcript.bip340.internalKey);
 
-    run("sign-bip340");
-    run("public-key-ed25519");
-    run("ed25519-begin");
+    const schnorred = run("sign-bip340");
+    expect(
+      bytesToHex(
+        decode.bip340(
+          result(schnorred.inner, schnorred.response),
+          hex(transcript.bip340.message),
+          taprootKey,
+          hex(transcript.bip340.tweak),
+        ),
+      ),
+    ).toBe(transcript.bip340.signature);
+
+    const edPublic = run("public-key-ed25519");
+    const encodedA = decode.weiPoint(result(edPublic.inner, edPublic.response));
+    const began = run("ed25519-begin");
+    const encodedR = decode.weiPoint(result(began.inner, began.response));
 
     for (const name of ["ed25519-update-0", "ed25519-update-1"]) {
       const update = run(name);
       decode.empty(result(update.inner, update.response));
     }
     const finish = run("ed25519-finish");
-    expect(bytesToHex(result(finish.inner, finish.response))).toBe(exchange("ed25519-finish").data);
+    const edSignature = decode.ed25519(
+      result(finish.inner, finish.response),
+      encodedR,
+      encodedA,
+      hex(transcript.ed25519.message),
+    );
+    expect(bytesToHex(edSignature)).toBe(transcript.ed25519.signature);
 
     const changed = run("change");
     decode.empty(result(changed.inner, changed.response));
@@ -679,6 +703,10 @@ describe("decode.walletInfo / decode.created", () => {
 });
 
 describe("decode guards", () => {
+  it("decodes a blank status", () => {
+    expect(decode.status(hex("0100"))).toStrictEqual({ life: "blank", tries: 0 });
+  });
+
   it.each([
     ["empty", new Uint8Array(0)],
     ["one byte", new Uint8Array(1)],

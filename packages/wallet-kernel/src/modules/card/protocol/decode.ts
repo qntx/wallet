@@ -5,13 +5,24 @@
  * with `invalid-input`.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { HDKey } from "@scure/bip32";
 
-import { validPoint } from "./bytes.ts";
+import { validPoint, validUncompressedPoint } from "./bytes.ts";
 import { checkOthers } from "./commands.ts";
 import type { CreateParams } from "./commands.ts";
 import { CardError } from "./errors.ts";
+import {
+  bip340 as bip340Signature,
+  ecdsa as ecdsaSignature,
+  ed25519Signature,
+} from "./signatures.ts";
+import type { EcdsaResult } from "./signatures.ts";
 import { ACCESS_LIMITS } from "./status.ts";
+import { exportMessage, offerMessage } from "./transfer.ts";
+import type { ExportHead, Offer } from "./transfer.ts";
+import { edwardsEncode } from "./wei25519.ts";
 
 export type CardStatus =
   | { readonly life: "blank"; readonly tries: 0 }
@@ -27,6 +38,17 @@ export type WalletInfo = {
 const fault = (message: string): never => {
   throw new CardError("card-fault", message);
 };
+
+const input = (message: string): never => {
+  throw new CardError("invalid-input", message);
+};
+
+/** Compressed secp256k1 identity key argument: 33 bytes on the curve. */
+function checkIdentity(key: Uint8Array, what: string): void {
+  if (key.length !== 33 || !validPoint(key)) {
+    input(`${what} is not a valid identity key`);
+  }
+}
 
 /** §9.3: `life ‖ tries` — `01 00` BLANK; `02` with `tries ∈ [0, L]` LOADED. */
 function status(data: Uint8Array): CardStatus {
@@ -125,13 +147,8 @@ function created(data: Uint8Array, params: CreateParams, cardId: Uint8Array): Wa
     }
   }
   if (params.mode === "import") {
-    let expected: Uint8Array | undefined;
-    try {
-      expected = HDKey.fromMasterSeed(params.seed).publicKey ?? undefined;
-    } catch {
-      expected = undefined;
-    }
-    if (expected === undefined || !equalBytes(expected, masterPublicKey)) {
+    const expected = HDKey.fromMasterSeed(params.seed).publicKey;
+    if (expected === null || !equalBytes(expected, masterPublicKey)) {
       fault("CREATE echoed a different master public key");
     }
   }
@@ -168,6 +185,72 @@ function exportPayload(data: Uint8Array): Uint8Array {
   return new Uint8Array(data);
 }
 
+/**
+ * §9.12 OFFER response `LK ‖ Sign(idKey_T, "qntx-card/v1/offer" ‖ LK)`; `target` is the offering
+ * card's compressed identity key (its session's `identity`). High-s signatures verify, like every
+ * card signature.
+ */
+function offer(data: Uint8Array, target: Uint8Array): Offer {
+  checkIdentity(target, "target");
+  if (data.length !== 129) {
+    fault("OFFER response is not 129 bytes");
+  }
+  const linkKey = data.subarray(0, 65);
+  const signature = data.subarray(65, 129);
+  if (!validUncompressedPoint(linkKey)) {
+    fault("OFFER link key is not a valid point");
+  }
+  if (
+    !secp256k1.verify(signature, sha256(offerMessage(linkKey)), target, {
+      prehash: false,
+      lowS: false,
+    })
+  ) {
+    fault("OFFER signature does not verify under the target identity");
+  }
+  return { linkKey: new Uint8Array(linkKey), signature: new Uint8Array(signature) };
+}
+
+/** What the host knows about an EXPORT before its head arrives. */
+export type ExportParams = {
+  /** The exporting card's compressed identity key. */
+  readonly source: Uint8Array;
+  /** The offering card's compressed identity key. */
+  readonly target: Uint8Array;
+  /** `LK` from the accepted OFFER. */
+  readonly linkKey: Uint8Array;
+};
+
+/**
+ * §9.13 EXPORT `P1 = 0x00` response `E ‖ Sign(idKey_S, M)` with `M = "qntx-card/v1/export" ‖ A_S ‖
+ * A_T ‖ LK ‖ E` — all keys bound into the message.
+ */
+function exportHead(data: Uint8Array, params: ExportParams): ExportHead {
+  checkIdentity(params.source, "source");
+  checkIdentity(params.target, "target");
+  if (params.linkKey.length !== 65 || !validUncompressedPoint(params.linkKey)) {
+    input("linkKey is not a valid uncompressed point");
+  }
+  if (data.length !== 129) {
+    fault("EXPORT head is not 129 bytes");
+  }
+  const ephemeral = data.subarray(0, 65);
+  const signature = data.subarray(65, 129);
+  if (!validUncompressedPoint(ephemeral)) {
+    fault("EXPORT ephemeral is not a valid point");
+  }
+  const message = exportMessage(params.source, params.target, params.linkKey, ephemeral);
+  if (
+    !secp256k1.verify(signature, sha256(message), params.source, {
+      prehash: false,
+      lowS: false,
+    })
+  ) {
+    fault("EXPORT signature does not verify under the source identity");
+  }
+  return { ephemeral: new Uint8Array(ephemeral), signature: new Uint8Array(signature) };
+}
+
 export type PublicKeyResult = {
   readonly publicKey: Uint8Array;
   readonly chainCode: Uint8Array;
@@ -178,7 +261,28 @@ export type Decode = {
   readonly walletInfo: (data: Uint8Array, cardId: Uint8Array) => WalletInfo;
   readonly created: (data: Uint8Array, params: CreateParams, cardId: Uint8Array) => WalletInfo;
   readonly publicKey: (data: Uint8Array) => PublicKeyResult;
+  readonly weiPoint: (data: Uint8Array) => Uint8Array;
   readonly empty: (data: Uint8Array) => void;
+  readonly ecdsa: (
+    data: Uint8Array,
+    digest: Uint8Array,
+    publicKey: Uint8Array,
+    previousR: ReadonlyArray<Uint8Array>,
+  ) => EcdsaResult;
+  readonly bip340: (
+    data: Uint8Array,
+    message: Uint8Array,
+    internalKey: Uint8Array,
+    tweak: Uint8Array,
+  ) => Uint8Array;
+  readonly ed25519: (
+    data: Uint8Array,
+    encodedR: Uint8Array,
+    publicKey: Uint8Array,
+    message: Uint8Array,
+  ) => Uint8Array;
+  readonly offer: (data: Uint8Array, target: Uint8Array) => Offer;
+  readonly exportHead: (data: Uint8Array, params: ExportParams) => ExportHead;
   readonly exportPayload: (data: Uint8Array) => Uint8Array;
 };
 
@@ -187,6 +291,12 @@ export const decode: Decode = {
   walletInfo,
   created,
   publicKey,
+  weiPoint: edwardsEncode,
   empty,
+  ecdsa: ecdsaSignature,
+  bip340: bip340Signature,
+  ed25519: ed25519Signature,
+  offer,
+  exportHead,
   exportPayload,
 };
