@@ -206,8 +206,20 @@ const v1Vectors = (
     readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/solana-v1.json"), "utf8"),
   ) as { cases: Array<{ name: string; message: string; signer: string }> }
 ).cases;
-const V1_MESSAGES = v1Vectors.map((c) => Uint8Array.from(Buffer.from(c.message, "hex")));
-// Additional v1 mainnet fixtures (e.g. a future solana-v1-mainnet.json) append their messages here.
+const v1Mainnet = (
+  JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, "../../../vectors/chains/solana-mainnet-v1.json"),
+      "utf8",
+    ),
+  ) as Array<{ wire: string }>
+).map((f) => Uint8Array.from(Buffer.from(f.wire, "base64")));
+const V1_MESSAGES = [
+  ...v1Vectors.map((c) => Uint8Array.from(Buffer.from(c.message, "hex"))),
+  /* A v1 mainnet fixture's message is its wire minus the trailing signature block. */
+  ...v1Mainnet.map((wire) => wire.subarray(0, wire.length - 64 * (wire[1] ?? 0))),
+];
+// Additional v1 mainnet fixtures append their messages here.
 const V1_SIGNERS = v1Vectors.map((c) => c.signer);
 const v1Decoder = getCompiledTransactionMessageDecoder();
 const v1Encoder = getCompiledTransactionMessageEncoder();
@@ -274,13 +286,18 @@ describe("Solana v1 fuzz", () => {
     600_000,
   );
 
-  it("every truncation of each v1 vector throws only a ChainError", () => {
-    for (const base of V1_MESSAGES) {
-      for (let length = 0; length < base.length; length += 1) {
-        expect(truncatedV1Outcome(base.subarray(0, length))).toBe(true);
+  it(
+    "every truncation of each v1 vector throws only a ChainError",
+    () => {
+      for (const base of V1_MESSAGES) {
+        for (let length = 0; length < base.length; length += 1) {
+          expect(truncatedV1Outcome(base.subarray(0, length))).toBe(true);
+        }
       }
-    }
-  });
+    },
+    // ~40k parses across the vectors and the 65 mainnet fixtures take ~20 s.
+    300_000,
+  );
 });
 
 const TRON_NET = "tron:728126428";

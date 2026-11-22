@@ -633,9 +633,7 @@ export class SolanaChainAdapter {
       }
       slots[account] = sig;
     }
-    /* kit brands the wire parts (TransactionMessageBytes/SignatureBytes); the encoder reads
-       plain bytes. */
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- kit brands the wire parts (TransactionMessageBytes/SignatureBytes); the encoder reads plain bytes
     const tx = { messageBytes, signatures: slots } as unknown as Parameters<
       ReturnType<typeof getTransactionEncoder>["encode"]
     >[0];

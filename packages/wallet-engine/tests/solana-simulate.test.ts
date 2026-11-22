@@ -196,6 +196,16 @@ describe("SolanaChainAdapter.simulate", () => {
     expect(new Uint8Array(decoded.messageBytes)).toStrictEqual(msg);
   });
 
+  it("finalize refuses more signatures than the message has accounts", () => {
+    const msg = message([]);
+    const sig = new Uint8Array(64);
+    const adapter = new SolanaChainAdapter();
+    const tooMany = Array.from({ length: 10 }, () => sig);
+    expect(() => adapter.finalize(msg, tooMany)).toThrow(
+      "more signatures than the message has accounts",
+    );
+  });
+
   it("sums token deltas per mint over the owner's token accounts only", async () => {
     const pre = {
       [ATA_A]: {

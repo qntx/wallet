@@ -282,7 +282,6 @@ type CompiledV1Message = {
     readonly data: Uint8Array;
   }>;
   readonly lifetimeToken: string;
-  readonly numStaticAccounts: number;
   readonly staticAccounts: ReadonlyArray<string>;
 };
 
@@ -312,7 +311,6 @@ const asV1Message = (value: unknown): CompiledV1Message => {
     typeof header["numReadonlySignerAccounts"] !== "number" ||
     typeof header["numReadonlyNonSignerAccounts"] !== "number" ||
     typeof value["lifetimeToken"] !== "string" ||
-    typeof value["numStaticAccounts"] !== "number" ||
     !isStringArray(staticAccounts) ||
     !Array.isArray(headers) ||
     !Array.isArray(payloads)
@@ -342,7 +340,6 @@ const asV1Message = (value: unknown): CompiledV1Message => {
     },
     instructions,
     lifetimeToken: value["lifetimeToken"],
-    numStaticAccounts: value["numStaticAccounts"],
     staticAccounts,
   };
 };
@@ -355,9 +352,9 @@ const asV1Message = (value: unknown): CompiledV1Message => {
 const v1Config = (
   mask: number,
   bytes: Uint8Array,
-  numStaticAccounts: number,
+  staticAccountCount: number,
 ): SolanaTransactionConfig => {
-  const view = new DataView(bytes.buffer, bytes.byteOffset + 42 + 32 * numStaticAccounts);
+  const view = new DataView(bytes.buffer, bytes.byteOffset + 42 + 32 * staticAccountCount);
   let offset = 0;
   const config: {
     priorityFeeLamports?: bigint;
@@ -506,7 +503,7 @@ const parseV1Message = (bytes: Uint8Array): ParsedSolanaMessage => {
     throw new ChainError("invalid-request", "compiled message has trailing bytes");
   }
   const message = asV1Message(decoded);
-  const config = v1Config(mask, bytes, message.numStaticAccounts);
+  const config = v1Config(mask, bytes, message.staticAccounts.length);
   sanitizeV1Message(message, config);
   return {
     version: 1,
