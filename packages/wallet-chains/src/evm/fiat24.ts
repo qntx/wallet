@@ -213,6 +213,35 @@ export type Fiat24Decode = {
   readonly fiat24?: Fiat24Action;
 };
 
+type DecodeResult = { readonly decoded: Fiat24Decode } | "claimed" | undefined;
+type ValueCall = { readonly value: bigint; readonly data: string };
+type CashToken = { readonly address: string; readonly symbol: string };
+
+/* One described function: `payable` marks the calls that must carry value (depositETH,
+   mintByClientWithETH); a selector match that fails the value check is a near miss. */
+type Fiat24Case = {
+  readonly fn: AbiFunction.AbiFunction;
+  readonly payable?: boolean;
+  readonly run: (args: ReadonlyArray<unknown>, call: ValueCall) => Fiat24Decode | "claimed";
+};
+
+/* First matching selector wins; the single value guard and every "claimed" result end the
+   decode. No match returns undefined so the caller can apply its own fallback. */
+const runCases = (cases: ReadonlyArray<Fiat24Case>, call: ValueCall): DecodeResult => {
+  for (const c of cases) {
+    const args = tryCall(c.fn, call.data);
+    if (args === undefined) {
+      continue;
+    }
+    if (c.payable === true ? call.value === 0n : call.value > 0n) {
+      return "claimed";
+    }
+    const decoded = c.run(args, call);
+    return decoded === "claimed" ? "claimed" : { decoded };
+  }
+  return undefined;
+};
+
 const tokenAmount = (token: string, amount: bigint, chainId: number, table: EvmTokenTable) => {
   const known = lookupEvmToken(table, chainId, token);
   return {
@@ -225,327 +254,297 @@ const tokenAmount = (token: string, amount: bigint, chainId: number, table: EvmT
 /** The cash-token row for an address argument, or undefined for any other token. */
 const cashToken = (address: string) => FIAT24_TOKENS[address.toLowerCase()];
 
-const fiat24Token = (token: { readonly address: string; readonly symbol: string }) => ({
+const fiat24Token = (token: CashToken) => ({
   asset: token.address,
   symbol: token.symbol,
   decimals: 2 as const,
 });
 
-/**
- * A call to a cash token: `transferByAccountId` resolves the recipient on chain at execution — the
- * bytes name only the account id — and the five ERC-20 selectors fall through to the standard token
- * path. Everything else on a cash token (ERC-721/1155 shapes, role functions, burn, payout-desk
- * functions) is a Fiat24 call the family claims.
- */
-const decodeFiat24Token = (
-  token: { readonly address: string; readonly symbol: string },
-  call: { readonly value: bigint; readonly data: string },
+/** Verified outflow of a cash-token amount; `fiat24` names the account or payee the bytes carry. */
+const cashFlow = (
+  token: CashToken,
+  amount: bigint,
   chainId: number,
   table: EvmTokenTable,
-): { readonly decoded: Fiat24Decode } | "claimed" | undefined => {
-  const args = tryCall(TRANSFER_BY_ACCOUNT_ID, call.data);
-  if (args !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const account = argUint(args, 0);
-    const amount = argUint(args, 1);
-    const warnings: IntentWarning[] =
-      account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX
-        ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
-        : [];
-    return {
-      decoded: {
-        summary: "transfer",
-        outflows: [
-          {
-            to: token.address,
-            amount: tokenAmount(token.address, amount, chainId, table),
-            verified: true,
-            fiat24: { account: account.toString(10) },
-          },
-        ],
-        warnings,
-      },
-    };
-  }
-  /* clientPayout(Ref) pays out by bank transfer: the bytes name the payee id, Fiat24 resolves
-     the receiving account off-chain — the outflow carries the id, the action the verbatim
-     strings. */
-  const payoutArgs = tryCall(CLIENT_PAYOUT, call.data);
-  if (payoutArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const amount = argUint(payoutArgs, 0);
-    const contactId = argString(payoutArgs, 1);
-    return {
-      decoded: {
-        summary: "payout",
-        outflows: [
-          {
-            to: token.address,
-            amount: tokenAmount(token.address, amount, chainId, table),
-            verified: true,
-            fiat24: { payee: contactId },
-          },
-        ],
-        warnings: [{ kind: "fiat24-payee-offchain", message: "" }],
-        fiat24: { kind: "payout", contactId },
-      },
-    };
-  }
-  const refArgs = tryCall(CLIENT_PAYOUT_REF, call.data);
-  if (refArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const amount = argUint(refArgs, 0);
-    const contactId = argString(refArgs, 1);
-    const purposeId = argUint(refArgs, 2).toString(10);
-    const ref = argString(refArgs, 3);
-    return {
-      decoded: {
-        summary: "payout",
-        outflows: [
-          {
-            to: token.address,
-            amount: tokenAmount(token.address, amount, chainId, table),
-            verified: true,
-            fiat24: { payee: contactId },
-          },
-        ],
-        warnings: [{ kind: "fiat24-payee-offchain", message: "" }],
-        fiat24: { kind: "payout", contactId, purposeId, ref },
-      },
-    };
-  }
-  const selector = call.data.slice(0, 10).toLowerCase();
-  if (ERC20_SELECTORS.has(selector) && call.value === 0n) {
-    return undefined;
-  }
-  return "claimed";
+  fiat24: { readonly account: string } | { readonly payee: string },
+): AssetFlow => ({
+  to: token.address,
+  amount: tokenAmount(token.address, amount, chainId, table),
+  verified: true,
+  fiat24,
+});
+
+const ethFlow = (to: string, value: bigint): AssetFlow => ({
+  to,
+  amount: { asset: EVM_NATIVE_ASSET, amount: value.toString(10) },
+  verified: true,
+});
+
+/** A top-up input paid to the deposit contract — verified only when the token table knows it. */
+const topUpFlow = (
+  input: string,
+  amount: bigint,
+  chainId: number,
+  table: EvmTokenTable,
+): AssetFlow => ({
+  to: FIAT24_DEPOSIT,
+  amount: tokenAmount(input, amount, chainId, table),
+  verified: lookupEvmToken(table, chainId, input) !== undefined,
+});
+
+/* clientPayout(Ref) pays out by bank transfer: the bytes name the payee id, Fiat24 resolves the
+   receiving account off-chain — the outflow carries the id, the action the verbatim strings. */
+const payout = (
+  token: CashToken,
+  args: ReadonlyArray<unknown>,
+  action: (contactId: string) => Fiat24Action,
+  chainId: number,
+  table: EvmTokenTable,
+): Fiat24Decode => {
+  const contactId = argString(args, 1);
+  return {
+    summary: "payout",
+    outflows: [cashFlow(token, argUint(args, 0), chainId, table, { payee: contactId })],
+    warnings: [{ kind: "fiat24-payee-offchain", message: "" }],
+    fiat24: action(contactId),
+  };
 };
 
-/**
- * A call into the deposit/top-up contract: the FX exchanges swap between cash tokens at the
- * issuer-set rate (the rate is operator storage, so the bytes cannot bound what the call receives).
- * Everything else the contract carries is the wallet-provider or operator surface — claimed, not
- * described.
- */
-const decodeFiat24Deposit = (
-  call: { readonly value: bigint; readonly data: string },
+/** Both exchange sides need two different cash tokens — anything else is a near miss. */
+const exchangePair = (args: ReadonlyArray<unknown>) => {
+  const input = cashToken(argAddress(args, 0));
+  const output = cashToken(argAddress(args, 1));
+  return input === undefined || output === undefined || input.address === output.address
+    ? undefined
+    : { input, output };
+};
+
+/* The FX exchanges swap between cash tokens at the issuer-set rate: the rate is operator
+   storage, so the bytes cannot bound what the call receives. */
+const exchangeIn = (
+  args: ReadonlyArray<unknown>,
   chainId: number,
   table: EvmTokenTable,
-): { readonly decoded: Fiat24Decode } | "claimed" | undefined => {
-  const inArgs = tryCall(MONEY_EXCHANGE_EXACT_IN, call.data);
-  if (inArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const input = cashToken(argAddress(inArgs, 0));
-    const output = cashToken(argAddress(inArgs, 1));
-    if (input === undefined || output === undefined || input.address === output.address) {
-      return "claimed";
-    }
-    return {
-      decoded: {
-        summary: "swap",
-        outflows: [
-          {
-            to: FIAT24_DEPOSIT,
-            amount: tokenAmount(input.address, argUint(inArgs, 2), chainId, table),
-            verified: true,
-          },
-        ],
-        warnings: [{ kind: "fiat24-issuer-rate", message: "" }],
-        fiat24: { kind: "exchange", side: "exact-in", receive: fiat24Token(output) },
-      },
-    };
+): Fiat24Decode | "claimed" => {
+  const pair = exchangePair(args);
+  if (pair === undefined) {
+    return "claimed";
   }
-  const outArgs = tryCall(MONEY_EXCHANGE_EXACT_OUT, call.data);
-  if (outArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const input = cashToken(argAddress(outArgs, 0));
-    const output = cashToken(argAddress(outArgs, 1));
-    if (input === undefined || output === undefined || input.address === output.address) {
-      return "claimed";
-    }
-    return {
-      decoded: {
-        summary: "swap",
-        outflows: [],
-        warnings: [
-          { kind: "fiat24-issuer-rate", message: "" },
-          { kind: "fiat24-exact-out-unbounded", message: "" },
-        ],
-        fiat24: {
-          kind: "exchange",
-          side: "exact-out",
-          pay: fiat24Token(input),
-          receive: tokenAmount(output.address, argUint(outArgs, 2), chainId, table),
-        },
+  return {
+    summary: "swap",
+    outflows: [
+      {
+        to: FIAT24_DEPOSIT,
+        amount: tokenAmount(pair.input.address, argUint(args, 2), chainId, table),
+        verified: true,
       },
-    };
-  }
+    ],
+    warnings: [{ kind: "fiat24-issuer-rate", message: "" }],
+    fiat24: { kind: "exchange", side: "exact-in", receive: fiat24Token(pair.output) },
+  };
+};
 
-  /* The three top-ups settle a listed or unlisted input (or ETH) into a cash token: the bytes
-     name the pay amount and the receive token — the rate and any in-transaction swap are the
-     issuer's. `depositByWallet` and the rest of the operator surface stay claimed. */
-  const usdcArgs = tryCall(DEPOSIT_TOKEN_VIA_USDC, call.data);
-  if (usdcArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const input = argAddress(usdcArgs, 0);
-    const output = cashToken(argAddress(usdcArgs, 1));
-    if (output === undefined) {
-      return "claimed";
-    }
-    return topUp(
-      [
-        {
-          to: FIAT24_DEPOSIT,
-          amount: tokenAmount(input, argUint(usdcArgs, 2), chainId, table),
-          verified: lookupEvmToken(table, chainId, input) !== undefined,
-        },
-      ],
-      output,
-      input.toLowerCase() !== FIAT24_USDC.toLowerCase(),
-    );
+const exchangeOut = (
+  args: ReadonlyArray<unknown>,
+  chainId: number,
+  table: EvmTokenTable,
+): Fiat24Decode | "claimed" => {
+  const pair = exchangePair(args);
+  if (pair === undefined) {
+    return "claimed";
   }
-  const ethArgs = tryCall(DEPOSIT_ETH, call.data);
-  if (ethArgs !== undefined) {
-    const output = cashToken(argAddress(ethArgs, 0));
-    if (output === undefined || call.value === 0n) {
-      return "claimed";
-    }
-    return topUp(
-      [
-        {
-          to: FIAT24_DEPOSIT,
-          amount: { asset: EVM_NATIVE_ASSET, amount: call.value.toString(10) },
-          verified: true,
-        },
-      ],
-      output,
-      true,
-    );
-  }
-  const viaEthArgs = tryCall(DEPOSIT_TOKEN_VIA_ETH, call.data);
-  if (viaEthArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const input = argAddress(viaEthArgs, 0);
-    const output = cashToken(argAddress(viaEthArgs, 1));
-    if (output === undefined) {
-      return "claimed";
-    }
-    return topUp(
-      [
-        {
-          to: FIAT24_DEPOSIT,
-          amount: tokenAmount(input, argUint(viaEthArgs, 2), chainId, table),
-          verified: lookupEvmToken(table, chainId, input) !== undefined,
-        },
-      ],
-      output,
-      true,
-    );
-  }
-  return "claimed";
+  return {
+    summary: "swap",
+    outflows: [],
+    warnings: [
+      { kind: "fiat24-issuer-rate", message: "" },
+      { kind: "fiat24-exact-out-unbounded", message: "" },
+    ],
+    fiat24: {
+      kind: "exchange",
+      side: "exact-out",
+      pay: fiat24Token(pair.input),
+      receive: tokenAmount(pair.output.address, argUint(args, 2), chainId, table),
+    },
+  };
 };
 
 /** A top-up's shared shape: pay in, receive a cash token at a rate the transaction cannot bound. */
 const topUp = (
   outflows: ReadonlyArray<AssetFlow>,
-  output: { readonly address: string; readonly symbol: string },
+  output: CashToken,
   swapsInTx: boolean,
-): { readonly decoded: Fiat24Decode } => ({
-  decoded: {
-    summary: "swap",
-    outflows,
-    warnings: [
-      { kind: "fiat24-issuer-rate", message: "" },
-      ...(swapsInTx ? [{ kind: "fiat24-swap-quote" as const, message: "" }] : []),
-    ],
-    fiat24: { kind: "top-up", receive: fiat24Token(output) },
-  },
+): Fiat24Decode => ({
+  summary: "swap",
+  outflows,
+  warnings: [
+    { kind: "fiat24-issuer-rate", message: "" },
+    ...(swapsInTx ? [{ kind: "fiat24-swap-quote" as const, message: "" }] : []),
+  ],
+  fiat24: { kind: "top-up", receive: fiat24Token(output) },
 });
 
-/**
- * A call into the account contract: minting opens an account whose token id is the account number,
- * and moving the NFT moves control of the account — its balance and the identity verified for it.
- * `approve`/`setApprovalForAll` and the wallet/operator surface stay claimed.
- */
-const decodeFiat24Account = (call: {
-  readonly value: bigint;
-  readonly data: string;
-}): { readonly decoded: Fiat24Decode } | "claimed" | undefined => {
-  const mintArgs = tryCall(MINT_BY_CLIENT, call.data);
-  if (mintArgs !== undefined) {
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    return openAccount(argUint(mintArgs, 0), []);
+/* depositTokenViaUsdc/depositTokenViaEth settle a listed or unlisted token input into a cash
+   token; `swapsInTx` marks inputs that trade inside the transaction (anything but USDC). */
+const topUpToken = (
+  args: ReadonlyArray<unknown>,
+  swapsInTx: (input: string) => boolean,
+  chainId: number,
+  table: EvmTokenTable,
+): Fiat24Decode | "claimed" => {
+  const input = argAddress(args, 0);
+  const output = cashToken(argAddress(args, 1));
+  if (output === undefined) {
+    return "claimed";
   }
-  const mintEthArgs = tryCall(MINT_BY_CLIENT_WITH_ETH, call.data);
-  if (mintEthArgs !== undefined) {
-    if (call.value === 0n) {
-      return "claimed";
-    }
-    return openAccount(argUint(mintEthArgs, 0), [
-      {
-        to: FIAT24_ACCOUNT,
-        amount: { asset: EVM_NATIVE_ASSET, amount: call.value.toString(10) },
-        verified: true,
-      },
-    ]);
-  }
-  for (const fn of [ACCOUNT_SAFE_TRANSFER_DATA, ACCOUNT_SAFE_TRANSFER, ACCOUNT_TRANSFER_FROM]) {
-    const args = tryCall(fn, call.data);
-    if (args === undefined) {
-      continue;
-    }
-    if (call.value > 0n) {
-      return "claimed";
-    }
-    const to = argAddress(args, 1);
-    const id = argUint(args, 2);
-    return {
-      decoded: {
-        summary: "transfer",
-        outflows: [
-          {
-            to,
-            amount: { asset: FIAT24_ACCOUNT, amount: "1", tokenId: id.toString(10) },
-            verified: false,
-          },
-        ],
-        warnings: [
-          { kind: "fiat24-account-move", level: "danger", message: `#${id.toString(10)} → ${to}` },
-        ],
-      },
-    };
-  }
-  return "claimed";
+  return topUp([topUpFlow(input, argUint(args, 2), chainId, table)], output, swapsInTx(input));
 };
 
 /** Minting an account permanently links the address to the identity Fiat24 verifies. */
-const openAccount = (
-  id: bigint,
-  outflows: ReadonlyArray<AssetFlow>,
-): { readonly decoded: Fiat24Decode } => ({
-  decoded: {
-    summary: "contract-call",
-    outflows,
-    warnings: [{ kind: "fiat24-account-link", message: "" }],
-    fiat24: { kind: "open-account", account: id.toString(10) },
-  },
+const openAccount = (id: bigint, outflows: ReadonlyArray<AssetFlow>): Fiat24Decode => ({
+  summary: "contract-call",
+  outflows,
+  warnings: [{ kind: "fiat24-account-link", message: "" }],
+  fiat24: { kind: "open-account", account: id.toString(10) },
 });
+
+/* Moving the account NFT moves control of the account — its balance and the identity verified
+   for it. */
+const moveAccount = (args: ReadonlyArray<unknown>): Fiat24Decode => {
+  const to = argAddress(args, 1);
+  const id = argUint(args, 2);
+  return {
+    summary: "transfer",
+    outflows: [
+      {
+        to,
+        amount: { asset: FIAT24_ACCOUNT, amount: "1", tokenId: id.toString(10) },
+        verified: false,
+      },
+    ],
+    warnings: [
+      { kind: "fiat24-account-move", level: "danger", message: `#${id.toString(10)} → ${to}` },
+    ],
+  };
+};
+
+/* A call to a cash token: `transferByAccountId` resolves the recipient on chain at execution —
+   the bytes name only the account id — and the five ERC-20 selectors fall through to the
+   standard token path. Everything else is a Fiat24 call the family claims. */
+const decodeFiat24Token = (
+  token: CashToken,
+  call: ValueCall,
+  chainId: number,
+  table: EvmTokenTable,
+): DecodeResult => {
+  const hit = runCases(
+    [
+      {
+        fn: TRANSFER_BY_ACCOUNT_ID,
+        run: (args) => {
+          const account = argUint(args, 0);
+          return {
+            summary: "transfer",
+            outflows: [
+              cashFlow(token, argUint(args, 1), chainId, table, {
+                account: account.toString(10),
+              }),
+            ],
+            warnings:
+              account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX
+                ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
+                : [],
+          };
+        },
+      },
+      {
+        fn: CLIENT_PAYOUT,
+        run: (args) =>
+          payout(token, args, (contactId) => ({ kind: "payout", contactId }), chainId, table),
+      },
+      {
+        fn: CLIENT_PAYOUT_REF,
+        run: (args) =>
+          payout(
+            token,
+            args,
+            (contactId) => ({
+              kind: "payout",
+              contactId,
+              purposeId: argUint(args, 2).toString(10),
+              ref: argString(args, 3),
+            }),
+            chainId,
+            table,
+          ),
+      },
+    ],
+    call,
+  );
+  if (hit !== undefined) {
+    return hit;
+  }
+  const selector = call.data.slice(0, 10).toLowerCase();
+  return ERC20_SELECTORS.has(selector) && call.value === 0n ? undefined : "claimed";
+};
+
+/* A call into the deposit/top-up contract: the FX exchanges and the three top-ups, decoded as
+   above; `depositByWallet` and the rest of the wallet-provider/operator surface stay claimed. */
+const decodeFiat24Deposit = (
+  call: ValueCall,
+  chainId: number,
+  table: EvmTokenTable,
+): DecodeResult =>
+  runCases(
+    [
+      { fn: MONEY_EXCHANGE_EXACT_IN, run: (args) => exchangeIn(args, chainId, table) },
+      { fn: MONEY_EXCHANGE_EXACT_OUT, run: (args) => exchangeOut(args, chainId, table) },
+      {
+        fn: DEPOSIT_TOKEN_VIA_USDC,
+        run: (args) =>
+          topUpToken(
+            args,
+            (input) => input.toLowerCase() !== FIAT24_USDC.toLowerCase(),
+            chainId,
+            table,
+          ),
+      },
+      {
+        fn: DEPOSIT_ETH,
+        payable: true,
+        run: (args, call) => {
+          const output = cashToken(argAddress(args, 0));
+          return output === undefined
+            ? "claimed"
+            : topUp([ethFlow(FIAT24_DEPOSIT, call.value)], output, true);
+        },
+      },
+      {
+        fn: DEPOSIT_TOKEN_VIA_ETH,
+        run: (args) => topUpToken(args, () => true, chainId, table),
+      },
+    ],
+    call,
+  ) ?? "claimed";
+
+/* A call into the account contract: minting opens an account whose token id is the account
+   number, and moving the NFT moves control of it. `approve`/`setApprovalForAll` and the
+   wallet/operator surface stay claimed. */
+const decodeFiat24Account = (call: ValueCall): DecodeResult =>
+  runCases(
+    [
+      { fn: MINT_BY_CLIENT, run: (args) => openAccount(argUint(args, 0), []) },
+      {
+        fn: MINT_BY_CLIENT_WITH_ETH,
+        payable: true,
+        run: (args, call) => openAccount(argUint(args, 0), [ethFlow(FIAT24_ACCOUNT, call.value)]),
+      },
+      { fn: ACCOUNT_SAFE_TRANSFER_DATA, run: moveAccount },
+      { fn: ACCOUNT_SAFE_TRANSFER, run: moveAccount },
+      { fn: ACCOUNT_TRANSFER_FROM, run: moveAccount },
+    ],
+    call,
+  ) ?? "claimed";
 
 /**
  * Decodes a call to a Fiat24 contract: `{ decoded }` for the calls the rules table describes,
@@ -560,7 +559,7 @@ export const decodeFiat24 = (
   chainId: number,
   call: { readonly to: string | undefined; readonly value: bigint; readonly data: string },
   table: EvmTokenTable,
-): { readonly decoded: Fiat24Decode } | "claimed" | undefined => {
+): DecodeResult => {
   if (chainId !== FIAT24_CHAIN || call.to === undefined) {
     return undefined;
   }
@@ -575,10 +574,7 @@ export const decodeFiat24 = (
   if (to === FIAT24_ACCOUNT.toLowerCase()) {
     return decodeFiat24Account(call);
   }
-  if (FIAT24_CONTRACTS.has(to)) {
-    return "claimed";
-  }
-  return undefined;
+  return FIAT24_CONTRACTS.has(to) ? "claimed" : undefined;
 };
 
 /* The grant message the Fiat24 API verifies: "I agree to access my profile. " followed by the

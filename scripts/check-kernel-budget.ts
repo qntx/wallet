@@ -55,8 +55,8 @@ const UNITS: ReadonlyArray<Unit> = [
   {
     name: "fiat24 decoder",
     match: /^packages\/wallet-chains\/src\/evm\/fiat24\.ts$/,
-    // measured 15900 B
-    budget: 18_432,
+    // measured 14710 B
+    budget: 15_360,
     note: "Fiat24 calldata decoder, grant prefixes and session-message builder",
   },
   {
