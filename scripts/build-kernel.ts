@@ -20,6 +20,7 @@ import { build } from "vite";
 
 import { VAULT_FORMAT } from "../packages/wallet-kernel/src/vault/store.ts";
 import { PROTOCOL_VERSION } from "../packages/wallet/src/protocol/index.ts";
+import { kernelBuildConfig } from "./kernel-build-config.ts";
 import {
   isRecord,
   lockPackages,
@@ -35,22 +36,10 @@ const outDir = resolve(root, "packages/wallet-native/kernel/generated");
 
 mkdirSync(outDir, { recursive: true });
 
-// One iife classic-script bundle — hermesc needs a classic script, not an ES module.
-await build({
-  configFile: false,
-  logLevel: "warn",
-  build: {
-    lib: { entry, formats: ["iife"], name: "qntxKernelEntry", fileName: () => "kernel-entry.js" },
-    outDir,
-    emptyOutDir: false,
-    minify: false,
-    target: "es2017",
-    // Nothing may stay external: the bytecode runs in a bare Hermes runtime with
-    // no module loader — deps+peers in package.json must be inlined, not left as
-    // IIFE parameters.
-    rolldownOptions: { external: [] },
-  },
-});
+// One iife classic-script bundle — the shared config pins the resolve conditions and keeps
+// nothing external: Hermes has no module loader, so deps+peers are inlined, not left as IIFE
+// parameters.
+await build(kernelBuildConfig(entry, outDir));
 const generated = resolve(outDir, "kernel-entry.js");
 const bytes = readFileSync(generated);
 const head = bytes.toString("utf8").slice(0, 2000);
