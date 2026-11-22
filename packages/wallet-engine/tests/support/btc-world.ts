@@ -286,7 +286,10 @@ export const persistedTx = async (
 };
 
 export const world = (
-  options: { readonly independent?: boolean; readonly template?: BitcoinAccountTemplate } = {},
+  options: {
+    readonly independent?: boolean | (() => "available" | "unavailable");
+    readonly template?: BitcoinAccountTemplate;
+  } = {},
 ): BtcWorld => {
   /** The world's own account template — bip84 unless the test asks for a legacy one. */
   const template: BitcoinAccountTemplate = options.template ?? "btc.bip84";
@@ -522,9 +525,13 @@ export const world = (
           info: () => ({ family: "bitcoin" }),
           esplora: () => esploraStub,
           independentEsplora: () =>
-            options.independent === true
-              ? { kind: "available", client: independentStub }
-              : { kind: "not-needed" },
+            typeof options.independent === "function"
+              ? options.independent() === "available"
+                ? { kind: "available", client: independentStub }
+                : { kind: "unavailable" }
+              : options.independent === true
+                ? { kind: "available", client: independentStub }
+                : { kind: "not-needed" },
         },
         isNetworks,
       ),

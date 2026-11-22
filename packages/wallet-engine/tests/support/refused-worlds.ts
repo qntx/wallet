@@ -14,6 +14,7 @@ import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type { chains } from "@qntx/wallet/chains";
 
 import { EsploraError } from "../../src/chains/bitcoin.ts";
+import { gatewaySession } from "../../src/gateway/session.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
@@ -39,6 +40,10 @@ import type { ManualTimers } from "./timers.ts";
 export const POLL_MS = 4000;
 const GATEWAY = "https://gateway.test";
 const HOST = "http://host.local";
+/** A second host wired as the independent endpoint; the primary never reaches it. */
+export const HOST2 = "http://independent.local";
+/** A host that always fails — an "available but unreachable" independent endpoint. */
+export const DEAD_HOST = "http://dead.local";
 const VERIFY = { kind: "password" as const, password: "pw" };
 
 type Backing = { collections: Map<string, Map<string, Uint8Array>> };
@@ -123,10 +128,24 @@ export type EvmNode = {
   attempts: string[];
   /** Armed per test: the next sendRawTransaction answers with this JSON-RPC error. */
   refuse: { code: number; message: string } | undefined;
+  /** Armed per test: every sendRawTransaction fetch fails like a dropped connection. */
+  drop: boolean;
+};
+
+/** The independent host endpoint's own view of the chain — reachable only via `HOST2`. */
+export type EvmHost = {
+  known: Set<string>;
+  receipts: Map<string, unknown>;
+  /** Armed per test: every request to the host endpoint fails. */
+  fail: boolean;
 };
 
 export type EvmWorld = {
   readonly node: EvmNode;
+  /** The host endpoint's answers, when a boot wires `HOST2` into `rpc`. */
+  readonly host: EvmHost;
+  /** The engine's injected clock — advancing it is how test schedules age rows. */
+  readonly clock: { t: number };
   /** The same durable map every `boot` opens — a restart over it is one call. */
   readonly backing: Backing;
   /** Every message the engine's logger warned about, in order. */
@@ -134,7 +153,14 @@ export type EvmWorld = {
   readonly bomb: Bomb;
   /** Every sign request the fake chains api saw, in order. */
   readonly signed: SignRequest[];
-  readonly boot: () => Promise<Booted>;
+  /**
+   * `hosts` replaces the `rpc` host list; `gateway` wires the session so the host list becomes the
+   * independent endpoint instead of the primary.
+   */
+  readonly boot: (opts?: {
+    readonly hosts?: ReadonlyArray<string>;
+    readonly gateway?: boolean;
+  }) => Promise<Booted>;
   readonly persistedTx: (id: string) => Promise<Record<string, unknown> | undefined>;
   /** Every sendRawTransaction waits on the armed gate. */
   readonly armSendGate: () => void;
@@ -155,7 +181,9 @@ export const evmWorld = (): EvmWorld => {
     sent: [],
     attempts: [],
     refuse: undefined,
+    drop: false,
   };
+  const host: EvmHost = { known: new Set(), receipts: new Map(), fail: false };
   const clock = { t: 1_000_000 };
   const backing = newBacking();
   const bomb: Bomb = { fail: undefined };
@@ -176,11 +204,44 @@ export const evmWorld = (): EvmWorld => {
     const body = isObject(parsed) ? parsed : {};
     const method = typeof body["method"] === "string" ? body["method"] : "";
     const params: unknown[] = Array.isArray(body["params"]) ? body["params"] : [];
+    if (url.startsWith(DEAD_HOST)) {
+      throw new TypeError("fetch failed");
+    }
+    if (url.startsWith(HOST2)) {
+      if (host.fail) {
+        throw new TypeError("fetch failed");
+      }
+      const hostReply = ((): { result: unknown } => {
+        switch (method) {
+          case "eth_getTransactionCount":
+            return { result: "0x0" };
+          case "eth_getTransactionByHash":
+            return { result: host.known.has(String(params[0])) ? { hash: params[0] } : null };
+          case "eth_getTransactionReceipt":
+            return { result: host.receipts.get(String(params[0])) ?? null };
+          case "eth_sendRawTransaction": {
+            const raw = String(params[0]);
+            if (!isHex(raw)) {
+              throw new Error("sendRawTransaction param is not hex");
+            }
+            const hash = keccak256(raw);
+            host.known.add(hash);
+            return { result: hash };
+          }
+          default:
+            return { result: null };
+        }
+      })();
+      return Response.json({ jsonrpc: "2.0", id: 1, ...hostReply });
+    }
     if (method === "eth_sendRawTransaction") {
       node.attempts.push(String(params[0]));
       const gate = sendGate;
       if (gate !== undefined) {
         await gate.promise;
+      }
+      if (node.drop) {
+        throw new TypeError("fetch failed");
       }
     }
     const reply = ((): { result: unknown } | { error: { code: number; message: string } } => {
@@ -264,25 +325,33 @@ export const evmWorld = (): EvmWorld => {
     },
   } as unknown as ReturnType<typeof chains>;
 
-  const boot = async (): Promise<Booted> => {
+  const random = (n: number): Uint8Array => {
+    tag += 1;
+    return new Uint8Array(n).fill(tag);
+  };
+
+  const boot = async (opts?: {
+    hosts?: ReadonlyArray<string>;
+    gateway?: boolean;
+  }): Promise<Booted> => {
     const timers = manualTimers();
+    const networks = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: fetchImpl,
+      rpc: { "eip155:1": opts?.hosts ?? [HOST] },
+      gateway: opts?.gateway === true ? gatewaySession(GATEWAY, random) : undefined,
+      // oxlint-disable-next-line typescript/require-await -- the seam's signature is a promise
+      openStore: async () => createMemoryEngineStore(),
+      logger: { warn: () => undefined },
+    });
+    await networks.init();
     const ctl = new TransactionController({
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- routes receive the wallet but never read it here
       wallet: {} as Wallet,
-      networks: new NetworkController({
-        ...idleNetworkDeps,
-        fetch: fetchImpl,
-        rpc: { "eip155:1": [HOST] },
-        // oxlint-disable-next-line typescript/require-await -- the seam's signature is a promise
-        openStore: async () => createMemoryEngineStore(),
-        logger: { warn: () => undefined },
-      }),
+      networks,
       // oxlint-disable-next-line typescript/require-await -- the seam's signature is a promise
       openStore: async () => bombedStore(createMemoryEngineStore(backing), bomb),
-      random: (n) => {
-        tag += 1;
-        return new Uint8Array(n).fill(tag);
-      },
+      random,
       setTimer: timers.setTimer,
       now: () => clock.t,
       logger: {
@@ -299,6 +368,8 @@ export const evmWorld = (): EvmWorld => {
 
   return {
     node,
+    host,
+    clock,
     backing,
     warnings,
     bomb,
