@@ -268,6 +268,7 @@ type Catalog = {
   readonly fiat24Payout: (amount: string, payee: string) => string;
   readonly fiat24PayoutPurpose: (purposeId: string) => string;
   readonly fiat24PayoutReference: (ref: string) => string;
+  readonly fiat24OpenAccount: (account: string) => string;
 };
 
 const zh: Catalog = {
@@ -389,6 +390,10 @@ const zh: Catalog = {
     "fiat24-exact-out-unbounded": () => "你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限",
     "fiat24-payee-offchain": () =>
       "Fiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金",
+    "fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
+    "fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
+    "fiat24-account-move": (message) =>
+      `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -560,6 +565,7 @@ const zh: Catalog = {
   fiat24Payout: (amount, payee) => `以银行转账出金 ${amount} 给 Fiat24 收款人 ${payee}`,
   fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
+  fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
 };
 
 const en: Catalog = {
@@ -691,6 +697,12 @@ const en: Catalog = {
       "What you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
     "fiat24-payee-offchain": () =>
       "Fiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
+    "fiat24-swap-quote": () =>
+      "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
+    "fiat24-account-link": () =>
+      "Opening the account permanently links this address to the identity you verify with Fiat24",
+    "fiat24-account-move": (message) =>
+      `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -876,6 +888,7 @@ const en: Catalog = {
   fiat24Payout: (amount, payee) => `Pay out ${amount} by bank transfer to Fiat24 payee ${payee}`,
   fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
+  fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1237,6 +1250,14 @@ const fiat24Lines = (catalog: Catalog, action: Fiat24Action): ReadonlyArray<stri
         ? []
         : [quoted(catalog.fiat24PayoutReference(field(action.ref)))]),
     ];
+  }
+  /* A top-up receives the cash token at the issuer's rate — the same fact an exact-in swap
+     states; opening an account links the address to the verified identity. */
+  if (action.kind === "top-up") {
+    return [catalog.fiat24ReceiveAtRate(action.receive.symbol)];
+  }
+  if (action.kind === "open-account") {
+    return [catalog.fiat24OpenAccount(action.account)];
   }
   return [];
 };

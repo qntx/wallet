@@ -1,4 +1,4 @@
-import { encodeFunctionData, maxUint256, parseAbi } from "viem";
+import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "../src/evm/decode.ts";
@@ -433,5 +433,206 @@ describe("Fiat24 payouts", () => {
     const data = `${canonical.slice(0, 74)}${"60".padStart(64, "0")}${"0".repeat(64)}${tail}`;
     const intent = decodeEvm(tx(USD24, data), SIGNER);
     expect(intent.blind).toBe("fiat24-function");
+  });
+});
+
+describe("Fiat24 account minting", () => {
+  it("mintByClient opens the account for the caller", () => {
+    const data = fn(ACCOUNT_ABI, "mintByClient", [123456n]);
+    const intent = decodeEvm(tx(ACCOUNT, data), SIGNER);
+    expect(intent.summary).toBe("contract-call");
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([]);
+    expect(intent.fiat24).toStrictEqual({ kind: "open-account", account: "123456" });
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-account-link", message: "" }]);
+  });
+
+  it("mintByClientWithETH pays the fee in ETH to the account contract", () => {
+    const data = fn(ACCOUNT_ABI, "mintByClientWithETH", [123456n]);
+    const intent = decodeEvm(tx(ACCOUNT, data, "0xde0b6b3a7640000"), SIGNER);
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: ACCOUNT,
+        amount: {
+          asset: "native",
+          amount: "1000000000000000000",
+          symbol: "ETH",
+          decimals: 18,
+        },
+        verified: true,
+      },
+    ]);
+    expect(intent.fiat24).toStrictEqual({ kind: "open-account", account: "123456" });
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-account-link", message: "" }]);
+  });
+
+  it("zero value on the payable mint is claimed blind", () => {
+    const intent = decodeEvm(tx(ACCOUNT, fn(ACCOUNT_ABI, "mintByClientWithETH", [1n])), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+
+  it("value on the non-payable mint is claimed blind", () => {
+    const intent = decodeEvm(tx(ACCOUNT, fn(ACCOUNT_ABI, "mintByClient", [1n]), "0x1"), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+});
+
+describe("Fiat24 account NFT movement", () => {
+  const nftCall = (name: string, args: unknown[]) => fn(ACCOUNT_ABI, name, args);
+
+  it.each([
+    ["transferFrom", nftCall("transferFrom", [SIGNER, OTHER, 123456n])],
+    ["safeTransferFrom", nftCall("safeTransferFrom", [SIGNER, OTHER, 123456n])],
+    ["safeTransferFrom with data", nftCall("safeTransferFrom", [SIGNER, OTHER, 123456n, "0x"])],
+  ])("%s of an account token is a danger move", (_name, data) => {
+    const intent = decodeEvm(tx(ACCOUNT, data), SIGNER);
+    expect(intent.summary).toBe("transfer");
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: getAddress(OTHER),
+        amount: { asset: ACCOUNT, amount: "1", tokenId: "123456" },
+        verified: false,
+      },
+    ]);
+    expect(intent.warnings).toStrictEqual([
+      {
+        kind: "fiat24-account-move",
+        level: "danger",
+        message: `#123456 → ${getAddress(OTHER)}`,
+      },
+    ]);
+  });
+
+  it("an operator moving another's account is described the same way", () => {
+    const data = nftCall("transferFrom", [OTHER, SIGNER, 99n]);
+    const intent = decodeEvm(tx(ACCOUNT, data), SIGNER);
+    expect(intent.summary).toBe("transfer");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: SIGNER,
+        amount: { asset: ACCOUNT, amount: "1", tokenId: "99" },
+        verified: false,
+      },
+    ]);
+    expect(intent.warnings[0]?.kind).toBe("fiat24-account-move");
+  });
+
+  it("value on an account move is claimed blind", () => {
+    const intent = decodeEvm(
+      tx(ACCOUNT, nftCall("transferFrom", [SIGNER, OTHER, 1n]), "0x1"),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("fiat24-function");
+  });
+});
+
+describe("Fiat24 top-ups", () => {
+  it("depositTokenViaUsdc pays USDC in and receives a cash token at the issuer rate", () => {
+    const data = fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USDC_ARB, EUR24, 5_000_000n]);
+    const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
+    expect(intent.summary).toBe("swap");
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: DEPOSIT,
+        amount: { asset: USDC_ARB, amount: "5000000", symbol: "USDC", decimals: 6 },
+        verified: true,
+      },
+    ]);
+    expect(intent.fiat24).toStrictEqual({
+      kind: "top-up",
+      receive: { asset: EUR24, symbol: "EUR24", decimals: 2 },
+    });
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-issuer-rate", message: "" }]);
+  });
+
+  it("a non-USDC input adds the swap-quote warning", () => {
+    const data = fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USD24, EUR24, 5000n]);
+    const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
+    expect(intent.warnings).toStrictEqual([
+      { kind: "fiat24-issuer-rate", message: "" },
+      { kind: "fiat24-swap-quote", message: "" },
+    ]);
+  });
+
+  it("an unlisted input pays unverified base units", () => {
+    const data = fn(DEPOSIT_ABI, "depositTokenViaEth", [OTHER, USD24, 5n]);
+    const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
+    expect(intent.outflows).toStrictEqual([
+      { to: DEPOSIT, amount: { asset: getAddress(OTHER), amount: "5" }, verified: false },
+    ]);
+    expect(intent.warnings).toStrictEqual([
+      { kind: "fiat24-issuer-rate", message: "" },
+      { kind: "fiat24-swap-quote", message: "" },
+    ]);
+  });
+
+  it("depositETH pays ETH in and always warns the in-transaction swap", () => {
+    const data = fn(DEPOSIT_ABI, "depositETH", [CNH24]);
+    const intent = decodeEvm(tx(DEPOSIT, data, "0xde0b6b3a7640000"), SIGNER);
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: DEPOSIT,
+        amount: {
+          asset: "native",
+          amount: "1000000000000000000",
+          symbol: "ETH",
+          decimals: 18,
+        },
+        verified: true,
+      },
+    ]);
+    expect(intent.fiat24).toStrictEqual({
+      kind: "top-up",
+      receive: { asset: CNH24, symbol: "CNH24", decimals: 2 },
+    });
+    expect(intent.warnings).toStrictEqual([
+      { kind: "fiat24-issuer-rate", message: "" },
+      { kind: "fiat24-swap-quote", message: "" },
+    ]);
+  });
+
+  it.each([
+    [
+      "value on depositTokenViaUsdc",
+      fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USDC_ARB, EUR24, 5n]),
+      "0x1",
+    ],
+    [
+      "value on depositTokenViaEth",
+      fn(DEPOSIT_ABI, "depositTokenViaEth", [USDC_ARB, EUR24, 5n]),
+      "0x1",
+    ],
+    ["zero value on depositETH", fn(DEPOSIT_ABI, "depositETH", [EUR24]), "0x0"],
+    [
+      "a non-cash output on depositTokenViaUsdc",
+      fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USDC_ARB, OTHER, 5n]),
+      "0x0",
+    ],
+    ["a non-cash output on depositETH", fn(DEPOSIT_ABI, "depositETH", [OTHER]), "0x1"],
+    [
+      "a non-cash output on depositTokenViaEth",
+      fn(DEPOSIT_ABI, "depositTokenViaEth", [USDC_ARB, OTHER, 5n]),
+      "0x0",
+    ],
+    [
+      "trailing bytes on depositTokenViaUsdc",
+      `${fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USDC_ARB, EUR24, 5n])}0011`,
+      "0x0",
+    ],
+  ])("a near miss is claimed blind: %s", (_name, data, value) => {
+    const intent = decodeEvm(tx(DEPOSIT, data, value), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+
+  it("a USDC input spelled in another case is still USDC", () => {
+    const data = fn(DEPOSIT_ABI, "depositTokenViaUsdc", [
+      USDC_ARB.toLowerCase(),
+      EUR24,
+      5_000_000n,
+    ]);
+    const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-issuer-rate", message: "" }]);
   });
 });

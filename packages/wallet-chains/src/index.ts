@@ -377,7 +377,10 @@ export type IntentWarningKind =
   | "fiat24-unlimited-approval"
   | "fiat24-issuer-rate"
   | "fiat24-exact-out-unbounded"
-  | "fiat24-payee-offchain";
+  | "fiat24-payee-offchain"
+  | "fiat24-swap-quote"
+  | "fiat24-account-link"
+  | "fiat24-account-move";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
@@ -403,7 +406,9 @@ export type Fiat24Action =
       readonly contactId: string;
       readonly purposeId?: string;
       readonly ref?: string;
-    };
+    }
+  | { readonly kind: "top-up"; readonly receive: Fiat24Token }
+  | { readonly kind: "open-account"; readonly account: string };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
 export type SeaportItem = {

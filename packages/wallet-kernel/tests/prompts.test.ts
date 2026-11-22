@@ -3753,6 +3753,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24Payout: ["1", "payee"],
     fiat24PayoutPurpose: ["42"],
     fiat24PayoutReference: ["ref"],
+    fiat24OpenAccount: ["10365"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {
@@ -3797,7 +3798,10 @@ describe("Fiat24 prompts", () => {
   const EUR24 = "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA";
   const CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
   const DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
+  const ACCOUNT = "0x133CAEecA096cA54889db71956c7f75862Ead7A0";
   const SAFE = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+  const SIGNER = "0x52908400098527886E0F7030069857D2E4169EE7";
+  const OTHER = "0x00000000000000000000000000000000c0ffee00";
 
   const TOKEN_ABI = parseAbi([
     "function transferByAccountId(uint256 recipientAccountId, uint256 amount)",
@@ -3808,6 +3812,14 @@ describe("Fiat24 prompts", () => {
   const DEPOSIT_ABI = parseAbi([
     "function moneyExchangeExactIn(address inputToken, address outputToken, uint256 inputAmount)",
     "function moneyExchangeExactOut(address inputToken, address outputToken, uint256 outputAmount)",
+    "function depositTokenViaUsdc(address inputToken, address outputToken, uint256 amount)",
+    "function depositETH(address outputToken) payable",
+    "function depositTokenViaEth(address inputToken, address outputToken, uint256 amount)",
+  ]);
+  const ACCOUNT_ABI = parseAbi([
+    "function mintByClient(uint256 tokenId)",
+    "function mintByClientWithETH(uint256 tokenId) payable",
+    "function safeTransferFrom(address from, address to, uint256 tokenId)",
   ]);
 
   const arbTx = (to: string, data: string, value = "0x0"): PromptIntent =>
@@ -3975,6 +3987,70 @@ describe("Fiat24 prompts", () => {
     const { description } = chainPrompt("en", arbTx(EUR24, data));
     expect(description).toContain("· Fiat24 reference rent…");
     expect(description).not.toContain("\nSend 1 ETH");
+  });
+
+  it("a USDC top-up warns only about the issuer rate", () => {
+    const data = encodeFunctionData({
+      abi: DEPOSIT_ABI,
+      functionName: "depositTokenViaUsdc",
+      args: ["0xaf88d065e77c8cC2239327C5EDb3A432268e5831", EUR24, 5_000_000n],
+    });
+    const intent = arbTx(DEPOSIT, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm swap",
+      description: `Network: Arbitrum One\nThere may be other outflows\nSend 5 USDC to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n发送 5 USDC 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度`,
+    );
+  });
+
+  it("an ETH top-up also warns about the in-transaction swap", () => {
+    const data = encodeFunctionData({
+      abi: DEPOSIT_ABI,
+      functionName: "depositETH",
+      args: [USD24],
+    });
+    const intent = arbTx(DEPOSIT, data, "0xde0b6b3a7640000");
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nSend 1 ETH to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive USD24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n发送 1 ETH 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 USD24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限`,
+    );
+  });
+
+  it("minting an account warns about the identity link", () => {
+    const data = encodeFunctionData({
+      abi: ACCOUNT_ABI,
+      functionName: "mintByClient",
+      args: [123456n],
+    });
+    const intent = arbTx(ACCOUNT, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm contract call",
+      description: `Network: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000021 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000021 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联`,
+    );
+  });
+
+  it("moving an account NFT is a danger line", () => {
+    const data = encodeFunctionData({
+      abi: ACCOUNT_ABI,
+      functionName: "safeTransferFrom",
+      args: [SIGNER, OTHER, 123456n],
+    });
+    const intent = arbTx(ACCOUNT, data);
+    const other = "0x00000000000000000000000000000000C0FfeE00";
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm transfer",
+      description: `Network: Arbitrum One\nThere may be other outflows\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to ${other}\nMax fee 0.000021 ETH\nDanger: this moves control of Fiat24 account #123456 → ${other} — its money and the identity verified for it`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 ${other}\n最高手续费 0.000021 ETH\n危险：这将转移 Fiat24 账户 #123456 → ${other} 的控制权——包括其中的资金与已验证身份`,
+    );
   });
 
   const SAFE_TX_TYPES = [
