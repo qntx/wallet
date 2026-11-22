@@ -236,6 +236,21 @@ const FIXTURES: ReadonlyArray<readonly [string, string, string]> = [
     "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
     "5CM9JJCdwqztMMQrmY8RfhNQstC3aNqj8ToS25mimvyoPVTUV2cFXvfjYA6ciZyBJToCuzqSN7EtYuacZr7WGBeG",
   ],
+  [
+    "Meteora DLMM swap",
+    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "4KtJNRr1kXZD214dAcQvzrXQHYb6iLhHHT8jPCD5EoxJKbUP2omXW6GQLRnJjTpPUoSYWoEhqNKLCu8WBQEKLt4x",
+  ],
+  [
+    "Meteora DLMM swap2",
+    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "5jvyWbPYSPJZ6STCxSJ7jdHUbch23LcMiryFx8FcgSkzWVFT6tYx24wNc7DXBmV3w9zM7NGuFuwv5DBZfSnr3P6F",
+  ],
+  [
+    "Meteora DLMM swap2",
+    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+    "53p1zq9z7RF1hgZTJLTZCxHZ5wY1WWoURacsLhM65Ey3UTFRE4smotHX4vkNQBpg18iqYnTR3Qj5FG4TzRXgtBc3",
+  ],
 ];
 
 const sleep = async (ms: number): Promise<void> =>

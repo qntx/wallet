@@ -18,6 +18,7 @@ import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  METEORA_DLMM_PROGRAM,
   RAYDIUM_AMM_PROGRAM,
   RAYDIUM_CLMM_PROGRAM,
   RAYDIUM_CPMM_PROGRAM,
@@ -443,5 +444,153 @@ describe("amm decoders never throw on random input", () => {
       ),
       { numRuns: 60 },
     );
+  });
+});
+
+const DLMM_SWAP = anchor("f8c69e91e17587c8");
+const DLMM_SWAP2 = anchor("414b3f4ceb5b5b88");
+
+/* lb_clmm swap metas: pool, bitmap, reserves, token accounts, mints, oracle, host fee, user
+   (authority at 10), token programs, then (swap2) memo at 13, event authority, program. */
+const dlmmMetas = (
+  source = ACC(30),
+  destination = ACC(31),
+  user: string = SIGNER,
+  swap2 = false,
+): Meta[] => {
+  const metas: Meta[] = [
+    w(ACC(1)),
+    ro(ACC(2)),
+    w(ACC(3)),
+    w(ACC(4)),
+    w(source),
+    w(destination),
+    ro(WSOL),
+    ro(USDC),
+    w(ACC(9)),
+    w(ACC(10)),
+    rs(user),
+    ro(TOKEN),
+    ro(TOKEN),
+  ];
+  if (swap2) {
+    metas.push(ro(MEMO));
+  }
+  metas.push(ro(ACC(13)), ro(ACC(14)));
+  return metas;
+};
+
+const dlmmData = (disc: Uint8Array, a: bigint, b: bigint): Uint8Array =>
+  cat(disc, u64le(a), u64le(b));
+
+describe("Meteora DLMM", () => {
+  it("the instruction discriminators are sha256(\"global:<name>\")[0..8]", async () => {
+    const { sha256 } = await import("@noble/hashes/sha2.js");
+    const enc = new TextEncoder();
+    expect(sha256(enc.encode("global:swap")).subarray(0, 8)).toStrictEqual(DLMM_SWAP);
+    expect(sha256(enc.encode("global:swap2")).subarray(0, 8)).toStrictEqual(DLMM_SWAP2);
+  });
+
+  it("swap describes the bounds and resolves both mints through the signer's ATAs", () => {
+    const srcAta = associatedTokenAddress(SIGNER, WSOL, TOKEN);
+    const dstAta = associatedTokenAddress(SIGNER, USDC, TOKEN);
+    const intent = intentOf([
+      ix(METEORA_DLMM_PROGRAM, dlmmMetas(srcAta, dstAta), dlmmData(DLMM_SWAP, 5000n, 100n)),
+    ]);
+    expect(intent.summary).toBe("swap");
+    /* X is wSOL: the outflow shows the native asset. */
+    expect(intent.outflows[0]).toMatchObject({
+      to: METEORA_DLMM_PROGRAM,
+      amount: { asset: "lamports", amount: "5000", symbol: "SOL", decimals: 9 },
+      verified: true,
+    });
+    expect(intent.minimumReceived?.[0]).toStrictEqual({
+      to: SIGNER,
+      amount: { asset: USDC, amount: "100", symbol: "USDC", decimals: 6 },
+    });
+  });
+
+  it("swap in the other direction (Y to X) resolves the same way", () => {
+    const srcAta = associatedTokenAddress(SIGNER, USDC, TOKEN);
+    const dstAta = associatedTokenAddress(SIGNER, WSOL, TOKEN);
+    const intent = intentOf([
+      ix(METEORA_DLMM_PROGRAM, dlmmMetas(srcAta, dstAta), dlmmData(DLMM_SWAP, 7000n, 9n)),
+    ]);
+    expect(intent.outflows[0]?.amount).toMatchObject({ asset: USDC, amount: "7000" });
+    expect(intent.minimumReceived?.[0]?.amount).toMatchObject({ asset: "lamports", amount: "9" });
+  });
+
+  it("swap2 parses RemainingAccountsInfo, including a tag-3 slice, to the last byte", () => {
+    /* slices = [{TransferHookX, len 2}, {TransferHookMultiReward, extra 9, len 1}] */
+    const rai = cat(
+      new Uint8Array([2, 0, 0, 0]),
+      new Uint8Array([0, 2]),
+      new Uint8Array([3, 9, 1]),
+    );
+    const srcAta = associatedTokenAddress(SIGNER, WSOL, TOKEN);
+    const dstAta = associatedTokenAddress(SIGNER, USDC, TOKEN);
+    const intent = intentOf([
+      ix(
+        METEORA_DLMM_PROGRAM,
+        dlmmMetas(srcAta, dstAta, SIGNER, true),
+        cat(dlmmData(DLMM_SWAP2, 4000n, 50n), rai),
+      ),
+    ]);
+    expect(intent.summary).toBe("swap");
+    expect(intent.outflows[0]?.amount).toMatchObject({ amount: "4000" });
+    expect(intent.minimumReceived?.[0]?.amount).toMatchObject({ amount: "50" });
+  });
+
+  it.each([
+    ["swap with a trailing byte", cat(dlmmData(DLMM_SWAP, 5n, 1n), Uint8Array.of(0)), dlmmMetas()],
+    ["swap with 14 accounts", dlmmData(DLMM_SWAP, 5n, 1n), dlmmMetas().slice(0, 14)],
+    [
+      "swap2 whose slices over-read",
+      cat(dlmmData(DLMM_SWAP2, 5n, 1n), new Uint8Array([9, 0, 0, 0, 0, 1])),
+      dlmmMetas(undefined, undefined, SIGNER, true),
+    ],
+    [
+      "swap2 with a trailing byte",
+      cat(dlmmData(DLMM_SWAP2, 5n, 1n), new Uint8Array([0, 0, 0, 0]), Uint8Array.of(0)),
+      dlmmMetas(undefined, undefined, SIGNER, true),
+    ],
+    [
+      "swap2 with an unknown AccountsType tag",
+      cat(dlmmData(DLMM_SWAP2, 5n, 1n), new Uint8Array([1, 0, 0, 0, 7, 1])),
+      dlmmMetas(undefined, undefined, SIGNER, true),
+    ],
+    ["truncated swap data", dlmmData(DLMM_SWAP, 5n, 1n).subarray(0, 22), dlmmMetas()],
+  ])("falls back for %s", (_name, data, metas) => {
+    const intent = intentOf([ix(METEORA_DLMM_PROGRAM, metas, data)]);
+    expect(hasAuthority(intent, METEORA_DLMM_PROGRAM)).toBe(true);
+  });
+
+  it("falls back when the user slot is not the signer", () => {
+    const intent = intentOf([
+      /* The signer is still in the ix — at the source slot — while another account is user. */
+      ix(METEORA_DLMM_PROGRAM, dlmmMetas(SIGNER, ACC(31), ACC(40)), dlmmData(DLMM_SWAP, 5n, 1n)),
+    ]);
+    expect(hasAuthority(intent, METEORA_DLMM_PROGRAM)).toBe(true);
+  });
+
+  it("falls back when source and destination resolve to the same mint", () => {
+    const ata = associatedTokenAddress(SIGNER, WSOL, TOKEN);
+    const intent = intentOf([
+      ix(METEORA_DLMM_PROGRAM, dlmmMetas(ata, ata), dlmmData(DLMM_SWAP, 5n, 1n)),
+    ]);
+    expect(hasAuthority(intent, METEORA_DLMM_PROGRAM)).toBe(true);
+  });
+
+  it("a non-ATA source account leaves the leg in token-account units", () => {
+    const intent = intentOf([
+      ix(METEORA_DLMM_PROGRAM, dlmmMetas(), dlmmData(DLMM_SWAP, 6000n, 100n)),
+    ]);
+    expect(intent.summary).toBe("swap");
+    expect(intent.outflows[0]).toMatchObject({
+      to: METEORA_DLMM_PROGRAM,
+      amount: { asset: ACC(30), amount: "6000" },
+      tokenAccount: ACC(30),
+      verified: false,
+    });
   });
 });
