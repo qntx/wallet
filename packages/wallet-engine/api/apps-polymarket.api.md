@@ -741,7 +741,7 @@ class NetworkController extends Controller<NetworkControllerState> {
     init(): Promise<void>;
     // (undocumented)
     lock(): void;
-    pinnedTronApi(network: string): TronApi;
+    pinnedTronApi(network: string, until?: () => number): TronApi;
     solanaRpc(network: string): SolanaRpc;
     tronApi(network: string): TronApi;
 }
@@ -790,6 +790,7 @@ type Options$1 = {
     readonly gateway?: GatewayConfig | undefined;
     readonly setTimer: SetTimer;
     readonly random: (length: number) => Uint8Array;
+    readonly now: () => number;
 };
 
 // @public (undocumented)
