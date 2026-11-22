@@ -1,8 +1,8 @@
 /**
  * Signing-path seams — the structural half of "the kernel signs only through the plan → backend →
- * assemble pipeline": the `@qntx/wallet-chains/<family>/sign` private-key entries are imported
- * only by run.ts (the plan executor) and sessions.ts (the session signer), and inside
- * modules/chains only keys.ts touches derivation or curve code.
+ * assemble pipeline": the `@qntx/wallet-chains/<family>/sign` private-key entries are imported only
+ * by run.ts (the plan executor) and sessions.ts (the session signer), and inside modules/chains
+ * only keys.ts touches derivation or curve code.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -50,7 +50,11 @@ const importNames = (clause: string): ReadonlyArray<string> => {
   const braces = /\{([^}]*)\}/s.exec(clause);
   if (braces !== null) {
     for (const entry of (braces[1] ?? "").split(",")) {
-      const imported = entry.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]?.trim();
+      const imported = entry
+        .trim()
+        .replace(/^type\s+/, "")
+        .split(/\s+as\s+/)[0]
+        ?.trim();
       if (imported !== undefined && imported !== "") {
         names.push(imported);
       }
@@ -69,7 +73,7 @@ const importNames = (clause: string): ReadonlyArray<string> => {
 
 /** Line and block comments removed so identifier checks see only live code. */
 const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/\/\/[^\n]*/g, "");
 
 describe("chains/*/sign imports", () => {
   it("the extractor handles import type and multi-line imports", () => {
@@ -142,7 +146,7 @@ describe("modules/chains internals", () => {
       expect(source).not.toContain("privateKey");
       // `backend.sign(task)` is the SigningBackend dispatch; any other `.sign(` would be a
       // sibling signing with raw key material outside the keys.ts bridge.
-      expect(stripComments(source).replace(/\bbackend\.sign\(/g, "")).not.toContain(".sign(");
+      expect(stripComments(source).replaceAll(/\bbackend\.sign\(/g, "")).not.toContain(".sign(");
     }
     expect(holders).toStrictEqual([]);
     expect(
@@ -155,6 +159,6 @@ describe("modules/chains internals", () => {
   it("index.ts hands the withWalletSeed seed only to seedKeys(", () => {
     const source = stripComments(readFileSync(join(CHAINS, "index.ts"), "utf8"));
     const passed = /seedKeys\(\s*seed\b|\(\s*seed\s*\)\s*=>/g;
-    expect(/\bseed\b/.test(source.replace(passed, ""))).toBe(false);
+    expect(/\bseed\b/.test(source.replaceAll(passed, ""))).toBe(false);
   });
 });

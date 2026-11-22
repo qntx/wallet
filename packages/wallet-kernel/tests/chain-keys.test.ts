@@ -353,9 +353,7 @@ describe("run.ts plan execution", () => {
   describe("evm.fiat24-session", () => {
     /* vectors/chains/fiat24.json holds a session signature for this request under the anvil
        key 0 — the same key the chain.sign flow tests import. */
-    const FIAT24_KEY = fromHex(
-      "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const FIAT24_KEY = fromHex("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
     const fiat24 = JSON.parse(
       readFileSync(join(import.meta.dirname, "../../../vectors/chains/fiat24.json"), "utf8"),
     ) as {
@@ -388,7 +386,7 @@ describe("run.ts plan execution", () => {
         expect(prepared.signer?.toLowerCase()).toBe(fiat24Case.signer.toLowerCase());
         const result = await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
         expect(result.kind).toBe("evm.fiat24-session");
-        const signature = result["signature"] as Uint8Array;
+        const signature = (result as Record<string, unknown>)["signature"] as Uint8Array;
         expect(recoverEvmSigner(request as never, { signature })).toBe(
           prepared.signer?.toLowerCase(),
         );

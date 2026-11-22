@@ -1,9 +1,9 @@
 /**
- * The §7.1 access-code derivation: `accessHash = Argon2id(P = code, S =
- * "qntx-card/v1/access" ‖ ID(A), m = 65536, t = 3, p = 4, T = 32, v = 0x13)`. The code arrives
- * as the ASCII bytes `SecureInput` hands over, so it never becomes a JS string: 6–64 bytes,
- * each in 0x20–0x7E — anything else is `invalid-input` and never reaches Argon2id, which is
- * injected by the host runtime.
+ * The §7.1 access-code derivation: `accessHash = Argon2id(P = code, S = "qntx-card/v1/access" ‖
+ * ID(A), m = 65536, t = 3, p = 4, T = 32, v = 0x13)`. The code arrives as the ASCII bytes
+ * `SecureInput` hands over, so it never becomes a JS string: 6–64 bytes, each in 0x20–0x7E —
+ * anything else is `invalid-input` and never reaches Argon2id, which is injected by the host
+ * runtime.
  */
 import { concatBytes } from "@noble/hashes/utils.js";
 

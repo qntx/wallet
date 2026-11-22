@@ -15,10 +15,7 @@ import {
 } from "../src/modules/card/protocol/identity.ts";
 import type { Anchor } from "../src/modules/card/protocol/identity.ts";
 import { kdf, m2, unM2 } from "../src/modules/card/protocol/kdf.ts";
-import type {
-  Argon2id as KernelArgon2id,
-  SecureInputResult,
-} from "../src/platform.ts";
+import type { Argon2id as KernelArgon2id, SecureInputResult } from "../src/platform.ts";
 import { loadVectors } from "./helpers.ts";
 
 const hex = hexToBytes;
@@ -251,9 +248,7 @@ describe("accessHash", () => {
 
   it("rejects a wrong-length cardId without calling Argon2id", async () => {
     const spy: Argon2id = async () => Promise.resolve(new Uint8Array(32));
-    await expect(
-      accessHash(utf8ToBytes("123456"), new Uint8Array(15), spy),
-    ).rejects.toMatchObject({
+    await expect(accessHash(utf8ToBytes("123456"), new Uint8Array(15), spy)).rejects.toMatchObject({
       code: "invalid-input",
     });
   });
@@ -322,26 +317,30 @@ describe("accessHash", () => {
     expect(bytesToHex(result)).toBe(v.accessHash);
   });
 
-  it("hashes the SecureInputResult value bytes without touching the caller's buffer", {
-    timeout: 30_000,
-  }, async () => {
-    const v = realCostAccepted;
-    const input: SecureInputResult = { ok: true, value: utf8ToBytes(v.code) };
-    if (!input.ok) {
-      throw new Error("unreachable");
-    }
-    let password: Uint8Array | undefined;
-    const real: Argon2id = (p, salt, cost, length) => {
-      password = p;
-      return Promise.resolve(
-        argon2id(p, salt, { m: cost.memoryKiB, t: cost.passes, p: cost.lanes, dkLen: length }),
-      );
-    };
-    const result = await accessHash(input.value, hex(v.cardId), real);
-    expect(bytesToHex(result)).toBe(v.accessHash);
-    expect(bytesToHex(input.value)).toBe(bytesToHex(utf8ToBytes(v.code)));
-    expect(password !== undefined && [...password].every((b) => b === 0)).toBe(true);
-  });
+  it(
+    "hashes the SecureInputResult value bytes without touching the caller's buffer",
+    {
+      timeout: 30_000,
+    },
+    async () => {
+      const v = realCostAccepted;
+      const input: SecureInputResult = { ok: true, value: utf8ToBytes(v.code) };
+      if (!input.ok) {
+        throw new Error("unreachable");
+      }
+      let password: Uint8Array | undefined;
+      const real: Argon2id = async (p, salt, cost, length) => {
+        password = p;
+        return Promise.resolve(
+          argon2id(p, salt, { m: cost.memoryKiB, t: cost.passes, p: cost.lanes, dkLen: length }),
+        );
+      };
+      const result = await accessHash(input.value, hex(v.cardId), real);
+      expect(bytesToHex(result)).toBe(v.accessHash);
+      expect(bytesToHex(input.value)).toBe(bytesToHex(utf8ToBytes(v.code)));
+      expect(password !== undefined && [...password].every((b) => b === 0)).toBe(true);
+    },
+  );
 
   it("accepts the kernel's Argon2id type", () => {
     const kernelArgon2id: KernelArgon2id = async () => Promise.resolve(new Uint8Array(32));

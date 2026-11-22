@@ -353,7 +353,7 @@ describe("sessions.sign against the oracle vectors", () => {
   /* The seam: sessions.sign's output is the plan → task signer → assemble artefact of the
      scheme's document, not a bespoke signature. */
   it.each(allowListed)("$name is the plan → task signer → assemble artefact", async (vector) => {
-    const start = vector.expiresAfter !== undefined ? vector.nonce - 1 : vector.nonce;
+    const start = vector.expiresAfter === undefined ? vector.nonce : vector.nonce - 1;
     const { signed, keyBytes, header, now } = await signEndToEnd(vector, start);
     const document = hyperliquidL1Agent.document(signArgs(vector), header, now);
     const plan = planEvm({ kind: "evm.typed-data", typedData: document } as never, {
@@ -364,9 +364,7 @@ describe("sessions.sign against the oracle vectors", () => {
     const assembled = assembleEvm(plan, [signEvmTask(task, keyBytes)]);
     expect(assembled.kind).toBe("signed");
     if (assembled.kind === "signed") {
-      expect(bytesToHex(bytesField(signed, "signature"))).toBe(
-        bytesToHex(assembled.artefact as Uint8Array),
-      );
+      expect(bytesToHex(bytesField(signed, "signature"))).toBe(bytesToHex(assembled.artefact));
     }
   });
 

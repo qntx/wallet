@@ -15,7 +15,7 @@ describe("SecureInput host component", () => {
 
     expect(SecureInput).toBe("secure-input-host-component");
     expect(getHostComponent).toHaveBeenCalledTimes(1);
-    const [name, configFactory] = getHostComponent.mock.calls[0] as [
+    const [name, configFactory] = getHostComponent.mock.calls[0] as unknown as [
       string,
       () => unknown,
     ];

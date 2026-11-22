@@ -1,9 +1,9 @@
 // oxlint-disable typescript/require-await -- test-only callbacks satisfy async contracts
 /**
- * Card client × signing plans × transport — the card protocol's command surface against every
- * task of the committed signing-plan vectors, card-side signature decode and Ed25519 stream
- * assembly against chains assemble for a high-s ECDSA signature, and the wire bounds the native
- * reader and kernel binding enforce.
+ * Card client × signing plans × transport — the card protocol's command surface against every task
+ * of the committed signing-plan vectors, card-side signature decode and Ed25519 stream assembly
+ * against chains assemble for a high-s ECDSA signature, and the wire bounds the native reader and
+ * kernel binding enforce.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +22,6 @@ import { assembleBitcoinPsbt, planBitcoinPsbt } from "@qntx/wallet-chains/bitcoi
 import { assembleEvm, planEvm } from "@qntx/wallet-chains/evm";
 import { assembleSolana, planSolana } from "@qntx/wallet-chains/solana";
 
-import { pathString } from "../src/modules/chains/keys.ts";
 import {
   cmd,
   decode,
@@ -33,6 +32,7 @@ import {
 } from "../src/modules/card/protocol/index.ts";
 import { m2 } from "../src/modules/card/protocol/kdf.ts";
 import { sessionFromKeys } from "../src/modules/card/protocol/session.ts";
+import { pathString } from "../src/modules/chains/keys.ts";
 import { loadVectors } from "./helpers.ts";
 
 const hex = hexToBytes;
@@ -77,8 +77,6 @@ const requireBytes = (value: string | undefined, what: string): Uint8Array => {
   }
   return hex(value);
 };
-
-type Task = (typeof vectors.cases)[number]["stages"][number][number];
 
 const everyTask = vectors.cases.flatMap((c) =>
   c.stages.flatMap((stage) => stage.map((task) => ({ name: c.name, task }))),
@@ -150,7 +148,7 @@ describe("card decode × chains assemble", () => {
   };
 
   const privateAt = (path: ReadonlyArray<number>): Uint8Array => {
-    const privateKey = root.derive(pathString(path)).privateKey;
+    const { privateKey } = root.derive(pathString(path));
     if (privateKey === null) {
       throw new Error("no private key at path");
     }
@@ -167,7 +165,10 @@ describe("card decode × chains assemble", () => {
   };
 
   /** BIP-340 over the tweaked output key (protocol.md §12.2), zero aux like the vectors. */
-  const bip340Sign = (task: { message: Uint8Array; tweak: Uint8Array }, priv: Uint8Array): Uint8Array => {
+  const bip340Sign = (
+    task: { message: Uint8Array; tweak: Uint8Array },
+    priv: Uint8Array,
+  ): Uint8Array => {
     const d0 = bytesToNumberBE(priv);
     const even = secp256k1.getPublicKey(priv, true)[0] === 0x02 ? d0 : N - d0;
     const tweaked = (even + bytesToNumberBE(task.tweak)) % N;
@@ -222,7 +223,7 @@ describe("card decode × chains assemble", () => {
       if (task.scheme === "ecdsa-secp256k1") {
         return highS(task.digest, priv);
       }
-      throw new Error(`unexpected scheme ${task.scheme}`);
+      throw new Error(`unexpected task scheme: ${JSON.stringify(task)}`);
     });
     const assembled = assembleBitcoinPsbt(plan, signatures);
     expect(assembled.kind).toBe("signed");
@@ -231,19 +232,19 @@ describe("card decode × chains assemble", () => {
       for (const entry of c.artefact.signatures) {
         const input = tx.getInput(entry.index);
         const got =
-          typeof entry.partialSig === "string"
-            ? input.partialSig?.[0]?.[1]
-            : input.tapKeySig;
-        expect(bytesToHex(got ?? new Uint8Array())).toBe(
-          entry.partialSig ?? entry.tapKeySig ?? "",
-        );
+          typeof entry.partialSig === "string" ? input.partialSig?.[0]?.[1] : input.tapKeySig;
+        expect(bytesToHex(got ?? new Uint8Array())).toBe(entry.partialSig ?? entry.tapKeySig ?? "");
       }
     }
   });
 
   it("solana: the ed25519 stream assembly decodes and assembles to the vector", () => {
     const c = caseOf("solana-transaction-legacy-single-signer");
-    const request = { ...c.request, account: ACCOUNT, message: hex(c.request["message"] as string) };
+    const request = {
+      ...c.request,
+      account: ACCOUNT,
+      message: hex(c.request["message"] as string),
+    };
     const plan = planSolana(request as never, keyOf(c));
     const task = plan.tasks[0];
     if (task.scheme !== "ed25519") {
@@ -253,7 +254,12 @@ describe("card decode × chains assemble", () => {
     const signature = ed25519.sign(task.message, priv);
     // The card streams R‖A‖M and returns le32(S); the client reassembles and verifies.
     expect(
-      decode.ed25519(signature.subarray(32), signature.subarray(0, 32), task.publicKey, task.message),
+      decode.ed25519(
+        signature.subarray(32),
+        signature.subarray(0, 32),
+        task.publicKey,
+        task.message,
+      ),
     ).toStrictEqual(signature);
     const assembled = assembleSolana(plan, [signature]);
     expect(assembled.kind).toBe("signed");

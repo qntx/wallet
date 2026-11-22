@@ -1,7 +1,7 @@
 /**
  * Sign-entry seam — every runtime export of `src/<family>/sign.ts` other than the task signer
- * (`sign<Family>Task`, the private-key leaf the kernel drives) is a raw-key API implemented
- * through `signLocally(`: plan → task signer → assemble, never bespoke signing.
+ * (`sign<Family>Task`, the private-key leaf the kernel drives) is a raw-key API implemented through
+ * `signLocally(`: plan → task signer → assemble, never bespoke signing.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,24 +24,30 @@ const FAMILIES = [
 const segmentOf = (source: string, name: string): string => {
   const marker = `export const ${name}`;
   const start = source.indexOf(marker);
-  if (start < 0) {
+  if (start === -1) {
     throw new Error(`${name} is not an exported const`);
   }
   const next = source.indexOf("export ", start + marker.length);
-  return source.slice(start, next < 0 ? source.length : next);
+  return source.slice(start, next === -1 ? source.length : next);
 };
 
 describe("family /sign entries", () => {
-  it.each(FAMILIES)("%s: exports are exactly the task signer plus signLocally APIs", (family, mod) => {
-    const task = `sign${family[0]?.toUpperCase()}${family.slice(1)}Task`;
-    const exports = Object.keys(mod).toSorted();
-    const expected = exports.filter((name) => name !== task);
-    expect(exports).toContain(task);
-    const source = readFileSync(join(import.meta.dirname, "..", "src", family, "sign.ts"), "utf8");
-    for (const name of expected) {
-      expect(segmentOf(source, name), `${family}.${name} runs through signLocally`).toContain(
-        "signLocally(",
+  it.each(FAMILIES)(
+    "%s: exports are exactly the task signer plus signLocally APIs",
+    (family, mod) => {
+      const task = `sign${family[0]?.toUpperCase()}${family.slice(1)}Task`;
+      const exports = Object.keys(mod).toSorted();
+      const expected = exports.filter((name) => name !== task);
+      expect(exports).toContain(task);
+      const source = readFileSync(
+        join(import.meta.dirname, "..", "src", family, "sign.ts"),
+        "utf8",
       );
-    }
-  });
+      for (const name of expected) {
+        expect(segmentOf(source, name), `${family}.${name} runs through signLocally`).toContain(
+          "signLocally(",
+        );
+      }
+    },
+  );
 });
