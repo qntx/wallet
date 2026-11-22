@@ -619,7 +619,7 @@ export type HyperliquidL1Params = {
     readonly action: HyperliquidL1Action;
     readonly nonce: number;
     readonly vaultAddress?: string;
-    readonly expiresAfter?: number;
+    readonly expiresAfter: number;
 };
 
 // @public (undocumented)
