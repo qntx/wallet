@@ -21,7 +21,13 @@ import { chains } from "@qntx/wallet/chains";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
-import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
+import {
+  scanChain,
+  scanSourceWithHistory,
+  scanUtxos,
+  scriptPubKey,
+  utxosFromHistory,
+} from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraDeps, EsploraResponse } from "../src/chains/bitcoin.ts";
 import {
   esplora,
@@ -807,6 +813,21 @@ const legacyFlow = async (): Promise<void> => {
       1,
     );
     expect(changeChain.some((a) => a.used)).toBe(true);
+    // History-derived UTXOs must equal the /utxo read on the same spent wallet — bip84's
+    // change chain is scanned even though its receive chain is empty.
+    await step("utxosFromHistory matches /utxo", async () => {
+      const scanned84 = await scanSourceWithHistory(
+        es,
+        { kind: "xpub", template: "btc.bip84", xpub: xpub84 },
+        NETWORK,
+        bitcoinNetwork(NETWORK).params,
+      );
+      const derived = await utxosFromHistory(es, scanned84, bitcoinNetwork(NETWORK).params);
+      const direct = await scanUtxos(es, scanned84, bitcoinNetwork(NETWORK).params);
+      console.log(`utxosFromHistory=${String(derived.length)} scanUtxos=${String(direct.length)}`);
+      expect(derived.length).toBeGreaterThan(0);
+      expect(derived).toStrictEqual(direct);
+    });
   } finally {
     spawnSync("docker", ["rm", "-f", LEGACY]);
   }

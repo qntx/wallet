@@ -6,6 +6,27 @@
 
 import { MessageFields } from '@qntx/siwx';
 
+// @public
+type AccountAuthority = {
+    readonly kind: "morpho";
+    readonly contract: string;
+    readonly verified: boolean;
+    readonly authorized: string;
+    readonly grant: boolean;
+    readonly deadline?: number;
+} | {
+    readonly kind: "aave-credit";
+    readonly contract: string;
+    readonly verified: boolean;
+    readonly delegatee: string;
+    readonly amount: AssetAmount;
+    readonly unlimited: boolean;
+    readonly deadline?: number;
+} | {
+    readonly kind: "snapshot-alias";
+    readonly alias: string;
+};
+
 // @public (undocumented)
 type AccountRef = {
     readonly kind: "hd";
@@ -295,6 +316,14 @@ type Execution = {
     readonly data: string;
 };
 
+// @public
+type FarcasterKey = {
+    readonly kind: "add" | "request";
+    readonly key: string;
+    readonly requestFid: string;
+    readonly deadline?: number;
+};
+
 // @public (undocumented)
 export const HYPERLIQUID_DOMAIN = 19;
 
@@ -369,7 +398,7 @@ export const isCanonicalHex: (value: string) => boolean;
 export const isEvmAddress: (value: string) => boolean;
 
 // @public
-export const isZeroExSettler: (chainId: number, address: string) => boolean;
+export const isZeroExSettler: (chainId: number, address: string, feature?: bigint) => boolean;
 
 // @public
 export const LIDO_CHAIN = 1;
@@ -407,6 +436,9 @@ type MessageContent = {
     readonly safe?: SafeTransaction;
     readonly hyperliquid?: HyperliquidAction;
     readonly polymarket?: PolymarketContent;
+    readonly authorization?: TokenAuthorization;
+    readonly authority?: AccountAuthority;
+    readonly farcaster?: FarcasterKey;
     readonly fields?: ReadonlyArray<TypedDataLeaf>;
 };
 
@@ -421,7 +453,7 @@ export const normalizeEvmTransaction: (tx: unknown) => EvmTransaction;
 
 // @public
 type OffchainOrder = {
-    readonly protocol: "1inch" | "uniswapx" | "cow";
+    readonly protocol: "1inch" | "uniswapx" | "cow" | "0x";
     readonly maker: string;
     readonly give: AssetAmount;
     readonly receive: ReadonlyArray<{
@@ -714,6 +746,19 @@ type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public
+type TokenAuthorization = {
+    readonly kind: "transfer" | "receive";
+    readonly to: string;
+    readonly amount: AssetAmount;
+    readonly validAfter: number;
+    readonly validBefore?: number;
+} | {
+    readonly kind: "cancel";
+    readonly token: string;
+    readonly nonce: string;
 };
 
 // @public

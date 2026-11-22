@@ -72,6 +72,9 @@ const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   "4qGxbcXkMQjd": [undefined, 1],
   "3gDLixGSjoHz": [undefined, 1],
   "5CM9JJCdwqzt": [undefined, 1],
+  "4KtJNRr1kXZD": [undefined, 1],
+  "5jvyWbPYSPJZ": ["program-authority", 1],
+  "53p1zq9z7RF1": [undefined, 0],
 };
 
 const want = (signature: string): readonly [BlindReason | undefined, number] =>

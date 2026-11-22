@@ -76,6 +76,9 @@ type Call = { readonly path: string; readonly body: Record<string, unknown> };
 const is = (body: Record<string, unknown>, selector: string): boolean =>
   typeof body["data"] === "string" && body["data"].startsWith(selector);
 
+const isBalanceRead = (c: Call): boolean =>
+  c.path === "/wallet/triggerconstantcontract" && is(c.body, "70a08231");
+
 const tronApi = (answers: Answers, calls: Call[]): TronApi => ({
   post: async (path, body) => {
     const b = isObject(body) ? body : {};
@@ -90,6 +93,9 @@ const tronApi = (answers: Answers, calls: Call[]): TronApi => ({
       return Promise.resolve(answers.reward ?? {});
     }
     if (path === "/v1/accounts/account") {
+      if (answers.indexer === "fail") {
+        return Promise.reject(new Error("indexer down"));
+      }
       return Promise.resolve(answers.indexer ?? { success: true, data: [{}] });
     }
     if (path === "/wallet/getassetissuebyid") {
@@ -314,6 +320,75 @@ describe("AssetsController tron balances", () => {
     await assets.init();
     await assets.refresh(OWNER, TRON_NET);
     expect(calls.some((c) => c.path === "/v1/accounts/account")).toBe(false);
+  });
+
+  it("calls balanceOf only for built-in contracts the indexer lists as held", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        account: accountBody(),
+        indexer: { success: true, data: [{ trc20: [{ [USDT]: "999" }] }] },
+        balances: { [USDT]: 4_201_000n },
+      },
+      calls,
+      { gateway: true },
+    );
+    await assets.init();
+    const balances = await assets.refresh(OWNER, TRON_NET);
+    const balanceReads = calls.filter(isBalanceRead);
+    expect(balanceReads.map((c) => String(c.body["contract_address"]))).toStrictEqual([USDT]);
+    // The node read — not the indexer's 999 — is the displayed balance.
+    expect(token(balances, USDT)?.balance).toBe("4201000");
+    // Every other built-in row still renders, "0" and verified, without a node call.
+    expect(balances.tokens).toHaveLength(9);
+    expect(balances.tokens.every((t) => t.verified)).toBe(true);
+    expect(balances.tokens.filter((t) => t.address !== USDT).every((t) => t.balance === "0")).toBe(
+      true,
+    );
+  });
+
+  it("calls no built-in balanceOf when the indexer lists nothing held", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        account: accountBody(),
+        indexer: { success: true, data: [{ trc20: [] }] },
+      },
+      calls,
+      { gateway: true },
+    );
+    await assets.init();
+    const balances = await assets.refresh(OWNER, TRON_NET);
+    expect(calls.filter(isBalanceRead)).toStrictEqual([]);
+    expect(balances.tokens).toHaveLength(9);
+    expect(balances.tokens.every((t) => t.balance === "0")).toBe(true);
+  });
+
+  it("reads every built-in contract when the indexer discovery fails", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        account: accountBody(),
+        indexer: "fail",
+        balances: { [USDT]: 7n },
+      },
+      calls,
+      { gateway: true },
+    );
+    await assets.init();
+    const balances = await assets.refresh(OWNER, TRON_NET);
+    const balanceReads = calls.filter(isBalanceRead);
+    expect(balanceReads).toHaveLength(9);
+    expect(token(balances, USDT)?.balance).toBe("7");
+  });
+
+  it("reads every built-in contract when the gateway serves no discovery", async () => {
+    const calls: Call[] = [];
+    const assets = make({ account: accountBody() }, calls);
+    await assets.init();
+    await assets.refresh(OWNER, TRON_NET);
+    const balanceReads = calls.filter(isBalanceRead);
+    expect(balanceReads).toHaveLength(9);
   });
 
   it("rejects the refresh rather than show a fabricated zero for a failed built-in read", async () => {

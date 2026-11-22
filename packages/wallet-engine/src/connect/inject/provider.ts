@@ -464,7 +464,7 @@ export function install(info: ProviderInfo): void {
     },
     "solana:signTransaction": {
       version: "1.0.0",
-      supportedTransactionVersions: ["legacy", 0],
+      supportedTransactionVersions: ["legacy", 0, 1],
       signTransaction: async (...inputs) => {
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
         const result = (await signTransactions("solana:signTransaction", inputs)) as {
@@ -475,7 +475,7 @@ export function install(info: ProviderInfo): void {
     },
     "solana:signAndSendTransaction": {
       version: "1.0.0",
-      supportedTransactionVersions: ["legacy", 0],
+      supportedTransactionVersions: ["legacy", 0, 1],
       signAndSendTransaction: async (...inputs) => {
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
         const result = (await signTransactions("solana:signAndSendTransaction", inputs)) as {

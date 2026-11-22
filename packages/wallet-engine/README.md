@@ -137,6 +137,31 @@ the package root.
   `withdrawLnurl`.
 - `engine.unsubscribe` — stops listening to the wallet and the phishing-list refresh.
 
+Transaction tracking: a send whose outcome is unknown is never declared `dropped` by a timer.
+On EVM a transaction ends on its own receipt, on its nonce being consumed without its receipt
+(cross-checked against the host endpoint), or on a replacement; on Bitcoin only on inclusion or
+on one of its inputs being spent by another confirmed transaction. When no endpoint has known a
+transaction for thirty minutes the row turns `stuck: true` — still `submitted`, still holding its
+nonce or inputs, polled at the finality interval — and the host should offer `speed-up` /
+`cancel`. A row recovered from a broadcast whose outcome never settled carries
+`rebroadcast: false`: watched, never resent. TRON and Solana keep proof-based expiry (chain
+expiration, blockhash / durable-nonce validity). A durable-nonce transaction is `dropped` only
+when the nonce account's signature history provably covers the window since submission and
+still does not list the transaction — a trimmed ledger can make a landed send read absent.
+
+Chain binding on the gateway path: when the gateway serves a TRON or Solana network, the value
+that binds the signed bytes to the chain — TRON's reference block, Solana's recent blockhash —
+must be confirmed by a host endpoint, and the answering node must report the configured
+network's genesis. A gateway-only TRON or Solana send is refused rather than signed on one
+party's word.
+
+L1 data fees on OP Stack and Scroll move with the L1's own fee market, so the `l1Data` amount an
+intent displays is a bound, not the raw oracle read: the read plus three L1 price updates of at
+most ×9/8 (two for the inclusion window, one of review headroom). Approval re-reads the oracle
+before signing, and broadcast re-reads it again whenever the signature took longer than one
+12 s L1 slot; when the current price outgrows what the shown maximum covers the request ends
+(`the L1 data fee rose — start over`) — the host re-prepares and the user approves the new bound.
+
 The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of the collection and
 key, authenticates every value it reads back (a row that fails authentication reads as absent),
 and rebuilds a database keyed by another data key empty.
@@ -163,7 +188,11 @@ createWalletEngine({
 When the gateway serves the network it is tried first (route `POST /v1/tron/:caip2/*`, an
 allow-list of node-API paths plus the TronGrid indexer feeds); every decisive read is still
 cross-checked against a second provider before anything is built or signed, and a
-`reads-unverified` flag marks a prepare whose cross-check could not run.
+`reads-unverified` flag marks a prepare whose cross-check could not run. Two reads are binding
+rather than flaggable: the reference block — what binds the signed bytes to the chain — must be
+confirmed by a host endpoint when the gateway serves the network, so a gateway-only TRON send is
+refused; and the answering node itself must report the network's genesis block, so a gateway
+provider on another chain is refused before anything is signed.
 
 Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
 TRC-10 decimal id or a TRC-20 `T…` address and an optional `memo` (1–256 UTF-8 bytes, no line
@@ -209,8 +238,12 @@ supplies as `domain`/`types`/`message`, and `wallet_watchAsset` accepts TRC-20 o
 Tracking follows the chain's own rule: the signed bytes bind to the solidified head and stay
 `submitted` — rebroadcast as needed — until the solidified node reports them (solidified
 inclusion is `final`, a failed receipt is `failed`) or its timestamp passes the transaction's
-`expiration`, which is `dropped`. Broadcast answers the node does not classify are never
-guessed: only a definite refusal fails a request.
+`expiration`, which is `dropped`. A poll never trusts one upstream's word for an absence: every
+read of a poll is pinned to a single upstream (the gateway is pinned to one provider once it
+answers), and `dropped` or `reorged` is reached only when a configured host endpoint agrees, or
+— without one — after three consecutive matching polls spanning more than one solidification
+period (~57 seconds). Broadcast answers the node does not classify are never guessed: only a
+definite refusal fails a request.
 
 History is display-only indexer data: the gateway's TronGrid feeds, verified entry by entry on
 the node (the raw data hash must equal the txid and every claimed leg must decode to the claim)
@@ -310,9 +343,17 @@ restrictions; the gateway answer only decides what the UI offers.
   `trade.place` requires `slippageBps` (there is no default — the host must show the computed
   cap it is about to sign).
 - `trade.place`/`close` answer `{ outcomes, price }`; each outcome is `resting`, `filled`,
-  `rejected`, `not-placed` or `unknown` per cloid. `unknown` means the POST's result is
-  unknowable and the action may have committed — the engine reconciles it by cloid and
-  **nothing is ever re-sent**. Give every order a stable `cloid` so reconciliation can find it.
+  `rejected` or `unknown` per cloid. `unknown` means the POST's result is unknowable and the
+  action may have committed — the engine reconciles it by cloid and **nothing is ever
+  re-sent**. Give every order a stable `cloid` so reconciliation can find it.
+- `unknown` is never proven "not placed": no documented consistency between an info read and
+  L1 state means an `unknownOid` answer cannot rule out a committed order. `trade.corrections`
+  is the follow-up channel — `subscribe` gets `{ group, cloid, outcome }` every time a pending
+  cloid is proven later: by `orderStatus` re-asks for ten minutes after the call returned
+  (every 10 s, bounded set of 64), or by live user-view frames — an `openOrders` frame carrying
+  the cloid corrects to `resting` immediately, a `fills` frame carrying it triggers an
+  immediate `orderStatus` check (a fill alone cannot prove a full fill). Locking the vault
+  drops the pending set.
 - `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`scheduleCancel`/`twap`/
   `twapCancel`/`setLeverage`/`adjustMargin`/`close` round out the action set.
 

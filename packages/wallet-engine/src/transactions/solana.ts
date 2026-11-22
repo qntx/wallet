@@ -17,10 +17,11 @@ import {
   decodeSolana,
   MPL_CORE_PROGRAM,
   netAfterTransferFee,
+  parseCompiledMessage,
   parseMintExtensions,
   PROGRAM_IDS,
 } from "@qntx/wallet-chains/solana";
-import type { MintExtensionSummary } from "@qntx/wallet-chains/solana";
+import type { MintExtensionSummary, ParsedSolanaMessage } from "@qntx/wallet-chains/solana";
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
 import { chains } from "@qntx/wallet/chains";
 
@@ -84,6 +85,13 @@ const SOLANA_REFUSED =
   /^Transaction simulation failed|signature verification failure|precompile verification failure|^invalid transaction/i;
 
 /**
+ * The margin `submittedAt` gets when the nonce account's history must reach back before it:
+ * device-clock skew against a block's `blockTime` — the larger the margin, the more conservative
+ * the `dropped` proof.
+ */
+const SOLANA_HISTORY_SKEW_MS = 600_000;
+
+/**
  * What a failed `sendTransaction` says about the bytes. A preflight "Blockhash not found" is the
  * node lagging behind the blockhash, not the transaction: it stays unknown until the blockhash
  * expiry settles it.
@@ -117,10 +125,12 @@ const NONCE_DISCRIMINATOR = getAdvanceNonceAccountDiscriminatorBytes();
 export const durableNonceOfMessage = (
   messageBytes: Uint8Array,
 ): { readonly account: string | undefined; readonly value: string } | undefined => {
-  const compiled = getCompiledTransactionMessageDecoder().decode(messageBytes);
-  if (!("instructions" in compiled)) {
-    return undefined;
-  }
+  /* `parseCompiledMessage` maps every supported version onto one model — kit's own decoder
+     gives a v1 message instruction headers/payloads instead of `instructions`, which would
+     silently misclassify a v1 durable nonce. A message that fails to parse is not
+     blockhash-lifetime: the error propagates so the poll cannot misclassify a durable
+     transaction and drop it while it can still land. */
+  const compiled: ParsedSolanaMessage = parseCompiledMessage(messageBytes);
   const [first] = compiled.instructions;
   const data = first?.data;
   const accountIndices = first?.accountIndices;
@@ -138,7 +148,7 @@ export const durableNonceOfMessage = (
     return undefined;
   }
   return {
-    account: nonceAccount === undefined ? undefined : String(nonceAccount),
+    account: nonceAccount,
     value: compiled.lifetimeToken,
   };
 };
@@ -259,15 +269,48 @@ const finishPrepared = async (
   },
 ): Promise<PreparedRequest> => {
   const { account, network, from, fee, unsigned, rpc, independent, apis, intentOf } = args;
+  /* The recent blockhash is the chain binding of the signed bytes: when the gateway may be
+     answering it has to be confirmed by a host endpoint, and both endpoints' genesis must be the
+     configured cluster's — a provider on another cluster would otherwise sign a valid-looking
+     wire for the wrong chain. `build` read the blockhash at `confirmed`; `isBlockhashValid` is
+     asked at `processed`, the freshest bank, so a host a few slots behind still knows it. */
+  if (independent.kind === "unavailable") {
+    throw new ChainError(
+      "invalid-request",
+      `only the gateway vouches for the recent blockhash on ${network} — configure a host endpoint for it`,
+    );
+  }
+  if (independent.kind === "available") {
+    if ((await solana.genesisHash(rpc)) !== ctx.options.networks.info(network).genesisHash) {
+      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
+    }
+    let hostGenesis: string | undefined;
+    let hostValid: { readonly valid: boolean; readonly slot: bigint | undefined } | undefined;
+    try {
+      hostGenesis = await solana.genesisHash(independent.client);
+      hostValid = await solana.blockhashValid(independent.client, unsigned.blockhash);
+    } catch {
+      throw new ChainError(
+        "invalid-request",
+        "the host endpoint could not confirm the recent blockhash",
+      );
+    }
+    if (hostGenesis !== ctx.options.networks.info(network).genesisHash) {
+      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
+    }
+    if (hostValid !== undefined && !hostValid.valid) {
+      throw new ChainError(
+        "invalid-request",
+        "the host endpoint does not know the recent blockhash — try again",
+      );
+    }
+  }
   const quotes = await solana.estimateFee(rpc, unsigned.writable);
   let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
   if (quote === undefined) {
     throw new Error("no fee quote");
   }
-  const flags: Array<RequestCheckCode | undefined> = [
-    independent.kind === "unavailable" ? "reads-unverified" : undefined,
-    ...(args.flags ?? []),
-  ];
+  const flags: Array<RequestCheckCode | undefined> = [...(args.flags ?? [])];
   if (independent.kind === "available") {
     try {
       const others = await solana.estimateFee(independent.client, unsigned.writable);
@@ -540,9 +583,7 @@ export const prepareSolanaStake = async (
     if (!primaryVote) {
       throw new ChainError("invalid-request", `${action.vote} is not a current vote account`);
     }
-    if (independent.kind === "unavailable") {
-      flags.push("reads-unverified");
-    } else if (independent.kind === "available") {
+    if (independent.kind === "available") {
       try {
         if (!(await voteIsCurrent(independent.client, action.vote))) {
           throw new ChainError(
@@ -855,10 +896,9 @@ export const pollSolana = async (
        It is read at finalized before the status, so a value that advanced between the reads can
        never be finalised `dropped` by an answer a stale bank produced. A lookup-loaded account
        cannot be read back, so that transaction is only ever settled by landing. */
+    const nonceAccount = tx.durableNonce.account;
     const nonce =
-      tx.durableNonce.account === undefined
-        ? undefined
-        : await solana.nonceValue(rpc, tx.durableNonce.account);
+      nonceAccount === undefined ? undefined : await solana.nonceValue(rpc, nonceAccount);
     const status = await solana.signatureStatus(rpc, tx.hash);
     const { entry } = status;
     if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
@@ -870,21 +910,43 @@ export const pollSolana = async (
       };
     }
     /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
-       read has no entry at any commitment: the nonce was consumed by something else — `dropped`
-       proven. Anything else — the value still ours, a processed-only entry, a status bank behind
-       the nonce read, an unreadable account — proves nothing and stays tracked. */
+       read has no entry at any commitment. A null status is not yet the drop: the status lookup
+       only reaches back as far as the node's ledger, so a transaction that consumed the nonce
+       long ago can still read absent. The nonce account's own signature history is the proof:
+       ours listed settles the transaction from that entry; absent is `dropped` only when the
+       listing provably reaches back before we submitted — an entry whose blockTime predates
+       `submittedAt` by more than the clock-skew margin. A short, young or blockTime-less
+       listing, or a failed read, proves nothing: keep tracking (never rebroadcast — the nonce
+       is consumed). */
     if (
       nonce !== undefined &&
       nonce.value !== tx.durableNonce.value &&
       status.entry === undefined &&
       status.slot !== undefined &&
       nonce.slot !== undefined &&
-      status.slot >= nonce.slot
+      status.slot >= nonce.slot &&
+      nonceAccount !== undefined
     ) {
-      return { kind: "ended", state: "dropped" };
+      const history = await solana.signaturesForAddress(rpc, nonceAccount).catch(() => undefined);
+      const ours = history?.find((e) => e.signature === tx.hash);
+      if (ours !== undefined) {
+        return {
+          kind: "included",
+          state: ours.err === null || ours.err === undefined ? "confirmed" : "failed",
+          block: { height: ours.slot },
+          final: ours.confirmationStatus === "finalized",
+        };
+      }
+      const coversWindow =
+        history?.some(
+          (e) =>
+            e.blockTime !== undefined &&
+            e.blockTime * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS,
+        ) === true;
+      return coversWindow ? { kind: "ended", state: "dropped" } : undefined;
     }
     const consumed = nonce !== undefined && nonce.value !== tx.durableNonce.value;
-    if (!consumed && tx.raw !== undefined) {
+    if (!consumed && tx.raw !== undefined && tx.rebroadcast !== false) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
@@ -931,12 +993,12 @@ export const pollSolana = async (
     ) {
       return { kind: "ended", state: "dropped" };
     }
-    if (validity.valid && tx.raw !== undefined) {
+    if (validity.valid && tx.raw !== undefined && tx.rebroadcast !== false) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
   }
-  if (tx.raw !== undefined) {
+  if (tx.raw !== undefined && tx.rebroadcast !== false) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
   }
   return undefined;

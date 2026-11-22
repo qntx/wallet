@@ -35,8 +35,15 @@ import {
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
-import { ERC20_ABI, EvmChainAdapter, checkedHex, evmRpcHex } from "../chains/evm.ts";
-import type { EvmUnsignedTransaction } from "../chains/evm.ts";
+import {
+  ERC20_ABI,
+  EvmChainAdapter,
+  L1_SLOT_MS,
+  checkedHex,
+  evmRpcHex,
+  l1FeeBound,
+} from "../chains/evm.ts";
+import type { EvmUnsignedTransaction, L1FeeRead } from "../chains/evm.ts";
 import { LIDO_CHUNK_MAX, LIDO_CHUNK_MIN, LIDO_QUEUE_ABI, LIDO_STETH_ABI } from "../lido/index.ts";
 import { resolveEns } from "../names/ens.ts";
 import {
@@ -57,7 +64,13 @@ import {
   assertSwapIntent,
   assertSwapSimulation,
 } from "../swaps/index.ts";
-import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
+import {
+  RESUBMIT_BASE_MS,
+  RESUBMIT_MAX_MS,
+  STUCK_AFTER_MS,
+  STUCK_NOTE,
+  submitSigned,
+} from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
 import {
@@ -237,6 +250,12 @@ type EvmWire = {
    * `reserve` refuses to sign when a lower nonce is free again below the hold.
    */
   readonly base: number;
+  /**
+   * Last refusal before the signed bytes can leave: called after the signature and the `signed`
+   * transition, before the nonce reserve and `commit` — its failure fails the row, never signs
+   * again, and keeps the nonce free.
+   */
+  readonly beforeBroadcast?: (() => Promise<void>) | undefined;
 };
 
 const signSubmit = async (
@@ -254,6 +273,9 @@ const signSubmit = async (
   try {
     const result = await apis.sign({ request, verify });
     tracked = await ctx.transition(tracked, { state: "signed" });
+    /* The fee bound was read at prepare/approve: a slow signature lets it lapse — the check runs
+       while the nonce is still unreserved and no byte has left. */
+    await wire.beforeBroadcast?.();
     raw = wire.finalize(result);
     /* The nonce becomes this transaction's own in the same segment as the request's commit:
        an overlapping send can never sign it, a refused broadcast frees only this hold. */
@@ -989,18 +1011,18 @@ const nftRead = async <T>(
 
 /**
  * A fee `read` charges beyond `gasUsed × effectiveGasPrice` for `tx`, the larger of the primary and
- * independent reads (the chain charges it either way; the figure only drives display and checks).
- * Unknown when the primary read fails.
+ * independent reads per component (the chain charges it either way; the figure only drives display
+ * and checks). Unknown when the primary read fails.
  */
 const beyondGasRead = async (
   ctx: RouteContext,
   network: string,
   tx: EvmUnsignedTransaction,
   flags: Array<RequestCheckCode | undefined>,
-  read: (client: PublicClient, tx: EvmUnsignedTransaction) => Promise<bigint>,
-): Promise<bigint | undefined> => {
+  read: (client: PublicClient, tx: EvmUnsignedTransaction) => Promise<L1FeeRead>,
+): Promise<L1FeeRead | undefined> => {
   const { networks } = ctx.options;
-  let fee: bigint;
+  let fee: L1FeeRead;
   try {
     fee = await read(networks.client(network), tx);
   } catch {
@@ -1011,13 +1033,86 @@ const beyondGasRead = async (
   if (independent.kind === "available") {
     try {
       const other = await read(independent.client, tx);
-      flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
-      fee = other > fee ? other : fee;
+      flags.push(
+        feesDiffer(fee.raw + fee.extra, other.raw + other.extra) ? "fee-mismatch" : undefined,
+      );
+      fee = {
+        raw: other.raw > fee.raw ? other.raw : fee.raw,
+        extra: other.extra > fee.extra ? other.extra : fee.extra,
+      };
     } catch {
       flags.push("reads-unverified");
     }
   }
   return fee;
+};
+
+/**
+ * The L1 charge a prepared transaction relies on: `shown` is what the intent's `l1Data` displays
+ * and the worst-case fee check uses — the read bounded through three L1 updates (the two of the
+ * inclusion window plus one of review headroom). `stale` re-reads the oracle at approval and
+ * `beforeBroadcast` re-checks the bound before the signed bytes leave; both refuse when a rise the
+ * shown maximum cannot cover is priced.
+ */
+type L1Quote = {
+  readonly shown: bigint;
+  readonly stale: () => Promise<string | undefined>;
+  readonly beforeBroadcast: () => Promise<void>;
+};
+
+const l1Quote = async (
+  ctx: RouteContext,
+  network: string,
+  tx: EvmUnsignedTransaction,
+  flags: Array<RequestCheckCode | undefined>,
+  read: (client: PublicClient, tx: EvmUnsignedTransaction) => Promise<L1FeeRead>,
+): Promise<L1Quote | undefined> => {
+  const initial = await beyondGasRead(ctx, network, tx, flags, read);
+  if (initial === undefined) {
+    return undefined;
+  }
+  const shown = l1FeeBound(initial.raw, 3) + initial.extra;
+  /** The approval read `stale` stored; `beforeBroadcast` ages it and refreshes on a lapse. */
+  let approval: { readonly raw: bigint; readonly extra: bigint; readonly at: number } | undefined;
+  const reread = async () => {
+    const fresh = await beyondGasRead(ctx, network, tx, [], read);
+    return fresh === undefined ? undefined : { ...fresh, at: ctx.options.now() };
+  };
+  return {
+    shown,
+    stale: async () => {
+      const fresh = await reread();
+      if (fresh === undefined) {
+        return "the L1 data fee could not be re-read — start over";
+      }
+      approval = fresh;
+      /* The shown bound carries one headroom update beyond the two the approval needs. */
+      return l1FeeBound(fresh.raw, 2) + fresh.extra > shown
+        ? "the L1 data fee rose — start over"
+        : undefined;
+    },
+    beforeBroadcast: async () => {
+      /* The approval read covers two inclusion updates plus one per commenced L1 slot of age —
+         once a full slot has passed, the shown bound's review headroom is spent and the fee is
+         re-read. A missing approval (no stale check ran) always re-reads. */
+      const held =
+        approval !== undefined &&
+        l1FeeBound(
+          approval.raw,
+          2 + Math.ceil(Math.max(ctx.options.now() - approval.at, 0) / L1_SLOT_MS),
+        ) +
+          approval.extra <=
+          shown;
+      if (held) {
+        return;
+      }
+      const fresh = await reread();
+      if (fresh === undefined || l1FeeBound(fresh.raw, 2) + fresh.extra > shown) {
+        throw new ChainError("invalid-request", "the L1 data fee rose — start over");
+      }
+      approval = fresh;
+    },
+  };
 };
 
 /** Per-controller route — nonce ownership and the per-tx poll state are engine state. */
@@ -1044,13 +1139,13 @@ export const createEvmRoute = (): EvmRoute => {
     network: string,
     tx: EvmUnsignedTransaction,
     flags: Array<RequestCheckCode | undefined>,
-  ): Promise<bigint | undefined> => {
+  ): Promise<L1Quote | undefined> => {
     const model = ctx.options.networks.info(network).feeModel;
     switch (model?.kind) {
       case "op-stack":
-        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t, model));
+        return l1Quote(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t, model));
       case "scroll":
-        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.scrollL1Fee(c, t));
+        return l1Quote(ctx, network, tx, flags, async (c, t) => evm.scrollL1Fee(c, t));
       case "execution":
       case undefined:
         return undefined;
@@ -1112,14 +1207,14 @@ export const createEvmRoute = (): EvmRoute => {
     if (
       spec.nativeValue !== undefined &&
       feeReachesAmount(
-        feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n) + (l1 ?? 0n),
+        feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n) + (l1?.shown ?? 0n),
         spec.nativeValue,
       )
     ) {
       flags.push("fee-exceeds-amount");
     }
     const request = evm.toSignRequest(feed, account, info.chainId);
-    const intent = withL1Fee(decodeEvm(request, from), l1);
+    const intent = withL1Fee(decodeEvm(request, from), l1?.shown);
     const txId = newId(ctx.options.random);
     const simulated = { to: feed.to, value: feed.value, data: feed.data };
     const delegatedCode =
@@ -1167,6 +1262,7 @@ export const createEvmRoute = (): EvmRoute => {
           held: heldNonces(feed),
           shared: false,
           base: chain,
+          beforeBroadcast: l1?.beforeBroadcast,
         },
         commit,
       );
@@ -1181,7 +1277,7 @@ export const createEvmRoute = (): EvmRoute => {
       simulation,
       resimulate: async () =>
         evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer, delegatedCode),
-      staleReason: () => {
+      staleReason: async () => {
         for (const held of heldNonces(feed)) {
           if (nonces.taken(network, from, held)) {
             return "nonce already used by a newer transaction — start over";
@@ -1190,9 +1286,12 @@ export const createEvmRoute = (): EvmRoute => {
         /* A prepared-but-unsigned request does not hold its nonce: a lower nonce freed since the
            build makes this one a gap its signature would widen. */
         const gap = nonces.gap(network, from, chain, unsigned.nonce);
-        return gap === undefined
-          ? undefined
-          : `nonce ${String(gap)} is free again — an earlier transaction was not sent; start over`;
+        if (gap !== undefined) {
+          return `nonce ${String(gap)} is free again — an earlier transaction was not sent; start over`;
+        }
+        /* The L1 fee is re-read at approval: a rise the shown maximum cannot cover ends the
+           request before anything is signed. */
+        return l1?.stale();
       },
       submit,
       release: () => undefined,
@@ -1980,7 +2079,7 @@ export const createEvmRoute = (): EvmRoute => {
         : { ...original, ...feeFields };
     const request = evm.toSignRequest(unsigned, account, chainId);
     const l1 = await beyondGasFee(ctx, old.network, unsigned, flags);
-    const intent = withL1Fee(decodeEvm(request, original.from), l1);
+    const intent = withL1Fee(decodeEvm(request, original.from), l1?.shown);
     const txId = newId(ctx.options.random);
 
     const submit = async (
@@ -2016,6 +2115,7 @@ export const createEvmRoute = (): EvmRoute => {
           held: heldNonces(unsigned),
           shared: true,
           base: old.nonce,
+          beforeBroadcast: l1?.beforeBroadcast,
         },
         commit,
       );
@@ -2028,7 +2128,7 @@ export const createEvmRoute = (): EvmRoute => {
       target: old.id,
       intent,
       checks: collectChecks(flags),
-      staleReason: () => replacementStaleReason(ctx, old.id),
+      staleReason: async () => replacementStaleReason(ctx, old.id) ?? l1?.stale(),
       submit,
       release: () => undefined,
     };
@@ -2096,8 +2196,9 @@ export const createEvmRoute = (): EvmRoute => {
 
   /**
    * Returns `included` once the receipt lands, `reorged` when a confirmed transaction's block
-   * leaves the chain, `ended` once the nonce is settled without our receipt, or `undefined` to keep
-   * polling. While the node does not know the transaction it is rebroadcast with exponential
+   * leaves the chain, `ended` once the nonce is settled without our receipt, `waiting` while the
+   * transaction cannot land yet — gap note, or `stuck` past `STUCK_AFTER_MS` — or `undefined` to
+   * keep polling. While the node does not know the transaction it is rebroadcast with exponential
    * backoff.
    */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
@@ -2138,6 +2239,22 @@ export const createEvmRoute = (): EvmRoute => {
       if (watch.consumed < DROP_CONFIRMATIONS) {
         return undefined;
       }
+      /* The nonce passed without our receipt — a pool eviction is only the likelier story, not
+         proof. Before ending, the host endpoint gets to hold the receipt instead: a copy found
+         there keeps the row live, and a failing read proves nothing. */
+      const independent = ctx.options.networks.independentClient(tx.network);
+      if (independent.kind === "available") {
+        let receipt: Awaited<ReturnType<typeof evm.receipt>>;
+        try {
+          receipt = await evm.receipt(independent.client, hash);
+        } catch {
+          return undefined;
+        }
+        if (receipt !== undefined) {
+          watch.consumed = 0;
+          return undefined;
+        }
+      }
       watching.delete(tx.id);
       return {
         kind: "ended",
@@ -2159,8 +2276,14 @@ export const createEvmRoute = (): EvmRoute => {
       gap === undefined
         ? undefined
         : `nonce ${String(gap)} below this transaction was never sent — the next send from this account fills it`;
-    const waiting = (): TxPoll | undefined =>
-      tx.error === note ? undefined : { kind: "waiting", error: note };
+    /* A gap note explains more than the stuck one, so it wins the error text while `stuck`
+       marks the row either way. */
+    const waiting = (stuck: boolean): TxPoll | undefined => {
+      const error = note ?? (stuck ? STUCK_NOTE : undefined);
+      return tx.error === error && (tx.stuck === true) === stuck
+        ? undefined
+        : { kind: "waiting", error, ...(stuck ? { stuck } : {}) };
+    };
 
     const replacerLive = sameNonce(ctx, tx, record.from).some(
       (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
@@ -2169,33 +2292,37 @@ export const createEvmRoute = (): EvmRoute => {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return waiting();
+      return waiting(false);
     }
 
     if (await evm.known(client, hash)) {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return waiting();
+      return waiting(false);
     }
     const now = ctx.options.now();
-    watch.unknownSince ??= now;
-    if (now - watch.unknownSince >= UNKNOWN_DROP_MS) {
+    // A row persisted stuck resumes already inside the window — restarting never un-marks it.
+    watch.unknownSince ??= tx.stuck === true ? now - STUCK_AFTER_MS : now;
+    let stuck = false;
+    if (now - watch.unknownSince >= STUCK_AFTER_MS) {
+      /* `stuck` needs every endpoint that can answer to not know the transaction: a copy on the
+         host endpoint — or its read failing — is not "the network never saw it". */
       const independent = ctx.options.networks.independentClient(tx.network);
       const elsewhere =
         independent.kind === "available" &&
         (await evm.known(independent.client, hash).catch(() => true));
-      if (!elsewhere) {
-        watching.delete(tx.id);
-        return { kind: "ended", state: "dropped" };
-      }
+      stuck = !elsewhere;
     }
-    if (watch.nextResubmit === undefined || now >= watch.nextResubmit) {
+    if (
+      tx.rebroadcast !== false &&
+      (watch.nextResubmit === undefined || now >= watch.nextResubmit)
+    ) {
       await evm.broadcast(client, raw).catch(() => "");
       watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;
     }
-    return waiting();
+    return waiting(stuck);
   };
 
   const readDelegationState = async (

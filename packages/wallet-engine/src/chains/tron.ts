@@ -13,6 +13,8 @@ import { ChainError } from "@qntx/wallet-chains";
 import { tronAddressFromHex } from "@qntx/wallet-chains/tron";
 
 import {
+  PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   parseTronJson,
   parseWith,
   tronAccountResponse,
@@ -58,31 +60,8 @@ export const tronCaller = (
     for (const url of urls) {
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
-        const res = await fetchFn(`${url}${path}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          last = new Error(`${path}: HTTP ${res.status} from ${url}`);
-          continue;
-        }
-        let parsed: unknown;
-        try {
-          /* `res.json()` would lose int64 precision — java-tron prints int64 as bare numbers and
-             POST requests have no string form (JsonFormat INT64_AS_STRING is GET-only), so the
-             body is parsed losslessly here. A parser failure reads as non-JSON: next endpoint. */
-          // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
-          parsed = parseTronJson(await res.text());
-        } catch {
-          last = new Error(`${path}: non-JSON response from ${url}`);
-          continue;
-        }
-        if (parsed === null || typeof parsed !== "object") {
-          last = new Error(`${path}: malformed response from ${url}`);
-          continue;
-        }
-        return parsed;
+        const answered = await postOnce(fetchFn, url, path, body, undefined);
+        return answered.parsed;
       } catch (error) {
         last = error;
       }
@@ -90,6 +69,79 @@ export const tronCaller = (
     throw last instanceof Error ? last : new Error(path);
   },
 });
+
+/**
+ * One POST to `url`: the lossless parse shared by both callers — `res.json()` would lose int64
+ * precision (java-tron prints int64 as bare numbers and POST requests have no string form,
+ * JsonFormat INT64_AS_STRING is GET-only). A transport error, a non-2xx status, a non-JSON body, or
+ * a body that is not a JSON object throws an `Error` naming the path, the status, and the endpoint
+ * — never a raw SyntaxError. `provider` is the answering upstream's id when the response names one
+ * (the gateway's `x-gateway-providers` header).
+ */
+const postOnce = async (
+  fetchFn: typeof globalThis.fetch,
+  url: string,
+  path: string,
+  body: unknown,
+  pin: string | undefined,
+): Promise<{ readonly parsed: unknown; readonly provider: string | undefined }> => {
+  const res = await fetchFn(`${url}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(pin === undefined ? {} : { [PROVIDER_PIN_HEADER]: pin }),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`${path}: HTTP ${res.status} from ${url}`);
+  }
+  let parsed: unknown;
+  try {
+    /* A parser failure reads as non-JSON: next endpoint on an unpinned call, a thrown error on a
+       pinned one. */
+    parsed = parseTronJson(await res.text());
+  } catch {
+    throw new Error(`${path}: non-JSON response from ${url}`);
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error(`${path}: malformed response from ${url}`);
+  }
+  return { parsed, provider: res.headers.get(PROVIDERS_HEADER) ?? undefined };
+};
+
+/**
+ * Ordered failover only until the first answer: whichever URL answers first is pinned and every
+ * later call goes to it alone, so a sequence of reads comes from one upstream. When the answer
+ * named a provider, later calls send `x-gateway-provider` so the gateway too serves them from that
+ * one node. A pinned call that fails throws — no failover mid-sequence.
+ */
+export const pinnedTronCaller = (
+  urls: ReadonlyArray<string>,
+  fetchFn: typeof globalThis.fetch,
+): TronApi => {
+  let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
+  return {
+    post: async (path, body) => {
+      if (pinned !== undefined) {
+        const answered = await postOnce(fetchFn, pinned.url, path, body, pinned.provider);
+        return answered.parsed;
+      }
+      let last: unknown;
+      for (const url of urls) {
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
+          const answered = await postOnce(fetchFn, url, path, body, undefined);
+          pinned = { url, provider: answered.provider };
+          return answered.parsed;
+        } catch (error) {
+          last = error;
+        }
+      }
+      throw last instanceof Error ? last : new Error(path);
+    },
+  };
+};
 
 /** `value` parsed by `schema`, else a malformed-response `Error` — readers never see raw JSON. */
 const parsed = <S extends z.ZodMiniType>(schema: S, what: string, value: unknown): z.output<S> => {

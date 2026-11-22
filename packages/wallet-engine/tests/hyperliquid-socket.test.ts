@@ -131,6 +131,27 @@ describe("hyperliquid socket", () => {
     socket.close();
   });
 
+  it("a `__proto__` payload key is data — it keeps its own property, never a prototype", async () => {
+    const { socket, sockets } = rig();
+    /* Only JSON.parse can create an own `__proto__` — a literal would set the prototype. */
+    const polluted: unknown = JSON.parse(
+      '{"type":"l2Book","coin":"BTC","__proto__":{"pollute":1}}',
+    );
+    const a = socket.subscribe("l2Book", PAYLOAD, () => undefined);
+    const b = socket.subscribe("l2Book", polluted, () => undefined);
+    const s = sockets[0]!;
+    s.open();
+    confirm(s, PAYLOAD);
+    await a;
+    confirm(s, polluted);
+    await b;
+    /* Two distinct payloads → two subscribe frames; assigning `__proto__` during normalization
+       would drop the key, collapse both onto one id, and send a single frame. */
+    expect(s.count("subscribe")).toBe(2);
+    expect(Object.getPrototypeOf(polluted)).toBe(Object.prototype);
+    socket.close();
+  });
+
   it("rejects a subscribe when the confirmation times out", async () => {
     const { socket, advance } = rig();
     const pending = socket.subscribe("l2Book", PAYLOAD, () => undefined);

@@ -267,7 +267,8 @@ describe("bitcoin inclusion, finality and reorgs", () => {
     booted.ctl.lock();
     release();
     await inflight;
-    expect(booted.ctl.getState().txs[tx.id]?.final).toBe(false);
+    // The locked vault holds no rows — the mid-flight answer settles nothing.
+    expect(booted.ctl.getState().txs[tx.id]).toBeUndefined();
     const saved = await w.persistedTx(booted.backing, tx.id);
     expect(saved?.["final"]).toBe(false);
 

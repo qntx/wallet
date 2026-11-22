@@ -170,6 +170,10 @@ const rpcAnswer = (o: StakeWorld, independent: boolean, seeds: ReadonlyArray<str
         };
       case "getRecentPrioritizationFees":
         return [];
+      case "getGenesisHash":
+        return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+      case "isBlockhashValid":
+        return { context: { slot: 5000 }, value: true };
       case "getMinimumBalanceForRentExemption":
         return Number(o.rent ?? 2_282_880n);
       case "getEpochInfo":

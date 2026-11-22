@@ -19,6 +19,7 @@ import {
   RAYDIUM_CPMM_PROGRAM,
   WHIRLPOOL_PROGRAM,
   decodeAmmSwapIx,
+  METEORA_DLMM_PROGRAM,
 } from "./amm.ts";
 import type { AmmSwap } from "./amm.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
@@ -219,7 +220,8 @@ const classifyIx = (
     program === RAYDIUM_AMM_PROGRAM ||
     program === RAYDIUM_CLMM_PROGRAM ||
     program === RAYDIUM_CPMM_PROGRAM ||
-    program === WHIRLPOOL_PROGRAM
+    program === WHIRLPOOL_PROGRAM ||
+    program === METEORA_DLMM_PROGRAM
   ) {
     const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
     return amm !== undefined && amm.authority === signer
@@ -316,6 +318,11 @@ const feeLamports = (
   lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
   calls: ReadonlyArray<IxCall>,
 ): bigint => {
+  // SIMD-0385: a v1 transaction ignores ComputeBudget instructions; its config carries the
+  // priority fee as a total in lamports, not a per-compute-unit price.
+  if (parsed.version === 1) {
+    return 5000n * BigInt(parsed.numRequiredSignatures) + (parsed.config.priorityFeeLamports ?? 0n);
+  }
   const price = calls.find((c) => c.kind === "cu-price")?.microLamports ?? 0n;
   // Agave compute_budget_instruction_details.rs: the default limit is 3,000 CU per
   // non-migrating builtin instruction (System and ComputeBudget here; migrating builtins count

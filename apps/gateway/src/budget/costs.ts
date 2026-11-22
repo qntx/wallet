@@ -32,7 +32,8 @@ export function rpcCost(model: CostModel, body: RpcCall | ReadonlyArray<RpcCall>
   if (model.kind === "request") {
     return calls.length * model.request.units;
   }
-  // Allow-listed methods are all keys of `methods`; a non-key is a zero-cost gap, never billed.
+  // Allow-listed methods are all keys of `methods`; a non-key is a zero-cost gap — the forwarder
+  // still floors every upstream call at one billed unit.
   const methods: Readonly<Record<string, CostRow>> = model.methods;
   let total = 0;
   for (const call of calls) {
@@ -73,10 +74,6 @@ export function transfersCost(model: CostModel): number {
 const alchemy = (units: number): CostRow => ({
   units,
   source: "https://www.alchemy.com/docs/reference/compute-unit-costs",
-});
-const drpc = (units: number): CostRow => ({
-  units,
-  source: "https://drpc.org/docs/pricing/compute-units",
 });
 
 /**
@@ -140,66 +137,4 @@ export const ALCHEMY_COSTS: CostModel = {
     simulateTransaction: alchemy(20),
   },
   transfers: { units: 120, source: "https://www.alchemy.com/docs/reference/compute-unit-costs" },
-};
-
-/**
- * DRPC prices every method at a flat 20 compute units, with the chain-identity reads free
- * (https://drpc.org/docs/pricing/compute-units: "All RPC methods cost a flat 20 compute units").
- */
-export const DRPC_COSTS: CostModel = {
-  kind: "rpc",
-  methods: {
-    eth_blobBaseFee: drpc(20),
-    eth_blockNumber: drpc(20),
-    eth_call: drpc(20),
-    eth_chainId: drpc(0),
-    eth_createAccessList: drpc(20),
-    eth_estimateGas: drpc(20),
-    eth_feeHistory: drpc(20),
-    eth_gasPrice: drpc(20),
-    eth_getBalance: drpc(20),
-    eth_getBlockByHash: drpc(20),
-    eth_getBlockByNumber: drpc(20),
-    eth_getBlockReceipts: drpc(20),
-    eth_getBlockTransactionCountByHash: drpc(20),
-    eth_getBlockTransactionCountByNumber: drpc(20),
-    eth_getCode: drpc(20),
-    eth_getLogs: drpc(20),
-    eth_getProof: drpc(20),
-    eth_getStorageAt: drpc(20),
-    eth_getTransactionByBlockHashAndIndex: drpc(20),
-    eth_getTransactionByBlockNumberAndIndex: drpc(20),
-    eth_getTransactionByHash: drpc(20),
-    eth_getTransactionCount: drpc(20),
-    eth_getTransactionReceipt: drpc(20),
-    eth_maxPriorityFeePerGas: drpc(20),
-    eth_sendRawTransaction: drpc(20),
-    eth_simulateV1: drpc(20),
-    net_version: drpc(0),
-    web3_clientVersion: drpc(0),
-    getAccountInfo: drpc(20),
-    getBalance: drpc(20),
-    getBlockHeight: drpc(20),
-    getBlockTime: drpc(20),
-    getEpochInfo: drpc(20),
-    getFeeForMessage: drpc(20),
-    getGenesisHash: drpc(20),
-    getLatestBlockhash: drpc(20),
-    getMinimumBalanceForRentExemption: drpc(20),
-    getMultipleAccounts: drpc(20),
-    getRecentPrioritizationFees: drpc(20),
-    getSignatureStatuses: drpc(20),
-    getSignaturesForAddress: drpc(20),
-    getSlot: drpc(20),
-    getStakeMinimumDelegation: drpc(20),
-    getTokenAccountBalance: drpc(20),
-    getTokenAccountsByOwner: drpc(20),
-    getTokenSupply: drpc(20),
-    getTransaction: drpc(20),
-    getVersion: drpc(20),
-    getVoteAccounts: drpc(20),
-    isBlockhashValid: drpc(20),
-    sendTransaction: drpc(20),
-    simulateTransaction: drpc(20),
-  },
 };

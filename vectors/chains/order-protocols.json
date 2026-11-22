@@ -554,6 +554,30 @@
     "separatorFn": "domainSeparator"
   },
   {
+    "label": "farcaster-key-gateway",
+    "chainId": 10,
+    "address": "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "Farcaster KeyGateway",
+      "version": "1",
+      "chainId": 10,
+      "verifyingContract": "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"
+    }
+  },
+  {
+    "label": "farcaster-key-request-validator",
+    "chainId": 10,
+    "address": "0x00000000FC700472606ED4fA22623Acf62c60553",
+    "codePresent": true,
+    "eip712Domain": {
+      "name": "Farcaster SignedKeyRequestValidator",
+      "version": "1",
+      "chainId": 10,
+      "verifyingContract": "0x00000000FC700472606ED4fA22623Acf62c60553"
+    }
+  },
+  {
     "label": "kyber-dslo",
     "chainId": 1,
     "address": "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
@@ -1160,6 +1184,34 @@
     "permit2MatchesCanonical": true
   },
   {
+    "label": "uniswapx-v3dutch-4663",
+    "chainId": 4663,
+    "address": "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    "codePresent": false
+  },
+  {
+    "label": "uniswapx-v3dutch-5042",
+    "chainId": 5042,
+    "address": "0x0000000015134054eA82AE0bb9fda66b36402C36",
+    "codePresent": false
+  },
+  {
+    "label": "uniswapx-v3dutch-57073",
+    "chainId": 57073,
+    "address": "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3dutch-7777777",
+    "chainId": 7777777,
+    "address": "0x000000002C9A3812e15cf233190992E9a57EDB56",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
     "label": "velora-portikus",
     "chainId": 1,
     "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
@@ -1262,5 +1314,77 @@
     "chainId": 10,
     "address": "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10",
     "codePresent": true
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 1,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x9a6350d532ed83a970d452b736be5847b2856768",
+    "nonce": 20
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 10,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x77b78b71b5c9f39cfdcf6ff562ae5d5d9bb618d0",
+    "nonce": 20
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 56,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x3a6957d477cb89e07502e4e6609c379ee304e618",
+    "nonce": 22
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 137,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0xf67942ddaad59c56ee827a89ceed573e462da40f",
+    "nonce": 19
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 8453,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x195a2e68f4e1d278dd1307b327ea5664b97b6731",
+    "nonce": 22
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 999,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x36c7534d85fc7efb49477726d6ecdceba6cff082",
+    "nonce": 11
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 42161,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x8052089ed33bcd8652530871d524cd28ab6f83f1",
+    "nonce": 19
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 43114,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x9f26c7b2bf8afb1968b7136ec278951e544c3d84",
+    "nonce": 19
+  },
+  {
+    "label": "zerox-metatxn",
+    "chainId": 11155111,
+    "address": "0x00000000000004533Fe15556B1E086BB1A72cEae",
+    "codePresent": true,
+    "owner": "0x30a91929ef5d394879dc597ad4b0de92338b3a1b",
+    "nonce": 19
   }
 ]

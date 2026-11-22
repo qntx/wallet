@@ -1432,6 +1432,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     independentEnsClient(network: string): Independent<PublicClient>;
     // (undocumented)
     independentEsplora(network: string): Independent<Esplora>;
+    independentPinnedTronApi(network: string): Independent<TronApi>;
     // (undocumented)
     independentSolanaRpc(network: string): Independent<SolanaRpc>;
     independentTronApi(network: string): Independent<TronApi>;
@@ -1441,6 +1442,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     init(): Promise<void>;
     // (undocumented)
     lock(): void;
+    pinnedTronApi(network: string): TronApi;
     solanaRpc(network: string): SolanaRpc;
     tronApi(network: string): TronApi;
 }
@@ -2599,6 +2601,8 @@ export type TrackedTransaction = {
     readonly replaces?: string;
     readonly parentId?: string;
     readonly sparkDeposit?: SparkDepositTag;
+    readonly rebroadcast?: false;
+    readonly stuck?: boolean | undefined;
     readonly raw?: string | undefined;
     readonly evm?: {
         readonly from: string;
@@ -2965,6 +2969,10 @@ const TRON_NODE_PATHS: {
                             to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                             amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                             asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                            contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                            call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                            call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                            token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                         }, z.core.$loose>;
                     }, z.core.$loose>;
                 }, z.core.$loose>>;

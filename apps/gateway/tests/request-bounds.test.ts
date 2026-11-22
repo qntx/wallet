@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { rpcPath } from "@qntx/wallet-engine/gateway/contract";
 
-import { ALCHEMY_COSTS, DRPC_COSTS } from "../src/budget/costs.ts";
+import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { Account } from "../src/config/accounts.ts";
 import type { GatewayNetwork } from "../src/types.ts";
 import {
@@ -29,11 +29,24 @@ const DRPC_NETWORKS: ReadonlyArray<GatewayNetwork> = [
   { id: ETH, providers: [{ id: "drpc", url: DRPC }] },
 ];
 
-/** The production account rows: alchemy 40k units / 5 s, drpc 8k / 5 s, public endpoints 20 / 2 s. */
+/** The production account rows: alchemy 40k units / 5 s, drpc 400 calls / 5 s, public 20 / 2 s. */
 const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 40_000, seconds: 5 }] },
-  drpc: { costs: DRPC_COSTS, budget: [{ units: 8000, seconds: 5 }] },
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 40_000, seconds: 5 }],
+    clientShare: 0.05,
+    source: "https://test.invalid",
+  },
+  drpc: {
+    costs: {
+      kind: "request",
+      request: { units: 1, source: "https://drpc.org/docs/howitworks/ratelimiting" },
+    },
+    budget: [{ units: 400, seconds: 5 }],
+    clientShare: 0.05,
+    source: "https://test.invalid",
+  },
 };
 
 const post = (body: unknown): RequestInit => ({
@@ -100,7 +113,12 @@ describe("per-request parameter bounds", () => {
     // a delta of 1,667 share units — more than the whole 1,000-unit window.
     const tiny: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 60, seconds: 60 }] },
+      alchemy: {
+        costs: ALCHEMY_COSTS,
+        budget: [{ units: 60, seconds: 60 }],
+        clientShare: 0.05,
+        source: "https://test.invalid",
+      },
     };
     const share = countBefore(1000);
     const up = fakeFetch({ [ALCHEMY]: () => rpcOk({}) });

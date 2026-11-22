@@ -25,7 +25,7 @@ export type FamilyClaim =
     }
   | {
       readonly surface: "evm.typed-data";
-      readonly verifyingContract: "token-table" | "permit2" | "seaport";
+      readonly verifyingContract: "token-table" | "permit2" | "seaport" | "morpho-blue";
     }
   /* An order protocol's domain name or any of its verifying contracts (either claims it). */
   | {
@@ -105,7 +105,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     claim: { surface: "evm.typed-data", verifyingContract: "permit2" },
     nearMiss: "typed-data-variant",
   },
-  /* EIP-2612 and DAI Permits signed to a token in the built-in table (EIP-3009 is not decoded). */
+  /* EIP-2612 and DAI Permits signed to a token in the built-in table. */
   {
     family: "built-in token signature",
     claim: { surface: "evm.typed-data", verifyingContract: "token-table" },
@@ -173,14 +173,14 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Snapshot `Vote` documents under the snapshot 0.1.4 domain (snapshot.js
-     src/sign/{index,types}.ts). */
+  /* Snapshot `Vote` documents and `Alias` authorizations under the snapshot 0.1.4 domain
+     (snapshot.js src/sign/{index,types}.ts). */
   {
     family: "Snapshot",
     claim: {
       surface: "evm.typed-data",
       domainName: "snapshot",
-      primaryType: /^Vote$/,
+      primaryType: /^(?:Vote|Alias)$/,
     },
     nearMiss: "typed-data-variant",
   },
@@ -336,6 +336,51 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
         "0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
         "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069",
       ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* FiatToken EIP-3009 authorizations (circlefin/stablecoin-evm EIP3009.sol TYPEHASHes) —
+     decoded under the exact-shape + signer-binding rules; a claimed variant is a near miss. */
+  {
+    family: "EIP-3009",
+    claim: {
+      surface: "evm.typed-data",
+      primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/,
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* Morpho Blue Authorization documents carry no domain name — a document to a Morpho Blue
+     deployment (evm/authority.ts, probed in vectors/chains/account-authority.json) under any
+     primary type claims the family. */
+  {
+    family: "Morpho Blue",
+    claim: { surface: "evm.typed-data", verifyingContract: "morpho-blue" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Aave v3 credit delegation (DebtTokenBase.sol DELEGATION_WITH_SIG_TYPEHASH). */
+  {
+    family: "Aave credit delegation",
+    claim: { surface: "evm.typed-data", primaryType: /^DelegationWithSig$/ },
+    nearMiss: "typed-data-variant",
+  },
+  /* Farcaster signer-key documents (farcasterxyz/contracts@9894509 src/KeyGateway.sol and
+     src/validators/SignedKeyRequestValidator.sol) — the only deployments, probed in
+     vectors/chains/account-authority.json. */
+  {
+    family: "Farcaster KeyGateway",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Farcaster KeyGateway",
+      contracts: ["0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "Farcaster SignedKeyRequestValidator",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Farcaster SignedKeyRequestValidator",
+      contracts: ["0x00000000FC700472606ED4fA22623Acf62c60553"],
     },
     nearMiss: "typed-data-variant",
   },

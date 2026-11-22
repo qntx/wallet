@@ -20,7 +20,7 @@
  */
 import { writeFileSync } from "node:fs";
 
-import { decodeAbiParameters } from "viem";
+import { concat, decodeAbiParameters, getAddress, keccak256, toHex } from "viem";
 
 const OUT = "vectors/chains/order-protocols.json";
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
@@ -55,7 +55,10 @@ const RPCS: Record<number, string> = {
   8217: "https://public-en.node.kaia.io",
   33139: "https://rpc.apechain.com",
   80094: "https://berachain-rpc.publicnode.com",
+  57073: "https://rpc-gel.inkonchain.com",
   747474: "https://rpc.katana.network",
+  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+  7777777: "https://rpc.zora.energy",
 };
 
 /* label, chainId, address, reactor — the deployment map the generator itself verifies on-chain
@@ -460,6 +463,18 @@ const TARGETS: ReadonlyArray<{
     label: "cow-settlement",
     chainId: 59144,
     address: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+    reactor: false,
+  },
+  {
+    label: "farcaster-key-gateway",
+    chainId: 10,
+    address: "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B",
+    reactor: false,
+  },
+  {
+    label: "farcaster-key-request-validator",
+    chainId: 10,
+    address: "0x00000000FC700472606ED4fA22623Acf62c60553",
     reactor: false,
   },
   {
@@ -871,6 +886,30 @@ const TARGETS: ReadonlyArray<{
     reactor: true,
   },
   {
+    label: "uniswapx-v3dutch-4663",
+    chainId: 4663,
+    address: "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    reactor: true,
+  },
+  {
+    label: "uniswapx-v3dutch-5042",
+    chainId: 5042,
+    address: "0x0000000015134054eA82AE0bb9fda66b36402C36",
+    reactor: true,
+  },
+  {
+    label: "uniswapx-v3dutch-57073",
+    chainId: 57073,
+    address: "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    reactor: true,
+  },
+  {
+    label: "uniswapx-v3dutch-7777777",
+    chainId: 7777777,
+    address: "0x000000002C9A3812e15cf233190992E9a57EDB56",
+    reactor: true,
+  },
+  {
     label: "velora-portikus",
     chainId: 1,
     address: "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
@@ -1001,6 +1040,8 @@ type Probe = {
   separatorFn?: string;
   permit2?: string;
   permit2MatchesCanonical?: boolean;
+  owner?: string;
+  nonce?: number;
 };
 
 const results: Probe[] = [];
@@ -1080,5 +1121,67 @@ for (const target of TARGETS) {
     setTimeout(resolve, 150);
   });
 }
+/* 0x Deployer `ownerOf(3)` — the MetaTxn-feature Settler on every chain the gasless decoder
+   recognises (packages/wallet-chains/src/evm/zerox.ts ZEROX_CHAINS; token id 3 = metatx per
+   0xProject/0x-settler@ad7c844 src/deployer/Deployer.sol's feature encoding). The Settler itself
+   is not a fixed address — Deployer redeploys it monthly — so the record carries the current
+   owner and the feature nonce that derives it via the documented
+   `salt = feature<<128 | chainId<<64 | nonce`, CREATE2 shim, CREATE child construction. */
+const ZEROX_DEPLOYER = "0x00000000000004533fe15556b1e086bb1a72ceae";
+const ZEROX_CHAINS = [1, 10, 56, 137, 8453, 999, 42161, 43114, 11155111] as const;
+const SHIM_INIT_CODE_HASH =
+  "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f" as const;
+
+const zeroxSettler = (chainId: number, feature: bigint, nonce: number): string => {
+  const salt = toHex(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce), {
+    size: 32,
+  });
+  const shim = keccak256(concat(["0xff", ZEROX_DEPLOYER, salt, SHIM_INIT_CODE_HASH]));
+  return getAddress(`0x${keccak256(`0xd694${shim.slice(26)}01`).slice(26)}`);
+};
+
+for (const chainId of ZEROX_CHAINS) {
+  const url = RPCS[chainId];
+  const record: Probe = {
+    label: "zerox-metatxn",
+    chainId,
+    address: ZEROX_DEPLOYER,
+    codePresent: false,
+  };
+  if (url === undefined) {
+    record.note = "no public RPC configured for this chain";
+    results.push(record);
+    continue;
+  }
+  const code = await call(url, "eth_getCode", [ZEROX_DEPLOYER, "latest"]);
+  record.codePresent = typeof code === "string" && code !== "0x";
+  if (record.codePresent) {
+    const owner = await call(url, "eth_call", [
+      {
+        to: ZEROX_DEPLOYER,
+        data: "0x6352211e0000000000000000000000000000000000000000000000000000000000000003",
+      },
+      "latest",
+    ]);
+    if (typeof owner === "string" && owner.length >= 66) {
+      record.owner = `0x${owner.slice(26)}`;
+      for (let nonce = 1; nonce <= 256 && record.nonce === undefined; nonce++) {
+        if (zeroxSettler(chainId, 3n, nonce).toLowerCase() === record.owner.toLowerCase()) {
+          record.nonce = nonce;
+        }
+      }
+    }
+  }
+  results.push(record);
+  console.log(
+    "zerox-metatxn",
+    chainId,
+    record.owner === undefined ? "NO OWNER" : `owner nonce ${record.nonce ?? "?"}`,
+  );
+  await new Promise((resolve) => {
+    setTimeout(resolve, 150);
+  });
+}
+
 writeFileSync(OUT, `${JSON.stringify(results, undefined, 2)}\n`);
 console.log(`wrote ${results.length} records to ${OUT}`);

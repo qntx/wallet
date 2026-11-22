@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   TRON_INDEXER_PATHS,
   TRON_NODE_PATHS,
   gatewayError,
@@ -17,6 +18,7 @@ import {
   expectContract,
   fakeFetch,
   gateway,
+  headers,
   post,
   recordingLimiter,
 } from "./helpers.ts";
@@ -167,6 +169,45 @@ describe("tron route", () => {
     const res = await app(up).request(`${BASE}/wallet/getchainparameters`, post({}));
     expect(res.status).toBe(200);
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+  });
+
+  it("serves a node request naming a provider pin from that provider only", async () => {
+    const up = fakeFetch({
+      "https://a.test/tron": () => Response.json({ chainParameter: [] }),
+      "https://b.test/tron": () => Response.json({ chainParameter: [{ key: "k", value: 1 }] }),
+    });
+    const res = await app(up).request(`${BASE}/wallet/getchainparameters`, {
+      ...post({}),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: "b" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+    expect(up.callsTo("https://a.test")).toHaveLength(0);
+    await expect(res.json()).resolves.toStrictEqual({ chainParameter: [{ key: "k", value: 1 }] });
+  });
+
+  it("does not fail over off a pinned provider — its failure is the answer", async () => {
+    const up = fakeFetch({
+      "https://a.test/tron": () => Response.json({ chainParameter: [] }),
+      "https://b.test/tron": () => new Response("down", { status: 502 }),
+    });
+    const res = await app(up).request(`${BASE}/wallet/getchainparameters`, {
+      ...post({}),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: "b" }),
+    });
+    expect(res.status).toBe(503);
+    expect(up.callsTo("https://a.test")).toHaveLength(0);
+  });
+
+  it("400s a node request naming a provider pin that does not exist", async () => {
+    const up = fakeFetch({});
+    const res = await app(up).request(`${BASE}/wallet/getchainparameters`, {
+      ...post({}),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: "nobody" }),
+    });
+    expect(res.status).toBe(400);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
   });
 
   it("answers 503 when every provider fails", async () => {

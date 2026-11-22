@@ -1,5 +1,5 @@
 import type { CostModel, CostRow } from "../budget/costs.ts";
-import { ALCHEMY_COSTS, DRPC_COSTS } from "../budget/costs.ts";
+import { ALCHEMY_COSTS } from "../budget/costs.ts";
 
 /**
  * A provider account's spending window: a token bucket of `units` capacity that refills fully every
@@ -11,6 +11,17 @@ export type BudgetWindow = { readonly units: number; readonly seconds: number };
 export type Account = {
   readonly costs: CostModel;
   readonly budget: ReadonlyArray<BudgetWindow>;
+  /**
+   * The fraction (0 < f ≤ 1) of the account's minute-scale capacity one IP prefix may spend per
+   * minute. Windows longer than a minute cap the shared budget only — they are not part of the
+   * per-prefix share.
+   */
+  readonly clientShare: number;
+  /**
+   * The page the `budget` numbers come from — for a POLICY row, the provider page that publishes no
+   * rate.
+   */
+  readonly source: string;
 };
 
 const request = (units: number, source: string): CostModel => ({
@@ -18,29 +29,42 @@ const request = (units: number, source: string): CostModel => ({
   request: { units, source } satisfies CostRow,
 });
 
-// https://www.coingecko.com/en/api/pricing — "1 call = 1 credit"; assumes Analyst 500/min and
-// 500k/month (≈16,129/day); 80 % plus a daily share of the monthly cap.
+// "1 call = 1 credit"; assumes Analyst 500/min and 500k/month (≈16,129/day); 80 % plus a daily
+// share of the monthly cap. clientShare 0.75 = 300 calls/min per prefix (delta 4 ⇒ the measured
+// 81-call cold start = 324 share units ≤ 333) — a high share is safe here: the gateway price
+// cache is shared by every client and only allow-listed assets reach the upstream, so one prefix
+// cannot multiply upstream calls beyond the distinct-asset misses.
 const COINGECKO: Account = {
   costs: request(1, "https://www.coingecko.com/en/api/pricing"),
   budget: [
     { units: 400, seconds: 60 },
     { units: 15_000, seconds: 86_400 },
   ],
+  clientShare: 0.75,
+  source: "https://www.coingecko.com/en/api/pricing",
 };
-// https://docs.llama.fi/pro-api — only the Pro tier publishes a limit. POLICY.
+// Only the Pro tier publishes a limit. POLICY: 7.5 req/s = 450/min, and the 150-unit depth absorbs
+// the measured cold-start volley (81 calls land in ~1 s). clientShare 0.75 = 337 calls/min per
+// prefix (delta 3 ⇒ 87 calls = 261 ≤ 333).
 const DEFILLAMA: Account = {
   costs: request(1, "https://docs.llama.fi/pro-api"),
-  budget: [{ units: 10, seconds: 2 }],
+  budget: [{ units: 150, seconds: 20 }],
+  clientShare: 0.75,
+  source: "https://docs.llama.fi/pro-api",
 };
-// https://docs.0x.org/docs/developer-resources/rate-limits — free tier ≈5 RPS; 80 %.
+// Free tier ≈5 RPS; 80 %.
 const ZEROX: Account = {
   costs: request(1, "https://docs.0x.org/docs/developer-resources/rate-limits"),
   budget: [{ units: 8, seconds: 2 }],
+  clientShare: 0.05,
+  source: "https://docs.0x.org/docs/developer-resources/rate-limits",
 };
-// https://docs.across.to/api-reference — no published limit. POLICY.
+// No published limit. POLICY.
 const ACROSS: Account = {
   costs: request(1, "https://docs.across.to/api-reference"),
   budget: [{ units: 10, seconds: 2 }],
+  clientShare: 0.05,
+  source: "https://docs.across.to/api-reference",
 };
 
 /**
@@ -50,52 +74,96 @@ const ACROSS: Account = {
  * marked POLICY have no published limit and use a conservative guess instead.
  */
 export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
-  // https://www.alchemy.com/docs/reference/pricing-plans — PAYG 10,000 throughput CU/s; budget is
-  // 80 % = 8,000/s. Shared by every network's RPC and by history's alchemy_getAssetTransfers.
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 40_000, seconds: 5 }] },
-  // https://drpc.org/docs/pricing/plans — assumes PAYG 100 RPS × 20 CU = 2,000 CU/s; 80 %. The
-  // plan size is an operator assumption.
-  drpc: { costs: DRPC_COSTS, budget: [{ units: 8000, seconds: 5 }] },
-  // https://blockstream.info/explorer-api — one credit per call. POLICY: no published rate limit.
+  // PAYG 10,000 throughput CU/s; budget is 80 % = 8,000/s. Shared by every network's RPC and by
+  // history's alchemy_getAssetTransfers. clientShare 0.1 = 48,000 CU/min per prefix ≥ 3 × the
+  // measured 7,150-CU fresh cold start incl. per-call rounding; a used-wallet cold start
+  // (34,750 CU) still fits once.
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 40_000, seconds: 5 }],
+    clientShare: 0.1,
+    source: "https://www.alchemy.com/docs/reference/pricing-plans",
+  },
+  // Assumes the PAYG plan for accounts created after 2026-10-19: 100 RPS, and rate limiting bills
+  // every call at least one request unit. 80 % = 400 calls/5 s; the plan itself is an operator
+  // assumption.
+  drpc: {
+    costs: request(1, "https://drpc.org/docs/howitworks/ratelimiting"),
+    budget: [{ units: 400, seconds: 5 }],
+    clientShare: 0.05,
+    source: "https://drpc.org/docs/howitworks/ratelimiting",
+  },
+  // One credit per call. POLICY: the explorer-api page sells prepaid credit packs and publishes
+  // no rate and no per-call credit cost for plain Esplora calls, so both numbers are operator
+  // confirmations. Rate ≈ 66.7 req/s = 4,000/min; the 1,000-unit depth absorbs the measured
+  // 286-call used-wallet cold volley; the day window caps prepaid-credit spend at 1M calls/day.
+  // clientShare 0.25 = 1,000 calls/min per prefix (delta 1 ⇒ 200 fresh / 286 used).
   blockstream: {
     costs: request(1, "https://blockstream.info/explorer-api"),
-    budget: [{ units: 10, seconds: 2 }],
+    budget: [
+      { units: 1000, seconds: 15 },
+      { units: 1_000_000, seconds: 86_400 },
+    ],
+    clientShare: 0.25,
+    source: "https://blockstream.info/explorer-api",
   },
-  // https://www.ankr.com/docs/rpc-service/service-plans/ — billed per request. POLICY 50 req/s:
-  // the plan's rate limit is an operator assumption.
+  // Rate: 80 % of the Freemium/Public "≈1800 reqs/min — guaranteed" (24 req/s = 120/5 s). Day:
+  // Freemium 200M API credits/month ÷ 200 credits per EVM request ÷ 30 × 80 % ≈ 26,666 → 26,000.
+  // POLICY: the operator confirms the plan; `x-api-key` header auth is still unverified with a
+  // real key (operator step).
   ankr: {
     costs: request(1, "https://www.ankr.com/docs/rpc-service/service-plans/"),
-    budget: [{ units: 250, seconds: 5 }],
+    budget: [
+      { units: 120, seconds: 5 },
+      { units: 26_000, seconds: 86_400 },
+    ],
+    clientShare: 0.05,
+    source: "https://www.ankr.com/docs/rpc-service/service-plans/",
   },
-  // https://developers.tron.network/reference/rate-limits — one request per call; the page
-  // publishes no fixed quota ("depending on plan"). POLICY 10 req/s and 80,000/day: the key's plan
-  // is an operator assumption.
+  // Day: 80 % of the Basic plan's published 100,000 requests/day. Rate POLICY: TronGrid publishes
+  // no keyed QPS (https://developers.tron.network/reference/rate-limits says "Do not hard-code
+  // fixed limits"), only that keyless requests get 3 QPS
+  // (https://www.trongrid.io/changeLog/v1-10-0) and keyed ones are not lower — 80 % of 3 QPS is at
+  // or below the free tier. Operator: read the key's QPS in the TronGrid console to raise it.
+  // 12 calls/5 s = 144/min × 0.1 = 14 calls/min/prefix.
   trongrid: {
     costs: request(1, "https://developers.tron.network/reference/rate-limits"),
     budget: [
-      { units: 50, seconds: 5 },
+      { units: 12, seconds: 5 },
       { units: 80_000, seconds: 86_400 },
     ],
+    clientShare: 0.1,
+    source: "https://www.trongrid.io/price",
   },
-  // https://docs.tatum.io/docs/rate-limits — one request per call. POLICY 5 req/s: the plan is an
-  // operator assumption.
+  // Rate: 80 % of the Free plan's 3 RPS — the lowest published plan rate, at or below every plan.
+  // Day: Starter 4M credits/month ÷ 30 ÷ 5 credits per call (worst case: `eth_call`-class methods
+  // cost 5, standard 2) × 80 % ≈ 21,333 → 21,000. Operator: confirm a paid plan (Starter or
+  // above) and turn off auto-upgrade. 12 calls/5 s = 144/min × 0.1 = 14 calls/min/prefix.
   tatum: {
-    costs: request(1, "https://docs.tatum.io/docs/rate-limits"),
-    budget: [{ units: 25, seconds: 5 }],
+    costs: request(1, "https://docs.tatum.io/docs/rpc-nodes"),
+    budget: [
+      { units: 12, seconds: 5 },
+      { units: 21_000, seconds: 86_400 },
+    ],
+    clientShare: 0.1,
+    source: "https://docs.tatum.io/docs/plans-limits",
   },
-  // https://www.coingecko.com/en/api/pricing — "1 call = 1 credit"; assumes Analyst 500/min and
-  // 500k/month (≈16,129/day); 80 % plus a daily share of the monthly cap.
+  // "1 call = 1 credit"; assumes Analyst 500/min and 500k/month (≈16,129/day); 80 % plus a daily
+  // share of the monthly cap.
   coingecko: COINGECKO,
-  // https://docs.llama.fi/pro-api — only the Pro tier publishes a limit. POLICY.
+  // Only the Pro tier publishes a limit. POLICY.
   defillama: DEFILLAMA,
-  // https://docs.0x.org/docs/developer-resources/rate-limits — free tier ≈5 RPS; 80 %.
+  // Free tier ≈5 RPS; 80 %.
   "0x": ZEROX,
-  // https://developers.jup.ag/docs/portal/rate-limits — keyed Free plan 1 RPS; 80 %.
+  // Keyed Free plan 1 RPS; 80 % = 4 calls per 5 s = 48/min, and one client prefix may spend a
+  // quarter of it (12 calls/min).
   jupiter: {
     costs: request(1, "https://developers.jup.ag/docs/portal/rate-limits"),
     budget: [{ units: 4, seconds: 5 }],
+    clientShare: 0.25,
+    source: "https://developers.jup.ag/docs/portal/rate-limits",
   },
-  // https://docs.across.to/api-reference — no published limit. POLICY.
+  // No published limit. POLICY.
   across: ACROSS,
 };
 
@@ -108,6 +176,10 @@ const PUBLIC_ENDPOINT_BUDGET: ReadonlyArray<BudgetWindow> = [{ units: 20, second
 const publicEndpoint = (source: string): Account => ({
   costs: request(1, source),
   budget: PUBLIC_ENDPOINT_BUDGET,
+  // 300 calls/min per prefix: staging Bitcoin's 200-call cold start fits once — not three times;
+  // we do not raise budgets on third parties' public endpoints to buy that headroom.
+  clientShare: 0.5,
+  source,
 });
 
 export const STAGING_ACCOUNTS: Readonly<Record<string, Account>> = {
@@ -146,10 +218,13 @@ export const STAGING_ACCOUNTS: Readonly<Record<string, Account>> = {
   coingecko: COINGECKO,
   defillama: DEFILLAMA,
   "0x": ZEROX,
-  // https://developers.jup.ag/docs/portal/rate-limits — keyless 0.5 RPS; 80 %.
+  // Keyless 0.5 RPS; 80 % = 2 calls per 5 s = 24/min, and one client prefix may spend half of it
+  // (12 calls/min).
   jupiter: {
     costs: request(1, "https://developers.jup.ag/docs/portal/rate-limits"),
     budget: [{ units: 2, seconds: 5 }],
+    clientShare: 0.5,
+    source: "https://developers.jup.ag/docs/portal/rate-limits",
   },
   across: ACROSS,
 };

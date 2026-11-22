@@ -1154,3 +1154,64 @@ describe("normalizeTron", () => {
     ).toThrow(ChainError);
   });
 });
+
+describe("call_token_value on a verified token call", () => {
+  const TRC10_ID = 1002000n;
+
+  const word = (bytes: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(32);
+    out.set(bytes, 32 - bytes.length);
+    return out;
+  };
+
+  const uint256 = (value: bigint): Uint8Array => hex(value.toString(16).padStart(64, "0"));
+
+  const transferData = (to: Uint8Array, amount: bigint): Uint8Array => {
+    const data = new Uint8Array(4 + 64);
+    data.set(hex("a9059cbb"));
+    data.set(word(to), 4);
+    data.set(uint256(amount), 36);
+    return data;
+  };
+
+  it("a USDT transfer trigger carrying TRC-10 value drops to partial and lists both legs", () => {
+    const value = encodeTronContract({
+      type: "TriggerSmartContract",
+      owner: OWNER,
+      contract: USDT,
+      callValue: 0n,
+      data: transferData(tronAddressToBytes(ALICE).slice(1), 10_000_000n),
+      callTokenValue: 500n,
+      tokenId: TRC10_ID,
+    });
+    const i = decodeTron(
+      {
+        kind: "tron.transaction",
+        network: "tron:728126428",
+        account: ACCOUNT,
+        rawData: encodeMessage([
+          { field: 1, bytes: requiredBytesField(1, raw.refBlockBytes) },
+          { field: 4, bytes: requiredBytesField(4, raw.refBlockHash) },
+          { field: 8, bytes: varintField(8, raw.expiration) },
+          {
+            field: 11,
+            bytes: requiredBytesField(11, contractSlot(31, "TriggerSmartContract", value)),
+          },
+          { field: 14, bytes: varintField(14, TS) },
+          { field: 18, bytes: varintField(18, 1_000_000n) },
+        ]),
+      },
+      OWNER,
+    );
+    expect(i.summary).toBe("transfer");
+    expect(i.verifiability).toBe("partial");
+    expect(i.outflows).toStrictEqual([
+      { to: USDT, amount: { asset: `trc10:${TRC10_ID}`, amount: "500" }, verified: false },
+      {
+        to: ALICE,
+        amount: { asset: USDT, amount: "10000000", symbol: "USDT", decimals: 6 },
+        verified: true,
+      },
+    ]);
+  });
+});

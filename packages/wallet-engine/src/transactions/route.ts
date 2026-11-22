@@ -52,7 +52,8 @@ export type TxBlock = {
  * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
  * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
  * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says why
- * the transaction cannot land yet, `undefined` clears an earlier note.
+ * the transaction cannot land yet, `undefined` clears an earlier note; `stuck` marks a row no
+ * endpoint has known for `STUCK_AFTER_MS` — a live mark, never terminal.
  */
 export type TxPoll =
   | {
@@ -65,7 +66,12 @@ export type TxPoll =
     }
   | { readonly kind: "reorged" }
   | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" }
-  | { readonly kind: "waiting"; readonly error: string | undefined };
+  | {
+      readonly kind: "waiting";
+      readonly error: string | undefined;
+      /** Set only when the mark is on; an absent `stuck` clears it — see `TrackedTransaction.stuck`. */
+      readonly stuck?: boolean;
+    };
 
 /** In a block but not final yet: tracked at the finality interval. */
 export const awaitingFinality = (tx: TrackedTransaction): boolean =>
@@ -145,6 +151,18 @@ export type TrackedTransaction = {
   readonly parentId?: string;
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
+  /**
+   * Absent: the tracker may rebroadcast the persisted bytes while the network does not know them.
+   * `false`: recovered from a broadcast whose outcome never settled — it may have been refused — so
+   * the bytes are watched but never resent; a speed-up or cancel is the remedy.
+   */
+  readonly rebroadcast?: false;
+  /**
+   * EVM and Bitcoin: neither endpoint has known this transaction for `STUCK_AFTER_MS`. It stays
+   * `submitted`, still holds its nonce or inputs and is polled at the finality interval; offer
+   * speed-up or cancel.
+   */
+  readonly stuck?: boolean | undefined;
   /**
    * The signed transaction exactly as broadcast — EVM and Bitcoin hex, Solana base64 wire —
    * persisted with `hash` before it leaves, so an unknown outcome is rebroadcast, even after a
@@ -444,12 +462,13 @@ export type Options = {
 export type RouteContext = {
   readonly options: Options;
   /**
-   * Applies `next` to `tx` and persists the row. A locked vault skips the write — unless `durable`,
-   * which throws instead: signed bytes must be on disk before they leave. Only a durable call may
-   * throw on a store failure: a failed non-durable write is retried by the next poll, since the
-   * bytes it describes may already be out. The context belongs to the session that created it:
-   * after a lock→unlock its calls are ignored (`durable` still throws), so a stale async result
-   * never writes into the new session.
+   * Applies `next` to `tx` and persists the row. A locked vault keeps the row out of state but
+   * retains it for replay at the next unlock — unless `durable`, which throws instead: signed bytes
+   * must be on disk before they leave. Only a durable call may throw on a store failure: a failed
+   * non-durable write is retained and landed by the controller's own retry loop, since the bytes it
+   * describes may already be out. The context belongs to the session that created it: after a
+   * lock→unlock its calls are ignored (`durable` still throws), so a stale async result never
+   * writes into the new session.
    */
   readonly transition: (
     tx: TrackedTransaction,

@@ -978,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-BQdtHsFg.mjs
+	// packages/wallet/dist/protocol-Vt1n05RQ.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1102,7 +1102,7 @@
 		kind: literal("solana.transaction"),
 		network: caip2,
 		account: accountRef,
-		message: bytes(1, 1232),
+		message: bytes(1, 4096),
 		lookupTables: opt(arr(obj({
 			address: solanaAddress,
 			addresses: arr(solanaAddress, 256)
@@ -13332,36 +13332,104 @@
 		return parse$1(text);
 	}
 	new Uint8Array([255, ...utf8Encode$2("solana offchain")]);
-	// packages/wallet-chains/dist/src-BAJO7wKQ.mjs
+	// packages/wallet-chains/dist/src-CHB_z45M.mjs
 	init_defineProperty();
 	/**
-	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show, and
-	* the checks behind the message-text rules. Code points come in three classes. Deceptive ones —
-	* controls other than TAB/LF/CR, line and paragraph separators, bidi embedding/override/isolate
-	* marks, interlinear annotation anchors, default-ignorable characters outside the format set and
-	* tag characters outside a valid emoji tag sequence — mean what the owner reads is not what was
-	* signed (`hasHiddenCharacters`); they render as U+FFFD. Format ones — joiners, direction marks,
-	* the soft hyphen, the combining grapheme joiner, variation selectors and emoji tag sequences — are
-	* ordinary text; joiners display only where they actually join, direction marks and the soft hyphen
-	* display as U+FFFD so they stay visible, the rest pass through. Everything else is text.
+	* GENERATED FILE — do not edit. Produced by packages/wallet-chains/scripts/unicode-tables.ts from
+	* the Unicode 18.0.0 Character Database:
+	* https://www.unicode.org/Public/18.0.0/ucd/DerivedCoreProperties.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/PropList.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/StandardizedVariants.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/emoji/emoji-data.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/emoji/emoji-variation-sequences.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/extracted/DerivedCombiningClass.txt
+	* https://www.unicode.org/Public/18.0.0/ucd/extracted/DerivedJoiningType.txt
+	* https://www.unicode.org/Public/18.0.0/emoji/emoji-sequences.txt
+	*
+	* Each table is a base-36-packed delta of an ascending list of inclusive code-point ranges [lo0,
+	* hi0, lo1, hi1, …]. VARIATION_BASES maps a Mongolian free variation selector or VS1–VS16 to the
+	* ranges of bases that selector is defined for. RGI_TAG_SEQUENCES holds the RGI flag tag bodies
+	* (the ASCII string encoded between U+1F3F4 and U+E007F).
 	*/
-	var DECEPTIVE = new RegExp("[\\p{Cc}\\p{Zl}\\p{Zp}\\u202A-\\u202E\\u2066-\\u2069\\uFFF9-\\uFFFB]", "u");
-	var IGNORABLE = new RegExp("\\p{Default_Ignorable_Code_Point}", "u");
-	var FORMAT = new RegExp("\\u200C|\\u200D|\\u200E|\\u200F|\\u061C|\\u00AD|\\u034F|\\p{Variation_Selector}", "u");
-	var JOINER = /\u200C|\u200D/u;
-	var JOINER_PREV = new RegExp("[\\p{L}\\p{M}\\p{Extended_Pictographic}\\p{Emoji_Modifier}\\p{Variation_Selector}]", "u");
-	var JOINER_NEXT = new RegExp("[\\p{L}\\p{M}\\p{Extended_Pictographic}]", "u");
+	var ranges = (packed) => {
+		const out = [];
+		let value = 0;
+		for (const token of packed.split(",")) {
+			value += Number.parseInt(token, 36);
+			out.push(value);
+		}
+		return out;
+	};
+	var DEFAULT_IGNORABLE = ranges("4t,0,iq,0,jx,0,283,1,190,1,2e,4,1ks,4,r,4,1e,f,3cl,0,14f0,f,6o,0,4h,0,28,8,119k,3,440,7,h406,35r");
+	var VARIATION_SELECTOR = ranges("4qz,2,2,0,19f5,f,i9yp,6n");
+	var UNIFIED_IDEOGRAPH = ranges("a9s,533,1t,g73,hsf,1,2,0,2,1,b,0,2,0,2,1,3,2,1fpz,wyn,x,3dq,2,4gd,3,5rk,g,h9,3hf,3t6,6,6jt");
+	var EXTENDED_PICTOGRAPHIC = ranges("4p,0,5,0,68e,0,d,0,61,0,n,0,2j,5,g,1,a8,1,d,0,4n,0,q,a,5,2,5k,0,6g,1,b,0,a,0,1n,3,2,4,a,0,3,0,3,1,3,0,5,0,3,0,2,1,3,0,4,0,4,1,9,2,6,0,2,0,6,b,c,1,3,0,2,1,2,0,j,0,3,1,j,5,2,0,2,1,4,1,6,0,3,1,5,1,c,1,6,1,3,0,6,1,2,0,2,1,l,1,6,5,2,3,3,0,5,0,3,0,3,5,2,0,3,0,2,0,2,0,7,0,4,0,7,0,b,1,g,0,3,0,5,0,2,0,5,2,2,0,c,1,1d,2,a,0,f,0,f,0,ad,1,cw,2,k,1,1g,0,5,0,yj,0,d,0,gq,0,2,0,2fzf,0,14,3,2t,b,g,1,g,0,f,1,12,9,35,1,d,1,f,0,3,9,l,1i,s,e,b,0,l,0,3,8,2,3,a,m,7,57,3,33,3,1,2,2,3,2a,3,2,2,3,6,71,2,1q,c,5,2,n,8,1,3,7,d,0,3,3,3,0,5,1,e,1,3,0,9,1,a,0,6,2,d,2,9,2,3,0,2,0,5,0,7,0,4,0,7,2d,1d,1x,6,7,3,g,4,0,2,5,3,c,65,k,s,3,1l,7,b,5,15,7,v,1,d,3,3,d,a,12,d,1a,2,9,2,54,2h,7,f,41,75,sd");
+	var EMOJI_MODIFIER = ranges("2qrf,4");
+	var VIRAMA = ranges("1u5,0,3k,0,3k,0,3k,0,3k,0,3k,0,3k,0,3k,0,32,1,h,0,3h,0,34,0,3k,0,5m,0,51,1,1cq,1,v,0,4e,0,i6,0,6c,0,2u,1,1z,1,3gs,0,o7b,0,12,0,48,0,3z,0,31,0,8m,0,6v,0,imq,0,16v,0,16,0,f,0,1m,0,3e,1,3w,0,39,0,51,0,2r,0,3l,2,36,0,3k,0,71,0,3k,0,3b,0,39,0,7i,0,78,1,4i,0,2c,0,j,0,2a,0,bq,0,79,1,2a,0,bu,1,d0t,0");
+	var JOIN_LEFT = ranges("17k,0,6,0,2,0,2,4,5,c,2,6,2,1,10,1,9,f,j,11,2,1,a,0,2,0,2,1,15,2,3,0,j,2,6,3,2,8,2,0,2,0,2,1,w,a,4,e,3,3,2,0,3,2,3,5,23,w,2f,4,3,0,2,9,2,0,b,0,2,3,3,0,u,0,3,4,2,0,h,9,6,1,3,5,2,e,30f,0,p,2g,f,x,2,0,sd2,1d,jf3,4,f,3,2,4,2,2,b,3,42,0,2,0,4,2,2,1,2,0,3,0,t,1,9f,w,2,0,bk,1,2,1,2x,2,2,g,d,2,t,3,3,b,1b,0,2,1,5,0,3,1,2,1,2,0,3,0,6,0,16wm,1v");
+	var JOIN_RIGHT = ranges("17k,0,6,0,2,0,2,4,5,c,2,6,2,1,10,1,9,f,j,11,2,1,a,0,2,0,2,1,15,2,3,0,j,2,6,3,2,8,2,0,2,0,2,1,w,a,4,e,3,3,2,0,3,2,3,5,23,w,2f,4,3,0,2,9,2,0,b,0,2,3,3,0,u,0,3,4,2,0,h,9,6,1,3,5,2,e,30f,0,p,2g,f,x,2,0,sd2,1d,jf3,4,f,3,2,4,2,2,b,3,42,0,2,0,4,2,2,1,2,0,3,0,t,1,9f,w,2,0,bk,1,2,1,2x,2,2,g,d,2,t,3,3,b,1b,0,2,1,5,0,3,1,2,1,2,0,3,0,6,0,16wm,1v");
+	var JOIN_TRANSPARENT = ranges("4t,0,gj,33,7o,6,7c,18,2,0,2,1,2,1,2,2,1z,a,2,0,1b,k,h,0,2u,6,3,5,3,1,2,3,y,0,2,0,v,q,2k,a,1n,8,a,0,p,3,2,8,2,2,2,4,18,2,1o,8,17,n,2,v,1k,0,2,0,5,7,5,0,4,6,b,1,u,0,1n,0,5,3,9,0,l,1,r,0,3,1,1m,0,5,1,5,1,3,2,4,0,v,1,4,0,c,1,1m,0,5,4,2,1,5,0,l,1,n,5,2,0,1n,0,3,0,2,3,9,0,6,3,c,1,v,0,1q,0,d,0,1f,0,4,0,1k,0,2,2,6,2,2,3,8,1,c,1,u,0,1n,0,3,0,7,0,6,1,l,1,t,1,1m,1,5,3,9,0,l,1,u,0,21,0,8,2,2,0,2j,0,3,6,d,7,2r,0,3,8,c,6,22,1,s,0,2,0,2,0,1k,d,2,4,2,1,6,a,2,z,a,0,2v,3,2,5,2,1,3,1,q,1,5,2,h,3,e,0,3,1,7,0,g,0,jk,2,qb,2,u,1,v,1,v,1,1t,1,2,6,9,0,3,a,a,0,1a,2,2,0,3a,1,z,0,3b,2,5,1,a,0,7,2,64,1,3,0,1n,0,2,6,2,0,2,0,3,7,7,9,3,0,1d,1s,g,3,1d,0,2,4,2,0,6,0,15,8,d,1,x,3,3,1,2,2,1l,0,2,1,4,0,2,2,1n,7,3,1,49,2,2,c,2,6,5,0,7,0,4,1,5j,1r,ek,0,3,1,r,4,1e,4,6,5,2p,w,2db,2,3y,0,2p,v,ff,3,30,1,n9x,3,2,9,x,1,29,1,7l,0,4,0,5,0,q,1,6,0,48,1,r,h,e,0,13,7,q,a,1b,2,1d,0,3,3,3,1,14,0,1w,5,3,1,3,1,d,0,9,0,1c,0,1g,0,2,2,3,1,6,1,2,0,17,1,9,0,6n,0,3,0,5,0,fn5,0,ki,f,h,f,5s,0,6y,2,ea,0,6b,0,46,4,1af,2,2,1,6,3,15,2,5,0,4m,1,fy,3,1u,4,8u,1,v,4,x,f,1z,a,1e,3,3g,0,1j,e,16,0,3,1,b,2,1e,3,3,1,8,0,1q,2,11,4,2,7,1r,0,d,1,1h,8,b,3,3,0,2o,2,3,0,2,1,7,0,3,0,4e,0,4,7,m,1,1m,1,4,0,12,6,4,4,1z,5,e,0,2,0,2,0,f,1,2e,7,3,2,2,0,o,0,2d,5,2,0,5,1,2,1,6n,3,7,1,2,1,s,1,2e,7,3,0,2,1,2z,0,2,0,3,5,2,0,2u,0,2,0,3,3,2,4,78,8,2,1,75,1,2,0,5,0,41,3,3,1,5,0,x,9,15,5,3,3,9,0,a,5,3,2,1b,c,2,1,5j,0,2,2,2,0,5m,6,2,5,2,0,2b,l,3,6,2,1,2,1,3f,5,4,0,2,1,2,6,2,0,21,1,4,0,2,0,2h,0,77,1,c,1,1h,4,6,0,2,0,o,0,446,g,7,e,8uh,b,4,2,1xd,4,1o,6,t5,0,1s,3,2a,0,f5l,1,2,3,3ml,19,3,m,dd,1,1r,2,a,f,3,6,v,3,45,2,n,1,1ic,1i,5,1d,9,0,f,0,n,4,2,e,11t,6,2,g,3,6,2,1,2,4,2t,0,4h,6,ag,0,1q,3,e5,3,73,1,6s,0,3,0,8,1,6,0,d7,6,32,7,gzau,0,v,2n,3l,6n");
+	var VARIATION_BASES = {
+		6155: ranges("4rk,6,2,0,2,0,2,1,2,4,2,1,2,0,c,5,3,2,e,2,2,0,3,2,3,1,6,0,4,3,a,1,6,1,2,0,8,0,8,0,6,1,3,0,3,1"),
+		6156: ranges("4rk,6,2,0,4,1,3,3,3,0,f,0,2,2,4,1,f,1,2,0,3,2,3,1,6,0,4,1,2,0,h,0,j,0,6,1,7,0"),
+		6157: ranges("4rk,0,2,0,2,2,2,0,4,1,9,0,f,0,2,0,7,0,f,0,3,0,3,0,5,1,a,1,j,0"),
+		6159: ranges("4rw,1,1c,0,3,0,k,0"),
+		65024: ranges("1c,0,34g,0,2,0,2,0,c,1,4,0,4,1,2,1,5,0,f,0,1w,0,3,0,2,0,6,0,32w,1,3,1,6m,0,5,0,2,0,9,0,h,0,4,1,2,0,5u,0,10,1,j,0,5,1,5,0,w,1,9,1,n,1,8,2,2,0,5,0,1d,0,d,3,1cq,0,3p,1,1b,0,1d,1,e,1,u,1,111,1,ce,0,6,0,3,0,6,3,2,1,2,0,4,2,8,0,jd,0,r,0,2,0,10,0,1i,0,d5,0,e,0,3p,0,4u,0,1f,0,q,0,23,0,s,0,1l,0,u,0,6s,0,1q,0,3c,0,10,0,h,0,1c,0,2c,0,3f,0,1i,0,6d,0,2r,0,7q,0,c,0,2r,0,69,0,c,0,g,0,x,0,d,0,28,0,25,0,24,0,5v,0,11,0,3d,0,2p,0,1f,0,11,0,3g,0,4,0,1e,0,2o,0,5c,0,1e,0,4,0,a,0,30,0,y,0,1o,0,3t,0,9,0,jy,0,29,0,3s,0,8,0,1o,0,3l,0,4b,0,74,0,v,0,b,0,2m,0,53,0,p,0,c,0,6,1,4,0,4,0,1t,0,4,0,14,0,i,0,c,0,o,0,3g,0,w,0,6,0,5,0,z,0,d,0,4,0,1v,0,15,0,27,0,v,0,1i,0,b,0,d,0,2h,0,5,0,8,0,7,0,g,0,3,2,4,0,a,0,9,0,d,0,5,0,3,0,2,0,d,0,8,0,9,0,2,0,i,0,3,0,g,0,2,0,n,0,e,0,4,0,g,0,i,0,h,1,b,0,18,0,5,0,i,0,i,0,8,0,g,0,k,0,2,0,9,0,c,0,6,0,h,0,5,0,b,1,h,0,14,0,a,0,8,0,9,0,p,0,2,0,8,0,2,0,1w,0,7,0,l,0,6,0,6,0,6,0,l,0,9,0,e,0,r,0,a,0,6,0,w,0,1i,0,4,0,r,0,1l,0,q,0,1v,0,2,0,e,0,x,0,3,0,i,0,4,0,e,0,8,0,d,0,2,0,w,0,10,0,23,0,n,0,c,0,3p,0,t,1,38,0,1v,0,12,0,p,0,10,1,e,0,q,0,4,0,22,0,4,0,7,0,11,0,7,0,f,0,4,0,5,0,f,0,k,0,8,0,y,0,4,0,9,0,3,0,e,0,h,0,2t,0,k,0,1b,0,c,0,1n,0,4,0,27,0,2b,0,w,0,m,0,1z,0,1q,0,l,0,f,0,7,0,5,0,c,0,7,0,s,0,t,0,x,0,2,0,2,1,9,0,v,0,1f,0,2h,0,16,0,d,0,r,0,3,0,e,0,1i,0,8,0,13,1,r,0,17,0,l,0,18,0,b,0,1e,0,a,0,3,0,3,0,j,1,8,1,6,0,j,0,i,0,6,0,u,0,1d,0,f,0,7,0,2,0,w,0,f,0,f,0,4,0,w,0,a,0,u,0,4,0,p,0,a,0,2h,0,c,0,j,0,1f,0,h,0,9,0,13,0,1o,0,4,0,4,0,2,0,i,0,8,0,i,0,k,0,2,0,k,0,b,0,3,0,18,0,k,0,4,0,a,0,g,0,b,0,j,0,6,0,15,0,2c,0,o,0,6,0,4,1,14,0,2,0,1r,0,j,0,o,0,j,0,8,0,t,0,9,0,r,1,v,0,1k,0,6,0,1c,0,n,0,e,0,7,0,s,0,3,0,13,0,3v,0,7,0,m,0,c,0,x,0,18,0,t,1,1c,0,1i,0,17,0,k,0,9,0,b,0,o,0,i,0,1a,0,4,0,8,0,n,0,4,0,6,0,19,0,5,0,3,0,8,0,t,0,a,0,i,0,2k,0,7,0,t,0,8,0,1f,0,1b,0,4,0,9,0,q,0,30,0,1a,0,2p,0,1z,0,o,0,h,0,45,0,17,0,8,0,15,0,t,0,1f,0,u,0,5,0,2,0,12,0,f,0,c,1,43,0,p,0,x,0,1j,0,d,1,o,0,1d,0,5,0,3,0,m,0,a,0,3,0,14,1,d,1,d,0,1y,0,f,0,g,0,f,0,x,0,l,0,1r,0,1a,0,u,0,d,0,4,0,6,0,a,0,1g,0,j,1,23,0,2g,0,11,0,j,0,t,0,3,0,r,0,h,0,12,0,7,0,6,0,s,0,k,0,r,0,h,0,30,0,4,0,11,0,1a,0,1e,0,2,0,1s,0,b,0,d,0,3,0,a,0,r,0,i,0,u,0,l,0,q,0,h,0,1o,0,1a,0,23,0,5,0,d,0,4,0,q,0,d,0,18,0,14,0,3,0,p,0,11,0,l,0,d,0,8,0,k,0,4,0,f,0,1e,0,1o,0,u,0,n,0,3,0,r,0,c,0,b,0,36,0,1a,0,d,0,2,0,z,0,13,0,2p,0,h,0,c,0,d,0,d,0,t,1,x,0,a,0,1t,0,s,0,4n,0,t,0,x,0,5,0,1l,0,2,0,1b,0,1b,0,i,0,2,0,a,1,7,0,6,0,7,1,7,0,q,0,e,2,v,0,s,0,x,0,1d,0,10,0,a,0,5,0,1e,0,1c,0,q,0,z,0,1e,0,4g,0,6,0,3,0,39,0,y,0,r,0,n,0,18,0,k,0,4,0,d,0,4,1,o,0,g,0,i,0,d,0,18,0,8,0,1p,0,u,0,9,0,19,0,e,0,7,0,1a,0,a,0,4,0,6x,0,1g,0,7,1,b,0,g,0,5,0,z,0,1p,0,7,0,4,0,1t,0,q,0,f,1,e,0,d,0,y,0,5,0,29,0,1n,0,4a,0,g,0,5,0,k,0,3,0,k,0,2f,0,a,0,i,0,6,0,c,0,k,0,2,0,a,0,14,1,1j,0,6,0,j,0,s,1,g,0,22,0,g,0,c,1,2,0,g,0,b,0,8,0,2,0,24,0,c,0,e,0,47,0,3,0,2,0,9,0,q,0,26,0,2x,0,19,0,c,0,c,0,r,0,i,0,h,0,c,0,b,0,2,0,v,0,x,0,1l,0,18,0,q,0,1v,0,e,0,d,0,1g,0,13,0,w,0,u,0,19,0,k,0,3,0,2n,0,d,0,8,0,7,0,3,0,n,0,2,0,m,0,1d,0,z,0,y,0,5,0,b,0,7e,0,a,0,l,0,c,0,7,0,4,0,n,0,b,0,6,0,3,0,1k,0,v,0,14,0,a,0,5a,0,d,0,2e,0,m,1,6,0,b,0,1h,0,j,0,2k,0,1x,0,f,0,10,1,62,0,a,0,2a,0,4,0,e,0,3,0,13,0,1o,0,i,0,6,0,31,0,l,0,1m,0,a,0,j,0,5,0,1m,0,g,0,j,0,c,0,k,0,a,0,27,0,1b,0,r,0,o,0,3,0,2,0,2r,0,4,0,1q,0,6,0,2j,1,18,0,1y,0,4v,0,s,0,ae,0,y,0,a,0,3b,0,t,0,2,0,14,0,3,0,4,0,a,0,t,0,k,1,b,0,v,1,j,1,18,0,f,0,m,0,e,0,3p,0,5,0,v,0,c,0,d,0,h,0,i,0,z,0,3o,0,d,0,d,0,18,1,3i,0,r,0,1b,0,d,0,30,0,4o,0,2l,0,5t,0,n,0,4m,0,2y,0,25,0,1y,0,10,0,2p,0,o,0,8,0,s,0,j,0,17,0,5,0,7,0,a,0,7,0,11,0,8,0,22,1,e,0,1q2,0,6,0,2,2,8,0,e0,6,5,1,3,0,b,0,gp3,0,b,0,2,0,2,0,a,1,4,0,2au,1,g,1,a,0,7g0,0,3i,0,d,0,5,0,6,0,i,0,2v,0,h,0,7,1,i,0,l,0,p,1,3l,0,4,0,6,0,7,0,u,0,x,0,h,0,b,0,w,0,k,0,7,0,q,0,1n,1,x,1,1l,0,h,1,2,0,7,0,4,0,3,1,w,0,3,1,9,0,w,3,1ia,2,p4,0,tgq,0,2,1,3,0,3,1,3,3,2,7,197,0,7iq,0,sa,0,9,0,12,0,6n,0,cq,0,62,0,9a,0,8n,0,1vl,0,ck,0,1u,0,ke,0,9c,0,dv,0,61,0,2,0,pp,0,s,0,b6,0,pv,0,a8,0,6,0,jm,0,6d,0,t5,0,j2,0,4n,0,1g,0,9,0,13,0,i,0,48,0,fq,0,ec,0,di,0,31,0,ci,0,2q,0,c3,0,3x,0,1c,0,k5,0,3v,0,59,0,gt,0,8d,0,67,0,te,0,2k,0,lr,0,n,0,3w,0,4u,1,12,0,q,0,7q,0,d0,0,eh,0,38,0,17,0,jb,0,8b,0,78,0,5x,0,28,0,ja,0,gk,0,26,0,v,0,42,0,2t,0,bg,0,21,0,3p,0,e7,0,e,0,p3,0,6y,0,4f,0,46,0,ch,0,3p,0,81,0,l4,0,il,0,g7,0,54,0,n6,0,ff,0,2k,0,1b7,0,r,0,8x,0,y4,0,al,0,r2,0,4a,0,1n,0,ds,0,3w,0,80,0,12y,0,13y,0,1j,0,7d,0,3n,0,75,0,ha,0"),
+		65025: ranges("6c8,1,3,1,6m,0,5,0,2,0,9,0,h,0,4,1,2,0,2xa,1,ck,0,9,0,e,0,1xc,0,m3,0,ap,0,31x,0,8p,0,2u,0,2w,0,2a,0,5c,0,2,0,r,0,m,0,t,0,1m,0,1a,0,ed,0,l,0,4,0,2x,0,gk,0,kk,0,4p,0,3r,0,gs,0,2g,0,aa,0,54,0,2,0,1s,0,2s,0,4,0,nt,0,85,0,t,0,3q,0,4,0,a2,0,al,0,c8,0,av,0,1i,0,9g,0,2f,0,70,0,9c,0,5j,0,6t,0,2l,0,6i,0,73,0,9m,0,16,0,17,0,17,0,8y,0,1s,0,3u,0,1l,0,4x,0,ao,0,fo,0,ep,0,e4,0,3c,0,30,0,aa,0,ed,0,7x,0,f1,0,7o,0,1v,0,b,0,6,0,3,0,1k,0,29,0,am,0,fk,0,74,0,1bf,0,37,0,4p,0,c,0,1c,0,k7,0,wa,0,iud,0,b,0,2,0,c,1,4,0,9ro,0,4f,0,7,0,26,0,16,0,1p,0,a,2,2l,0,14,0,c,0,p,0,2s,0,a,2,7,0,6,1,f,0,53,0,1d,0,26e,0,np,0,svc,0,2,1,3,0,3,1,3,3,2,7,fi4,0,aye,0"),
+		65026: ranges("6c8,1,3,1,a5e,0,1ns,0,147,0,2s,0,10l,0,kr,0,c8,0,av,0,3ar,0,ep,0,4qu,0,1ht,0,sqj,0,y,0,22,0,t,0,q,0,1g,0,14,0,2t,0,15,0,1v,0,2,0,f,0,5,0,5,1,d,4,8,0,5,0,g,0,p,0,n,0,i,0,a,0,8,0,16,1,f,0,s,0,2,0,1o,0,j,0,2,0,2ti,0,swr,0"),
+		65027: ranges("1o2a,0,4m,0,2,0,2d,0,w,0,a,0,23,0,o,1,2,0,i,0,16,0,16,0,41,0,4i,0,69,0"),
+		65028: ranges("1oah,0,k4,0"),
+		65029: ranges("1oah,0,3ej,0"),
+		65030: ranges("1oa7,0,a,0,23,0,2f,0,j,0,n,0,4f,0,1x,0,1u,0,d,0,1k,1,4o,0,2u3,0"),
+		65038: ranges("z,0,7,0,6,9,34,0,5,0,68e,0,d,0,61,0,n,0,2j,5,g,1,a8,1,d,0,4n,0,q,a,5,2,5k,0,6g,1,b,0,a,0,1n,3,2,4,a,0,3,0,3,1,3,0,5,0,3,0,2,1,3,0,4,0,4,1,9,2,6,0,2,0,6,b,c,1,3,0,2,1,2,0,j,0,3,1,j,5,2,0,2,1,4,1,6,0,3,1,5,1,c,1,6,1,3,0,6,1,2,0,2,1,l,1,6,5,2,3,3,0,5,0,3,0,3,5,2,0,3,0,2,0,2,0,7,0,4,0,7,0,b,1,g,0,3,0,5,0,2,0,5,2,2,0,c,1,1d,2,a,0,f,0,f,0,ad,1,cw,2,k,1,1g,0,5,0,yj,0,d,0,gq,0,2,0,2fzf,0,a4,1,d,1,3n,0,o,0,l,0,8,0,5y,2,6,0,7,0,5,0,3,8,a,0,1u,0,5,0,m,0,3,1,2,2,3,1,8,0,5,2,k,0,2,0,2,0,4,4,6,c,d,0,6,0,2,0,2,0,h,0,d,0,a,0,7,0,p,0,2,1,4,3,4,1,5,0,n,0,j,0,12,0,d,0,3,0,8,0,4,0,c,0,f,0,5,0,5,2,4,3,a,0,2,2,2,0,b,0,5,0,5,1,1i,1,6,n,8,1,3,6,e,0,3,3,3,0,l,0,3,0,9,1,a,0,6,2,d,2,9,2,3,0,2,0,5,0,7,0,4,0,7,0,m,0,3b,0,6,0,4,0,3,0,4,0,l,0,5,0,7,1,2,0,f,0,2,2,h,5,4,0,7,0,3,0"),
+		65039: ranges("z,0,7,0,6,9,34,0,5,0,68e,0,d,0,61,0,n,0,2j,5,g,1,a8,1,d,0,4n,0,q,a,5,2,5k,0,6g,1,b,0,a,0,1n,3,2,4,a,0,3,0,3,1,3,0,5,0,3,0,2,1,3,0,4,0,4,1,9,2,6,0,2,0,6,b,c,1,3,0,2,1,2,0,j,0,3,1,j,5,2,0,2,1,4,1,6,0,3,1,5,1,c,1,6,1,3,0,6,1,2,0,2,1,l,1,6,5,2,3,3,0,5,0,3,0,3,5,2,0,3,0,2,0,2,0,7,0,4,0,7,0,b,1,g,0,3,0,5,0,2,0,5,2,2,0,c,1,1d,2,a,0,f,0,f,0,ad,1,cw,2,k,1,1g,0,5,0,yj,0,d,0,gq,0,2,0,2fzf,0,a4,1,d,1,3n,0,o,0,l,0,8,0,5y,2,6,0,7,0,5,0,3,8,a,0,1u,0,5,0,m,0,3,1,2,2,3,1,8,0,5,2,k,0,2,0,2,0,4,4,6,c,d,0,6,0,2,0,2,0,h,0,d,0,a,0,7,0,p,0,2,1,4,3,4,1,5,0,n,0,j,0,12,0,d,0,3,0,8,0,4,0,c,0,f,0,5,0,5,2,4,3,a,0,2,2,2,0,b,0,5,0,5,1,1i,1,6,n,8,1,3,6,e,0,3,3,3,0,l,0,3,0,9,1,a,0,6,2,d,2,9,2,3,0,2,0,5,0,7,0,4,0,7,0,m,0,3b,0,6,0,4,0,3,0,4,0,l,0,5,0,7,1,2,0,f,0,2,2,h,5,4,0,7,0,3,0")
+	};
+	var RGI_TAG_SEQUENCES = [
+		"gbeng",
+		"gbsct",
+		"gbwls"
+	];
+	/**
+	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show, and
+	* the checks behind the message-text rules. Code points come in three classes, taken from the
+	* generated Unicode 18.0.0 tables in unicode-tables.ts so the kernel and the host classify every
+	* code point identically regardless of the engine's ICU version. Deceptive ones — controls other
+	* than TAB/LF/CR, the line and paragraph separators, the bidi embedding/override marks U+202A–202E,
+	* interlinear annotation anchors U+FFF9–FFFB, default-ignorable code points outside the format set,
+	* tag characters outside an exact RGI emoji tag sequence (U+1F3F4, the tag-encoded body, U+E007F)
+	* and variation selectors not immediately after a base the selector is defined for — mean what the
+	* owner reads is not what was signed (`hasHiddenCharacters`); they render as U+FFFD. Format
+	* characters — joiners, direction marks, the soft hyphen, the combining grapheme joiner, variation
+	* selectors in a valid position and RGI tag sequences — are ordinary text; direction marks, the
+	* soft hyphen, CGJ and joiners outside a joining context display as U+FFFD so they stay visible,
+	* the rest pass through. Everything else is text.
+	*
+	* Joining context: a ZWJ is kept after a virama (ccc=9, RFC 5892 appendix A.2) or inside an emoji
+	* ZWJ sequence (UTS #51 ED-16: the preceding code point is Extended_Pictographic or an emoji
+	* modifier — an emoji-variation FE0F after a pictographic base counts as its base — and the next is
+	* Extended_Pictographic). A ZWNJ is kept after a virama or between left- and right-joining
+	* characters, skipping transparent ones (RFC 5892 appendix A.1).
+	*/
+	var CONTROL = new RegExp("\\p{Cc}", "u");
 	var MARK_VISIBLE = /* @__PURE__ */ new Set([
 		8206,
 		8207,
 		1564,
-		173
+		173,
+		847
 	]);
+	var TAB = 9;
+	var LINE_FEED = 10;
+	var CARRIAGE_RETURN = 13;
+	var ZWNJ = 8204;
+	var ZWJ = 8205;
+	var EMOJI_VS = 65039;
+	var IVS_FIRST = 917760;
 	var TAG_BASE = 127988;
-	var TAG_FIRST = 917504;
-	var TAG_LAST = 917631;
-	var TAG_BODY_FIRST = 917536;
+	var TAG_FIRST = 917536;
 	var TAG_BODY_LAST = 917630;
+	var TAG_LAST = 917631;
+	var TAG_CANCEL = 917631;
 	var codePoint = (char) => {
 		var _char$codePointAt;
 		return (_char$codePointAt = char === null || char === void 0 ? void 0 : char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0;
@@ -13371,37 +13439,82 @@
 		for (const char of text) chars.push(char);
 		return chars;
 	};
+	/** Whether `cp` lies in a flat sorted inclusive-range table `[lo0, hi0, lo1, hi1, …]`. */
+	var inRanges = (ranges, cp) => {
+		let lo = 0;
+		let hi = ranges.length / 2;
+		while (lo < hi) {
+			const mid = Math.floor((lo + hi) / 2);
+			const start = ranges[mid * 2];
+			const end = ranges[mid * 2 + 1];
+			if (start === void 0 || end === void 0) return false;
+			if (cp < start) hi = mid;
+			else if (cp > end) lo = mid + 1;
+			else return true;
+		}
+		return false;
+	};
+	var isTagChar = (cp) => cp >= TAG_FIRST && cp <= TAG_LAST;
+	var isFormat = (cp) => cp === ZWNJ || cp === ZWJ || MARK_VISIBLE.has(cp) || inRanges(VARIATION_SELECTOR, cp) || isTagChar(cp);
+	/** The explicit deceptive set: separators, bidi embedding/override marks, annotation anchors. */
+	var isExplicitDeceptive = (cp) => cp >= 8232 && cp <= 8233 || cp >= 8234 && cp <= 8238 || cp >= 65529 && cp <= 65531;
 	/**
-	* Whether the tag character at `i` is part of a valid emoji tag sequence: U+1F3F4, then one or more
-	* of U+E0020–U+E007E, terminated by U+E007F.
+	* Whether the tag character at `i` is part of an exact RGI emoji tag sequence: U+1F3F4, then the
+	* tag-encoded body of one of RGI_TAG_SEQUENCES, terminated by U+E007F (UTS #51).
 	*/
-	var inEmojiTagSequence = (chars, i) => {
+	var inRgiTagSequence = (chars, i) => {
 		let start = i;
 		while (start > 0) {
 			const cp = codePoint(chars[start - 1]);
-			if (cp < TAG_FIRST || cp > TAG_LAST) break;
+			if (cp < TAG_FIRST || cp > TAG_BODY_LAST) break;
 			start--;
 		}
 		if (start === 0 || codePoint(chars[start - 1]) !== TAG_BASE) return false;
 		let end = start;
+		let body = "";
 		while (end < chars.length) {
 			const cp = codePoint(chars[end]);
-			if (cp < TAG_BODY_FIRST || cp > TAG_BODY_LAST) break;
+			if (cp < TAG_FIRST || cp > TAG_BODY_LAST) break;
+			body += String.fromCodePoint(cp - 917504);
 			end++;
 		}
-		return end > start && codePoint(chars[end]) === TAG_LAST && i <= end;
+		return codePoint(chars[end]) === TAG_CANCEL && RGI_TAG_SEQUENCES.includes(body) && i <= end;
 	};
-	var isDeceptive = (char, codePoint) => codePoint !== 9 && codePoint !== 10 && codePoint !== 13 && DECEPTIVE.test(char) || IGNORABLE.test(char) && !FORMAT.test(char);
+	/** A variation selector is deceptive unless it immediately follows a base defined for it. */
+	var misplacedSelector = (chars, i) => {
+		const selector = codePoint(chars[i]);
+		const prev = codePoint(chars[i - 1]);
+		if (selector >= IVS_FIRST) return !inRanges(UNIFIED_IDEOGRAPH, prev);
+		const bases = VARIATION_BASES[selector];
+		return bases === void 0 || !inRanges(bases, prev);
+	};
+	/** Whether the code point at `i` hides, reorders or fakes signed content. */
+	var isDeceptive = (chars, i) => {
+		var _chars$i;
+		const cp = codePoint(chars[i]);
+		if (isTagChar(cp)) return !inRgiTagSequence(chars, i);
+		if (inRanges(VARIATION_SELECTOR, cp)) return misplacedSelector(chars, i);
+		if (cp !== TAB && cp !== LINE_FEED && cp !== CARRIAGE_RETURN && (CONTROL.test((_chars$i = chars[i]) !== null && _chars$i !== void 0 ? _chars$i : "") || isExplicitDeceptive(cp))) return true;
+		return inRanges(DEFAULT_IGNORABLE, cp) && !isFormat(cp);
+	};
+	/** Whether the joiner at `i` actually joins — kept verbatim in the display. */
+	var joinsHere = (chars, i) => {
+		const prev = codePoint(chars[i - 1]);
+		if (inRanges(VIRAMA, prev)) return true;
+		if (codePoint(chars[i]) === ZWJ) return (inRanges(EXTENDED_PICTOGRAPHIC, prev) || inRanges(EMOJI_MODIFIER, prev) || prev === EMOJI_VS && inRanges(EXTENDED_PICTOGRAPHIC, codePoint(chars[i - 2]))) && inRanges(EXTENDED_PICTOGRAPHIC, codePoint(chars[i + 1]));
+		let before = i - 1;
+		while (before >= 0 && inRanges(JOIN_TRANSPARENT, codePoint(chars[before]))) before--;
+		let after = i + 1;
+		while (after < chars.length && inRanges(JOIN_TRANSPARENT, codePoint(chars[after]))) after++;
+		return inRanges(JOIN_LEFT, codePoint(chars[before])) && inRanges(JOIN_RIGHT, codePoint(chars[after]));
+	};
 	/**
 	* Whether `text` holds a deceptive code point — one that hides, reorders or fakes content. TAB, LF
 	* and CR are the only control characters ordinary text may carry.
 	*/
 	var hasHiddenCharacters = (text) => {
 		const chars = codePointsOf(text);
-		for (const [i, char] of chars.entries()) {
-			const cp = codePoint(char);
-			if (cp >= TAG_FIRST && cp <= TAG_LAST ? !inEmojiTagSequence(chars, i) : isDeceptive(char, cp)) return true;
-		}
+		for (const [i] of chars.entries()) if (isDeceptive(chars, i)) return true;
 		return false;
 	};
 	/**
@@ -13426,18 +13539,17 @@
 	var REPLACEMENT = "�";
 	var LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
 	/**
-	* The code points of one line: tabs as spaces, trimmed; deceptive characters, misplaced joiners and
-	* the always-visible marks (LRM, RLM, ALM, SHY) as U+FFFD; tag characters only inside a valid emoji
-	* tag sequence.
+	* The code points of one line: tabs as spaces, trimmed; deceptive characters, joiners outside a
+	* joining context and the always-visible marks (LRM, RLM, ALM, SHY, CGJ) as U+FFFD; tag characters
+	* only inside an exact RGI emoji tag sequence.
 	*/
 	var safeLine = (line) => {
 		const chars = codePointsOf(line.replaceAll("	", " ").trim());
 		return chars.map((char, i) => {
-			var _chars, _chars2;
 			const cp = codePoint(char);
-			if (cp >= TAG_FIRST && cp <= TAG_LAST) return inEmojiTagSequence(chars, i) ? char : REPLACEMENT;
-			if (JOINER.test(char)) return JOINER_PREV.test((_chars = chars[i - 1]) !== null && _chars !== void 0 ? _chars : "") && JOINER_NEXT.test((_chars2 = chars[i + 1]) !== null && _chars2 !== void 0 ? _chars2 : "") ? char : REPLACEMENT;
-			if (MARK_VISIBLE.has(cp) || isDeceptive(char, cp)) return REPLACEMENT;
+			if (isTagChar(cp)) return inRgiTagSequence(chars, i) ? char : REPLACEMENT;
+			if (cp === ZWNJ || cp === ZWJ) return joinsHere(chars, i) ? char : REPLACEMENT;
+			if (MARK_VISIBLE.has(cp) || isDeceptive(chars, i)) return REPLACEMENT;
 			return char;
 		});
 	};
@@ -13605,7 +13717,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-B8ghHmXw.mjs
+	// packages/wallet-chains/dist/account-ref-BFTeEyHt.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -18350,7 +18462,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-CBf8nsvd.mjs
+	// packages/wallet-chains/dist/typed-data-W11SiJgr.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -18430,7 +18542,7 @@
 		}
 	};
 	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
-	function assertHex$2(value, field) {
+	function assertHex$1(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 	}
 	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18749,7 +18861,8 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-BypPFdXR.mjs
+	// packages/wallet-chains/dist/token-call-p-YLnu3c.mjs
+	init_utils$2();
 	init_objectSpread2();
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var EVM_NATIVE_ASSET = "native";
@@ -19091,13 +19204,15 @@
 		196: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
 		480: { V3DutchOrder: "0x00000000d714ea34028930b762e96bfbe50f42c2" },
 		1868: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
+		57073: { V3DutchOrder: "0x000000007a1c8e570011eedf86a2a35593013cba" },
 		8453: {
 			V3DutchOrder: "0x000000008a8330b5d1f43a62bf4c673a49f27ba0",
 			PriorityOrder: "0x000000001ec5656dcdb24d90dfa42742738de729"
 		},
 		42161: { V3DutchOrder: "0xb274d5f4b833b61b340b654d600a864fb604a87c" },
 		42220: { V3DutchOrder: "0x00000000b8077fdf2281a80be96f6c282b5d943a" },
-		43114: { V3DutchOrder: "0x00000000862ccf095823fc7576fa6c7e6b7385ef" }
+		43114: { V3DutchOrder: "0x00000000862ccf095823fc7576fa6c7e6b7385ef" },
+		7777777: { V3DutchOrder: "0x000000002c9a3812e15cf233190992e9a57edb56" }
 	};
 	var ZERO$3 = "0x0000000000000000000000000000000000000000";
 	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
@@ -19227,6 +19342,232 @@
 			}, parsed.exclusiveFiller === void 0 ? {} : { exclusiveFiller: parsed.exclusiveFiller })
 		};
 	};
+	/** Chains whose AllowanceHolder + Settler deployment this decoder recognises. */
+	var ZEROX_CHAINS = /* @__PURE__ */ new Set([
+		1,
+		10,
+		56,
+		137,
+		8453,
+		999,
+		42161,
+		43114,
+		11155111
+	]);
+	var ZEROX_DEPLOYER = "0x00000000000004533Fe15556B1E086BB1A72cEae";
+	var SHIM_INIT_CODE_HASH = "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f";
+	/** The native-token sentinel 0x uses in `exec`, and the bare zero address (same meaning). */
+	var NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+	var ZERO_ADDRESS$3 = "0x0000000000000000000000000000000000000000";
+	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
+	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
+	var last20 = (hex) => `0x${hex.slice(-40)}`;
+	var addressBytes = (address) => hexToBytes$3(address.slice(2));
+	var bigIntBytes32 = (value) => hexToBytes$3(value.toString(16).padStart(64, "0"));
+	var keccakHex = (parts) => {
+		const total = parts.reduce((sum, part) => sum + part.length, 0);
+		const flat = new Uint8Array(total);
+		let offset = 0;
+		for (const part of parts) {
+			flat.set(part, offset);
+			offset += part.length;
+		}
+		return `0x${bytesToHex$4(keccak_256(flat))}`;
+	};
+	var FEATURE_TAKER = 2n;
+	var FEATURE_METATXN = 3n;
+	/**
+	* Whether `address` is a `feature` 0x Settler on `chainId` — 2 taker, 3 MetaTxn (Deployer.sol's
+	* `ownerOf(tokenId)`). Settlers deploy as a CREATE2 shim whose CREATE child is the contract: `salt
+	* = (feature << 128) | (chainId << 64) | nonce`, `shim = CREATE2(deployer, salt, initHash)`,
+	* `settler = CREATE(shim, 1)`. Settler is redeployed roughly monthly, so nonces 1..256 leave
+	* decades of headroom; the loop runs 512 keccaks and is only reached for an AllowanceHolder `exec`
+	* or a Permit2 `slippageAndActions` witness. Feature 5 (bridge) is deliberately not matched.
+	*/
+	var isZeroExSettler = (chainId, address, feature = FEATURE_TAKER) => {
+		const want = address.toLowerCase();
+		const deployer = addressBytes(ZEROX_DEPLOYER);
+		const initHash = hexToBytes$3(SHIM_INIT_CODE_HASH.slice(2));
+		for (let nonce = 1; nonce <= 256; nonce++) {
+			const salt = bigIntBytes32(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
+			const shim = addressBytes(last20(keccakHex([
+				new Uint8Array([255]),
+				deployer,
+				salt,
+				initHash
+			])));
+			if (last20(keccakHex([
+				new Uint8Array([214, 148]),
+				shim,
+				new Uint8Array([1])
+			])) === want) return true;
+		}
+		return false;
+	};
+	/** The canonical-decoded `exec` arguments, or `undefined` (selector mismatch or non-canonical). */
+	var decodeExec = (data) => {
+		if (!data.toLowerCase().startsWith("0x2213bc0b")) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(EXEC, data);
+			if (!Array.isArray(args) || args.length !== 5) return;
+			if (encodeData$1(EXEC, args).toLowerCase() !== data.toLowerCase()) return;
+			const [operator, token, amount, target, inner] = args;
+			if (typeof operator !== "string" || typeof token !== "string" || typeof amount !== "bigint" || typeof target !== "string" || typeof inner !== "string") return;
+			return {
+				operator,
+				token,
+				amount,
+				target,
+				data: inner
+			};
+		} catch (_unused) {
+			return;
+		}
+	};
+	var isSlippage = (value) => typeof value === "object" && value !== null && "recipient" in value && typeof value.recipient === "string" && "buyToken" in value && typeof value.buyToken === "string" && "minAmountOut" in value && typeof value.minAmountOut === "bigint";
+	/**
+	* The canonical-decoded `execute` slippage tuple, or `undefined` when the call is not a Settler
+	* execute.
+	*/
+	var decodeSettlerExecute = (data) => {
+		if (!data.toLowerCase().startsWith("0x1fff991f")) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(SETTLER_EXECUTE, data);
+			if (!Array.isArray(args) || args.length !== 3) return;
+			if (encodeData$1(SETTLER_EXECUTE, args).toLowerCase() !== data.toLowerCase()) return;
+			const [slippage] = args;
+			if (!isSlippage(slippage)) return;
+			return slippage;
+		} catch (_unused2) {
+			return;
+		}
+	};
+	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$3;
+	var tokenAmount$2 = (token, amount, chainId, table) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2({
+			asset: checksumEvmAddress(token),
+			amount: amount.toString(10)
+		}, known === void 0 ? {} : {
+			symbol: known.symbol,
+			decimals: known.decimals
+		});
+	};
+	var nativeMinimum = (amount) => ({
+		asset: EVM_NATIVE_ASSET,
+		amount: amount.toString(10)
+	});
+	/**
+	* The `DisplayIntent` for a call to AllowanceHolder `exec` on a chain this decoder covers: a swap
+	* when the operator calls the taker Settler's own `execute` (operator == target, an on-chain
+	* Settler, a canonical inner call) and a generic one-time allowance otherwise. `undefined` when the
+	* call is not to AllowanceHolder or not `exec`.
+	*/
+	var decodeZeroX = (chainId, call, table) => {
+		if (call.to === void 0 || call.to.toLowerCase() !== "0x0000000000001fF3684f28c67538d4D072C22734".toLowerCase() || !ZEROX_CHAINS.has(chainId)) return;
+		const exec = decodeExec(call.data);
+		if (exec === void 0) return;
+		const { operator, token, amount, target, data: inner } = exec;
+		const slippage = decodeSettlerExecute(inner);
+		if (operator.toLowerCase() === target.toLowerCase() && isZeroExSettler(chainId, target) && slippage !== void 0 && slippage !== void 0) {
+			let outflow;
+			if (isNativeToken(token)) {
+				if (amount === call.value && call.value > 0n) outflow = {
+					to: target,
+					amount: {
+						asset: EVM_NATIVE_ASSET,
+						amount: call.value.toString(10)
+					},
+					verified: true
+				};
+			} else if (call.value === 0n) outflow = {
+				to: target,
+				amount: tokenAmount$2(token, amount, chainId, table),
+				verified: lookupEvmToken(table, chainId, token) !== void 0
+			};
+			if (outflow !== void 0) {
+				const buyNative = isNativeToken(slippage.buyToken);
+				return {
+					summary: "swap",
+					outflows: [outflow],
+					approvals: [],
+					minimumReceived: [{
+						to: slippage.recipient,
+						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount$2(slippage.buyToken, slippage.minAmountOut, chainId, table)
+					}],
+					verifiability: "partial"
+				};
+			}
+		}
+		const approvals = isNativeToken(token) ? [] : [allowanceChange(checksumEvmAddress(token), operator, amount, "transfer", MAX_UINT256, chainId, table, { via: "allowance-holder" })];
+		return {
+			summary: "contract-call",
+			outflows: call.value === 0n ? [] : [{
+				to: target,
+				amount: {
+					asset: EVM_NATIVE_ASSET,
+					amount: call.value.toString(10)
+				},
+				verified: true
+			}],
+			approvals,
+			verifiability: "partial"
+		};
+	};
+	var METATXN_DOMAIN = [
+		"string name",
+		"uint256 chainId",
+		"address verifyingContract"
+	];
+	var METATXN_PERMIT = [
+		"TokenPermissions permitted",
+		"address spender",
+		"uint256 nonce",
+		"uint256 deadline",
+		"SlippageAndActions slippageAndActions"
+	];
+	var METATXN_SLIPPAGE = [
+		"address recipient",
+		"address buyToken",
+		"uint256 minAmountOut",
+		"bytes[] actions"
+	];
+	/**
+	* The gasless order a 0x Settler MetaTxn Permit2 witness signs (0xProject/0x-settler@ad7c844
+	* `src/SettlerMetaTxn.sol` + `src/core/Permit2Payment.sol`): the meta-transaction's first action
+	* must consume this witness's Permit2 transfer, and `_checkSlippageAndTransfer` requires the
+	* Settler to hold at least `minAmountOut` of `buyToken` and sends its whole balance to `recipient`
+	* — `minAmountOut` is the least the recipient gets (a 0 bound skips the check only together with a
+	* zero `buyToken`, and would bind nothing, so the decoder requires a positive bound). `spender`
+	* must be the MetaTxn-feature Settler of the request's chain — `permit.ts` is already gated to the
+	* Permit2 verifying contract.
+	*/
+	var recognizeZeroXMetaTxn = (json, signer, chainId, table) => {
+		const { types, primaryType, domain, message } = json;
+		if (primaryType !== "PermitWitnessTransferFrom" || Object.keys(types).length !== 4 || !sameFields(types, "EIP712Domain", METATXN_DOMAIN) || !sameFields(types, "TokenPermissions", ["address token", "uint256 amount"]) || !sameFields(types, "SlippageAndActions", METATXN_SLIPPAGE) || !sameFields(types, "PermitWitnessTransferFrom", METATXN_PERMIT) || !ZEROX_CHAINS.has(chainId) || domainChainId(domain) !== chainId) return;
+		const { permitted, slippageAndActions } = message;
+		const spender = typedDataAddress(message["spender"]);
+		const permittedToken = isTypedDataMessage(permitted) ? typedDataAddress(permitted["token"]) : void 0;
+		const permittedAmount = isTypedDataMessage(permitted) ? typedDataUint(permitted["amount"], MAX_UINT256) : void 0;
+		const nonce = typedDataUint(message["nonce"], MAX_UINT256);
+		const deadline = typedDataUint(message["deadline"], MAX_UINT256);
+		const recipient = isTypedDataMessage(slippageAndActions) ? typedDataAddress(slippageAndActions["recipient"]) : void 0;
+		const buyToken = isTypedDataMessage(slippageAndActions) ? typedDataAddress(slippageAndActions["buyToken"]) : void 0;
+		const minAmountOut = isTypedDataMessage(slippageAndActions) ? typedDataUint(slippageAndActions["minAmountOut"], MAX_UINT256) : void 0;
+		const actions = isTypedDataMessage(slippageAndActions) ? slippageAndActions["actions"] : void 0;
+		if (spender === void 0 || !isZeroExSettler(chainId, spender, FEATURE_METATXN) || permittedToken === void 0 || permittedAmount === void 0 || nonce === void 0 || deadline === void 0 || recipient === void 0 || buyToken === void 0 || minAmountOut === void 0 || minAmountOut === 0n || !Array.isArray(actions) || actions.some((action) => typedDataBytes(action) === void 0)) return;
+		return _objectSpread2(_objectSpread2({
+			protocol: "0x",
+			maker: checksumEvmAddress(signer),
+			give: orderAmount(permittedToken, permittedAmount, chainId, table),
+			receive: [{
+				recipient,
+				amount: orderAmount(buyToken, minAmountOut, chainId, table, NATIVE_SENTINEL)
+			}]
+		}, deadline <= MAX_UINT48 ? { expiry: Number(deadline) } : {}), {}, { partialFill: false });
+	};
 	var isMessage$1 = isTypedDataMessage;
 	var address$2 = typedDataAddress;
 	var uint$2 = typedDataUint;
@@ -19335,7 +19676,7 @@
 		if (primaryType !== `Permit${batch ? "Batch" : ""}${witness ? "Witness" : ""}TransferFrom`) return;
 		const own = types[primaryType];
 		const last = own === null || own === void 0 ? void 0 : own.at(-1);
-		const fieldsOk = witness ? sameFields(_objectSpread2(_objectSpread2({}, types), {}, { [primaryType]: (_own$slice = own === null || own === void 0 ? void 0 : own.slice(0, -1)) !== null && _own$slice !== void 0 ? _own$slice : [] }), primaryType, expected) && (last === null || last === void 0 ? void 0 : last.name) === "witness" && types[last.type] !== void 0 : sameFields(types, primaryType, expected);
+		const fieldsOk = witness ? sameFields(_objectSpread2(_objectSpread2({}, types), {}, { [primaryType]: (_own$slice = own === null || own === void 0 ? void 0 : own.slice(0, -1)) !== null && _own$slice !== void 0 ? _own$slice : [] }), primaryType, expected) && ((last === null || last === void 0 ? void 0 : last.name) === "witness" || (last === null || last === void 0 ? void 0 : last.name) === "slippageAndActions") && types[last.type] !== void 0 : sameFields(types, primaryType, expected);
 		const deadline = uint$2(message["deadline"], MAX_UINT256);
 		if (!fieldsOk || !sameFields(types, "TokenPermissions", PERMISSIONS) || deadline === void 0) return;
 		const { permitted } = message;
@@ -19349,14 +19690,22 @@
 	* order over the item limit blinds the document; a commitment leaf blinds it too.
 	*/
 	var witnessOutcome = (result, json, signer, chainId, table) => {
-		var _json$types$json$prim;
+		var _json$types$json$prim, _json$types$json$prim2;
+		if (((_json$types$json$prim = json.types[json.primaryType]) === null || _json$types$json$prim === void 0 || (_json$types$json$prim = _json$types$json$prim.at(-1)) === null || _json$types$json$prim === void 0 ? void 0 : _json$types$json$prim.name) === "slippageAndActions") {
+			const order = recognizeZeroXMetaTxn(json, signer, chainId, table);
+			return order === void 0 ? void 0 : {
+				approvals: result.approvals,
+				warnings: [],
+				order
+			};
+		}
 		const uniswapx = recognizeUniswapX(json, signer, chainId, table);
 		if ((uniswapx === null || uniswapx === void 0 ? void 0 : uniswapx.kind) === "order") return {
 			approvals: result.approvals,
 			warnings: [],
 			order: uniswapx.order
 		};
-		const witnessType = (_json$types$json$prim = json.types[json.primaryType]) === null || _json$types$json$prim === void 0 || (_json$types$json$prim = _json$types$json$prim.at(-1)) === null || _json$types$json$prim === void 0 ? void 0 : _json$types$json$prim.type;
+		const witnessType = (_json$types$json$prim2 = json.types[json.primaryType]) === null || _json$types$json$prim2 === void 0 || (_json$types$json$prim2 = _json$types$json$prim2.at(-1)) === null || _json$types$json$prim2 === void 0 ? void 0 : _json$types$json$prim2.type;
 		const { witness } = json.message;
 		const subtree = uniswapx === void 0 && witnessType !== void 0 && isMessage$1(witness) ? typedDataFields({
 			types: json.types,
@@ -19367,7 +19716,7 @@
 		return _objectSpread2(_objectSpread2({
 			approvals: result.approvals,
 			warnings: [WITNESS_WARNING]
-		}, subtree === void 0 ? {} : { fields: subtree.fields.map((leaf) => _objectSpread2(_objectSpread2({}, leaf), {}, { path: `witness.${leaf.path}` })) }), uniswapx !== void 0 || subtree === void 0 ? { blind: "typed-data-oversize" } : subtree.hasCommitment ? { blind: "typed-data-commitment" } : {});
+		}, subtree === void 0 ? {} : { fields: subtree.fields.map((leaf) => _objectSpread2(_objectSpread2({}, leaf), {}, { path: `witness.${leaf.path}` })) }), subtree === void 0 ? { blind: "typed-data-oversize" } : subtree.hasCommitment ? { blind: "typed-data-commitment" } : {});
 	};
 	/**
 	* The ERC-20/721/1155 selector table shared with TRON's TRC-20 decoding — its own module so the
@@ -19385,7 +19734,7 @@
 	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
 	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
 	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
-	function assertHex$1(data) {
+	function assertHex$2(data) {
 		if (!/^0x[0-9a-fA-F]*$/.test(data)) throw new ChainError("invalid-request", "call data is not 0x-prefixed hex");
 	}
 	var argAddress$3 = (args, index) => {
@@ -19407,11 +19756,11 @@
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$1(data);
+			assertHex$2(data);
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused) {
+		} catch (_unused3) {
 			return;
 		}
 	};
@@ -19748,7 +20097,7 @@
 		}) }) }) });
 		return decorate(intent);
 	};
-	// packages/wallet-chains/dist/families-B9rgBFc2.mjs
+	// packages/wallet-chains/dist/families-B9NiheX5.mjs
 	var RECOGNISED_FAMILIES = [
 		{
 			family: "Hyperliquid L1",
@@ -19897,7 +20246,7 @@
 			claim: {
 				surface: "evm.typed-data",
 				domainName: "snapshot",
-				primaryType: /^Vote$/
+				primaryType: /^(?:Vote|Alias)$/
 			},
 			nearMiss: "typed-data-variant"
 		},
@@ -20031,6 +20380,48 @@
 					"0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
 					"0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
 				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "EIP-3009",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Morpho Blue",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "morpho-blue"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Aave credit delegation",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^DelegationWithSig$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Farcaster KeyGateway",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Farcaster KeyGateway",
+				contracts: ["0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Farcaster SignedKeyRequestValidator",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Farcaster SignedKeyRequestValidator",
+				contracts: ["0x00000000FC700472606ED4fA22623Acf62c60553"]
 			},
 			nearMiss: "typed-data-variant"
 		},
@@ -22013,7 +22404,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-CTXEc-Gc.mjs
+	// packages/wallet-chains/dist/envelope-Du_WsBnA.mjs
 	init_objectSpread2();
 	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
 	function assertHex(value, field) {
@@ -24506,7 +24897,6 @@ zoo`.split("\n"));
 	fromString$1("ox.secp256k1.fromPrf.v1");
 	fromString$1("ox.secp256k1.fromSeed.v1");
 	// packages/wallet-chains/dist/evm.mjs
-	init_utils$2();
 	init_objectSpread2();
 	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
@@ -24542,7 +24932,7 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$2(data, "data");
+			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			const reencoded = encodeData$1(fn, args).toLowerCase();
@@ -24557,7 +24947,7 @@ zoo`.split("\n"));
 		if (value.slice(2, 26) !== "000000000000000000000000") return;
 		return checksumEvmAddress(`0x${value.slice(26)}`);
 	};
-	var tokenAmount$2 = (table, chainId, token, amount) => {
+	var tokenAmount$1 = (table, chainId, token, amount) => {
 		const meta = table === void 0 ? void 0 : lookupEvmToken(table, chainId, token);
 		return meta === void 0 ? {
 			asset: token,
@@ -24612,12 +25002,12 @@ zoo`.split("\n"));
 				amount: native ? {
 					asset: EVM_NATIVE_ASSET,
 					amount: call.value.toString(10)
-				} : tokenAmount$2(table, chainId, inputToken, inputAmount),
+				} : tokenAmount$1(table, chainId, inputToken, inputAmount),
 				verified: true
 			}],
 			minimumReceived: [{
 				to: recipient,
-				amount: tokenAmount$2(table, Number(destinationChainId), outputToken, outputAmount),
+				amount: tokenAmount$1(table, Number(destinationChainId), outputToken, outputAmount),
 				verified: true
 			}],
 			bridge: {
@@ -24655,7 +25045,7 @@ zoo`.split("\n"));
 	* `Exchange` domain where `connectionId` is a keccak of the msgpack action (nktkas _l1.ts) — a
 	* commitment no prompt can bound, blind `typed-data-commitment` via the "Hyperliquid L1" row.
 	*/
-	var ZERO_ADDRESS$2 = "0x0000000000000000000000000000000000000000";
+	var ZERO_ADDRESS$1$1 = "0x0000000000000000000000000000000000000000";
 	var MAX_UINT64$2 = 2n ** 64n - 1n;
 	var EIP712_DOMAIN$1 = [
 		"string name",
@@ -24915,7 +25305,7 @@ zoo`.split("\n"));
 	function recognizeHyperliquid(json) {
 		var _typedDataAddress;
 		const { types, primaryType, domain, message } = json;
-		if (domain["name"] !== "HyperliquidSignTransaction" || domain["version"] !== "1" || domainChainId(domain) === void 0 || ((_typedDataAddress = typedDataAddress(domain["verifyingContract"])) === null || _typedDataAddress === void 0 ? void 0 : _typedDataAddress.toLowerCase()) !== ZERO_ADDRESS$2 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN$1) || Object.keys(types).length !== 2 || types[primaryType] === void 0 || !primaryType.startsWith(PREFIX)) return;
+		if (domain["name"] !== "HyperliquidSignTransaction" || domain["version"] !== "1" || domainChainId(domain) === void 0 || ((_typedDataAddress = typedDataAddress(domain["verifyingContract"])) === null || _typedDataAddress === void 0 ? void 0 : _typedDataAddress.toLowerCase()) !== ZERO_ADDRESS$1$1 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN$1) || Object.keys(types).length !== 2 || types[primaryType] === void 0 || !primaryType.startsWith(PREFIX)) return;
 		const described = DESCRIBED.find((entry) => entry.suffix === primaryType.slice(23));
 		const chain = message["hyperliquidChain"];
 		if (described === void 0 || !sameFields(types, primaryType, described.fields) || chain !== "Mainnet" && chain !== "Testnet") return;
@@ -25230,6 +25620,196 @@ zoo`.split("\n"));
 		}, polymarket.blind === void 0 ? {} : { blind: polymarket.blind });
 	};
 	/**
+	* Recognition of account-authority documents — Morpho Blue `Authorization` and Aave v3
+	* `DelegationWithSig` — typed data that hands someone else power over the signer's account.
+	*
+	* Morpho Blue (morpho-org/morpho-blue@339a885 `src/libraries/ConstantsLib.sol`:
+	* `Authorization(address authorizer,address authorized,bool isAuthorized,uint256 nonce,uint256
+	* deadline)` under `EIP712Domain(uint256 chainId,address verifyingContract)`): `Morpho.sol`'s
+	* `setAuthorizationWithSig` recovers the signatory with ecrecover and requires
+	* `authorization.authorizer == signatory`, so the decoder requires `authorizer` to be the signer;
+	* an authorized account can withdraw, borrow and withdrawCollateral on the signer's behalf with an
+	* arbitrary receiver. The document decodes on ANY verifyingContract — the `verified` flag tells the
+	* prompt whether it is a deployment of the table below.
+	*
+	* Aave v3 (aave-dao/aave-v3-origin@8305565 `DebtTokenBase.sol`: `DelegationWithSig(address
+	* delegatee,uint256 value,uint256 nonce,uint256 deadline)` under the four-field domain at version
+	* `"1"`): `delegationWithSig` recovers the delegator from the signature — the signer is the
+	* delegator by construction — and sets `_borrowAllowances[delegator][delegatee] = value`. A
+	* variable-debt token of the table below is verified and its amount displayed in the underlying
+	* asset's units; any other contract is unverified and the amount stays raw.
+	*/
+	var MORPHO_BLUE = {
+		"1": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+		"10": "0xce95AfbB8EA029495c66020883F87aaE8864AF92",
+		"14": "0xF4346F5132e810f80a28487a79c7559d9797E8B0",
+		"25": "0xDF9a1DC07e5dEe5ccCCaBeC35e446C70fAF7434e",
+		"56": "0x01b0Bd309AA75547f7a37Ad7B1219A898E67a83a",
+		"100": "0xB74D4dd451E250bC325AFF0556D717e4E2351c66",
+		"130": "0x8f5ae9CddB9f68de460C77730b018Ae7E04a140A",
+		"137": "0x1bF0c2541F820E775182832f06c0B7Fc27A25f67",
+		"143": "0xD5D960E8C380B724a48AC59E2DfF1b2CB4a1eAee",
+		"146": "0xd6c916eB7542D0Ad3f18AEd0FCBD50C582cfa95f",
+		"196": "0xeb00C490E888286357dC5B0a35D37D9260D11Ab5",
+		"252": "0xa6030627d724bA78a59aCf43Be7550b4C5a0653b",
+		"480": "0xE741BC7c34758b4caE05062794E8Ae24978AF432",
+		"999": "0x68e37dE8d93d3496ae143F2E900490f6280C57cD",
+		"1329": "0xc9cDAc20FCeAAF616f7EB0bb6Cd2c69dcfa9094c",
+		"1672": "0x18573fA18fd17dDfD790B4a5B5b2977aad3b4Efb",
+		"1868": "0xE75Fc5eA6e74B824954349Ca351eb4e671ADA53a",
+		"43114": "0x895383274303AA19fe978AFB4Ac55C7f094f982C",
+		"42220": "0xd24ECdD8C1e0E57a4E26B1a7bbeAa3e95466A569",
+		"4326": "0x18120312A7cf44DcfEc6dCe5632a431579ED9100",
+		"8453": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+		"9745": "0x2fF74A46536f5c67ef5A42FD5B4e2Ed8A2cee249",
+		"57073": "0x857f3EefE8cbda3Bc49367C996cd664A880d3042",
+		"59144": "0x6B0D716aC0A45536172308e08fC2C40387262c9F",
+		"747474": "0xD50F2DffFd62f94Ee4AEd9ca05C61d0753268aBc",
+		"534352": "0x2d012EdbAdc37eDc2BC62791B666f9193FDF5a55",
+		"84532": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+		"11155111": "0xd011EE229E7459ba1ddd22631eF7bF528d424A14"
+	};
+	var AAVE_DEBT_TOKENS = {
+		"1": {
+			"0xeA51d7853EEFb32b6ee06b1C12E6dcCA88Be0fFE": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+			"0x72E95b8931767C79bA4EeE721354d6E99a61D004": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			"0x6df1C1E379bC5a00a7b4C6e67A203333772f45A8": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			"0x9355032d747f1e08F8720CD01950E652eE15cdB7": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			"0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			"0x91b7d78BF92db564221f6B5AeE744D1727d1Dd1e": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+			"0xeD90dE2D824Ee766c6Fd22E90b12e598f681dc9F": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+		},
+		"10": {
+			"0x0c84331e39d6658Cd6e6b9ba04736cC4c4734351": "0x4200000000000000000000000000000000000006",
+			"0x5D557B07776D12967914379C71a1310e917C7555": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+		},
+		"56": { "0x0E76414d433ddfe8004d2A7505d218874875a996": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" },
+		"137": {
+			"0x4a1c3aD6Ed28a636ee1751C69071f6be75DEb8B8": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+			"0xE701126012EC0290822eEA17B794454d1AF8b030": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+		},
+		"143": { "0x9F555aB84C4e0a531B50283f09Dba7A97134c4e4": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603" },
+		"146": {
+			"0x2273caBAd63b7D247A6b107E723c803fc49953A0": "0x29219dd400f2Bf60E5a23d13Be72B486D4038894",
+			"0xF6089B790Fbf8F4812a79a31CFAbeB00B06BA7BD": "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38"
+		},
+		"196": { "0x585Eb919387F82bc9B2B440C4F3D8615B079465A": "0xB6CEceAB302E2E4948951eE7843FC24E92933061" },
+		"324": { "0x0049250D15A8550c5a14Baa5AF5B662a93a525B9": "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4" },
+		"4326": { "0x09ADCCC7AF2aBD356c18A4CadF2e5cC250f300E9": "0x4200000000000000000000000000000000000006" },
+		"1868": { "0xC52375A5A04C0ABe5a6Ca5F3a344be2415EF54dB": "0x4200000000000000000000000000000000000006" },
+		"8453": {
+			"0x24e6e0795b3c7c71D965fCc4f371803d1c1DcA1E": "0x4200000000000000000000000000000000000006",
+			"0x59dca05b6c26dbd64b5381374aAaC5CD05644C28": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+		},
+		"42161": {
+			"0x0c84331e39d6658Cd6e6b9ba04736cC4c4734351": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+			"0xf611aEb5013fD2c0511c9CD55c7dc5C1140741A6": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+		},
+		"42220": {
+			"0xDbe517c0FA6467873B684eCcbED77217E471E862": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+			"0xE15324a9887999803b931Ac45aa89a94A9750052": "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+			"0xaEa37B42955De2Ba2E4AF6581E46349bCD3Ea2d6": "0x471EcE3750Da237f93B8E339c536989b8978a438"
+		},
+		"43114": {
+			"0xFCCf3cAbbe80101232d343252614b6A3eE81C989": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+			"0xfb00AC187a8Eb5AFAE4eACE434F493Eb62672df7": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
+			"0x4a1c3aD6Ed28a636ee1751C69071f6be75DEb8B8": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7"
+		},
+		"57073": {
+			"0xc1457AcfBaD2332b07B7651A4Da3176E8F3Bc9E4": "0x4200000000000000000000000000000000000006",
+			"0x305c03f74DBb8C6052b7667AaBEE21dC7c1f0B29": "0x2D270e6886d130D724215A266106e6832161EAEd"
+		},
+		"59144": { "0x63aB166e6E1b6Fb705b6ca23686FaD9705EB3534": "0x176211869cA2b568f2A7D4EE941E073a821EE1ff" },
+		"534352": { "0xfD7344CeB1Df9Cf238EcD667f4A6F99c6Ef44a56": "0x5300000000000000000000000000000000000004" }
+	};
+	/** `address` is the Morpho Blue deployment of `chainId` (the `morpho-blue` family claim). */
+	var isMorphoBlue = (chainId, address) => {
+		var _MORPHO_BLUE$String;
+		return ((_MORPHO_BLUE$String = MORPHO_BLUE[String(chainId)]) === null || _MORPHO_BLUE$String === void 0 ? void 0 : _MORPHO_BLUE$String.toLowerCase()) === address.toLowerCase();
+	};
+	var MORPHO_DOMAIN = ["uint256 chainId", "address verifyingContract"];
+	var MORPHO_FIELDS = [
+		"address authorizer",
+		"address authorized",
+		"bool isAuthorized",
+		"uint256 nonce",
+		"uint256 deadline"
+	];
+	var AAVE_DOMAIN = [
+		"string name",
+		"string version",
+		"uint256 chainId",
+		"address verifyingContract"
+	];
+	var AAVE_FIELDS = [
+		"address delegatee",
+		"uint256 value",
+		"uint256 nonce",
+		"uint256 deadline"
+	];
+	var parseUint$1 = (value) => typedDataUint(value, MAX_UINT256);
+	var result$1 = (authority) => ({
+		content: { authority },
+		summary: "authorization",
+		outflows: [],
+		verifiability: "partial"
+	});
+	/**
+	* The authority the document grants, or `undefined` when the shape is not exactly a Morpho Blue
+	* `Authorization` bound to the signer or an Aave `DelegationWithSig` on `chainId`.
+	*/
+	function recognizeAuthority(json, chainId, table, signer) {
+		const { types, primaryType, message, domain } = json;
+		if (Object.keys(types).length !== 2 || domainChainId(domain) !== chainId) return;
+		const contract = typedDataAddress(domain["verifyingContract"]);
+		if (contract === void 0) return;
+		if (primaryType === "Authorization") {
+			if (!sameFields(types, "EIP712Domain", MORPHO_DOMAIN) || !sameFields(types, "Authorization", MORPHO_FIELDS)) return;
+			const authorizer = typedDataAddress(message["authorizer"]);
+			const authorized = typedDataAddress(message["authorized"]);
+			const { isAuthorized } = message;
+			const nonce = parseUint$1(message["nonce"]);
+			const deadline = parseUint$1(message["deadline"]);
+			if (authorizer === void 0 || authorizer.toLowerCase() !== signer.toLowerCase() || authorized === void 0 || typeof isAuthorized !== "boolean" || nonce === void 0 || deadline === void 0) return;
+			return result$1(_objectSpread2({
+				kind: "morpho",
+				contract,
+				verified: isMorphoBlue(chainId, contract),
+				authorized,
+				grant: isAuthorized
+			}, deadline <= MAX_UINT48 ? { deadline: Number(deadline) } : {}));
+		}
+		if (primaryType === "DelegationWithSig") {
+			var _AAVE_DEBT_TOKENS$Str;
+			if (!sameFields(types, "EIP712Domain", AAVE_DOMAIN) || !sameFields(types, "DelegationWithSig", AAVE_FIELDS) || typeof domain["name"] !== "string" || domain["version"] !== "1") return;
+			const delegatee = typedDataAddress(message["delegatee"]);
+			const value = parseUint$1(message["value"]);
+			const nonce = parseUint$1(message["nonce"]);
+			const deadline = parseUint$1(message["deadline"]);
+			if (delegatee === void 0 || value === void 0 || nonce === void 0 || deadline === void 0) return;
+			const underlying = (_AAVE_DEBT_TOKENS$Str = AAVE_DEBT_TOKENS[String(chainId)]) === null || _AAVE_DEBT_TOKENS$Str === void 0 ? void 0 : _AAVE_DEBT_TOKENS$Str[contract];
+			const listed = underlying === void 0 ? void 0 : lookupEvmToken(table, chainId, underlying);
+			const amount = underlying === void 0 ? {
+				asset: contract,
+				amount: value.toString()
+			} : _objectSpread2({
+				asset: underlying,
+				amount: value.toString()
+			}, listed === void 0 ? {} : {
+				symbol: listed.symbol,
+				decimals: listed.decimals
+			});
+			return result$1(_objectSpread2({
+				kind: "aave-credit",
+				contract,
+				verified: underlying !== void 0,
+				delegatee,
+				amount,
+				unlimited: value === MAX_UINT256
+			}, deadline <= MAX_UINT48 ? { deadline: Number(deadline) } : {}));
+		}
+	}
+	/**
 	* CCTP TokenMessengerV2 `depositForBurnWithHook` deposits USDC into Hyperliquid via Circle's
 	* CctpForwarder on HyperEVM (destination domain 19). Only the Hyperliquid route is described — a
 	* call to the messenger on these chains that does not match it exactly is blind
@@ -25260,7 +25840,7 @@ zoo`.split("\n"));
 	var tryCall$3 = (fn, data) => {
 		if (!data.toLowerCase().startsWith(getSelector(fn))) return;
 		try {
-			assertHex$2(data, "data");
+			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
@@ -25404,6 +25984,94 @@ zoo`.split("\n"));
 			partialFill: message["partiallyFillable"]
 		};
 	};
+	/**
+	* Recognition of EIP-3009 authorizations — `TransferWithAuthorization`, `ReceiveWithAuthorization`
+	* and `CancelAuthorization` as emitted by FiatToken (circlefin/stablecoin-evm@fc85788
+	* `contracts/v2/EIP3009.sol`: the three TYPEHASH field lists).
+	*
+	* Binding rules beyond the field list: `types` is exactly `EIP712Domain` plus the one primary type,
+	* the domain carries a `verifyingContract` (the token itself) and a `chainId` equal to the request
+	* network's, and `from`/`authorizer` is the signer — FiatToken v2.2 checks the authorization with
+	* `SignatureChecker.isValidSignatureNow(from, …)`, so a `from` that is an ERC-1271 contract wallet
+	* could spend that contract's funds on this EOA's signature; anything else is a near miss
+	* (`typed-data-variant`).
+	*
+	* `nonce` is a bytes32 one-time id the family owns — not a commitment, and not shown (the ERC-7730
+	* registry descriptor marks it `visible: never`) except on `CancelAuthorization`, where it names
+	* the authorization being cancelled.
+	*/
+	var TRANSFER_FIELDS = [
+		"address from",
+		"address to",
+		"uint256 value",
+		"uint256 validAfter",
+		"uint256 validBefore",
+		"bytes32 nonce"
+	];
+	var CANCEL_FIELDS = ["address authorizer", "bytes32 nonce"];
+	var MAX_UINT48_SECONDS = 2n ** 48n;
+	/**
+	* The authorization the document grants, or `undefined` when the shape is not exactly one of the
+	* FiatToken EIP-3009 primary types bound to the signer on `chainId`.
+	*/
+	function recognizeEip3009(json, chainId, table, signer) {
+		const { types, primaryType, message, domain } = json;
+		if (Object.keys(types).length !== 2 || domainChainId(domain) !== chainId) return;
+		const token = typedDataAddress(domain["verifyingContract"]);
+		if (token === void 0) return;
+		const listed = lookupEvmToken(table, chainId, token);
+		const amount = (value) => listed === void 0 ? {
+			asset: token,
+			amount: value.toString()
+		} : {
+			asset: token,
+			amount: value.toString(),
+			symbol: listed.symbol,
+			decimals: listed.decimals
+		};
+		const isSigner = (candidate) => candidate !== void 0 && candidate.toLowerCase() === signer.toLowerCase();
+		if (primaryType === "TransferWithAuthorization" || primaryType === "ReceiveWithAuthorization") {
+			if (!sameFields(types, primaryType, TRANSFER_FIELDS)) return;
+			const from = typedDataAddress(message["from"]);
+			const to = typedDataAddress(message["to"]);
+			const value = typedDataUint(message["value"], MAX_UINT256);
+			const validAfter = typedDataUint(message["validAfter"], MAX_UINT256);
+			const validBefore = typedDataUint(message["validBefore"], MAX_UINT256);
+			const nonce = typedDataBytes(message["nonce"]);
+			if (!isSigner(from) || to === void 0 || value === void 0 || validAfter === void 0 || validAfter >= MAX_UINT48_SECONDS || validBefore === void 0 || nonce === void 0 || nonce.length !== 66) return;
+			return {
+				content: { authorization: _objectSpread2({
+					kind: primaryType === "TransferWithAuthorization" ? "transfer" : "receive",
+					to,
+					amount: amount(value),
+					validAfter: Number(validAfter)
+				}, validBefore < MAX_UINT48_SECONDS ? { validBefore: Number(validBefore) } : {}) },
+				summary: "transfer",
+				outflows: [{
+					to,
+					amount: amount(value),
+					verified: listed !== void 0
+				}],
+				verifiability: listed === void 0 ? "partial" : "full"
+			};
+		}
+		if (primaryType === "CancelAuthorization") {
+			if (!sameFields(types, primaryType, CANCEL_FIELDS)) return;
+			const authorizer = typedDataAddress(message["authorizer"]);
+			const nonce = typedDataBytes(message["nonce"]);
+			if (!isSigner(authorizer) || nonce === void 0 || nonce.length !== 66) return;
+			return {
+				content: { authorization: {
+					kind: "cancel",
+					token,
+					nonce: nonce.toLowerCase()
+				} },
+				summary: "message",
+				outflows: [],
+				verifiability: "full"
+			};
+		}
+	}
 	/** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
 	var SEAPORT_CONTRACTS = /* @__PURE__ */ new Set(["0x0000000000000068f116a894984e2db1123eb395", "0x00000000000000adc04c56bf30ac9d3c0aaf14dc"]);
 	/** Seaport `itemType` values 0–5; an item type outside the list is not recognized. */
@@ -25539,8 +26207,111 @@ zoo`.split("\n"));
 			if ("primaryType" in claim) return claim.primaryType.test(json.primaryType);
 			if (verifying === void 0) return false;
 			const contract = verifying.toLowerCase();
-			return claim.verifyingContract === "permit2" && contract === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase() || claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract) || claim.verifyingContract === "token-table" && lookupEvmToken(table, chainId, verifying) !== void 0;
+			return claim.verifyingContract === "permit2" && contract === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase() || claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract) || claim.verifyingContract === "morpho-blue" && isMorphoBlue(chainId, contract) || claim.verifyingContract === "token-table" && lookupEvmToken(table, chainId, verifying) !== void 0;
 		})) === null || _RECOGNISED_FAMILIES$2 === void 0 ? void 0 : _RECOGNISED_FAMILIES$2.nearMiss;
+	};
+	var FARCASTER_CHAIN_ID = 10;
+	var DOMAIN_FIELDS$1 = [
+		"string name",
+		"string version",
+		"uint256 chainId",
+		"address verifyingContract"
+	];
+	var ADD_FIELDS = [
+		"address owner",
+		"uint32 keyType",
+		"bytes key",
+		"uint8 metadataType",
+		"bytes metadata",
+		"uint256 nonce",
+		"uint256 deadline"
+	];
+	var REQUEST_FIELDS = [
+		"uint256 requestFid",
+		"bytes key",
+		"uint256 deadline"
+	];
+	var KEY_METADATA = [{
+		type: "tuple",
+		components: [
+			{
+				name: "requestFid",
+				type: "uint256"
+			},
+			{
+				name: "requestSigner",
+				type: "address"
+			},
+			{
+				name: "signature",
+				type: "bytes"
+			},
+			{
+				name: "deadline",
+				type: "uint256"
+			}
+		]
+	}];
+	var isUint = (value, max, expected) => typedDataUint(value, max) === expected;
+	var parseUint = (value) => typedDataUint(value, 2n ** 256n - 1n);
+	var isKey = (value) => {
+		const bytes = typedDataBytes(value);
+		return bytes !== void 0 && size$1(bytes) === 32;
+	};
+	var isKeyMetadata = (value) => typeof value === "object" && value !== null && "requestFid" in value && typeof value.requestFid === "bigint" && "requestSigner" in value && typedDataAddress(value.requestSigner) !== void 0 && "signature" in value && typedDataBytes(value.signature) !== void 0 && "deadline" in value && typeof value.deadline === "bigint";
+	var decodeKeyMetadata = (bytes) => {
+		try {
+			const decoded = decode$2(KEY_METADATA, bytes);
+			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
+			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
+			return tuple;
+		} catch (_unused3) {
+			return;
+		}
+	};
+	var result = (farcaster, summary) => ({
+		content: { farcaster },
+		summary,
+		outflows: [],
+		verifiability: "partial"
+	});
+	/**
+	* The Farcaster signer-key document, or `undefined` when the shape is not exactly a KeyGateway
+	* `Add` bound to the signer or a `SignedKeyRequest` — on the OP Mainnet deployment.
+	*/
+	var recognizeFarcaster = (json, chainId, signer) => {
+		const { types, primaryType, domain, message } = json;
+		if (chainId !== FARCASTER_CHAIN_ID || domainChainId(domain) !== chainId || domain["version"] !== "1" || Object.keys(domain).length !== 4 || Object.keys(types).length !== 2 || !sameFields(types, "EIP712Domain", DOMAIN_FIELDS$1)) return;
+		const contract = typedDataAddress(domain["verifyingContract"]);
+		if (contract === void 0) return;
+		if (primaryType === "Add" && domain["name"] === "Farcaster KeyGateway" && contract === "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B") {
+			if (!sameFields(types, "Add", ADD_FIELDS)) return;
+			const owner = typedDataAddress(message["owner"]);
+			const { key } = message;
+			const metadata = typedDataBytes(message["metadata"]);
+			const nonce = parseUint(message["nonce"]);
+			const deadline = parseUint(message["deadline"]);
+			if (owner === void 0 || owner.toLowerCase() !== signer.toLowerCase() || !isUint(message["keyType"], 2n ** 32n - 1n, 1n) || !isKey(key) || !isUint(message["metadataType"], 2n ** 8n - 1n, 1n) || metadata === void 0 || nonce === void 0 || deadline === void 0) return;
+			const app = decodeKeyMetadata(metadata);
+			if (app === void 0) return;
+			return result(_objectSpread2({
+				kind: "add",
+				key,
+				requestFid: app.requestFid.toString()
+			}, deadline <= MAX_UINT48 ? { deadline: Number(deadline) } : {}), "authorization");
+		}
+		if (primaryType === "SignedKeyRequest" && domain["name"] === "Farcaster SignedKeyRequestValidator" && contract === "0x00000000FC700472606ED4fA22623Acf62c60553") {
+			if (!sameFields(types, "SignedKeyRequest", REQUEST_FIELDS)) return;
+			const requestFid = parseUint(message["requestFid"]);
+			const { key } = message;
+			const deadline = parseUint(message["deadline"]);
+			if (requestFid === void 0 || !isKey(key) || deadline === void 0) return;
+			return result(_objectSpread2({
+				kind: "request",
+				key,
+				requestFid: requestFid.toString()
+			}, deadline <= MAX_UINT48 ? { deadline: Number(deadline) } : {}), "message");
+		}
 	};
 	/**
 	* Typed data whose domain targets an execution context over the signer's account turns a signature
@@ -25570,11 +26341,11 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$2(data, "data");
+			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused3) {
+		} catch (_unused4) {
 			return;
 		}
 	};
@@ -25588,7 +26359,7 @@ zoo`.split("\n"));
 		if (!Array.isArray(value) || !value.every((v) => typeof v === "bigint")) throw new ChainError("invalid-request", "decoded argument is not a uint256 array");
 		return value;
 	};
-	var tokenAmount$1 = (token, amount, table) => {
+	var tokenAmount = (token, amount, table) => {
 		const known = lookupEvmToken(table, 1, token);
 		return _objectSpread2({
 			asset: token,
@@ -25600,15 +26371,17 @@ zoo`.split("\n"));
 	};
 	var tokenFlow = (token, to, amount, table) => ({
 		to,
-		amount: tokenAmount$1(token, amount, table),
+		amount: tokenAmount(token, amount, table),
 		verified: lookupEvmToken(table, 1, token) !== void 0
 	});
 	/**
 	* Lido staking on Ethereum mainnet: `submit` to stETH, the four withdrawal-request forms and
 	* `claimWithdrawals` on the queue. The minted stETH shares and the checkpointed claim amounts
-	* cannot be read exactly from calldata, so every recognised call is verifiability-partial.
+	* cannot be read exactly from calldata, so every recognised call is verifiability-partial. `caller`
+	* is the account the call runs as — msg.sender at the queue (the signer for a transaction, the Safe
+	* or deposit wallet for an inner call); a zero owner resolves to it.
 	*/
-	var decodeLido = (chainId, call, signer, table) => {
+	var decodeLido = (chainId, call, caller, table) => {
 		if (chainId !== 1 || call.to === void 0) return;
 		const to = call.to.toLowerCase();
 		if (to === "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84".toLowerCase() && call.value > 0n) {
@@ -25627,7 +26400,7 @@ zoo`.split("\n"));
 						asset: EVM_NATIVE_ASSET,
 						amount: call.value.toString(10)
 					},
-					receive: tokenAmount$1(LIDO_STETH, call.value, table)
+					receive: tokenAmount(LIDO_STETH, call.value, table)
 				}]
 			};
 			return;
@@ -25643,15 +26416,15 @@ zoo`.split("\n"));
 			if (args === void 0) continue;
 			const total = argList$1(args, 0).reduce((sum, amount) => sum + amount, 0n);
 			const raw = argAddress$1(args, 1);
-			const owner = raw === ZERO$1 ? signer : raw;
+			const owner = raw === ZERO$1 ? caller : raw;
 			const action = {
 				kind: "lido-request",
 				token,
-				amount: tokenAmount$1(token, total, table),
+				amount: tokenAmount(token, total, table),
 				owner
 			};
 			return {
-				outflows: owner.toLowerCase() === signer.toLowerCase() ? [] : [tokenFlow(token, owner, total, table)],
+				outflows: owner.toLowerCase() === caller.toLowerCase() ? [] : [tokenFlow(token, owner, total, table)],
 				staking: [action]
 			};
 		}
@@ -25787,7 +26560,7 @@ zoo`.split("\n"));
 	];
 	var MULTISEND = from$2("function multiSend(bytes transactions)");
 	/** The zero address: `gasToken` zero pays the refund in the chain's native asset. */
-	var ZERO_ADDRESS$1$1 = "0x0000000000000000000000000000000000000000";
+	var ZERO_ADDRESS$2 = "0x0000000000000000000000000000000000000000";
 	/**
 	* Packed MultiSend entries (`uint8 operation, address to, uint256 value, uint256 dataLength, bytes
 	* data` repeated). `undefined` when `data` is not a `multiSend(bytes)` call, a byte is truncated or
@@ -25801,7 +26574,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused4) {
+		} catch (_unused5) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -25868,7 +26641,7 @@ zoo`.split("\n"));
 			data
 		}]).map((call) => decode(call, safe));
 		const refundAsset = (v) => {
-			if (gasToken === ZERO_ADDRESS$1$1) return {
+			if (gasToken === ZERO_ADDRESS$2) return {
 				asset: EVM_NATIVE_ASSET,
 				amount: v.toString(10)
 			};
@@ -25890,23 +26663,14 @@ zoo`.split("\n"));
 				value: value.toString(10),
 				data,
 				calls
-			}, gasPrice > 0n ? { refund: _objectSpread2(_objectSpread2({}, refundReceiver === ZERO_ADDRESS$1$1 ? {} : { receiver: refundReceiver }), {}, {
+			}, gasPrice > 0n ? { refund: _objectSpread2(_objectSpread2({}, refundReceiver === ZERO_ADDRESS$2 ? {} : { receiver: refundReceiver }), {}, {
 				gasPrice: refundAsset(gasPrice),
 				amount: refundAsset((baseGas + safeTxGas) * gasPrice)
 			}) } : {}),
 			multisend: inner !== void 0
 		};
 	}
-	/**
-	* Recognition of a Snapshot `Vote`: the document is a claim of the Snapshot family only when the
-	* domain is exactly `{name: "snapshot", version: "0.1.4"}` (snapshot.js `src/sign/index.ts` at
-	* 2c1198f5 —
-	* https://github.com/snapshot-labs/snapshot.js/blob/2c1198f5ead59cff427f2bd63cdb56336cdf351d/src/sign/index.ts),
-	* the declared `EIP712Domain` is exactly `[string name, string version]`, the primary type is
-	* `Vote` and `types` holds exactly `EIP712Domain` plus `Vote` with one of the three field lists
-	* snapshot.js emits (`voteTypes`/`voteArrayTypes`/`voteStringTypes`, `src/sign/types.ts`). Any
-	* other shape is not Snapshot and falls through to the generic rules.
-	*/
+	var DOMAIN_FIELDS = ["string name", "string version"];
 	var VOTE_FIELDS = [
 		"string from",
 		"string space",
@@ -25923,13 +26687,34 @@ zoo`.split("\n"));
 		"uint32[] choice",
 		"string choice"
 	];
-	var recognizeSnapshot = (json) => {
-		const { types, primaryType, domain } = json;
-		return primaryType === "Vote" && domain["name"] === "snapshot" && domain["version"] === "0.1.4" && Object.keys(domain).length === 2 && Object.keys(types).length === 2 && sameFields(types, "EIP712Domain", ["string name", "string version"]) && VOTE_CHOICE.some((choice) => sameFields(types, "Vote", [
+	var ALIAS_FIELDS = [
+		"address from",
+		"address alias",
+		"uint64 timestamp"
+	];
+	var recognizeSnapshot = (json, signer) => {
+		const { types, primaryType, domain, message } = json;
+		if (domain["name"] !== "snapshot" || domain["version"] !== "0.1.4" || Object.keys(domain).length !== 2 || Object.keys(types).length !== 2 || !sameFields(types, "EIP712Domain", DOMAIN_FIELDS)) return;
+		if (primaryType === "Vote" && VOTE_CHOICE.some((choice) => sameFields(types, "Vote", [
 			...VOTE_FIELDS,
 			choice,
 			...VOTE_TAIL
-		]));
+		]))) return { kind: "vote" };
+		if (primaryType === "Alias" && sameFields(types, "Alias", ALIAS_FIELDS)) {
+			const from = typedDataAddress(message["from"]);
+			const alias = typedDataAddress(message["alias"]);
+			if (from === void 0 || from.toLowerCase() !== signer.toLowerCase() || alias === void 0) return;
+			return {
+				kind: "alias",
+				content: { authority: {
+					kind: "snapshot-alias",
+					alias
+				} },
+				summary: "authorization",
+				outflows: [],
+				verifiability: "partial"
+			};
+		}
 	};
 	/**
 	* Wrapped natives — WETH9-style contracts listed in the token table with role "wrapped-native".
@@ -25944,11 +26729,11 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$2(data, "data");
+			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused5) {
+		} catch (_unused6) {
 			return;
 		}
 	};
@@ -25957,7 +26742,12 @@ zoo`.split("\n"));
 		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not an integer");
 		return value;
 	};
-	var decodeWrappedNative = (chainId, call, signer, table) => {
+	/**
+	* `caller` is the account the call runs as — msg.sender at `call.to`: the signer for a transaction
+	* or batch call, the Safe or deposit wallet for an inner call. Minted or withdrawn assets go to
+	* it.
+	*/
+	var decodeWrappedNative = (chainId, call, caller, table) => {
 		const token = call.to === void 0 ? void 0 : lookupEvmToken(table, chainId, call.to);
 		if (call.to === void 0 || (token === null || token === void 0 ? void 0 : token.role) !== "wrapped-native") return;
 		if (call.data.toLowerCase() === getSelector(DEPOSIT)) return {
@@ -25970,7 +26760,7 @@ zoo`.split("\n"));
 				verified: true
 			}],
 			minimumReceived: [{
-				to: signer,
+				to: caller,
 				amount: {
 					asset: call.to,
 					amount: call.value.toString(10),
@@ -25994,184 +26784,12 @@ zoo`.split("\n"));
 				verified: true
 			}],
 			minimumReceived: [{
-				to: signer,
+				to: caller,
 				amount: {
 					asset: EVM_NATIVE_ASSET,
 					amount: wad.toString(10)
 				}
 			}]
-		};
-	};
-	/** Chains whose AllowanceHolder + Settler deployment this decoder recognises. */
-	var ZEROX_CHAINS = /* @__PURE__ */ new Set([
-		1,
-		10,
-		56,
-		137,
-		8453,
-		999,
-		42161,
-		43114,
-		11155111
-	]);
-	var ZEROX_DEPLOYER = "0x00000000000004533Fe15556B1E086BB1A72cEae";
-	var SHIM_INIT_CODE_HASH = "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f";
-	/** The native-token sentinel 0x uses in `exec`, and the bare zero address (same meaning). */
-	var NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-	var ZERO_ADDRESS$3 = "0x0000000000000000000000000000000000000000";
-	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
-	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
-	var last20 = (hex) => `0x${hex.slice(-40)}`;
-	var addressBytes = (address) => hexToBytes$3(address.slice(2));
-	var bigIntBytes32 = (value) => hexToBytes$3(value.toString(16).padStart(64, "0"));
-	var keccakHex = (parts) => {
-		const total = parts.reduce((sum, part) => sum + part.length, 0);
-		const flat = new Uint8Array(total);
-		let offset = 0;
-		for (const part of parts) {
-			flat.set(part, offset);
-			offset += part.length;
-		}
-		return `0x${bytesToHex$4(keccak_256(flat))}`;
-	};
-	var FEATURE_TAKER = 2n;
-	/**
-	* Whether `address` is a taker-feature (2) 0x Settler on `chainId`. Settlers deploy as a CREATE2
-	* shim whose CREATE child is the contract: `salt = (feature << 128) | (chainId << 64) | nonce`,
-	* `shim = CREATE2(deployer, salt, initHash)`, `settler = CREATE(shim, 1)`. Settler is redeployed
-	* roughly monthly, so nonces 1..256 leave decades of headroom; the loop runs 512 keccaks and is
-	* only reached for an AllowanceHolder `exec`. Feature 5 (bridge) is deliberately not matched.
-	*/
-	var isZeroExSettler = (chainId, address) => {
-		const want = address.toLowerCase();
-		const deployer = addressBytes(ZEROX_DEPLOYER);
-		const initHash = hexToBytes$3(SHIM_INIT_CODE_HASH.slice(2));
-		for (let nonce = 1; nonce <= 256; nonce++) {
-			const salt = bigIntBytes32(FEATURE_TAKER * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
-			const shim = addressBytes(last20(keccakHex([
-				new Uint8Array([255]),
-				deployer,
-				salt,
-				initHash
-			])));
-			if (last20(keccakHex([
-				new Uint8Array([214, 148]),
-				shim,
-				new Uint8Array([1])
-			])) === want) return true;
-		}
-		return false;
-	};
-	/** The canonical-decoded `exec` arguments, or `undefined` (selector mismatch or non-canonical). */
-	var decodeExec = (data) => {
-		if (!data.toLowerCase().startsWith("0x2213bc0b")) return;
-		try {
-			assertHex$2(data, "data");
-			const args = decodeData(EXEC, data);
-			if (!Array.isArray(args) || args.length !== 5) return;
-			if (encodeData$1(EXEC, args).toLowerCase() !== data.toLowerCase()) return;
-			const [operator, token, amount, target, inner] = args;
-			if (typeof operator !== "string" || typeof token !== "string" || typeof amount !== "bigint" || typeof target !== "string" || typeof inner !== "string") return;
-			return {
-				operator,
-				token,
-				amount,
-				target,
-				data: inner
-			};
-		} catch (_unused6) {
-			return;
-		}
-	};
-	var isSlippage = (value) => typeof value === "object" && value !== null && "recipient" in value && typeof value.recipient === "string" && "buyToken" in value && typeof value.buyToken === "string" && "minAmountOut" in value && typeof value.minAmountOut === "bigint";
-	/**
-	* The canonical-decoded `execute` slippage tuple, or `undefined` when the call is not a Settler
-	* execute.
-	*/
-	var decodeSettlerExecute = (data) => {
-		if (!data.toLowerCase().startsWith("0x1fff991f")) return;
-		try {
-			assertHex$2(data, "data");
-			const args = decodeData(SETTLER_EXECUTE, data);
-			if (!Array.isArray(args) || args.length !== 3) return;
-			if (encodeData$1(SETTLER_EXECUTE, args).toLowerCase() !== data.toLowerCase()) return;
-			const [slippage] = args;
-			if (!isSlippage(slippage)) return;
-			return slippage;
-		} catch (_unused7) {
-			return;
-		}
-	};
-	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$3;
-	var tokenAmount = (token, amount, chainId, table) => {
-		const known = lookupEvmToken(table, chainId, token);
-		return _objectSpread2({
-			asset: checksumEvmAddress(token),
-			amount: amount.toString(10)
-		}, known === void 0 ? {} : {
-			symbol: known.symbol,
-			decimals: known.decimals
-		});
-	};
-	var nativeMinimum = (amount) => ({
-		asset: EVM_NATIVE_ASSET,
-		amount: amount.toString(10)
-	});
-	/**
-	* The `DisplayIntent` for a call to AllowanceHolder `exec` on a chain this decoder covers: a swap
-	* when the operator calls the taker Settler's own `execute` (operator == target, an on-chain
-	* Settler, a canonical inner call) and a generic one-time allowance otherwise. `undefined` when the
-	* call is not to AllowanceHolder or not `exec`.
-	*/
-	var decodeZeroX = (chainId, call, table) => {
-		if (call.to === void 0 || call.to.toLowerCase() !== "0x0000000000001fF3684f28c67538d4D072C22734".toLowerCase() || !ZEROX_CHAINS.has(chainId)) return;
-		const exec = decodeExec(call.data);
-		if (exec === void 0) return;
-		const { operator, token, amount, target, data: inner } = exec;
-		const slippage = decodeSettlerExecute(inner);
-		if (operator.toLowerCase() === target.toLowerCase() && isZeroExSettler(chainId, target) && slippage !== void 0 && slippage !== void 0) {
-			let outflow;
-			if (isNativeToken(token)) {
-				if (amount === call.value && call.value > 0n) outflow = {
-					to: target,
-					amount: {
-						asset: EVM_NATIVE_ASSET,
-						amount: call.value.toString(10)
-					},
-					verified: true
-				};
-			} else if (call.value === 0n) outflow = {
-				to: target,
-				amount: tokenAmount(token, amount, chainId, table),
-				verified: lookupEvmToken(table, chainId, token) !== void 0
-			};
-			if (outflow !== void 0) {
-				const buyNative = isNativeToken(slippage.buyToken);
-				return {
-					summary: "swap",
-					outflows: [outflow],
-					approvals: [],
-					minimumReceived: [{
-						to: slippage.recipient,
-						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table)
-					}],
-					verifiability: "partial"
-				};
-			}
-		}
-		const approvals = isNativeToken(token) ? [] : [allowanceChange(checksumEvmAddress(token), operator, amount, "transfer", MAX_UINT256, chainId, table, { via: "allowance-holder" })];
-		return {
-			summary: "contract-call",
-			outflows: call.value === 0n ? [] : [{
-				to: target,
-				amount: {
-					asset: EVM_NATIVE_ASSET,
-					amount: call.value.toString(10)
-				},
-				verified: true
-			}],
-			approvals,
-			verifiability: "partial"
 		};
 	};
 	var PERMIT2_APPROVE = from$2("function approve(address token, address spender, uint160 amount, uint48 expiration)");
@@ -26195,11 +26813,11 @@ zoo`.split("\n"));
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
-			assertHex$2(data, "data");
+			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused8) {
+		} catch (_unused7) {
 			return;
 		}
 	};
@@ -26229,7 +26847,7 @@ zoo`.split("\n"));
 		return checksumEvmAddress(value);
 	};
 	/** A call into a protocol the decoder models in full, native value included. */
-	var protocolIntent = (call, { network, fee, table, signer }) => {
+	var protocolIntent = (call, { network, fee, table, signer, self }) => {
 		const chainId = networkChainId(network);
 		const base = {
 			family: "evm",
@@ -26276,7 +26894,7 @@ zoo`.split("\n"));
 				blind: "cctp-destination"
 			});
 		}
-		const lido = decodeLido(chainId, call, signer, table);
+		const lido = decodeLido(chainId, call, self, table);
 		if (lido !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 			summary: "stake",
 			outflows: lido.outflows,
@@ -26284,7 +26902,7 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
-		const wrapped = decodeWrappedNative(chainId, call, signer, table);
+		const wrapped = decodeWrappedNative(chainId, call, self, table);
 		if (wrapped !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 			summary: "swap",
 			outflows: wrapped.outflows,
@@ -26393,7 +27011,7 @@ zoo`.split("\n"));
 	var weakest = (intents) => intents.some((i) => i.verifiability === "opaque") ? "opaque" : intents.some((i) => i.verifiability === "partial") ? "partial" : "full";
 	/** The address a contract creation from `signer` at `nonce` deploys to (CREATE). */
 	var createdAddress = (signer, nonce) => {
-		assertHex$2(signer, "signer");
+		assertHex$1(signer, "signer");
 		return checksumEvmAddress(fromCreate({
 			from: signer,
 			nonce: BigInt(nonce)
@@ -26472,7 +27090,7 @@ zoo`.split("\n"));
 	* account; the token table parameter is for tests.
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
-		var _recognizeCow, _permit$blind, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _app$outflows, _ref2, _permit$approvals, _ref3, _permit$warnings, _app$verifiability;
+		var _ref2, _recognizeEip, _recognizeCow, _permit$blind, _recognized$summary, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _ref3, _recognized$outflows, _ref4, _permit$approvals, _ref5, _permit$warnings, _ref6, _recognized$verifiabi;
 		if (request.kind === "evm.transaction") return withNativeAmountMeta(decodeTransaction$1(request, signer, table), request.network, EVM_NATIVE_ASSET, 18);
 		if (request.kind === "evm.personal-message") {
 			const content = messageContent(request.message, "evm");
@@ -26494,8 +27112,9 @@ zoo`.split("\n"));
 		assertNoExecutionGrant(json.domain, signer);
 		const chainId = networkChainId(request.network);
 		const permit = recognizePermit(json, chainId, table, signer);
-		const seaport = permit === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
-		const safe = permit === void 0 && seaport === void 0 ? recognizeSafe(json, {
+		const claimed = permit === void 0 ? (_ref2 = (_recognizeEip = recognizeEip3009(json, chainId, table, signer)) !== null && _recognizeEip !== void 0 ? _recognizeEip : recognizeAuthority(json, chainId, table, signer)) !== null && _ref2 !== void 0 ? _ref2 : recognizeFarcaster(json, chainId, signer) : void 0;
+		const seaport = permit === void 0 && claimed === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
+		const safe = permit === void 0 && claimed === void 0 && seaport === void 0 ? recognizeSafe(json, {
 			network: request.network,
 			chainId,
 			table
@@ -26506,7 +27125,7 @@ zoo`.split("\n"));
 			signer,
 			self: safeAddress
 		})) : void 0;
-		const app = permit === void 0 && seaport === void 0 && safe === void 0 ? recognizeApp(json, {
+		const app = permit === void 0 && claimed === void 0 && seaport === void 0 && safe === void 0 ? recognizeApp(json, {
 			network: request.network,
 			chainId,
 			table,
@@ -26518,31 +27137,32 @@ zoo`.split("\n"));
 			signer,
 			self
 		})) : void 0;
-		const order = permit === void 0 ? seaport === void 0 && safe === void 0 && app === void 0 ? (_recognizeCow = recognizeCow(json, chainId, signer, table)) !== null && _recognizeCow !== void 0 ? _recognizeCow : recognizeOneinch(json, chainId, table) : void 0 : permit.order;
-		const snapshot = permit === void 0 && seaport === void 0 && safe === void 0 && app === void 0 && order === void 0 && recognizeSnapshot(json);
-		const unclaimed = permit === void 0 && seaport === void 0 && safe === void 0 && app === void 0 && order === void 0 && !snapshot;
+		const order = permit === void 0 && claimed === void 0 ? seaport === void 0 && safe === void 0 && app === void 0 ? (_recognizeCow = recognizeCow(json, chainId, signer, table)) !== null && _recognizeCow !== void 0 ? _recognizeCow : recognizeOneinch(json, chainId, table) : void 0 : permit === null || permit === void 0 ? void 0 : permit.order;
+		const snapshot = permit === void 0 && claimed === void 0 && seaport === void 0 && safe === void 0 && app === void 0 && order === void 0 ? recognizeSnapshot(json, signer) : void 0;
+		const unclaimed = permit === void 0 && claimed === void 0 && seaport === void 0 && safe === void 0 && app === void 0 && order === void 0 && snapshot === void 0;
+		const recognized = claimed !== null && claimed !== void 0 ? claimed : (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "alias" ? snapshot : void 0;
 		const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : void 0;
-		const shown = unclaimed || snapshot ? typedDataFields(json) : void 0;
+		const shown = unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? typedDataFields(json) : void 0;
 		const fields = shown === null || shown === void 0 ? void 0 : shown.fields;
-		const unclaimedBlind = nearMiss !== null && nearMiss !== void 0 ? nearMiss : unclaimed || snapshot ? shown === void 0 ? "typed-data-oversize" : unclaimed && shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
+		const unclaimedBlind = nearMiss !== null && nearMiss !== void 0 ? nearMiss : unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? shown === void 0 ? "typed-data-oversize" : unclaimed && shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
 		const blind = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : typedDataBlind(safe, seaport, app, unclaimedBlind);
-		const message = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
+		const message = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
 			domain: displayDomain(json.domain),
 			data: json.message
-		}, seaport === void 0 ? {} : { seaport }), order === void 0 ? {} : { order }), safe === void 0 ? {} : { safe: safe.safe }), app === void 0 ? {} : app.content), fields === void 0 ? {} : { fields }), (permit === null || permit === void 0 ? void 0 : permit.fields) === void 0 ? {} : { fields: permit.fields });
-		const summary = order !== void 0 || seaport !== void 0 ? "swap" : safe === void 0 ? permit === void 0 ? (_app$summary = app === null || app === void 0 ? void 0 : app.summary) !== null && _app$summary !== void 0 ? _app$summary : "message" : "approve" : safe.multisend ? "batch" : (_safe$safe$calls$0$su = (_safe$safe$calls$ = safe.safe.calls[0]) === null || _safe$safe$calls$ === void 0 ? void 0 : _safe$safe$calls$.summary) !== null && _safe$safe$calls$0$su !== void 0 ? _safe$safe$calls$0$su : "contract-call";
+		}, seaport === void 0 ? {} : { seaport }), order === void 0 ? {} : { order }), safe === void 0 ? {} : { safe: safe.safe }), app === void 0 ? {} : app.content), recognized === void 0 ? {} : recognized.content), fields === void 0 ? {} : { fields }), (permit === null || permit === void 0 ? void 0 : permit.fields) === void 0 ? {} : { fields: permit.fields });
+		const summary = (_recognized$summary = recognized === null || recognized === void 0 ? void 0 : recognized.summary) !== null && _recognized$summary !== void 0 ? _recognized$summary : order !== void 0 || seaport !== void 0 ? "swap" : safe === void 0 ? permit === void 0 ? (_app$summary = app === null || app === void 0 ? void 0 : app.summary) !== null && _app$summary !== void 0 ? _app$summary : "message" : "approve" : safe.multisend ? "batch" : (_safe$safe$calls$0$su = (_safe$safe$calls$ = safe.safe.calls[0]) === null || _safe$safe$calls$ === void 0 ? void 0 : _safe$safe$calls$.summary) !== null && _safe$safe$calls$0$su !== void 0 ? _safe$safe$calls$0$su : "contract-call";
 		return withNativeAmountMeta(_objectSpread2({
 			family: "evm",
 			network: request.network,
 			summary,
-			outflows: (_app$outflows = app === null || app === void 0 ? void 0 : app.outflows) !== null && _app$outflows !== void 0 ? _app$outflows : [],
-			approvals: (_ref2 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref2 !== void 0 ? _ref2 : [],
+			outflows: (_ref3 = (_recognized$outflows = recognized === null || recognized === void 0 ? void 0 : recognized.outflows) !== null && _recognized$outflows !== void 0 ? _recognized$outflows : app === null || app === void 0 ? void 0 : app.outflows) !== null && _ref3 !== void 0 ? _ref3 : [],
+			approvals: (_ref4 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref4 !== void 0 ? _ref4 : [],
 			fee: void 0,
-			warnings: (_ref3 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref3 !== void 0 ? _ref3 : [],
+			warnings: (_ref5 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref5 !== void 0 ? _ref5 : [],
 			message,
-			verifiability: (_app$verifiability = app === null || app === void 0 ? void 0 : app.verifiability) !== null && _app$verifiability !== void 0 ? _app$verifiability : permit === void 0 && order === void 0 ? "opaque" : "partial"
+			verifiability: (_ref6 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref6 !== void 0 ? _ref6 : permit === void 0 && order === void 0 ? "opaque" : "partial"
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
 	/**
@@ -28214,14 +28834,16 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* Decodes a compiled wire message; rejects trailing bytes and the 1232-byte transaction limit. The
-	* fee payer is `staticAccounts[0]` — every valid transaction signs it.
+	* Decodes a compiled wire message; rejects trailing bytes and the transaction size limit (1232 for
+	* legacy/v0, 4096 including signatures for v1). The fee payer is `staticAccounts[0]` — every valid
+	* transaction signs it.
 	*/
 	var parseCompiledMessage = (bytes) => {
-		if (bytes.length > 1232) throw new ChainError("invalid-request", "compiled message exceeds the 1232-byte limit");
 		const [first] = bytes;
 		if (first === void 0) throw new ChainError("invalid-request", "compiled message is empty");
-		if (first > 128) throw new ChainError("unsupported", `Solana transaction version ${first - 128} is not supported`);
+		if (first === 129) return parseV1Message(bytes);
+		if (first > 129) throw new ChainError("unsupported", `Solana transaction version ${first - 128} is not supported`);
+		if (bytes.length > 1232) throw new ChainError("invalid-request", "compiled message exceeds the 1232-byte limit");
 		let decoded;
 		let end;
 		try {
@@ -28239,6 +28861,7 @@ zoo`.split("\n"));
 			numReadonlySignerAccounts: message.numReadonlySignerAccounts,
 			numReadonlyNonSignerAccounts: message.numReadonlyNonSignerAccounts,
 			staticAccounts,
+			lifetimeToken: message.lifetimeToken,
 			instructions: message.instructions,
 			lookups: lookups.map((l) => ({
 				address: l.lookupTableAddress,
@@ -28259,7 +28882,8 @@ zoo`.split("\n"));
 		const { staticAccounts } = value;
 		const { instructions } = value;
 		const lookups = value["addressTableLookups"];
-		if (typeof header["numSignerAccounts"] !== "number" || typeof header["numReadonlySignerAccounts"] !== "number" || typeof header["numReadonlyNonSignerAccounts"] !== "number" || !isStringArray(staticAccounts) || !Array.isArray(instructions) || !instructions.every(isIx) || lookups !== void 0 && (!Array.isArray(lookups) || !lookups.every(isLookup))) throw new ChainError("invalid-request", "compiled message failed to decode");
+		const { lifetimeToken } = value;
+		if (typeof header["numSignerAccounts"] !== "number" || typeof header["numReadonlySignerAccounts"] !== "number" || typeof header["numReadonlyNonSignerAccounts"] !== "number" || !isStringArray(staticAccounts) || typeof lifetimeToken !== "string" || !Array.isArray(instructions) || !instructions.every(isIx) || lookups !== void 0 && (!Array.isArray(lookups) || !lookups.every(isLookup))) throw new ChainError("invalid-request", "compiled message failed to decode");
 		const versionField = value["version"];
 		if (versionField !== "legacy" && versionField !== 0) throw new ChainError("invalid-request", "compiled message failed to decode");
 		const version = versionField;
@@ -28286,8 +28910,127 @@ zoo`.split("\n"));
 			numReadonlySignerAccounts: header["numReadonlySignerAccounts"],
 			numReadonlyNonSignerAccounts: header["numReadonlyNonSignerAccounts"],
 			staticAccounts,
+			lifetimeToken,
 			instructions: ixs,
 			addressTableLookups: tables
+		};
+	};
+	var V1_MESSAGE_MIN_BYTES = 42;
+	var V1_PRIORITY_FEE_BITS = 3;
+	var V1_MAX_SIGNATURES = 12;
+	var V1_MAX_ACCOUNTS = 64;
+	var V1_MAX_INSTRUCTIONS = 64;
+	var V1_HEAP_MIN = 32768;
+	var V1_HEAP_MAX = 262144;
+	var V1_HEAP_MULTIPLE = 1024;
+	var isV1InstructionHeader = (value) => isRecord$2(value) && typeof value["programAccountIndex"] === "number" && typeof value["numInstructionAccounts"] === "number" && typeof value["numInstructionDataBytes"] === "number";
+	var isV1InstructionPayload = (value) => isRecord$2(value) && (isNumberArray(value["instructionAccountIndices"]) || value["instructionAccountIndices"] instanceof Uint8Array) && value["instructionData"] instanceof Uint8Array;
+	var asV1Message = (value) => {
+		if (!isRecord$2(value) || !isRecord$2(value["header"])) throw new ChainError("invalid-request", "compiled message failed to decode");
+		const { header } = value;
+		const { staticAccounts } = value;
+		const headers = value["instructionHeaders"];
+		const payloads = value["instructionPayloads"];
+		if (value["version"] !== 1 || typeof header["numSignerAccounts"] !== "number" || typeof header["numReadonlySignerAccounts"] !== "number" || typeof header["numReadonlyNonSignerAccounts"] !== "number" || typeof value["lifetimeToken"] !== "string" || !isStringArray(staticAccounts) || !Array.isArray(headers) || !Array.isArray(payloads)) throw new ChainError("invalid-request", "compiled message failed to decode");
+		const instructions = headers.map((h, i) => {
+			const payload = payloads[i];
+			if (!isV1InstructionHeader(h) || !isV1InstructionPayload(payload)) throw new ChainError("invalid-request", "compiled message failed to decode");
+			return {
+				programAccountIndex: h.programAccountIndex,
+				accountIndices: payload.instructionAccountIndices,
+				data: payload.instructionData
+			};
+		});
+		return {
+			version: 1,
+			header: {
+				numSignerAccounts: header["numSignerAccounts"],
+				numReadonlySignerAccounts: header["numReadonlySignerAccounts"],
+				numReadonlyNonSignerAccounts: header["numReadonlyNonSignerAccounts"]
+			},
+			instructions,
+			lifetimeToken: value["lifetimeToken"],
+			staticAccounts
+		};
+	};
+	var v1Config = (mask, bytes, staticAccountCount) => {
+		const view = new DataView(bytes.buffer, bytes.byteOffset + 42 + 32 * staticAccountCount);
+		let offset = 0;
+		const config = {};
+		if ((mask & V1_PRIORITY_FEE_BITS) !== 0) {
+			config.priorityFeeLamports = view.getBigUint64(offset, true);
+			offset += 8;
+		}
+		if ((mask & 4) !== 0) {
+			config.computeUnitLimit = view.getUint32(offset, true);
+			offset += 4;
+		}
+		if ((mask & 8) !== 0) {
+			config.loadedAccountsDataSizeLimit = view.getUint32(offset, true);
+			offset += 4;
+		}
+		if ((mask & 16) !== 0) config.heapSize = view.getUint32(offset, true);
+		return config;
+	};
+	var sanitizeV1Message = (message, config) => {
+		const { numSignerAccounts: signatures, numReadonlySignerAccounts: readonlySigners, numReadonlyNonSignerAccounts: readonlyNonSigners } = message.header;
+		const accounts = message.staticAccounts.length;
+		if (signatures < 1 || signatures > V1_MAX_SIGNATURES) throw new ChainError("invalid-request", `v1 message requires ${signatures} signatures (1–12 allowed)`);
+		if (readonlySigners >= signatures) throw new ChainError("invalid-request", `v1 message marks ${readonlySigners} of ${signatures} signers read-only`);
+		if (accounts > V1_MAX_ACCOUNTS) throw new ChainError("invalid-request", `v1 message declares ${accounts} accounts (64 allowed)`);
+		if (accounts < signatures + readonlyNonSigners) throw new ChainError("invalid-request", `v1 message has ${accounts} accounts for ${signatures} signers and ${readonlyNonSigners} read-only non-signers`);
+		if (message.instructions.length > V1_MAX_INSTRUCTIONS) throw new ChainError("invalid-request", `v1 message declares ${message.instructions.length} instructions (64 allowed)`);
+		const seen = /* @__PURE__ */ new Set();
+		for (const account of message.staticAccounts) {
+			if (seen.has(account)) throw new ChainError("invalid-request", `v1 message repeats account ${account}`);
+			seen.add(account);
+		}
+		for (const [i, instruction] of message.instructions.entries()) {
+			if (instruction.programAccountIndex === 0) throw new ChainError("invalid-request", `v1 instruction ${i} uses the fee payer as its program`);
+			if (instruction.programAccountIndex >= accounts) throw new ChainError("invalid-request", `v1 instruction ${i} uses program index ${instruction.programAccountIndex} of ${accounts} accounts`);
+			for (const index of instruction.accountIndices) if (index >= accounts) throw new ChainError("invalid-request", `v1 instruction ${i} uses account index ${index} of ${accounts} accounts`);
+		}
+		const heap = config.heapSize;
+		if (heap !== void 0 && (heap % V1_HEAP_MULTIPLE !== 0 || heap < V1_HEAP_MIN || heap > V1_HEAP_MAX)) throw new ChainError("invalid-request", `v1 heap size ${heap} is not a multiple of 1024 within 32768–262144`);
+	};
+	/**
+	* A v1 message: the mask is checked before kit decodes — kit reads only the bits it knows, so an
+	* unknown bit or a half priority-fee pair must be caught here. The size bound covers the whole
+	* transaction (message plus 64 bytes per required signature), then every Agave sanitize rule runs
+	* before the message maps onto the same model as legacy/v0.
+	*/
+	var parseV1Message = (bytes) => {
+		var _bytes$;
+		if (bytes.length < V1_MESSAGE_MIN_BYTES) throw new ChainError("invalid-request", "compiled message failed to decode");
+		const mask = new DataView(bytes.buffer, bytes.byteOffset + 4, 4).getUint32(0, true);
+		if ((mask & -32) !== 0) throw new ChainError("unsupported", `Solana v1 transaction config mask 0x${mask.toString(16)} sets bits this wallet does not know`);
+		if ((mask & V1_PRIORITY_FEE_BITS) !== 0 && (mask & V1_PRIORITY_FEE_BITS) !== V1_PRIORITY_FEE_BITS) throw new ChainError("invalid-request", "Solana v1 transaction config mask sets only one of the two priority-fee bits");
+		if (bytes.length + 64 * ((_bytes$ = bytes[1]) !== null && _bytes$ !== void 0 ? _bytes$ : 0) > 4096) throw new ChainError("invalid-request", "v1 transaction exceeds the 4096-byte limit");
+		let decoded;
+		let end;
+		try {
+			[decoded, end] = decoder$1.read(bytes, 0);
+		} catch (_unused4) {
+			throw new ChainError("invalid-request", "compiled message failed to decode");
+		}
+		if (end !== bytes.length) throw new ChainError("invalid-request", "compiled message has trailing bytes");
+		const message = asV1Message(decoded);
+		const config = v1Config(mask, bytes, message.staticAccounts.length);
+		sanitizeV1Message(message, config);
+		return {
+			version: 1,
+			numRequiredSignatures: message.header.numSignerAccounts,
+			numReadonlySignerAccounts: message.header.numReadonlySignerAccounts,
+			numReadonlyNonSignerAccounts: message.header.numReadonlyNonSignerAccounts,
+			staticAccounts: [...message.staticAccounts],
+			lifetimeToken: message.lifetimeToken,
+			instructions: message.instructions.map((instruction) => ({
+				programAddressIndex: instruction.programAccountIndex,
+				accountIndices: [...instruction.accountIndices],
+				data: new Uint8Array(instruction.data)
+			})),
+			lookups: [],
+			config
 		};
 	};
 	/**
@@ -28324,6 +29067,47 @@ zoo`.split("\n"));
 		if (tables === void 0) return;
 		for (const table of tables) if (!isSolanaAddress(table.address) || !table.addresses.every(isSolanaAddress)) throw new ChainError("invalid-address", "lookup table entries must be base58 32-byte addresses");
 	};
+	var PDA_SEED = new TextEncoder().encode("ProgramDerivedAddress");
+	var encoder = getAddressEncoder();
+	var decoder = getAddressDecoder();
+	var onCurve = (candidate) => {
+		try {
+			ed25519.Point.fromBytes(candidate);
+			return true;
+		} catch (_unused5) {
+			return false;
+		}
+	};
+	/**
+	* Sync Associated Token Account derivation for the kernel: `findAssociatedTokenPda` is async, so
+	* the decoder derives `sha256(owner ‖ tokenProgram ‖ mint ‖ bump ‖ ata ‖ "ProgramDerivedAddress")`
+	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
+	*/
+	var associatedTokenAddress = (owner, mint, tokenProgram) => {
+		const ownerBytes = encoder.encode(address(owner));
+		const programBytes = encoder.encode(address(tokenProgram));
+		const mintBytes = encoder.encode(address(mint));
+		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
+		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
+		let o = 0;
+		const put = (bytes) => {
+			input.set(bytes, o);
+			o += bytes.length;
+		};
+		put(ownerBytes);
+		put(programBytes);
+		put(mintBytes);
+		const bumpAt = o;
+		o += 1;
+		put(ataBytes);
+		put(PDA_SEED);
+		for (let bump = 255; bump >= 0; bump -= 1) {
+			input[bumpAt] = bump;
+			const candidate = sha256$1(input);
+			if (!onCurve(candidate)) return decoder.decode(candidate);
+		}
+		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
+	};
 	/** SPL Token — AMM v4 asserts its token program account equals this id (processor.rs check). */
 	var SPL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 	var SWAP_V2 = Uint8Array.from([
@@ -28345,6 +29129,26 @@ zoo`.split("\n"));
 		30,
 		51,
 		222
+	]);
+	var DLMM_SWAP = Uint8Array.from([
+		248,
+		198,
+		158,
+		145,
+		225,
+		117,
+		135,
+		200
+	]);
+	var DLMM_SWAP2 = Uint8Array.from([
+		65,
+		75,
+		63,
+		76,
+		235,
+		91,
+		91,
+		136
 	]);
 	var u32$3 = getU32Decoder();
 	var u64$4 = getU64Decoder();
@@ -28459,50 +29263,54 @@ zoo`.split("\n"));
 				minOut: u64$4.decode(data, 16)
 			};
 		}
+		if (program === "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo") {
+			const swap = startsWith$1(data, DLMM_SWAP);
+			const swap2 = !swap && startsWith$1(data, DLMM_SWAP2);
+			if (!swap && !swap2 || data.length < 24 || ix.accountIndices.length < (swap ? 15 : 16)) return;
+			if (swap) {
+				if (data.length !== 24) return;
+			} else {
+				if (data.length < 28) return;
+				const slices = u32$3.decode(data, 24);
+				let offset = 28;
+				for (let i = 0; i < slices; i++) {
+					const tag = data.at(offset);
+					if (tag === void 0 || tag > 4) return;
+					offset += tag === 3 ? 2 : 1;
+					if (data.at(offset) === void 0) return;
+					offset += 1;
+				}
+				if (offset !== data.length) return;
+			}
+			const authority = account(10);
+			const sourceAccount = account(4);
+			const destinationAccount = account(5);
+			const mintX = account(6);
+			const mintY = account(7);
+			const programX = account(11);
+			const programY = account(12);
+			if (authority === void 0 || sourceAccount === void 0 || destinationAccount === void 0 || mintX === void 0 || mintY === void 0 || programX === void 0 || programY === void 0) return;
+			const ataX = associatedTokenAddress(authority, mintX, programX);
+			const ataY = associatedTokenAddress(authority, mintY, programY);
+			const sourceMint = sourceAccount === ataX ? mintX : sourceAccount === ataY ? mintY : void 0;
+			const destinationMint = destinationAccount === ataX ? mintX : destinationAccount === ataY ? mintY : void 0;
+			if (sourceMint !== void 0 && sourceMint === destinationMint) return;
+			return _objectSpread2(_objectSpread2({
+				program,
+				protocol: "meteora-dlmm",
+				authority,
+				sourceAccount,
+				destinationAccount,
+				sourceMint,
+				destinationMint
+			}, destinationMint === void 0 ? {} : { destinationTokenProgram: destinationMint === mintX ? programX : programY }), {}, {
+				maxIn: u64$4.decode(data, 8),
+				minOut: u64$4.decode(data, 16)
+			});
+		}
 	};
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var SOLANA_NATIVE_ASSET = "lamports";
-	var PDA_SEED = new TextEncoder().encode("ProgramDerivedAddress");
-	var encoder = getAddressEncoder();
-	var decoder = getAddressDecoder();
-	var onCurve = (candidate) => {
-		try {
-			ed25519.Point.fromBytes(candidate);
-			return true;
-		} catch (_unused4) {
-			return false;
-		}
-	};
-	/**
-	* Sync Associated Token Account derivation for the kernel: `findAssociatedTokenPda` is async, so
-	* the decoder derives `sha256(owner ‖ tokenProgram ‖ mint ‖ bump ‖ ata ‖ "ProgramDerivedAddress")`
-	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
-	*/
-	var associatedTokenAddress = (owner, mint, tokenProgram) => {
-		const ownerBytes = encoder.encode(address(owner));
-		const programBytes = encoder.encode(address(tokenProgram));
-		const mintBytes = encoder.encode(address(mint));
-		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
-		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
-		let o = 0;
-		const put = (bytes) => {
-			input.set(bytes, o);
-			o += bytes.length;
-		};
-		put(ownerBytes);
-		put(programBytes);
-		put(mintBytes);
-		const bumpAt = o;
-		o += 1;
-		put(ataBytes);
-		put(PDA_SEED);
-		for (let bump = 255; bump >= 0; bump -= 1) {
-			input[bumpAt] = bump;
-			const candidate = sha256$1(input);
-			if (!onCurve(candidate)) return decoder.decode(candidate);
-		}
-		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
-	};
 	/**
 	* `MplAssetInstruction::TransferV1` = 14; `TransferV1Args` is `{ compressionProof: Option }` — a
 	* bare transfer carries `[14, 0]` (no compression proof). mpl-core IDL at c8732ac.
@@ -28899,7 +29707,7 @@ zoo`.split("\n"));
 				jupiter
 			} : { kind: "other" };
 		}
-		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" || program === "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" || program === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C" || program === "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc") {
+		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" || program === "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" || program === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C" || program === "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc" || program === "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo") {
 			const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
 			return amm !== void 0 && amm.authority === signer ? {
 				kind: "amm-swap",
@@ -28953,7 +29761,8 @@ zoo`.split("\n"));
 	var BUILTIN_INSTRUCTION_CU = 3000n;
 	var MAX_COMPUTE_UNIT_LIMIT = 1400000n;
 	var feeLamports = (parsed, lookups, calls) => {
-		var _calls$find$microLamp, _calls$find, _calls$find2;
+		var _parsed$config$priori, _calls$find$microLamp, _calls$find, _calls$find2;
+		if (parsed.version === 1) return 5000n * BigInt(parsed.numRequiredSignatures) + ((_parsed$config$priori = parsed.config.priorityFeeLamports) !== null && _parsed$config$priori !== void 0 ? _parsed$config$priori : 0n);
 		const price = (_calls$find$microLamp = (_calls$find = calls.find((c) => c.kind === "cu-price")) === null || _calls$find === void 0 ? void 0 : _calls$find.microLamports) !== null && _calls$find$microLamp !== void 0 ? _calls$find$microLamp : 0n;
 		let builtin = 0n;
 		let other = 0n;
@@ -29350,10 +30159,11 @@ zoo`.split("\n"));
 	};
 	/**
 	* Normalizes a Solana sign request. `signer` is a required signer the wallet is about to sign for —
-	* the message must declare it among the first `numRequiredSignatures` static accounts. A raw
-	* `solana.message` must not decode as a transaction message (chains.mdx rule — a bytes-to-sign path
-	* that produces a transaction signature is a wallet-drainer): bytes a cluster could accept as a
-	* transaction message of any version are never signed as a raw message. Idempotent.
+	* the message must declare it among the first `numRequiredSignatures` static accounts.
+	* `lookupTables` may only accompany a v0 message — v1 has no address lookup tables (SIMD-0385). A
+	* raw `solana.message` must not decode as a transaction message (chains.mdx rule — a bytes-to-sign
+	* path that produces a transaction signature is a wallet-drainer): bytes a cluster could accept as
+	* a transaction message of any version are never signed as a raw message. Idempotent.
 	*/
 	var normalizeSolana = (request, signer) => {
 		if (!isRecord$4(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
@@ -29365,6 +30175,7 @@ zoo`.split("\n"));
 		if (request["kind"] === "solana.transaction") {
 			const lookupTables = validateLookupTablesRaw(request["lookupTables"]);
 			const parsed = parseCompiledMessage(message);
+			if (parsed.version === 1 && lookupTables !== void 0) throw new ChainError("invalid-request", "a v1 transaction has no address lookup tables");
 			if (!parsed.staticAccounts.slice(0, parsed.numRequiredSignatures).includes(signer)) throw new ChainError("invalid-request", "signer is not a required signer of the transaction");
 			return _objectSpread2({
 				kind: "solana.transaction",
@@ -29390,7 +30201,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/typed-data-BmMOmT73.mjs
+	// packages/wallet-chains/dist/typed-data-B2GMDrHr.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_sha2();
@@ -36476,7 +37287,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-ZOT446GF.mjs
+	// packages/wallet-chains/dist/message-DqaJ6u4v.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -37094,7 +37905,7 @@ zoo`.split("\n"));
 		typedContract: (address) => `验证合约 ${address}`,
 		typedType: (name) => `类型：${name}`,
 		typedUnverified: "钱包无法核实此签名授权的内容",
-		typedField: (path, value) => `· ${path} = ${value}`,
+		typedField: (path, value) => `${path} = ${value}`,
 		typedCommitment: "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容",
 		typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
 		typedOversize: "此类型数据过大，无法完整显示",
@@ -37239,7 +38050,20 @@ zoo`.split("\n"));
 			bandwidth: "带宽",
 			energy: "能量",
 			"tron-power": "TRON Power"
-		}
+		},
+		authAnyone: "任何持有此签名的人都可以提交这笔转账",
+		authOnlyRecipient: (to) => `只有 ${to} 可以提交这笔转账`,
+		authWindow: (after, before) => after !== void 0 && before !== void 0 ? `${after} 之后、${before} 之前有效（UTC）` : before === void 0 ? after === void 0 ? "无到期时间" : `${after} 之后有效（UTC），无到期时间` : `${before} 之前有效（UTC）`,
+		authCancel: (nonce) => `取消未使用的转账授权 ${nonce}；不转移资金`,
+		morphoGrant: (x) => `允许 ${x} 管理你在 Morpho 的仓位：它可以提走你存入的资产和抵押品，并以你的抵押品借款，资金可转到任何地址`,
+		morphoRevoke: (x) => `撤销 ${x} 管理你 Morpho 仓位的权限`,
+		aaveCredit: (x, amount) => `允许 ${x} 以你的 Aave 信用借入最多 ${amount}：债务由你承担，以你的抵押品担保`,
+		aaveRevoke: (x, asset) => `撤销 ${x} 在 Aave 借入 ${asset} 的额度`,
+		authorityUnverified: (c) => `钱包不认识合约 ${c}；它可能授予其他权限`,
+		snapshotAlias: (x) => `允许 ${x} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
+		signatureDeadline: (date) => `此签名在 ${date}（UTC）前可被使用`,
+		fcAddKey: (key, fid) => `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
+		fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`
 	};
 	var en = {
 		titles: {
@@ -37287,7 +38111,7 @@ zoo`.split("\n"));
 		typedContract: (address) => `Verifying contract ${address}`,
 		typedType: (name) => `Type: ${name}`,
 		typedUnverified: "The wallet cannot verify what this signature authorises",
-		typedField: (path, value) => `· ${path} = ${value}`,
+		typedField: (path, value) => `${path} = ${value}`,
 		typedCommitment: "It signs a hash or raw bytes; the wallet cannot see what they commit to",
 		typedVariant: "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
 		typedOversize: "This typed data is too large to show in full",
@@ -37432,7 +38256,20 @@ zoo`.split("\n"));
 			bandwidth: "Bandwidth",
 			energy: "Energy",
 			"tron-power": "TRON Power"
-		}
+		},
+		authAnyone: "Anyone holding this signature can submit the transfer",
+		authOnlyRecipient: (to) => `Only ${to} can submit the transfer`,
+		authWindow: (after, before) => after !== void 0 && before !== void 0 ? `Valid after ${after} and before ${before} (UTC)` : before === void 0 ? after === void 0 ? "No expiry" : `Valid after ${after} (UTC); no expiry` : `Valid before ${before} (UTC)`,
+		authCancel: (nonce) => `Cancel the unused transfer authorization ${nonce}; no funds move`,
+		morphoGrant: (x) => `Let ${x} manage your Morpho positions: it can withdraw your supplied assets and collateral and borrow against your collateral, sending the funds anywhere`,
+		morphoRevoke: (x) => `Revoke ${x}'s authority over your Morpho positions`,
+		aaveCredit: (x, amount) => `Let ${x} borrow up to ${amount} on your Aave credit: you owe the debt and your collateral backs it`,
+		aaveRevoke: (x, asset) => `Revoke ${x}'s Aave borrowing allowance for ${asset}`,
+		authorityUnverified: (c) => `The wallet does not know contract ${c}; it may grant other powers`,
+		snapshotAlias: (x) => `Let ${x} vote, create proposals and act on Snapshot as you`,
+		signatureDeadline: (date) => `This signature can be used until ${date} (UTC)`,
+		fcAddKey: (key, fid) => `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
+		fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`
 	};
 	var CATALOGS$1 = {
 		"zh-Hans": zh,
@@ -37488,15 +38325,29 @@ zoo`.split("\n"));
 		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
 		return `${line}${via}${until}`;
 	}
-	/** One requester-chosen value on a single line. */
-	var field = (raw) => {
-		var _displayExcerpt$lines;
-		return (_displayExcerpt$lines = displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0]) !== null && _displayExcerpt$lines !== void 0 ? _displayExcerpt$lines : "";
+	/**
+	* Every line of requester-supplied text carries this prefix — a kernel-generated line never does,
+	* so a forged "Network:" or fee line inside a message or memo can never read as the prompt's own.
+	*/
+	var REQUESTER_LINE = "· ";
+	/** A line of requester-supplied text marked as such. */
+	var quoted = (line) => `${REQUESTER_LINE}${line}`;
+	/**
+	* The requester text of a message or memo: each displayed line quoted, plus the kernel's own "… N
+	* more" line (unquoted) when the excerpt does not fit.
+	*/
+	var requesterText = (catalog, text) => {
+		const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+		return [...lines.map(quoted), ...omitted === 0 ? [] : [catalog.omitted(omitted)]];
 	};
-	/** The "… N more" trailing line when a text memo exceeds the excerpt budget, else none. */
-	var displayOmitted = (catalog, text) => {
-		const { omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-		return omitted === 0 ? [] : [catalog.omitted(omitted)];
+	/**
+	* One requester-chosen value on a single line; a dropped remainder is marked with an ellipsis so a
+	* second line or tail can never hide inside it.
+	*/
+	var field = (raw) => {
+		var _lines$;
+		const { lines, omitted } = displayExcerpt(raw, 1, FIELD_CODE_POINTS);
+		return `${(_lines$ = lines[0]) !== null && _lines$ !== void 0 ? _lines$ : ""}${omitted === 0 ? "" : "…"}`;
 	};
 	/** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
 	function tronOperationNames(operations) {
@@ -37580,11 +38431,7 @@ zoo`.split("\n"));
 			...tron.permissionUpdate.witness === void 0 ? [] : [tronPermissionLine(catalog, tron.permissionUpdate.witness)],
 			...tron.permissionUpdate.actives.map((p) => tronPermissionLine(catalog, p))
 		];
-		const memo = (tron === null || tron === void 0 ? void 0 : tron.memo) === void 0 ? [] : tron.memo.kind === "text" ? [
-			catalog.tronMemoHeading,
-			...displayExcerpt(tron.memo.text, MESSAGE_LINES, MESSAGE_CODE_POINTS).lines,
-			...displayOmitted(catalog, tron.memo.text)
-		] : tron.memo.hex.length - 2 <= 128 ? [catalog.tronMemoData(tron.memo.hex)] : [catalog.tronMemoLength((tron.memo.hex.length - 2) / 2)];
+		const memo = (tron === null || tron === void 0 ? void 0 : tron.memo) === void 0 ? [] : tron.memo.kind === "text" ? [catalog.tronMemoHeading, ...requesterText(catalog, tron.memo.text)] : tron.memo.hex.length - 2 <= 128 ? [catalog.tronMemoData(tron.memo.hex)] : [catalog.tronMemoLength((tron.memo.hex.length - 2) / 2)];
 		return {
 			title: intent.blind === void 0 ? catalog.titles[intent.summary] : catalog.blindTitle,
 			description: joinLines([
@@ -37615,12 +38462,7 @@ zoo`.split("\n"));
 		];
 	}
 	function textLines(catalog, text) {
-		const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-		return [
-			catalog.messageHeading,
-			...lines,
-			...omitted === 0 ? [] : [catalog.omitted(omitted)]
-		];
+		return [catalog.messageHeading, ...requesterText(catalog, text)];
 	}
 	var CONTROL_CHAR = new RegExp("\\p{Cc}", "u");
 	/** Every code point prints plainly: no control characters, nothing hidden or reordering. */
@@ -37648,7 +38490,8 @@ zoo`.split("\n"));
 	var ORDER_PROTOCOL_NAME = {
 		"1inch": "1inch",
 		uniswapx: "UniswapX",
-		cow: "CoW Protocol"
+		cow: "CoW Protocol",
+		"0x": "0x"
 	};
 	/** The lines of a recognised off-chain order: header, the most it gives, the least each gets. */
 	function offchainOrderLines(catalog, order) {
@@ -37675,6 +38518,9 @@ zoo`.split("\n"));
 		if (message.order !== void 0) return [...intent.approvals.map((change) => approvalLine(catalog, change)), ...offchainOrderLines(catalog, message.order)];
 		if (message.seaport !== void 0) return orderLines(catalog, message.seaport);
 		if (message.safe !== void 0) return safeLines(catalog, message.safe);
+		if (message.authorization !== void 0) return authorizationLines(catalog, message.authorization);
+		if (message.authority !== void 0) return authorityLines(catalog, message.authority);
+		if (message.farcaster !== void 0) return [...message.farcaster.kind === "add" ? [catalog.fcAddKey(message.farcaster.key, message.farcaster.requestFid)] : [catalog.fcKeyRequest(message.farcaster.requestFid, message.farcaster.key)], ...message.farcaster.deadline === void 0 ? [] : [catalog.signatureDeadline(utcDateTime(message.farcaster.deadline))]];
 		if (intent.approvals.length > 0) {
 			var _message$fields;
 			return [
@@ -37682,18 +38528,44 @@ zoo`.split("\n"));
 				...effectLines(catalog, intent),
 				...intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : [],
 				...intent.blind === "typed-data-oversize" ? [catalog.typedOversize] : [],
-				...((_message$fields = message.fields) !== null && _message$fields !== void 0 ? _message$fields : []).map((leaf) => catalog.typedField(leaf.path, leaf.value))
+				...((_message$fields = message.fields) !== null && _message$fields !== void 0 ? _message$fields : []).map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value)))
 			];
 		}
 		if (message.fields !== void 0) return [
 			...intent.blind === "typed-data-variant" ? [catalog.typedVariant] : [],
 			...intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : [],
 			catalog.typedUnverified,
-			...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value))
+			...message.fields.map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value)))
 		];
 		if (intent.blind === "typed-data-variant") return [catalog.typedVariant, catalog.typedOversize];
 		if (intent.blind === "typed-data-oversize") return [catalog.typedOversize];
 		throw new KernelError("integrity", "unreachable: typed data is neither recognised, shown nor blind");
+	}
+	/** The lines of a recognised EIP-3009 authorization: who can submit it, and its validity. */
+	function authorizationLines(catalog, authorization) {
+		if (authorization.kind === "cancel") return [catalog.authCancel(authorization.nonce)];
+		const window = catalog.authWindow(authorization.validAfter === 0 ? void 0 : utcDateTime(authorization.validAfter), authorization.validBefore === void 0 ? void 0 : utcDateTime(authorization.validBefore));
+		return [
+			catalog.send(formatAmount(catalog, authorization.amount), authorization.to),
+			authorization.kind === "transfer" ? catalog.authAnyone : catalog.authOnlyRecipient(authorization.to),
+			window
+		];
+	}
+	/** The lines of a recognised account-authority document: the delegatee's power, then warnings. */
+	function authorityLines(catalog, authority) {
+		var _authority$amount$sym;
+		if (authority.kind === "snapshot-alias") return [catalog.snapshotAlias(authority.alias)];
+		if (authority.kind === "morpho") return [
+			authority.grant ? catalog.morphoGrant(authority.authorized) : catalog.morphoRevoke(authority.authorized),
+			...authority.verified ? [] : [catalog.authorityUnverified(authority.contract)],
+			...authority.deadline === void 0 ? [] : [catalog.signatureDeadline(utcDateTime(authority.deadline))]
+		];
+		const asset = (_authority$amount$sym = authority.amount.symbol) !== null && _authority$amount$sym !== void 0 ? _authority$amount$sym : authority.amount.asset;
+		return [
+			authority.unlimited ? catalog.aaveCredit(authority.delegatee, catalog.unlimited(asset)) : authority.amount.amount === "0" ? catalog.aaveRevoke(authority.delegatee, asset) : catalog.aaveCredit(authority.delegatee, formatAmount(catalog, authority.amount)),
+			...authority.verified ? [] : [catalog.authorityUnverified(authority.contract)],
+			...authority.deadline === void 0 ? [] : [catalog.signatureDeadline(utcDateTime(authority.deadline))]
+		];
 	}
 	/** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
 	var hype = (wei) => formatUnits(wei, 8);

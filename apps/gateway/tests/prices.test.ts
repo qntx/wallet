@@ -948,7 +948,15 @@ describe("quotePrices", () => {
       }
       return {
         value: await attempt(async (request) => {
-          await options.meter(provider.account, request.cost);
+          const charge = await options.meter(provider.account, request.cost);
+          if (!charge.ok) {
+            // One-provider walk: the surfaced answer is the client's own refusal.
+            throw new GatewayHttpError(
+              charge.reason === "rate-limited" ? 429 : 413,
+              charge.reason,
+              charge.retryAfterSeconds,
+            );
+          }
           return {
             status: 200,
             ok: true,
@@ -972,14 +980,12 @@ describe("quotePrices", () => {
     },
   };
 
-  /** A share meter that pays for `budget` units, then throws the limiter's 429 refusal. */
+  /** A share meter that pays for `budget` units, then reports the limiter's 429 refusal. */
   const meterUpTo = (budget: number): Meter => {
     const limiter = countBefore(budget);
     return async (_account, units) => {
       const { success } = await limiter.limit({ key: "share", delta: units });
-      if (!success) {
-        throw new GatewayHttpError(429, "rate-limited", 60);
-      }
+      return success ? { ok: true } : { ok: false, reason: "rate-limited", retryAfterSeconds: 60 };
     };
   };
 
@@ -996,7 +1002,7 @@ describe("quotePrices", () => {
     const { response, providers } = await quotePrices(
       deps([source]),
       { currency: "usd", assets: [ETH_NATIVE, BTC_NATIVE] },
-      async () => {},
+      async () => Promise.resolve({ ok: true }),
     );
     expect(response.prices.map((q) => q.asset)).toStrictEqual([ETH_NATIVE]);
     expect(response.missing).toStrictEqual([BTC_NATIVE]);
@@ -1009,10 +1015,8 @@ describe("quotePrices", () => {
     };
     const source = fakeSource(new Map());
     await expect(
-      quotePrices(
-        deps([source], forwarder),
-        { currency: "usd", assets: [ETH_NATIVE] },
-        async () => {},
+      quotePrices(deps([source], forwarder), { currency: "usd", assets: [ETH_NATIVE] }, async () =>
+        Promise.resolve({ ok: true }),
       ),
     ).rejects.toBeInstanceOf(TypeError);
   });

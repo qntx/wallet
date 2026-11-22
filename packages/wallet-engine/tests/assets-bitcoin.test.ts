@@ -16,7 +16,7 @@ import type { ChainsApi } from "@qntx/wallet/chains";
 import type { BitcoinTotals } from "../src/assets/bitcoin.ts";
 import { AssetsController } from "../src/assets/controller.ts";
 import type { AccountBalances, TokenBalance } from "../src/assets/controller.ts";
-import { scripthash } from "../src/chains/bitcoin-scan.ts";
+import { hexOf, scanSource, scripthash, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { world } from "./support/btc-world.ts";
@@ -96,7 +96,32 @@ const utxo = (txid: string, value: number, height: number): unknown => ({
 });
 
 const fund = (funded: Funded, address: string, utxos: ReadonlyArray<unknown>): void => {
-  funded[scripthash(address, NETWORK)] = { txs: [{ txid: "ff".repeat(32) }], utxo: [...utxos] };
+  // A well-formed funding tx per utxo row — the read path derives UTXOs from history
+  // without asking `/utxo` again.
+  const scriptHex = hexOf(scriptPubKey(address, NETWORK));
+  funded[scripthash(address, NETWORK)] = {
+    txs: utxos.map((u) => {
+      const row = u as {
+        txid: string;
+        vout: number;
+        value: number;
+        status?: { block_height?: number };
+      };
+      const height = row.status?.block_height ?? 0;
+      const vout: unknown[] = Array.from({ length: row.vout }, () => ({
+        scriptpubkey: "6a",
+        value: 0,
+      }));
+      vout.push({ scriptpubkey: scriptHex, value: row.value });
+      return {
+        txid: row.txid,
+        vin: [{ txid: "00".repeat(32), vout: 0 }],
+        vout,
+        status: { confirmed: height > 0, block_height: height },
+      };
+    }),
+    utxo: [...utxos],
+  };
 };
 
 const btcNetworks = (es: Esplora) =>
@@ -111,6 +136,7 @@ const make = (
   timers?: Array<() => unknown>,
   chainsApi?: Pick<ChainsApi, "account">,
   ownTxids: ReadonlySet<string> = new Set(),
+  now?: () => number,
 ): AssetsController =>
   new AssetsController({
     networks: btcNetworks(es),
@@ -124,7 +150,7 @@ const make = (
     logger,
     gateway: undefined,
     fetch: globalThis.fetch,
-    now: () => Date.now(),
+    now: now ?? (() => Date.now()),
   });
 
 /** `key` reachable on `v` — totals objects must not carry a `frozen` field at all. */
@@ -346,6 +372,115 @@ describe("AssetsController bitcoin group", () => {
     void timers[0]?.();
     await new Promise((resolve) => setTimeout(resolve));
     expect(asked.slice(before)).toContain(scripthash(receive, NETWORK));
+  });
+
+  it("scans bip84's change chain even when its receive chain is empty — legacy change lives there", async () => {
+    const funded: Funded = {};
+    // A receipt only on bip44 receive 0; its spend's change landed on bip84 change 0 —
+    // the send path's change destination for legacy templates.
+    fund(funded, addressOf("btc.bip44", 0, 0), [utxo("aa".repeat(32), 100_000, 800_000)]);
+    fund(funded, addressOf("btc.bip84", 1, 0), [utxo("bb".repeat(32), 80_000, 800_000)]);
+    const asked: string[] = [];
+    const es = esplora(funded, asked);
+    const assets = make(es);
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("180000");
+    expect(balances.sources?.["btc.bip84"]).toStrictEqual({
+      native: "80000",
+      unconfirmed: "0",
+      protected: "0",
+    });
+    // History's scan of the same bip84 xpub must see the used change address.
+    const scanned = await scanSource(
+      es,
+      { kind: "xpub", template: "btc.bip84", xpub: ACCOUNTS["btc.bip84"].publicExtendedKey },
+      BTC_NET,
+      NETWORK,
+    );
+    const change = scanned.filter((a) => a.chain === 1);
+    expect(change.some((a) => a.used)).toBe(true);
+  });
+});
+
+describe("AssetsController bitcoin group discovery cache", () => {
+  /** Counts `/txs` and `/utxo` calls separately — the cache assertions are about call counts. */
+  const countEsplora = (funded: Funded, counts: { txs: number; utxo: number }): Esplora => ({
+    get: async (path) => {
+      const m = /^\/scripthash\/([0-9a-f]+)\/(txs|utxo)$/.exec(path);
+      if (m === null) {
+        return Promise.reject(new Error(`unmocked ${path}`));
+      }
+      if (m[2] === "txs") {
+        counts.txs += 1;
+      } else {
+        counts.utxo += 1;
+      }
+      const entry = funded[m[1] ?? ""];
+      return Promise.resolve(m[2] === "txs" ? (entry?.txs ?? []) : (entry?.utxo ?? []));
+    },
+    post: async () => Promise.reject(new Error("unmocked")),
+  });
+
+  it("a cold refresh reads history only — 100 /txs, zero /utxo; a warm refresh re-reads bip84", async () => {
+    const funded: Funded = {};
+    const counts = { txs: 0, utxo: 0 };
+    let now = 1_000_000;
+    const assets = make(
+      countEsplora(funded, counts),
+      undefined,
+      undefined,
+      undefined,
+      new Set(),
+      () => now,
+    );
+    await assets.init();
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    // bip44/bip49/bip86 stop at 20 receive rows each (BIP-44 early exit); bip84 always walks
+    // its change chain — the wallet's change destination — so 3×20 + 40.
+    expect(counts).toStrictEqual({ txs: 100, utxo: 0 });
+    // Warm: the three verified-unused templates are skipped; btc.bip84 (the default receive
+    // template and the group's change chain) is always re-scanned — 40 history reads.
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(counts).toStrictEqual({ txs: 140, utxo: 0 });
+    // After the discovery interval the entry expires and all four are verified again.
+    now += 10 * 60_000;
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(counts).toStrictEqual({ txs: 240, utxo: 0 });
+  });
+
+  it("a deposit on the default receive address shows on a warm refresh; skipped sources are zero", async () => {
+    const funded: Funded = {};
+    const counts = { txs: 0, utxo: 0 };
+    const assets = make(countEsplora(funded, counts));
+    await assets.init();
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    fund(funded, addressOf("btc.bip84", 0, 0), [utxo("ee".repeat(32), 42_000, 800_000)]);
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.sources?.["btc.bip84"]).toStrictEqual({
+      native: "42000",
+      unconfirmed: "0",
+      protected: "0",
+    });
+    // Skipped templates contribute zero totals — verified unused within the discovery window.
+    expect(balances.sources?.["btc.bip44"]).toStrictEqual({
+      native: "0",
+      unconfirmed: "0",
+      protected: "0",
+    });
+    expect(balances.native).toBe("42000");
+  });
+
+  it("lock() clears the cache — the next refresh scans all four templates again", async () => {
+    const funded: Funded = {};
+    const counts = { txs: 0, utxo: 0 };
+    const assets = make(countEsplora(funded, counts));
+    await assets.init();
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(counts.txs).toBe(100);
+    assets.lock();
+    await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(counts).toStrictEqual({ txs: 200, utxo: 0 });
   });
 });
 

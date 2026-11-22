@@ -238,18 +238,30 @@ describe("SolanaWalletHandler", () => {
     expect(requestsCalls).toHaveLength(0);
   });
 
-  it("rejects a v1 transaction and a transaction the wallet does not sign", async () => {
+  it("rejects a transaction the wallet does not sign", async () => {
     const { handler, requestsCalls } = rig({ session: {} });
-    for (const transactions of [[V1_TX], [FOREIGN_TX]]) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
-      await expect(
-        handler.handle(SITE, {
-          method: "solana:signTransaction",
-          params: { transactions },
-        }),
-      ).rejects.toMatchObject({ code: -32_602 });
-    }
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signTransaction",
+        params: { transactions: [FOREIGN_TX] },
+      }),
+    ).rejects.toMatchObject({ code: -32_602 });
     expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("passes a v1 transaction to the sign request", async () => {
+    const signed = [new Uint8Array([9, 9, 9])];
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: false, signedTransactions: signed },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signTransaction",
+      params: { transactions: [V1_TX] },
+    });
+    const input = requestsCalls[0] as { request: { transactions: Uint8Array[] } };
+    expect(input.request.transactions).toStrictEqual([V1_TX]);
+    expect(result).toMatchObject({ signedTransactions: signed });
   });
 
   it("signAndSend refuses a transaction whose other signers have not signed", async () => {

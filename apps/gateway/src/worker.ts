@@ -87,6 +87,8 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
       networks: PRODUCTION_NETWORKS,
       accounts,
       budget,
+      // Both environments run behind Cloudflare, which always sets cf-connecting-ip.
+      clientAddress: "required",
       auth: {
         alchemy: bearer(env.ALCHEMY_API_KEY),
         drpc: header("Drpc-Key", env.DRPC_API_KEY),
@@ -109,6 +111,8 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     networks: STAGING_NETWORKS,
     accounts,
     budget,
+    // Both environments run behind Cloudflare, which always sets cf-connecting-ip.
+    clientAddress: "required",
     auth: {},
     prices: {
       cache,

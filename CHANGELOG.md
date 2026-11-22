@@ -462,6 +462,44 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - Vectors: `vectors/chains/polymarket-l2.json` (L2 headers, oracle clob-client-v2
   `createL2Headers`), `vectors/chains/polymarket-wallets.json` (deposit-wallet and Safe derivations
   checked against on-chain owners).
+- `@qntx/wallet-chains`: Solana v1 transaction messages (SIMD-0385, live on mainnet, devnet and
+  testnet) parse, classify and sign like legacy/v0. The parser reuses the pinned
+  `@solana/kit` 8.5.0 codec and adds every Agave sanitize rule kit does not check: config mask
+  limited to bits 0–4 with a complete priority-fee pair (an unknown bit is `unsupported`), 1–12
+  signatures, readonly signers below the signer count, ≤ 64 distinct accounts covering the header,
+  ≤ 64 instructions, program index in `[1, accounts)`, account indices in range, heap a multiple
+  of 1024 in [32 KiB, 256 KiB], message plus signatures ≤ 4096 bytes, no trailing bytes.
+  `ParsedSolanaMessage` gains `lifetimeToken` (every version) and, for v1, `config`
+  (`SolanaTransactionConfig`: priority fee, compute-unit limit, loaded-accounts-data-size limit,
+  heap size).
+- `@qntx/wallet-chains`: a v1 transaction's maximum fee is `5000 × signatures + the config's
+  priority fee` (lamports); ComputeBudget instructions in a v1 transaction configure nothing and
+  no longer feed the fee. Resource limits are not shown — they bound neither funds nor fee.
+- `@qntx/wallet-chains`: `decodeSolanaTransaction` / `addSolanaSignature` read and fill the v1
+  message-first envelope (signatures after the message), up to 4096 bytes.
+- `@qntx/wallet-engine`: the injected Wallet Standard provider advertises
+  `supportedTransactionVersions: ["legacy", 0, 1]`; Wallet Standard and WalletConnect `solana_*`
+  requests sign v1 transactions; `SolanaChainAdapter.finalize` lays out the wire with kit's
+  transaction encoder, so simulation and broadcast of a v1 message send the message-first
+  envelope; history reads `getTransaction` with `maxSupportedTransactionVersion: 1`.
+- Vectors: `vectors/chains/solana-v1.json` (kit-built v1 cases with kernel prompts and WebCrypto
+  signatures, plus one malformed case per sanitize rule), v1 cases in
+  `vectors/chains/solana-wire.json`, and `vectors/chains/solana-mainnet-v1.json` — 65 landed
+  mainnet v1 transactions re-fetched and signature-checked by `scripts/vectors/solana-mainnet-v1.ts`.
+- **EIP-3009 authorizations are described.** `TransferWithAuthorization`, `ReceiveWithAuthorization` and `CancelAuthorization` signed to the token contract by the signer (x402 payments) show the amount, recipient, validity window and who can submit it — listed tokens `full`, others with the unverified-token amount; any other shape on these primary types is blind (`typed-data-variant`). New `MessageContent.authorization` (`TokenAuthorization`).
+- **Account-authority signatures are described with danger wording.** Morpho Blue `Authorization`, Aave v3 credit delegation `DelegationWithSig` and Snapshot `Alias` decode into `MessageContent.authority` (`AccountAuthority`) with summary `authorization`; the Morpho Blue deployments and Aave variable-debt tokens of the built-in tables are probed on-chain (`vectors/chains/account-authority.json`), any other contract is named unverified.
+- **Farcaster signer keys are described.** KeyGateway `Add` (owner = signer, ed25519 key, signed-key-request metadata) and `SignedKeyRequest` decode into `MessageContent.farcaster` (`FarcasterKey`).
+- **0x gasless trades are described.** A Permit2 `PermitWitnessTransferFrom` whose `slippageAndActions` witness is spent by a 0x Settler MetaTxn deployment decodes as an `OffchainOrder` with `protocol: "0x"` — at most the permitted amount out, at least `minAmountOut` of the buy token to the recipient, enforced by the Settler's final slippage check.
+- **UniswapX V3 reactors on Ink and Zora** (UniswapX README deployments, code and `permit2()` probed on-chain) are added to the reactor table; the Robinhood Chain and Arc addresses the README lists could not be confirmed on-chain and stay out.
+- **Meteora DLMM `swap`/`swap2`** decode on Solana (legacy, v0 and v1 messages) with the signer's maximum input and minimum output; the legs' mints resolve through the signer's associated token accounts.
+- `@qntx/wallet-engine`: `TrackedTransaction.stuck` and `TrackedTransaction.rebroadcast`.
+- `@qntx/wallet-engine/apps/hyperliquid`: `HyperliquidTrade.corrections` and `HyperliquidOutcomeCorrection` —
+  late answers for orders reported `unknown` (orderStatus re-asked for 10 minutes; live
+  `openOrders` / `fills` sightings).
+- `@qntx/wallet-engine/gateway/contract`: `PROVIDER_PIN_HEADER` (`x-gateway-provider`).
+- `@qntx/gateway`: the TRON node route serves a request carrying `x-gateway-provider` from that
+  provider only (unknown id → `400 invalid-request`), charged to the client share and the account
+  budget exactly like the unpinned route; CORS allows the header.
 
 ### Changed
 
@@ -812,6 +850,48 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   shared WebSocket core moved to `src/apps/socket.ts` (Hyperliquid behaviour unchanged).
   `controller.approveBuilder(group, "polymarket")` is refused with `PolymarketError("invalid-input")`
   (Polymarket has no builder fee approval). The main engine entry is byte-identical.
+- **BREAKING:** `@qntx/wallet-chains`: `ParsedSolanaMessage["version"]` is `"legacy" | 0 | 1`
+  (a discriminated union carrying `config` for v1); a v1 message no longer throws
+  `ChainError("unsupported", "Solana transaction version 1 is not supported")`, and a v1 wire no
+  longer fails with "transaction exceeds the 1232-byte limit" below 4096 bytes. Versions above 1
+  stay `unsupported`. A v1 `solana.transaction` request that carries `lookupTables` is
+  `invalid-request` (v1 has no lookup tables).
+- `@qntx/wallet`: the `solana.transaction` `message` transport bound is 4096 bytes (was 1232).
+- `@qntx/wallet-kernel`: `chain.sign` signs v1 `solana.transaction` requests under the same
+  blind-signing policy (was `invalid-input`); a v1 message as `solana.message` is still refused.
+- `@qntx/wallet-engine`: a send whose outcome is unknown is never declared `dropped` by a timer.
+  EVM transactions end only on their receipt, a replacement, or their nonce being consumed without
+  their receipt (now cross-checked against the host endpoint when configured); Bitcoin
+  transactions only on inclusion, an input spent by another confirmed transaction, or their own
+  replacement confirming. After 30 minutes unseen a row carries `stuck: true` (still `submitted`,
+  nonce or inputs still held, polled at the finality interval) — offer speed-up or cancel.
+- `@qntx/wallet-engine`: a definite broadcast refusal is stored durably as `failed`; if the store
+  cannot take it (vault locked, write error) the row is retried by its own loop and replayed at the
+  next unlock. A `signed` row recovered at unlock becomes `submitted` with `rebroadcast: false` —
+  watched on chain, never resent. `lock()` clears transaction rows and call batches from memory.
+- `@qntx/wallet-engine`: TRON `dropped` and reorg answers need the host endpoint's agreement or
+  three consecutive polls spanning more than one solidification period (~57 s); every read of a
+  poll is pinned to one upstream.
+- `@qntx/wallet-engine`: TRON (send, stake, approve, dApp, rebuild) and Solana wallet builds are
+  refused when only the gateway vouches for the reference block / recent blockhash; with a host
+  endpoint it must confirm it, and the gateway's answering node must report the network's genesis.
+- `@qntx/wallet-engine`: the OP Stack / Scroll L1 data fee maximum is `raw × (9/8)^3` (was × 5/4),
+  re-read at approval (a rise beyond the shown maximum ends the request: "the L1 data fee rose —
+  start over") and again before broadcast when the approval read is older than one L1 slot.
+- `@qntx/wallet-engine`: a Solana durable-nonce transaction is `dropped` only when the nonce
+  account's signature history covering the time since submission does not list it; a listed
+  signature settles the row.
+- `@qntx/wallet-engine`: TRON history collapses duplicated TRX/TRC-10 claims, shows
+  `call_value` / `call_token_value` movements, and verifies an entry only on a decoded, sha256-pinned
+  body; an unclaimed movement is `chain-mismatch`.
+- `@qntx/wallet-engine`: typed-data and message requests (`evm-sign`, `tron-sign`) whose decode
+  moves value — an EIP-3009 transfer authorization, a Hyperliquid `usdSend` — carry the same
+  recipient findings as a transaction (`first-recipient`, `address-poisoning`), from any origin.
+- `@qntx/wallet-engine/apps`: Hyperliquid account views clear their data when closed or locked;
+  `AppsController.lock()` clears `groups`.
+- **gateway:** client shares, POLICY budgets and flood limiters (IP 3,000 / RPC 1,500 / default 400 per 60 s) are sized from measured engine usage so a fresh all-family cold start uses at most a third of one client prefix's allowance; the README states the concurrency target and its arithmetic.
+- **ci:** the gateway deploy workflow checks required secrets before deploying, rolls back only when the previous version shares the Durable Object migrations (Cloudflare refuses rollbacks across a migration) and alerts otherwise; a new `gateway-workerd` job boots the real worker with Durable Object and rate-limit bindings and runs the smoke plan and budget scenarios against stub upstreams, plus `wrangler deploy --dry-run` for both environments.
+- `@qntx/wallet-chains`: Velora/Paraswap Delta orders deliberately stay blind: the verifying contract is an owner-upgradable module adapter, so the order bounds are not fixed by the signed bytes. 1inch Fusion orders stay blind: their extension's amount getter decides the taking amount and is only hash-committed in `salt`.
 
 ### Removed
 
@@ -830,6 +910,8 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `SparkControllerOptions.random`, and `ProviderInfo.uuid` in `/connect`.
 - **BREAKING:** `@qntx/wallet-chains`: `ChainErrorCode` `fee-payer-mismatch`; `SafeTransaction`
   `gasToken` / `refundReceiver` (now inside `refund`).
+- `@qntx/wallet-engine/apps/hyperliquid`: the `not-placed` Hyperliquid order outcome — an unproven outcome is
+  `unknown`.
 
 ### Fixed
 
@@ -1028,6 +1110,20 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-engine`: the in-app Solana and Bitcoin providers reported a rejected, expired or
   invalidated request as `-32603 internal error`; they now reject with `4001` like EIP-1193 (and
   `-32602` for a sign-in for another domain).
+- `@qntx/wallet-engine`: a durable-nonce v1 transaction is tracked as durable — the kit decoder
+  exposes no `instructions` for v1, so the nonce check read it as blockhash-lifetime and the poll
+  could declare it dropped while it could still land. `durableNonceOfMessage` now reads the
+  wallet's own parse and lets a parse failure propagate.
+- **gateway:** the per-IP share of a provider account is priced from the account's minute-scale windows only; day and month quotas are enforced by the global account budget. CoinGecko (every non-USD price) is served again instead of `413 too-costly`, and the production smoke check can pass.
+- **gateway:** a request whose share of one provider account is spent fails over to the next provider; the client gets `429` (shortest wait) only when every provider refused its share, `413` only when every one was too costly.
+- **gateway:** every upstream call is billed at least one unit against the client share and the account budget, so zero-compute-unit methods are no longer free. dRPC is budgeted in requests (80 % of its 100 RPS Pay-as-you-go limit).
+- **gateway:** client addresses are parsed strictly: IPv4-mapped IPv6 addresses are keyed by their embedded IPv4 /24, and a deployed gateway answers `400 invalid-request` to a request without a usable `cf-connecting-ip`.
+- **gateway:** account-budget leases follow each isolate's spend rate and refusals are cached until their `Retry-After`, so the provider-budget Durable Object sees under one call per second per busy isolate instead of one per upstream call; a small request no longer shares a larger request's refusal. The object no longer wraps its synchronous storage in `blockConcurrencyWhile`.
+- **gateway:** provider rows cite their sources (the dead Tatum URL is gone); Tatum, Ankr and TronGrid budgets follow the providers' published free-tier limits.
+- **engine:** a Bitcoin balance read follows BIP-44 account discovery (an unused template's change chain is not walked, except `btc.bip84`, which receives every legacy-template send's change), derives UTXOs from the `/scripthash/:h/txs` page when it is complete, and remembers unused templates for the discovery interval: a fresh account's cold start costs 200 Esplora calls instead of 480 and a foreground refresh 81 instead of 380.
+- **engine:** TRON built-in token balances are read only for contracts the indexer lists as held (the node stays the source of truth for their amounts); a failed indexer still reads every built-in.
+- **scripts:** the bundle boundary check builds kernel entries exactly like the kernel build (same resolve conditions, nothing external) and judges workspace code reached through third-party packages; `new URL(literal, import.meta.url)` and `import.meta.resolve(literal)` are judged as module references.
+- **ci:** the `tron-e2e` service image is pinned by digest.
 
 ### Security
 
@@ -1040,6 +1136,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   upstream 429s and open the breakers for every user; one request could cost more than any
   limiter window. Fixed by the cost pricing, account budget, cost ceiling and throttle handling
   above.
+- **Text rule bypasses closed.** The untrusted-text rule now classifies code points from generated Unicode 18.0.0 tables (`packages/wallet-chains/src/unicode-tables.ts`, written by `scripts/unicode-tables.ts`) instead of the engine's ICU, so the kernel (Hermes) and the host classify every code point identically. Emoji tag sequences are accepted only as the three RGI flag sequences — any other tag run (including the "ASCII smuggling" form that hid a sentence behind a black flag) is a hidden character; a variation selector counts only directly after a base it is defined for (StandardizedVariants, emoji-variation-sequences, or a unified ideograph for VS17–VS256); ZWJ/ZWNJ display only in their RFC 5892 ContextJ or emoji-ZWJ positions and show as U+FFFD elsewhere; the combining grapheme joiner always shows as U+FFFD. Every RGI emoji sequence and the usual Persian/Indic/Japanese/Mongolian joiner and selector uses stay plain text (`vectors/chains/text-rule.json`).
+- **Requester text can no longer forge kernel prompt lines.** Every line of requester-supplied multi-line text in a signing prompt — message text, TRON memos, typed-data field lines — starts with `· `, which no kernel line does; a single-line requester value (domain name, token or agent name, TRON permission name) that had more lines or code points than shown ends with `…` instead of being cut silently.
+- **Wrap/unwrap and Lido inside a Safe or deposit wallet credit the calling account.** WETH-style `deposit`/`withdraw` and Lido withdrawal requests in Safe or Polymarket deposit-wallet inner calls now show the Safe/wallet (the `msg.sender`) as the recipient or owner, not the signing EOA.
 
 ## [0.13.0] - 2026-11-09
 

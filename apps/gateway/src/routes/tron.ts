@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import {
   PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   TRON_BROADCAST_PATH,
   TRON_INDEXER_PATHS,
   accepts,
@@ -120,8 +121,16 @@ export function tronRoutes({
     }
 
     const payload = JSON.stringify(body);
+    const pin = c.req.header(PROVIDER_PIN_HEADER);
+    const providers =
+      pin === undefined
+        ? network.providers
+        : network.providers.filter((provider) => provider.id === pin);
+    if (providers.length === 0) {
+      throw new GatewayHttpError(400, "invalid-request");
+    }
     const { value, providerId } = await forwarder.run(
-      network.providers,
+      providers,
       async (send, provider) =>
         respond(
           await send({

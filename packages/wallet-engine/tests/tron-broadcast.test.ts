@@ -174,6 +174,7 @@ const world = () => {
   let tag = 0;
   const boot = async () => {
     const timers = manualTimers();
+    const clock = { t: 1_000_000 };
     const ctl = new TransactionController({
       wallet: {} as Wallet,
       networks: new NetworkController({
@@ -189,13 +190,13 @@ const world = () => {
         return new Uint8Array(n).fill(tag);
       },
       setTimer: timers.setTimer,
-      now: () => 1_000_000,
+      now: () => clock.t,
       logger: { warn: (msg) => warnings.push(msg) },
       pollMs: POLL_MS,
       chains: apis,
     });
     await ctl.init();
-    return { ctl, timers };
+    return { ctl, timers, clock };
   };
 
   const persistedTx = async (id: string): Promise<Record<string, unknown> | undefined> => {
@@ -325,11 +326,19 @@ describe("a TRON broadcast", () => {
 
   it("rebroadcast stops once the solidified head passes expiration", async () => {
     const w = world();
-    const { ctl, timers } = await w.boot();
+    const { ctl, timers, clock } = await w.boot();
     w.setBroadcastMode({ kind: "drop" });
     const tx = await send(ctl, SEND);
     w.setBroadcastMode({ kind: "ok" });
     w.env.solidTime = 1_060_001; // expiration was now+60_000
+    /* No host endpoint to corroborate: one lagging-solid-head poll claims, three consecutive
+       polls spanning a solidification period prove the drop. */
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    clock.t += 30_000;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    clock.t += 30_000;
     await timers.fire(POLL_MS);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
     expect(w.broadcasts).toHaveLength(0); // a dropped transaction is never rebroadcast

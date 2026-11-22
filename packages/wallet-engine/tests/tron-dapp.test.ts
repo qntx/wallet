@@ -51,6 +51,7 @@ const VERIFY = { kind: "password", password: "pw" } as SendParams["verify"];
 
 /** Full-node head 105; the reference block is the solid head at 100. */
 const SOLID_ID = "ab".repeat(32);
+const GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc";
 const REF_BYTES = "0064";
 const REF_HASH = SOLID_ID.slice(16, 32);
 const EXPIRATION = 1_100_000;
@@ -170,7 +171,10 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     owner: FROM,
     fullHead: 105,
     solidBlock: { number: 100, timestamp: 900_000 },
-    blockIds: new Map([[100, SOLID_ID]]),
+    blockIds: new Map([
+      [0, GENESIS],
+      [100, SOLID_ID],
+    ]),
     energyUsed: 14_630,
     logs: [],
     callOk: true,
@@ -257,7 +261,10 @@ const ctx = (
       options: {
         networks: {
           tronApi: () => w.api,
+          pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
+          independentPinnedTronApi: () => w.independent,
+          info: () => ({ genesisHash: GENESIS }),
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -437,6 +444,7 @@ describe("prepareDappTron with the SUN.io fixture", () => {
       owner: SUNIO_OWNER,
       fullHead: 65_636,
       blockIds: new Map([
+        [0, GENESIS],
         [52_480, SUNIO_REF_ID],
         [100, SOLID_ID],
       ]),
@@ -474,8 +482,9 @@ describe("prepareDappTron with the SUN.io fixture", () => {
 describe("submitDappTron", () => {
   const signed = async (
     w: World & { api: TronApi },
+    now?: () => number,
   ): Promise<{ ctx: RouteContext; raw: Uint8Array; tx: TrackedTransaction }> => {
-    const { ctx: route } = ctx(w);
+    const { ctx: route } = ctx(w, now);
     const raw = dappRawData();
     const prepared = await prepareDappTron(route, ACCOUNT, NET, raw);
     const tx = await prepared.submit(VERIFY, () => undefined);
@@ -541,11 +550,12 @@ describe("submitDappTron", () => {
   });
 
   it("an observed entry resolves through the poll lifecycle without ever broadcasting", async () => {
+    const now = { t: NOW };
     const w = world();
-    const { ctx: c, tx } = await signed(w);
+    const { ctx: c, tx } = await signed(w, () => now.t);
     expect(tx.raw).toBeUndefined();
     // still submitted: neither node knows the hash yet — and nothing is broadcast
-    await expect(pollTron(c, tx)).resolves.toBeUndefined();
+    await expect(pollTron(c, tx, new Map())).resolves.toBeUndefined();
     expect(w.broadcasts).toHaveLength(0);
     // the solid node proves inclusion → confirmed and final in one step
     const info = {
@@ -555,14 +565,20 @@ describe("submitDappTron", () => {
       receipt: { result: "SUCCESS" },
     };
     w.solidInfo.set(String(tx.hash), info);
-    const poll = await pollTron(c, tx);
+    const poll = await pollTron(c, tx, new Map());
     expect(poll).toMatchObject({ kind: "included", state: "confirmed", final: true });
     expect(w.broadcasts).toHaveLength(0);
     // a second entry never included and past expiration on the solidified head → dropped
     const { tx: tx2 } = await signed(w);
     w.solidInfo.clear();
     w.solidBlock = { number: 200, timestamp: EXPIRATION + 1 };
-    await expect(pollTron(c, tx2)).resolves.toMatchObject({ kind: "ended", state: "dropped" });
+    // no host endpoint configured — one poll claims, three consecutive polls prove
+    const ev = new Map();
+    await expect(pollTron(c, tx2, ev)).resolves.toBeUndefined();
+    now.t += 30_000;
+    await expect(pollTron(c, tx2, ev)).resolves.toBeUndefined();
+    now.t += 30_000;
+    await expect(pollTron(c, tx2, ev)).resolves.toMatchObject({ kind: "ended", state: "dropped" });
     expect(w.broadcasts).toHaveLength(0);
   });
 });

@@ -60,36 +60,59 @@ double-broadcast it.
 ## Rate limiting
 
 Three kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
-bindings counting requests per 10 s window (values in `wrangler.jsonc`) — answer `429 rate-limited`:
-every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet rotation inside a /48
-cannot hide and one /64 is not billed for its neighbours), then `x-client-id` + the most specific
-key on either the RPC limiter (transport routes) or the default one. Every request pays one unit up
-front; an RPC batch pays one more unit for each of its remaining calls.
+bindings counting requests per 60 s window (`IP_LIMITER` 3000, `RPC_LIMITER` 1500,
+`DEFAULT_LIMITER` 400; values in `wrangler.jsonc`, `Retry-After: 60`) — answer
+`429 rate-limited`: every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet
+rotation inside a /48 cannot hide and one /64 is not billed for its neighbours), then `x-client-id`
+
+- the most specific key on either the RPC limiter (transport routes) or the default one. Every
+  request pays one unit up front; an RPC batch pays one more unit for each of its remaining calls.
+  The numbers are sized at roughly 3 × the measured volley of one fresh all-family wallet cold start
+  (461 IP units, 200 on the RPC limiter's busiest `bitcoin:` key, 98 on the default limiter's
+  `service:` key), so the RPC binding also admits a used wallet's 1,451-call EVM refresh once.
 
 The **share limiter** (`SHARE_LIMITER`, 1000 units per 60 s) bills every upstream call at the
 provider's own price — compute units on Alchemy and dRPC (`src/budget/costs.ts` lists a row for
 every allow-listed method, plus `alchemy_getAssetTransfers`), one credit per call on request-priced
 endpoints. Before `send` fires, the forwarder charges
-`ceil(units × SHARE_LIMIT / (SHARE_OF_ACCOUNT × perMinute))` on every `account:` + IP key, so one
-IP buys at most `SHARE_OF_ACCOUNT` (5 %) of each account's tightest per-minute budget window
-(`src/config/accounts.ts` sets those budgets and their derivations). A refused charge never reaches
-the upstream — the request gets `429 rate-limited` — and a single delta over the whole 1000-unit
-window is `413 too-costly` without touching the limiter.
+`ceil(units × SHARE_LIMIT / (clientShare × perMinute))` on every `account:` + IP key, where
+`perMinute` is the account's tightest minute-scale (≤ 60 s) budget window — day and month windows
+stay out of the per-prefix price and are enforced only by the global budget below. Each account's
+`clientShare` (in `src/config/accounts.ts`, with the arithmetic in its comment) is the fraction of
+that per-minute capacity one prefix may spend; a high share is safe where the upstream call count
+cannot be multiplied per prefix — CoinGecko and DefiLlama serve through the gateway's shared price
+cache, so one prefix buys at most the distinct-asset misses, not a copy per request. A refused
+charge never reaches the upstream: the walk moves on to the route's next provider, and the client
+sees `429 rate-limited` only when every provider's share charge refuses (a single delta over the
+whole 1000-unit window on every provider is `413 too-costly` without touching the limiter).
 
 The **account budget** (`PROVIDER_BUDGET`, one Durable Object per provider account) is the global
 bound the share limiter cannot express: the Workers rate-limit binding counts per Cloudflare
 location, so only a Durable Object can hold one account's worldwide quota (the binding
 documentation's "Strict limits" section prescribes exactly this). Each object keeps a multi-window
-token bucket in its SQLite storage; each isolate holds a one-second adaptive lease from it (sized
-by what it actually spent, capped at 1 % of the account's tightest window) so the object sees
-seconds, not requests — a Durable Object's ~1,000 rps soft limit and its round trip are amortised
-away. A spent account refuses with its own wait time; the request fails over — never a breaker
-outage — and when every provider is spent or cooling, the 503 `unavailable` carries the shortest
-announced wait. Operator note: the budgets in `src/config/accounts.ts` assume the provider plans
-listed in each row's comment — review them when a plan changes.
+token bucket in its SQLite storage covering every window in the account's `budget` list — the
+sub-minute burst depth, the per-minute rate, and the day/month caps alike. Each isolate holds a
+one-second adaptive lease from it (sized by what it actually spent, capped at 1 % of the account's
+tightest window) so the object sees seconds, not requests — a Durable Object's ~1,000 rps soft
+limit and its round trip are amortised away. A spent account refuses with its own wait time; the
+request fails over — never a breaker outage — and when every provider is spent or cooling, the 503
+`unavailable` carries the shortest announced wait. Operator note: the budgets in
+`src/config/accounts.ts` assume the provider plans listed in each row's comment — review them when
+a plan changes.
 
 TRON providers are request-priced like Esplora: every allow-listed `/v1/tron` path is one bounded
 upstream call billed one request credit on the provider's account (`trongrid`, `tatum`).
+
+The global budgets are sized for ≥ 20 concurrently active all-family wallets each
+foreground-refreshing once per minute, plus 10 fresh all-family cold starts per minute (numbers
+from `packages/wallet-engine/tests/gateway-capacity.test.ts`): Alchemy 20 × 1,570 + 10 × 7,150 =
+102,900 CU/min ≤ the 480,000 CU/min budget; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
+4,000/min budget. CoinGecko and DefiLlama cold starts cost upstream calls only on a cold per-colo
+price cache (≈ 81 calls per colo per cache lifetime, well under the 400/min and 450/min budgets).
+TRON is the known exception: a fresh wallet costs 3 calls, but a used wallet's history fetches
+`getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh — which exceeds the free-tier
+TronGrid/Tatum POLICY budgets (144/min each); raising them waits on the operator's keyed-QPS
+confirmation and an engine-side history cache (outside this change).
 
 ## Prices
 
@@ -254,15 +277,28 @@ done
 - **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
   checking it has a passed CI run, and waits for a `production` reviewer other than the person who
   dispatched it.
-- A failed smoke rolls the environment back to its previous version (`wrangler rollback`).
+
+Each job runs two checks before deploying (`scripts/deploy-check.ts`):
+
+- **Check required secrets** — `wrangler secret list` against the env's `secrets.required` rows in
+  `wrangler.jsonc`; a missing name fails the job with the exact `wrangler secret put` command, and
+  an absent Worker means the first deploy is the manual operator step below.
+- **Plan rollback** — reads the active deployment's `deploy <sha>` annotation (the deploy step's
+  `--message`), fetches that commit and compares its `migrations` in `wrangler.jsonc` with the
+  deploying commit's. A failed smoke then rolls back to the planned version id. When the plan
+  finds no safe target — no previous deployment, an unannotated deployment, or differing
+  Durable Object migrations — the job alerts instead of rolling back, because Cloudflare refuses
+  a rollback across a DO class lifecycle change
+  (<https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/>).
 
 **Staging and production live in different Cloudflare accounts.** Workers Scripts Edit is
 account-wide, so a staging token in the production account could replace the production Worker,
 read its secrets and write its KV. Each environment pins its `account_id` in `wrangler.jsonc`, and
 the staging job refuses to deploy while staging's account equals production's or while the staging
-token is not refused by the production account. Staging still shares production's account today
-and stays blocked until it moves: create a separate account holding the staging zone, create its
-RISK KV namespace, and update `env.staging.account_id` and the KV ids in `wrangler.jsonc`.
+token is not refused by the production account. **Staging still shares production's account today
+and stays blocked by design until it has its own account**: create a separate account holding the
+staging zone, create its RISK KV namespace, and update `env.staging.account_id` and the KV ids in
+`wrangler.jsonc`.
 
 Both environments accept deployments from `main` only.
 `.github/rulesets/apply.sh <reviewer> <reviewer> [...]` creates them with those rules (two or more
@@ -274,3 +310,44 @@ Workers Routes permission). The workflow stays off until the repository variable
 is `true`.
 
 Roll back by hand with `bunx wrangler rollback --env production`.
+
+## Operator runbook — first production deploy
+
+1. Prerequisites: the production Cloudflare account (`env.production.account_id`) holds the
+   `gateway.meowl.xyz` zone; a GitHub `production` environment with required reviewers and secret
+   `CLOUDFLARE_API_TOKEN` scoped to that account only, with the permissions `wrangler deploy`
+   needs for Workers scripts, KV, Durable Objects and custom domains.
+2. The production `RISK` KV namespace exists and its id matches `wrangler.jsonc` (else
+   `bunx wrangler kv namespace create RISK --env production` and update the id in a PR).
+3. Confirm every operator assumption in `src/config/accounts.ts` against the provider consoles
+   and adjust rows in a PR if they differ: Alchemy PAYG (10,000 CUPS); dRPC PAYG created after
+   2026-10-19 (100 RPS); Ankr plan and rate; TronGrid key's QPS and daily quota (console); Tatum
+   plan ≥ Starter with auto-upgrade turned off; CoinGecko Analyst (500/min, 500k/month); Jupiter
+   keyed plan; 0x plan; Blockstream Enterprise credentials, credit balance, the per-call credit
+   cost of plain Esplora calls and an acceptable rate/day cap; DefiLlama and Across keyless use.
+4. Verify Ankr header auth with the real key:
+
+   ```bash
+   curl -s -H "x-api-key: $ANKR_API_KEY" -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+     https://rpc.ankr.com/arbitrumnova   # must return 0xa4ba
+   ```
+
+5. Write the ten `secrets.required` values to a file outside the repository (mode 600).
+6. From a clean checkout of a `main` commit whose CI passed:
+   `bun install --frozen-lockfile && bunx vp run @qntx/wallet-engine#build`, then in
+   `apps/gateway`
+   `bunx wrangler deploy --env production --secrets-file <file> --message "deploy <sha>"`
+   (this applies Durable Object migration v1); delete the file.
+7. `bun scripts/smoke.ts https://gateway.meowl.xyz production`. This first deploy has no
+   automatic rollback: there is no earlier version, and Cloudflare refuses a rollback across
+   migration v1 — fix forward, or detach the custom domain to withdraw the gateway.
+8. Set the repository variable `GATEWAY_DEPLOY=true`; later production deploys are the workflow's
+   manual dispatch on `main`.
+9. Watch `bunx wrangler tail --env production` for `budget-error`, `upstream-throttled` and
+   `all-providers-failed` during the first hours.
+10. Staging stays blocked until: a separate Cloudflare account holds the
+    `wallet-gateway-staging.qntx.org` zone and a `RISK` KV namespace; `env.staging.account_id`
+    and the KV ids are updated in `wrangler.jsonc`; the GitHub `staging` environment's
+    `CLOUDFLARE_API_TOKEN` is scoped to that account only; its first deploy is the same manual
+    `--secrets-file` step (with `ZEROX_API_KEY`).

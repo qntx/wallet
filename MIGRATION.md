@@ -1576,3 +1576,125 @@ Compiled snippet: `tests/migration/sessions.ts`.
 
 `EligibilityResponse["apps"]` is a map keyed by app id. Treat a missing app as unknown, not as
 available (`tests/migration/sessions.ts`).
+
+## 29. Solana v1 transactions
+
+Compiled snippet: `tests/migration/solana-v1.ts`.
+
+### dApps can now send v1 transactions
+
+The injected provider advertises `supportedTransactionVersions: ["legacy", 0, 1]` for
+`solana:signTransaction` and `solana:signAndSendTransaction`, so Wallet Standard dApps that
+check it start sending SIMD-0385 v1 transactions (message first, signatures last, up to 4096
+bytes). WalletConnect `solana_*` requests accept them as well. Nothing to change in a host that
+forwards the bytes unchanged; a host that pre-checks transaction size or parses the wire itself
+must accept the v1 envelope and the 4096-byte limit.
+
+### Error codes that go away
+
+| Before                                                                                                                                             | Now                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `ChainError("unsupported")` "Solana transaction version 1 is not supported" (`normalizeSolana`, `parseCompiledMessage`, `decodeSolanaTransaction`) | v1 parses; versions ≥ 2 keep the error                                 |
+| `ChainError("invalid-request")` "transaction exceeds the 1232-byte limit" for a v1 wire                                                            | only above 4096 bytes ("… 4096-byte limit")                            |
+| kernel `chain.sign` `invalid-input` for a v1 `solana.transaction`                                                                                  | signed under the vault's blind-signing policy, prompt as for legacy/v0 |
+
+New refusals (`invalid-request` unless noted) are the cluster's own sanitize failures: unknown
+config-mask bits (`unsupported`), a half-set priority-fee pair, invalid heap size, duplicate
+accounts, out-of-range indices, too many signatures/accounts/instructions, trailing bytes, and a
+v1 request carrying `lookupTables`.
+
+### `ParsedSolanaMessage`
+
+`version` is `"legacy" | 0 | 1`; narrow on `version === 1` to read `config`
+(`SolanaTransactionConfig`). Every version carries `lifetimeToken`.
+
+### The maximum fee of a v1 transaction
+
+The prompt's "Max fee" for a v1 transaction is `5000 × signatures + config priority fee`.
+ComputeBudget instructions inside a v1 transaction are no-ops on chain and no longer change the
+displayed fee. Note that on Agave an unset v1 compute-unit limit or loaded-accounts-data-size
+limit is zero, so such a transaction fails at execution (and still pays its fee) — that is the
+dApp's message, the wallet does not rewrite it.
+
+## 30. Typed-data families and requester text
+
+Compiled snippet: `tests/migration/typed-data-families.ts`. Only `@qntx/wallet-chains` changes
+for hosts.
+
+1. `OffchainOrder["protocol"]` gains `"0x"`. A host with an exhaustive `switch` over the protocol
+   must add the case.
+2. The typed-data `MessageContent` alternative gains three optional fields — `authorization`
+   (`TokenAuthorization`), `authority` (`AccountAuthority`) and `farcaster` (`FarcasterKey`). A
+   host that renders recognised typed data from `DisplayIntent.message` should render them;
+   documents carrying them have no generic `fields`.
+3. Classification changes a host may observe: EIP-3009 documents that were blind
+   (`typed-data-variant` / `typed-data-commitment`) are now described when bound to the signer;
+   Morpho/Aave authority documents that were generic `opaque` field lists are now `partial` with
+   summary `authorization`; text carrying non-RGI tag sequences or misplaced variation selectors
+   is now `hidden-characters` (blind); Meteora DLMM `swap`/`swap2` on Solana (legacy, v0 and v1)
+   are described swaps instead of `program-authority`.
+4. The kernel's prompt text marks requester lines with `· ` — hosts never parse prompt text, so
+   nothing to change; listed for completeness.
+
+## 31. Transaction tracking, L1 fees, TRON/Solana host endpoints and Hyperliquid corrections
+
+Compiled snippets: `tests/migration/stuck-transactions.ts`, `tests/migration/l1-fee-bound.ts`
+and `tests/migration/hyperliquid-corrections.ts`.
+
+### Stuck and never-resent transactions
+
+`dropped` is no longer produced by a timeout on EVM or Bitcoin. A transaction the network has not
+seen for 30 minutes stays `submitted` with `stuck: true`; offer `speed-up` / `cancel` requests for
+it. A row with `rebroadcast: false` was recovered from a broadcast whose outcome never settled: the
+wallet watches it but never resends it.
+
+Rows and call batches are no longer readable from `engine.transactions` while the vault is locked;
+they return at unlock.
+
+### L1 data fee maximum
+
+The displayed `l1Data` maximum on OP Stack and Scroll networks is larger (`raw × (9/8)^3`), and
+`approve` can now fail with "the L1 data fee rose — start over" (also before broadcast, when the
+signature took longer than one L1 slot and the fee rose): prepare the same request again.
+
+### TRON and Solana need a host endpoint behind the gateway
+
+When the gateway serves a TRON or Solana network, sends are refused unless the host passes its own
+endpoint for that network in `rpc` (the reference block / blockhash must be confirmed by it). Hosts
+that relied on the gateway alone must configure one, on testnets too.
+
+### Hyperliquid
+
+`not-placed` is gone from `HyperliquidOrderOutcome`; after a lost POST the outcome is `unknown`.
+Subscribe to `apps.hyperliquid.trade.corrections` for late answers; `HyperliquidOutcomeCorrection`
+is exported from `@qntx/wallet-engine/apps/hyperliquid`. Account live views report
+`{ status: "stale", data: undefined }` once closed or locked; `apps.controller` state has no
+`groups` while locked.
+
+## 32. Bitcoin account discovery and gateway operators
+
+No host-facing type or export changes, so there is no snippet.
+
+### Engine: Bitcoin balance reads follow BIP-44 account discovery
+
+`assets.refreshBitcoinGroup` and the Bitcoin history stream no longer walk the change chain of a
+template whose receive chain has no transactions — except `btc.bip84`, whose change chain receives
+the change of every `btc.bip44`/`btc.bip49` send. A seed that another wallet used only on the
+change chain of `btc.bip44`, `btc.bip49` or `btc.bip86` (never on the receive chain) no longer
+shows that balance; BIP-44 defines such an account as unused. Templates verified unused are
+re-scanned every discovery interval (10 minutes) instead of on every refresh; within that interval
+their `sources` entry reports zero totals. No host code change is required.
+
+### Gateway operators
+
+- A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` always set it); a
+  request without a usable address answers `400 invalid-request`. In-process embeddings pass
+  `clientAddress: "optional"` to `createGateway`.
+- `Account` rows now carry `clientShare` and `source`; flood limiters use 60-second periods
+  (`Retry-After: 60`).
+- The TRON node route serves a request carrying `x-gateway-provider` (`PROVIDER_PIN_HEADER`) from
+  that provider only, metered and budgeted like any other request; an unknown id answers
+  `400 invalid-request`. CORS allows the header.
+- The first production deploy is a manual operator step (`wrangler deploy --secrets-file`); follow
+  `apps/gateway/README.md` "Operator runbook — first production deploy". The deploy workflow
+  refuses an automatic rollback across a Durable Object migration and alerts instead.

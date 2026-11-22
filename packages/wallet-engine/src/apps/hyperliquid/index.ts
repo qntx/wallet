@@ -33,6 +33,7 @@ export type {
   HyperliquidActionOutcome,
   HyperliquidCancelOutcome,
   HyperliquidOrderOutcome,
+  HyperliquidOutcomeCorrection,
   HyperliquidRejectReason,
 } from "./exchange.ts";
 export type { HyperliquidPlaceResult, HyperliquidTrade } from "./trade.ts";

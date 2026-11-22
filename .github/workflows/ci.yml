@@ -101,7 +101,9 @@ jobs:
     services:
       # TronBox Runtime Environment — the java-tron devnet; produces one block per transaction.
       tre:
-        image: tronbox/tre:2.0.0
+        # tag 2.0.0, digest from https://hub.docker.com/v2/repositories/tronbox/tre/tags/2.0.0
+        # (checked 2026-11-22), rotate by re-reading that URL's `digest`.
+        image: tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
         ports:
           - 9090:9090
     steps:
@@ -120,3 +122,21 @@ jobs:
           ENGINE_E2E_TRON=1 bunx vitest run tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
+
+  # The real gateway in real workerd: Durable Object leasing, rate-limit bindings and the deploy
+  # bundle itself — `wrangler deploy --dry-run` compiles what Cloudflare would run.
+  gateway-workerd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - run: bun run --cwd apps/gateway test:workerd
+      - run: bunx wrangler deploy --dry-run --env production --outdir "$RUNNER_TEMP/gw-prod"
+        working-directory: apps/gateway
+      - run: bunx wrangler deploy --dry-run --env staging --outdir "$RUNNER_TEMP/gw-staging"
+        working-directory: apps/gateway

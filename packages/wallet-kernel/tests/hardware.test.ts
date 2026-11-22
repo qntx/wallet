@@ -479,7 +479,7 @@ describe("hardware factor: chain.sign", () => {
     );
     expect(seeds.length - before).toBe(1);
     expect(prompts(fake.calls, "open")).toStrictEqual([
-      { title: "Confirm signature", description: "Message:\nhello" },
+      { title: "Confirm signature", description: "Message:\n· hello" },
     ]);
   });
 });

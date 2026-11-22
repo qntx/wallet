@@ -19,6 +19,8 @@ const V3_REACTOR_1 = "0x0000000015757c461808EA25Eb309638B62681cf";
 const V2_REACTOR_1 = "0x00000011F84B9aa48e5f8aA8B9897600006289Be";
 const EXCLUSIVE_REACTOR_1 = "0x6000da47483062A0D734Ba3dc7576Ce6A0B645C4";
 const V3_REACTOR_8453 = "0x000000008a8330B5d1F43A62Bf4C673A49f27ba0";
+const V3_REACTOR_57073 = "0x000000007A1C8e570011EeDF86A2A35593013cBA";
+const V3_REACTOR_7777777 = "0x000000002C9A3812e15cf233190992E9a57EDB56";
 const PRIORITY_REACTOR_8453 = "0x000000001Ec5656dcdB24D90DFa42742738De729";
 const table: EvmTokenTable = { "1": { [USDC]: { symbol: "USDC", decimals: 6 } } };
 
@@ -367,6 +369,40 @@ describe("decodeEvm: UniswapX Permit2 witness orders", () => {
     ]);
   });
 
+  it.each([
+    [57073, V3_REACTOR_57073],
+    [7777777, V3_REACTOR_7777777],
+  ] as const)("a V3DutchOrder decodes on chain %d", (chainId, reactor) => {
+    const curve = { relativeBlocks: "10", relativeAmounts: ["0"] };
+    const doc = permitDoc(
+      "V3DutchOrder",
+      {
+        info: info(reactor),
+        cosigner: ATTACKER,
+        startingBaseFee: "0",
+        baseInput: {
+          token: WETH,
+          startAmount: "1",
+          curve,
+          maxAmount: "9",
+          adjustmentPerGweiBaseFee: "0",
+        },
+        baseOutputs: [
+          {
+            token: USDC,
+            startAmount: "2000000",
+            curve,
+            recipient: SIGNER,
+            minAmount: "1000000",
+            adjustmentPerGweiBaseFee: "0",
+          },
+        ],
+      },
+      { spender: reactor, chainId },
+    );
+    expect(orderOf(doc, `eip155:${chainId}`)?.protocol).toBe("uniswapx");
+  });
+
   it("a V3 reactor from another chain is not recognised", () => {
     const curve = { relativeBlocks: "10", relativeAmounts: ["0"] };
     const doc = permitDoc(
@@ -534,6 +570,43 @@ describe("decodeEvm: UniswapX Permit2 witness orders", () => {
       { spender: EXCLUSIVE_REACTOR_1, amount: "3" },
     );
     expect(orderOf(doc)?.give).toStrictEqual({ asset: WETH, amount: "3" });
+  });
+
+  it("a V3DutchOrder whose spender is not the order reactor is not decoded as an order", () => {
+    const curve = { relativeBlocks: "0", relativeAmounts: ["0"] };
+    const doc = permitDoc(
+      "V3DutchOrder",
+      {
+        info: info(V3_REACTOR_1),
+        cosigner: ATTACKER,
+        startingBaseFee: "0",
+        baseInput: {
+          token: WETH,
+          startAmount: "1",
+          curve,
+          maxAmount: "9",
+          adjustmentPerGweiBaseFee: "0",
+        },
+        baseOutputs: [
+          {
+            token: USDC,
+            startAmount: "1000000",
+            curve,
+            recipient: SIGNER,
+            minAmount: "900000",
+            adjustmentPerGweiBaseFee: "0",
+          },
+        ],
+      },
+      { spender: ATTACKER },
+    );
+    const intent = decode(doc);
+    expect(orderOf(doc)).toBeUndefined();
+    expect(intent.blind).toBe("typed-data-oversize");
+    expect(intent.warnings).toStrictEqual([
+      { kind: "permit2-witness", message: "the permit carries a witness with further terms" },
+    ]);
+    expect(intent.verifiability).toBe("partial");
   });
 
   it("an order with more outputs than the prompt lists is oversize-blind", () => {

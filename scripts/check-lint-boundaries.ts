@@ -818,6 +818,224 @@ const PROBES: Probe[] = [
     expect: fires(),
     bundle: { kind: "gateway", min: 1 },
   },
+
+  // --- GW-N3-09 boundary-bypass probes (the review's B1–B21, re-targeted at this tree). Every
+  // violation must be caught by at least one layer — source, bundle or lint — and every control
+  // keeps its documented outcome.
+
+  // B1: a computed dynamic import cannot be checked — fails closed.
+  {
+    file: `${KERNEL}/__lint_probe_b1__.ts`,
+    source: 'const s = "@qntx/wallet-engine";\nexport const m = import(s);\n',
+    expect: { rule: "imports", min: 1, unresolved: true },
+  },
+  // B2: a template literal without expressions is a literal — resolved and judged.
+  {
+    file: `${KERNEL}/__lint_probe_b2__.ts`,
+    source: "export const m = import(`@qntx/wallet-engine`);\n",
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B3: `new Function` hides the import from every module layer — the general lint rule is the
+  // layer that sees it.
+  {
+    file: `${KERNEL}/__lint_probe_b3__.ts`,
+    source: "export const f = new Function(\"return import('@qntx/wallet-engine')\");\n",
+    expect: firesGlobals(),
+  },
+  // B4: a computed globalThis member reaches eval — enclave globals lint.
+  {
+    file: `${KERNEL}/__lint_probe_b4__.ts`,
+    source: 'export const x = globalThis["ev" + "al"];\n',
+    expect: firesGlobals(),
+  },
+  // B5: a protocol file re-exporting the engine rides the kernel's legitimate protocol import.
+  {
+    file: "packages/wallet/src/protocol/__lint_probe_b5__.ts",
+    source: 'export * from "../../../wallet-engine/src/engine.ts";\n',
+    append: [
+      {
+        path: "packages/wallet/src/protocol/index.ts",
+        lines: 'export {} from "./__lint_probe_b5__.ts";\n',
+      },
+    ],
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B6: a chains file re-exporting the engine breaks the chains-leaf rule.
+  {
+    file: "packages/wallet-chains/src/__lint_probe_b6__.ts",
+    source: 'export * from "../../wallet-engine/src/index.ts";\n',
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B7: a `browser` conditional export is what the kernel build resolves — the bundle layer must
+  // judge the browser target, not the import one. The engine-pulling payload is reachable only
+  // through the condition, so a checker that ignores it never sees the pull.
+  {
+    file: `${KERNEL}/__lint_probe_b7__.ts`,
+    source: 'export const m = import("@qntx/wallet/protocol");\n',
+    edit: [
+      {
+        path: "packages/wallet/package.json",
+        search: '    "./protocol": {\n      "types": "./dist/protocol.d.mts",',
+        replacement:
+          '    "./protocol": {\n      "browser": "./src/protocol/__lint_probe_b7_payload__.ts",\n      "types": "./dist/protocol.d.mts",',
+      },
+    ],
+    extra: [
+      {
+        path: "packages/wallet/src/protocol/__lint_probe_b7_payload__.ts",
+        source: 'export * from "@qntx/wallet-engine";\n',
+      },
+    ],
+    also: ["packages/wallet/src/protocol/__lint_probe_b7_payload__.ts"],
+    expect: fires(),
+    bundle: {
+      kind: "enclave",
+      entry: "packages/wallet-kernel/src/index.ts",
+      min: 1,
+    },
+  },
+  // B8 control: a type-only worker import from the kernel — the source layer stays strict and
+  // reports it (documented acceptable), while nothing lands in the bundle.
+  {
+    file: `${KERNEL}/__lint_probe_b8__.ts`,
+    source:
+      'import type { KernelOptions } from "@qntx/wallet-worker/node";\nexport const x: KernelOptions | undefined = undefined;\n',
+    expect: fires(),
+    bundle: { kind: "enclave" },
+  },
+  // B9: `new Worker(new URL(<kernel>, import.meta.url))` is a module reference — judged like an
+  // import.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b9__.ts",
+    source:
+      'declare const Worker: new (url: URL) => unknown;\nexport const w = new Worker(new URL("../../wallet-kernel/src/index.ts", import.meta.url));\n',
+    expect: fires(),
+  },
+  // B10: `new URL(<kernel>, import.meta.url)` is a module reference too.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b10__.ts",
+    source: 'export const u = new URL("../../wallet-kernel/src/kernel.ts", import.meta.url);\n',
+    expect: fires(),
+  },
+  // B11: `?worker` suffixed imports do not resolve — fail closed at the source layer; the bundler
+  // refuses or flags the kernel file it lands.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b11__.ts",
+    source:
+      'import * as a from "../../wallet-kernel/src/index.ts?worker";\nimport * as b from "../../wallet-kernel/src/index.ts?worker&inline";\nexport const x = [typeof a, typeof b];\n',
+    expect: { rule: "imports", min: 2, unresolved: true },
+    bundle: { kind: "main", min: 1 },
+  },
+  // B12: same for `?raw`.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b12__.ts",
+    source:
+      'import * as r from "../../wallet-kernel/src/index.ts?raw";\nexport const x = typeof r;\n',
+    expect: { rule: "imports", min: 1, unresolved: true },
+    bundle: { kind: "main", min: 1 },
+  },
+  // B13 control: a pack entry named after an installed package cannot redirect the bare specifier
+  // — pack entry names are dist subpaths, so `viem` still resolves to the real installed package.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b13__.ts",
+    source: importing("viem"),
+    edit: [
+      {
+        path: "packages/wallet-engine/vite.config.ts",
+        search: '        "gateway-contract": "src/gateway/contract/index.ts",',
+        replacement:
+          '        "gateway-contract": "src/gateway/contract/index.ts",\n        viem: "../wallet-kernel/src/index.ts",',
+      },
+    ],
+    expect: "clean",
+  },
+  // B14 control: a node_modules symlink into workspace source — not walked, resolves as an
+  // external package for a main entry (documented: not landed).
+  {
+    file: "packages/wallet-engine/src/__lint_probe_b14__.ts",
+    source: importing("n3-probe-link"),
+    extra: [{ path: "node_modules/n3-probe-link", link: "../packages/wallet-kernel/src" }],
+    expect: "clean",
+    bundle: { kind: "main" },
+  },
+  // B15: a third-party trampoline package re-exporting the engine — the enclave bundle keeps
+  // nothing external, so the trampoline is bundled and its workspace re-export lands and is
+  // judged. The source layer sees only the specifier (documented clean there).
+  {
+    file: `${KERNEL}/__lint_probe_b15__.ts`,
+    source: importing("n3-probe-tramp"),
+    extra: [
+      {
+        path: "node_modules/n3-probe-tramp/package.json",
+        source: '{ "name": "n3-probe-tramp", "type": "module", "exports": "./index.js" }\n',
+      },
+      {
+        path: "node_modules/n3-probe-tramp/index.js",
+        source: 'export * from "@qntx/wallet-engine";\n',
+      },
+    ],
+    expect: "clean",
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B16 control: viem is a declared @qntx/wallet-kernel dependency — bundling it is legitimate.
+  {
+    file: `${KERNEL}/__lint_probe_b16__.ts`,
+    source: importing("viem"),
+    expect: "clean",
+    bundle: { kind: "enclave" },
+  },
+  // B17: `export * as` re-exports the engine from kernel source.
+  {
+    file: `${KERNEL}/__lint_probe_b17__.ts`,
+    source: 'export * as e from "../../wallet-engine/src/index.ts";\n',
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B18: `import.meta.resolve(<engine>)` is a module reference — resolved and judged.
+  {
+    file: `${KERNEL}/__lint_probe_b18__.ts`,
+    source: 'export const r = import.meta.resolve("@qntx/wallet-engine");\n',
+    expect: fires(),
+  },
+  // B19 control: the contract entry re-exporting an engine-internal file stays inside the
+  // contract closure the gateway may bundle (documented: allowed).
+  {
+    file: "packages/wallet-engine/src/gateway/contract/__lint_probe_b19__.ts",
+    source: 'export * from "../../chains/bitcoin-scan.ts";\n',
+    append: [
+      {
+        path: "packages/wallet-engine/src/gateway/contract/index.ts",
+        lines: 'export {} from "./__lint_probe_b19__.ts";\n',
+      },
+    ],
+    expect: "clean",
+    bundle: { kind: "gateway" },
+  },
+  // B20: a JSON import of the engine manifest is still a load into the kernel.
+  {
+    file: `${KERNEL}/__lint_probe_b20__.ts`,
+    source:
+      'import p from "../../wallet-engine/package.json" with { type: "json" };\nexport const x = p;\n',
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
+  // B21: a declared devDependency does not permit the kernel to load the host package.
+  {
+    file: `${KERNEL}/__lint_probe_b21__.ts`,
+    source: importing("@qntx/wallet-worker/node"),
+    edit: [
+      {
+        path: "packages/wallet-kernel/package.json",
+        search: '  "devDependencies": {',
+        replacement: '  "devDependencies": {\n    "@qntx/wallet-worker": "workspace:*",',
+      },
+    ],
+    expect: fires(),
+    bundle: { kind: "enclave", min: 1 },
+  },
 ];
 
 const created: string[] = [];
@@ -942,7 +1160,12 @@ try {
   };
   for (const diagnostic of report.diagnostics) {
     const file = diagnostic.filename.replaceAll("\\", "/");
-    if (diagnostic.code.includes("no-restricted-globals") || diagnostic.code.includes("no-undef")) {
+    if (
+      diagnostic.code.includes("no-restricted-globals") ||
+      diagnostic.code.includes("no-undef") ||
+      diagnostic.code.includes("no-new-func") ||
+      diagnostic.code.includes("no-eval")
+    ) {
       entry(file).globals += 1;
     }
   }

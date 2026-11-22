@@ -11,15 +11,25 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
+import { createHyperliquidAccount } from "../src/apps/hyperliquid/account.ts";
 import { createHyperliquidAgentRegistry } from "../src/apps/hyperliquid/agents.ts";
+import type { HyperliquidAgentRegistry, HyperliquidGroup } from "../src/apps/hyperliquid/agents.ts";
+import { createHyperliquidClock } from "../src/apps/hyperliquid/clock.ts";
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
+import { createHyperliquidExchange } from "../src/apps/hyperliquid/exchange.ts";
+import type { HyperliquidOutcomeCorrection } from "../src/apps/hyperliquid/exchange.ts";
+import { createHyperliquidMarkets } from "../src/apps/hyperliquid/markets.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
 import type {
   HyperliquidProvider,
   HyperliquidProviderInternals,
 } from "../src/apps/hyperliquid/provider.ts";
+import { createHyperliquidSocket } from "../src/apps/hyperliquid/socket.ts";
+import type { AppSocket } from "../src/apps/hyperliquid/socket.ts";
+import { createHyperliquidTransport } from "../src/apps/hyperliquid/transport.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -28,6 +38,7 @@ const PASSWORD = "correct horse battery staple";
 const NOW = Date.now();
 const DAY = 86_400_000;
 const CLOID = "0x07070707070707070707070707070707";
+const MASTER = "0x000000000000000000000000000000000000dead";
 
 const fixture = (name: string): { response: unknown } =>
   JSON.parse(
@@ -102,7 +113,14 @@ const drive = async <T>(timers: Timers, promise: Promise<T>): Promise<T> => {
     await new Promise((resolve) => {
       setImmediate(resolve);
     });
-    timers.step();
+    if (!timers.step()) {
+      /* Nothing is due on the manual clock, so the call waits on real work — the kernel signing
+         in its worker. Give it real time instead of spinning through the iteration budget. */
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between timer steps.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1);
+      });
+    }
     if (settled) {
       break;
     }
@@ -111,6 +129,21 @@ const drive = async <T>(timers: Timers, promise: Promise<T>): Promise<T> => {
     throw new Error("the call never settled");
   }
   return outcome;
+};
+
+/** Step the manual timers like `drive` until `reached` holds — mid-call, before it settles. */
+const stepUntil = async (timers: Timers, reached: () => boolean): Promise<void> => {
+  for (let i = 0; i < 10_000; i += 1) {
+    if (reached()) {
+      return;
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between steps.
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    timers.step();
+  }
+  throw new Error("the awaited point was never reached");
 };
 
 type InfoAnswers = (body: Record<string, unknown>) => unknown;
@@ -205,26 +238,90 @@ const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   return shared;
 };
 
+class FakeSocket implements AppSocket {
+  readyState = 0;
+  readonly sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { readonly data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  send(data: string): void {
+    this.sent.push(data);
+  }
+  close(): void {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+  open(): void {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  push(frame: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
+  frames(method: string): unknown[] {
+    return this.sent
+      .map((f) => JSON.parse(f) as { method?: string; subscription?: unknown })
+      .filter((f) => f.method === method)
+      .map((f) => f.subscription);
+  }
+}
+
 const rig = async (
   posted: Posted[],
   timers: Timers,
   answers: Parameters<typeof serve>[2] = {},
+  extra: {
+    readonly random?: (length: number) => Uint8Array;
+    readonly sockets?: FakeSocket[];
+  } = {},
 ): Promise<{
   provider: HyperliquidProvider & HyperliquidProviderInternals;
   wallet: Wallet;
   walletId: string;
 }> => {
   const { wallet, walletId } = await nodeWallet();
+  const random = extra.random ?? ((length: number) => new Uint8Array(length).fill(7));
   const provider = createHyperliquidProvider({
     network: "Testnet",
     fetch: serve(posted, timers, answers),
     now: timers.now,
     setTimer: timers.setTimer,
     wallet,
-    random: (length) => new Uint8Array(length).fill(7),
+    random,
     logger: { warn: () => undefined },
+    ...(extra.sockets === undefined
+      ? {}
+      : {
+          socket: createHyperliquidSocket({
+            network: "Testnet",
+            socket: () => {
+              const s = new FakeSocket();
+              extra.sockets?.push(s);
+              return s;
+            },
+            setTimer: timers.setTimer,
+            random,
+          }),
+        }),
   });
   return { provider, wallet, walletId };
+};
+
+/** A macrotask flushes every queued microtask — owner resolution, SDK chains, fetches. */
+const tick = async (): Promise<void> => {
+  await new Promise((resolve) => {
+    setTimeout(resolve);
+  });
+};
+
+/** Step the manual timers and flush the async work one poll round at a time. */
+const pump = async (timers: Timers, steps = 1): Promise<void> => {
+  for (let i = 0; i < steps; i += 1) {
+    timers.step();
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between steps.
+    await tick();
+  }
 };
 
 let agentAddress: string | undefined;
@@ -274,6 +371,11 @@ const exchangeCount = (posted: Posted[]): number =>
 /** An info answer that serves `value` only for `type` — keeps conditionals out of test bodies. */
 const whenType = (type: string, value: unknown): InfoAnswers => {
   return (body) => (body["type"] === type ? value : undefined);
+};
+
+/** OrderStatus stays unknownOid until `exists` — the endpoint catching up after the call. */
+const orderStatusAfter = (exists: () => boolean, found: unknown): InfoAnswers => {
+  return (body) => (body["type"] === "orderStatus" && exists() ? found : undefined);
 };
 
 /** An info answer that throws for `type` — orderStatus polling failures. */
@@ -341,7 +443,7 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     ]);
   });
 
-  it("a 502 reconciles to not-placed when the cloid stays unknown past the deadline", async () => {
+  it("a 502 reconciles to unknown — unknownOid can never prove the order was not placed", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();
     const { provider, wallet, walletId } = await rig(posted, timers, {
@@ -352,7 +454,7 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     const result = await drive(timers, provider.trade.place(group, ORDER));
 
     expect(exchangeCount(posted)).toBe(1);
-    expect(result.outcomes).toStrictEqual([{ kind: "not-placed", cloid: CLOID }]);
+    expect(result.outcomes).toStrictEqual([{ kind: "unknown", cloid: CLOID }]);
     // expiresAfter + 5 s skew + 2 s slack — the last poll is past now+22 s.
     expect(timers.time).toBeGreaterThan(NOW + 22_000);
   });
@@ -460,6 +562,352 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
 
     expect(result).toStrictEqual({ kind: "unknown" });
     expect(exchangeCount(posted)).toBe(1);
+  });
+});
+
+describe("hyperliquid trade — late reconciliation", () => {
+  const UNKNOWN = { kind: "unknown" as const, cloid: CLOID };
+
+  it("unknownOid until the deadline, filled after — unknown, then a correction", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    let orderExists = false;
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: async () => new Promise<never>(() => {}),
+      info: orderStatusAfter(() => orderExists, orderFound("filled", { sz: "0" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+    // expiresAfter + 5 s skew + 2 s slack — the last poll ran past now+22 s.
+    expect(timers.time).toBeGreaterThan(NOW + 22_000);
+
+    // The order committed after all: the endpoint knows it on the late poll's next beat.
+    orderExists = true;
+    await pump(timers, 3);
+    expect(corrections).toStrictEqual([
+      {
+        group,
+        cloid: CLOID,
+        outcome: { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05" },
+      },
+    ]);
+    // A corrected cloid leaves the pending set — no further orderStatus calls for it.
+    const calls = posted.filter(isOrderStatusPost).length;
+    await pump(timers, 3);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(calls);
+  });
+
+  it("the late window expires — no correction, nothing left to poll", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: async () => new Promise<never>(() => {}),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+
+    // Sixty-one 10 s beats carry the pending cloid past its ten-minute window.
+    await pump(timers, 62);
+    expect(corrections).toStrictEqual([]);
+    // The expired entry dropped out — no late-poll timer remains.
+    expect(timers.step()).toBe(false);
+  });
+
+  it("locking the vault drops the pending set — the late poll never fires again", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: async () => new Promise<never>(() => {}),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+    const calls = posted.filter(isOrderStatusPost).length;
+
+    await wallet.vault.lock();
+    await pump(timers, 3);
+    expect(corrections).toStrictEqual([]);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(calls);
+    expect(timers.step()).toBe(false);
+    await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+  });
+
+  it("a lock and unlock during the in-call reconcile leave its cloid out of the new session", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    let orderExists = false;
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: async () => new Promise<never>(() => {}),
+      info: orderStatusAfter(() => orderExists, orderFound("filled", { sz: "0" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    // The POST is lost; step until the in-call orderStatus polling has begun.
+    const placing = provider.trade.place(group, ORDER);
+    await stepUntil(timers, () => posted.some(isOrderStatusPost));
+
+    // The session that placed the order ends while its reconcile is still polling.
+    await wallet.vault.lock();
+    await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+
+    const result = await drive(timers, placing);
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+
+    // The order committed after all — but it belongs to the locked session: no late poll, no
+    // correction in the new one.
+    orderExists = true;
+    await pump(timers, 3);
+    expect(corrections).toStrictEqual([]);
+  });
+
+  it("the pending set is capped — the oldest unknown cloid is evicted", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    let orderExists = false;
+    const { wallet, walletId } = await nodeWallet();
+    const clock = createHyperliquidClock(timers.now);
+    const transport = createHyperliquidTransport({
+      network: "Testnet",
+      fetch: serve(posted, timers, {
+        exchange: async () => new Promise<never>(() => {}),
+        info: orderStatusAfter(() => orderExists, orderFound("filled", { sz: "0" })),
+      }),
+      setTimer: timers.setTimer,
+      now: timers.now,
+      clock,
+    });
+    agentAddress ??= await sessions(wallet).create({
+      scheme: "hyperliquid-l1-agent",
+      owner: { walletId, groupIndex: 0 },
+      scope: "Testnet",
+      name: "reconcile",
+      validUntil: NOW + DAY,
+    });
+    const group: HyperliquidGroup = { walletId, groupIndex: 0 };
+    const exchange = createHyperliquidExchange({
+      wallet,
+      transport,
+      clock,
+      markets: createHyperliquidMarkets({ transport }),
+      account: createHyperliquidAccount({ transport }),
+      registry: {
+        require: () => ({ address: agentAddress!, owner: MASTER, validUntil: NOW + DAY }),
+      } as unknown as HyperliquidAgentRegistry,
+      now: timers.now,
+      setTimer: timers.setTimer,
+    });
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    exchange.corrections.subscribe((correction) => corrections.push(correction));
+
+    // 64 + 1 orders across two lost POSTs — one cloid over the pending cap.
+    const cloid = (n: number): string => `0x${n.toString(16).padStart(32, "0")}`;
+    const action = (from: number, count: number): HyperliquidL1Action => ({
+      type: "order",
+      orders: Array.from({ length: count }, (_, i) => ({
+        a: 0,
+        b: true,
+        p: "58000",
+        s: "0.05",
+        r: false,
+        t: { limit: { tif: "Gtc" as const } },
+        c: cloid(from + i),
+      })),
+      grouping: "na",
+    });
+    const first = await drive(timers, exchange.order(group, action(1, 64)));
+    const second = await drive(timers, exchange.order(group, action(65, 1)));
+    expect(first.every((outcome) => outcome.kind === "unknown")).toBe(true);
+    expect(second).toStrictEqual([{ kind: "unknown", cloid: cloid(65) }]);
+
+    // Every pending cloid fills late; the evicted first one earns no correction.
+    orderExists = true;
+    await pump(timers, 3);
+    const corrected = new Set(corrections.map((correction) => correction.cloid));
+    expect(corrected.has(cloid(1))).toBe(false);
+    expect(corrected.size).toBe(64);
+  });
+
+  it("a checksummed user and a mixed-case cloid still match the pending entry", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { wallet, walletId } = await nodeWallet();
+    const clock = createHyperliquidClock(timers.now);
+    const transport = createHyperliquidTransport({
+      network: "Testnet",
+      fetch: serve(posted, timers, { exchange: async () => new Promise<never>(() => {}) }),
+      setTimer: timers.setTimer,
+      now: timers.now,
+      clock,
+    });
+    agentAddress ??= await sessions(wallet).create({
+      scheme: "hyperliquid-l1-agent",
+      owner: { walletId, groupIndex: 0 },
+      scope: "Testnet",
+      name: "reconcile",
+      validUntil: NOW + DAY,
+    });
+    const group: HyperliquidGroup = { walletId, groupIndex: 0 };
+    const exchange = createHyperliquidExchange({
+      wallet,
+      transport,
+      clock,
+      markets: createHyperliquidMarkets({ transport }),
+      account: createHyperliquidAccount({ transport }),
+      registry: {
+        require: () => ({ address: agentAddress!, owner: MASTER, validUntil: NOW + DAY }),
+      } as unknown as HyperliquidAgentRegistry,
+      now: timers.now,
+      setTimer: timers.setTimer,
+    });
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    exchange.corrections.subscribe((correction) => corrections.push(correction));
+
+    const cloid = "0xabcdef0123456789abcdef0123456789";
+    const action: HyperliquidL1Action = {
+      type: "order",
+      orders: [
+        {
+          a: 0,
+          b: true,
+          p: "58000",
+          s: "0.05",
+          r: false,
+          t: { limit: { tif: "Gtc" } },
+          c: cloid,
+        },
+      ],
+      grouping: "na",
+    };
+    const outcomes = await drive(timers, exchange.order(group, action));
+    expect(outcomes).toStrictEqual([{ kind: "unknown", cloid }]);
+
+    /* The echo spells the owner checksummed and the cloid upper-cased — the same order. */
+    const upper = `0X${cloid.slice(2).toUpperCase()}`;
+    exchange.sighted(MASTER.toUpperCase(), {
+      orders: [{ coin: "BTC", oid: 99, cloid: upper }],
+    });
+    expect(corrections).toStrictEqual([
+      { group, cloid: upper, outcome: { kind: "resting", oid: 99, cloid: upper } },
+    ]);
+  });
+
+  it("an openOrders frame carrying the pending cloid corrects to resting without a poll", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const sockets: FakeSocket[] = [];
+    const { provider, wallet, walletId } = await rig(
+      posted,
+      timers,
+      { exchange: async () => new Promise<never>(() => {}) },
+      { sockets },
+    );
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+    const calls = posted.filter(isOrderStatusPost).length;
+
+    const view = provider.live?.openOrders(group);
+    await tick();
+    const s = sockets[0]!;
+    s.open();
+    s.push({
+      channel: "subscriptionResponse",
+      data: { method: "subscribe", subscription: s.frames("subscribe")[0] },
+    });
+    const { user } = s.frames("subscribe")[0] as { user: string };
+    s.push({
+      channel: "openOrders",
+      data: { dex: "", user, orders: [{ coin: "BTC", oid: 99, cloid: CLOID }] },
+    });
+    expect(corrections).toStrictEqual([
+      { group, cloid: CLOID, outcome: { kind: "resting", oid: 99, cloid: CLOID } },
+    ]);
+    // Proven by the frame — the late poll made no orderStatus call for it.
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(calls);
+    await view?.close();
+  });
+
+  it("a fills frame carrying the pending cloid triggers an immediate orderStatus lookup", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const sockets: FakeSocket[] = [];
+    let orderExists = false;
+    const { provider, wallet, walletId } = await rig(
+      posted,
+      timers,
+      {
+        exchange: async () => new Promise<never>(() => {}),
+        info: orderStatusAfter(() => orderExists, orderFound("filled", { sz: "0" })),
+      },
+      { sockets },
+    );
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+    const calls = posted.filter(isOrderStatusPost).length;
+
+    const view = provider.live?.fills(group);
+    await tick();
+    const s = sockets[0]!;
+    s.open();
+    s.push({
+      channel: "subscriptionResponse",
+      data: { method: "subscribe", subscription: s.frames("subscribe")[0] },
+    });
+    const { user } = s.frames("subscribe")[0] as { user: string };
+    orderExists = true;
+    s.push({
+      channel: "userFills",
+      data: { user, fills: [{ tid: 1, coin: "BTC", cloid: CLOID, oid: 424242 }], isSnapshot: true },
+    });
+    await tick();
+    // The fill alone could not prove the fill — orderStatus was re-asked immediately.
+    expect(posted.filter(isOrderStatusPost).length).toBeGreaterThan(calls);
+    expect(corrections).toStrictEqual([
+      {
+        group,
+        cloid: CLOID,
+        outcome: { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05" },
+      },
+    ]);
+    await view?.close();
+  });
+
+  it("a filled answer without avgPx still reconciles — a misread is never a verdict", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => ({
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ filled: { totalSz: "0.05", oid: 8 } }] } },
+      }),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    // orderStatus carries no fill price — without avgPx the status list answer cannot be trusted.
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
   });
 });
 

@@ -11,7 +11,7 @@ import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { readBitcoin } from "../src/assets/bitcoin.ts";
-import { scripthash } from "../src/chains/bitcoin-scan.ts";
+import { scriptPubKey, scripthash } from "../src/chains/bitcoin-scan.ts";
 import { assessBitcoinPsbts } from "../src/requests/risk.ts";
 import { createBitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { RouteContext, SignParams } from "../src/transactions/route.ts";
@@ -31,15 +31,43 @@ const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 
 // -- readBitcoin surface -----------------------------------------------------
 
-const esploraFor = (address: string, utxos: ReadonlyArray<unknown>) => {
+type UtxoJson = {
+  readonly txid: string;
+  readonly vout: number;
+  readonly value: number;
+  readonly status: { readonly block_height: number };
+};
+
+/** Serves the `/utxo` list AND the matching `/txs` history the read path now derives from. */
+const esploraFor = (address: string, utxos: ReadonlyArray<UtxoJson>) => {
   const hash = scripthash(address, NETWORK);
+  const script = hex.encode(scriptPubKey(address, NETWORK));
   return {
-    get: async (path: string) => Promise.resolve(path === `/scripthash/${hash}/utxo` ? utxos : []),
+    get: async (path: string) => {
+      if (path === `/scripthash/${hash}/utxo`) {
+        return Promise.resolve(utxos);
+      }
+      if (path === `/scripthash/${hash}/txs`) {
+        return Promise.resolve(
+          utxos.map((u) => ({
+            txid: u.txid,
+            vin: [{ txid: "ff".repeat(32), vout: 0 }],
+            vout: Array.from({ length: u.vout + 1 }, (_, i) =>
+              i === u.vout
+                ? { scriptpubkey: script, value: u.value }
+                : { scriptpubkey: "6a", value: 0 },
+            ),
+            status: { confirmed: true, block_height: u.status.block_height },
+          })),
+        );
+      }
+      return Promise.resolve([]);
+    },
     post: async () => Promise.reject(new Error("no broadcast")),
   };
 };
 
-const utxoJson = (txid: string, vout: number, value: number, height = 800_000): unknown => ({
+const utxoJson = (txid: string, vout: number, value: number, height = 800_000): UtxoJson => ({
   txid,
   vout,
   value,

@@ -361,12 +361,42 @@ describe("hyperliquid live", () => {
     expect(view.getState().status).toBe("live");
     lock();
     await tick();
-    expect(view.getState().status).toBe("stale");
+    /* A locked vault holds no account data — the view reports stale with nothing left. */
+    expect(view.getState()).toStrictEqual({
+      status: "stale",
+      data: undefined,
+      updatedAt: undefined,
+    });
     /* A frame after the lock-close must not update the view. */
     s.push({
       channel: "userFills",
       data: { user: OWNER, fills: [{ tid: 7 }] },
     });
-    expect(view.getState().data!.map((f) => f.tid)).toStrictEqual([1]);
+    expect(view.getState().data).toBeUndefined();
+  });
+
+  it("a re-confirmation without a closed event rebuilds from a fresh snapshot — deltas buffer", async () => {
+    const { live, sockets, http, confirm } = rig();
+    http["recentTrades"] = () => [trade(9)];
+    const view = live.trades("BTC");
+    const s = sockets[0]!;
+    s.open();
+    confirm(s, s.frames("subscribe")[0]);
+    s.push({ channel: "trades", data: [trade(1)] });
+    await tick();
+    expect(view.getState().data!.map((t) => t.tid)).toStrictEqual([1, 9]);
+    /* A re-`open` re-sends every subscription and un-confirms it — the fresh echo re-confirms
+       the view without a `closed` event ever firing; the view must wait for a fresh snapshot
+       while deltas buffer instead of merging onto the stale window. */
+    http["recentTrades"] = () => [trade(8)];
+    s.open();
+    confirm(s, s.frames("subscribe").at(-1));
+    expect(view.getState().status).toBe("connecting");
+    s.push({ channel: "trades", data: [trade(2)] });
+    /* Still the old window — without the ready reset this would already read [2, 1, 9]. */
+    expect(view.getState().data!.map((t) => t.tid)).toStrictEqual([1, 9]);
+    await tick();
+    expect(view.getState().data!.map((t) => t.tid)).toStrictEqual([2, 8]);
+    await view.close();
   });
 });

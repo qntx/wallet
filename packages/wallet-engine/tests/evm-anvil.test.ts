@@ -22,7 +22,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
-import { UNKNOWN_DROP_MS } from "../src/transactions/broadcast.ts";
+import { STUCK_AFTER_MS } from "../src/transactions/broadcast.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { approval } from "./approval.ts";
 import {
@@ -1118,7 +1118,7 @@ describe.runIf(RUN)("anvil e2e: a released lower nonce is re-filled", () => {
     }
   }, 120_000);
 
-  it("a lost send dropped after the window frees its nonce the same way", async () => {
+  it("a lost send stuck after the window keeps its nonce — speed-up is the way through", async () => {
     const port = 18561;
     const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
     await sleep(1500);
@@ -1139,20 +1139,29 @@ describe.runIf(RUN)("anvil e2e: a released lower nonce is re-filled", () => {
       expect(b.nonce).toBe(1);
       gate.setDrop(true);
       await timers.fire();
-      clock.t += UNKNOWN_DROP_MS + 1000;
+      clock.t += STUCK_AFTER_MS + 1000;
       await timers.fire();
-      expect(ctl.getState().txs[a.id]?.state).toBe("dropped");
+      // Never terminal on a timer: A marks stuck and keeps holding nonce 0, so C signs 2.
+      expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
+      expect(ctl.getState().txs[a.id]?.stuck).toBe(true);
       gate.setDrop(false);
       const c = await sendE2e(ctl, acct);
       expect(c.state).toBe("submitted");
-      expect(c.nonce).toBe(0);
+      expect(c.nonce).toBe(2);
+      // The remedy is explicit: a speed-up signs nonce 0 again and outbids whatever pool copy
+      // may exist; it lands and the original is replaced.
+      const bumped = await replaceVia(ctl, a.id, "speed-up", VERIFY);
+      expect(bumped.state).toBe("submitted");
+      expect(bumped.nonce).toBe(0);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
       await timers.fire();
       const { txs } = ctl.getState();
+      expect(txs[bumped.id]?.state).toBe("confirmed");
+      expect(txs[a.id]?.state).toBe("replaced");
       expect(txs[b.id]?.state).toBe("confirmed");
       expect(txs[c.id]?.state).toBe("confirmed");
       const count = await rpcCall(url, "eth_getTransactionCount", [from, "latest"]);
-      expect(Number(BigInt(String(count)))).toBe(2);
+      expect(Number(BigInt(String(count)))).toBe(3);
     } finally {
       proc.kill();
     }

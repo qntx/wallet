@@ -1,5 +1,6 @@
 import { getU32Decoder, getU64Decoder } from "@solana/codecs";
 
+import { associatedTokenAddress } from "./ata.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 import { resolveAccountIndex } from "./message.ts";
 
@@ -11,6 +12,8 @@ export const RAYDIUM_CLMM_PROGRAM = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWq
 export const RAYDIUM_CPMM_PROGRAM = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
 /** Orca Whirlpool — orca-so/whirlpools programs/whirlpool/src/lib.rs declare_id! */
 export const WHIRLPOOL_PROGRAM = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
+/** Meteora DLMM — meteora-ag/dlmm-sdk, the lb_clmm program id in the IDL metadata. */
+export const METEORA_DLMM_PROGRAM = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 
 /** SPL Token — AMM v4 asserts its token program account equals this id (processor.rs check). */
 const SPL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -18,6 +21,8 @@ const SPL_TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 /* Anchor discriminators sha256("global:<name>")[0..8], computed locally. */
 const SWAP_V2 = Uint8Array.from([0x2b, 0x04, 0xed, 0x0b, 0x1a, 0xc9, 0x1e, 0x62]);
 const SWAP_BASE_INPUT = Uint8Array.from([0x8f, 0xbe, 0x5a, 0xda, 0xc4, 0x1e, 0x33, 0xde]);
+const DLMM_SWAP = Uint8Array.from([0xf8, 0xc6, 0x9e, 0x91, 0xe1, 0x75, 0x87, 0xc8]);
+const DLMM_SWAP2 = Uint8Array.from([0x41, 0x4b, 0x3f, 0x4c, 0xeb, 0x5b, 0x5b, 0x88]);
 
 const u32 = getU32Decoder();
 const u64 = getU64Decoder();
@@ -27,13 +32,18 @@ const startsWith = (data: Uint8Array, prefix: Uint8Array): boolean =>
 
 export type AmmSwap = {
   readonly program: string;
-  readonly protocol: "raydium-amm-v4" | "raydium-clmm" | "raydium-cpmm" | "orca-whirlpool";
+  readonly protocol:
+    | "raydium-amm-v4"
+    | "raydium-clmm"
+    | "raydium-cpmm"
+    | "orca-whirlpool"
+    | "meteora-dlmm";
   /** The owner/authority slot that must be the signer. */
   readonly authority: string;
   readonly sourceAccount: string;
   readonly destinationAccount: string;
-  readonly sourceMint?: string;
-  readonly destinationMint?: string;
+  readonly sourceMint?: string | undefined;
+  readonly destinationMint?: string | undefined;
   /** The destination mint's token program when the instruction names it. */
   readonly destinationTokenProgram?: string;
   /** The most the swap may take from the source account. */
@@ -253,6 +263,92 @@ export const decodeAmmSwapIx = (
       sourceMint,
       destinationMint,
       destinationTokenProgram,
+      maxIn: u64.decode(data, 8),
+      minOut: u64.decode(data, 16),
+    };
+  }
+
+  if (program === METEORA_DLMM_PROGRAM) {
+    /* lb_clmm 0.12.0 IDL (meteora-ag/dlmm-sdk@1532e540 ts-client/src/dlmm/idl/idl.json):
+       swap{amount_in u64, min_amount_out u64} — 15 accounts; swap2{…, remaining_accounts_info} —
+       16, memo_program at 13. Account slots: user_token_in 4, user_token_out 5, token_x_mint 6,
+       token_y_mint 7, user (authority, the signer) 10, token_x_program 11, token_y_program 12.
+       swapExactOut / swapWithPriceImpact and their *2 forms do not decode: their amount fields
+       carry the same names with inverted bounds. */
+    const swap = startsWith(data, DLMM_SWAP);
+    const swap2 = !swap && startsWith(data, DLMM_SWAP2);
+    if ((!swap && !swap2) || data.length < 24 || ix.accountIndices.length < (swap ? 15 : 16)) {
+      return undefined;
+    }
+    if (swap) {
+      if (data.length !== 24) {
+        return undefined;
+      }
+    } else {
+      /* RemainingAccountsInfo: u32 slice count, then {AccountsType u8, u8 when tag 3
+         (TransferHookMultiReward carries a u8), length u8} per slice — it must consume exactly
+         to the end, trailing bytes mean a different layout. */
+      if (data.length < 28) {
+        return undefined;
+      }
+      const slices = u32.decode(data, 24);
+      let offset = 28;
+      for (let i = 0; i < slices; i++) {
+        const tag = data.at(offset);
+        if (tag === undefined || tag > 4) {
+          return undefined;
+        }
+        offset += tag === 3 ? 2 : 1;
+        if (data.at(offset) === undefined) {
+          return undefined;
+        }
+        offset += 1;
+      }
+      if (offset !== data.length) {
+        return undefined;
+      }
+    }
+    const authority = account(10);
+    const sourceAccount = account(4);
+    const destinationAccount = account(5);
+    const mintX = account(6);
+    const mintY = account(7);
+    const programX = account(11);
+    const programY = account(12);
+    if (
+      authority === undefined ||
+      sourceAccount === undefined ||
+      destinationAccount === undefined ||
+      mintX === undefined ||
+      mintY === undefined ||
+      programX === undefined ||
+      programY === undefined
+    ) {
+      return undefined;
+    }
+    /* The mints are not named in the instruction — resolve them from the signer's token
+       accounts: user_token_in is the signer's ATA of one mint and user_token_out of the other.
+       A token account that is not the signer's ATA leaves its leg unresolved (the intent shows
+       the token account); both legs resolving to one mint is a malformed layout, not a swap. */
+    const ataX = associatedTokenAddress(authority, mintX, programX);
+    const ataY = associatedTokenAddress(authority, mintY, programY);
+    const sourceMint = sourceAccount === ataX ? mintX : sourceAccount === ataY ? mintY : undefined;
+    const destinationMint =
+      destinationAccount === ataX ? mintX : destinationAccount === ataY ? mintY : undefined;
+    if (sourceMint !== undefined && sourceMint === destinationMint) {
+      return undefined;
+    }
+    return {
+      program,
+      protocol: "meteora-dlmm",
+      authority,
+      sourceAccount,
+      destinationAccount,
+      sourceMint,
+      destinationMint,
+      ...(destinationMint === undefined
+        ? {}
+        : { destinationTokenProgram: destinationMint === mintX ? programX : programY }),
       maxIn: u64.decode(data, 8),
       minOut: u64.decode(data, 16),
     };

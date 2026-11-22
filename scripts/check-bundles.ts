@@ -11,9 +11,10 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
-import { loadWorkspace, resolveSpecifier, within } from "./check-boundaries.ts";
+import { ENCLAVE_CONDITIONS, loadWorkspace, resolveSpecifier, within } from "./check-boundaries.ts";
 import type { Workspace } from "./check-boundaries.ts";
 import { ENCLAVE_ZONE } from "./enclave-zone.ts";
+import { KERNEL_BUILD_CONDITIONS } from "./kernel-build-config.ts";
 
 // The repo does not depend on @types/bun; declare the used surface.
 declare const Bun: {
@@ -81,13 +82,28 @@ const realpath = (id: string): string => {
   }
 };
 
+/** A loaded file inside the workspace (not node_modules) — the set the zone rules judge. */
+const WORKSPACE_TREE = /^(?:packages|apps)\//;
+
 /**
  * One `build()` per entry: write nothing, bundle every workspace file from source (workspace
  * specifiers are mapped to their `pack.entry` source in a pre resolveId, everything else the
  * bundler resolves itself — relative, absolute, `#imports`, tsconfig paths, symlinks, require,
  * glob), and record each loaded module with the importer that first reached it.
+ *
+ * `enclave` entries build under the kernel bundle's own resolve conditions and keep NOTHING
+ * external: a bare specifier the bundler can resolve is bundled and every loaded module —
+ * node_modules included — is recorded by realpath, so a third-party trampoline package's re-export
+ * of engine source lands and is judged. The bare specifier itself is still recorded as a `pkg:`
+ * external for the name rules (backends, host packages, engine), it just is not excluded from the
+ * bundle.
  */
-async function bundle(root: string, workspace: Workspace, entry: string): Promise<Bundle> {
+async function bundle(
+  root: string,
+  workspace: Workspace,
+  entry: string,
+  kind: EntryKind,
+): Promise<Bundle> {
   const files: string[] = [];
   const externals = new Map<string, External>();
   const unresolved = new Set<string>();
@@ -106,6 +122,7 @@ async function bundle(root: string, workspace: Workspace, entry: string): Promis
       return false;
     }
   };
+  const enclave = kind === "enclave";
   await build({
     configFile: false,
     logLevel: "silent",
@@ -114,9 +131,11 @@ async function bundle(root: string, workspace: Workspace, entry: string): Promis
       write: false,
       lib: { entry: resolve(root, entry), formats: ["es"] },
       minify: false,
+      ...(enclave ? { rolldownOptions: { external: [] } } : {}),
     },
     resolve: {
       tsconfigPaths: true,
+      ...(enclave ? { conditions: [...KERNEL_BUILD_CONDITIONS] } : {}),
       // The worker plugin resolves the URL through its own resolver (config.createResolver),
       // which honours resolve.alias but not user resolveId hooks — alias it to the stub.
       alias: [
@@ -153,6 +172,7 @@ async function bundle(root: string, workspace: Workspace, entry: string): Promis
             workspace,
             importer === undefined ? entry : rel(importer),
             id,
+            enclave ? ENCLAVE_CONDITIONS : undefined,
           );
           if (target.kind === "file") {
             return resolve(root, target.path);
@@ -164,7 +184,9 @@ async function bundle(root: string, workspace: Workspace, entry: string): Promis
           }
           if (importerResolve(id, importer)) {
             externals.set(`pkg:${id}`, { kind: "package", name: id });
-            return { id, external: true };
+            // The enclave bundles its dependencies — record the name for the external rules
+            // but let the bundler load the package so its contents are judged too.
+            return enclave ? null : { id, external: true };
           }
           return null;
         },
@@ -228,6 +250,11 @@ function judge(
 ): BundleViolation[] {
   const out: BundleViolation[] = [];
   const fileRule = (path: string): string | undefined => {
+    // Only workspace files are content-judged; a bundled node_modules payload (the enclave
+    // keeps nothing external) is a third-party package judged by its recorded specifier name.
+    if (!WORKSPACE_TREE.test(path)) {
+      return undefined;
+    }
     if (kind === "enclave") {
       return within(path, ...ENCLAVE_ZONE)
         ? undefined
@@ -379,6 +406,7 @@ export async function bundleViolations(
       normalized,
       workspace,
       "packages/wallet-engine/src/gateway/contract/index.ts",
+      "main",
     );
     const gatewayAllow = new Set(contract.files);
     const results: Array<{ readonly entry: Entry; readonly result: Bundle }> = [];
@@ -387,7 +415,10 @@ export async function bundleViolations(
     // worker threads ("ModuleLoader channel closed"); each build takes ~50 ms.
     for (const entry of entries) {
       try {
-        results.push({ entry, result: await bundle(normalized, workspace, entry.file) });
+        results.push({
+          entry,
+          result: await bundle(normalized, workspace, entry.file, entry.kind),
+        });
       } catch (error) {
         // Fail closed: an entry that cannot be built cannot be judged — surface it, don't skip it.
         failed.push({

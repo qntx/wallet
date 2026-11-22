@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { historyPath, rpcPath } from "@qntx/wallet-engine/gateway/contract";
+import {
+  EVM_RPC_METHODS,
+  SOLANA_RPC_METHODS,
+  historyPath,
+  rpcPath,
+} from "@qntx/wallet-engine/gateway/contract";
+import type { EvmRpcMethod, SolanaRpcMethod } from "@qntx/wallet-engine/gateway/contract";
 
-import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
+import { ALCHEMY_COSTS, rpcCost } from "../src/budget/costs.ts";
+import type { CostModel, CostRow } from "../src/budget/costs.ts";
+import { localBudget } from "../src/budget/local.ts";
+import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
 import type { Account } from "../src/config/accounts.ts";
-import type { GatewayNetwork } from "../src/types.ts";
+import type { GatewayNetwork, ProviderBudget } from "../src/types.ts";
 import {
   allowAll,
   call,
@@ -14,6 +23,8 @@ import {
   fakeFetch,
   gateway,
   headers,
+  post,
+  productionGateway,
   rpcOk,
 } from "./helpers.ts";
 
@@ -30,7 +41,12 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
 /** The production Alchemy row: its window refills 40,000 units every 5 s → 480,000 a minute. */
 const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
-  alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 40_000, seconds: 5 }] },
+  alchemy: {
+    costs: ALCHEMY_COSTS,
+    budget: [{ units: 40_000, seconds: 5 }],
+    clientShare: 0.05,
+    source: "https://test.invalid",
+  },
 };
 const PER_MINUTE = 40_000 * (60 / 5);
 /** The share limiter sells one IP at most 5 % of the account's per-minute budget. */
@@ -108,7 +124,12 @@ describe("provider-cost metering", () => {
     // the ceiling check refuses before the limiter is even asked.
     const tiny: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      alchemy: { costs: ALCHEMY_COSTS, budget: [{ units: 60, seconds: 60 }] },
+      alchemy: {
+        costs: ALCHEMY_COSTS,
+        budget: [{ units: 60, seconds: 60 }],
+        clientShare: 0.05,
+        source: "https://test.invalid",
+      },
     };
     const share = recordingLimiter();
     const up = fakeFetch({ [ALCHEMY]: () => rpcOk("0x1") });
@@ -135,5 +156,106 @@ describe("provider-cost metering", () => {
     const res = await app.request(rpcPath(ETH), jsonPost(freshId(1), call("eth_chainId")));
     expect(res.status).toBe(429);
     expect(up.callsTo(ALCHEMY)).toHaveLength(0);
+  });
+});
+
+describe("one billed unit per upstream call", () => {
+  it("bills dRPC's formerly free identity reads one request unit each", async () => {
+    // eth_chainId costs dRPC 0 CU, but rate limiting bills every call at least once — so the
+    // production row is request-priced and three reads charge the share and budget three units.
+    const upstream = fakeFetch({
+      "https://lb.drpc.live": () => rpcOk("0xa4b1"),
+      "https://rpc.ankr.com": () => rpcOk("0xa4b1"),
+    });
+    const share = recordingLimiter();
+    const takes: Array<{ account: string; units: number }> = [];
+    const inner = localBudget(PRODUCTION_ACCOUNTS, Date.now);
+    const budget: ProviderBudget = {
+      take: async (account, units) => {
+        takes.push({ account, units });
+        return inner.take(account, units);
+      },
+    };
+    const app = productionGateway({ fetch: upstream.fetch, share, budget });
+    for (let i = 0; i < 3; i += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential by design
+      const res = await app.request("/v1/rpc/eip155:42170", post(call("eth_chainId", [], i + 1)));
+      // oxlint-disable-next-line eslint/no-await-in-loop -- body must be consumed
+      await res.text();
+      expect(res.status).toBe(200);
+    }
+    expect(upstream.callsTo("https://lb.drpc.live")).toHaveLength(3);
+    expect(upstream.callsTo("https://rpc.ankr.com")).toHaveLength(0);
+    expect(share.keys.filter((key) => key.startsWith("drpc:"))).toHaveLength(3);
+    expect(takes.filter((take) => take.account === "drpc")).toStrictEqual([
+      { account: "drpc", units: 1 },
+      { account: "drpc", units: 1 },
+      { account: "drpc", units: 1 },
+    ]);
+  });
+
+  it("floors a method row priced at zero to one billed unit", async () => {
+    // An rpc-priced account whose rows all resolve to zero still pays one unit per call.
+    const costs: CostModel = {
+      kind: "rpc",
+      methods: Object.fromEntries(
+        [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS].map((method) => [
+          method,
+          { units: 0, source: "https://test.invalid" },
+        ]),
+      ) as Readonly<Record<EvmRpcMethod | SolanaRpcMethod, CostRow>>,
+    };
+    const accounts: Readonly<Record<string, Account>> = {
+      ...TEST_ACCOUNTS,
+      a: {
+        costs,
+        budget: [{ units: 1_000_000, seconds: 60 }],
+        clientShare: 0.05,
+        source: "https://test.invalid",
+      },
+    };
+    const share = recordingLimiter();
+    const takes: Array<{ account: string; units: number }> = [];
+    const budget: ProviderBudget = {
+      take: async (account, units) => {
+        takes.push({ account, units });
+        await Promise.resolve();
+        return { ok: true };
+      },
+    };
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa") });
+    // One RPC network: the default table also wires "a" into Esplora, which demands request pricing.
+    const networks: ReadonlyArray<GatewayNetwork> = [
+      { id: "eip155:11155111", providers: [{ id: "a", url: "https://a.test/evm" }] },
+    ];
+    const app = gateway({
+      fetch: up.fetch,
+      networks,
+      accounts,
+      limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share },
+      budget,
+    });
+    const res = await app.request("/v1/rpc/eip155:11155111", post(call("eth_chainId")));
+    expect(res.status).toBe(200);
+    expect(share.keys.filter((key) => key.startsWith("a:"))).toHaveLength(1);
+    expect(takes).toStrictEqual([{ account: "a", units: 1 }]);
+  });
+});
+
+describe("rpcCost", () => {
+  const request: CostModel = {
+    kind: "request",
+    request: { units: 2, source: "https://test.invalid" },
+  };
+
+  it("bills a request-priced batch once per call, not once per batch", () => {
+    expect(
+      rpcCost(request, [
+        { method: "eth_chainId" },
+        { method: "eth_blockNumber" },
+        { method: "eth_gasPrice" },
+      ]),
+    ).toBe(6);
+    expect(rpcCost(request, { method: "eth_chainId" })).toBe(2);
   });
 });

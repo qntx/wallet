@@ -401,6 +401,74 @@ describe("solanaHistoryStream", () => {
     ]);
   });
 
+  it("requests version-1 transactions and parses a jsonParsed v1 response", async () => {
+    const tokenAccount = "TokenAcct444444444444444444444444444444444";
+    const mint = "SomeMint555555555555555555555555555555555555";
+    const incoming = parsed({
+      keys: [tokenAccount, "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
+      meta: {
+        err: null,
+        fee: 5000,
+        preBalances: [1, 0],
+        postBalances: [1, 0],
+        preTokenBalances: [
+          {
+            accountIndex: 0,
+            mint,
+            owner: OWNER,
+            uiTokenAmount: { amount: "10", decimals: 6 },
+          },
+        ],
+        postTokenBalances: [
+          {
+            accountIndex: 0,
+            mint,
+            owner: OWNER,
+            uiTokenAmount: { amount: "60", decimals: 6 },
+          },
+        ],
+        innerInstructions: [],
+      },
+    });
+    // A jsonParsed v1 message: transactionConfig instead of addressTableLookups.
+    (incoming.transaction.message as Record<string, unknown>)["transactionConfig"] = {
+      priorityFee: 12345,
+      computeUnitLimit: 200000,
+      loadedAccountsDataSizeLimit: 65536,
+      heapSize: 65536,
+    };
+    const calls: Array<readonly [string, unknown[]]> = [];
+    const base = tokenStreamRpc(tokenAccount, mint, incoming);
+    const rpc: SolanaRpc = {
+      call: async (method, params) => {
+        calls.push([method, params]);
+        return base.call(method, params);
+      },
+    };
+    const stream = solanaHistoryStream(
+      { rpc, network: SOL_NET, owner: OWNER, trusted: true },
+      () => {},
+    );
+    const page = await stream.next();
+    expect(page.done).toBe(true);
+    const txCall = calls.find(([method]) => method === "getTransaction");
+    expect(txCall?.[1]).toMatchObject([
+      expect.any(String),
+      { encoding: "jsonParsed", maxSupportedTransactionVersion: 1 },
+    ]);
+    const e = page.items.find((x) => x.hash === "toksig");
+    expect(e?.direction).toBe("in");
+    expect(e?.changes).toStrictEqual([
+      {
+        direction: "in",
+        asset: mint,
+        amount: "50",
+        decimals: 6,
+        listed: false,
+      },
+    ]);
+  });
+
   it("reports a failing token-account sub-stream under the network id", async () => {
     const tokenAccount = "TokenAcct666666666666666666666666666666666";
     const errors: Array<readonly [string, unknown]> = [];

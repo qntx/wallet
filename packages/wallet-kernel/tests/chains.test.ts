@@ -16,7 +16,9 @@ import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import {
+  AccountRole,
   address,
+  appendTransactionMessageInstruction,
   blockhash,
   compileTransactionMessage,
   createTransactionMessage,
@@ -786,20 +788,37 @@ describe("chain.sign", () => {
     expect(verifySolanaSignature(msg, bytesField(msgRes, "signature"), SOL_ADDRESS)).toBe(true);
   });
 
-  it("refuses a v1 transaction message both as a raw message and as a transaction", async () => {
+  it("signs a v1 transaction message but still refuses it as a raw message", async () => {
     const { h, session, walletId } = await setup();
     const account = hd(walletId, "solana.bip44-change");
+    const data = new Uint8Array(12);
+    const view = new DataView(data.buffer);
+    view.setUint32(0, 2, true);
+    view.setBigUint64(4, 1000n, true);
     const v1 = new Uint8Array(
       getCompiledTransactionMessageEncoder().encode(
         compileTransactionMessage(
-          setTransactionMessageLifetimeUsingBlockhash(
+          appendTransactionMessageInstruction(
             {
-              blockhash: blockhash("11111111111111111111111111111111"),
-              lastValidBlockHeight: 1000n,
+              programAddress: address("11111111111111111111111111111111"),
+              accounts: [
+                { address: address(SOL_ADDRESS), role: AccountRole.WRITABLE_SIGNER },
+                {
+                  address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+                  role: AccountRole.WRITABLE,
+                },
+              ],
+              data,
             },
-            setTransactionMessageFeePayer(
-              address(SOL_ADDRESS),
-              createTransactionMessage({ version: 1 }),
+            setTransactionMessageLifetimeUsingBlockhash(
+              {
+                blockhash: blockhash("11111111111111111111111111111111"),
+                lastValidBlockHeight: 1000n,
+              },
+              setTransactionMessageFeePayer(
+                address(SOL_ADDRESS),
+                createTransactionMessage({ version: 1 }),
+              ),
             ),
           ),
         ),
@@ -816,16 +835,17 @@ describe("chain.sign", () => {
         }),
       ),
     ).toBe("invalid-input");
-    expect(
-      errCode(
-        await callSign(h, session, {
-          kind: "solana.transaction",
-          network: vectors.solana.network,
-          account,
-          message: v1,
-        }),
-      ),
-    ).toBe("invalid-input");
+    const txReq = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: vectors.solana.network,
+        account,
+        message: v1,
+      },
+      SOL_ADDRESS,
+    );
+    const txRes = ok(await callSign(h, session, txReq));
+    expect(verifySolanaSignature(v1, bytesField(txRes, "signature"), SOL_ADDRESS)).toBe(true);
     const msg = utf8ToBytes("hello solana");
     const msgReq = normalizeSolana(
       {

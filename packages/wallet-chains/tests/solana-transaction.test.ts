@@ -22,6 +22,7 @@ import type { Instruction } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "../src/index.ts";
+import { parseCompiledMessage } from "../src/solana/message.ts";
 import { signSolanaMessage } from "../src/solana/sign.ts";
 import { addSolanaSignature, decodeSolanaTransaction } from "../src/solana/transaction.ts";
 import { verifySolanaSignature } from "../src/solana/verify.ts";
@@ -290,9 +291,33 @@ describe("solana wire transactions", () => {
     );
   });
 
-  it("rejects a v1 wire as unsupported, plus empty and garbage input", async () => {
-    const v1 = await tx({ version: 1, feePayer: WALLET, ixs: [transfer(WALLET, 1000n)] });
-    expect(codeOf(() => decodeSolanaTransaction(v1, WALLET)).code).toBe("unsupported");
+  it("decodes and signs a v1 wire byte-for-byte like kit", async () => {
+    const wallet = await keyPair(WALLET_SEED);
+    const wire = await tx({ version: 1, feePayer: WALLET, ixs: [transfer(WALLET, 1000n)] });
+    const { message, unsigned } = decodeSolanaTransaction(wire, WALLET);
+    expect(unsigned).toStrictEqual([]);
+    const out = addSolanaSignature(wire, WALLET, signSolanaMessage(message, WALLET_SEED));
+    expect(out).toStrictEqual(await kitSign(wire, wallet));
+    expect(verifySlot(out, WALLET)).toBe(true);
+  });
+
+  it("rejects a v1 wire above 4096 bytes and one over the message+sigs bound", async () => {
+    const wire = await tx({ version: 1, feePayer: WALLET, ixs: [transfer(WALLET, 1000n)] });
+    expect(
+      codeOf(() => decodeSolanaTransaction(new Uint8Array([...wire, 0]), WALLET)).message,
+    ).toMatch(/trailing bytes/);
+    const big = new Uint8Array(4097);
+    big.set(wire);
+    expect(codeOf(() => decodeSolanaTransaction(big, WALLET)).message).toMatch(/4096/);
+    /* The parser's bound is on the transaction size (message + 64 bytes per required
+       signature): a message that would only fit with fewer slots is refused. */
+    const { message } = decodeSolanaTransaction(wire, WALLET);
+    const fat = new Uint8Array(4096);
+    fat.set(message);
+    expect(codeOf(() => parseCompiledMessage(fat)).message).toMatch(/4096/);
+  });
+
+  it("rejects empty and garbage input", () => {
     expect(codeOf(() => decodeSolanaTransaction(new Uint8Array(0), WALLET)).message).toMatch(
       /failed to decode/,
     );
