@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vp test",
     "test:coverage": "vp test --coverage",
-    "smoke": "bun scripts/smoke.ts"
+    "smoke": "bun scripts/smoke.ts",
+    "test:workerd": "bun tests/workerd/run.ts"
   },
   "dependencies": {
     "@hono/standard-validator": "0.4.1",
@@ -20,6 +21,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "fast-check": "4.10.2",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
     "vite-plus": "1.4.0",

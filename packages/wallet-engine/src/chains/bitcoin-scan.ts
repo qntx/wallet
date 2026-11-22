@@ -29,6 +29,11 @@ export type ScanAddress = {
   readonly used: boolean;
 };
 
+export type ScannedAddress = ScanAddress & {
+  /** The address's Esplora `/txs` page — mempool rows first, confirmed newest first. */
+  readonly txs: ReadonlyArray<unknown>;
+};
+
 export type ScanUtxo = {
   readonly txid: string;
   readonly vout: number;
@@ -57,29 +62,32 @@ export const scripthash = (address: string, network: typeof BTC_NETWORK): string
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-const windowUsed = async (
+export const hexOf = (bytes: Uint8Array): string =>
+  [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+const windowTxs = async (
   es: Esplora,
   params: typeof BTC_NETWORK,
   addrs: ReadonlyArray<ScanAddress>,
-): Promise<ReadonlyArray<boolean>> =>
+): Promise<ReadonlyArray<ReadonlyArray<unknown>>> =>
   Promise.all(
     addrs.map(async (a) => {
       const txs: unknown = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
-      return isUnknownArray(txs) && txs.length > 0;
+      return isUnknownArray(txs) ? txs : [];
     }),
   );
 
 const MAX_SCAN_ADDRESSES = 2000;
 
-export const scanChain = async (
+const scanChainWithHistory = async (
   es: Esplora,
   xpub: string,
   template: BitcoinAccountTemplate,
   network: string,
   params: typeof BTC_NETWORK,
   chain: BtcChain,
-): Promise<ReadonlyArray<ScanAddress>> => {
-  const scanned: ScanAddress[] = [];
+): Promise<ReadonlyArray<ScannedAddress>> => {
+  const scanned: ScannedAddress[] = [];
   for (let start = 0; ; start += GAP) {
     if (start + GAP > MAX_SCAN_ADDRESSES) {
       throw new Error(`bitcoin address scan exceeded ${MAX_SCAN_ADDRESSES} addresses`);
@@ -94,18 +102,31 @@ export const scanChain = async (
       };
     });
     // oxlint-disable-next-line eslint/no-await-in-loop -- whether to scan the next window depends on this one.
-    const used = await windowUsed(es, params, batch);
-    const marked = batch.map((a, i) => ({
+    const pages = await windowTxs(es, params, batch);
+    const marked = batch.map((a, i): ScannedAddress => ({
       chain: a.chain,
       index: a.index,
       address: a.address,
-      used: used[i] === true,
+      used: (pages[i]?.length ?? 0) > 0,
+      txs: pages[i] ?? [],
     }));
     scanned.push(...marked);
     if (!marked.some((a) => a.used)) {
       return scanned;
     }
   }
+};
+
+export const scanChain = async (
+  es: Esplora,
+  xpub: string,
+  template: BitcoinAccountTemplate,
+  network: string,
+  params: typeof BTC_NETWORK,
+  chain: BtcChain,
+): Promise<ReadonlyArray<ScanAddress>> => {
+  const scanned = await scanChainWithHistory(es, xpub, template, network, params, chain);
+  return scanned.map(({ chain, index, address, used }) => ({ chain, index, address, used }));
 };
 
 const scanAddressUtxos = async (
@@ -144,12 +165,192 @@ export const scanUtxos = async (
   );
 };
 
+/** Esplora truncates `/txs` at 50 mempool + 25 confirmed rows — a full page may hide history. */
+const TX_PAGE_MEMPOOL = 50;
+const TX_PAGE_CONFIRMED = 25;
+const HEX = /^[0-9a-f]+$/;
+
+type HistoryVin = { readonly txid: string; readonly vout: number };
+type HistoryTx = {
+  readonly txid: string;
+  readonly vin: ReadonlyArray<HistoryVin>;
+  readonly vout: ReadonlyArray<{ readonly scriptpubkey: string; readonly value: number }>;
+  readonly confirmed: boolean;
+  readonly blockHeight: number | undefined;
+};
+
+const historyTx = (v: unknown): HistoryTx | undefined => {
+  if (
+    !isObject(v) ||
+    typeof v["txid"] !== "string" ||
+    !Array.isArray(v["vin"]) ||
+    !Array.isArray(v["vout"]) ||
+    !isObject(v["status"])
+  ) {
+    return undefined;
+  }
+  const vins: HistoryVin[] = [];
+  for (const vin of v["vin"]) {
+    if (!isObject(vin)) {
+      return undefined;
+    }
+    if (vin["is_coinbase"] === true) {
+      continue;
+    }
+    if (typeof vin["txid"] !== "string" || typeof vin["vout"] !== "number") {
+      return undefined;
+    }
+    vins.push({ txid: vin["txid"], vout: vin["vout"] });
+  }
+  const vouts: Array<{ scriptpubkey: string; value: number }> = [];
+  for (const out of v["vout"]) {
+    if (!isObject(out)) {
+      return undefined;
+    }
+    const spk = out["scriptpubkey"];
+    if (typeof spk !== "string" || !HEX.test(spk) || typeof out["value"] !== "number") {
+      return undefined;
+    }
+    vouts.push({ scriptpubkey: spk, value: out["value"] });
+  }
+  const { status } = v;
+  return {
+    txid: v["txid"],
+    vin: vins,
+    vout: vouts,
+    confirmed: status["confirmed"] === true,
+    blockHeight: typeof status["block_height"] === "number" ? status["block_height"] : undefined,
+  };
+};
+
+/**
+ * The page is derivable only when Esplora could not have truncated it AND every row is well-formed:
+ * a txid string, `vin` rows carrying txid/vout (coinbase rows exempt), `vout` rows carrying a hex
+ * scriptpubkey and a numeric value, and a `status` object. A duplicated txid or a tx spending one
+ * outpoint twice marks the page unsafe — Esplora never serves either.
+ */
+const safeHistory = (txs: ReadonlyArray<unknown>): ReadonlyArray<HistoryTx> | undefined => {
+  const parsed: HistoryTx[] = [];
+  const seenTxids = new Set<string>();
+  let confirmed = 0;
+  let mempool = 0;
+  for (const t of txs) {
+    const tx = historyTx(t);
+    if (tx === undefined || seenTxids.has(tx.txid)) {
+      return undefined;
+    }
+    seenTxids.add(tx.txid);
+    if (tx.confirmed) {
+      confirmed += 1;
+    } else {
+      mempool += 1;
+    }
+    const spentHere = new Set<string>();
+    for (const v of tx.vin) {
+      const key = `${v.txid}:${String(v.vout)}`;
+      if (spentHere.has(key)) {
+        return undefined;
+      }
+      spentHere.add(key);
+    }
+    parsed.push(tx);
+  }
+  if (confirmed >= TX_PAGE_CONFIRMED || mempool >= TX_PAGE_MEMPOOL) {
+    return undefined;
+  }
+  return parsed;
+};
+
+/**
+ * Derives each candidate's UTXO set from the `/txs` pages the scan already fetched — the same
+ * candidate filter as {@link scanUtxos}. An empty history means no UTXOs and no call. A complete,
+ * well-formed page derives: outputs paying the address's scriptPubKey that no vin in the page
+ * spends; height is `status.block_height` for confirmed rows, 0 otherwise. Anything else —
+ * truncated, malformed, duplicated — falls back to `/scripthash/:h/utxo` parsed like scanUtxos.
+ */
+export const utxosFromHistory = async (
+  es: Esplora,
+  scanned: ReadonlyArray<ScannedAddress>,
+  params: typeof BTC_NETWORK,
+): Promise<ReadonlyArray<ScanUtxo>> => {
+  const candidates = scanned.filter((a) => a.used || a.chain === 1 || a.index < GAP);
+  return Promise.all(
+    candidates.map(async (a): Promise<ReadonlyArray<ScanUtxo>> => {
+      if (a.txs.length === 0) {
+        return [];
+      }
+      const history = safeHistory(a.txs);
+      if (history === undefined) {
+        return scanAddressUtxos(es, a, params);
+      }
+      const script = hexOf(scriptPubKey(a.address, params));
+      const spent = new Set(
+        history.flatMap((tx) => tx.vin.map((v) => `${v.txid}:${String(v.vout)}`)),
+      );
+      return history.flatMap((tx) =>
+        tx.vout.flatMap((o, vout): ScanUtxo[] =>
+          o.scriptpubkey === script && !spent.has(`${tx.txid}:${String(vout)}`)
+            ? [
+                {
+                  txid: tx.txid,
+                  vout,
+                  value: o.value,
+                  address: a.address,
+                  height: tx.confirmed ? (tx.blockHeight ?? 0) : 0,
+                },
+              ]
+            : [],
+        ),
+      );
+    }),
+  ).then((r) => r.flat());
+};
+
 export const BITCOIN_TEMPLATES = ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const;
 
 /** What a Bitcoin balance is read from: one account template's xpub, or one watched address. */
 export type BitcoinSource =
   | { readonly kind: "xpub"; readonly template: BitcoinAccountTemplate; readonly xpub: string }
   | { readonly kind: "address"; readonly address: string };
+
+/**
+ * The scanned addresses plus each address's `/txs` page — the read path derives UTXOs from this
+ * history without asking `/utxo` again. BIP-44 account discovery: an all-unused external chain ends
+ * the scan — the change chain is never walked — except for btc.bip84: the send path puts every
+ * legacy template's change on the group's bip84 change chain, which can therefore be used while its
+ * receive chain is empty. bip44/bip49/bip86 change chains are only written by their own sends,
+ * which require a used receive chain first.
+ */
+export const scanSourceWithHistory = async (
+  es: Esplora,
+  source: BitcoinSource,
+  network: string,
+  params: typeof BTC_NETWORK,
+): Promise<ReadonlyArray<ScannedAddress>> => {
+  if (source.kind === "address") {
+    try {
+      Address(params).decode(source.address);
+    } catch {
+      throw new TypeError(`${source.address} is not a bitcoin address on ${network}`);
+    }
+    const txs: unknown = await es.get(`/scripthash/${scripthash(source.address, params)}/txs`);
+    return [
+      {
+        chain: 0,
+        index: 0,
+        address: source.address,
+        used: true,
+        txs: isUnknownArray(txs) ? txs : [],
+      },
+    ];
+  }
+  const receive = await scanChainWithHistory(es, source.xpub, source.template, network, params, 0);
+  if (source.template !== "btc.bip84" && !receive.some((a) => a.used)) {
+    return receive;
+  }
+  const change = await scanChainWithHistory(es, source.xpub, source.template, network, params, 1);
+  return [...receive, ...change];
+};
 
 /** The addresses to read: the xpub's gap-scanned receive and change chains, or the address itself. */
 export const scanSource = async (
@@ -166,9 +367,8 @@ export const scanSource = async (
     }
     return [{ chain: 0, index: 0, address: source.address, used: true }];
   }
-  const receive = await scanChain(es, source.xpub, source.template, network, params, 0);
-  const change = await scanChain(es, source.xpub, source.template, network, params, 1);
-  return [...receive, ...change];
+  const scanned = await scanSourceWithHistory(es, source, network, params);
+  return scanned.map(({ chain, index, address, used }) => ({ chain, index, address, used }));
 };
 
 export class BitcoinScanStore {

@@ -19,9 +19,6 @@ export function localBudget(
         throw new Error(`provider account "${account}" is not configured`);
       }
       await Promise.resolve();
-      if (units <= 0) {
-        return { ok: true };
-      }
       let state = states.get(account);
       if (state === undefined) {
         state = fullBuckets(found.budget, now());

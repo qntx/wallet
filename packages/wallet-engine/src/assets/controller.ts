@@ -20,6 +20,7 @@ import { address as solanaAddress } from "@solana/kit";
 import { isAddress } from "viem";
 import type { PublicClient } from "viem";
 
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { solanaTokenTable } from "@qntx/wallet-chains/solana";
 import { tronTokenTable, isTronAddress } from "@qntx/wallet-chains/tron";
@@ -142,6 +143,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
   /** Mint facts per `network:mint` for this unlock — each mint is inspected at most once. */
   private readonly mints = new Map<string, MintFacts | "missing">();
   private readonly tronMeta = new Map<string, TronTokenMeta | "missing">();
+
+  /** Bitcoin templates verified unused within the discovery window — skipped on warm refreshes. */
+  private readonly btcDiscovery = new Map<
+    string,
+    { readonly unused: ReadonlySet<BitcoinAccountTemplate>; readonly checkedAt: number }
+  >();
   /** State key → the held list tokens found on the last discovery scan, and when it ran. */
   private readonly discovered = new Map<
     string,
@@ -213,6 +220,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.meta.clear();
     this.mints.clear();
     this.tronMeta.clear();
+    this.btcDiscovery.clear();
     this.discovered.clear();
     this.tracked.clear();
     this.lists.clear();
@@ -301,9 +309,19 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const table = tronTokenTable[network] ?? {};
     const list = await this.lists.entries(network);
     const owners = symbolOwners([...Object.entries(table), ...list]);
+    // Indexer discovery runs before the built-in reads; `undefined` = no gateway or a failed
+    // call — then every built-in is read as today. An answered indexer, even an empty one,
+    // filters the `balanceOf` fan-out to the contracts it lists as held.
+    const discovered =
+      this.options.gateway === undefined
+        ? undefined
+        : await tronDiscoveredTokens(api, owner).catch(() => undefined);
+    const held = discovered ?? new Map<string, bigint>();
     const builtin = new Map(
       await mapPool(
-        Object.keys(table),
+        discovered === undefined
+          ? Object.keys(table)
+          : Object.keys(table).filter((c) => discovered.has(c)),
         4,
         async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
       ),
@@ -314,16 +332,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
       (contract) => table[contract] === undefined && isTronAddress(contract),
     );
     const customSet = new Set(custom);
-    const discovered =
-      this.options.gateway === undefined
-        ? new Map<string, bigint>()
-        : await tronDiscoveredTokens(api, owner).catch(() => new Map<string, bigint>());
     const trc10 = trc10Balances(row);
 
     // The metadata queue reads each contract/id once per unlock, capped per refresh.
     const wanted = [
       ...custom.filter((c) => !this.tronMeta.has(metaKey(c))),
-      ...[...discovered.keys()]
+      ...[...held.keys()]
         .filter(
           (c) => table[c] === undefined && !customSet.has(c) && !this.tronMeta.has(metaKey(c)),
         )
@@ -341,7 +355,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     });
     const customBalances = new Map(
       await mapPool(
-        custom.filter((c) => !discovered.has(c)),
+        custom.filter((c) => !held.has(c)),
         4,
         async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
       ),
@@ -367,7 +381,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       if (read === undefined || read === "missing") {
         continue;
       }
-      const balance = discovered.get(contract) ?? customBalances.get(contract) ?? 0n;
+      const balance = held.get(contract) ?? customBalances.get(contract) ?? 0n;
       const spam = spamReasons({
         address: contract,
         symbol: read.symbol,
@@ -385,9 +399,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         hidden: this.hiddenFor(network, contract, spam),
       });
     }
-    for (const [contract, balance] of [...discovered.entries()].sort(([a], [b]) =>
-      a < b ? -1 : 1,
-    )) {
+    for (const [contract, balance] of [...held.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
       if (table[contract] !== undefined || customSet.has(contract)) {
         continue;
       }
@@ -1088,8 +1100,17 @@ export class AssetsController extends Controller<AssetsControllerState> {
       throw new TypeError(`${network} is not a bitcoin network`);
     }
     const es = this.options.networks.esplora(network);
+    const cacheKey = `${group.walletId}:${group.groupIndex}:${network}`;
+    const cached = this.btcDiscovery.get(cacheKey);
+    // Templates verified unused within the window are skipped — they can hold no unindexed
+    // deposit — except btc.bip84, the default receive template, always re-scanned for deposits.
+    const prior: ReadonlySet<BitcoinAccountTemplate> =
+      cached !== undefined && this.options.now() - cached.checkedAt < DISCOVERY_MS
+        ? cached.unused
+        : new Set();
+    const templates = BITCOIN_TEMPLATES.filter((t) => t === "btc.bip84" || !prior.has(t));
     const sources = await Promise.all(
-      BITCOIN_TEMPLATES.map(async (template): Promise<BitcoinSource> => {
+      templates.map(async (template): Promise<BitcoinSource> => {
         const account = await this.options.chains.account({ ...group, template, network });
         if (!("xpub" in account)) {
           throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
@@ -1098,9 +1119,23 @@ export class AssetsController extends Controller<AssetsControllerState> {
       }),
     );
     const read = await readBitcoin(es, network, sources, this.options.ownBitcoinTxids());
+    const unused = new Set(prior);
+    for (const template of templates) {
+      if (read.usedSources.has(template)) {
+        unused.delete(template);
+      } else {
+        unused.add(template);
+      }
+    }
+    this.btcDiscovery.set(cacheKey, { unused, checkedAt: this.options.now() });
+    // Skipped templates contribute verified-zero totals — they were checked within the window.
+    const bySource = { ...read.bySource };
+    for (const t of BITCOIN_TEMPLATES) {
+      bySource[t] ??= { native: "0", unconfirmed: "0", protected: "0" };
+    }
     return this.record(
       `${network}:${group.walletId}:${group.groupIndex}`,
-      bitcoinBalances(read),
+      bitcoinBalances({ ...read, bySource }),
       async () => this.refreshBitcoinGroup(group, network),
       generation,
     );

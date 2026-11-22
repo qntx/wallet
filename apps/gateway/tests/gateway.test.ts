@@ -8,7 +8,6 @@ import {
   servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
-import { ipKeys } from "../src/middleware/rate-limit.ts";
 import type { RateLimiter } from "../src/types.ts";
 import {
   DEVNET,
@@ -1045,7 +1044,7 @@ describe("rate limiting", () => {
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("10");
+    expect(res.headers.get("retry-after")).toBe("60");
     await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
       error: "rate-limited",
     });
@@ -1187,7 +1186,7 @@ describe("rate limiting", () => {
       post([call("eth_chainId"), call("eth_getLogs", [{ fromBlock: "0x1", toBlock: "0x1f4" }])]),
     );
     expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("10");
+    expect(res.headers.get("retry-after")).toBe("60");
     await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
       error: "rate-limited",
     });
@@ -1215,24 +1214,6 @@ describe("rate limiting", () => {
     });
     await app.request("/v1/health");
     expect(rpc.keys).toHaveLength(0);
-  });
-
-  it("derives /24 and IPv6 /64+/48 keys", () => {
-    expect(ipKeys("198.51.100.200")).toStrictEqual(["198.51.100.0/24"]);
-    expect(ipKeys("2001:db8::1")).toStrictEqual([
-      "2001:0db8:0000:0000::/64",
-      "2001:0db8:0000::/48",
-    ]);
-    expect(ipKeys("fe80::1:2:3:4")).toStrictEqual([
-      "fe80:0000:0000:0000::/64",
-      "fe80:0000:0000::/48",
-    ]);
-    expect(ipKeys("2001:db8:1:2:3:4:5:6")).toStrictEqual([
-      "2001:0db8:0001:0002::/64",
-      "2001:0db8:0001::/48",
-    ]);
-    expect(ipKeys(undefined)).toStrictEqual(["unknown"]);
-    expect(ipKeys("nonsense")).toStrictEqual(["unknown"]);
   });
 });
 

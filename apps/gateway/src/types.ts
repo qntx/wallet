@@ -114,6 +114,13 @@ export type GatewayOptions = {
    */
   readonly auth: Readonly<Partial<Record<UpstreamAuthId, UpstreamAuth>>>;
   /**
+   * Whether every `/v1` request must carry a parseable `cf-connecting-ip`: `required` — the Worker
+   * deployments, which sit behind Cloudflare and are always given the header — rejects a missing or
+   * unparseable client address with 400 before any limiter or upstream call; `optional` meters it
+   * on the shared `unknown` key. Health is exempt either way.
+   */
+  readonly clientAddress: "required" | "optional";
+  /**
    * Provider accounts by name (`auth ?? id`): cost model and budget for every upstream the gateway
    * can call. A configured provider without an account fails construction.
    */

@@ -12,7 +12,7 @@ import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 
-import { scanSource, scanUtxos } from "../chains/bitcoin-scan.ts";
+import { scanSourceWithHistory, utxosFromHistory } from "../chains/bitcoin-scan.ts";
 import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
 import { isTaprootAddress, mayCarryInscription } from "../chains/bitcoin.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
@@ -44,9 +44,13 @@ const readSource = async (
   network: string,
   params: typeof BTC_NETWORK,
   ownTxids: ReadonlySet<string>,
-): Promise<{ readonly totals: BitcoinTotals; readonly utxos: ReadonlyArray<BitcoinUtxoView> }> => {
-  const addresses = await scanSource(es, source, network, params);
-  const scanned = await scanUtxos(es, addresses, params);
+): Promise<{
+  readonly totals: BitcoinTotals;
+  readonly utxos: ReadonlyArray<BitcoinUtxoView>;
+  readonly used: boolean;
+}> => {
+  const addresses = await scanSourceWithHistory(es, source, network, params);
+  const scanned = await utxosFromHistory(es, addresses, params);
   const key = sourceKey(source);
   let native = 0n;
   let unconfirmed = 0n;
@@ -78,6 +82,7 @@ const readSource = async (
       protected: protectedSats.toString(),
     },
     utxos,
+    used: source.kind === "address" || addresses.some((a) => a.used),
   };
 };
 
@@ -85,6 +90,8 @@ export type BitcoinRead = {
   readonly totals: BitcoinTotals;
   readonly bySource: Partial<Record<BitcoinSourceKey, BitcoinTotals>>;
   readonly utxos: ReadonlyArray<BitcoinUtxoView>;
+  /** Sources whose scan found history — safe to keep scanning on warm refreshes. */
+  readonly usedSources: ReadonlySet<BitcoinSourceKey>;
 };
 
 export const readBitcoin = async (
@@ -104,12 +111,16 @@ export const readBitcoin = async (
   let unconfirmed = 0n;
   let protectedSats = 0n;
   const bySource: Partial<Record<BitcoinSourceKey, BitcoinTotals>> = {};
+  const usedSources = new Set<BitcoinSourceKey>();
   const utxos: BitcoinUtxoView[] = [];
   for (const read of reads) {
     native += BigInt(read.totals.native);
     unconfirmed += BigInt(read.totals.unconfirmed);
     protectedSats += BigInt(read.totals.protected);
     bySource[sourceKey(read.source)] = read.totals;
+    if (read.used) {
+      usedSources.add(sourceKey(read.source));
+    }
     utxos.push(...read.utxos);
   }
   return {
@@ -120,6 +131,7 @@ export const readBitcoin = async (
     },
     bySource,
     utxos,
+    usedSources,
   };
 };
 

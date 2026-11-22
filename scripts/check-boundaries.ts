@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseSync } from "vite/rolldown/utils";
 
 import { ENCLAVE_ZONE } from "./enclave-zone.ts";
+import { KERNEL_BUILD_CONDITIONS } from "./kernel-build-config.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -346,9 +347,11 @@ const enclaveClosureViolations = (edges: ReadonlyArray<Edge>): Violation[] => {
     }
   }
   const reached = new Set<string>();
-  const queue = edges
-    .map((edge) => edge.from)
-    .filter((file) => within(file, KERNEL, NATIVE_KERNEL));
+  // Seed from every file in the zone, not only those reached from the kernel entries: a zone
+  // file's value edge out of the zone pulls its target into any bundle that loads it, however
+  // the file itself was reached — a conditional export that hides the zone's entry point cannot
+  // hide the edges inside it.
+  const queue = edges.map((edge) => edge.from).filter((file) => within(file, ...ENCLAVE_ZONE));
   const violations: Violation[] = [];
   while (queue.length > 0) {
     const file = queue.pop();
@@ -424,14 +427,29 @@ export async function loadWorkspace(root: string): Promise<Workspace> {
   return { packages, entries };
 }
 
-export const exportTarget = (exports: unknown, subpath: string): string | undefined => {
+/**
+ * Picks the `exports` target for `subpath` the way Node and the bundler do: iterate the condition
+ * keys in exports-object order and take the first whose name is an active condition. `conditions`
+ * is the importer's active-condition set — the ESM default (`import`, `default`) outside the
+ * enclave, the kernel build's conditions inside it (scripts/kernel-build-config.ts), so a
+ * conditional export resolves the way the real kernel bundle resolves it.
+ */
+export const exportTarget = (
+  exports: unknown,
+  subpath: string,
+  conditions: ReadonlyArray<string> = ["import", "default"],
+): string | undefined => {
   const entry = isRecord(exports) ? exports[subpath] : subpath === "." ? exports : undefined;
   if (typeof entry === "string") {
     return entry;
   }
   if (isRecord(entry)) {
-    const chosen = entry["import"] ?? entry["default"];
-    return typeof chosen === "string" ? chosen : undefined;
+    const active = new Set(conditions);
+    for (const [condition, chosen] of Object.entries(entry)) {
+      if (active.has(condition) && typeof chosen === "string") {
+        return chosen;
+      }
+    }
   }
   return undefined;
 };
@@ -467,6 +485,7 @@ export function resolveSpecifier(
   workspace: Workspace,
   from: string,
   specifier: string,
+  conditions?: ReadonlyArray<string>,
 ): Target {
   if (specifier.startsWith("node:") || builtinModules.includes(specifier)) {
     return { kind: "builtin", name: specifier.replace(/^node:/, "") };
@@ -482,7 +501,7 @@ export function resolveSpecifier(
   if (pkg === undefined) {
     return { kind: "package", name, subpath };
   }
-  const exported = exportTarget(pkg.exports, subpath);
+  const exported = exportTarget(pkg.exports, subpath, conditions);
   const built = exported === undefined ? undefined : /^\.\/dist\/(.+)\.mjs$/.exec(exported)?.[1];
   const source =
     exported?.endsWith(".ts") === true
@@ -667,7 +686,7 @@ const tsconfigViolations = (root: string): Violation[] => {
 const lineAt = (source: string, offset: number): number =>
   source.slice(0, offset).split("\n").length;
 
-const STRING_LITERAL = /^(["'])(.*)\1$/s;
+const STRING_LITERAL = /^(?:(["'])(.*)\1|`([^$`]*)`)$/s;
 
 type AstNode = { readonly type: string } & Record<string, unknown>;
 
@@ -685,6 +704,13 @@ const isImportMeta = (value: unknown): boolean =>
   isIdentifier(value["meta"], "import") &&
   isIdentifier(value["property"], "meta");
 
+/** `import.meta.url` — the second `new URL()` argument of a module-relative reference. */
+const isImportMetaUrl = (value: unknown): boolean =>
+  isAstNode(value) &&
+  value.type === "MemberExpression" &&
+  isImportMeta(value["object"]) &&
+  isIdentifier(value["property"], "url");
+
 const literalOf = (node: AstNode): string | undefined => {
   if (node.type === "Literal" && typeof node["value"] === "string") {
     return node["value"];
@@ -695,6 +721,82 @@ const literalOf = (node: AstNode): string | undefined => {
     typeof expression["value"] === "string"
     ? expression["value"]
     : undefined;
+};
+
+/** Extensions a `new URL(x, import.meta.url)` module reference can load — code, not data. */
+const MODULE_EXT = /\.(?:[cm]?[jt]sx?|wasm)$/;
+
+/** The trailing static text of a template literal's last quasi, if the node is a template. */
+const templateTail = (node: AstNode): string | undefined => {
+  const quasis: unknown = node["quasis"];
+  if (!Array.isArray(quasis) || quasis.length === 0) {
+    return undefined;
+  }
+  const last: unknown = quasis.at(-1);
+  if (!isAstNode(last)) {
+    return undefined;
+  }
+  const value: unknown = last["value"];
+  if (typeof value === "string") {
+    return value;
+  }
+  const cooked = isRecord(value) ? value["cooked"] : undefined;
+  return typeof cooked === "string" ? cooked : undefined;
+};
+
+/**
+ * A module reference the module record does not list: `new URL(<spec>, import.meta.url)` (the `new
+ * Worker(new URL(...))` worker-construction spelling included) and `import.meta.resolve(<spec>)`.
+ * The specifier is resolved and judged like an import — a literal string, or an unresolvable
+ * finding when it is computed. `new URL` is only a module reference when the specifier can name
+ * code: a literal or template tail ending in another extension is a data path (fixture reads,
+ * worker binaries) and stays unchecked.
+ */
+const moduleReference = (
+  node: AstNode,
+): { readonly specifier: string } | "computed" | undefined => {
+  if (node.type === "NewExpression") {
+    const { callee } = node;
+    const args: unknown = node["arguments"];
+    if (
+      isIdentifier(callee, "URL") &&
+      Array.isArray(args) &&
+      args.length === 2 &&
+      isImportMetaUrl(args[1])
+    ) {
+      const first: unknown = args[0];
+      if (isAstNode(first)) {
+        const literal = literalOf(first);
+        if (literal !== undefined) {
+          return MODULE_EXT.test(literal) ? { specifier: literal } : undefined;
+        }
+        // Computed first argument: a static tail in a data extension is provably not a module;
+        // anything else cannot be checked — fail closed.
+        const tail = templateTail(first);
+        return tail !== undefined && !MODULE_EXT.test(tail) && tail !== "" ? undefined : "computed";
+      }
+    }
+    return undefined;
+  }
+  if (node.type === "CallExpression") {
+    const { callee } = node;
+    const args: unknown = node["arguments"];
+    if (
+      isAstNode(callee) &&
+      callee.type === "MemberExpression" &&
+      isImportMeta(callee["object"]) &&
+      isIdentifier(callee["property"], "resolve") &&
+      Array.isArray(args) &&
+      args.length > 0
+    ) {
+      const first: unknown = args[0];
+      if (isAstNode(first)) {
+        const literal = literalOf(first);
+        return literal === undefined ? "computed" : { specifier: literal };
+      }
+    }
+  }
+  return undefined;
 };
 
 /** The CJS/glob call spellings that load modules outside the module record (rule commonjs-or-glob). */
@@ -723,18 +825,29 @@ const forbiddenCall = (node: AstNode): string | undefined => {
     : undefined;
 };
 
+/**
+ * The active `exports` conditions of the real kernel bundle's resolve (the build conditions plus
+ * the always-on ESM ones), used for files inside the enclave zone.
+ */
+export const ENCLAVE_CONDITIONS: ReadonlyArray<string> = [
+  ...KERNEL_BUILD_CONDITIONS,
+  "import",
+  "default",
+];
+
 type Findings = { readonly edges: Edge[]; readonly violations: Violation[] };
 
 function fileFindings(root: string, workspace: Workspace, from: string): Findings {
   const source = readFileSync(join(root, from), "utf8");
   const { module, program } = parseSync(from, source);
   const violations: Violation[] = [];
+  const conditions = within(from, ...ENCLAVE_ZONE) ? ENCLAVE_CONDITIONS : undefined;
   const edge = (specifier: string, typeOnly: boolean, offset: number): Edge => ({
     from,
     specifier,
     typeOnly,
     line: lineAt(source, offset),
-    target: resolveSpecifier(root, workspace, from, specifier),
+    target: resolveSpecifier(root, workspace, from, specifier, conditions),
   });
   // The module record has no entry for these spellings; the AST still names them:
   //   export {} from "x"        — evaluates the module (no module-record edge, bundler may keep it)
@@ -765,6 +878,24 @@ function fileFindings(root: string, workspace: Workspace, from: string): Finding
             extraEdges.push(edge(literal, false, start));
           }
         }
+      }
+    }
+    const reference = moduleReference(node);
+    if (reference !== undefined) {
+      const start = typeof node["start"] === "number" ? node["start"] : 0;
+      if (reference === "computed") {
+        extraEdges.push({
+          from,
+          specifier: "new URL(?, import.meta.url) / import.meta.resolve(?)",
+          typeOnly: false,
+          line: lineAt(source, start),
+          target: {
+            kind: "unresolved",
+            reason: "a computed module reference cannot be checked",
+          },
+        });
+      } else {
+        extraEdges.push(edge(reference.specifier, false, start));
       }
     }
     if (
@@ -845,7 +976,8 @@ function fileFindings(root: string, workspace: Workspace, from: string): Finding
       }),
       ...module.dynamicImports.map((entry): Edge => {
         const text = source.slice(entry.moduleRequest.start, entry.moduleRequest.end);
-        const literal = STRING_LITERAL.exec(text)?.[2];
+        const match = STRING_LITERAL.exec(text);
+        const literal = match?.[2] ?? match?.[3];
         return literal === undefined
           ? {
               from,
