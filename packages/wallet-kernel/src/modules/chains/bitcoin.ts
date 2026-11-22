@@ -30,7 +30,10 @@ const hex = (bytes: Uint8Array): string =>
   bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 
 /** The BIP-32 master fingerprint: first 4 bytes big-endian of hash160(master pubkey). */
-const fingerprintOf = (pub: Uint8Array): number => new DataView(hash160(pub).buffer).getUint32(0);
+const fingerprintOf = (pub: Uint8Array): number => {
+  const h = hash160(pub);
+  return new DataView(h.buffer, h.byteOffset, h.byteLength).getUint32(0);
+};
 
 type DerivationOwner = {
   bip32Derivation?: ReadonlyArray<readonly [Uint8Array, { fingerprint: number; path: number[] }]>;
