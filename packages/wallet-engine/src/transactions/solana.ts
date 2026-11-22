@@ -57,7 +57,14 @@ import type {
   TrackedTransaction,
   TxPoll,
 } from "./route.ts";
-import { accountAddressOf, errorMessage, includedPoll, newId, failTx } from "./route.ts";
+import {
+  accountAddressOf,
+  assertGatewayOnlyBinding,
+  errorMessage,
+  includedPoll,
+  newId,
+  failTx,
+} from "./route.ts";
 
 /** The network's base signature fee, lamports per signature. */
 const BASE_FEE_LAMPORTS = 5000n;
@@ -274,14 +281,15 @@ const finishPrepared = async (
      configured cluster's — a provider on another cluster would otherwise sign a valid-looking
      wire for the wrong chain. `build` read the blockhash at `confirmed`; `isBlockhashValid` is
      asked at `processed`, the freshest bank, so a host a few slots behind still knows it. */
+  const info = ctx.options.networks.info(network);
   if (independent.kind === "unavailable") {
-    throw new ChainError(
-      "invalid-request",
-      `only the gateway vouches for the recent blockhash on ${network} — configure a host endpoint for it`,
-    );
+    assertGatewayOnlyBinding(info, "recent blockhash");
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
+      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
+    }
   }
   if (independent.kind === "available") {
-    if ((await solana.genesisHash(rpc)) !== ctx.options.networks.info(network).genesisHash) {
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
       throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
     }
     let hostGenesis: string | undefined;
@@ -295,7 +303,7 @@ const finishPrepared = async (
         "the host endpoint could not confirm the recent blockhash",
       );
     }
-    if (hostGenesis !== ctx.options.networks.info(network).genesisHash) {
+    if (hostGenesis !== info.genesisHash) {
       throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
     }
     if (hostValid !== undefined && !hostValid.valid) {
@@ -310,7 +318,10 @@ const finishPrepared = async (
   if (quote === undefined) {
     throw new Error("no fee quote");
   }
-  const flags: Array<RequestCheckCode | undefined> = [...(args.flags ?? [])];
+  const flags: Array<RequestCheckCode | undefined> = [
+    independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ...(args.flags ?? []),
+  ];
   if (independent.kind === "available") {
     try {
       const others = await solana.estimateFee(independent.client, unsigned.writable);
@@ -582,6 +593,9 @@ export const prepareSolanaStake = async (
     const primaryVote = await voteIsCurrent(rpc, action.vote);
     if (!primaryVote) {
       throw new ChainError("invalid-request", `${action.vote} is not a current vote account`);
+    }
+    if (independent.kind === "unavailable") {
+      flags.push("reads-unverified");
     }
     if (independent.kind === "available") {
       try {

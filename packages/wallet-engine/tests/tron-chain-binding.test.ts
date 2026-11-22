@@ -188,9 +188,14 @@ const hostApiFailingNum = (
   },
 });
 
+const NILE = { id: NET, genesisHash: GENESIS, testnet: true } as const;
+
 const ctx = (
   w: World & { api: TronApi },
   now: () => number = () => 1_000_000,
+  net:
+    | typeof NILE
+    | { readonly id: string; readonly genesisHash: string; readonly testnet: boolean } = NILE,
 ): { ctx: RouteContext; transitions: TrackedTransaction[] } => {
   const transitions: TrackedTransaction[] = [];
   return {
@@ -202,7 +207,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
-          info: () => ({ genesisHash: GENESIS }),
+          info: () => net,
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -309,7 +314,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
     wv.blockIds.delete(100);
     wv.independent = { kind: "unavailable" }; // the host endpoint is now gone
     await expect(prepared.staleReason()).resolves.toBe(
-      "only the gateway vouches for the reference block on tron:3448148188 — configure a host endpoint for it",
+      'only the gateway vouches for the reference block on tron:3448148188; on a testnet a signature over another network\'s reference block could be valid there — configure a host endpoint in EngineOptions.rpc["tron:3448148188"]',
     );
   });
 
@@ -407,5 +412,81 @@ describe("the answering node must report the configured chain", () => {
     const prepared = await prepareDappTron(c, ACCOUNT, NET, dappRaw());
     expect(prepared.checks).toStrictEqual([]);
     expect(genesisReads(wv)).toBe(1);
+  });
+});
+
+describe("a gateway-only mainnet build goes ahead flagged reads-unverified", () => {
+  const MAINNET = "tron:728126428";
+  const mainNet = { id: MAINNET, genesisHash: MAINNET_GENESIS, testnet: false } as const;
+  const mainCtx = (
+    w: World & { api: TronApi },
+  ): { ctx: RouteContext; transitions: TrackedTransaction[] } => ctx(w, () => 1_000_000, mainNet);
+  const mainWorld = (over: Partial<World> = {}): ReturnType<typeof world> =>
+    world({
+      blockIds: new Map([
+        [0, MAINNET_GENESIS],
+        [100, SOLID_ID],
+      ]),
+      ...over,
+    });
+
+  it("prepares and submits a send on mainnet", async () => {
+    const w = mainWorld({ independent: { kind: "unavailable" } });
+    const prepared = await prepareTron(mainCtx(w).ctx, params({ network: MAINNET }));
+    expect(prepared.checks).toStrictEqual(["reads-unverified"]);
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).toBe("submitted");
+    expect(w.signCalls).toBe(1);
+  });
+
+  it("flags a mainnet stake, approve, and dApp prepare the same way", async () => {
+    const w = mainWorld({ independent: { kind: "unavailable" } });
+    const c = mainCtx(w).ctx;
+    const stake: Extract<ChainRequestInput, { method: "tron-stake" }> = {
+      method: "tron-stake",
+      account: ACCOUNT,
+      network: MAINNET,
+      action: { kind: "freeze", amount: 5_000_000n, resource: "bandwidth" },
+    };
+    const stakePrepared = await prepareTronStake(c, stake);
+    expect(stakePrepared.checks).toContain("reads-unverified");
+    const approve: Extract<ChainRequestInput, { method: "tron-approve" }> = {
+      method: "tron-approve",
+      account: ACCOUNT,
+      network: MAINNET,
+      token: TO,
+      spender: TO,
+      amount: 1_000_000n,
+    };
+    const approvePrepared = await prepareTronApprove(c, approve);
+    expect(approvePrepared.checks).toContain("reads-unverified");
+    const dappPrepared = await prepareDappTron(c, ACCOUNT, MAINNET, dappRaw());
+    expect(dappPrepared.checks).toContain("reads-unverified");
+    expect(w.signCalls).toBe(0);
+  });
+
+  it("still refuses a mainnet send whose answering node serves Nile's genesis", async () => {
+    const w = mainWorld({
+      blockIds: new Map([
+        [0, GENESIS], // the node answers Nile's block 0
+        [100, SOLID_ID],
+      ]),
+      independent: { kind: "unavailable" },
+    });
+    await expect(prepareTron(mainCtx(w).ctx, params({ network: MAINNET }))).rejects.toThrow(
+      /serves another chain than tron:728126428/,
+    );
+    expect(w.signCalls).toBe(0);
+  });
+
+  it("rebuilds a stale mainnet transaction without a host endpoint", async () => {
+    const wv = mainWorld();
+    wv.independent = { kind: "available", client: hostApi(wv) };
+    const c = mainCtx(wv).ctx;
+    const prepared = await prepareTron(c, params({ network: MAINNET }));
+    // The reference block falls out of the node's view → staleReason goes through rebuild.
+    wv.blockIds.delete(100);
+    wv.independent = { kind: "unavailable" }; // the host endpoint is now gone
+    await expect(prepared.staleReason()).resolves.toBeUndefined();
   });
 });

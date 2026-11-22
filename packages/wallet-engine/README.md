@@ -152,8 +152,10 @@ still does not list the transaction — a trimmed ledger can make a landed send 
 Chain binding on the gateway path: when the gateway serves a TRON or Solana network, the value
 that binds the signed bytes to the chain — TRON's reference block, Solana's recent blockhash —
 must be confirmed by a host endpoint, and the answering node must report the configured
-network's genesis. A gateway-only TRON or Solana send is refused rather than signed on one
-party's word.
+network's genesis. A gateway-only testnet send is refused rather than signed on one
+party's word — a binding taken from the mainnet would produce a signature valid on the
+mainnet — while a gateway-only mainnet send builds flagged `reads-unverified`: a wrong-chain
+binding makes the signature invalid on the mainnet and nothing of more value can move.
 
 L1 data fees on OP Stack and Scroll move with the L1's own fee market, so the `l1Data` amount an
 intent displays is a bound, not the raw oracle read: the read plus three L1 price updates of at
@@ -190,9 +192,10 @@ allow-list of node-API paths plus the TronGrid indexer feeds); every decisive re
 cross-checked against a second provider before anything is built or signed, and a
 `reads-unverified` flag marks a prepare whose cross-check could not run. Two reads are binding
 rather than flaggable: the reference block — what binds the signed bytes to the chain — must be
-confirmed by a host endpoint when the gateway serves the network, so a gateway-only TRON send is
-refused; and the answering node itself must report the network's genesis block, so a gateway
-provider on another chain is refused before anything is signed.
+confirmed by a host endpoint when the gateway serves the network — on a testnet a gateway-only
+TRON send is refused, on a mainnet it proceeds flagged `reads-unverified`; and the answering
+node itself must report the network's genesis block, so a gateway provider on another chain is
+refused before anything is signed.
 
 Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
 TRC-10 decimal id or a TRC-20 `T…` address and an optional `memo` (1–256 UTF-8 bytes, no line

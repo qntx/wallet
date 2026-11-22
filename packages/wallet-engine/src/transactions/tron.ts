@@ -56,12 +56,20 @@ import type {
 } from "../chains/tron.ts";
 import type { TronAccount } from "../gateway/contract/index.ts";
 import type { Independent } from "../networks/controller.ts";
+import type { NetworkInfo } from "../networks/registry.ts";
 import { collectChecks, feesDiffer } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 import { submitSigned } from "./broadcast.ts";
-import { includedPoll, newId, accountAddressOf, errorMessage, failTx } from "./route.ts";
+import {
+  includedPoll,
+  newId,
+  accountAddressOf,
+  assertGatewayOnlyBinding,
+  errorMessage,
+  failTx,
+} from "./route.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -136,7 +144,7 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
  * degrades to a `reads-unverified` flag.
  */
 const crossCheckTron = async (
-  network: string,
+  info: NetworkInfo,
   independent: Independent<TronApi>,
   head: Pick<TronHead, "number" | "id">,
   params: TronChainParams,
@@ -144,11 +152,11 @@ const crossCheckTron = async (
 ): Promise<"reads-unverified" | undefined> => {
   /* The reference block binds the signed bytes to a chain: if only the gateway can vouch for it,
      the build is refused — there is no second word. */
+  /* The params and contract reads the gateway answered are uncorroborated — a mainnet build
+     may proceed flagged reads-unverified, a testnet build is refused by the shared rule. */
   if (independent.kind === "unavailable") {
-    throw new ChainError(
-      "invalid-request",
-      `only the gateway vouches for the reference block on ${network} — configure a host endpoint for it`,
-    );
+    assertGatewayOnlyBinding(info, "reference block");
+    return "reads-unverified";
   }
   if (independent.kind !== "available") {
     return undefined;
@@ -427,7 +435,13 @@ export const prepareTron = async (
         flags.push("reads-unverified");
       }
     };
-    const flag = await crossCheckTron(network, independent, head, params0, extra);
+    const flag = await crossCheckTron(
+      ctx.options.networks.info(network),
+      independent,
+      head,
+      params0,
+      extra,
+    );
     if (flag !== undefined) {
       flags.push(flag);
     }
@@ -610,7 +624,11 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
       return errorMessage(error);
     }
     if (independent.kind === "unavailable") {
-      return `only the gateway vouches for the reference block on ${network} — configure a host endpoint for it`;
+      try {
+        assertGatewayOnlyBinding(ctx.options.networks.info(network), "reference block");
+      } catch (error) {
+        return errorMessage(error);
+      }
     }
     if (independent.kind === "available") {
       let otherId: string | undefined;
@@ -1000,7 +1018,7 @@ export const prepareTronStake = async (
     }
   }
 
-  const flag = await crossCheckTron(network, independent, head, params0);
+  const flag = await crossCheckTron(ctx.options.networks.info(network), independent, head, params0);
   if (flag !== undefined) {
     flags.push(flag);
   }
@@ -1073,20 +1091,26 @@ export const prepareTronApprove = async (
   }
   let estimate = { used: call.energyUsed, penalty: call.energyPenalty };
 
-  const flag = await crossCheckTron(network, independent, head, params0, async (independentApi) => {
-    const other = await constantCall(independentApi, { owner: from, contract: token, data });
-    if (other.ok) {
-      if (feesDiffer(BigInt(other.energyUsed), BigInt(estimate.used))) {
-        flags.push("fee-mismatch");
+  const flag = await crossCheckTron(
+    ctx.options.networks.info(network),
+    independent,
+    head,
+    params0,
+    async (independentApi) => {
+      const other = await constantCall(independentApi, { owner: from, contract: token, data });
+      if (other.ok) {
+        if (feesDiffer(BigInt(other.energyUsed), BigInt(estimate.used))) {
+          flags.push("fee-mismatch");
+        }
+        estimate = {
+          used: Math.max(estimate.used, other.energyUsed),
+          penalty: Math.max(estimate.penalty, other.energyPenalty),
+        };
+      } else {
+        flags.push("reads-unverified");
       }
-      estimate = {
-        used: Math.max(estimate.used, other.energyUsed),
-        penalty: Math.max(estimate.penalty, other.energyPenalty),
-      };
-    } else {
-      flags.push("reads-unverified");
-    }
-  });
+    },
+  );
   if (flag !== undefined) {
     flags.push(flag);
   }
@@ -1298,7 +1322,7 @@ export const prepareDappTron = async (
     }
   };
   const flag = await crossCheckTron(
-    network,
+    ctx.options.networks.info(network),
     independent,
     { number: refNumber, id: refId },
     params0,
