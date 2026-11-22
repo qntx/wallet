@@ -646,20 +646,22 @@ describe("polymarket trade — place", () => {
   });
 
   it.each([
-    [["absent", "absent", "absent"], "not-found"],
-    [["error", "error", "error"], "unknown"],
-    [["error", "absent"], "not-found"],
+    [["absent", "absent", "absent"]],
+    [["error", "error", "error"]],
+    [["error", "absent"]],
   ] as const)(
-    "reconcile reads %j settle %s — never a re-post",
+    "reconcile reads %j never saw the order — unknown plus the cancel attempt, never a re-post",
     { timeout: 20_000 },
-    async (lookup, want) => {
+    async (lookup) => {
       const e = env({ post: { status: 503, body: {} }, orderLookup: [...lookup] });
       const placed = await e.provider.trade.place(group, LIMIT_BUY);
       await e.approve(placed.requestId);
       await expect(settled(e, placed.outcome)).resolves.toStrictEqual({
-        kind: want,
+        kind: "unknown",
         orderId: placed.orderId,
+        cancel: { kind: "not-canceled", reason: expect.any(String) },
       });
+      expect(e.requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
       expect(e.posts()).toHaveLength(1);
     },
   );

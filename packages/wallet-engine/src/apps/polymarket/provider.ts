@@ -129,6 +129,7 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     account,
     markets,
     requests: options.requests,
+    wallet: options.wallet,
     random: options.random,
     now: options.now,
     setTimer: options.setTimer,

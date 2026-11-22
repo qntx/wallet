@@ -538,9 +538,14 @@ has no such fields) and shown as such. `orderId` is the order's EIP-712 hash, kn
 approval.
 
 Outcomes: `resting`, `matched`, `delayed`, `unmatched`, `rejected` (classified reason), `canceled`,
-`not-found`, and `unknown`. An `unknown` — timeout, network error, 5xx, or an answer that cannot be
-tied to the hash — is reconciled by reads at 0/+2 s/+5 s and **never re-posted**: a V2 order has no
-expiry, so a lost-but-valid order could still be submitted by whoever holds it. Cancels
+and `unknown`. An `unknown` — timeout, network error, 5xx, or an answer that cannot be tied to the
+hash — is reconciled by reads at 0/+2 s/+5 s and **never re-posted**: a V2 order has no expiry, so
+a lost-but-valid order could still be submitted by whoever holds it. An order no reconcile read
+saw is **not** proven absent, so the engine attempts `DELETE /order` by id before resolving — the
+attempt's result rides the outcome as `cancel` — and registers the id for the late reconcile:
+`trade.corrections` re-asks `order` every 10 s for 10 minutes and emits the eventual status once.
+`unknown` means the order may or may not exist — it MUST NOT be blindly re-placed, because a
+later-landing first order plus the retry is a duplicate position. Cancels
 (`cancel`, `cancelMany` ≤ 500, `cancelAll`, `cancelMarket`) are never eligibility-gated.
 
 ### Close-only

@@ -44,6 +44,8 @@ const PLACEMENT_ID = "0xff354cd7ca7539dfa9c28d90943ab5779a4eac34b9b37a757d7b32bd
 
 type Fake = AppSocket & {
   sent: string[];
+  /** When set, `close()` reports `open` first — the spec race: open can complete as close lands. */
+  openOnClose: boolean;
   opened: () => void;
   recv: (raw: string) => void;
   drop: () => void;
@@ -57,11 +59,15 @@ const makeSocket = (): Fake => {
       return ready;
     },
     sent: [],
+    openOnClose: false,
     send(data) {
       this.sent.push(data);
     },
     close() {
       ready = 3;
+      if (this.openOnClose) {
+        this.onopen?.();
+      }
       this.onclose?.();
     },
     opened() {
@@ -700,6 +706,21 @@ describe("polymarket live account views", () => {
     await flush();
     expect(sockets).toHaveLength(1);
     expect(sockets[0]!.sent).toHaveLength(1);
+  });
+
+  it("a view closed while its socket was connecting never leaks the auth frame", async () => {
+    const { live } = setup();
+    const view = live.account(group);
+    await flush();
+    expect(sockets).toHaveLength(1);
+    /* close() landing while the socket is still CONNECTING does not cancel its `open` — per the
+       spec a socket may finish opening as it closes. The stopped view must have dropped its
+       credentials already: the open finds nothing to send. */
+    const socket = sockets[0]!;
+    socket.openOnClose = true;
+    await view.close();
+    expect(socket.sent.every((frame) => !frame.includes(CREDS.apiKey))).toBe(true);
+    expect(socket.sent).toHaveLength(0);
   });
 
   it("a credentials delete for a different group leaves the view live", async () => {

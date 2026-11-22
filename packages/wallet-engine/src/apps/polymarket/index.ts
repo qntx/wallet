@@ -56,8 +56,10 @@ export type {
   PolymarketSide,
 } from "./orders.ts";
 export type {
+  PolymarketCancelAttempt,
   PolymarketCancelResult,
   PolymarketOrderOutcome,
+  PolymarketOutcomeCorrection,
   PolymarketPlaceParams,
   PolymarketPlacedOrder,
   PolymarketRejectReason,
