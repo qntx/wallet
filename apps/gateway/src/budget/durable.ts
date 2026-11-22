@@ -20,22 +20,19 @@ const LEVELS_KEY = "levels";
  * evicted object does not reset to full. Windows arrive per call; the object holds no config.
  */
 export class ProviderBudgetObject extends DurableObject {
-  async lease(
-    windows: ReadonlyArray<BudgetWindow>,
-    want: number,
-    min: number,
-  ): Promise<LeaseResult> {
-    // oxlint-disable-next-line typescript/require-await -- sync KV needs no await; API wants a promise
-    return this.ctx.blockConcurrencyWhile(async () => {
-      const now = Date.now();
-      const stored = this.ctx.storage.kv.get<BucketState>(LEVELS_KEY);
-      const state =
-        stored !== undefined && stored.levels.length === windows.length
-          ? stored
-          : fullBuckets(windows, now);
-      const result = grant(windows, state, now, want, min);
-      this.ctx.storage.kv.put(LEVELS_KEY, state);
-      return result;
-    });
+  lease(windows: ReadonlyArray<BudgetWindow>, want: number, min: number): LeaseResult {
+    // SQLite storage operations are synchronous and do not yield the event loop, so they execute
+    // atomically without blockConcurrencyWhile
+    // (https://developers.cloudflare.com/durable-objects/api/state/) — no await separates the KV
+    // read from the write.
+    const now = Date.now();
+    const stored = this.ctx.storage.kv.get<BucketState>(LEVELS_KEY);
+    const state =
+      stored !== undefined && stored.levels.length === windows.length
+        ? stored
+        : fullBuckets(windows, now);
+    const result = grant(windows, state, now, want, min);
+    this.ctx.storage.kv.put(LEVELS_KEY, state);
+    return result;
   }
 }
