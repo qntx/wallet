@@ -3542,7 +3542,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$7, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$8, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3772,7 +3772,7 @@
 				return res.subarray(0, pos);
 			}
 		}));
-		utf8$7 = /* @__PURE__ */ freeze(() => {
+		utf8$8 = /* @__PURE__ */ freeze(() => {
 			let _utf8Encoder;
 			let _utf8Decoder;
 			const utf8Builtin = {
@@ -11852,7 +11852,7 @@
 				}
 			});
 		};
-		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$7), (value) => {
+		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$8), (value) => {
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
@@ -13651,7 +13651,7 @@
 	* Quantities are canonical `0x` hex (lowercase, no leading zeros, `0x0` for
 	* zero), token amounts are decimal strings of the smallest unit.
 	*/
-	var utf8$6 = new TextDecoder("utf-8", {
+	var utf8$7 = new TextDecoder("utf-8", {
 		fatal: true,
 		ignoreBOM: true
 	});
@@ -13668,7 +13668,7 @@
 	var messageContent = (bytes, family) => {
 		let text;
 		try {
-			text = utf8$6.decode(bytes);
+			text = utf8$7.decode(bytes);
 		} catch (_unused2) {
 			return bytesContent(bytes);
 		}
@@ -18462,7 +18462,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-W11SiJgr.mjs
+	// packages/wallet-chains/dist/typed-data-DLw7RATn.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -18851,6 +18851,28 @@
 		} : void 0;
 	};
 	/**
+	* Whether any `string` leaf of the document carries characters the text rule hides — domain fields
+	* under `types.EIP712Domain` (or the fields ox derives when it is not declared) and message fields
+	* under `primaryType`, walked through structs and arrays. A key the type does not declare is not
+	* signed and is ignored. Never throws: a branch it cannot walk counts as no hidden text — malformed
+	* documents are refused by the validator.
+	*/
+	var typedDataHasHiddenText = (json) => {
+		var _json$types$EIP712Dom2;
+		const hidden = (type, value, depth) => {
+			if (depth >= 32) return false;
+			const array = /^(.+)\[\d*\]$/.exec(type);
+			if (array !== null) return Array.isArray(value) && value.some((item) => {
+				var _array$3;
+				return hidden((_array$3 = array[1]) !== null && _array$3 !== void 0 ? _array$3 : "", item, depth + 1);
+			});
+			const struct = json.types[type];
+			if (struct !== void 0) return isRecord$3(value) && struct.some((field) => hidden(field.type, value[field.name], depth + 1));
+			return type === "string" && typeof value === "string" && hasHiddenCharacters(value);
+		};
+		return ((_json$types$EIP712Dom2 = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom2 !== void 0 ? _json$types$EIP712Dom2 : extractEip712DomainTypes(json.domain)).some((field) => hidden(field.type, json.domain[field.name], 0)) || hidden(json.primaryType, json.message, 0);
+	};
+	/**
 	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
 	* decimal string or a `0x` hex string.
 	*/
@@ -18861,7 +18883,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-p-YLnu3c.mjs
+	// packages/wallet-chains/dist/token-call-BGB95-QI.mjs
 	init_utils$2();
 	init_objectSpread2();
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
@@ -24897,6 +24919,7 @@ zoo`.split("\n"));
 	fromString$1("ox.secp256k1.fromPrf.v1");
 	fromString$1("ox.secp256k1.fromSeed.v1");
 	// packages/wallet-chains/dist/evm.mjs
+	init_utils$2();
 	init_objectSpread2();
 	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
@@ -27090,7 +27113,7 @@ zoo`.split("\n"));
 	* account; the token table parameter is for tests.
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
-		var _ref2, _recognizeEip, _recognizeCow, _permit$blind, _recognized$summary, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _ref3, _recognized$outflows, _ref4, _permit$approvals, _ref5, _permit$warnings, _ref6, _recognized$verifiabi;
+		var _ref2, _recognizeEip, _recognizeCow, _ref3, _permit$blind, _recognized$summary, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _ref4, _recognized$outflows, _ref5, _permit$approvals, _ref6, _permit$warnings, _ref7, _recognized$verifiabi;
 		if (request.kind === "evm.transaction") return withNativeAmountMeta(decodeTransaction$1(request, signer, table), request.network, EVM_NATIVE_ASSET, 18);
 		if (request.kind === "evm.personal-message") {
 			const content = messageContent(request.message, "evm");
@@ -27145,7 +27168,7 @@ zoo`.split("\n"));
 		const shown = unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? typedDataFields(json) : void 0;
 		const fields = shown === null || shown === void 0 ? void 0 : shown.fields;
 		const unclaimedBlind = nearMiss !== null && nearMiss !== void 0 ? nearMiss : unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? shown === void 0 ? "typed-data-oversize" : unclaimed && shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
-		const blind = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : typedDataBlind(safe, seaport, app, unclaimedBlind);
+		const blind = (_ref3 = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : typedDataBlind(safe, seaport, app, unclaimedBlind)) !== null && _ref3 !== void 0 ? _ref3 : typedDataHasHiddenText(json) ? "message-bytes" : void 0;
 		const message = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
@@ -27157,14 +27180,273 @@ zoo`.split("\n"));
 			family: "evm",
 			network: request.network,
 			summary,
-			outflows: (_ref3 = (_recognized$outflows = recognized === null || recognized === void 0 ? void 0 : recognized.outflows) !== null && _recognized$outflows !== void 0 ? _recognized$outflows : app === null || app === void 0 ? void 0 : app.outflows) !== null && _ref3 !== void 0 ? _ref3 : [],
-			approvals: (_ref4 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref4 !== void 0 ? _ref4 : [],
+			outflows: (_ref4 = (_recognized$outflows = recognized === null || recognized === void 0 ? void 0 : recognized.outflows) !== null && _recognized$outflows !== void 0 ? _recognized$outflows : app === null || app === void 0 ? void 0 : app.outflows) !== null && _ref4 !== void 0 ? _ref4 : [],
+			approvals: (_ref5 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref5 !== void 0 ? _ref5 : [],
 			fee: void 0,
-			warnings: (_ref5 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref5 !== void 0 ? _ref5 : [],
+			warnings: (_ref6 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref6 !== void 0 ? _ref6 : [],
 			message,
-			verifiability: (_ref6 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref6 !== void 0 ? _ref6 : permit === void 0 && order === void 0 ? "opaque" : "partial"
+			verifiability: (_ref7 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref7 !== void 0 ? _ref7 : permit === void 0 && order === void 0 ? "opaque" : "partial"
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
+	/**
+	* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
+	* form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
+	* order is semantic — it changes the phantom-agent connectionId).
+	*
+	* Byte-for-byte compatible with the encoder nktkas uses
+	* (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
+	* `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
+	* fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
+	* exactly like @std/msgpack's integer path.
+	*
+	* `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
+	* its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
+	* order, exactly what must not happen.
+	*/
+	var utf8$6 = new TextEncoder();
+	function concat$3(...chunks) {
+		let length = 0;
+		for (const chunk of chunks) length += chunk.length;
+		const out = new Uint8Array(length);
+		let offset = 0;
+		for (const chunk of chunks) {
+			out.set(chunk, offset);
+			offset += chunk.length;
+		}
+		return out;
+	}
+	var u16be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(2);
+		new DataView(out.buffer).setUint16(0, value);
+		return out;
+	};
+	var u32be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	};
+	var i64be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigInt64(0, value);
+		return out;
+	};
+	var u64be$1 = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigUint64(0, value);
+		return out;
+	};
+	/** Safe integers only — the L1 schemas bound every numeric field well inside them. */
+	function packInt(value) {
+		if (!Number.isSafeInteger(value)) throw new ChainError("invalid-request", "unreachable: non-integer msgpack field");
+		if (value >= 0) {
+			if (value <= 127) return new Uint8Array([value]);
+			if (value <= 255) return new Uint8Array([204, value]);
+			if (value <= 65535) return concat$3(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$3(new Uint8Array([206]), u32be(value));
+			return concat$3(new Uint8Array([207]), u64be$1(BigInt(value)));
+		}
+		if (value >= -32) return new Uint8Array([value + 256]);
+		if (value >= -128) return new Uint8Array([208, value + 256]);
+		if (value >= -32768) return concat$3(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$3(new Uint8Array([210]), u32be(value + 4294967296));
+		return concat$3(new Uint8Array([211]), i64be(BigInt(value)));
+	}
+	function packStr(value) {
+		const bytes = utf8$6.encode(value);
+		const { length } = bytes;
+		if (length < 32) return concat$3(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$3(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$3(new Uint8Array([218]), u16be(length), bytes);
+		return concat$3(new Uint8Array([219]), u32be(length), bytes);
+	}
+	function packBool(value) {
+		return new Uint8Array([value ? 195 : 194]);
+	}
+	function packArray(items) {
+		return concat$3(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$3(new Uint8Array([220]), u16be(items.length)) : (() => {
+			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
+		})(), ...items);
+	}
+	/**
+	* Entries arrive already in encoding order — the caller spells the schema's key order out
+	* literally; this writer never iterates an object.
+	*/
+	function packMap(entries) {
+		return concat$3(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$3(new Uint8Array([222]), u16be(entries.length)) : (() => {
+			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
+		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
+	}
+	/**
+	* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
+	* literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
+	*
+	* ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
+	* : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
+	* python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
+	* 0x00/0x01.)
+	*
+	* The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
+	* {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
+	* testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
+	*/
+	var u64be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigUint64(0, BigInt(value));
+		return out;
+	};
+	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
+	var orderWire$1 = (order) => {
+		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
+			["isMarket", packBool(order.t.trigger.isMarket)],
+			["triggerPx", packStr(order.t.trigger.triggerPx)],
+			["tpsl", packStr(order.t.trigger.tpsl)]
+		])]]);
+		const entries = [
+			["a", packInt(order.a)],
+			["b", packBool(order.b)],
+			["p", packStr(order.p)],
+			["s", packStr(order.s)],
+			["r", packBool(order.r)],
+			["t", t]
+		];
+		if (order.c !== void 0) entries.push(["c", packStr(order.c)]);
+		return packMap(entries);
+	};
+	var packOid = (oid) => typeof oid === "number" ? packInt(oid) : packStr(oid);
+	/**
+	* Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
+	* over the action union; a trailing return is unreachable code (TS7027).
+	*/
+	function encodeL1Action(action) {
+		switch (action.type) {
+			case "order": {
+				const entries = [
+					["type", packStr("order")],
+					["orders", packArray(action.orders.map(orderWire$1))],
+					["grouping", packStr(action.grouping)]
+				];
+				if (action.builder !== void 0) entries.push(["builder", packMap([["b", packStr(action.builder.b)], ["f", packInt(action.builder.f)]])]);
+				return packMap(entries);
+			}
+			case "cancel": {
+				const entries = [["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]];
+				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
+				return packMap(entries);
+			}
+			case "cancelByCloid": {
+				const entries = [["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]];
+				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
+				return packMap(entries);
+			}
+			case "modify": {
+				const entries = [
+					["type", packStr("modify")],
+					["oid", packOid(action.oid)],
+					["order", orderWire$1(action.order)]
+				];
+				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
+				return packMap(entries);
+			}
+			case "batchModify": {
+				const entries = [["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]];
+				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
+				return packMap(entries);
+			}
+			case "scheduleCancel": {
+				const entries = [["type", packStr("scheduleCancel")]];
+				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
+				return packMap(entries);
+			}
+			case "updateLeverage": return packMap([
+				["type", packStr("updateLeverage")],
+				["asset", packInt(action.asset)],
+				["isCross", packBool(action.isCross)],
+				["leverage", packInt(action.leverage)]
+			]);
+			case "updateIsolatedMargin": return packMap([
+				["type", packStr("updateIsolatedMargin")],
+				["asset", packInt(action.asset)],
+				["isBuy", packBool(action.isBuy)],
+				["ntli", packInt(action.ntli)]
+			]);
+			case "twapOrder": return packMap([["type", packStr("twapOrder")], ["twap", packMap([
+				["a", packInt(action.twap.a)],
+				["b", packBool(action.twap.b)],
+				["s", packStr(action.twap.s)],
+				["r", packBool(action.twap.r)],
+				["m", packInt(action.twap.m)],
+				["t", packBool(action.twap.t)]
+			])]]);
+			case "twapCancel": return packMap([
+				["type", packStr("twapCancel")],
+				["a", packInt(action.a)],
+				["t", packInt(action.t)]
+			]);
+		}
+	}
+	/**
+	* Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
+	* ? 0x00 ‖ u64be(expiresAfter) : ε)).
+	*/
+	function l1ConnectionId(args) {
+		const packed = encodeL1Action(args.action);
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(args.expiresAfter));
+		return keccak_256(concat$3(packed, u64be(args.nonce), vault, expiry));
+	}
+	/**
+	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
+	* never supplies one. `source` is "a" on mainnet, "b" on testnet.
+	*/
+	function phantomAgentTypedData(connectionId, network) {
+		return JSON.stringify({
+			types: {
+				EIP712Domain: [
+					{
+						name: "name",
+						type: "string"
+					},
+					{
+						name: "version",
+						type: "string"
+					},
+					{
+						name: "chainId",
+						type: "uint256"
+					},
+					{
+						name: "verifyingContract",
+						type: "address"
+					}
+				],
+				Agent: [{
+					name: "source",
+					type: "string"
+				}, {
+					name: "connectionId",
+					type: "bytes32"
+				}]
+			},
+			primaryType: "Agent",
+			domain: {
+				name: "Exchange",
+				version: "1",
+				chainId: 1337,
+				verifyingContract: "0x0000000000000000000000000000000000000000"
+			},
+			message: {
+				source: network === "Mainnet" ? "a" : "b",
+				connectionId: `0x${bytesToHex$4(connectionId)}`
+			}
+		});
+	}
+	/** The phantom-agent typed-data JSON an L1 `params` signs, shared by the kernel and the host. */
+	function hyperliquidL1Document(params, network) {
+		return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
+			action: params.action,
+			nonce: params.nonce
+		}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), {}, { expiresAfter: params.expiresAfter })), network);
+	}
 	/**
 	* Normalizes a SignRequest for the EVM family: exact key sets, chainId vs the CAIP-2 `network`,
 	* canonical quantities and EIP-55 addresses. Idempotent.
@@ -28796,7 +29078,10 @@ zoo`.split("\n"));
 		associatedToken: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 		token: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 		token2022: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-		stake: "Stake11111111111111111111111111111111111111"
+		stake: "Stake11111111111111111111111111111111111111",
+		ed25519: "Ed25519SigVerify111111111111111111111111111",
+		secp256k1: "KeccakSecp256k11111111111111111111111111111",
+		secp256r1: "Secp256r1SigVerify1111111111111111111111111"
 	});
 	/**
 	* CAIP-2 ids the wallet knows. The wire message itself carries no network marker — `network` is the
@@ -28873,8 +29158,7 @@ zoo`.split("\n"));
 	var isRecord$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isStringArray = (value) => Array.isArray(value) && value.every((v) => typeof v === "string");
 	var isNumberArray = (value) => Array.isArray(value) && value.every((v) => typeof v === "number");
-	var isArrayLike = (value) => isRecord$2(value) && typeof value["length"] === "number";
-	var isIx = (value) => isRecord$2(value) && typeof value["programAddressIndex"] === "number" && (value["accountIndices"] === void 0 || isNumberArray(value["accountIndices"]) || isArrayLike(value["accountIndices"])) && value["data"] instanceof Uint8Array;
+	var isIx = (value) => isRecord$2(value) && typeof value["programAddressIndex"] === "number" && (value["accountIndices"] === void 0 || isNumberArray(value["accountIndices"]) || value["accountIndices"] instanceof Uint8Array) && (value["data"] === void 0 || value["data"] instanceof Uint8Array);
 	var isLookup = (value) => isRecord$2(value) && typeof value["lookupTableAddress"] === "string" && (isNumberArray(value["readonlyIndexes"]) || value["readonlyIndexes"] instanceof Uint8Array) && (isNumberArray(value["writableIndexes"]) || value["writableIndexes"] instanceof Uint8Array);
 	var asCompiledMessage = (value) => {
 		if (!isRecord$2(value) || !isRecord$2(value["header"])) throw new ChainError("invalid-request", "compiled message failed to decode");
@@ -28888,12 +29172,13 @@ zoo`.split("\n"));
 		if (versionField !== "legacy" && versionField !== 0) throw new ChainError("invalid-request", "compiled message failed to decode");
 		const version = versionField;
 		const ixs = instructions.map((ix) => {
+			var _ix$data;
 			if (!isIx(ix)) throw new ChainError("invalid-request", "compiled message failed to decode");
 			const indices = ix.accountIndices;
 			return {
 				programAddressIndex: ix.programAddressIndex,
 				accountIndices: indices === void 0 ? [] : [...indices],
-				data: ix.data
+				data: (_ix$data = ix.data) !== null && _ix$data !== void 0 ? _ix$data : /* @__PURE__ */ new Uint8Array(0)
 			};
 		});
 		const tables = (lookups !== null && lookups !== void 0 ? lookups : []).map((t) => {
@@ -29760,9 +30045,24 @@ zoo`.split("\n"));
 	var DEFAULT_INSTRUCTION_CU = 200000n;
 	var BUILTIN_INSTRUCTION_CU = 3000n;
 	var MAX_COMPUTE_UNIT_LIMIT = 1400000n;
+	var PRECOMPILE_PROGRAMS = /* @__PURE__ */ new Set([
+		PROGRAM_IDS.ed25519,
+		PROGRAM_IDS.secp256k1,
+		PROGRAM_IDS.secp256r1
+	]);
+	var signatureCount = (parsed, lookups) => {
+		let count = parsed.numRequiredSignatures;
+		for (const ix of parsed.instructions) {
+			var _ix$data$;
+			const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+			if (program !== void 0 && PRECOMPILE_PROGRAMS.has(program)) count += (_ix$data$ = ix.data[0]) !== null && _ix$data$ !== void 0 ? _ix$data$ : 0;
+		}
+		return count;
+	};
 	var feeLamports = (parsed, lookups, calls) => {
 		var _parsed$config$priori, _calls$find$microLamp, _calls$find, _calls$find2;
-		if (parsed.version === 1) return 5000n * BigInt(parsed.numRequiredSignatures) + ((_parsed$config$priori = parsed.config.priorityFeeLamports) !== null && _parsed$config$priori !== void 0 ? _parsed$config$priori : 0n);
+		const signatures = BigInt(signatureCount(parsed, lookups));
+		if (parsed.version === 1) return 5000n * signatures + ((_parsed$config$priori = parsed.config.priorityFeeLamports) !== null && _parsed$config$priori !== void 0 ? _parsed$config$priori : 0n);
 		const price = (_calls$find$microLamp = (_calls$find = calls.find((c) => c.kind === "cu-price")) === null || _calls$find === void 0 ? void 0 : _calls$find.microLamports) !== null && _calls$find$microLamp !== void 0 ? _calls$find$microLamp : 0n;
 		let builtin = 0n;
 		let other = 0n;
@@ -29775,7 +30075,7 @@ zoo`.split("\n"));
 		const requested = (_calls$find2 = calls.find((c) => c.kind === "cu-limit")) === null || _calls$find2 === void 0 ? void 0 : _calls$find2.units;
 		const limit = requested === void 0 ? defaultLimit : BigInt(requested);
 		const capped = limit < MAX_COMPUTE_UNIT_LIMIT ? limit : MAX_COMPUTE_UNIT_LIMIT;
-		return 5000n * BigInt(parsed.numRequiredSignatures) + (price * capped + 999999n) / 1000000n;
+		return 5000n * signatures + (price * capped + 999999n) / 1000000n;
 	};
 	var decodeTransaction = (request, signer, table) => {
 		var _request$lookupTables, _table$request$networ;
@@ -30201,7 +30501,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/typed-data-B2GMDrHr.mjs
+	// packages/wallet-chains/dist/typed-data-CZCBZp5N.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_sha2();
@@ -30303,7 +30603,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$3 = (parts) => {
+	var concat$2 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -30317,11 +30617,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$3([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$2([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$3([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$2([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$3([
+	var requiredBytesField = (field, data) => concat$2([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -30335,7 +30635,7 @@ zoo`.split("\n"));
 	var encodeMessage = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$3(present.map((f) => f.bytes));
+		return concat$2(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -32175,7 +32475,7 @@ zoo`.split("\n"));
 	* own reason, then family near-miss, then oversize, then commitment.
 	*/
 	var tronTypedDataIntent = (typedData, network, chainId, signer, table) => {
-		var _permit$blind, _permit$approvals, _permit$warnings;
+		var _ref2, _permit$blind, _permit$approvals, _permit$warnings;
 		const { json } = parseTronTypedData(typedData);
 		const evmJson = tronTypedDataToEvm(json);
 		const permit2 = TRON_PERMIT2[network];
@@ -32198,7 +32498,7 @@ zoo`.split("\n"));
 				value: leaf.value
 			}));
 		}
-		const blind = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : permit === void 0 ? nearMiss !== null && nearMiss !== void 0 ? nearMiss : shown === void 0 ? "typed-data-oversize" : shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
+		const blind = (_ref2 = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : permit === void 0 ? nearMiss !== null && nearMiss !== void 0 ? nearMiss : shown === void 0 ? "typed-data-oversize" : shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0) !== null && _ref2 !== void 0 ? _ref2 : typedDataHasHiddenText(json) ? "message-bytes" : void 0;
 		return _objectSpread2({
 			family: "tron",
 			network,
@@ -37347,10 +37647,10 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
-	var concat$2 = (...parts) => {
+	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
+	var concat$1 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -37365,7 +37665,7 @@ zoo`.split("\n"));
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$2(varint(data.length), data);
+		return concat$1(varint(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -37379,8 +37679,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$2(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8(BIP322_TAG));
+		return sha256$1(concat$1(tag, tag, utf8(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -37388,8 +37688,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$2(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$2(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$1(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$1(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -37461,14 +37761,14 @@ zoo`.split("\n"));
 		tx.finalizeIdx(0);
 		const witness = tx.getInput(0).finalScriptWitness;
 		if (witness === void 0) throw new ChainError("invalid-request", "BIP-322 input produced no witness");
-		return `smp${base64(concat$2(varint(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
 	};
 	/**
 	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
 	*/
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$2(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
 		const hash = legacyMessageHash(message);
@@ -37478,7 +37778,7 @@ zoo`.split("\n"));
 			prehash: false
 		});
 		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
-		return base64(concat$2(Uint8Array.of(header), recovered.slice(1)));
+		return base64(concat$1(Uint8Array.of(header), recovered.slice(1)));
 	};
 	// packages/wallet-chains/dist/bitcoin.mjs
 	init_payment();
@@ -38646,10 +38946,16 @@ zoo`.split("\n"));
 	}
 	function typedDataLines(catalog, intent, message) {
 		const { name, chainId, verifyingContract } = message.domain;
-		if (message.hyperliquid !== void 0) return [catalog.hlChain[message.hyperliquid.chain], ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)];
-		if (message.polymarket !== void 0) return polymarketLines(catalog, intent, message.polymarket);
+		const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
+		if (message.hyperliquid !== void 0) return [
+			...hazard,
+			catalog.hlChain[message.hyperliquid.chain],
+			...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)
+		];
+		if (message.polymarket !== void 0) return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
 		const network = intent.family === "tron" ? intent.network : chainId === void 0 ? intent.network : `eip155:${chainId}`;
 		return [
+			...hazard,
 			...name === void 0 ? [] : [catalog.typedApp(field(name))],
 			...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
 			...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
@@ -41124,261 +41430,6 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/msgpack.ts
-	/**
-	* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
-	* form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
-	* order is semantic — it changes the phantom-agent connectionId).
-	*
-	* Byte-for-byte compatible with the encoder nktkas uses
-	* (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
-	* `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
-	* fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
-	* exactly like @std/msgpack's integer path.
-	*
-	* `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
-	* its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
-	* order, exactly what must not happen.
-	*/
-	var utf8 = new TextEncoder();
-	function concat$1(...chunks) {
-		let length = 0;
-		for (const chunk of chunks) length += chunk.length;
-		const out = new Uint8Array(length);
-		let offset = 0;
-		for (const chunk of chunks) {
-			out.set(chunk, offset);
-			offset += chunk.length;
-		}
-		return out;
-	}
-	var u16be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(2);
-		new DataView(out.buffer).setUint16(0, value);
-		return out;
-	};
-	var u32be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(4);
-		new DataView(out.buffer).setUint32(0, value);
-		return out;
-	};
-	var i64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigInt64(0, value);
-		return out;
-	};
-	var u64be$1 = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, value);
-		return out;
-	};
-	/** Safe integers only — the L1 schemas bound every numeric field well inside them. */
-	function packInt(value) {
-		if (!Number.isSafeInteger(value)) throw new KernelError("integrity", "unreachable: non-integer msgpack field");
-		if (value >= 0) {
-			if (value <= 127) return new Uint8Array([value]);
-			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$1(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$1(new Uint8Array([206]), u32be(value));
-			return concat$1(new Uint8Array([207]), u64be$1(BigInt(value)));
-		}
-		if (value >= -32) return new Uint8Array([value + 256]);
-		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$1(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$1(new Uint8Array([210]), u32be(value + 4294967296));
-		return concat$1(new Uint8Array([211]), i64be(BigInt(value)));
-	}
-	function packStr(value) {
-		const bytes = utf8.encode(value);
-		const { length } = bytes;
-		if (length < 32) return concat$1(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$1(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$1(new Uint8Array([218]), u16be(length), bytes);
-		return concat$1(new Uint8Array([219]), u32be(length), bytes);
-	}
-	function packBool(value) {
-		return new Uint8Array([value ? 195 : 194]);
-	}
-	function packArray(items) {
-		return concat$1(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$1(new Uint8Array([220]), u16be(items.length)) : (() => {
-			throw new KernelError("integrity", "unreachable: msgpack array over 65535 items");
-		})(), ...items);
-	}
-	/**
-	* Entries arrive already in encoding order — the caller spells the schema's key order out
-	* literally; this writer never iterates an object.
-	*/
-	function packMap(entries) {
-		return concat$1(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$1(new Uint8Array([222]), u16be(entries.length)) : (() => {
-			throw new KernelError("integrity", "unreachable: msgpack map over 65535 entries");
-		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
-	}
-	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts
-	/**
-	* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
-	* literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
-	*
-	* ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
-	* : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
-	* python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
-	* 0x00/0x01.)
-	*
-	* The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
-	* {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
-	* testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
-	*/
-	init_utils$2();
-	var u64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, BigInt(value));
-		return out;
-	};
-	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
-	var orderWire$1 = (order) => {
-		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
-			["isMarket", packBool(order.t.trigger.isMarket)],
-			["triggerPx", packStr(order.t.trigger.triggerPx)],
-			["tpsl", packStr(order.t.trigger.tpsl)]
-		])]]);
-		const entries = [
-			["a", packInt(order.a)],
-			["b", packBool(order.b)],
-			["p", packStr(order.p)],
-			["s", packStr(order.s)],
-			["r", packBool(order.r)],
-			["t", t]
-		];
-		if (order.c !== void 0) entries.push(["c", packStr(order.c)]);
-		return packMap(entries);
-	};
-	var packOid = (oid) => typeof oid === "number" ? packInt(oid) : packStr(oid);
-	/**
-	* Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
-	* over the action union; a trailing return is unreachable code (TS7027).
-	*/
-	function encodeL1Action(action) {
-		switch (action.type) {
-			case "order": {
-				const entries = [
-					["type", packStr("order")],
-					["orders", packArray(action.orders.map(orderWire$1))],
-					["grouping", packStr(action.grouping)]
-				];
-				if (action.builder !== void 0) entries.push(["builder", packMap([["b", packStr(action.builder.b)], ["f", packInt(action.builder.f)]])]);
-				return packMap(entries);
-			}
-			case "cancel": {
-				const entries = [["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "cancelByCloid": {
-				const entries = [["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "modify": {
-				const entries = [
-					["type", packStr("modify")],
-					["oid", packOid(action.oid)],
-					["order", orderWire$1(action.order)]
-				];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
-			case "batchModify": {
-				const entries = [["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
-			case "scheduleCancel": {
-				const entries = [["type", packStr("scheduleCancel")]];
-				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
-				return packMap(entries);
-			}
-			case "updateLeverage": return packMap([
-				["type", packStr("updateLeverage")],
-				["asset", packInt(action.asset)],
-				["isCross", packBool(action.isCross)],
-				["leverage", packInt(action.leverage)]
-			]);
-			case "updateIsolatedMargin": return packMap([
-				["type", packStr("updateIsolatedMargin")],
-				["asset", packInt(action.asset)],
-				["isBuy", packBool(action.isBuy)],
-				["ntli", packInt(action.ntli)]
-			]);
-			case "twapOrder": return packMap([["type", packStr("twapOrder")], ["twap", packMap([
-				["a", packInt(action.twap.a)],
-				["b", packBool(action.twap.b)],
-				["s", packStr(action.twap.s)],
-				["r", packBool(action.twap.r)],
-				["m", packInt(action.twap.m)],
-				["t", packBool(action.twap.t)]
-			])]]);
-			case "twapCancel": return packMap([
-				["type", packStr("twapCancel")],
-				["a", packInt(action.a)],
-				["t", packInt(action.t)]
-			]);
-		}
-	}
-	/**
-	* Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
-	* ? 0x00 ‖ u64be(expiresAfter) : ε)).
-	*/
-	function l1ConnectionId(args) {
-		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$1(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$1(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$1(packed, u64be(args.nonce), vault, expiry));
-	}
-	/**
-	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
-	* never supplies one. `source` is "a" on mainnet, "b" on testnet.
-	*/
-	function phantomAgentTypedData(connectionId, network) {
-		return JSON.stringify({
-			types: {
-				EIP712Domain: [
-					{
-						name: "name",
-						type: "string"
-					},
-					{
-						name: "version",
-						type: "string"
-					},
-					{
-						name: "chainId",
-						type: "uint256"
-					},
-					{
-						name: "verifyingContract",
-						type: "address"
-					}
-				],
-				Agent: [{
-					name: "source",
-					type: "string"
-				}, {
-					name: "connectionId",
-					type: "bytes32"
-				}]
-			},
-			primaryType: "Agent",
-			domain: {
-				name: "Exchange",
-				version: "1",
-				chainId: 1337,
-				verifyingContract: "0x0000000000000000000000000000000000000000"
-			},
-			message: {
-				source: network === "Mainnet" ? "a" : "b",
-				connectionId: `0x${bytesToHex$4(connectionId)}`
-			}
-		});
-	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts
 	/**
 	* The strict validators of the hyperliquid-l1-agent scheme — the network scope and the wire params
@@ -41481,7 +41532,6 @@ zoo`.split("\n"));
 	* The hyperliquid-l1-agent session scheme: Hyperliquid L1 trading, scoped to a network, signed as
 	* the phantom-agent `Agent(string source,bytes32 connectionId)` typed data the kernel builds.
 	*/
-	init_objectSpread2();
 	/**
 	* Hyperliquid allows an agent name's `valid_until` at most 180 days out (docs exchange-endpoint
 	* §Approve an API wallet).
@@ -41514,10 +41564,7 @@ zoo`.split("\n"));
 			if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
 			if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
 			if (params.action.type === "scheduleCancel" && params.action.time !== void 0 && !(params.action.time >= now + SCHEDULE_CANCEL_MIN_MS && params.action.time <= header.validUntil)) throw new KernelError("invalid-input", "schedule time outside the session");
-			return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
-				action: params.action,
-				nonce: params.nonce
-			}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), {}, { expiresAfter: params.expiresAfter })), scope);
+			return hyperliquidL1Document(params, scope);
 		}
 	}) };
 	function isSchemeId(id) {
