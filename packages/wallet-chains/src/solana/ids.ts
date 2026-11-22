@@ -10,6 +10,9 @@ export const PROGRAM_IDS: Readonly<{
   token: string;
   token2022: string;
   stake: string;
+  ed25519: string;
+  secp256k1: string;
+  secp256r1: string;
 }> = Object.freeze({
   system: "11111111111111111111111111111111",
   computeBudget: "ComputeBudget111111111111111111111111111111",
@@ -17,6 +20,10 @@ export const PROGRAM_IDS: Readonly<{
   token: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   token2022: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
   stake: "Stake11111111111111111111111111111111111111",
+  // anza-xyz/solana-sdk sdk-ids/src/lib.rs — the signature-verification precompiles
+  ed25519: "Ed25519SigVerify111111111111111111111111111",
+  secp256k1: "KeccakSecp256k11111111111111111111111111111",
+  secp256r1: "Secp256r1SigVerify1111111111111111111111111",
 });
 
 /**

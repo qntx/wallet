@@ -427,7 +427,7 @@ describe("text rules", () => {
       ? intent.message.fields?.find((f) => f.path === path)?.value
       : undefined;
 
-  it("a typed-data string leaf with a smuggling tag run shows U+FFFD, unblind", () => {
+  it("a typed-data string leaf with a smuggling tag run shows U+FFFD, blind", () => {
     const tagged = `hi${TAG_FLAG}${tags("hidden")}${TAG_END}`;
     const doc = {
       types: {
@@ -454,9 +454,9 @@ describe("text rules", () => {
       SIGNER,
     );
     /* The leaf goes through displayExcerpt like every shown value: deceptive code points render
-       as U+FFFD in the field line, so nothing the signature commits to is invisible; the request
-       itself stays unblind. */
-    expect(intent.blind).toBeUndefined();
+       as U+FFFD in the field line — and the request is blind, since the signed string carries
+       characters the shown line cannot reproduce. */
+    expect(intent.blind).toBe("message-bytes");
     expect(fieldAt(intent, "text")).toBe(`hi${TAG_FLAG}${"\uFFFD".repeat("hidden".length + 1)}`);
   });
 });

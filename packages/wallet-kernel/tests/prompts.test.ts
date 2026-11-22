@@ -1661,9 +1661,10 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       domain: { name: "Some\u202EExchange", chainId: 1, verifyingContract: TO },
       message: { maker: SIGNER },
     });
+    expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
-      title: "Confirm signature",
-      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\n· maker = ${SIGNER}`,
+      title: "Confirm blind signing",
+      description: `This text contains hidden or reordering characters (shown as \uFFFD); what you read may differ from what is signed\nApp: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\n· maker = ${SIGNER}`,
     });
   });
 
@@ -2841,6 +2842,51 @@ describe("blind text prompts", () => {
       description: `消息：\n· ${text}`,
     });
   });
+
+  it("a typed-data string leaf with hidden characters gets the hazard first, in both locales", () => {
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account,
+        typedData: JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+            ],
+            Root: [{ name: "subject", type: "string" }],
+          },
+          primaryType: "Root",
+          domain: { name: "App", version: "1", chainId: 1 },
+          message: { subject: "pay ‮bob" },
+        }),
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\n" +
+        "App: App\n" +
+        "Network: Ethereum\n" +
+        "Type: Root\n" +
+        "The wallet cannot verify what this signature authorises\n" +
+        "· subject = pay �bob",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n" +
+        "应用：App\n" +
+        "网络：Ethereum\n" +
+        "类型：Root\n" +
+        "钱包无法核实此签名授权的内容\n" +
+        "· subject = pay �bob",
+    });
+  });
 });
 
 describe("hyperliquid prompts", () => {
@@ -2880,6 +2926,27 @@ describe("hyperliquid prompts", () => {
       data: {},
       hyperliquid,
     },
+  });
+
+  it("a blind hyperliquid document leads with the hidden-characters hazard", () => {
+    const intent: PromptIntent = {
+      ...hlIntent("transfer", "partial", {
+        kind: "withdraw",
+        chain: "Testnet",
+        destination: HL_DEST,
+        amount: "25",
+      }),
+      blind: "message-bytes",
+    };
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\n" +
+        `Hyperliquid Testnet\nWithdraw 25 USDC from Hyperliquid to ${HL_DEST} through the Hyperliquid bridge\nHyperliquid charges a withdrawal fee`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toContain(
+      "文本含有隐藏或改变显示顺序的字符",
+    );
   });
 
   it("withdraw names the bridge and its fee", () => {

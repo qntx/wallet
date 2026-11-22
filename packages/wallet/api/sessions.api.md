@@ -4,6 +4,11 @@
 
 ```ts
 
+import { HyperliquidL1Action } from '@qntx/wallet-chains/evm';
+import { HyperliquidL1Order } from '@qntx/wallet-chains/evm';
+import { HyperliquidL1Params } from '@qntx/wallet-chains/evm';
+import { HyperliquidNetwork } from '@qntx/wallet-chains/evm';
+
 // @public
 type BackupApi = {
     readonly enable: (options: {
@@ -70,101 +75,13 @@ type FactorInfo = {
     readonly createdAt: number;
 };
 
-// @public
-export type HyperliquidL1Action = {
-    readonly type: "order";
-    readonly orders: ReadonlyArray<HyperliquidL1Order>;
-    readonly grouping: "na" | "normalTpsl" | "positionTpsl";
-    readonly builder?: {
-        readonly b: string;
-        readonly f: number;
-    };
-} | {
-    readonly type: "cancel";
-    readonly cancels: ReadonlyArray<{
-        readonly a: number;
-        readonly o: number;
-    }>;
-    readonly f?: true;
-} | {
-    readonly type: "cancelByCloid";
-    readonly cancels: ReadonlyArray<{
-        readonly asset: number;
-        readonly cloid: string;
-    }>;
-    readonly f?: true;
-} | {
-    readonly type: "modify";
-    readonly oid: number | string;
-    readonly order: HyperliquidL1Order;
-    readonly a?: true;
-} | {
-    readonly type: "batchModify";
-    readonly modifies: ReadonlyArray<{
-        readonly oid: number | string;
-        readonly order: HyperliquidL1Order;
-    }>;
-    readonly a?: true;
-} | {
-    readonly type: "scheduleCancel";
-    readonly time?: number;
-} | {
-    readonly type: "updateLeverage";
-    readonly asset: number;
-    readonly isCross: boolean;
-    readonly leverage: number;
-} | {
-    readonly type: "updateIsolatedMargin";
-    readonly asset: number;
-    readonly isBuy: boolean;
-    readonly ntli: number;
-} | {
-    readonly type: "twapOrder";
-    readonly twap: {
-        readonly a: number;
-        readonly b: boolean;
-        readonly s: string;
-        readonly r: boolean;
-        readonly m: number;
-        readonly t: boolean;
-    };
-} | {
-    readonly type: "twapCancel";
-    readonly a: number;
-    readonly t: number;
-};
+export { HyperliquidL1Action }
 
-// @public (undocumented)
-export type HyperliquidL1Order = {
-    readonly a: number;
-    readonly b: boolean;
-    readonly p: string;
-    readonly s: string;
-    readonly r: boolean;
-    readonly t: {
-        readonly limit: {
-            readonly tif: "Gtc" | "Ioc" | "Alo" | "FrontendMarket";
-        };
-    } | {
-        readonly trigger: {
-            readonly isMarket: boolean;
-            readonly triggerPx: string;
-            readonly tpsl: "tp" | "sl";
-        };
-    };
-    readonly c?: string;
-};
+export { HyperliquidL1Order }
 
-// @public (undocumented)
-export type HyperliquidL1Params = {
-    readonly action: HyperliquidL1Action;
-    readonly nonce: number;
-    readonly vaultAddress?: string;
-    readonly expiresAfter: number;
-};
+export { HyperliquidL1Params }
 
-// @public (undocumented)
-export type HyperliquidNetwork = "Mainnet" | "Testnet";
+export { HyperliquidNetwork }
 
 // @public
 type InitialFactor = {

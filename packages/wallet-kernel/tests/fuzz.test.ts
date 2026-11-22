@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { hyperliquidL1Document } from "@qntx/wallet-chains/evm";
 import { METHODS, validate } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
 import { encodeSessionHeader, parseSessionHeader } from "../src/modules/sessions/record.ts";
-import { encodeL1Action } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
 import { hyperliquidL1Action } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts";
 import { createHarness, mulberry32 } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
@@ -218,7 +218,9 @@ describe("sessions parser fuzz", () => {
       .filter((value) => value !== undefined);
     for (const action of parsed) {
       // Encoding a validated action is total, and the parsed value is a fixpoint.
-      expect(() => encodeL1Action(action)).not.toThrow();
+      expect(() =>
+        hyperliquidL1Document({ action, nonce: 0, expiresAfter: 0 }, "Mainnet"),
+      ).not.toThrow();
       expect(validate(hyperliquidL1Action, action)).toStrictEqual(action);
     }
     // The generator does produce valid actions — the property is not vacuous.

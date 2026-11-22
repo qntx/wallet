@@ -45,6 +45,31 @@ export type TronApi = {
   readonly post: (path: TronNodePath | TronIndexerPath, body: unknown) => Promise<unknown>;
 };
 
+/** A non-2xx answer from a TRON node API; `retryAfterMs` is the `retry-after` delta in ms. */
+class TronHttpError extends Error {
+  readonly status: number;
+  readonly retryAfterMs: number | undefined;
+  constructor(status: number, retryAfterMs: number | undefined, message: string) {
+    super(message);
+    this.name = "TronHttpError";
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
+ * The TRON node API is throttling and the transaction's validity window does not leave time to wait
+ * the requested backoff out — retry the request later.
+ */
+export class TronThrottledError extends Error {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super("the TRON node API is throttling — retry later");
+    this.name = "TronThrottledError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 /**
  * Ordered failover like `solanaCaller`: a transport error, a non-2xx status, a non-JSON body, or a
  * body that is not a JSON object moves to the next URL; the last error thrown names the path, the
@@ -94,7 +119,10 @@ const postOnce = async (
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`${path}: HTTP ${res.status} from ${url}`);
+    const ra = res.headers.get("retry-after");
+    const retryAfterMs =
+      ra !== null && ra !== "" && !Number.isNaN(Number(ra)) ? Number(ra) * 1000 : undefined;
+    throw new TronHttpError(res.status, retryAfterMs, `${path}: HTTP ${res.status} from ${url}`);
   }
   let parsed: unknown;
   try {
@@ -116,29 +144,63 @@ const postOnce = async (
  * named a provider, later calls send `x-gateway-provider` so the gateway too serves them from that
  * one node. A pinned call that fails throws — no failover mid-sequence.
  */
+/** A retry never re-sends a broadcast: the bytes may already be out from the first attempt. */
+const NO_RETRY_PATHS: ReadonlySet<string> = new Set([
+  "/wallet/broadcasthex",
+  "/wallet/broadcasttransaction",
+]);
+
 export const pinnedTronCaller = (
   urls: ReadonlyArray<string>,
   fetchFn: typeof globalThis.fetch,
+  retry?: {
+    readonly until: () => number;
+    readonly now: () => number;
+    readonly sleep: (ms: number) => Promise<void>;
+  },
 ): TronApi => {
   let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
   return {
     post: async (path, body) => {
-      if (pinned !== undefined) {
-        const answered = await postOnce(fetchFn, pinned.url, path, body, pinned.provider);
-        return answered.parsed;
-      }
-      let last: unknown;
-      for (const url of urls) {
+      for (;;) {
         try {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
-          const answered = await postOnce(fetchFn, url, path, body, undefined);
-          pinned = { url, provider: answered.provider };
-          return answered.parsed;
+          if (pinned !== undefined) {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- a throttled attempt retries after the backoff
+            const answered = await postOnce(fetchFn, pinned.url, path, body, pinned.provider);
+            return answered.parsed;
+          }
+          let last: unknown;
+          for (const url of urls) {
+            try {
+              // oxlint-disable-next-line eslint/no-await-in-loop -- failover is ordered and sequential
+              const answered = await postOnce(fetchFn, url, path, body, undefined);
+              pinned = { url, provider: answered.provider };
+              return answered.parsed;
+            } catch (error) {
+              last = error;
+            }
+          }
+          throw last instanceof Error ? last : new Error(path);
         } catch (error) {
-          last = error;
+          /* A 429/503 inside the transaction's validity window waits the server's backoff and
+             re-runs the same attempt — the pin, and the provider pin header with it, is kept.
+             Without a deadline the original error propagates as before. */
+          if (
+            retry === undefined ||
+            !(error instanceof TronHttpError) ||
+            (error.status !== 429 && error.status !== 503) ||
+            NO_RETRY_PATHS.has(path)
+          ) {
+            throw error;
+          }
+          const wait = Math.max(250, error.retryAfterMs ?? 1000);
+          if (retry.now() + wait > retry.until()) {
+            throw new TronThrottledError(wait);
+          }
+          // oxlint-disable-next-line eslint/no-await-in-loop -- the retry waits the server's backoff
+          await retry.sleep(wait);
         }
       }
-      throw last instanceof Error ? last : new Error(path);
     },
   };
 };

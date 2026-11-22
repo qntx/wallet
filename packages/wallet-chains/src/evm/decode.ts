@@ -42,7 +42,12 @@ import { decodeTokenCall } from "./token-call.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
-import { domainChainId, parseTypedData, typedDataFields } from "./typed-data.ts";
+import {
+  domainChainId,
+  parseTypedData,
+  typedDataFields,
+  typedDataHasHiddenText,
+} from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 import { decodeWrappedNative } from "./wrapped-native.ts";
 import { decodeZeroX } from "./zerox.ts";
@@ -643,7 +648,10 @@ export const decodeEvm = (
           ? "typed-data-commitment"
           : undefined
       : undefined);
-  const blind = permit?.blind ?? typedDataBlind(safe, seaport, app, unclaimedBlind);
+  const blind =
+    permit?.blind ??
+    typedDataBlind(safe, seaport, app, unclaimedBlind) ??
+    (typedDataHasHiddenText(json) ? "message-bytes" : undefined);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,

@@ -202,6 +202,11 @@ const ctxOf = (api: TronApi, signCalls: Uint8Array[]): RouteContext => ({
       pinnedTronApi: () => api,
       independentTronApi: () => ({ kind: "not-needed" }),
       independentPinnedTronApi: () => ({ kind: "not-needed" }),
+      info: () => ({
+        id: NET,
+        genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc",
+        testnet: false,
+      }),
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),

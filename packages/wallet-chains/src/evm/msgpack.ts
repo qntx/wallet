@@ -13,7 +13,7 @@
  * its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
  * order, exactly what must not happen.
  */
-import { KernelError } from "../../../../errors.ts";
+import { ChainError } from "../index.ts";
 
 const utf8 = new TextEncoder();
 
@@ -58,7 +58,7 @@ const u64be = (value: bigint): Uint8Array => {
 /** Safe integers only — the L1 schemas bound every numeric field well inside them. */
 export function packInt(value: number): Uint8Array {
   if (!Number.isSafeInteger(value)) {
-    throw new KernelError("integrity", "unreachable: non-integer msgpack field");
+    throw new ChainError("invalid-request", "unreachable: non-integer msgpack field");
   }
   if (value >= 0) {
     if (value <= 0x7f) {
@@ -118,7 +118,7 @@ export function packArray(items: ReadonlyArray<Uint8Array>): Uint8Array {
       : items.length < 65536
         ? concat(new Uint8Array([0xdc]), u16be(items.length))
         : (() => {
-            throw new KernelError("integrity", "unreachable: msgpack array over 65535 items");
+            throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
           })();
   return concat(head, ...items);
 }
@@ -135,7 +135,7 @@ export function packMap(entries: ReadonlyArray<readonly [string, Uint8Array]>): 
       : entries.length < 65536
         ? concat(new Uint8Array([0xde]), u16be(entries.length))
         : (() => {
-            throw new KernelError("integrity", "unreachable: msgpack map over 65535 entries");
+            throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
           })();
   return concat(head, ...entries.flatMap(([key, value]) => [packStr(key), value]));
 }

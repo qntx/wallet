@@ -41,8 +41,9 @@ const UNITS: ReadonlyArray<Unit> = [
   },
   {
     name: "hyperliquid-l1-agent scheme",
-    match: /^packages\/wallet-kernel\/src\/modules\/sessions\/schemes\/hyperliquid-l1-agent\//,
-    // measured 15794 B; study budget 8192 B exceeded — needs a recorded decision
+    match:
+      /^packages\/(wallet-kernel\/src\/modules\/sessions\/schemes\/hyperliquid-l1-agent\/|wallet-chains\/src\/evm\/(hyperliquid-l1|msgpack)\.ts$)/,
+    // measured 15940 B; study budget 8192 B exceeded — needs a recorded decision
     budget: 16_384,
     note: "the one session scheme: L1 action validators, msgpack, phantom-agent document",
   },

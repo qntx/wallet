@@ -116,6 +116,7 @@ describe("a poisoned engine-store row", () => {
       logger: LOGGER,
       setTimer: () => () => {},
       random,
+      now: () => Date.now(),
     });
     await store.collection("networks").put("customRpc", json({ "eip155:1": ["http://rpc.good"] }));
     const recId = await oracleId(DATA_KEY, "networks", "customRpc");
@@ -162,6 +163,7 @@ describe("a poisoned engine-store row", () => {
         logger: LOGGER,
         setTimer: () => () => {},
         random,
+        now: () => Date.now(),
       }),
       openStore: async () => Promise.resolve(store),
       random,

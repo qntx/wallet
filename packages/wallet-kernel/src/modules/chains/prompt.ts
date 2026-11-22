@@ -1547,10 +1547,14 @@ function typedDataLines(
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
   const { name, chainId, verifyingContract } = message.domain;
+  /* A document blind because a string leaf carries hidden characters gets the same hazard line
+     a hazardous text message does — ahead of every family branch. */
+  const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
   if (message.hyperliquid !== undefined) {
     /* The domain's chain id is only the wallet's signing chain; the environment the action
        targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
     return [
+      ...hazard,
       catalog.hlChain[message.hyperliquid.chain],
       ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
     ];
@@ -1558,7 +1562,7 @@ function typedDataLines(
   /* A Polymarket document is its own description — before the generic branches, because a
      deposit-wallet batch also carries approvals and outflows. */
   if (message.polymarket !== undefined) {
-    return polymarketLines(catalog, intent, message.polymarket);
+    return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
   }
   /* For TRON the domain chainId is the network's CAIP-2 reference — already checked against
      `intent.network` at normalize — so the network line is the network itself, not eip155. */
@@ -1569,6 +1573,7 @@ function typedDataLines(
         ? intent.network
         : `eip155:${chainId}`;
   return [
+    ...hazard,
     ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
     ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),
     ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),

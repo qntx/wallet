@@ -56,12 +56,20 @@ import type {
 } from "../chains/tron.ts";
 import type { TronAccount } from "../gateway/contract/index.ts";
 import type { Independent } from "../networks/controller.ts";
+import type { NetworkInfo } from "../networks/registry.ts";
 import { collectChecks, feesDiffer } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 import { submitSigned } from "./broadcast.ts";
-import { includedPoll, newId, accountAddressOf, errorMessage, failTx } from "./route.ts";
+import {
+  includedPoll,
+  newId,
+  accountAddressOf,
+  assertGatewayOnlyBinding,
+  errorMessage,
+  failTx,
+} from "./route.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -130,25 +138,24 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
 
 /**
  * The independent-endpoint cross-check (invariant 2): the reference block id — the chain binding —
- * must be confirmed by the host endpoint, so without one the prepare is refused and its read
- * failure is refused too. The fee-model chain parameters and `extra` (recipient existence, energy
- * estimate) share the failure umbrella: a disagreement refuses the prepare, any other read failure
- * degrades to a `reads-unverified` flag.
+ * must be confirmed by the host endpoint when there is one, and its read failure is refused too.
+ * Without a host endpoint the shared rule decides: a testnet prepare is refused, a mainnet prepare
+ * proceeds flagged `reads-unverified`. The fee-model chain parameters and `extra` (recipient
+ * existence, energy estimate) share the failure umbrella: a disagreement refuses the prepare, any
+ * other read failure degrades to a `reads-unverified` flag.
  */
 const crossCheckTron = async (
-  network: string,
+  info: NetworkInfo,
   independent: Independent<TronApi>,
   head: Pick<TronHead, "number" | "id">,
   params: TronChainParams,
   extra?: (api: TronApi) => Promise<void>,
 ): Promise<"reads-unverified" | undefined> => {
-  /* The reference block binds the signed bytes to a chain: if only the gateway can vouch for it,
-     the build is refused — there is no second word. */
+  /* The params and contract reads the gateway answered are uncorroborated — a mainnet build
+     may proceed flagged reads-unverified, a testnet build is refused by the shared rule. */
   if (independent.kind === "unavailable") {
-    throw new ChainError(
-      "invalid-request",
-      `only the gateway vouches for the reference block on ${network} — configure a host endpoint for it`,
-    );
+    assertGatewayOnlyBinding(info, "reference block");
+    return "reads-unverified";
   }
   if (independent.kind !== "available") {
     return undefined;
@@ -192,8 +199,9 @@ const anchoredSolidHead = async (
   ctx: RouteContext,
   network: string,
   independent: Independent<TronApi>,
+  until?: () => number,
 ): Promise<{ readonly api: TronApi; readonly head: TronHead }> => {
-  const api = ctx.options.networks.pinnedTronApi(network);
+  const api = ctx.options.networks.pinnedTronApi(network, until);
   const head = await solidHead(api);
   if (independent.kind === "not-needed") {
     return { api, head };
@@ -341,7 +349,8 @@ export const prepareTron = async (
   const flags: Array<RequestCheckCode | undefined> = [];
   const risk: RiskFinding[] = [];
 
-  const { api, head } = await anchoredSolidHead(ctx, network, independent);
+  const budget = { at: ctx.options.now() + TRON_TTL_MS - TRON_STALE_MS };
+  const { api, head } = await anchoredSolidHead(ctx, network, independent, () => budget.at);
   const params0 = await chainParams(api);
   const fromRow = await account(api, from);
   if (fromRow === undefined) {
@@ -427,7 +436,13 @@ export const prepareTron = async (
         flags.push("reads-unverified");
       }
     };
-    const flag = await crossCheckTron(network, independent, head, params0, extra);
+    const flag = await crossCheckTron(
+      ctx.options.networks.info(network),
+      independent,
+      head,
+      params0,
+      extra,
+    );
     if (flag !== undefined) {
       flags.push(flag);
     }
@@ -459,6 +474,7 @@ export const prepareTron = async (
       : undefined;
 
   return finishTron(ctx, {
+    budget,
     api,
     ref,
     network,
@@ -530,6 +546,8 @@ type TronFinish = {
   readonly assertIntent: (intent: ReturnType<typeof decodeTron>) => void;
   readonly simulation?: SimulationOutcome;
   readonly resimulate?: () => Promise<SimulationOutcome>;
+  /** The flow's read-retry deadline — the transaction must be signed before this. */
+  readonly budget: { at: number };
 };
 
 /**
@@ -567,6 +585,7 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
   const decodeAt = (raw: Uint8Array): ReturnType<typeof decodeTron> =>
     decodeTron({ kind: "tron.transaction", network, account: ref, rawData: raw }, from);
   const header = buildHeader(head, now);
+  input.budget.at = header.expiration - TRON_STALE_MS;
   const rawData = buildTronRawData(header, contract);
   const quote = quoteFor(rawData);
   if (input.balance < input.outflow + BigInt(quote.expected)) {
@@ -603,14 +622,19 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
    */
   const rebuild = async (): Promise<string | undefined> => {
     const independent = ctx.options.networks.independentTronApi(network);
+    input.budget.at = ctx.options.now() + TRON_TTL_MS - TRON_STALE_MS;
     let fresh: TronHead;
     try {
-      ({ head: fresh } = await anchoredSolidHead(ctx, network, independent));
+      ({ head: fresh } = await anchoredSolidHead(ctx, network, independent, () => input.budget.at));
     } catch (error) {
       return errorMessage(error);
     }
     if (independent.kind === "unavailable") {
-      return `only the gateway vouches for the reference block on ${network} — configure a host endpoint for it`;
+      try {
+        assertGatewayOnlyBinding(ctx.options.networks.info(network), "reference block");
+      } catch (error) {
+        return errorMessage(error);
+      }
     }
     if (independent.kind === "available") {
       let otherId: string | undefined;
@@ -639,6 +663,7 @@ const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
       return errorMessage(error);
     }
     current = { header: header2, rawData: rebuilt, quote: quote2, intent: intent2 };
+    input.budget.at = header2.expiration - TRON_STALE_MS;
     return undefined;
   };
 
@@ -766,7 +791,8 @@ export const prepareTronStake = async (
   const flags: Array<RequestCheckCode | undefined> = [];
   const risk: RiskFinding[] = [];
 
-  const { api, head } = await anchoredSolidHead(ctx, network, independent);
+  const budget = { at: ctx.options.now() + TRON_TTL_MS - TRON_STALE_MS };
+  const { api, head } = await anchoredSolidHead(ctx, network, independent, () => budget.at);
   const params0 = await chainParams(api);
   const fromRow = await account(api, from);
   if (fromRow === undefined) {
@@ -1000,12 +1026,13 @@ export const prepareTronStake = async (
     }
   }
 
-  const flag = await crossCheckTron(network, independent, head, params0);
+  const flag = await crossCheckTron(ctx.options.networks.info(network), independent, head, params0);
   if (flag !== undefined) {
     flags.push(flag);
   }
 
   return finishTron(ctx, {
+    budget,
     api,
     ref,
     network,
@@ -1054,7 +1081,8 @@ export const prepareTronApprove = async (
   const flags: Array<RequestCheckCode | undefined> = [];
   const risk: RiskFinding[] = [];
 
-  const { api, head } = await anchoredSolidHead(ctx, network, independent);
+  const budget = { at: ctx.options.now() + TRON_TTL_MS - TRON_STALE_MS };
+  const { api, head } = await anchoredSolidHead(ctx, network, independent, () => budget.at);
   const params0 = await chainParams(api);
   const fromRow = await account(api, from);
   if (fromRow === undefined) {
@@ -1073,25 +1101,32 @@ export const prepareTronApprove = async (
   }
   let estimate = { used: call.energyUsed, penalty: call.energyPenalty };
 
-  const flag = await crossCheckTron(network, independent, head, params0, async (independentApi) => {
-    const other = await constantCall(independentApi, { owner: from, contract: token, data });
-    if (other.ok) {
-      if (feesDiffer(BigInt(other.energyUsed), BigInt(estimate.used))) {
-        flags.push("fee-mismatch");
+  const flag = await crossCheckTron(
+    ctx.options.networks.info(network),
+    independent,
+    head,
+    params0,
+    async (independentApi) => {
+      const other = await constantCall(independentApi, { owner: from, contract: token, data });
+      if (other.ok) {
+        if (feesDiffer(BigInt(other.energyUsed), BigInt(estimate.used))) {
+          flags.push("fee-mismatch");
+        }
+        estimate = {
+          used: Math.max(estimate.used, other.energyUsed),
+          penalty: Math.max(estimate.penalty, other.energyPenalty),
+        };
+      } else {
+        flags.push("reads-unverified");
       }
-      estimate = {
-        used: Math.max(estimate.used, other.energyUsed),
-        penalty: Math.max(estimate.penalty, other.energyPenalty),
-      };
-    } else {
-      flags.push("reads-unverified");
-    }
-  });
+    },
+  );
   if (flag !== undefined) {
     flags.push(flag);
   }
 
   return finishTron(ctx, {
+    budget,
     api,
     ref,
     network,
@@ -1228,9 +1263,10 @@ export const prepareDappTron = async (
   // TaPoS: ref_block_bytes are the reference block number's low 16 bits; the number is recovered
   // against the full-node head, then that block's id must contain ref_block_hash in bytes 8–16.
   // The head and both block reads share one pinned upstream, anchored to the configured genesis.
-  const { api, head: solid } = await anchoredSolidHead(ctx, network, independent);
+  const budget = { at: expiration - TRON_DAPP_MIN_REMAINING_MS };
+  const { api, head: solid } = await anchoredSolidHead(ctx, network, independent, () => budget.at);
   const refIdAt = async (): Promise<string | undefined> => {
-    const anchored = await anchoredSolidHead(ctx, network, independent);
+    const anchored = await anchoredSolidHead(ctx, network, independent, () => budget.at);
     return blockId(anchored.api, refNumber, refNumber <= anchored.head.number);
   };
   const headFull = await headNumber(api);
@@ -1298,7 +1334,7 @@ export const prepareDappTron = async (
     }
   };
   const flag = await crossCheckTron(
-    network,
+    ctx.options.networks.info(network),
     independent,
     { number: refNumber, id: refId },
     params0,

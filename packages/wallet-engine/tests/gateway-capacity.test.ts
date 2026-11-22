@@ -667,4 +667,75 @@ describe("engine gateway capacity", () => {
       ).toBeLessThanOrEqual(SHARE_LIMIT);
     }
   }, 600_000);
+
+  it.skipIf(UNCONSTRAINED)(
+    "a TRON send retries TronGrid budget refusals inside the signing window",
+    async () => {
+      const { wallet, walletId } = await createHarnessWallet();
+      const addresses = await walletAddresses(wallet, walletId, PRODUCTION_NETWORKS);
+      const btcAddrs = bitcoinAddresses(addresses.xpubs, [
+        { chain: 0, max: 3 },
+        { chain: 1, max: 1 },
+      ]);
+      const world = await createWorld({
+        wallet,
+        model: usedModel({
+          evmAddress: addresses.evm,
+          bitcoin: bitcoinUsed(NETWORK, btcAddrs),
+          trc20Contract: TRC20,
+        }),
+        networks: byId(TRON),
+        tronAddress: addresses.tron,
+        passthroughTron: true,
+      });
+      /* Other tenants' traffic (a foreign /24, so a different client share) drains TronGrid's
+         shared 12-calls/5 s bucket to 2; the send then pins trongrid — pinned calls fail over
+         to nothing — and meets 503s announcing the bucket's refill wait, which the engine's
+         pinned-read retry sleeps through. This client's own share keeps room, so no 60-second
+         share refusal lands. */
+      await world.pressureTron(10);
+      const before = world.snapshot();
+      const t0 = world.clock();
+      const pending: { id: string; risk?: unknown; checks?: unknown } | undefined =
+        await world.engine.requests.prepare({
+          method: "send",
+          account: {
+            kind: "hd" as const,
+            walletId,
+            groupIndex: 0,
+            template: "tron.bip44" as const,
+          } as never,
+          network: TRON,
+          to: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
+          amount: 1_000_000n,
+          fee: "normal",
+        } as never);
+      if (pending === undefined) {
+        throw new Error("send tron: prepare never succeeded");
+      }
+      const tx = await world.engine.requests.approve(
+        pending.id,
+        "send",
+        approval(pending as never, VERIFY),
+      );
+      const waited = world.clock() - t0;
+      const send = diffReadings(world.snapshot(), before);
+      const throttled =
+        (send.routeStatuses.get("tron|429") ?? 0) + (send.routeStatuses.get("tron|503") ?? 0);
+      const pinned = [...send.pinned.values()].reduce((a, b) => a + b, 0);
+      console.log(
+        `throttled pinned tron reads: ${String(throttled)}; pinned gateway requests: ${String(pinned)}; virtual wait: ${String(waited)} ms; statuses: ${[...send.routeStatuses].map(([k, n]) => `${k}×${String(n)}`).join(",")}`,
+      );
+      expect(tx.hash).toBeDefined();
+      expect(
+        throttled,
+        "the gateway never refused a pinned TRON request — the window did not throttle",
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        waited,
+        `the send waited ${String(waited)} ms — beyond the stale bound`,
+      ).toBeLessThanOrEqual(40_000);
+    },
+    600_000,
+  );
 });

@@ -497,6 +497,7 @@ const ctlRig = async (
     wallet,
     networks: new NetworkController({
       ...realDeps,
+      now: () => Date.now(),
       fetch: globalThis.fetch.bind(globalThis),
       rpc: { [NETWORK]: [base] },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -724,6 +725,7 @@ const legacyFlow = async (): Promise<void> => {
       sparkNetwork: "regtest",
       networks: new NetworkController({
         ...realDeps,
+        now: () => Date.now(),
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -748,6 +750,7 @@ const legacyFlow = async (): Promise<void> => {
       wallet,
       networks: new NetworkController({
         ...realDeps,
+        now: () => Date.now(),
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
