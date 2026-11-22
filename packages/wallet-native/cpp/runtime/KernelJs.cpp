@@ -23,6 +23,20 @@ double finiteNumber(jsi::Runtime& rt, const jsi::Value& value, const char* name)
   return value.getNumber();
 }
 
+jsi::Value detailValue(jsi::Runtime& rt, const std::string& detail) {
+  if (detail.empty() || detail.size() > 80) {
+    return jsi::Value::undefined();
+  }
+  for (const char c : detail) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ':' || c == '-';
+    if (!ok) {
+      return jsi::Value::undefined();
+    }
+  }
+  return jsi::Value(rt, jsi::String::createFromAscii(rt, detail));
+}
+
 uint64_t integerInRange(
     jsi::Runtime& rt,
     const jsi::Value& value,

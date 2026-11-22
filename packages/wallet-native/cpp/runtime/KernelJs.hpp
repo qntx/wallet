@@ -42,6 +42,10 @@ void defineHiddenGlobal(
 
 double finiteNumber(jsi::Runtime& rt, const jsi::Value& value, const char* name);
 
+// A detail is a "<domain>:<code>" diagnostic the JS side validates again;
+// pass it through only while it stays a short token string.
+jsi::Value detailValue(jsi::Runtime& rt, const std::string& detail);
+
 uint64_t integerInRange(
     jsi::Runtime& rt,
     const jsi::Value& value,
