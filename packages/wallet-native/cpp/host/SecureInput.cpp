@@ -72,30 +72,29 @@ bool SecureInputHub::submit(uint64_t view, SecretBytes value) {
   std::vector<SecureInputSink> sinks;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!pending_.has_value()) {
-      return false;
-    }
-    if (!validFor(pending_->kind, value)) {
-      // Never complete on bad bytes; clear just the offending view — the
-      // request stays pending for the others.
-      const auto found = sinks_.find(view);
-      if (found != sinks_.end()) {
-        sink = found->second;
-      }
-    } else {
+    if (pending_.has_value() && validFor(pending_->kind, value)) {
       done = std::move(pending_->done);
       pending_.reset();
       sinks.reserve(sinks_.size());
       for (const auto& [_, s] : sinks_) {
         sinks.push_back(s);
       }
+    } else {
+      // Nothing pending, or bad bytes: never complete — clear just the
+      // submitting view. A live request stays pending for the others.
+      const auto found = sinks_.find(view);
+      if (found != sinks_.end()) {
+        sink = found->second;
+      }
     }
+  }
+  // The clear reaches the views before the completion: a re-request issued
+  // from inside done() can never be overtaken by this clear.
+  for (const auto& s : sinks) {
+    s(std::nullopt);
   }
   if (done) {
     done(SecureInputResult{std::nullopt, std::move(value)});
-    for (const auto& s : sinks) {
-      s(std::nullopt);
-    }
     return true;
   }
   if (sink) {
@@ -144,11 +143,13 @@ void SecureInputHub::cancel(const void* owner) {
       sinks.push_back(s);
     }
   }
-  if (done) {
-    done(SecureInputResult{SecureInputFailure::cancelled, {}});
-  }
+  // Same ordering as submit: views learn the request is gone before the
+  // requester's completion can arm the next one.
   for (const auto& s : sinks) {
     s(std::nullopt);
+  }
+  if (done) {
+    done(SecureInputResult{SecureInputFailure::cancelled, {}});
   }
 }
 

@@ -299,7 +299,8 @@ export type Port = {
 /**
  * Why a card-reader session ended without completing the current call. `cancelled` is the user
  * dismissing the session, `timeout` the platform's session window expiring, `tag-lost` the card
- * leaving the field, `interrupted` a platform interruption (call, another app taking NFC), and
+ * leaving the field, `interrupted` the platform interrupting the session — the reader surface lost
+ * focus, the app left the foreground, or the system ended the session unexpectedly — and
  * `unavailable` anything else — including the reader being owned by another runtime or the platform
  * reporting an out-of-contract outcome.
  */
@@ -333,7 +334,7 @@ export type CardReader = {
   readonly close: (outcome: "success" | "failure", text: string) => void;
 };
 
-/** What the secure input view collects: the vault access code, or a card's printed short ID. */
+/** What the secure input view collects: the qntx card's access code, or its printed short ID. */
 export type SecureInputKind = "access-code" | "short-id";
 
 /** The outcome of a secure-input request; `value` is the confirmed bytes the user entered. */

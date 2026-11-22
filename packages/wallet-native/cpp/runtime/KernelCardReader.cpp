@@ -52,14 +52,14 @@ const void*& ownerSlot() {
   return owner;
 }
 
-bool ownsReader(const KernelGlobalsState* state) {
+bool ownsReader(const void* owner) {
   std::lock_guard<std::mutex> lock(ownerMutex());
-  return ownerSlot() == state;
+  return ownerSlot() == owner;
 }
 
-void releaseReader(const KernelGlobalsState* state) {
+void releaseReader(const void* owner) {
   std::lock_guard<std::mutex> lock(ownerMutex());
-  if (ownerSlot() == state) {
+  if (ownerSlot() == owner) {
     ownerSlot() = nullptr;
   }
 }
@@ -150,15 +150,19 @@ void installKernelCardReader(
     const std::shared_ptr<KernelGlobalsState>& state) {
   auto session = std::make_shared<ReaderSession>();
 
-  state->cancelCeremonies.emplace_back([state, session] {
-    // Kernel thread, runtime teardown: a live session belongs to nobody now —
-    // close it silently and hand ownership back. Late completions die on the
-    // weak state/active flag like every other ceremony.
+  // Kernel thread, runtime teardown: a live session belongs to nobody now —
+  // close it silently and hand ownership back. Late completions die on the
+  // weak state/active flag like every other ceremony. Capturing `state` here
+  // would cycle state → cancelCeremonies → state, so the ceremony keeps the
+  // raw owner identity and a reader reference instead.
+  const void* owner = state.get();
+  const std::shared_ptr<CardReader> reader = state->cardReader;
+  state->cancelCeremonies.emplace_back([owner, reader, session] {
     session->phase = Phase::closed;
-    if (ownsReader(state.get()) && state->cardReader != nullptr) {
-      state->cardReader->close(false, "");
+    if (ownsReader(owner) && reader != nullptr) {
+      reader->close(false, "");
     }
-    releaseReader(state.get());
+    releaseReader(owner);
   });
 
   auto cardReader = jsi::Object(rt);
@@ -333,16 +337,13 @@ void installKernelCardReader(
           throw jsi::JSError(rt, "__qntx.cardReader.close outcome must be success or failure");
         }
         const auto text = textArg(rt, args[1], "__qntx.cardReader.close text", kTextMax);
-        // The kernel ended the session itself: any call still parked resolves
-        // cancelled and the platform's late answer is ignored.
-        if (auto parked = std::move(session->open); parked != nullptr) {
-          settle(rt, state, parked, {ascii(rt, "cancelled"), jsi::Value::undefined()});
-        }
-        if (auto parked = std::move(session->transmit); parked != nullptr) {
-          settle(
-              rt, state, parked,
-              {jsi::Value::undefined(), ascii(rt, "cancelled"), jsi::Value::undefined()});
-        }
+        // The kernel ended the session itself: the platform session ends and
+        // ownership is released first, then any call still parked resolves
+        // cancelled asynchronously, like every other completion — settling
+        // here would re-enter JS while the phase still says open. The
+        // platform's late answer is ignored.
+        auto parkedOpen = std::move(session->open);
+        auto parkedTransmit = std::move(session->transmit);
         switch (session->phase) {
           case Phase::idle:
           case Phase::closed:
@@ -359,6 +360,20 @@ void installKernelCardReader(
             session->phase = Phase::closed;
             releaseReader(state.get());
             break;
+        }
+        if (parkedOpen != nullptr) {
+          state->enqueueTask([state, parkedOpen](jsi::Runtime& rt) {
+            settle(
+                rt, state, parkedOpen,
+                {ascii(rt, "cancelled"), jsi::Value::undefined()});
+          });
+        }
+        if (parkedTransmit != nullptr) {
+          state->enqueueTask([state, parkedTransmit](jsi::Runtime& rt) {
+            settle(
+                rt, state, parkedTransmit,
+                {jsi::Value::undefined(), ascii(rt, "cancelled"), jsi::Value::undefined()});
+          });
         }
         return jsi::Value::undefined();
       }));

@@ -35,9 +35,12 @@ void installKernelSecureInput(
   auto& hub = SecureInputHub::shared();
 
   // Teardown drops this runtime's pending request without completing it — the
-  // parked jsi::Function is already dead by then — and clears the views.
+  // parked jsi::Function is already dead by then — and clears the views. The
+  // ceremony captures the raw owner identity, not `state`: a shared_ptr here
+  // would cycle state → cancelCeremonies → state.
+  const void* owner = state.get();
   state->cancelCeremonies.emplace_back(
-      [&hub, state] { hub.release(state.get()); });
+      [&hub, owner] { hub.release(owner); });
 
   auto secureInput = jsi::Object(rt);
   secureInput.setProperty(

@@ -1274,10 +1274,11 @@ __qntx.cardReader.open("s", function (code) {
       CHECK(closes.size() == 1, "card-reader-teardown: a late completion closed the session again");
       std::lock_guard<std::mutex> lock(box.m);
       // The kernel's own close settled the in-flight transmit cancelled,
-      // exactly once; the late tag-lost must not resolve it again.
+      // exactly once, asynchronously after "closed"; the late tag-lost must
+      // not resolve it again.
       CHECK(
-          box.posts.size() == 2 && box.posts[0] == "late-tx:cancelled" &&
-              box.posts[1] == "closed",
+          box.posts.size() == 2 && box.posts[0] == "closed" &&
+              box.posts[1] == "late-tx:cancelled",
           "card-reader-teardown: a late completion re-settled the closed call");
       CHECK(box.errors.empty(), "card-reader-teardown: unexpected onError");
     }
@@ -1420,8 +1421,9 @@ __send("armed");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1, "secure-input-teardown: done ran on a dead runtime");
   CHECK(box.errors.empty(), "secure-input-teardown: unexpected onError");
-  // attach's own empty prompt, the request's prompt, teardown's clear.
-  CHECK(prompts.load() == 3, "secure-input-teardown: the view was not cleared");
+  // attach's own empty prompt, the request's prompt, teardown's clear, and
+  // the refused submit's clear of the submitting view.
+  CHECK(prompts.load() == 4, "secure-input-teardown: the view was not cleared");
   return g_failures;
 }
 
@@ -1437,6 +1439,8 @@ int secureInputHubCase() {
   CHECK(seen.size() == 1 && !seen[0].has_value(), "secure-input-hub: attach replayed a prompt");
   CHECK(!hub.submit(view, qntx::SecretBytes(std::vector<uint8_t>{'a'})),
       "secure-input-hub: submit without a request");
+  CHECK(seen.size() == 2 && !seen[1].has_value(),
+      "secure-input-hub: a refused submit did not clear the view");
   int calls = 0;
   std::optional<qntx::SecureInputFailure> lastFailure;
   qntx::SecretBytes lastValue;
@@ -1492,9 +1496,41 @@ int secureInputHubCase() {
   CHECK(calls == 3, "secure-input-hub: release ran the completion");
   CHECK(!trySubmit({'a'}), "secure-input-hub: submit after release");
   hub.detach(view);
-  CHECK(seen.size() >= 5 && seen[1].has_value() && seen[1]->label == "label" &&
+  CHECK(seen.size() >= 5 && seen[2].has_value() && seen[2]->label == "label" &&
             !seen.back().has_value(),
       "secure-input-hub: the view did not see prompt and clear");
+  // Ordering: the clear reaches the views before the completion, so a request
+  // armed from inside done() is the last prompt a view observes — the view can
+  // never be left idle while a request is pending.
+  {
+    std::vector<std::optional<qntx::SecureInputPrompt>> order;
+    const uint64_t v2 = hub.attach(
+        [&](const std::optional<qntx::SecureInputPrompt>& p) { order.push_back(p); });
+    hub.request(
+        ownerA, qntx::SecureInputKind::accessCode, "first",
+        [&](qntx::SecureInputResult) {
+          hub.request(
+              ownerA, qntx::SecureInputKind::accessCode, "second",
+              [](qntx::SecureInputResult) {});
+        });
+    CHECK(hub.submit(v2, qntx::SecretBytes(std::vector<uint8_t>{'k'})),
+        "secure-input-hub: ordering submit refused");
+    CHECK(order.back().has_value() && order.back()->label == "second",
+        "secure-input-hub: the submit clear overtook a request armed inside done");
+    hub.release(ownerA);
+    hub.request(
+        ownerA, qntx::SecureInputKind::accessCode, "third",
+        [&](qntx::SecureInputResult) {
+          hub.request(
+              ownerA, qntx::SecureInputKind::accessCode, "fourth",
+              [](qntx::SecureInputResult) {});
+        });
+    hub.cancel(ownerA);
+    CHECK(order.back().has_value() && order.back()->label == "fourth",
+        "secure-input-hub: the cancel clear overtook a request armed inside done");
+    hub.release(ownerA);
+    hub.detach(v2);
+  }
   return g_failures;
 }
 
