@@ -1,8 +1,8 @@
 /**
- * OPEN (protocol.md §8.1–8.2) and the §8.4 secure session. One request/response record pair
- * per inner command, AES-128 CBC + CMAC under the four session keys, u16 counters. The
- * session is torn down — keys wiped, every further call `session-broken` — on any framing or
- * cryptographic failure, after an inner `6F00`, or after the response that uses `ctr = 0xFFFF`.
+ * OPEN (protocol.md §8.1–8.2) and the §8.4 secure session. One request/response record pair per
+ * inner command, AES-128 CBC + CMAC under the four session keys, u16 counters. The session is torn
+ * down — keys wiped, every further call `session-broken` — on any framing or cryptographic failure,
+ * after an inner `6F00`, or after the response that uses `ctr = 0xFFFF`.
  */
 import { cbc, cmac, ecb } from "@noble/ciphers/aes.js";
 import { equalBytes } from "@noble/ciphers/utils.js";
@@ -46,17 +46,17 @@ export type Session = {
   readonly ephemeralTag: Uint8Array;
   readonly closed: boolean;
   /** Wraps an inner command into its §8.4 SESSION command APDU. */
-  wrap(command: Inner): Uint8Array;
+  wrap: (command: Inner) => Uint8Array;
   /** Unwraps a SESSION response APDU into `{ data, sw }`; tears the session down per §8.4. */
-  unwrap(rapdu: Uint8Array): InnerResponse;
+  unwrap: (rapdu: Uint8Array) => InnerResponse;
   /** Wipes the session keys; idempotent. */
-  close(): void;
+  close: () => void;
 };
 
 /**
- * Draws a host ephemeral secret and returns the `80 10 00 00 41 hostEph 00` OPEN APDU.
- * `random` is the injected randomness; invalid draws are wiped and retried — after 8 the
- * source is treated as broken (`invalid-input`).
+ * Draws a host ephemeral secret and returns the `80 10 00 00 41 hostEph 00` OPEN APDU. `random` is
+ * the injected randomness; invalid draws are wiped and retried — after 8 the source is treated as
+ * broken (`invalid-input`).
  */
 export function openRequest(random: (n: number) => Uint8Array): {
   apdu: Uint8Array;
@@ -82,16 +82,16 @@ export function openRequest(random: (n: number) => Uint8Array): {
 }
 
 /**
- * Verifies the card's OPEN response (`cardEph ‖ sig ‖ cert ‖ 9000`, §8.1) and derives the
- * session keys. `secret` and the ECDH output are wiped on every path; every failure of the
- * response itself is `card-not-genuine` — except a repeated `cardEph`, which is `card-fault`.
+ * Verifies the card's OPEN response (`cardEph ‖ sig ‖ cert ‖ 9000`, §8.1) and derives the session
+ * keys. `secret` and the ECDH output are wiped on every path; every failure of the response itself
+ * is `card-not-genuine` — except a repeated `cardEph`, which is `card-fault`.
  */
 export function openResponse(
   secret: Uint8Array,
   request: Uint8Array,
   response: Uint8Array,
-  anchors: readonly Anchor[],
-  recentEphemerals: readonly Uint8Array[],
+  anchors: ReadonlyArray<Anchor>,
+  recentEphemerals: ReadonlyArray<Uint8Array>,
 ): Session {
   let shared: Uint8Array | undefined;
   try {
@@ -107,11 +107,7 @@ export function openResponse(
     if (!equalBytes(request, expectedRequest)) {
       throw new CardError("invalid-input", "request does not carry the host ephemeral");
     }
-    if (
-      response.length !== 228 ||
-      response[response.length - 2] !== 0x90 ||
-      response[response.length - 1] !== 0x00
-    ) {
+    if (response.length !== 228 || response.at(-2) !== 0x90 || response.at(-1) !== 0x00) {
       throw new CardError(
         "card-not-genuine",
         "OPEN response is not 226 bytes + 9000",
@@ -215,7 +211,7 @@ class CardSession implements Session {
       this.#break("response ciphertext has an invalid length");
     }
     const ciphertext = rapdu.subarray(0, bodyLength);
-    const tag = rapdu.subarray(bodyLength, rapdu.length - 2);
+    const tag = rapdu.subarray(bodyLength, -2);
     const counter = this.#received;
     const expected = cmac(concatBytes(u16(counter), ciphertext), keys.subarray(48, 64)).subarray(
       0,
@@ -234,7 +230,7 @@ class CardSession implements Session {
     }
     this.#received = counter + 1;
     const response: InnerResponse = {
-      data: new Uint8Array(plaintext.subarray(0, plaintext.length - 2)),
+      data: new Uint8Array(plaintext.subarray(0, -2)),
       sw: readSw(plaintext),
     };
     if (response.sw === 0x6f00 || counter === COUNTER_MAX) {
@@ -270,9 +266,9 @@ class CardSession implements Session {
 }
 
 /**
- * Test-only entry point: opens a session directly from the four concatenated session keys
- * (`K_ce ‖ K_cm ‖ K_re ‖ K_rm`, 64 bytes). Takes ownership of `keys` and wipes it on close
- * and on every teardown path. Not exported from index.ts.
+ * Test-only entry point: opens a session directly from the four concatenated session keys (`K_ce ‖
+ * K_cm ‖ K_re ‖ K_rm`, 64 bytes). Takes ownership of `keys` and wipes it on close and on every
+ * teardown path. Not exported from index.ts.
  */
 export function sessionFromKeys(
   keys: Uint8Array,
