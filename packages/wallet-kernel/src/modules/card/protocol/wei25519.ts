@@ -49,8 +49,9 @@ export function edwardsEncode(wei: Uint8Array): Uint8Array {
   } catch {
     fault("Wei25519 point does not map onto edwards25519");
   }
-  if (point.is0() || !point.isTorsionFree()) {
-    fault("Wei25519 point maps to a torsion or identity point");
+  // y = 1 (the identity) would need u − 1 = u + 1, so only torsion remains possible
+  if (!point.isTorsionFree()) {
+    fault("Wei25519 point maps to a torsion point");
   }
   return point.toBytes();
 }

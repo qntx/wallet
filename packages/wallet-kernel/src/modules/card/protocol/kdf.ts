@@ -42,7 +42,8 @@ export function unM2(padded: Uint8Array): Uint8Array | undefined {
   while (marker >= 0 && padded[marker] === 0) {
     marker -= 1;
   }
-  if (marker < 0 || padded[marker] !== 0x80 || padded.length - 1 - marker > 15) {
+  // marker = -1 reads padded[-1] as undefined, which !== 0x80 catches
+  if (padded[marker] !== 0x80 || padded.length - 1 - marker > 15) {
     return undefined;
   }
   return padded.subarray(0, marker);

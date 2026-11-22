@@ -8,7 +8,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes } from "@noble/hashes/utils.js";
 
-import { ascii, validUncompressedPoint } from "./bytes.ts";
+import { ascii, validPoint, validUncompressedPoint } from "./bytes.ts";
 import { CardError } from "./errors.ts";
 
 const LABEL_CERT = ascii("qntx-card/v1/cert");
@@ -51,6 +51,9 @@ export function verifyCertificate(
     }
   }
   const identity = cert.subarray(0, 33);
+  if (!validPoint(identity)) {
+    throw new CardError("card-not-genuine", "certificate subject is not a compressed point");
+  }
   const signature = cert.subarray(33, 97);
   const digest = sha256(concatBytes(LABEL_CERT, identity));
   for (const anchor of anchors) {

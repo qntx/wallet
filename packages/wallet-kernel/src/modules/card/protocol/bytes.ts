@@ -35,9 +35,8 @@ type Secp256k1Point = InstanceType<typeof secp256k1.Point>;
 /** A secp256k1 point decoded and curve-checked; `undefined` on any malformed input. */
 export function tryPoint(bytes: Uint8Array): Secp256k1Point | undefined {
   try {
-    const point = secp256k1.Point.fromBytes(bytes);
-    point.assertValidity();
-    return point.is0() ? undefined : point;
+    // noble's fromBytes already rejects points that are not on the curve
+    return secp256k1.Point.fromBytes(bytes);
   } catch {
     return undefined;
   }

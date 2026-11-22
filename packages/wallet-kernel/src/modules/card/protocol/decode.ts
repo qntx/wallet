@@ -7,10 +7,9 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { HDKey } from "@scure/bip32";
 
 import { validPoint, validUncompressedPoint } from "./bytes.ts";
-import { checkOthers } from "./commands.ts";
+import { checkCreateParams, masterPublicKey } from "./commands.ts";
 import type { CreateParams } from "./commands.ts";
 import { CardError } from "./errors.ts";
 import {
@@ -131,8 +130,8 @@ function walletInfo(data: Uint8Array, cardId: Uint8Array): WalletInfo {
  */
 function created(data: Uint8Array, params: CreateParams, cardId: Uint8Array): WalletInfo {
   checkCardId(cardId);
-  checkOthers(params.others);
-  const { masterPublicKey, originByte, members } = parseWalletInfo(data);
+  checkCreateParams(params);
+  const { masterPublicKey: echoed, originByte, members } = parseWalletInfo(data);
   const expectedOrigin = params.mode === "generate" ? 0x01 : 0x02;
   if (originByte !== expectedOrigin) {
     fault("CREATE echoed a different origin than requested");
@@ -146,13 +145,10 @@ function created(data: Uint8Array, params: CreateParams, cardId: Uint8Array): Wa
       fault("CREATE echoed the members in a different order");
     }
   }
-  if (params.mode === "import") {
-    const expected = HDKey.fromMasterSeed(params.seed).publicKey;
-    if (expected === null || !equalBytes(expected, masterPublicKey)) {
-      fault("CREATE echoed a different master public key");
-    }
+  if (params.mode === "import" && !equalBytes(masterPublicKey(params.seed), echoed)) {
+    fault("CREATE echoed a different master public key");
   }
-  return { masterPublicKey, origin: originName(originByte), members };
+  return { masterPublicKey: echoed, origin: originName(originByte), members };
 }
 
 /** §9.8 secp256k1 response: `publicKey(33) ‖ chainCode(32)`; the key must be a valid point. */

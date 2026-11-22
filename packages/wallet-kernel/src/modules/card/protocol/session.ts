@@ -24,7 +24,7 @@ const COUNTER_MAX = 0xffff;
 const LABEL_SESSION = ascii("qntx-card/v1/session");
 const LABEL_KDF_SESSION = ascii("qntx-card/v1/kdf-session");
 
-/** `00 A4 04 00 07 F0716E74780101 00` — SELECT the wallet applet by its AID (§8.2). */
+/** `00 A4 04 00 07 F0716E74780101 00` — SELECT the wallet applet by its AID (§6). */
 export const SELECT_APDU: Uint8Array = hexToBytes("00a4040007f0716e7478010100");
 
 /** The plaintext form an unwrapped response record takes: `data ‖ SW1 ‖ SW2` (§8.4). */
@@ -181,9 +181,14 @@ class CardSession implements Session {
       new Uint8Array([command.ins, command.p1, command.p2]),
       command.data,
     );
-    const ciphertext = cbc(kce, recordIv(kce, 0x01, counter), { disablePadding: true }).encrypt(
-      m2(plaintext),
-    );
+    const padded = m2(plaintext);
+    wipe(plaintext);
+    let ciphertext: Uint8Array;
+    try {
+      ciphertext = cbc(kce, recordIv(kce, 0x01, counter), { disablePadding: true }).encrypt(padded);
+    } finally {
+      wipe(padded);
+    }
     const tag = cmac(concatBytes(u16(counter), ciphertext), keys.subarray(16, 32)).subarray(0, 8);
     this.#sent = counter + 1;
     return concatBytes(
@@ -207,7 +212,9 @@ class CardSession implements Session {
       this.#break("secure-messaging status is not 9000", sw);
     }
     const bodyLength = rapdu.length - 10; // ciphertext ‖ tag(8) ‖ sw(2)
-    if (bodyLength < 16 || bodyLength % 16 !== 0 || bodyLength > 240) {
+    // bodies shorter than one block still fail: %16 catches nonzero lengths, a length-0 body
+    // fails the MAC check below (no card MACs an empty ciphertext for this counter)
+    if (bodyLength % 16 !== 0 || bodyLength > 240) {
       this.#break("response ciphertext has an invalid length");
     }
     const ciphertext = rapdu.subarray(0, bodyLength);
@@ -224,19 +231,23 @@ class CardSession implements Session {
     const padded = cbc(kre, recordIv(kre, 0x02, counter), { disablePadding: true }).decrypt(
       ciphertext,
     );
-    const plaintext = unM2(padded);
-    if (plaintext === undefined || plaintext.length < 2) {
-      this.#break("response padding is malformed");
+    try {
+      const plaintext = unM2(padded);
+      if (plaintext === undefined || plaintext.length < 2) {
+        this.#break("response padding is malformed");
+      }
+      this.#received = counter + 1;
+      const response: InnerResponse = {
+        data: new Uint8Array(plaintext.subarray(0, -2)),
+        sw: readSw(plaintext),
+      };
+      if (response.sw === 0x6f00 || counter === COUNTER_MAX) {
+        this.#teardown();
+      }
+      return response;
+    } finally {
+      wipe(padded);
     }
-    this.#received = counter + 1;
-    const response: InnerResponse = {
-      data: new Uint8Array(plaintext.subarray(0, -2)),
-      sw: readSw(plaintext),
-    };
-    if (response.sw === 0x6f00 || counter === COUNTER_MAX) {
-      this.#teardown();
-    }
-    return response;
   }
 
   close(): void {
@@ -266,9 +277,10 @@ class CardSession implements Session {
 }
 
 /**
- * Test-only entry point: opens a session directly from the four concatenated session keys (`K_ce ‖
- * K_cm ‖ K_re ‖ K_rm`, 64 bytes). Takes ownership of `keys` and wipes it on close and on every
- * teardown path. Not exported from index.ts.
+ * Opens a session directly from the four concatenated session keys (`K_ce ‖ K_cm ‖ K_re ‖ K_rm`, 64
+ * bytes) — the constructor `openResponse` uses after the ECDH exchange and KDF. It is exported from
+ * session.ts so tests can drive sessions without an OPEN exchange; index.ts does not re-export it.
+ * Takes ownership of `keys` and wipes it on close and on every teardown path.
  */
 export function sessionFromKeys(
   keys: Uint8Array,

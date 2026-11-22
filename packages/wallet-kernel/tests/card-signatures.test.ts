@@ -236,7 +236,8 @@ describe("ecdsa", () => {
   it.each([
     [
       "short digest",
-      () => decode.ecdsa(new Uint8Array(64), new Uint8Array(31), new Uint8Array(33), []),
+      (publicKey: Uint8Array) =>
+        decode.ecdsa(new Uint8Array(64), new Uint8Array(31), publicKey, []),
     ],
     [
       "short publicKey",
@@ -249,13 +250,13 @@ describe("ecdsa", () => {
     ],
     [
       "short previousR",
-      () =>
-        decode.ecdsa(new Uint8Array(64), new Uint8Array(32), new Uint8Array(33), [
-          new Uint8Array(31),
-        ]),
+      (publicKey: Uint8Array) =>
+        decode.ecdsa(new Uint8Array(64), new Uint8Array(32), publicKey, [new Uint8Array(31)]),
     ],
   ])("%s is invalid-input", (_name, run) => {
-    expect(cardError(run)).toBe("invalid-input");
+    // a VALID public key: a degenerate one would mask the argument guard under test
+    const publicKey = hex(requireCase(ecdsa.accepted[0]).publicKey);
+    expect(cardError(() => run(publicKey))).toBe("invalid-input");
   });
 
   it.each([63, 65])("a %d-byte response is card-fault", (len) => {
@@ -441,18 +442,19 @@ describe("transfer", () => {
 
   it("rejects malformed export params as invalid-input", () => {
     const head = hex(transfer.head);
+    const linkKey = hex(transfer.offer).subarray(0, 65);
     const cases: ReadonlyArray<() => unknown> = [
       () =>
         decode.exportHead(head, {
           source: new Uint8Array(32),
           target: targetId,
-          linkKey: new Uint8Array(65),
+          linkKey, // a VALID link key, so only the identity guard can reject this
         }),
       () =>
         decode.exportHead(head, {
           source: sourceId,
           target: new Uint8Array(32),
-          linkKey: new Uint8Array(65),
+          linkKey,
         }),
       () =>
         decode.exportHead(head, {

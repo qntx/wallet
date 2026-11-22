@@ -63,7 +63,7 @@ export function result(command: Inner, response: InnerResponse): Uint8Array {
   throw new CardError("invalid-data", "command data was rejected by the card", sw);
 }
 
-/** §13.2 access policy: L failure limit, F free attempts, W waits per gated attempt. */
+/** §7.3 access policy: L failure limit, F free attempts, W waits per gated attempt. */
 export const ACCESS_LIMITS = { failures: 10, free: 3, waits: 15 } as const;
 
 /**

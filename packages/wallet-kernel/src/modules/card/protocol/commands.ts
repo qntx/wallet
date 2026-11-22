@@ -7,6 +7,7 @@ import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToNumberBE } from "@noble/curves/utils.js";
 import { concatBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
 
 import { CardError } from "./errors.ts";
 import type { ExportHead, Offer } from "./transfer.ts";
@@ -124,17 +125,52 @@ export function checkOthers(others: ReadonlyArray<Uint8Array>): void {
   }
 }
 
+/**
+ * The BIP-32 master public key a CREATE import seed yields. `invalid-input` when `HDKey` rejects
+ * the seed — sent unchecked, the card would answer `6A80` (§9.4).
+ */
+export function masterPublicKey(seed: Uint8Array): Uint8Array {
+  let key: HDKey;
+  try {
+    key = HDKey.fromMasterSeed(seed);
+  } catch {
+    throw new CardError("invalid-input", "seed does not yield a valid master key");
+  }
+  try {
+    const { publicKey } = key;
+    if (publicKey === null) {
+      throw new CardError("invalid-input", "seed does not yield a valid master key");
+    }
+    return publicKey;
+  } finally {
+    key.wipePrivateData();
+  }
+}
+
+/**
+ * The CREATE argument contract (§9.4), shared by `cmd.create` and `decode.created`: accessHash 32
+ * bytes; entropy 32 bytes for `generate`, a 64-byte seed that yields a master key for `import`;
+ * `others` per `checkOthers`.
+ */
+export function checkCreateParams(params: CreateParams): void {
+  checkOthers(params.others);
+  exact("accessHash", params.accessHash, 32);
+  if (params.mode === "generate") {
+    exact("entropy", params.entropy, 32);
+  } else {
+    exact("seed", params.seed, 64);
+    masterPublicKey(params.seed);
+  }
+}
+
 export const cmd = {
   status: (): Inner => inner("status", 0, 0, new Uint8Array(0)),
   create: (params: CreateParams): Inner => {
-    checkOthers(params.others);
+    checkCreateParams(params);
     const head =
       params.mode === "generate"
-        ? concatBytes(
-            exact("accessHash", params.accessHash, 32),
-            exact("entropy", params.entropy, 32),
-          )
-        : concatBytes(exact("accessHash", params.accessHash, 32), exact("seed", params.seed, 64));
+        ? concatBytes(params.accessHash, params.entropy)
+        : concatBytes(params.accessHash, params.seed);
     return inner(
       "create",
       params.mode === "generate" ? 0 : 1,

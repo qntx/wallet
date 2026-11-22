@@ -123,9 +123,21 @@ describe("verifyCertificate", () => {
     );
   });
 
+  it("rejects a certificate whose subject is not a compressed point", () => {
+    // oracle open.rejected `certificate-key-not-a-point`: `02 ‖ 0³²` signed by ca1 — the
+    // signature verifies, but the subject is not a point and must fail first
+    const v = requireCase(open.rejected.find((r) => r.name === "certificate-key-not-a-point"));
+    const certBytes = hex(v.response).subarray(129, 226);
+    expect(cardError(() => verifyCertificate(certBytes, anchors))).toBe("card-not-genuine");
+  });
+
   it.each([
     ["short", hex("04326ee5")],
     ["compressed-prefix", hex(ca1.public).slice(0, 33)],
+    [
+      "compressed-point",
+      hex(requireCase(cert.identities.find((i) => i.compressed !== "")).compressed),
+    ],
     ["zero-point", hex("04".concat("00".repeat(64)))],
   ])("rejects an invalid anchor key (%s)", (_name, key) => {
     const v = requireCase(validCerts[0]);
@@ -197,6 +209,8 @@ describe("M2 padding", () => {
       })(),
     ],
     ["overlong-padding", badPadding(0, 16)],
+    ["sub-block marker", hex("80")],
+    ["sub-block data", hex("0080")],
   ])("rejects %s", (_name, input) => {
     expect(unM2(input)).toBeUndefined();
   });
@@ -207,7 +221,10 @@ type AccessVectors = {
   rejected: ReadonlyArray<{ name: string; code: string }>;
 };
 
-const { access } = loadVectors("card/oracle.json") as { access: AccessVectors };
+const { access, open } = loadVectors("card/oracle.json") as {
+  access: AccessVectors;
+  open: { rejected: ReadonlyArray<{ name: string; response: string }> };
+};
 const firstAccepted = requireCase(access.accepted[0]);
 const realCostAccepted = requireCase(access.accepted[2]);
 
@@ -230,6 +247,15 @@ describe("accessHash", () => {
     await expect(accessHash("123456", new Uint8Array(15), spy)).rejects.toMatchObject({
       code: "invalid-input",
     });
+  });
+
+  it("rejects and wipes a wrong-length Argon2id output", async () => {
+    const bad = new Uint8Array(31).fill(0x7a);
+    const spy: Argon2id = async () => Promise.resolve(bad);
+    await expect(accessHash("123456", hex(firstAccepted.cardId), spy)).rejects.toMatchObject({
+      code: "invalid-input",
+    });
+    expect([...bad].every((b) => b === 0)).toBe(true);
   });
 
   const spyOn = () => {

@@ -1,6 +1,7 @@
 import { cbc, cmac, ecb } from "@noble/ciphers/aes.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, concatBytes, hexToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { u16 } from "../src/modules/card/protocol/bytes.ts";
@@ -74,19 +75,19 @@ const commandRecord = (keys: Uint8Array, counter: number, plain: Uint8Array): Ui
   );
 };
 
+const rawResponse = (keys: Uint8Array, counter: number, plain: Uint8Array): Uint8Array => {
+  const kre = keys.subarray(32, 48);
+  const ct = cbc(kre, recordIv(kre, 2, counter), { disablePadding: true }).encrypt(m2(plain));
+  const tag = cmac(concatBytes(u16(counter), ct), keys.subarray(48, 64)).subarray(0, 8);
+  return concatBytes(ct, tag, new Uint8Array([0x90, 0x00]));
+};
+
 const responseRecord = (
   keys: Uint8Array,
   counter: number,
   data: Uint8Array,
   sw: number,
-): Uint8Array => {
-  const kre = keys.subarray(32, 48);
-  const ct = cbc(kre, recordIv(kre, 2, counter), { disablePadding: true }).encrypt(
-    m2(concatBytes(data, u16(sw))),
-  );
-  const tag = cmac(concatBytes(u16(counter), ct), keys.subarray(48, 64)).subarray(0, 8);
-  return concatBytes(ct, tag, new Uint8Array([0x90, 0x00]));
-};
+): Uint8Array => rawResponse(keys, counter, concatBytes(data, u16(sw)));
 
 type SessionVectors = {
   ca: string;
@@ -275,6 +276,37 @@ describe("openResponse (oracle)", () => {
     expect(error?.sw).toBe(0x6985);
   });
 
+  it("rejects a full-length OPEN response carrying a failure status word", () => {
+    const response = Uint8Array.from(hex(open.response));
+    response[response.length - 2] = 0x6a;
+    response[response.length - 1] = 0x80;
+    const error = capture(() =>
+      openResponse(hex(open.hostPrivate), hex(open.request), response, [oracleAnchor], []),
+    );
+    expect(error?.code).toBe("card-not-genuine");
+    expect(error?.sw).toBe(0x6a80);
+  });
+
+  it("rejects a correctly signed response whose cardEph is not a point", () => {
+    // signed with the card's identity key over a deliberately off-curve cardEph — the
+    // signature verifies, so only the cardEph point check stands between this and an
+    // untyped getSharedSecret failure
+    const cardEph = hex(`04${"00".repeat(31)}01${"00".repeat(31)}01`);
+    const transcriptHash = sha256(
+      concatBytes(
+        utf8ToBytes("qntx-card/v1/session"),
+        hex(vec.hostEph),
+        cardEph,
+        hex(vec.identity.compressed),
+      ),
+    );
+    const signature = secp256k1.sign(transcriptHash, hex(vec.identity.private));
+    const response = concatBytes(cardEph, signature, hex(vec.cert), hex("9000"));
+    expect(
+      cardError(() => openResponse(hex(vec.hostPrivate), hex(vec.request), response, [anchor], [])),
+    ).toBe("card-not-genuine");
+  });
+
   it("rejects a repeated ephemeralTag as card-fault", () => {
     const error = capture(() =>
       openResponse(
@@ -395,6 +427,53 @@ describe("session lifecycle", () => {
   it("rejects unwrap without a pending command", () => {
     const session = freshSession(recordKeys());
     expect(cardError(() => session.unwrap(hex("9000")))).toBe("session-broken");
+  });
+
+  it("rejects a second response once every command was answered", () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    session.unwrap(responseRecord(keys, 0, new Uint8Array(0), 0x9000));
+    expect(
+      cardError(() => session.unwrap(responseRecord(keys, 1, new Uint8Array(0), 0x9000))),
+    ).toBe("session-broken");
+  });
+
+  it("rejects a record whose outer status word is not 9000", () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    const rapdu = Uint8Array.from(responseRecord(keys, 0, new Uint8Array(0), 0x9000));
+    rapdu[rapdu.length - 2] = 0x69;
+    rapdu[rapdu.length - 1] = 0x82;
+    expect(cardError(() => session.unwrap(rapdu))).toBe("session-broken");
+  });
+
+  it("rejects a well-tagged ciphertext that is not a multiple of 16", () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    const ct = new Uint8Array(17).fill(0xaa);
+    const tag = cmac(concatBytes(u16(0), ct), keys.subarray(48, 64)).subarray(0, 8);
+    expect(cardError(() => session.unwrap(concatBytes(ct, tag, hex("9000"))))).toBe(
+      "session-broken",
+    );
+  });
+
+  it("rejects a response body longer than 240 bytes", () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    expect(
+      cardError(() => session.unwrap(responseRecord(keys, 0, new Uint8Array(252), 0x9000))),
+    ).toBe("session-broken");
+  });
+
+  it("rejects a plaintext too short to carry a status word", () => {
+    const keys = recordKeys();
+    const session = freshSession(keys);
+    session.wrap(statusInner());
+    expect(cardError(() => session.unwrap(rawResponse(keys, 0, hex("90"))))).toBe("session-broken");
   });
 
   it.each([

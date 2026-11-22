@@ -41,13 +41,20 @@ export async function accessHash(
   const password = new Uint8Array(code.length);
   try {
     for (let index = 0; index < code.length; index += 1) {
-      const unit = code.codePointAt(index) ?? 0;
+      // UTF-16 code units are intended: a lone surrogate is ≥ 0xD800 and fails the range check
+      // oxlint-disable-next-line unicorn/prefer-code-point
+      const unit = code.charCodeAt(index);
       if (unit < 0x20 || unit > 0x7e) {
         throw new CardError("invalid-input", "access code is not printable ASCII");
       }
       password[index] = unit;
     }
-    return await argon2id(password, concatBytes(LABEL_ACCESS, cardId), COST, 32);
+    const derived = await argon2id(password, concatBytes(LABEL_ACCESS, cardId), COST, 32);
+    if (derived.length !== 32) {
+      wipe(derived);
+      throw new CardError("invalid-input", "argon2id returned a hash that is not 32 bytes");
+    }
+    return derived;
   } finally {
     wipe(password);
   }

@@ -3,7 +3,7 @@ import { HDKey } from "@scure/bip32";
 import { describe, expect, it } from "vite-plus/test";
 
 import { cmd } from "../src/modules/card/protocol/commands.ts";
-import type { CommandName, Inner } from "../src/modules/card/protocol/commands.ts";
+import type { CommandName, CreateParams, Inner } from "../src/modules/card/protocol/commands.ts";
 import { decode } from "../src/modules/card/protocol/decode.ts";
 import { CardError } from "../src/modules/card/protocol/errors.ts";
 import type { CardErrorCode } from "../src/modules/card/protocol/errors.ts";
@@ -160,6 +160,12 @@ describe("result() status-word matrix", () => {
 
   it.each(NAMES)("command=%s failing with data is card-fault", (name) => {
     expect(cardError(() => result(innerOf(name), respond(SOME_DATA, 0x6982)))).toBe("card-fault");
+  });
+
+  it("maps 6F00 to card-fault with its own message", () => {
+    const error = capture(() => result(innerOf("status"), respond(NO_DATA, 0x6f00)));
+    expect(error?.code).toBe("card-fault");
+    expect(error?.message).toBe("card reported an internal fault");
   });
 });
 
@@ -610,6 +616,7 @@ describe("decode.walletInfo / decode.created", () => {
   });
 
   it.each([
+    ["far too short for a header", hex("00".repeat(3))],
     ["short", hex("00".repeat(50))],
     ["not member-aligned", hex("00".repeat(52))],
     [
@@ -647,6 +654,18 @@ describe("decode.walletInfo / decode.created", () => {
       hex("0102"),
       otherId,
       hex("ee".repeat(16)),
+    );
+    expect(cardError(() => decode.walletInfo(data, cardIdBytes))).toBe("card-fault");
+  });
+
+  it("rejects a WalletInfo with four distinct members", () => {
+    const data = concatBytes(
+      hex(transcript.walletInfo.masterPublicKey),
+      hex("0104"),
+      cardIdBytes,
+      otherId,
+      hex("cc".repeat(16)),
+      hex("dd".repeat(16)),
     );
     expect(cardError(() => decode.walletInfo(data, cardIdBytes))).toBe("card-fault");
   });
@@ -699,6 +718,25 @@ describe("decode.walletInfo / decode.created", () => {
       others: [],
     } as const;
     expect(cardError(() => decode.created(data, params, cardIdBytes))).toBe("card-fault");
+  });
+
+  it.each<[string, CreateParams]>([
+    [
+      "short accessHash",
+      { mode: "generate", accessHash: new Uint8Array(31), entropy: h32, others: [] },
+    ],
+    [
+      "short entropy",
+      { mode: "generate", accessHash: h32, entropy: new Uint8Array(31), others: [] },
+    ],
+    ["short seed", { mode: "import", accessHash: h32, seed: new Uint8Array(63), others: [] }],
+    [
+      "bad member id",
+      { mode: "generate", accessHash: h32, entropy: h32, others: [new Uint8Array(15)] },
+    ],
+  ])("rejects invalid params (%s) as invalid-input", (_name, params) => {
+    const data = concatBytes(master, hex("0101"), cardIdBytes);
+    expect(cardError(() => decode.created(data, params, cardIdBytes))).toBe("invalid-input");
   });
 });
 

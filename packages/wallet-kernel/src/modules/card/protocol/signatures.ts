@@ -7,14 +7,13 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
-import { bytesToNumberBE, bytesToNumberLE, numberToBytesBE } from "@noble/curves/utils.js";
+import { bytesToNumberBE, numberToBytesBE } from "@noble/curves/utils.js";
 import { concatBytes } from "@noble/hashes/utils.js";
 
 import { validPoint } from "./bytes.ts";
 import { CardError } from "./errors.ts";
 
 const N = secp256k1.Point.Fn.ORDER;
-const L = ed25519.Point.Fn.ORDER;
 
 const fault = (message: string): never => {
   throw new CardError("card-fault", message);
@@ -46,18 +45,12 @@ export type EcdsaResult = {
 };
 
 function recoveryBit(r: bigint, lowS: bigint, digest: Uint8Array, publicKey: Uint8Array): 0 | 1 {
-  const signature = new secp256k1.Signature(r, lowS);
-  for (const bit of [0, 1] as const) {
-    try {
-      const point = signature.addRecoveryBit(bit).recoverPublicKey(digest);
-      if (equalBytes(point.toBytes(true), publicKey)) {
-        return bit;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return fault("no recovery bit reproduces the signing key");
+  // The signature already verified, so exactly one recovery bit reproduces `publicKey`.
+  const recovered = new secp256k1.Signature(r, lowS)
+    .addRecoveryBit(0)
+    .recoverPublicKey(digest)
+    .toBytes(true);
+  return equalBytes(recovered, publicKey) ? 0 : 1;
 }
 
 /**
@@ -82,9 +75,7 @@ export function ecdsa(
   const rBytes = data.subarray(0, 32);
   const r = bytesToNumberBE(rBytes);
   const s = bytesToNumberBE(data.subarray(32, 64));
-  if (r === 0n || s === 0n || r >= N || s >= N) {
-    fault("ECDSA component is outside [1, n−1]");
-  }
+  // noble's verify parses the signature and rejects r, s outside [1, n−1] by returning false
   if (!secp256k1.verify(data, digest, publicKey, { prehash: false, lowS: false })) {
     fault("ECDSA signature does not verify");
   }
@@ -160,10 +151,7 @@ export function ed25519Signature(
   if (data.length !== 32) {
     fault("SIGN_ED25519 finish response is not 32 bytes");
   }
-  const s = bytesToNumberLE(data);
-  if (s >= L) {
-    fault("Ed25519 S is not below the group order");
-  }
+  // noble's strict (zip215: false) verify already rejects S ≥ ℓ
   const signature = concatBytes(encodedR, data);
   if (!ed25519.verify(signature, message, publicKey, { zip215: false })) {
     fault("assembled Ed25519 signature does not verify");
