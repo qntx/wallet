@@ -103,10 +103,10 @@ export const hyperliquidL1Action: Validator<HyperliquidL1Action> = union(
   obj({ type: literal("twapCancel"), a: asset, t: id }),
 );
 
-/** The params `sessions.sign` takes for this scheme — `expiresAfter` is optional on the wire. */
+/** The params `sessions.sign` takes for this scheme — `expiresAfter` is required. */
 export const hyperliquidL1Params: Validator<HyperliquidL1Params> = obj({
   action: hyperliquidL1Action,
   nonce: safeTime,
   vaultAddress: opt(lowerAddress),
-  expiresAfter: opt(safeTime),
+  expiresAfter: safeTime,
 });

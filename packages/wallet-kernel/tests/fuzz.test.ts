@@ -196,13 +196,17 @@ const signOutcome = (res: KernelResponse): string => {
   return signature instanceof Uint8Array && signature.length === 65 ? "sig65" : "bad";
 };
 
-/** Every third sample is a near-valid sessions.sign request — it reaches the handler's checks. */
-const signParams = (next: () => number, address: string, i: number): unknown =>
+/** Every third sample is a near-valid sessions.sign request — it reaches the scheme's checks. */
+const signParams = (next: () => number, address: string, i: number, now: number): unknown =>
   i % 3 === 0
     ? {
         scheme: "hyperliquid-l1-agent",
         address,
-        params: { action: randomJson(next, 1), nonce: randomJson(next) },
+        params: {
+          action: randomJson(next, 1),
+          nonce: now,
+          expiresAfter: now + 15_000,
+        },
       }
     : randomJson(next);
 
@@ -262,7 +266,7 @@ describe("sessions parser fuzz", () => {
       expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
       const next = mulberry32(0xf00d);
       for (let i = 0; i < RUNS; i++) {
-        const params = signParams(next, address, i);
+        const params = signParams(next, address, i, h.wallNow());
         // oxlint-disable-next-line eslint/no-await-in-loop -- requests are dispatched sequentially
         const response = await h.sendRaw({
           v: 3,

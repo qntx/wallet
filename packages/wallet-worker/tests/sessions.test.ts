@@ -114,10 +114,11 @@ describe("sessions subpath on the node host", () => {
     // The phantom-agent connectionId over the action + nonce is what the agent signs.
     const action = { type: "updateLeverage", asset: 1, isCross: true, leverage: 5 } as const;
     const nonce = Date.now();
+    const expiresAfter = nonce + 15_000;
     const signature = await api.sign({
       scheme: "hyperliquid-l1-agent",
       address,
-      params: { action, nonce },
+      params: { action, nonce, expiresAfter },
     });
     expect(signature).toHaveLength(65);
     const recovered = await recoverTypedDataAddress({
@@ -129,7 +130,10 @@ describe("sessions subpath on the node host", () => {
       },
       types: AGENT_TYPES,
       primaryType: "Agent",
-      message: { source: "a", connectionId: createL1ActionHash({ action, nonce }) },
+      message: {
+        source: "a",
+        connectionId: createL1ActionHash({ action, nonce, expiresAfter }),
+      },
       signature: `0x${bytesToHex(signature)}`,
     });
     expect(recovered.toLowerCase()).toBe(address.toLowerCase());

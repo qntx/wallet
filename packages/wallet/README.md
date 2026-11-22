@@ -56,7 +56,9 @@ secp256k1 key inside the enclave for one HD account under a named scheme and ret
 scheme defines — for `hyperliquid-l1-agent`, the phantom-agent signature over an allow-listed L1
 action. A Hyperliquid agent only becomes valid once the owner approves it on Hyperliquid — the
 kernel binds that signature's `agentName` to the recorded validity window — and the private key
-never leaves the enclave.
+never leaves the enclave. For `hyperliquid-l1-agent` every signature must carry an `expiresAfter`
+at most 60 s after it is made and a nonce within ±60 s of wall time, and a `scheduleCancel` time
+cannot outlive the session's `validUntil`.
 
 ### React
 

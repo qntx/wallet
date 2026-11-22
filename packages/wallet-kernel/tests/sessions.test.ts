@@ -8,11 +8,15 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { evmAddressFromPublicKey, normalizeEvm } from "@qntx/wallet-chains/evm";
+import { signEvmTypedData } from "@qntx/wallet-chains/evm/sign";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { createSessionsModule } from "../src/modules/sessions/index.ts";
 import { encodeSessionHeader, findSession, SESSION_KIND } from "../src/modules/sessions/record.ts";
-import { l1ConnectionId } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
+import {
+  l1ConnectionId,
+  phantomAgentTypedData,
+} from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
 import {
   packArray,
   packBool,
@@ -208,13 +212,6 @@ const l1IdArgs = (vector: L1Case) => ({
   ...(vector.expiresAfter === undefined ? {} : { expiresAfter: vector.expiresAfter }),
 });
 
-/** Sessions.sign params for a vector. */
-const signParams = (address: string, vector: L1Case) => ({
-  scheme: SCHEME,
-  address,
-  params: l1IdArgs(vector),
-});
-
 const l1Cases = (loadVectors("chains/hyperliquid.json") as { l1: L1Case[] }).l1;
 const allowListed = l1Cases.filter((c) => c.action["type"] !== "dummy");
 const dummies = l1Cases.filter((c) => c.action["type"] === "dummy");
@@ -295,13 +292,28 @@ describe("L1 connectionId against the oracle vectors", () => {
 });
 
 describe("sessions.sign against the oracle vectors", () => {
-  it.each(allowListed)("$name signs byte-identically", async (vector) => {
+  /* The oracle scheduleCancel vectors' `time` values are far in the past — under the window policy
+     the kernel refuses them, so the sign call substitutes the session's own validUntil (their
+     encoding stays pinned by the connectionId checks above and the window test's bounds). */
+  const signArgs = (vector: L1Case) => ({
+    action:
+      vector.action["type"] === "scheduleCancel" && vector.action["time"] !== undefined
+        ? ({ ...vector.action, time: vector.nonce + DAY } as never)
+        : (vector.action as never),
+    nonce: vector.nonce,
+    ...(vector.vaultAddress === undefined ? {} : { vaultAddress: vector.vaultAddress }),
+    expiresAfter: vector.expiresAfter ?? vector.nonce + 15_000,
+  });
+  const signEndToEnd = async (
+    vector: L1Case,
+    start: number,
+  ): Promise<{ signed: ProtocolValue; keyBytes: Uint8Array }> => {
     const keyBytes = hexToBytes(vector.privateKey.slice(2));
     const expectedAddress = evmAddressFromPublicKey(
       secp256k1.getPublicKey(keyBytes, true),
     ).toLowerCase();
     const injected = injectingRandom(keyBytes);
-    const h = createHarness({ start: vector.nonce, random: injected.random });
+    const h = createHarness({ start, random: injected.random });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {
@@ -328,8 +340,35 @@ describe("sessions.sign against the oracle vectors", () => {
     injected.arm(false);
     const address = strField(created, "address").toLowerCase();
     expect(address).toBe(expectedAddress);
-    const signed = ok(await h.call("sessions.sign", signParams(address, vector), session));
+    const signed = ok(
+      await h.call("sessions.sign", { scheme: SCHEME, address, params: signArgs(vector) }, session),
+    );
+    return { signed, keyBytes };
+  };
+
+  /* Vectors carrying expiresAfter byte-compare end to end: the clock starts at nonce−1 so the
+     required expiresAfter = nonce is inside (now, now + 60 s]. */
+  const withExpires = allowListed.filter((c) => c.expiresAfter !== undefined);
+
+  it.each(withExpires)("$name signs byte-identically", async (vector) => {
+    const { signed } = await signEndToEnd(vector, vector.nonce - 1);
     expect(bytesToHex(bytesField(signed, "signature"))).toBe(vector.signature.slice(2));
+  });
+
+  /* Vectors without expiresAfter sign with a 15 s expiresAfter and compare against the
+     document+signature assembled outside the kernel — the encoder itself stays pinned by the
+     connectionId checks above. */
+  const withoutExpires = allowListed.filter((c) => c.expiresAfter === undefined);
+
+  it.each(withoutExpires)("$name signs byte-identically", async (vector) => {
+    const { signed, keyBytes } = await signEndToEnd(vector, vector.nonce);
+    const expected = bytesToHex(
+      signEvmTypedData(
+        phantomAgentTypedData(l1ConnectionId(signArgs(vector)), vector.network),
+        keyBytes,
+      ),
+    );
+    expect(bytesToHex(bytesField(signed, "signature"))).toBe(expected);
   });
 
   it.each(dummies)("$name is rejected as invalid-input", async (vector) => {
@@ -371,7 +410,11 @@ describe("protocol: strict action validation", () => {
     errCode(
       await h.call(
         "sessions.sign",
-        { scheme: SCHEME, address, params: { action, nonce: T0 } },
+        {
+          scheme: SCHEME,
+          address,
+          params: { action, nonce: T0, expiresAfter: T0 + 15_000 },
+        },
         session,
       ),
     );
@@ -393,7 +436,7 @@ describe("protocol: strict action validation", () => {
     { type: "modify", oid: `0x${"00".repeat(16)}`, order, a: true },
     { type: "batchModify", modifies: [{ oid: 1, order }] },
     { type: "scheduleCancel" },
-    { type: "scheduleCancel", time: 1 },
+    { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "updateLeverage", asset: 0, isCross: true, leverage: 5 },
     { type: "updateIsolatedMargin", asset: 0, isBuy: true, ntli: -100 },
     { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
@@ -622,7 +665,11 @@ describe("sessions.sign checks", () => {
         await signCall(h, session, {
           scheme: SCHEME,
           address,
-          params: { action: orderAction, nonce: h.wallNow() },
+          params: {
+            action: orderAction,
+            nonce: h.wallNow(),
+            expiresAfter: h.wallNow() + 15_000,
+          },
         }),
       ),
     ).toBe("invalid-input");
@@ -632,17 +679,21 @@ describe("sessions.sign checks", () => {
         await signCall(h, session, {
           scheme: SCHEME,
           address,
-          params: { action: orderAction, nonce: h.wallNow() },
+          params: {
+            action: orderAction,
+            nonce: h.wallNow(),
+            expiresAfter: h.wallNow() + 15_000,
+          },
         }),
       ),
     ).toBe("invalid-input");
   });
 
   it.each([
-    ["+300_000", 300_000, undefined],
-    ["+300_001", 300_001, "invalid-input"],
-    ["-300_000", -300_000, undefined],
-    ["-300_001", -300_001, "invalid-input"],
+    ["+60_000", 60_000, undefined],
+    ["+60_001", 60_001, "invalid-input"],
+    ["-60_000", -60_000, undefined],
+    ["-60_001", -60_001, "invalid-input"],
   ])("nonce %s of now → %s", async (_label, delta, code) => {
     const { h, session, walletId } = await setup(T0);
     const address = await createSession(h, session, walletId, { validUntil: T0 + 400_000 });
@@ -651,7 +702,7 @@ describe("sessions.sign checks", () => {
         await signCall(h, session, {
           scheme: SCHEME,
           address,
-          params: { action: orderAction, nonce: T0 + delta },
+          params: { action: orderAction, nonce: T0 + delta, expiresAfter: T0 + 15_000 },
         }),
       ),
     ).toBe(code);
@@ -770,6 +821,7 @@ describe("session defense-in-depth checks", () => {
               grouping: "na",
             },
             nonce: T0,
+            expiresAfter: T0 + 15_000,
           },
         },
         "00".repeat(16),

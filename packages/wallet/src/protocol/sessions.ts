@@ -95,7 +95,8 @@ export type HyperliquidL1Params = {
   readonly action: HyperliquidL1Action;
   readonly nonce: number;
   readonly vaultAddress?: string;
-  readonly expiresAfter?: number;
+  /** Wall-clock ms after which Hyperliquid rejects the action — at most 60 s after signing. */
+  readonly expiresAfter: number;
 };
 
 /**
