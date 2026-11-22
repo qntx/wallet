@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   bridgeQuote,
   health,
   historyPath,
@@ -15,7 +17,7 @@ import {
 import { UPSTREAM_TIMEOUT_MS } from "../src/providers/forward.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
-import type { GatewayNetwork } from "../src/types.ts";
+import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
 import {
   SEPOLIA,
   SIGNET,
@@ -460,6 +462,116 @@ describe("upstream cost metering", () => {
     const expected = up.calls.map((c) => `${accountOf(c.url)}:unknown`).toSorted();
     expect(share.keys.toSorted()).toStrictEqual(expected);
     expect(share.deltas.every((delta) => delta >= 1)).toBe(true);
+  });
+
+  /*
+   * The pinned TRON node request (`x-gateway-provider`, the engine's drop-proof reads) is the same
+   * route with a narrowed provider list: it must charge the client share and the account budget
+   * exactly like the unpinned request that provider answers, and a refusal of either must neither
+   * reach that provider nor fail over to another one.
+   */
+  describe("a pinned TRON node request", () => {
+    const TRON_NODE = `/v1/tron/${NILE}/wallet/getchainparameters`;
+    const pinnedPost = (pin: string): RequestInit => ({
+      ...post({}),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: pin }),
+    });
+    const metered = (options: {
+      readonly up: ReturnType<typeof fakeFetch>;
+      readonly share?: RateLimiter;
+      readonly refuse?: string;
+    }) => {
+      const takes: Array<{ account: string; units: number }> = [];
+      const app = gateway({
+        fetch: options.up.fetch,
+        networks: NETWORKS,
+        limiters: {
+          ip: allowAll,
+          rpc: allowAll,
+          default: allowAll,
+          share: options.share ?? recordingLimiter(),
+        },
+        budget: {
+          take: async (account, units) => {
+            takes.push({ account, units });
+            await Promise.resolve();
+            return account === options.refuse ? { ok: false, retryAfterSeconds: 7 } : { ok: true };
+          },
+        },
+      });
+      return { app, takes };
+    };
+    const answering = () =>
+      fakeFetch({
+        "https://a.test/tron": () => Response.json({ chainParameter: [] }),
+        "https://b.test/tron": () => Response.json({ chainParameter: [] }),
+      });
+
+    const ok = () => Response.json({ chainParameter: [] });
+    const down = () => new Response("down", { status: 502 });
+
+    it.each([
+      // Unpinned, the walk reaches the pin first: trongrid leads, b answers once trongrid is down.
+      { pin: "trongrid", url: "https://a.test/tron", first: ok },
+      { pin: "b", url: "https://b.test/tron", first: down },
+    ])(
+      "charges the share and the budget of $pin exactly like its unpinned answer",
+      async ({ pin, url, first }) => {
+        const unpinnedUp = fakeFetch({ "https://a.test/tron": first, "https://b.test/tron": ok });
+        const unpinnedShare = recordingLimiter();
+        const unpinned = metered({ up: unpinnedUp, share: unpinnedShare });
+        const plain = await unpinned.app.request(TRON_NODE, post({}));
+        expect(plain.status).toBe(200);
+        expect(plain.headers.get(PROVIDERS_HEADER)).toBe(pin);
+        const account = accountOf(url);
+        const charges = (share: ReturnType<typeof recordingLimiter>): string[] =>
+          share.keys.map((key, i) => `${key}=${String(share.deltas[i])}`);
+
+        const pinnedShare = recordingLimiter();
+        const pinnedUp = answering();
+        const pinned = metered({ up: pinnedUp, share: pinnedShare });
+        const res = await pinned.app.request(TRON_NODE, pinnedPost(pin));
+        expect(res.status).toBe(200);
+        expect(res.headers.get(PROVIDERS_HEADER)).toBe(pin);
+
+        // Exactly one upstream call, one share charge and one budget draw — all on the pin, each
+        // equal to what the unpinned request charged that provider.
+        expect(pinnedUp.callsTo(url)).toHaveLength(1);
+        expect(pinnedUp.calls).toHaveLength(1);
+        expect(pinnedShare.keys).toStrictEqual([`${account}:unknown`]);
+        expect(charges(pinnedShare)).toStrictEqual(
+          charges(unpinnedShare).filter((charge) => charge.startsWith(`${account}:`)),
+        );
+        expect(pinnedShare.deltas.every((delta) => delta >= 1)).toBe(true);
+        expect(pinned.takes).toStrictEqual(unpinned.takes.filter((t) => t.account === account));
+        expect(pinned.takes).toHaveLength(1);
+      },
+    );
+
+    it("answers 429 on a spent share of the pinned provider without failing over", async () => {
+      const up = answering();
+      // Only b's share is spent — trongrid would answer if the pin let the walk move on.
+      const share = {
+        limit: async ({ key }: { key: string }) => {
+          await Promise.resolve();
+          return { success: !key.startsWith("b:") };
+        },
+      };
+      const { app } = metered({ up, share });
+      const res = await app.request(TRON_NODE, pinnedPost("b"));
+      expect(res.status).toBe(429);
+      expect(up.calls).toHaveLength(0);
+    });
+
+    it("answers 503 on a spent budget of the pinned provider without failing over", async () => {
+      const up = answering();
+      const { app, takes } = metered({ up, refuse: "b" });
+      const res = await app.request(TRON_NODE, pinnedPost("b"));
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("7");
+      expect(takes.map((t) => t.account)).toStrictEqual(["b"]);
+      expect(up.calls).toHaveLength(0);
+    });
   });
 });
 
