@@ -2,8 +2,8 @@ import type { IRequestTransport } from "@nktkas/hyperliquid";
 
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import { timeoutSignal } from "../../timer.ts";
-import type { SetTimer } from "../../timer.ts";
+import { timeoutSignal } from "../spi.ts";
+import type { SetTimer } from "../spi.ts";
 import type { HyperliquidClock } from "./clock.ts";
 import { HyperliquidError } from "./errors.ts";
 

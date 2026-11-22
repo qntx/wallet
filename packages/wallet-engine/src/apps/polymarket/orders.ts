@@ -21,7 +21,7 @@ import {
   toHex,
 } from "viem";
 
-import { formatDecimal, parseDecimal } from "../../decimal.ts";
+import { formatDecimal, parseDecimal } from "../spi.ts";
 import {
   CTF_EXCHANGE_NAME,
   CTF_EXCHANGE_V2,

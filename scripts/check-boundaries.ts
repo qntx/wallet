@@ -103,6 +103,10 @@ const packageTarget = (edge: Edge): { name: string; subpath: string } | undefine
   edge.target.kind === "package" ? edge.target : undefined;
 /** The engine's composition root: src/*.ts. Everything else in engine src is a subdirectory. */
 const isEngineRoot = (path: string): boolean => /^packages\/wallet-engine\/src\/[^/]+$/.test(path);
+/** The `<app>` in `packages/wallet-engine/src/apps/<app>/…`, or undefined for core apps files. */
+const APP_PROVIDER = /^packages\/wallet-engine\/src\/apps\/([^/]+)\//;
+const appDirOf = (path: string): string | undefined => APP_PROVIDER.exec(path)?.[1];
+const APPS_SPI = `${ENGINE}/apps/spi.ts`;
 
 type Rule = {
   readonly id: string;
@@ -231,6 +235,33 @@ const RULES: ReadonlyArray<Rule> = [
       }
       return pkg.name === "@qntx/spark" && pkg.subpath === "./signer"
         ? "@qntx/spark/signer is the kernel's signer surface — the engine never loads it"
+        : undefined;
+    },
+  },
+  {
+    id: "app-provider-spi",
+    check: (edge) => {
+      const target = fileTarget(edge);
+      if (target === undefined) {
+        return undefined;
+      }
+      const fromApp = appDirOf(edge.from);
+      const toApp = appDirOf(target);
+      /* Reverse direction: only an app dir imports itself — the core and the other apps
+         never reach into a provider; a provider reaches its host through its own pack
+         entry. Type-only edges count the same. */
+      if (toApp !== undefined) {
+        return toApp === fromApp
+          ? undefined
+          : "the core and other apps never import a provider — providers reach hosts through their own pack entry";
+      }
+      /* A provider sees the engine only through the SPI. A self-import by package name
+         resolves to an engine file and lands here the same way; targets outside the
+         engine are other rules' business. */
+      return fromApp !== undefined &&
+        within(target, "packages/wallet-engine") &&
+        target !== APPS_SPI
+        ? "an app provider reaches the engine only through src/apps/spi.ts"
         : undefined;
     },
   },

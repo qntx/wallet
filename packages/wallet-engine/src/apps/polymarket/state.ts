@@ -4,7 +4,7 @@
  * resolves to) is documented here: the group must migrate its Safe outside the wallet before it can
  * be enabled, and reads stay scoped to it until then.
  */
-import type { AppGroupState } from "../types.ts";
+import type { AppGroupState } from "../spi.ts";
 
 /** The resumable enablement step a group is in; absent when `status` is terminal. */
 export type PolymarketStep =

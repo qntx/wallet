@@ -32,11 +32,8 @@ import type * as z from "zod/mini";
 
 import type { Wallet } from "@qntx/wallet";
 
-import type { EngineLogger } from "../../events.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppSocket, AppSocketCore } from "../socket.ts";
-import { createAppSocketCore } from "../socket.ts";
-import type { AppGroup } from "../types.ts";
+import { createAppSocketCore } from "../spi.ts";
+import type { AppGroup, AppSocket, AppSocketCore, EngineLogger, SetTimer } from "../spi.ts";
 import type {
   PolymarketAccountReads,
   PolymarketOrder,

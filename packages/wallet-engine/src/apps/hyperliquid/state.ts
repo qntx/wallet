@@ -5,9 +5,8 @@
  * record in collection `apps.hyperliquid` under `<walletId>/<groupIndex>` — strict parse, a
  * malformed record reads as empty.
  */
-import type { EngineLogger } from "../../events.ts";
-import { readJson } from "../../store/json.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppStorage } from "../types.ts";
+import { readJson } from "../spi.ts";
+import type { AppFlow, AppGroup, AppGroupState, AppStorage, EngineLogger } from "../spi.ts";
 
 /** The resumable enablement step a group is in; absent when `status` is terminal. */
 export type HyperliquidStep =

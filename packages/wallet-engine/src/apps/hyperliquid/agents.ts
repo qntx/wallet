@@ -1,6 +1,6 @@
 import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 
-import type { EngineLogger } from "../../events.ts";
+import type { EngineLogger } from "../spi.ts";
 import { HyperliquidError } from "./errors.ts";
 
 /** The account identity every trade method takes first — a wallet group, nothing more. */

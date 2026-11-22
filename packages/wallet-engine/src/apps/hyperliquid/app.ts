@@ -7,7 +7,7 @@
  */
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import type { AppContext, AppDefinition } from "../types.ts";
+import type { AppContext, AppDefinition } from "../spi.ts";
 import { createHyperliquidEnable } from "./enable.ts";
 import { createHyperliquidProvider } from "./provider.ts";
 import type { HyperliquidProvider } from "./provider.ts";

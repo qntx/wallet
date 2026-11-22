@@ -4,10 +4,8 @@ import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 
-import type { EvmFeeTier } from "../../chains/evm.ts";
-import type { EngineLogger } from "../../events.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type { AppRequests, EngineLogger, EvmFeeTier } from "../spi.ts";
 import { createHyperliquidAccount } from "./account.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import { createHyperliquidActions } from "./actions.ts";

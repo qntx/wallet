@@ -4,7 +4,7 @@
  * store scoped to `context.storage`, the provider and the enable state machine wired exactly as the
  * monolithic composition built them.
  */
-import type { AppContext, AppDefinition } from "../types.ts";
+import type { AppContext, AppDefinition } from "../spi.ts";
 import { createPolymarketCredentials } from "./credentials.ts";
 import { createPolymarketEnable } from "./enable.ts";
 import { createPolymarketProvider } from "./provider.ts";

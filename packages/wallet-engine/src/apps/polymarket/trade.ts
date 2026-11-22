@@ -26,10 +26,8 @@ import type * as z from "zod/mini";
 
 import type { Wallet } from "@qntx/wallet";
 
-import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppGroup, AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type { AppAvailability, AppGroup, AppRequests, SetTimer } from "../spi.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketL2 } from "./l2.ts";

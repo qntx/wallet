@@ -10,9 +10,14 @@ import type { Wallet } from "@qntx/wallet";
 import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
-import type { EngineLogger } from "../../events.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppFlow, AppGroup, AppProvider, AppRequests } from "../types.ts";
+import type {
+  AppFlow,
+  AppGroup,
+  AppProvider,
+  AppRequests,
+  EngineLogger,
+  SetTimer,
+} from "../spi.ts";
 import { HyperliquidError } from "./errors.ts";
 import type { HyperliquidErrorCategory } from "./errors.ts";
 import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";

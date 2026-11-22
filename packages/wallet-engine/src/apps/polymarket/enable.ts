@@ -12,10 +12,15 @@
 
 import { toHex } from "viem";
 
-import type { EngineLogger } from "../../events.ts";
-import { RequestEndedError } from "../../requests/controller.ts";
-import type { SetTimer } from "../../timer.ts";
-import type { AppFlow, AppGroup, AppProvider, AppRequests } from "../types.ts";
+import { RequestEndedError } from "../spi.ts";
+import type {
+  AppFlow,
+  AppGroup,
+  AppProvider,
+  AppRequests,
+  EngineLogger,
+  SetTimer,
+} from "../spi.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import {
   CONDITIONAL_TOKENS,
