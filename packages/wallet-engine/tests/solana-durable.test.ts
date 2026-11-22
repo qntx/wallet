@@ -213,6 +213,9 @@ const fakeCtx = (rpc: MockRpc) => {
       wallet: {} as Wallet,
       networks: {
         solanaRpc: () => rpc,
+        pinnedSolanaRpc: () => rpc,
+        // The same scripted answers serve as the host endpoint — a drop it also proves drops.
+        independentPinnedSolanaRpc: () => ({ kind: "available", client: rpc }),
       } as unknown as RouteContext["options"]["networks"],
       openStore: async () => {
         await Promise.resolve();
@@ -278,7 +281,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     expect(tx.lastValidBlockHeight).toBeUndefined();
 
     const before = rpc.calls.filter((c) => c === "sendTransaction").length;
-    const state = await pollSolana(ctx, tx);
+    const state = await pollSolana(ctx, tx, new Map());
     expect(state).toBeUndefined();
     // Still ours: rebroadcast, never a tip read — a durable tx has no height bound.
     expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(before + 1);
@@ -304,7 +307,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     expect(tx.durableNonce).toStrictEqual({ account: nonceAccount, value: NONCE_VALUE });
     expect(tx.lastValidBlockHeight).toBeUndefined();
 
-    const state = await pollSolana(ctx, tx);
+    const state = await pollSolana(ctx, tx, new Map());
     expect(state).toBeUndefined();
     expect(rpc.calls).not.toContain("getEpochInfo");
   });
@@ -326,7 +329,10 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       signatures: [HISTORY_BEFORE_SUBMISSION],
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({ kind: "ended", state: "dropped" });
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
   });
 
   it("an advanced nonce with our signature in the account history is inclusion, not a drop", async () => {
@@ -354,7 +360,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       ],
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toStrictEqual({
       kind: "included",
       state: "confirmed",
       block: { height: 5001 },
@@ -385,7 +391,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       ],
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toStrictEqual({
       kind: "included",
       state: "failed",
       block: { height: 5001 },
@@ -417,7 +423,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       ],
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toBeUndefined();
     expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(1);
   });
 
@@ -435,7 +441,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
 
     const failing = mockRpc(signature, { account: consumed, status, signatures: "fail" });
     const { ctx: ctx1, tx } = await trackTx(failing, wire);
-    await expect(pollSolana(ctx1, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx1, tx, new Map())).resolves.toBeUndefined();
 
     const timeless = mockRpc(signature, {
       account: consumed,
@@ -443,7 +449,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       signatures: [{ ...HISTORY_BEFORE_SUBMISSION, blockTime: null }],
     });
     const { ctx: ctx2 } = fakeCtx(timeless);
-    await expect(pollSolana(ctx2, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx2, tx, new Map())).resolves.toBeUndefined();
   });
 
   it("an advanced nonce on a status bank behind the finalized read proves nothing", async () => {
@@ -460,7 +466,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: null, slot: 4999 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toBeUndefined();
     // No rebroadcast either: the nonce may already be consumed.
     expect(rpc.calls.filter((c) => c === "sendTransaction")).toHaveLength(1);
   });
@@ -478,7 +484,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: { confirmationStatus: "processed", err: null, slot: 5000 }, slot: 5000 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toBeUndefined();
   });
 
   it("a confirmed entry lands the transaction even while the nonce still holds", async () => {
@@ -491,7 +497,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: { confirmationStatus: "confirmed", err: null, slot: 5100 }, slot: 5100 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toStrictEqual({
       kind: "included",
       state: "confirmed",
       block: { height: 5100 },
@@ -508,7 +514,10 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       signatures: [HISTORY_BEFORE_SUBMISSION],
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).resolves.toStrictEqual({ kind: "ended", state: "dropped" });
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
   });
 
   it("an unreadable nonce account keeps the poll open — the error is not a drop", async () => {
@@ -521,7 +530,7 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
       status: { entry: null, slot: 5000 },
     });
     const { ctx, tx } = await trackTx(rpc, wire);
-    await expect(pollSolana(ctx, tx)).rejects.toThrow("not owned by the System program");
+    await expect(pollSolana(ctx, tx, new Map())).rejects.toThrow("not owned by the System program");
   });
 });
 
@@ -629,7 +638,7 @@ describe("durableNonceOfMessage", () => {
     };
 
     const before = rpc.calls.filter((c) => c === "sendTransaction").length;
-    await expect(pollSolana(ctx, tx)).resolves.toBeUndefined();
+    await expect(pollSolana(ctx, tx, new Map())).resolves.toBeUndefined();
     // No nonce account to read — only the status; and the wire keeps going out.
     expect(rpc.calls).not.toContain("getAccountInfo");
     expect(rpc.calls).not.toContain("getEpochInfo");
@@ -639,7 +648,7 @@ describe("durableNonceOfMessage", () => {
       status: { entry: { slot: 5100, err: null, confirmationStatus: "confirmed" }, slot: 5100 },
     });
     const { ctx: ctx2 } = fakeCtx(confirmed);
-    await expect(pollSolana(ctx2, tx)).resolves.toStrictEqual({
+    await expect(pollSolana(ctx2, tx, new Map())).resolves.toStrictEqual({
       kind: "included",
       state: "confirmed",
       block: { height: 5100 },

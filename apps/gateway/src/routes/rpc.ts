@@ -3,6 +3,7 @@ import { Hono } from "hono";
 
 import {
   PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   accepts,
   containsBroadcast,
   evmRpcRequest,
@@ -57,13 +58,21 @@ export function rpcRoutes({
       if (!accepts(allowed, body)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
+      const pin = c.req.header(PROVIDER_PIN_HEADER);
+      const providers =
+        pin === undefined
+          ? network.providers
+          : network.providers.filter((provider) => provider.id === pin);
+      if (providers.length === 0) {
+        throw new GatewayHttpError(400, "invalid-request");
+      }
       // The request paid one unit up front; a batch's remaining calls pay one unit each. The
       // provider's own price (compute units) is metered per upstream call by the forwarder.
       await c.get("charge")((Array.isArray(body) ? body.length : 1) - 1);
       const payload = JSON.stringify(body);
 
       const { value, providerId } = await forwarder.run(
-        network.providers,
+        providers,
         async (send, provider) => {
           const response = await send({
             url: provider.url,

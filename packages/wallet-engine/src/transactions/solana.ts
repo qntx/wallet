@@ -46,6 +46,8 @@ import {
 } from "../swaps/jupiter.ts";
 import { submitSigned } from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
+import { corroborated } from "./drop-evidence.ts";
+import type { DropEvidence } from "./drop-evidence.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -97,6 +99,18 @@ const SOLANA_REFUSED =
  * the `dropped` proof.
  */
 const SOLANA_HISTORY_SKEW_MS = 600_000;
+
+/**
+ * The span a `dropped` streak without a host endpoint must outlast: one processing age. A blockhash
+ * is accepted for MAX_PROCESSING_AGE = MAX_RECENT_BLOCKHASHES / 2 = 150 blocks (anza-xyz/solana-sdk
+ * clock/src/lib.rs `MAX_PROCESSING_AGE`; agave runtime/src/bank.rs `is_blockhash_valid` →
+ * `is_hash_valid_for_age`, `get_blockhash_last_valid_block_height` = block_height +
+ * max_processing_age − age), and 400 ms is the longest target slot time the cluster has run
+ * (`DEFAULT_MS_PER_SLOT_400_MS`; SIMD-0525 only lowers it, `MAX_HASH_AGE_IN_SECONDS_400_MS` for the
+ * 300-hash queue) — so a streak longer than one age outlasts any blockhash a lagging upstream could
+ * still have called valid when the streak began.
+ */
+const SOLANA_DROP_SPAN_MS = 150 * 400;
 
 /**
  * What a failed `sendTransaction` says about the bytes. A preflight "Blockhash not found" is the
@@ -874,145 +888,224 @@ export const submitDappSolana = async (
   return signature;
 };
 
-export const pollSolana = async (
-  ctx: RouteContext,
+/**
+ * What one endpoint's reads settle a poll to: an inclusion it observed, the `dropped` verdict it
+ * claims — or nothing proven — plus whether the transaction can still land on its view, in which
+ * case the wire keeps going out.
+ */
+type SolanaPollProof = {
+  readonly poll: TxPoll | undefined;
+  readonly rebroadcast: boolean;
+};
+
+/** A confirmed-or-better status entry settles the poll directly. */
+const entrySettles = (entry: {
+  readonly slot: number;
+  readonly commitment: "processed" | "confirmed" | "finalized";
+  readonly failed: boolean;
+}): TxPoll => ({
+  kind: "included",
+  state: entry.failed ? "failed" : "confirmed",
+  block: { height: entry.slot },
+  final: entry.commitment === "finalized",
+});
+
+/* The durable-nonce drop proof, run against one client so the verdict's reads all come from the
+   same upstream. A durable nonce never expires by height — the nonce account's current value is
+   the proof. It is read at finalized before the status, so a value that advanced between the
+   reads can never be finalised `dropped` by an answer a stale bank produced. A lookup-loaded
+   account cannot be read back, so that transaction is only ever settled by landing. */
+const proveDurableDrop = async (
+  rpc: SolanaRpc,
   tx: TrackedTransaction,
-): Promise<TxPoll | undefined> => {
-  if (tx.hash === undefined) {
-    return { kind: "ended", state: "failed" };
+  durable: NonNullable<TrackedTransaction["durableNonce"]>,
+  hash: string,
+): Promise<SolanaPollProof> => {
+  const nonceAccount = durable.account;
+  const nonce = nonceAccount === undefined ? undefined : await solana.nonceValue(rpc, nonceAccount);
+  const status = await solana.signatureStatus(rpc, hash);
+  const { entry } = status;
+  if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+    return { poll: entrySettles(entry), rebroadcast: false };
   }
-  const rpc = ctx.options.networks.solanaRpc(tx.network);
-  if (tx.block !== undefined) {
-    /* The finality recheck: the entry reports its commitment. No entry, or only a processed one,
-       proves a reorg only when the answering bank is already at or past the persisted slot and
-       the entry — if any — names a different one; a bank behind the slot proves nothing. */
-    const status = await solana.signatureStatus(rpc, tx.hash);
-    const { entry } = status;
-    if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
-      return includedPoll(
-        tx,
-        entry.failed ? "failed" : "confirmed",
-        { height: entry.slot },
-        entry.commitment === "finalized",
-      );
-    }
-    return status.slot !== undefined &&
-      status.slot >= BigInt(tx.block.height) &&
-      (entry === undefined || entry.slot !== tx.block.height)
-      ? { kind: "reorged" }
-      : undefined;
-  }
-  if (tx.durableNonce !== undefined) {
-    /* A durable nonce never expires by height — the nonce account's current value is the proof.
-       It is read at finalized before the status, so a value that advanced between the reads can
-       never be finalised `dropped` by an answer a stale bank produced. A lookup-loaded account
-       cannot be read back, so that transaction is only ever settled by landing. */
-    const nonceAccount = tx.durableNonce.account;
-    const nonce =
-      nonceAccount === undefined ? undefined : await solana.nonceValue(rpc, nonceAccount);
-    const status = await solana.signatureStatus(rpc, tx.hash);
-    const { entry } = status;
-    if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+  /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
+     read has no entry at any commitment. A null status is not yet the drop: the status lookup
+     only reaches back as far as the node's ledger, so a transaction that consumed the nonce
+     long ago can still read absent. The nonce account's own signature history is the proof:
+     ours listed settles the transaction from that entry; absent is `dropped` only when the
+     listing provably reaches back before we submitted — an entry whose blockTime predates
+     `submittedAt` by more than the clock-skew margin. A short, young or blockTime-less
+     listing, or a failed read, proves nothing: keep tracking (never rebroadcast — the nonce
+     is consumed). */
+  if (
+    nonce !== undefined &&
+    nonce.value !== durable.value &&
+    status.entry === undefined &&
+    status.slot !== undefined &&
+    nonce.slot !== undefined &&
+    status.slot >= nonce.slot &&
+    nonceAccount !== undefined
+  ) {
+    const history = await solana.signaturesForAddress(rpc, nonceAccount).catch(() => undefined);
+    const ours = history?.find((e) => e.signature === hash);
+    if (ours !== undefined) {
       return {
-        kind: "included",
-        state: entry.failed ? "failed" : "confirmed",
-        block: { height: entry.slot },
-        final: entry.commitment === "finalized",
-      };
-    }
-    /* The nonce advanced (or the account is gone) and a bank at least as fresh as the finalized
-       read has no entry at any commitment. A null status is not yet the drop: the status lookup
-       only reaches back as far as the node's ledger, so a transaction that consumed the nonce
-       long ago can still read absent. The nonce account's own signature history is the proof:
-       ours listed settles the transaction from that entry; absent is `dropped` only when the
-       listing provably reaches back before we submitted — an entry whose blockTime predates
-       `submittedAt` by more than the clock-skew margin. A short, young or blockTime-less
-       listing, or a failed read, proves nothing: keep tracking (never rebroadcast — the nonce
-       is consumed). */
-    if (
-      nonce !== undefined &&
-      nonce.value !== tx.durableNonce.value &&
-      status.entry === undefined &&
-      status.slot !== undefined &&
-      nonce.slot !== undefined &&
-      status.slot >= nonce.slot &&
-      nonceAccount !== undefined
-    ) {
-      const history = await solana.signaturesForAddress(rpc, nonceAccount).catch(() => undefined);
-      const ours = history?.find((e) => e.signature === tx.hash);
-      if (ours !== undefined) {
-        return {
+        poll: {
           kind: "included",
           state: ours.err === null || ours.err === undefined ? "confirmed" : "failed",
           block: { height: ours.slot },
           final: ours.confirmationStatus === "finalized",
-        };
-      }
-      const coversWindow =
-        history?.some(
-          (e) =>
-            e.blockTime !== undefined &&
-            e.blockTime * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS,
-        ) === true;
-      return coversWindow ? { kind: "ended", state: "dropped" } : undefined;
+        },
+        rebroadcast: false,
+      };
     }
-    const consumed = nonce !== undefined && nonce.value !== tx.durableNonce.value;
-    if (!consumed && tx.raw !== undefined && tx.rebroadcast !== false) {
-      await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
-    }
-    return undefined;
+    const coversWindow =
+      history?.some(
+        (e) =>
+          e.blockTime !== undefined && e.blockTime * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS,
+      ) === true;
+    return {
+      poll: coversWindow ? { kind: "ended", state: "dropped" } : undefined,
+      rebroadcast: false,
+    };
   }
-  /* With a blockhash bound the tip is read first, then — only when the height alone says
-     expired — the blockhash's own validity on the same endpoint, then the status: a transaction
-     landing or a nonce advancing between the reads can never be finalised `dropped` by an answer
-     a stale bank produced. The stored bound was read at request time — possibly from an endpoint
-     behind the cluster — so it can sit below the blockhash's true expiry; `isBlockhashValid` is
-     the authoritative check, and a raw that cannot be decoded proves nothing. */
+  /* Nothing proven — but a nonce that already moved is never rebroadcast onto. */
+  const consumed = nonce !== undefined && nonce.value !== durable.value;
+  return { poll: undefined, rebroadcast: !consumed };
+};
+
+/* The blockhash drop proof, run against one client. With a blockhash bound the tip is read first,
+   then — only when the height alone says expired — the blockhash's own validity on the same
+   endpoint, then the status: a transaction landing between the reads can never be finalised
+   `dropped` by an answer a stale bank produced. The stored bound was read at request time —
+   possibly from an endpoint behind the cluster — so it can sit below the blockhash's true expiry;
+   `isBlockhashValid` is the authoritative check, and a raw that cannot be decoded proves
+   nothing. */
+const proveBlockhashDrop = async (
+  rpc: SolanaRpc,
+  tx: TrackedTransaction,
+  hash: string,
+): Promise<SolanaPollProof> => {
   const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
   const expired = tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0);
   const validity = expired
     ? await (async () => {
-        const hash = tx.raw === undefined ? undefined : lifetimeTokenOf(tx.raw);
-        return hash === undefined ? undefined : solana.blockhashValid(rpc, hash);
+        const blockhash = tx.raw === undefined ? undefined : lifetimeTokenOf(tx.raw);
+        return blockhash === undefined ? undefined : solana.blockhashValid(rpc, blockhash);
       })()
     : undefined;
-  const status = await solana.signatureStatus(rpc, tx.hash);
+  const status = await solana.signatureStatus(rpc, hash);
   const { entry } = status;
   if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
-    return {
-      kind: "included",
-      state: entry.failed ? "failed" : "confirmed",
-      block: { height: entry.slot },
-      final: entry.commitment === "finalized",
-    };
+    return { poll: entrySettles(entry), rebroadcast: false };
   }
-  if (expired) {
-    if (validity === undefined) {
-      return undefined; // the wire's blockhash cannot be read — the drop is not proven
+  if (!expired || tip === undefined) {
+    return { poll: undefined, rebroadcast: true };
+  }
+  if (validity === undefined) {
+    // the wire's blockhash cannot be read — the drop is not proven
+    return { poll: undefined, rebroadcast: false };
+  }
+  const bankFloor =
+    validity.slot !== undefined && validity.slot > tip.slot ? validity.slot : tip.slot;
+  /* Invalid on this endpoint, no entry at any commitment, and a status bank at least as far
+     along as the tip and the validity read: `dropped` claimed. Anything else — a stale-bank
+     status, a processed-only entry — stays tracked and is not rebroadcast: a dead blockhash
+     can only hit "already processed" or nothing. A still-valid one keeps the wire going out. */
+  if (
+    !validity.valid &&
+    status.entry === undefined &&
+    status.slot !== undefined &&
+    status.slot >= bankFloor
+  ) {
+    return { poll: { kind: "ended", state: "dropped" }, rebroadcast: false };
+  }
+  return { poll: undefined, rebroadcast: validity.valid };
+};
+
+/* A `dropped` claim from one upstream is only a claim. A configured host endpoint re-runs the
+   whole proof on its own pinned client: agreement ends the row `dropped`, an entry it surfaces
+   settles the inclusion, an unfinished proof or a failed read keeps tracking. With no host
+   endpoint — none configured, or the host endpoint already is the primary — the same picture
+   must hold for a streak of consecutive polls spanning more than one processing age. */
+const settleSolanaDrop = async (
+  ctx: RouteContext,
+  tx: TrackedTransaction,
+  evidence: DropEvidence,
+  prove: (rpc: SolanaRpc) => Promise<SolanaPollProof>,
+): Promise<TxPoll | undefined> => {
+  const independent = ctx.options.networks.independentPinnedSolanaRpc(tx.network);
+  if (independent.kind === "available") {
+    const theirs = await prove(independent.client).catch(() => undefined);
+    evidence.delete(tx.id);
+    return theirs?.poll;
+  }
+  if (corroborated(ctx.options.now(), evidence, tx.id, SOLANA_DROP_SPAN_MS)) {
+    evidence.delete(tx.id);
+    return { kind: "ended", state: "dropped" };
+  }
+  return undefined;
+};
+
+export const pollSolana = async (
+  ctx: RouteContext,
+  tx: TrackedTransaction,
+  evidence: DropEvidence,
+): Promise<TxPoll | undefined> => {
+  if (tx.hash === undefined) {
+    return { kind: "ended", state: "failed" };
+  }
+  const { hash } = tx;
+  /* Every read of one poll goes through one pinned upstream: a tip from one node mixed with a
+     validity, status or nonce answer from another would "prove" a drop that neither node alone
+     claims. */
+  const rpc = ctx.options.networks.pinnedSolanaRpc(tx.network);
+  try {
+    if (tx.block !== undefined) {
+      /* The finality recheck: the entry reports its commitment. No entry, or only a processed one,
+         proves a reorg only when the answering bank is already at or past the persisted slot and
+         the entry — if any — names a different one; a bank behind the slot proves nothing. */
+      const status = await solana.signatureStatus(rpc, tx.hash);
+      const { entry } = status;
+      if (entry !== undefined && (entry.failed || entry.commitment !== "processed")) {
+        return includedPoll(
+          tx,
+          entry.failed ? "failed" : "confirmed",
+          { height: entry.slot },
+          entry.commitment === "finalized",
+        );
+      }
+      return status.slot !== undefined &&
+        status.slot >= BigInt(tx.block.height) &&
+        (entry === undefined || entry.slot !== tx.block.height)
+        ? { kind: "reorged" }
+        : undefined;
     }
-    const bankFloor =
-      validity.slot !== undefined && validity.slot > tip.slot ? validity.slot : tip.slot;
-    /* Invalid on this endpoint, no entry at any commitment, and a status bank at least as far
-       along as the tip and the validity read: `dropped` proven. Anything else — a stale-bank
-       status, a processed-only entry — stays tracked and is not rebroadcast: a dead blockhash
-       can only hit "already processed" or nothing. A still-valid one keeps the wire going out. */
-    if (
-      !validity.valid &&
-      status.entry === undefined &&
-      status.slot !== undefined &&
-      status.slot >= bankFloor
-    ) {
-      return { kind: "ended", state: "dropped" };
+    const durable = tx.durableNonce;
+    const prove =
+      durable === undefined
+        ? async (r: SolanaRpc) => proveBlockhashDrop(r, tx, hash)
+        : async (r: SolanaRpc) => proveDurableDrop(r, tx, durable, hash);
+    const proof = await prove(rpc);
+    if (proof.poll !== undefined) {
+      if (proof.poll.kind === "ended" && proof.poll.state === "dropped") {
+        return await settleSolanaDrop(ctx, tx, evidence, prove);
+      }
+      evidence.delete(tx.id);
+      return proof.poll;
     }
-    if (validity.valid && tx.raw !== undefined && tx.rebroadcast !== false) {
+    evidence.delete(tx.id);
+    /* Never rebroadcast a dead blockhash or a consumed nonce — the wire only leaves while the
+       transaction could still land. */
+    if (proof.rebroadcast && tx.raw !== undefined && tx.rebroadcast !== false) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
+  } catch (error) {
+    /* A failed read proves nothing — it also clears any streak the row had collected. */
+    evidence.delete(tx.id);
+    throw error;
   }
-  if (tx.raw !== undefined && tx.rebroadcast !== false) {
-    await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
-  }
-  return undefined;
 };
 
 /**

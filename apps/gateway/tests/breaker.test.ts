@@ -34,6 +34,7 @@ import type { Upstream, UpstreamCall } from "./helpers.ts";
 
 const ETH = "eip155:1";
 const NILE = "tron:3448148188";
+const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const ALCHEMY = "https://alchemy.test/eth";
 
@@ -60,6 +61,13 @@ const NETWORKS: ReadonlyArray<GatewayNetwork> = [
       { id: "b", url: "https://b.test/tron" },
     ],
   },
+  {
+    id: SOLANA,
+    providers: [
+      { id: "a", url: "https://a.test/sol" },
+      { id: "b", url: "https://b.test/sol" },
+    ],
+  },
 ];
 
 const TAKER = "0x8f3796aa4dB3f47E0fE0D19f9c3c96a51aD5f0F8";
@@ -68,7 +76,6 @@ const WETH = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
 const WSOL = "So11111111111111111111111111111111111111112";
 const SUSDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const STAKER = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
-const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 type Forwarded = {
   /** The request a client sends to the route. */
@@ -570,6 +577,124 @@ describe("upstream cost metering", () => {
       expect(res.status).toBe(503);
       expect(res.headers.get("retry-after")).toBe("7");
       expect(takes.map((t) => t.account)).toStrictEqual(["b"]);
+      expect(up.calls).toHaveLength(0);
+    });
+  });
+
+  /*
+   * The pinned JSON-RPC request (`x-gateway-provider`, the engine's Solana drop-proof reads) is
+   * the same route with a narrowed provider list: it must charge the client share and the
+   * account budget exactly like the unpinned request that provider answers, and a refusal of
+   * either must neither reach that provider nor fail over to another one.
+   */
+  describe("a pinned Solana rpc request", () => {
+    const SOLANA_RPC = rpcPath(SOLANA);
+    const pinnedPost = (pin: string): RequestInit => ({
+      ...post(call("getSlot")),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: pin }),
+    });
+    const metered = (options: {
+      readonly up: ReturnType<typeof fakeFetch>;
+      readonly share?: RateLimiter;
+      readonly refuse?: string;
+    }) => {
+      const takes: Array<{ account: string; units: number }> = [];
+      const app = gateway({
+        fetch: options.up.fetch,
+        networks: NETWORKS,
+        limiters: {
+          ip: allowAll,
+          rpc: allowAll,
+          default: allowAll,
+          share: options.share ?? recordingLimiter(),
+        },
+        budget: {
+          take: async (account, units) => {
+            takes.push({ account, units });
+            await Promise.resolve();
+            return account === options.refuse ? { ok: false, retryAfterSeconds: 7 } : { ok: true };
+          },
+        },
+      });
+      return { app, takes };
+    };
+    const answering = () =>
+      fakeFetch({
+        "https://a.test/sol": () => rpcOk(42),
+        "https://b.test/sol": () => rpcOk(42),
+      });
+
+    const ok = () => rpcOk(42);
+    const down = () => new Response("down", { status: 502 });
+
+    it.each([
+      // Unpinned, the walk reaches the pin first: a leads, b answers once a is down.
+      { pin: "a", url: "https://a.test/sol", first: ok },
+      { pin: "b", url: "https://b.test/sol", first: down },
+    ])(
+      "charges the share and the budget of $pin exactly like its unpinned answer",
+      async ({ pin, url, first }) => {
+        const unpinnedUp = fakeFetch({ "https://a.test/sol": first, "https://b.test/sol": ok });
+        const unpinnedShare = recordingLimiter();
+        const unpinned = metered({ up: unpinnedUp, share: unpinnedShare });
+        const plain = await unpinned.app.request(SOLANA_RPC, post(call("getSlot")));
+        expect(plain.status).toBe(200);
+        expect(plain.headers.get(PROVIDERS_HEADER)).toBe(pin);
+        const account = accountOf(url);
+        const charges = (share: ReturnType<typeof recordingLimiter>): string[] =>
+          share.keys.map((key, i) => `${key}=${String(share.deltas[i])}`);
+
+        const pinnedShare = recordingLimiter();
+        const pinnedUp = answering();
+        const pinned = metered({ up: pinnedUp, share: pinnedShare });
+        const res = await pinned.app.request(SOLANA_RPC, pinnedPost(pin));
+        expect(res.status).toBe(200);
+        expect(res.headers.get(PROVIDERS_HEADER)).toBe(pin);
+
+        // Exactly one upstream call, one share charge and one budget draw — all on the pin, each
+        // equal to what the unpinned request charged that provider.
+        expect(pinnedUp.callsTo(url)).toHaveLength(1);
+        expect(pinnedUp.calls).toHaveLength(1);
+        expect(pinnedShare.keys).toStrictEqual([`${account}:unknown`]);
+        expect(charges(pinnedShare)).toStrictEqual(
+          charges(unpinnedShare).filter((charge) => charge.startsWith(`${account}:`)),
+        );
+        expect(pinnedShare.deltas.every((delta) => delta >= 1)).toBe(true);
+        expect(pinned.takes).toStrictEqual(unpinned.takes.filter((t) => t.account === account));
+        expect(pinned.takes).toHaveLength(1);
+      },
+    );
+
+    it("answers 429 on a spent share of the pinned provider without failing over", async () => {
+      const up = answering();
+      // Only b's share is spent — a would answer if the pin let the walk move on.
+      const share = {
+        limit: async ({ key }: { key: string }) => {
+          await Promise.resolve();
+          return { success: !key.startsWith("b:") };
+        },
+      };
+      const { app } = metered({ up, share });
+      const res = await app.request(SOLANA_RPC, pinnedPost("b"));
+      expect(res.status).toBe(429);
+      expect(up.calls).toHaveLength(0);
+    });
+
+    it("answers 503 on a spent budget of the pinned provider without failing over", async () => {
+      const up = answering();
+      const { app, takes } = metered({ up, refuse: "b" });
+      const res = await app.request(SOLANA_RPC, pinnedPost("b"));
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("7");
+      expect(takes.map((t) => t.account)).toStrictEqual(["b"]);
+      expect(up.calls).toHaveLength(0);
+    });
+
+    it("rejects an unknown pin with 400 before any upstream call", async () => {
+      const up = answering();
+      const { app } = metered({ up });
+      const res = await app.request(SOLANA_RPC, pinnedPost("nobody"));
+      expect(res.status).toBe(400);
       expect(up.calls).toHaveLength(0);
     });
   });

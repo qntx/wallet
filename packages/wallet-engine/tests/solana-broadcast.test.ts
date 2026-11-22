@@ -17,8 +17,11 @@ import { TransactionController } from "../src/transactions/controller.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { idleNetworkDeps, send } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const POLL_MS = 4000;
+/** A blockhash lives 150 slots at the cluster's longest slot target of 400 ms. */
+const PROCESSING_AGE_MS = 150 * 400;
 const HOST = "http://host.local";
 const NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const PAYER = "11111111111111111111111111111112";
@@ -61,6 +64,8 @@ const world = () => {
     validitySlot: undefined as number | undefined,
     /** Fired after the poll's first read — a transaction landing between the two reads. */
     landAfterFirstRead: undefined as undefined | (() => void),
+    /** The engine's clock — a drop streak's span is measured against it. */
+    now: 1_000_000,
   };
   /** How sendTransaction answers: a real signature, an rpc error, or a dead transport. */
   let sendMode: { kind: "ok" } | { kind: "rpc-error"; message: string } | { kind: "drop" } = {
@@ -190,7 +195,7 @@ const world = () => {
         return new Uint8Array(n).fill(tag);
       },
       setTimer: timers.setTimer,
-      now: () => 1_000_000,
+      now: () => env.now,
       logger: { warn: (msg) => warnings.push(msg) },
       pollMs: POLL_MS,
       chains: apis,
@@ -236,6 +241,16 @@ const rawOf = (tx: TrackedTransaction): string => {
     throw new Error("tracked transaction has no raw");
   }
   return raw;
+};
+
+/**
+ * The streak a drop claim without a host endpoint needs after the first claiming poll: two more
+ * consecutive polls, the last more than one processing age after the streak began.
+ */
+const corroborate = async (w: ReturnType<typeof world>, timers: ManualTimers): Promise<void> => {
+  w.env.now += PROCESSING_AGE_MS + 1;
+  await timers.fire(POLL_MS);
+  await timers.fire(POLL_MS);
 };
 
 describe("a Solana broadcast with an unsettled outcome", () => {
@@ -334,6 +349,8 @@ describe("a Solana broadcast with an unsettled outcome", () => {
 
     w.env.blockHeight = LVBH + 1;
     await timers.fire(POLL_MS);
+    // One upstream's claim is only a claim: the streak proves the drop.
+    await corroborate(w, timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
@@ -386,6 +403,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
 
     w.env.blockHeight = LVBH + 1;
     await second.timers.fire(POLL_MS);
+    await corroborate(w, second.timers);
     expect(second.ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
@@ -431,9 +449,10 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
     expect(w.attempts).toHaveLength(before);
 
-    // A bank at least as far along as the tip also has no entry: the drop is proven.
+    // A bank at least as far along as the tip also has no entry: the claim needs its streak.
     w.env.statusSlot = 700;
     await timers.fire(POLL_MS);
+    await corroborate(w, timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
@@ -468,6 +487,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     const proofReads = new Set(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
     const reads = w.calls.filter((call) => proofReads.has(call));
     expect(reads).toStrictEqual(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
+    await corroborate(w, timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
@@ -488,9 +508,10 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     // Still executable: the poll rebroadcasts the persisted wire.
     expect(w.attempts.length).toBeGreaterThan(before);
 
-    // The blockhash dying on the same endpoint proves the drop — at a fresh enough bank.
+    // The blockhash dying on the same endpoint claims the drop — the streak proves it.
     w.env.blockhashAlive = false;
     await timers.fire(POLL_MS);
+    await corroborate(w, timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
@@ -510,6 +531,7 @@ describe("a Solana broadcast with an unsettled outcome", () => {
 
     w.env.statusSlot = 800;
     await timers.fire(POLL_MS);
+    await corroborate(w, timers);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 });

@@ -62,6 +62,8 @@ import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 import { submitSigned } from "./broadcast.ts";
+import { corroborated } from "./drop-evidence.ts";
+import type { DropEvidence } from "./drop-evidence.ts";
 import {
   includedPoll,
   newId,
@@ -97,8 +99,6 @@ const TRON_STALE_MS = 20_000;
  * behind the freshest chain view looks exactly like "the transaction is gone".
  */
 const TRON_SOLIDIFY_MS = 19 * 3000;
-/** Polls corroborating a `dropped`/`reorged` proof without a host endpoint. */
-const TRON_DROP_POLLS = 3;
 /** Keccak256("Transfer(address,address,uint256)") — the TRC-20 Transfer event topic. */
 const TRANSFER_TOPIC = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 /** `balanceOf(address)` selector; the address argument is ABI-padded to 32 bytes. */
@@ -1530,7 +1530,7 @@ export const submitDappTron = async (
 export const pollTron = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
-  evidence: TronDropEvidence,
+  evidence: DropEvidence,
 ): Promise<TxPoll | undefined> => {
   if (tx.hash === undefined) {
     return { kind: "ended", state: "failed" };
@@ -1580,7 +1580,7 @@ export const pollTron = async (
           ? { kind: "reorged" }
           : undefined;
       }
-      if (corroborated(ctx, evidence, tx)) {
+      if (corroborated(ctx.options.now(), evidence, tx.id, TRON_SOLIDIFY_MS)) {
         evidence.delete(tx.id);
         return { kind: "reorged" };
       }
@@ -1621,7 +1621,7 @@ export const pollTron = async (
           return { kind: "ended", state: "dropped" };
         }
         evidence.delete(tx.id);
-      } else if (corroborated(ctx, evidence, tx)) {
+      } else if (corroborated(ctx.options.now(), evidence, tx.id, TRON_SOLIDIFY_MS)) {
         evidence.delete(tx.id);
         return { kind: "ended", state: "dropped" };
       }
@@ -1643,26 +1643,6 @@ export const pollTron = async (
     evidence.delete(tx.id);
     throw error;
   }
-};
-
-/**
- * Corroboration state for a `dropped`/`reorged` proof that has no host endpoint: the first poll
- * observing the ending condition starts the streak, `since` marks when it began.
- */
-export type TronDropEvidence = Map<string, { since: number; polls: number }>;
-
-/**
- * One poll observing the ending condition: returns whether it completes the proof. Without a host
- * endpoint the same single-upstream picture must hold for `TRON_DROP_POLLS` consecutive polls
- * spanning more than one solidification period — so the solid head cannot merely lag behind a chain
- * that knows the transaction.
- */
-const corroborated = (ctx: RouteContext, evidence: TronDropEvidence, tx: TrackedTransaction) => {
-  const now = ctx.options.now();
-  const streak = evidence.get(tx.id) ?? { since: now, polls: 0 };
-  streak.polls += 1;
-  evidence.set(tx.id, streak);
-  return streak.polls >= TRON_DROP_POLLS && now - streak.since > TRON_SOLIDIFY_MS;
 };
 
 /**
