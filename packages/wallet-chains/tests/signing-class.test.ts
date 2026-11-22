@@ -1587,7 +1587,7 @@ describe("typed-data near misses of decoded families are blind", () => {
   });
 
   it.each([["TransferWithAuthorization"], ["ReceiveWithAuthorization"]])(
-    "an EIP-3009 %s on a table token is blind",
+    "an exact EIP-3009 %s on a table token decodes bound to the signer",
     (primaryType) => {
       const intent = decodeEvm(
         simpleDoc(
@@ -1612,11 +1612,16 @@ describe("typed-data near misses of decoded families are blind", () => {
         ),
         SIGNER,
       );
-      expect(intent.blind).toBe("typed-data-variant");
+      expect(intent.blind).toBeUndefined();
+      expect(intent.verifiability).toBe("full");
+      expect(intent.message).toMatchObject({
+        kind: "typed-data",
+        authorization: expect.anything(),
+      });
     },
   );
 
-  it("the same authorization shape on a non-table token stays described", () => {
+  it("an EIP-3009 shape missing its tail fields is a claimed variant, blind", () => {
     const intent = decodeEvm(
       simpleDoc(
         "TransferWithAuthorization",
@@ -1630,8 +1635,7 @@ describe("typed-data near misses of decoded families are blind", () => {
       ),
       SIGNER,
     );
-    expect(intent.blind).toBeUndefined();
-    expect(fieldsOf(intent)?.length).toBeGreaterThan(0);
+    expect(intent.blind).toBe("typed-data-variant");
   });
 
   it("a canonical Permit on a non-table token is recognised, not variant-blind", () => {
@@ -1848,6 +1852,8 @@ describe("typed-data near misses of decoded families are blind", () => {
           "^Permit": "PermitXYZ",
           "^SafeTx$": "SafeTx",
           "^(?:OrderComponents|BulkOrder)$": "BulkOrder",
+          "^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$":
+            "ReceiveWithAuthorization",
         } as Record<string, string | undefined>
       )[claim.primaryType.source];
       if (primaryType === undefined) {

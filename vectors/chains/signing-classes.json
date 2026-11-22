@@ -934,7 +934,7 @@
       }
     },
     {
-      "name": "USDC TransferWithAuthorization (EIP-3009 near miss)",
+      "name": "USDC TransferWithAuthorization (EIP-3009 near miss, from not the signer)",
       "request": {
         "kind": "evm.typed-data",
         "network": "eip155:1",
@@ -999,7 +999,7 @@
             "verifyingContract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
           },
           "message": {
-            "from": "0x2222222222222222222222222222222222222222",
+            "from": "0x00000000000000000000000000000000000BAd00",
             "to": "0x00000000000000000000000000000000000BAd00",
             "value": "1000000",
             "validAfter": "0",
@@ -1013,11 +1013,343 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
+          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\n· from = 0x00000000000000000000000000000000000BAd00\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· from = 0x2222222222222222222222222222222222222222\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
+          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\n· from = 0x00000000000000000000000000000000000BAd00\n· to = 0x00000000000000000000000000000000000BAd00\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = 0xabababababababababababababababababababababababababababababababab"
+        }
+      }
+    },
+    {
+      "name": "USDC TransferWithAuthorization (x402, listed Base USDC)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:8453",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TransferWithAuthorization": [
+              {
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "validAfter",
+                "type": "uint256"
+              },
+              {
+                "name": "validBefore",
+                "type": "uint256"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "TransferWithAuthorization",
+          "domain": {
+            "name": "USD Coin",
+            "version": "2",
+            "chainId": 8453,
+            "verifyingContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "to": "0x00000000000000000000000000000000000BAd00",
+            "value": "10000",
+            "validAfter": "0",
+            "validBefore": "1738886400",
+            "nonce": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "App: USD Coin\nNetwork: Base\nVerifying contract 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\nType: TransferWithAuthorization\nSend 0.01 USDC to 0x00000000000000000000000000000000000BAd00\nAnyone holding this signature can submit the transfer\nValid before 2025-02-07 00:00 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "应用：USD Coin\n网络：Base\n验证合约 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\n类型：TransferWithAuthorization\n发送 0.01 USDC 到 0x00000000000000000000000000000000000BAd00\n任何持有此签名的人都可以提交这笔转账\n2025-02-07 00:00 之前有效（UTC）"
+        }
+      }
+    },
+    {
+      "name": "USDC ReceiveWithAuthorization (listed Arbitrum USDC)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "ReceiveWithAuthorization": [
+              {
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "validAfter",
+                "type": "uint256"
+              },
+              {
+                "name": "validBefore",
+                "type": "uint256"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "ReceiveWithAuthorization",
+          "domain": {
+            "name": "USD Coin",
+            "version": "2",
+            "chainId": 42161,
+            "verifyingContract": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "to": "0x00000000000000000000000000000000000BAd00",
+            "value": "8080000",
+            "validAfter": "1772641538",
+            "validBefore": "1772645198",
+            "nonce": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "App: USD Coin\nNetwork: Arbitrum One\nVerifying contract 0xaf88d065e77c8cC2239327C5EDb3A432268e5831\nType: ReceiveWithAuthorization\nSend 8.08 USDC to 0x00000000000000000000000000000000000BAd00\nOnly 0x00000000000000000000000000000000000BAd00 can submit the transfer\nValid after 2026-03-04 16:25 and before 2026-03-04 17:26 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "应用：USD Coin\n网络：Arbitrum One\n验证合约 0xaf88d065e77c8cC2239327C5EDb3A432268e5831\n类型：ReceiveWithAuthorization\n发送 8.08 USDC 到 0x00000000000000000000000000000000000BAd00\n只有 0x00000000000000000000000000000000000BAd00 可以提交这笔转账\n2026-03-04 16:25 之后、2026-03-04 17:26 之前有效（UTC）"
+        }
+      }
+    },
+    {
+      "name": "USDT0 CancelAuthorization (Flare, unlisted token)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:14",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "CancelAuthorization": [
+              {
+                "name": "authorizer",
+                "type": "address"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "CancelAuthorization",
+          "domain": {
+            "name": "USD₮0",
+            "version": "1",
+            "chainId": 14,
+            "verifyingContract": "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+          },
+          "message": {
+            "authorizer": "0x2222222222222222222222222222222222222222",
+            "nonce": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: USD₮0\nNetwork: Flare\nVerifying contract 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\nType: CancelAuthorization\nCancel the unused transfer authorization 0xabababababababababababababababababababababababababababababababab; no funds move"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：USD₮0\n网络：Flare\n验证合约 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\n类型：CancelAuthorization\n取消未使用的转账授权 0xabababababababababababababababababababababababababababababababab；不转移资金"
+        }
+      }
+    },
+    {
+      "name": "zkstables TransferWithAuthorization (unlisted token)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:8453",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TransferWithAuthorization": [
+              {
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "validAfter",
+                "type": "uint256"
+              },
+              {
+                "name": "validBefore",
+                "type": "uint256"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "TransferWithAuthorization",
+          "domain": {
+            "name": "ZK Stables USD",
+            "version": "1",
+            "chainId": 8453,
+            "verifyingContract": "0x8ED36a645beF11075283524C01acA742CbAfC832"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "to": "0x00000000000000000000000000000000000BAd00",
+            "value": "21370000",
+            "validAfter": "1767225600",
+            "validBefore": "1767225600",
+            "nonce": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "App: ZK Stables USD\nNetwork: Base\nVerifying contract 0x8ED36a645beF11075283524C01acA742CbAfC832\nType: TransferWithAuthorization\nSend 21370000 base units of unverified token 0x8ED36a645beF11075283524C01acA742CbAfC832 to 0x00000000000000000000000000000000000BAd00\nAnyone holding this signature can submit the transfer\nValid after 2026-01-01 00:00 and before 2026-01-01 00:00 (UTC)"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "应用：ZK Stables USD\n网络：Base\n验证合约 0x8ED36a645beF11075283524C01acA742CbAfC832\n类型：TransferWithAuthorization\n发送 21370000 个最小单位（未验证代币 0x8ED36a645beF11075283524C01acA742CbAfC832） 到 0x00000000000000000000000000000000000BAd00\n任何持有此签名的人都可以提交这笔转账\n2026-01-01 00:00 之后、2026-01-01 00:00 之前有效（UTC）"
         }
       }
     },

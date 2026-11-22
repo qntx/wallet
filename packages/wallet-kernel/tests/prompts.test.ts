@@ -3731,6 +3731,10 @@ describe("requester text lines cannot imitate kernel lines", () => {
     pmAuthNonce: ["1"],
     pmAuthScope: [],
     pmBatchHeader: ["w", "1", "d"],
+    authAnyone: [],
+    authOnlyRecipient: ["to"],
+    authWindow: ["after", "before"],
+    authCancel: ["0x00"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {

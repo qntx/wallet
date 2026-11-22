@@ -18,6 +18,7 @@ import {
 import type {
   ApprovalChange,
   AssetAmount,
+  TokenAuthorization,
   ChainFamily,
   DisplayIntent,
   HyperliquidAction,
@@ -243,6 +244,10 @@ type Catalog = {
   readonly pmAuthNonce: (nonce: string) => string;
   readonly pmAuthScope: string;
   readonly pmBatchHeader: (wallet: string, nonce: string, deadline: string) => string;
+  readonly authAnyone: string;
+  readonly authOnlyRecipient: (to: string) => string;
+  readonly authWindow: (after?: string, before?: string) => string;
+  readonly authCancel: (nonce: string) => string;
 };
 
 const zh: Catalog = {
@@ -492,6 +497,17 @@ const zh: Catalog = {
   tronFeeLimit: (fee) => `能量费上限 ${fee}；另可能扣除带宽费`,
   tronBandwidthFee: "可能扣除带宽费或账户激活费",
   tronResource: { bandwidth: "带宽", energy: "能量", "tron-power": "TRON Power" },
+  authAnyone: "任何持有此签名的人都可以提交这笔转账",
+  authOnlyRecipient: (to) => `只有 ${to} 可以提交这笔转账`,
+  authWindow: (after, before) =>
+    after !== undefined && before !== undefined
+      ? `${after} 之后、${before} 之前有效（UTC）`
+      : before === undefined
+        ? after === undefined
+          ? "无到期时间"
+          : `${after} 之后有效（UTC），无到期时间`
+        : `${before} 之前有效（UTC）`,
+  authCancel: (nonce) => `取消未使用的转账授权 ${nonce}；不转移资金`,
 };
 
 const en: Catalog = {
@@ -761,6 +777,17 @@ const en: Catalog = {
   tronFeeLimit: (fee) => `Max fee ${fee} for energy; bandwidth fees may be charged in addition`,
   tronBandwidthFee: "Bandwidth or account-activation fees may be charged",
   tronResource: { bandwidth: "Bandwidth", energy: "Energy", "tron-power": "TRON Power" },
+  authAnyone: "Anyone holding this signature can submit the transfer",
+  authOnlyRecipient: (to) => `Only ${to} can submit the transfer`,
+  authWindow: (after, before) =>
+    after !== undefined && before !== undefined
+      ? `Valid after ${after} and before ${before} (UTC)`
+      : before === undefined
+        ? after === undefined
+          ? "No expiry"
+          : `Valid after ${after} (UTC); no expiry`
+        : `Valid before ${before} (UTC)`,
+  authCancel: (nonce) => `Cancel the unused transfer authorization ${nonce}; no funds move`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1226,6 +1253,9 @@ function typedContentLines(
   if (message.safe !== undefined) {
     return safeLines(catalog, message.safe);
   }
+  if (message.authorization !== undefined) {
+    return authorizationLines(catalog, message.authorization);
+  }
   if (intent.approvals.length > 0) {
     return [
       catalog.otherOutflows,
@@ -1254,6 +1284,28 @@ function typedContentLines(
     "unreachable: typed data is neither recognised, shown nor blind",
   );
 }
+
+/** The lines of a recognised EIP-3009 authorization: who can submit it, and its validity. */
+function authorizationLines(
+  catalog: Catalog,
+  authorization: TokenAuthorization,
+): ReadonlyArray<string> {
+  if (authorization.kind === "cancel") {
+    return [catalog.authCancel(authorization.nonce)];
+  }
+  const window = catalog.authWindow(
+    authorization.validAfter === 0 ? undefined : utcDateTime(authorization.validAfter),
+    authorization.validBefore === undefined ? undefined : utcDateTime(authorization.validBefore),
+  );
+  return [
+    catalog.send(formatAmount(catalog, authorization.amount), authorization.to),
+    authorization.kind === "transfer"
+      ? catalog.authAnyone
+      : catalog.authOnlyRecipient(authorization.to),
+    window,
+  ];
+}
+
 
 /** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
 const hype = (wei: string): string => formatUnits(wei, 8);

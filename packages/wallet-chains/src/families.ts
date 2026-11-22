@@ -105,7 +105,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     claim: { surface: "evm.typed-data", verifyingContract: "permit2" },
     nearMiss: "typed-data-variant",
   },
-  /* EIP-2612 and DAI Permits signed to a token in the built-in table (EIP-3009 is not decoded). */
+  /* EIP-2612 and DAI Permits signed to a token in the built-in table. */
   {
     family: "built-in token signature",
     claim: { surface: "evm.typed-data", verifyingContract: "token-table" },
@@ -336,6 +336,16 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
         "0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
         "0xb3a9B56056a5c93F468dF62579b9A5BEa1741069",
       ],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  /* FiatToken EIP-3009 authorizations (circlefin/stablecoin-evm EIP3009.sol TYPEHASHes) —
+     decoded under the exact-shape + signer-binding rules; a claimed variant is a near miss. */
+  {
+    family: "EIP-3009",
+    claim: {
+      surface: "evm.typed-data",
+      primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/,
     },
     nearMiss: "typed-data-variant",
   },

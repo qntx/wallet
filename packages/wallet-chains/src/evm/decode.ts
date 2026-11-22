@@ -25,6 +25,7 @@ import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { decodeCctp, isCctpMessenger } from "./cctp.ts";
 import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
+import { recognizeEip3009 } from "./eip3009.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
@@ -564,9 +565,15 @@ export const decodeEvm = (
   assertNoExecutionGrant(json.domain, signer);
   const chainId = networkChainId(request.network);
   const permit = recognizePermit(json, chainId, table, signer);
-  const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
+  /* Any of the exact authorization/authority shapes short-circuits the other decoders: a
+     document cannot be both, and a recognised one shows no generic fields. */
+  const claimed = permit === undefined ? recognizeEip3009(json, chainId, table, signer) : undefined;
+  const seaport =
+    permit === undefined && claimed === undefined
+      ? recognizeSeaport(json, chainId, table)
+      : undefined;
   const safe =
-    permit === undefined && seaport === undefined
+    permit === undefined && claimed === undefined && seaport === undefined
       ? recognizeSafe(json, { network: request.network, chainId, table }, (call, safeAddress) =>
           decodeCall(call, {
             network: request.network,
@@ -578,7 +585,7 @@ export const decodeEvm = (
         )
       : undefined;
   const app =
-    permit === undefined && seaport === undefined && safe === undefined
+    permit === undefined && claimed === undefined && seaport === undefined && safe === undefined
       ? recognizeApp(json, { network: request.network, chainId, table, signer }, (call, self) =>
           decodeCall(call, {
             network: request.network,
@@ -590,13 +597,14 @@ export const decodeEvm = (
         )
       : undefined;
   const order =
-    permit === undefined
+    permit === undefined && claimed === undefined
       ? seaport === undefined && safe === undefined && app === undefined
         ? (recognizeCow(json, chainId, signer, table) ?? recognizeOneinch(json, chainId, table))
         : undefined
-      : permit.order;
+      : permit?.order;
   const snapshot =
     permit === undefined &&
+    claimed === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
@@ -604,6 +612,7 @@ export const decodeEvm = (
     recognizeSnapshot(json);
   const unclaimed =
     permit === undefined &&
+    claimed === undefined &&
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
@@ -633,11 +642,13 @@ export const decodeEvm = (
     ...(order === undefined ? {} : { order }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
     ...(app === undefined ? {} : app.content),
+    ...(claimed === undefined ? {} : claimed.content),
     ...(fields === undefined ? {} : { fields }),
     ...(permit?.fields === undefined ? {} : { fields: permit.fields }),
   };
   const summary =
-    order !== undefined || seaport !== undefined
+    claimed?.summary ??
+    (order !== undefined || seaport !== undefined
       ? "swap"
       : safe === undefined
         ? permit === undefined
@@ -645,19 +656,21 @@ export const decodeEvm = (
           : "approve"
         : safe.multisend
           ? "batch"
-          : (safe.safe.calls[0]?.summary ?? "contract-call");
+          : (safe.safe.calls[0]?.summary ?? "contract-call"));
   return withNativeAmountMeta(
     {
       family: "evm",
       network: request.network,
       summary,
-      outflows: app?.outflows ?? [],
+      outflows: claimed?.outflows ?? app?.outflows ?? [],
       approvals: permit?.approvals ?? app?.approvals ?? [],
       fee: undefined,
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
       verifiability:
-        app?.verifiability ?? (permit === undefined && order === undefined ? "opaque" : "partial"),
+        claimed?.verifiability ??
+        app?.verifiability ??
+        (permit === undefined && order === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),
     },
     request.network,

@@ -560,6 +560,28 @@ export type PolymarketContent =
       readonly calls: ReadonlyArray<DisplayIntent>;
     };
 
+/**
+ * A recognised EIP-3009 authorization signed to the token contract itself by its
+ * `from`/`authorizer`.
+ */
+export type TokenAuthorization =
+  | {
+      readonly kind: "transfer" | "receive";
+      readonly to: string;
+      /** Asset = the token contract (domain.verifyingContract); symbol/decimals when listed. */
+      readonly amount: AssetAmount;
+      /** Unix seconds; valid only strictly after it (0 = at once). */
+      readonly validAfter: number;
+      /** Unix seconds; valid only strictly before it; absent when ≥ 2^48. */
+      readonly validBefore?: number;
+    }
+  | {
+      readonly kind: "cancel";
+      readonly token: string;
+      /** Bytes32, lowercase hex */ readonly nonce: string;
+    };
+
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -589,6 +611,8 @@ export type MessageContent =
       readonly hyperliquid?: HyperliquidAction;
       /** A recognized Polymarket order, CLOB auth signature or deposit-wallet batch. */
       readonly polymarket?: PolymarketContent;
+      /** A recognized EIP-3009 authorization signed to the token contract itself. */
+      readonly authorization?: TokenAuthorization;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is

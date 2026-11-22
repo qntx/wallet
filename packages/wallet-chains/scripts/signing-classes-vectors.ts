@@ -41,9 +41,14 @@ const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
 const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const CCTP_FORWARDER = "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757";
 const netArb = "Network: Arbitrum One";
 const netArbZh = "网络：Arbitrum One";
+const netBase = "Network: Base";
+const netBaseZh = "网络：Base";
+const netFlare = "Network: Flare";
+const netFlareZh = "网络：Flare";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
@@ -755,7 +760,7 @@ const cases: VectorCase[] = [
     ),
   },
   {
-    name: "USDC TransferWithAuthorization (EIP-3009 near miss)",
+    name: "USDC TransferWithAuthorization (EIP-3009 near miss, from not the signer)",
     request: typedData({
       types: {
         EIP712Domain: [
@@ -776,7 +781,7 @@ const cases: VectorCase[] = [
       primaryType: "TransferWithAuthorization",
       domain: { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC },
       message: {
-        from: SIGNER,
+        from: OTHER,
         to: OTHER,
         value: "1000000",
         validAfter: "0",
@@ -789,8 +794,188 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
-      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${OTHER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${OTHER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+    ),
+  },
+  {
+    name: "USDC TransferWithAuthorization (x402, listed Base USDC)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        domain: {
+          name: "USD Coin",
+          version: "2",
+          chainId: 8453,
+          verifyingContract: BASE_USDC,
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "10000",
+          validAfter: "0",
+          validBefore: "1738886400",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: USD Coin\n${netBase}\nVerifying contract ${BASE_USDC}\nType: TransferWithAuthorization\nSend 0.01 USDC to ${OTHER}\nAnyone holding this signature can submit the transfer\nValid before 2025-02-07 00:00 (UTC)`,
+      `应用：USD Coin\n${netBaseZh}\n验证合约 ${BASE_USDC}\n类型：TransferWithAuthorization\n发送 0.01 USDC 到 ${OTHER}\n任何持有此签名的人都可以提交这笔转账\n2025-02-07 00:00 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "USDC ReceiveWithAuthorization (listed Arbitrum USDC)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          ReceiveWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "ReceiveWithAuthorization",
+        domain: {
+          name: "USD Coin",
+          version: "2",
+          chainId: 42161,
+          verifyingContract: ARB_USDC,
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "8080000",
+          validAfter: "1772641538",
+          validBefore: "1772645198",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:42161",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: USD Coin\n${netArb}\nVerifying contract ${ARB_USDC}\nType: ReceiveWithAuthorization\nSend 8.08 USDC to ${OTHER}\nOnly ${OTHER} can submit the transfer\nValid after 2026-03-04 16:25 and before 2026-03-04 17:26 (UTC)`,
+      `应用：USD Coin\n${netArbZh}\n验证合约 ${ARB_USDC}\n类型：ReceiveWithAuthorization\n发送 8.08 USDC 到 ${OTHER}\n只有 ${OTHER} 可以提交这笔转账\n2026-03-04 16:25 之后、2026-03-04 17:26 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "USDT0 CancelAuthorization (Flare, unlisted token)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          CancelAuthorization: [
+            { name: "authorizer", type: "address" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "CancelAuthorization",
+        domain: {
+          name: "USD₮0",
+          version: "1",
+          chainId: 14,
+          verifyingContract: "0xe7cd86e13AC4309349F30B3435a9d337750fC82D",
+        },
+        message: {
+          authorizer: SIGNER,
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:14",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      `App: USD₮0\n${netFlare}\nVerifying contract 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\nType: CancelAuthorization\nCancel the unused transfer authorization ${hash32}; no funds move`,
+      `应用：USD₮0\n${netFlareZh}\n验证合约 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\n类型：CancelAuthorization\n取消未使用的转账授权 ${hash32}；不转移资金`,
+    ),
+  },
+  {
+    name: "zkstables TransferWithAuthorization (unlisted token)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        domain: {
+          name: "ZK Stables USD",
+          version: "1",
+          chainId: 8453,
+          verifyingContract: "0x8ED36a645beF11075283524C01acA742CbAfC832",
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "21370000",
+          validAfter: "1767225600",
+          validBefore: "1767225600",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: ZK Stables USD\n${netBase}\nVerifying contract 0x8ED36a645beF11075283524C01acA742CbAfC832\nType: TransferWithAuthorization\nSend 21370000 base units of unverified token 0x8ED36a645beF11075283524C01acA742CbAfC832 to ${OTHER}\nAnyone holding this signature can submit the transfer\nValid after 2026-01-01 00:00 and before 2026-01-01 00:00 (UTC)`,
+      `应用：ZK Stables USD\n${netBaseZh}\n验证合约 0x8ED36a645beF11075283524C01acA742CbAfC832\n类型：TransferWithAuthorization\n发送 21370000 个最小单位（未验证代币 0x8ED36a645beF11075283524C01acA742CbAfC832） 到 ${OTHER}\n任何持有此签名的人都可以提交这笔转账\n2026-01-01 00:00 之后、2026-01-01 00:00 之前有效（UTC）`,
     ),
   },
   {
