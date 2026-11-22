@@ -1044,7 +1044,7 @@ describe("rate limiting", () => {
     });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("10");
+    expect(res.headers.get("retry-after")).toBe("60");
     await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
       error: "rate-limited",
     });
@@ -1186,7 +1186,7 @@ describe("rate limiting", () => {
       post([call("eth_chainId"), call("eth_getLogs", [{ fromBlock: "0x1", toBlock: "0x1f4" }])]),
     );
     expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("10");
+    expect(res.headers.get("retry-after")).toBe("60");
     await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
       error: "rate-limited",
     });

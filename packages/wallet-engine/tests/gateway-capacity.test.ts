@@ -21,11 +21,13 @@ import { NETWORK } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PRODUCTION_NETWORKS } from "../../../apps/gateway/src/config/networks.ts";
+import { SHARE_LIMIT } from "../../../apps/gateway/src/middleware/rate-limit.ts";
 import { approval } from "./approval.ts";
 import {
   createHarnessWallet,
   createWorld,
   diffReadings,
+  productionLimits,
   quietFor,
   TRC20,
   VERIFY,
@@ -487,4 +489,61 @@ describe("engine gateway capacity", () => {
     console.log(md);
     expect(rows.length).toBeGreaterThan(0);
   }, 3_600_000);
+
+  it("admits a fresh all-family cold start inside every limiter's window", async () => {
+    const { wallet, walletId } = await createHarnessWallet();
+    const addresses = await walletAddresses(wallet, walletId, PRODUCTION_NETWORKS);
+    const world = await createWorld({
+      wallet,
+      model: freshModel(),
+      networks: PRODUCTION_NETWORKS,
+      tronAddress: addresses.tron,
+    });
+    const before = world.snapshot();
+    await coldStart(world, PRODUCTION_NETWORKS, walletId, addresses);
+    const row = diffReadings(world.snapshot(), before);
+    expect(
+      world.stub.unstubbed,
+      `unstubbed upstreams ${world.stub.unstubbed.join(", ")}`,
+    ).toStrictEqual([]);
+
+    // (a) No refusal: the only non-200s allowed are the unsupported-route 404s on history/tokens.
+    for (const [key, count] of row.routeStatuses) {
+      if (count === 0 || key.endsWith("|200")) {
+        continue;
+      }
+      expect(["history|404", "tokens|404"]).toContain(key);
+    }
+
+    // (b) Three fresh cold starts in one share window must fit: 3 × deltaSum <= SHARE_LIMIT.
+    const shareLines = [...row.share].map(
+      ([key, sum]) =>
+        `${key}: ${String(sum)}/1000 used, 3×=${String(3 * sum)} (headroom ${(SHARE_LIMIT / Math.max(1, sum)).toFixed(2)}×)`,
+    );
+    console.log(`share headroom:\n  ${shareLines.join("\n  ")}`);
+    for (const [key, sum] of row.share) {
+      expect(
+        3 * sum,
+        `share key ${key}: 3 × ${String(sum)} > ${String(SHARE_LIMIT)}`,
+      ).toBeLessThanOrEqual(SHARE_LIMIT);
+    }
+
+    // (c) Same for the flood limiters: 3 × the busiest key's windowed count <= its limit.
+    const limits = productionLimits();
+    const maxima = limiterMaxima(row);
+    const floodLines: string[] = [];
+    for (const name of ["ip", "rpc", "default"] as const) {
+      const binding = `${name.toUpperCase()}_LIMITER`;
+      const limit = limits[binding]?.limit;
+      const max = maxima.get(name);
+      floodLines.push(
+        `${binding} max key ${max?.key ?? "-"}: ${String(max?.count ?? 0)}/${String(limit)}, headroom ${(Number(limit) / Math.max(1, max?.count ?? 0)).toFixed(2)}×`,
+      );
+      expect(
+        limit === undefined || 3 * (max?.count ?? 0) <= limit,
+        `${binding}: 3 × ${String(max?.count ?? 0)} > ${String(limit)}`,
+      ).toBe(true);
+    }
+    console.log(`flood-limiter headroom:\n  ${floodLines.join("\n  ")}`);
+  }, 600_000);
 });

@@ -30,21 +30,26 @@ const request = (units: number, source: string): CostModel => ({
 });
 
 // "1 call = 1 credit"; assumes Analyst 500/min and 500k/month (≈16,129/day); 80 % plus a daily
-// share of the monthly cap.
+// share of the monthly cap. clientShare 0.75 = 300 calls/min per prefix (delta 4 ⇒ the measured
+// 81-call cold start = 324 share units ≤ 333) — a high share is safe here: the gateway price
+// cache is shared by every client and only allow-listed assets reach the upstream, so one prefix
+// cannot multiply upstream calls beyond the distinct-asset misses.
 const COINGECKO: Account = {
   costs: request(1, "https://www.coingecko.com/en/api/pricing"),
   budget: [
     { units: 400, seconds: 60 },
     { units: 15_000, seconds: 86_400 },
   ],
-  clientShare: 0.05,
+  clientShare: 0.75,
   source: "https://www.coingecko.com/en/api/pricing",
 };
-// Only the Pro tier publishes a limit. POLICY.
+// Only the Pro tier publishes a limit. POLICY: 7.5 req/s = 450/min, and the 150-unit depth absorbs
+// the measured cold-start volley (81 calls land in ~1 s). clientShare 0.75 = 337 calls/min per
+// prefix (delta 3 ⇒ 87 calls = 261 ≤ 333).
 const DEFILLAMA: Account = {
   costs: request(1, "https://docs.llama.fi/pro-api"),
-  budget: [{ units: 10, seconds: 2 }],
-  clientShare: 0.05,
+  budget: [{ units: 150, seconds: 20 }],
+  clientShare: 0.75,
   source: "https://docs.llama.fi/pro-api",
 };
 // Free tier ≈5 RPS; 80 %.
@@ -70,11 +75,13 @@ const ACROSS: Account = {
  */
 export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
   // PAYG 10,000 throughput CU/s; budget is 80 % = 8,000/s. Shared by every network's RPC and by
-  // history's alchemy_getAssetTransfers.
+  // history's alchemy_getAssetTransfers. clientShare 0.1 = 48,000 CU/min per prefix ≥ 3 × the
+  // measured 7,150-CU fresh cold start incl. per-call rounding; a used-wallet cold start
+  // (34,750 CU) still fits once.
   alchemy: {
     costs: ALCHEMY_COSTS,
     budget: [{ units: 40_000, seconds: 5 }],
-    clientShare: 0.05,
+    clientShare: 0.1,
     source: "https://www.alchemy.com/docs/reference/pricing-plans",
   },
   // Assumes the PAYG plan for accounts created after 2026-10-19: 100 RPS, and rate limiting bills
@@ -86,12 +93,18 @@ export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
     clientShare: 0.05,
     source: "https://drpc.org/docs/howitworks/ratelimiting",
   },
-  // One credit per call. POLICY: the page sells prepaid credit packs and publishes no rate;
-  // the numbers are re-sized in a later layer.
+  // One credit per call. POLICY: the explorer-api page sells prepaid credit packs and publishes
+  // no rate and no per-call credit cost for plain Esplora calls, so both numbers are operator
+  // confirmations. Rate ≈ 66.7 req/s = 4,000/min; the 1,000-unit depth absorbs the measured
+  // 286-call used-wallet cold volley; the day window caps prepaid-credit spend at 1M calls/day.
+  // clientShare 0.25 = 1,000 calls/min per prefix (delta 1 ⇒ 200 fresh / 286 used).
   blockstream: {
     costs: request(1, "https://blockstream.info/explorer-api"),
-    budget: [{ units: 10, seconds: 2 }],
-    clientShare: 0.05,
+    budget: [
+      { units: 1000, seconds: 15 },
+      { units: 1_000_000, seconds: 86_400 },
+    ],
+    clientShare: 0.25,
     source: "https://blockstream.info/explorer-api",
   },
   // Rate: 80 % of the Freemium/Public "≈1800 reqs/min — guaranteed" (24 req/s = 120/5 s). Day:
@@ -163,7 +176,9 @@ const PUBLIC_ENDPOINT_BUDGET: ReadonlyArray<BudgetWindow> = [{ units: 20, second
 const publicEndpoint = (source: string): Account => ({
   costs: request(1, source),
   budget: PUBLIC_ENDPOINT_BUDGET,
-  clientShare: 0.05,
+  // 300 calls/min per prefix: staging Bitcoin's 200-call cold start fits once — not three times;
+  // we do not raise budgets on third parties' public endpoints to buy that headroom.
+  clientShare: 0.5,
   source,
 });
 

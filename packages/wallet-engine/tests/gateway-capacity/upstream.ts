@@ -552,7 +552,7 @@ const tronNode = (model: WalletModel, path: string, body: Tx, address: string): 
   }
 };
 
-const tronIndexer = (model: WalletModel, sub: string): unknown => {
+const tronIndexer = (model: WalletModel, sub: string, url: URL): unknown => {
   // `""` is the bare account-info GET — the gateway rewrites the engine's
   // `/v1/accounts/account` POST into `GET /v1/accounts/<address>` on TronGrid.
   if (!model.tron.exists) {
@@ -576,18 +576,24 @@ const tronIndexer = (model: WalletModel, sub: string): unknown => {
     body["data"] = rows;
     return body;
   }
-  if (sub === "/transactions") {
+  if (sub === "/transactions" || sub === "/transactions/trc20") {
+    // The indexer contract caps `data` at TRON_INDEXER_LIMIT_MAX = 50 rows per page; the gateway
+    // rejects an oversized page as malformed upstream output, so pages are served honestly:
+    // `fingerprint` is the next row offset and is absent on the last page.
+    const rows = sub === "/transactions" ? model.tron.transactions : model.tron.trc20;
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? "50") || 50, 50);
+    const offset = Number(url.searchParams.get("fingerprint") ?? "0") || 0;
+    const page = rows.slice(offset, offset + limit);
+    const more = offset + page.length < rows.length;
     return {
-      data: model.tron.transactions,
+      data: page,
       success: true,
-      meta: { at: 1_700_000_000_000, fingerprint: "", links: { next: "" }, page_size: 60 },
-    };
-  }
-  if (sub === "/transactions/trc20") {
-    return {
-      data: model.tron.trc20,
-      success: true,
-      meta: { at: 1_700_000_000_000, fingerprint: "", links: { next: "" }, page_size: 60 },
+      meta: {
+        at: 1_700_000_000_000,
+        ...(more ? { fingerprint: String(offset + page.length) } : {}),
+        links: more ? { next: "" } : {},
+        page_size: page.length,
+      },
     };
   }
   return undefined;
@@ -805,7 +811,7 @@ export const stubUpstream = (
         : url.pathname;
       if (url.pathname.startsWith("/v1/accounts/")) {
         record(`tron:${sub}`);
-        const out = tronIndexer(model, sub);
+        const out = tronIndexer(model, sub, url);
         if (out === undefined) {
           unstubbed.push(target);
         }

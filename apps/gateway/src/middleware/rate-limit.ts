@@ -8,8 +8,8 @@ import type { Limiters, RateLimiter } from "../types.ts";
 import type { ClientIdVariables } from "./client-id.ts";
 import { GatewayHttpError } from "./errors.ts";
 
-/** Matches the `period` of the Workers rate-limit bindings in wrangler.jsonc. */
-export const RATE_LIMIT_RETRY_AFTER_SECONDS = 10;
+/** Matches the 60 s `period` of the Workers rate-limit bindings in wrangler.jsonc. */
+export const RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
 
 /** The `SHARE_LIMITER` binding's limit: one IP's share units per account per minute. */
 export const SHARE_LIMIT = 1000;

@@ -60,36 +60,59 @@ double-broadcast it.
 ## Rate limiting
 
 Three kinds of limiting guard the shared provider accounts. The **flood limiters** — three Workers
-bindings counting requests per 10 s window (values in `wrangler.jsonc`) — answer `429 rate-limited`:
-every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet rotation inside a /48
-cannot hide and one /64 is not billed for its neighbours), then `x-client-id` + the most specific
-key on either the RPC limiter (transport routes) or the default one. Every request pays one unit up
-front; an RPC batch pays one more unit for each of its remaining calls.
+bindings counting requests per 60 s window (`IP_LIMITER` 3000, `RPC_LIMITER` 1500,
+`DEFAULT_LIMITER` 400; values in `wrangler.jsonc`, `Retry-After: 60`) — answer
+`429 rate-limited`: every IP key first (an IPv4 /24; for IPv6 both its /64 and its /48, so subnet
+rotation inside a /48 cannot hide and one /64 is not billed for its neighbours), then `x-client-id`
+
+- the most specific key on either the RPC limiter (transport routes) or the default one. Every
+  request pays one unit up front; an RPC batch pays one more unit for each of its remaining calls.
+  The numbers are sized at roughly 3 × the measured volley of one fresh all-family wallet cold start
+  (461 IP units, 200 on the RPC limiter's busiest `bitcoin:` key, 98 on the default limiter's
+  `service:` key), so the RPC binding also admits a used wallet's 1,451-call EVM refresh once.
 
 The **share limiter** (`SHARE_LIMITER`, 1000 units per 60 s) bills every upstream call at the
 provider's own price — compute units on Alchemy and dRPC (`src/budget/costs.ts` lists a row for
 every allow-listed method, plus `alchemy_getAssetTransfers`), one credit per call on request-priced
 endpoints. Before `send` fires, the forwarder charges
-`ceil(units × SHARE_LIMIT / (SHARE_OF_ACCOUNT × perMinute))` on every `account:` + IP key, so one
-IP buys at most `SHARE_OF_ACCOUNT` (5 %) of each account's tightest per-minute budget window
-(`src/config/accounts.ts` sets those budgets and their derivations). A refused charge never reaches
-the upstream — the request gets `429 rate-limited` — and a single delta over the whole 1000-unit
-window is `413 too-costly` without touching the limiter.
+`ceil(units × SHARE_LIMIT / (clientShare × perMinute))` on every `account:` + IP key, where
+`perMinute` is the account's tightest minute-scale (≤ 60 s) budget window — day and month windows
+stay out of the per-prefix price and are enforced only by the global budget below. Each account's
+`clientShare` (in `src/config/accounts.ts`, with the arithmetic in its comment) is the fraction of
+that per-minute capacity one prefix may spend; a high share is safe where the upstream call count
+cannot be multiplied per prefix — CoinGecko and DefiLlama serve through the gateway's shared price
+cache, so one prefix buys at most the distinct-asset misses, not a copy per request. A refused
+charge never reaches the upstream: the walk moves on to the route's next provider, and the client
+sees `429 rate-limited` only when every provider's share charge refuses (a single delta over the
+whole 1000-unit window on every provider is `413 too-costly` without touching the limiter).
 
 The **account budget** (`PROVIDER_BUDGET`, one Durable Object per provider account) is the global
 bound the share limiter cannot express: the Workers rate-limit binding counts per Cloudflare
 location, so only a Durable Object can hold one account's worldwide quota (the binding
 documentation's "Strict limits" section prescribes exactly this). Each object keeps a multi-window
-token bucket in its SQLite storage; each isolate holds a one-second adaptive lease from it (sized
-by what it actually spent, capped at 1 % of the account's tightest window) so the object sees
-seconds, not requests — a Durable Object's ~1,000 rps soft limit and its round trip are amortised
-away. A spent account refuses with its own wait time; the request fails over — never a breaker
-outage — and when every provider is spent or cooling, the 503 `unavailable` carries the shortest
-announced wait. Operator note: the budgets in `src/config/accounts.ts` assume the provider plans
-listed in each row's comment — review them when a plan changes.
+token bucket in its SQLite storage covering every window in the account's `budget` list — the
+sub-minute burst depth, the per-minute rate, and the day/month caps alike. Each isolate holds a
+one-second adaptive lease from it (sized by what it actually spent, capped at 1 % of the account's
+tightest window) so the object sees seconds, not requests — a Durable Object's ~1,000 rps soft
+limit and its round trip are amortised away. A spent account refuses with its own wait time; the
+request fails over — never a breaker outage — and when every provider is spent or cooling, the 503
+`unavailable` carries the shortest announced wait. Operator note: the budgets in
+`src/config/accounts.ts` assume the provider plans listed in each row's comment — review them when
+a plan changes.
 
 TRON providers are request-priced like Esplora: every allow-listed `/v1/tron` path is one bounded
 upstream call billed one request credit on the provider's account (`trongrid`, `tatum`).
+
+The global budgets are sized for ≥ 20 concurrently active all-family wallets each
+foreground-refreshing once per minute, plus 10 fresh all-family cold starts per minute (numbers
+from `packages/wallet-engine/tests/gateway-capacity.test.ts`): Alchemy 20 × 1,570 + 10 × 7,150 =
+102,900 CU/min ≤ the 480,000 CU/min budget; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
+4,000/min budget. CoinGecko and DefiLlama cold starts cost upstream calls only on a cold per-colo
+price cache (≈ 81 calls per colo per cache lifetime, well under the 400/min and 450/min budgets).
+TRON is the known exception: a fresh wallet costs 3 calls, but a used wallet's history fetches
+`getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh — which exceeds the free-tier
+TronGrid/Tatum POLICY budgets (144/min each); raising them waits on the operator's keyed-QPS
+confirmation and an engine-side history cache (outside this change).
 
 ## Prices
 
