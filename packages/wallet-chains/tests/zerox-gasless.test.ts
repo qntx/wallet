@@ -99,6 +99,14 @@ describe("decodeEvm: 0x gasless Settler MetaTxn witnesses", () => {
     expect(messageOf(intent).order).toBeUndefined();
   });
 
+  it("a deadline beyond uint48 shows no expiry", () => {
+    const data = structuredClone(vectors.real.data);
+    data.message["deadline"] = "281474976710656"; // 2^48 — beyond MAX_UINT48
+    const { order } = messageOf(decodeEvm(request(data), vectors.real.signer));
+    expect(order?.protocol).toBe("0x");
+    expect(order).not.toHaveProperty("expiry");
+  });
+
   it("shows the native sentinel buyToken as the native asset", () => {
     const { order } = messageOf(decodeEvm(request(nativeVariant.data), vectors.account));
     expect(order?.receive[0]?.amount.asset).toBe("native");
