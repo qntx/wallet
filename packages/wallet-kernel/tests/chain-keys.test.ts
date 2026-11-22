@@ -20,11 +20,12 @@ import { describe, expect, it } from "vite-plus/test";
 import type { KeyPath, SignTask } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
 import { planBitcoinMessage, planBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
-import { planEvm } from "@qntx/wallet-chains/evm";
+import { planEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { planSolana } from "@qntx/wallet-chains/solana";
 import { planTron } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../src/errors.ts";
+import { prepareEvm } from "../src/modules/chains/evm.ts";
 import { importedKeys, pathString, seedKeys } from "../src/modules/chains/keys.ts";
 import type { TaskSigner } from "../src/modules/chains/keys.ts";
 import { signPlan, taskSignerFor } from "../src/modules/chains/run.ts";
@@ -347,6 +348,87 @@ describe("run.ts plan execution", () => {
       },
     };
     await expect(signPlan(plan, failing)).rejects.toBeInstanceOf(ChainError);
+  });
+
+  describe("evm.fiat24-session", () => {
+    /* vectors/chains/fiat24.json holds a session signature for this request under the anvil
+       key 0 — the same key the chain.sign flow tests import. */
+    const FIAT24_KEY = fromHex(
+      "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    );
+    const fiat24 = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../../vectors/chains/fiat24.json"), "utf8"),
+    ) as {
+      cases: ReadonlyArray<{
+        name: string;
+        signer: string;
+        request: { kind: string; network?: string; tokenId?: string; deadline?: number };
+        session?: { signature: string };
+      }>;
+    };
+    const fiat24Case = fiat24.cases.find(
+      (c) => c.request.kind === "evm.fiat24-session" && c.session !== undefined,
+    );
+    if (fiat24Case === undefined) {
+      throw new Error("fiat24 vector case missing");
+    }
+    const request = {
+      kind: "evm.fiat24-session",
+      network: fiat24Case.request.network,
+      account: { kind: "imported", keyId: "fiat24", family: "evm" },
+      tokenId: fiat24Case.request.tokenId,
+      deadline: fiat24Case.request.deadline,
+    } as const;
+    const now = (): number => ((request.deadline ?? 0) - 600) * 1000;
+
+    it("the honest backend recovers to the signer and matches the vector", async () => {
+      const keys = importedKeys(new Uint8Array(FIAT24_KEY), "secp256k1", zeroRandom);
+      try {
+        const prepared = await prepareEvm(request as never, [], keys.material, now());
+        expect(prepared.signer?.toLowerCase()).toBe(fiat24Case.signer.toLowerCase());
+        const result = await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
+        expect(result.kind).toBe("evm.fiat24-session");
+        const signature = result["signature"] as Uint8Array;
+        expect(recoverEvmSigner(request as never, { signature })).toBe(
+          prepared.signer?.toLowerCase(),
+        );
+        expect(toHex(signature)).toBe(fiat24Case.session?.signature.slice(2));
+      } finally {
+        keys.wipe();
+      }
+    });
+
+    it("a backend signing with another key is integrity", async () => {
+      const keys = importedKeys(new Uint8Array(FIAT24_KEY), "secp256k1", zeroRandom);
+      try {
+        const prepared = await prepareEvm(request as never, [], keys.material, now());
+        const foreign = new Uint8Array(32).fill(7);
+        const backend = {
+          sign: async (task: SignTask) =>
+            secp256k1.sign((task as { digest: Uint8Array }).digest, foreign, {
+              prehash: false,
+            }),
+        };
+        await kernelError(async () => {
+          await signPlan(prepared.plan, backend);
+        }, "integrity");
+      } finally {
+        keys.wipe();
+      }
+    });
+
+    it("a backend returning 65 bytes is integrity", async () => {
+      const keys = importedKeys(new Uint8Array(FIAT24_KEY), "secp256k1", zeroRandom);
+      try {
+        const prepared = await prepareEvm(request as never, [], keys.material, now());
+        const backend = { sign: async () => new Uint8Array(65) };
+        await kernelError(async () => {
+          await signPlan(prepared.plan, backend);
+        }, "integrity");
+      } finally {
+        keys.wipe();
+      }
+    });
   });
 
   it("taskSignerFor picks the family's signer", () => {
