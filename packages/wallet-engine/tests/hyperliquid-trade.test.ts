@@ -556,11 +556,11 @@ describe("hyperliquid trade on the node host", () => {
     expect(posted).toHaveLength(0);
     await provider.trade.scheduleCancel(GROUP(walletId), NOW + 60_000);
     /* scheduleCancel needs no market data — the allMids read is the clock's priming read. */
-    const mids = posted.findIndex(
-      (entry) => entry.endpoint === "info" && entry.body["type"] === "allMids",
-    );
-    const exchange = posted.findIndex((entry) => entry.endpoint === "exchange");
+    const endpoints = posted.map((entry) => entry.endpoint);
+    const mids = posted.map((entry) => entry.body["type"]).indexOf("allMids");
+    const exchange = endpoints.indexOf("exchange");
     expect(mids).toBeGreaterThanOrEqual(0);
+    expect(endpoints[mids]).toBe("info");
     expect(mids).toBeLessThan(exchange);
   });
 
@@ -572,9 +572,8 @@ describe("hyperliquid trade on the node host", () => {
     await fresh.userSigned
       .usdSend(GROUP(walletId), { destination: `0x${"00".repeat(20)}`, amount: "1" })
       .catch(() => undefined);
-    expect(
-      priming.some((entry) => entry.endpoint === "info" && entry.body["type"] === "allMids"),
-    ).toBe(true);
+    const infoPosts = priming.filter((entry) => entry.endpoint === "info");
+    expect(infoPosts.some((entry) => entry.body["type"] === "allMids")).toBe(true);
 
     const skewed: Posted[] = [];
     const { provider, walletId: id2 } = await rig(skewed, manualTimer(), {
