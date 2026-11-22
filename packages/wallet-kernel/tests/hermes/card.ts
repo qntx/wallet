@@ -259,7 +259,7 @@ async function access(): Promise<void> {
   const expectedSalt = concatBytes(utf8ToBytes("qntx-card/v1/access"), card);
   const mark = new Uint8Array(32).fill(0x42);
   let captured: Uint8Array | undefined;
-  const fake: Argon2id =  async (password, salt, cost, length) => {
+  const fake: Argon2id = (password, salt, cost, length) => {
     check(bytesToHex(salt) === bytesToHex(expectedSalt), "argon2id salt");
     check(cost.memoryKiB === 65_536 && cost.passes === 3 && cost.lanes === 4, "argon2id cost");
     check(length === 32, "argon2id length");
