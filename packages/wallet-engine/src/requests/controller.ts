@@ -1142,6 +1142,13 @@ export class RequestController extends Controller<RequestControllerState> {
         message?.kind === "typed-data" && "signer" in prepared
           ? [...assessSeaport(message.seaport, prepared.signer), ...assessSafe(message.safe)]
           : [];
+      const recipientRisk = isTransaction
+        ? []
+        : assessRecipients(
+            prepared.intent.family,
+            prepared.intent.outflows.map((o) => o.to),
+            this.knownAddresses(prepared.intent.family),
+          );
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -1156,7 +1163,10 @@ export class RequestController extends Controller<RequestControllerState> {
         ]),
         risk: isTransaction
           ? this.chainRisk(prepared.intent)
-          : mergeRisk(mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk), blindRisk),
+          : mergeRisk(
+              mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk),
+              mergeRisk(recipientRisk, blindRisk),
+            ),
         run: { ...prepared, factor: "required" },
       };
       return isTransaction
@@ -1182,6 +1192,13 @@ export class RequestController extends Controller<RequestControllerState> {
       const { message } = prepared.intent;
       const permitRisk =
         message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
+      const recipientRisk = isTransaction
+        ? []
+        : assessRecipients(
+            prepared.intent.family,
+            prepared.intent.outflows.map((o) => o.to),
+            this.knownAddresses(prepared.intent.family),
+          );
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -1195,7 +1212,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ]),
         risk: isTransaction
           ? mergeRisk(this.chainRisk(prepared.intent), prepared.risk ?? [])
-          : mergeRisk(mergeRisk(signInRisk, permitRisk), blindRisk),
+          : mergeRisk(mergeRisk(signInRisk, permitRisk), mergeRisk(recipientRisk, blindRisk)),
         run: { ...prepared, factor: "required" },
         ...(prepared.tronFee === undefined ? {} : { tronFee: prepared.tronFee }),
       };

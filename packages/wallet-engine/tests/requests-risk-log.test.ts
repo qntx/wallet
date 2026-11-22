@@ -615,3 +615,72 @@ describe("seaport and safe typed data", () => {
     expect(entry).toMatchObject({ summary: "safe tx 7" });
   });
 });
+
+const eip3009Doc = (to: string) => ({
+  types: {
+    EIP712Domain: typedFields(
+      "string name, string version, uint256 chainId, address verifyingContract",
+    ),
+    TransferWithAuthorization: typedFields(
+      "address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce",
+    ),
+  },
+  primaryType: "TransferWithAuthorization",
+  domain: {
+    name: "USD Coin",
+    version: "2",
+    chainId: 11155111,
+    verifyingContract: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  },
+  message: {
+    from: SIGNER,
+    to,
+    value: "10000",
+    validAfter: "0",
+    validBefore: "1738886400",
+    nonce: `0x${"00".repeat(31)}01`,
+  },
+});
+
+describe("typed-data recipient risk", () => {
+  const prepareAuthorization = async (w: ReturnType<typeof world>, to: string) =>
+    w.requests.prepare(
+      {
+        method: "evm-sign",
+        account: ACCOUNT,
+        network: SEPOLIA,
+        request: {
+          kind: "evm.typed-data",
+          network: SEPOLIA,
+          account: ACCOUNT,
+          typedData: JSON.stringify(eip3009Doc(to)),
+        },
+      },
+      { kind: "app", id: "polymarket" },
+    );
+
+  it("an EIP-3009 transfer to a lookalike of a known address is recipient risk", async () => {
+    const w = world();
+    await w.start();
+    await w.addressBook.add({ name: "Alice", family: "evm", address: KNOWN });
+    const request = await prepareAuthorization(w, LOOKALIKE);
+    expect(request.risk).toStrictEqual([
+      { code: "address-poisoning", level: "danger" },
+      { code: "first-recipient", level: "warning" },
+    ]);
+    const intent = request.display as DisplayIntent;
+    expect(intent.blind).toBeUndefined();
+    expect(intent.message).toMatchObject({
+      kind: "typed-data",
+      authorization: { kind: "transfer" },
+    });
+  });
+
+  it("an EIP-3009 transfer to a known address carries no risk", async () => {
+    const w = world();
+    await w.start();
+    await w.addressBook.add({ name: "Alice", family: "evm", address: KNOWN });
+    const request = await prepareAuthorization(w, KNOWN);
+    expect(request.risk).toStrictEqual([]);
+  });
+});
