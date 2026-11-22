@@ -1732,13 +1732,13 @@ Compiled snippet: `tests/migration/fiat24.ts`. Changes affect `@qntx/wallet-chai
 
 An exhaustive `switch` in host code needs a case for each of these:
 
-| Union | New members |
-| --- | --- |
-| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }` |
-| `ChainSignResult` | `kind: "evm.fiat24-session"` (65-byte `signature`) |
-| `IntentSummary` | `"payout"` |
-| `BlindReason` | `"fiat24-function"`, `"fiat24-session-grant"` |
-| `IntentWarningKind` | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move` |
+| Union                                                                               | New members                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }`                                                                                                                                      |
+| `ChainSignResult`                                                                   | `kind: "evm.fiat24-session"` (65-byte `signature`)                                                                                                                                                                         |
+| `IntentSummary`                                                                     | `"payout"`                                                                                                                                                                                                                 |
+| `BlindReason`                                                                       | `"fiat24-function"`, `"fiat24-session-grant"`                                                                                                                                                                              |
+| `IntentWarningKind`                                                                 | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move` |
 
 A host that renders `DisplayIntent` itself should also render the new optional fields:
 
@@ -1776,7 +1776,13 @@ Build the grant as a structured request. Do not sign the text yourself:
 import { chains } from "@qntx/wallet/chains";
 
 await chains(wallet).sign({
-  request: { kind: "evm.fiat24-session", network: "eip155:42161", account, tokenId: "123456", deadline },
+  request: {
+    kind: "evm.fiat24-session",
+    network: "eip155:42161",
+    account,
+    tokenId: "123456",
+    deadline,
+  },
   verify,
 });
 ```
