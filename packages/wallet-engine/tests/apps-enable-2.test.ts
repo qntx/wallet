@@ -16,10 +16,27 @@ import {
 } from "@nktkas/hyperliquid/api/exchange";
 import { concat, hashDomain, hashStruct, keccak256, recoverAddress } from "viem";
 
+import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 
 import type { HyperliquidProviderInternals } from "../src/apps/hyperliquid/provider.ts";
+import { createApps } from "../src/apps/index.ts";
+import type {
+  AppContext,
+  AppDefinition,
+  AppId,
+  AppProvider,
+} from "../src/apps/types.ts";
+import type { NetworkController } from "../src/networks/controller.ts";
+import type {
+  AppOrigin,
+  PendingRequest,
+  RequestController,
+  RequestInput,
+  RequestOrigin,
+} from "../src/requests/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
 import {
   agentAddress,
   DAY,
@@ -932,4 +949,94 @@ describe("app-sourced request origins", () => {
     expect(w.requests.getState().requests[depositId]?.origin).toStrictEqual(APP_ORIGIN);
     await w.destroy();
   }, 20000);
+
+  it("createApps stamps each definition's own id — the registered id, never a forged one", async () => {
+    const prepared: RequestOrigin[] = [];
+    const requests: Pick<RequestController, "prepare" | "outcome" | "reject"> = {
+      prepare: (input: RequestInput, app?: AppOrigin): Promise<PendingRequest> => {
+        void input;
+        prepared.push(app ?? { kind: "internal" });
+        return Promise.resolve({} as PendingRequest);
+      },
+      outcome: (): Promise<never> => Promise.reject(new Error("unused")),
+      reject: () => undefined,
+    };
+    const contexts = new Map<AppId, AppContext>();
+    const stub = (id: AppId): AppDefinition<AppId, unknown> => ({
+      id,
+      create: (context) => {
+        contexts.set(id, context);
+        return { api: {}, provider: {} as AppProvider };
+      },
+    });
+    /* `create` runs as `definition.create(context)`, so `this` is the definition: a provider
+       that mutates its own id cannot re-stamp — registration captured the id beforehand. */
+    const mutable: AppDefinition<"polymarket", unknown> = {
+      id: "polymarket",
+      create(context) {
+        (this as { id: AppId }).id = "hyperliquid";
+        contexts.set("polymarket", context);
+        return { api: {}, provider: {} as AppProvider };
+      },
+    };
+    /* A locked wallet never transitions — nothing but the definitions' `create` runs. */
+    const wallet = {
+      getSnapshot: () => ({ vault: "locked", wallets: [] }),
+      subscribe: () => () => undefined,
+    } as unknown as Wallet;
+    const created = createApps({
+      wallet,
+      requests,
+      networks: {} as Pick<NetworkController, "client">,
+      fetch: () => Promise.reject(new Error("unused")),
+      now: () => 0,
+      setTimer: () => () => undefined,
+      random: (length) => new Uint8Array(length),
+      logger: { warn: () => undefined },
+      openStore: () => Promise.resolve(createMemoryEngineStore()),
+      socket: () => ({
+        readyState: 0,
+        send: () => undefined,
+        close: () => undefined,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      }),
+      gateway: { url: "https://gateway.test" },
+      apps: [stub("hyperliquid"), mutable],
+    });
+    const hyperliquid = contexts.get("hyperliquid");
+    const polymarket = contexts.get("polymarket");
+    if (hyperliquid === undefined || polymarket === undefined) {
+      throw new Error("a definition did not run");
+    }
+    const input = {} as RequestInput;
+
+    /* Each definition's pipeline stamps the id it registered under — including the one whose
+       `create` overwrote `definition.id` with the other app's. */
+    await hyperliquid.requests.prepare(input);
+    await polymarket.requests.prepare(input);
+    expect(prepared).toStrictEqual([
+      { kind: "app", id: "hyperliquid" },
+      { kind: "app", id: "polymarket" },
+    ]);
+
+    /* The stamped prepare takes one argument — a forged origin is ignored outright. */
+    const forge = polymarket.requests.prepare as unknown as (
+      request: RequestInput,
+      origin?: unknown,
+    ) => Promise<PendingRequest>;
+    await forge(input, { kind: "app", id: "hyperliquid" });
+    await forge(input, { kind: "internal" });
+    await forge(input, { kind: "browser", origin: "https://dapp.example" });
+    expect(prepared).toStrictEqual([
+      { kind: "app", id: "hyperliquid" },
+      { kind: "app", id: "polymarket" },
+      { kind: "app", id: "polymarket" },
+      { kind: "app", id: "polymarket" },
+      { kind: "app", id: "polymarket" },
+    ]);
+    await created.destroy();
+  });
 });
