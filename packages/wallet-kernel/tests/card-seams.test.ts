@@ -262,3 +262,88 @@ describe("card decode × chains assemble", () => {
     }
   });
 });
+describe("transport bounds", () => {
+  // packages/wallet-native/cpp/runtime/KernelCardReader.cpp: kApduMin/kApduMax.
+  const APDU_MIN = 4;
+  const APDU_MAX = 261;
+  // packages/wallet-native/kernel/card.ts: RESPONSE_MIN/RESPONSE_MAX.
+  const RESPONSE_MIN = 2;
+  const RESPONSE_MAX = 258;
+
+  const session = sessionFromKeys(
+    new Uint8Array(64).fill(7),
+    new Uint8Array(33).fill(2),
+    new Uint8Array(97).fill(3),
+    "test",
+    new Uint8Array(8).fill(4),
+  );
+
+  it("command APDUs fit the reader window", () => {
+    const { apdu } = openRequest(() => new Uint8Array(32).fill(1));
+    // A 173-byte message makes the first stream chunk a 236-byte update (amendment B2 keeps
+    // every chunk non-empty, so a 237-byte stream splits 236 ‖ 1).
+    const stream = cmd.ed25519Stream(new Uint8Array(32), new Uint8Array(32), new Uint8Array(173));
+    const update = stream[0];
+    if (update === undefined || update.name !== "ed25519-update" || update.data.length !== 236) {
+      throw new Error("expected a 236-byte ed25519-update chunk");
+    }
+    const apdus = [
+      SELECT_APDU,
+      apdu,
+      session.wrap(update),
+      session.wrap(
+        cmd.create({
+          mode: "generate",
+          accessHash: new Uint8Array(32),
+          entropy: new Uint8Array(32),
+          others: [new Uint8Array(16).fill(1), new Uint8Array(16).fill(2)],
+        }),
+      ),
+      session.wrap(
+        cmd.export0(new Uint8Array(97), {
+          linkKey: new Uint8Array(65),
+          signature: new Uint8Array(64),
+        }),
+      ),
+      session.wrap(
+        cmd.import0(new Uint8Array(97), {
+          ephemeral: new Uint8Array(65),
+          signature: new Uint8Array(64),
+        }),
+      ),
+      session.wrap(cmd.import1(new Uint8Array(176))),
+    ];
+    for (const command of apdus) {
+      expect(command.length).toBeGreaterThanOrEqual(APDU_MIN);
+      expect(command.length).toBeLessThanOrEqual(APDU_MAX);
+    }
+    session.close();
+  });
+
+  it("response APDUs fit the reader window", () => {
+    // §8.1 OPEN response: cardEph ‖ sig ‖ cert ‖ 9000.
+    const openResponse = 226 + 2;
+    // §8.4: unwrap reads ciphertext ‖ tag(8) ‖ sw(2) with the ciphertext a nonzero multiple of
+    // 16 capped at 240 — the largest plaintext data ‖ sw is then 239, so |data| ≤ 237.
+    const largest = m2(new Uint8Array(237 + 2)).length + 8 + 2;
+    for (const response of [openResponse, largest]) {
+      expect(response).toBeGreaterThanOrEqual(RESPONSE_MIN);
+      expect(response).toBeLessThanOrEqual(RESPONSE_MAX);
+    }
+    expect(largest).toBe(250);
+  });
+
+  it("every cert identity's short id satisfies the secure-input short-id rule", () => {
+    const cert = loadVectors("card/cert.json") as {
+      identities: ReadonlyArray<{ name: string; compressed: string }>;
+    };
+    for (const identity of cert.identities) {
+      const bytes = utf8ToBytes(shortId(hex(identity.compressed)).replace("-", ""));
+      // `validFor` in packages/wallet-native/kernel/card.ts: 8 bytes of [0-9A-F].
+      expect(bytes).toHaveLength(8);
+      expect(
+        bytes.every((byte) => (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46)),
+      ).toBe(true);
+    }
+  });
+});
