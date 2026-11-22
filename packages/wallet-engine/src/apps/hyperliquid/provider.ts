@@ -437,6 +437,7 @@ export function createHyperliquidProvider(
             setTimer: options.setTimer,
             random: options.random,
             wallet: options.wallet,
+            sighted: exchange.sighted,
           }),
         }),
     transfer: {

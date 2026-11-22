@@ -706,6 +706,9 @@ export const pricesResponse: z.ZodMiniObject<{
     unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>;
 
+// @public
+export const PROVIDER_PIN_HEADER = "x-gateway-provider";
+
 // @public (undocumented)
 export const PROVIDERS_HEADER = "x-gateway-providers";
 
@@ -1411,6 +1414,10 @@ export const TRON_NODE_PATHS: {
                             to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                             amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                             asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                            contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                            call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                            call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                            token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                         }, z.core.$loose>;
                     }, z.core.$loose>;
                 }, z.core.$loose>>;
@@ -1679,6 +1686,10 @@ export const tronIndexerTransaction: z.ZodMiniObject<{
                     to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                     amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                     asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                    call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                    token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                 }, z.core.$loose>;
             }, z.core.$loose>;
         }, z.core.$loose>>;
@@ -1827,6 +1838,10 @@ export const tronTransactionResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
                     to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
                     amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
                     asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                    call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+                    token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
                 }, z.core.$loose>;
             }, z.core.$loose>;
         }, z.core.$loose>>;

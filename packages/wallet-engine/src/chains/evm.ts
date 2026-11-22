@@ -128,26 +128,34 @@ const OP_GAS_PRICE_ORACLE_ABI = parseAbi([
   "function tokenRatio() view returns (uint256)",
 ]);
 
+/** One L1 price update lands per 12 s L1 slot. */
+export const L1_SLOT_MS = 12_000;
+
 /**
- * Safety margin on the OP Stack L1 data fee. The oracle prices the unsigned encoding at the state
- * the wallet reads, before inclusion; over 2,800+ real transactions on 13 OP Stack chains
- * (2026-11-21) the fee charged in block N was at most 1.13× the estimate read at block N-1 (p99.9
- * 1.12), so 5/4 bounds it with headroom.
+ * The most an L1 fee-oracle read of `raw` can have risen after `updates` L1 price updates: ceil(raw
+ * × (9/8)^updates). EIP-1559's base fee moves at most ×9/8 per block, and EIP-4844's blob base fee
+ * does not move faster either (EIP-4844's ×1.0817 target under EIP-7691's and EIP-7892's updated
+ * parameters), so one bound covers the OP Stack and Scroll oracles alike. Re-sampled over 436
+ * mainnet transactions on OP Mainnet and Scroll (2026-11-21, including a blob-fee spike): `raw ×
+ * (9/8)^(floor(d / 12 s) + 1)` read d seconds before inclusion never fell below the receipt's
+ * l1Fee.
  */
-const OP_STACK_L1_FEE_MARGIN = { numerator: 5n, denominator: 4n } as const;
+export const l1FeeBound = (raw: bigint, updates: number): bigint =>
+  ceilDiv(raw * 9n ** BigInt(updates), 8n ** BigInt(updates));
+
+/** An L1 fee oracle's read: the floating data fee and the flat charge besides it. */
+export type L1FeeRead = {
+  /** The L1 data fee — bound through {@link l1FeeBound} before it is relied on. */
+  readonly raw: bigint;
+  /** The flat operator fee at the gas limit (0 on Scroll); it never floats. */
+  readonly extra: bigint;
+};
 
 /** Scroll L1GasPriceOracle predeploy; `getL1Fee` prices the signed transaction's RLP. */
 export const SCROLL_L1_GAS_PRICE_ORACLE = "0x5300000000000000000000000000000000000002";
 const SCROLL_L1_GAS_PRICE_ORACLE_ABI = parseAbi([
   "function getL1Fee(bytes data) view returns (uint256)",
 ]);
-
-/**
- * Safety margin on Scroll's L1 data fee. Over 320 real transactions (8.9 days to 2026-11-21) the
- * fee charged in block N was at most 1.03× the oracle's price at block N-1 of the transaction
- * serialized under the maximal signature, so 5/4 bounds it with headroom.
- */
-const SCROLL_L1_FEE_MARGIN = { numerator: 5n, denominator: 4n } as const;
 
 /**
  * The largest signature viem can encode, yParity 1 (v = 28). Serializing under it is never shorter
@@ -348,16 +356,16 @@ export class EvmChainAdapter {
   }
 
   /**
-   * OP Stack fees charged on top of gas × gas price: the gas-token-denominated upper bound of the
-   * L1 data fee — the oracle estimate at the chain's `tokenRatio` when the model prices it in
-   * another token (Mantle), scaled by {@link OP_STACK_L1_FEE_MARGIN} — plus the operator fee at the
-   * full gas limit where the oracle prices one (pre-Isthmus oracles revert on it).
+   * OP Stack fees charged on top of gas × gas price: `raw` is the L1 data fee as the oracle read it
+   * — at the chain's `tokenRatio` where the model prices it in another token (Mantle) — and `extra`
+   * the flat operator fee at the full gas limit where the oracle prices one (pre-Isthmus oracles
+   * revert on it). Callers bound `raw` through {@link l1FeeBound}; `extra` never floats.
    */
   async opStackFee(
     client: PublicClient,
     tx: EvmUnsignedTransaction,
     model: { readonly operatorFee: boolean; readonly tokenRatio: boolean },
-  ): Promise<bigint> {
+  ): Promise<L1FeeRead> {
     const [l1, operator, ratio] = await Promise.all([
       estimateL1Fee(client, {
         chain: null,
@@ -382,23 +390,22 @@ export class EvmChainAdapter {
           })
         : Promise.resolve(1n),
     ]);
-    const margined = l1 * ratio * OP_STACK_L1_FEE_MARGIN.numerator;
-    return ceilDiv(margined, OP_STACK_L1_FEE_MARGIN.denominator) + operator;
+    return { raw: l1 * ratio, extra: operator };
   }
 
   /**
-   * Scroll's L1 data fee for `tx`, scaled by {@link SCROLL_L1_FEE_MARGIN}: the oracle prices the
-   * signed RLP, which pre-signing is the transaction serialized under `MAX_SIGNATURE` — an upper
-   * bound on the real encoding's length.
+   * Scroll's L1 data fee for `tx` in `raw`: the oracle prices the signed RLP, which pre-signing is
+   * the transaction serialized under `MAX_SIGNATURE` — an upper bound on the real encoding's
+   * length. Scroll charges no operator fee; callers bound `raw` through {@link l1FeeBound}.
    */
-  async scrollL1Fee(client: PublicClient, tx: EvmUnsignedTransaction): Promise<bigint> {
-    const l1 = await readContract(client, {
+  async scrollL1Fee(client: PublicClient, tx: EvmUnsignedTransaction): Promise<L1FeeRead> {
+    const raw = await readContract(client, {
       address: SCROLL_L1_GAS_PRICE_ORACLE,
       abi: SCROLL_L1_GAS_PRICE_ORACLE_ABI,
       functionName: "getL1Fee",
       args: [serializeTransaction(serializable(tx), MAX_SIGNATURE)],
     });
-    return ceilDiv(l1 * SCROLL_L1_FEE_MARGIN.numerator, SCROLL_L1_FEE_MARGIN.denominator);
+    return { raw, extra: 0n };
   }
 
   /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */

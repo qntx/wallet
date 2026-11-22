@@ -464,8 +464,9 @@ describe("tronHistoryStream", () => {
   });
 
   it("flags a zero-value TRC-20 leg and still verifies it on the node", async () => {
-    const txid = "a2".repeat(32);
-    const row = trc20Row(txid, { ts: 3000, from: SENDER, to: OWNER, value: "0" });
+    /* Verification needs the pinned body — a real trigger contract whose sha256 is the txid. */
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000003, ts: 3000 });
+    const row = trc20Row(made.txid, { ts: 3000, from: SENDER, to: OWNER, value: "0" });
     const info = trc20Info({
       block: 87000003,
       ts: 3000,
@@ -473,7 +474,7 @@ describe("tronHistoryStream", () => {
     });
     const { stream: s } = stream({
       trc20: [page([row])],
-      api: nodeApi({ [txid]: { info } }),
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
     });
     const [entry] = await drain(s);
     expect(entry?.flags).toContain("zero-value-transfer");
@@ -505,7 +506,8 @@ describe("tronHistoryStream", () => {
   });
 
   it("merges a txid whose trc20 rows split across a page boundary", async () => {
-    const txid = "a4".repeat(32);
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000005, ts: 5000 });
+    const { txid } = made;
     const leg1 = trc20Row(txid, { ts: 5000, from: SENDER, to: OWNER, value: "10" });
     const leg2 = trc20Row(txid, {
       ts: 5000,
@@ -534,7 +536,7 @@ describe("tronHistoryStream", () => {
     });
     const { stream: s } = stream({
       trc20: [page([leg1], "fp1"), page([leg2, older])],
-      api: nodeApi({ [txid]: { info }, ["a5".repeat(32)]: { info: otherInfo } }),
+      api: nodeApi({ [txid]: { tx: made.body, info }, ["a5".repeat(32)]: { info: otherInfo } }),
     });
     const entries = await drain(s);
     const merged = entries.find((e) => e.id === `${NETWORK}:${txid}`);
@@ -680,6 +682,355 @@ describe("tronHistoryStream", () => {
     expect(entry?.direction).toBe("out");
     expect(entry?.fee).toBe("268000");
     expect(entry?.verified).toBe(true);
+  });
+});
+
+/** An indexer `TriggerSmartContract` row: `from`/`to` are the 20-byte hex tails. */
+const triggerRow = (
+  txid: string,
+  opts: {
+    ts: number;
+    block?: number;
+    from: string;
+    to: string;
+    callValue?: number;
+    callTokenValue?: number;
+    tokenId?: number;
+  },
+): Row => ({
+  txID: txid,
+  block_timestamp: opts.ts,
+  blockNumber: opts.block ?? 87000000,
+  raw_data: {
+    contract: [
+      {
+        type: "TriggerSmartContract",
+        parameter: {
+          value: {
+            owner_address: `41${opts.from}`,
+            contract_address: `41${opts.to}`,
+            ...(opts.callValue === undefined ? {} : { call_value: opts.callValue }),
+            ...(opts.callTokenValue === undefined ? {} : { call_token_value: opts.callTokenValue }),
+            ...(opts.tokenId === undefined ? {} : { token_id: opts.tokenId }),
+          },
+        },
+      },
+    ],
+  },
+});
+
+/** A real raw_data_hex for a wallet-signed TriggerSmartContract; fields are base58. */
+const triggerBody = (opts: {
+  owner: string;
+  contract: string;
+  callValue?: bigint;
+  callTokenValue?: bigint;
+  tokenId?: bigint;
+  block: number;
+  ts: number;
+  failed?: boolean;
+}): { body: Row; info: Row; txid: string } => {
+  const raw = buildTronRawData(
+    {
+      refBlock: {
+        number: opts.block - 1,
+        id: "00000000000000000000000000000000000000000000000000000000000000ff",
+      },
+      expiration: opts.ts + 60_000,
+      timestamp: opts.ts,
+      feeLimit: 100_000_000n,
+    },
+    {
+      type: "TriggerSmartContract",
+      owner: opts.owner,
+      contract: opts.contract,
+      callValue: opts.callValue ?? 0n,
+      data: new Uint8Array([0x38, 0xed, 0x17, 0x39]),
+      callTokenValue: opts.callTokenValue ?? 0n,
+      tokenId: opts.tokenId ?? 0n,
+    },
+  );
+  const hex = bytesToHex(raw);
+  const txid = bytesToHex(sha256(raw));
+  return {
+    txid,
+    body: {
+      txID: txid,
+      block_timestamp: opts.ts,
+      raw_data_hex: hex,
+      raw_data: {
+        contract: [
+          {
+            type: "TriggerSmartContract",
+            parameter: {
+              value: {
+                owner_address: tronAddressToHex(opts.owner),
+                contract_address: tronAddressToHex(opts.contract),
+                ...(opts.callValue === undefined ? {} : { call_value: Number(opts.callValue) }),
+                ...(opts.callTokenValue === undefined
+                  ? {}
+                  : { call_token_value: Number(opts.callTokenValue) }),
+                ...(opts.tokenId === undefined ? {} : { token_id: Number(opts.tokenId) }),
+              },
+            },
+          },
+        ],
+      },
+    },
+    info: trc20Info({
+      block: opts.block,
+      ts: opts.ts,
+      ...(opts.failed === undefined ? {} : { failed: opts.failed }),
+      logs: [],
+    }),
+  };
+};
+
+describe("TRON claims bind one-to-one to the node contract", () => {
+  it("a TransferContract row repeated across pages counts once and verifies", async () => {
+    const made = trxBody({ from: SENDER, to: OWNER, amount: 7n, block: 87000001, ts: 1000 });
+    const row = txRow(made.txid, { ts: 1000, from: SENDER_HEX20, to: OWNER_HEX20, amount: 7 });
+    const { stream: s } = stream({
+      tx: [page([row], "f1"), page([row])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info: made.info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.hash).toBe(made.txid);
+    expect(entry?.changes).toStrictEqual([
+      { direction: "in", asset: "sun", amount: "7", listed: true },
+    ]);
+    expect(entry?.verified).toBe(true);
+  });
+
+  it("two distinct TRX claims on one txid cannot bind one contract — chain-mismatch", async () => {
+    const made = trxBody({ from: SENDER, to: OWNER, amount: 7n, block: 87000001, ts: 1000 });
+    const rows = [
+      txRow(made.txid, { ts: 1000, from: SENDER_HEX20, to: OWNER_HEX20, amount: 7 }),
+      txRow(made.txid, { ts: 1000, from: SENDER_HEX20, to: OWNER_HEX20, amount: 9 }),
+    ];
+    const { stream: s } = stream({
+      tx: [page(rows)],
+      api: nodeApi({ [made.txid]: { tx: made.body, info: made.info } }),
+    });
+    const [entry] = await drain(s);
+    expect(flagsOf(entry)).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
+  });
+
+  it("a wallet swap paying TRX shows the call_value outflow and verifies", async () => {
+    const made = triggerBody({
+      owner: OWNER,
+      contract: DDYS,
+      callValue: 5_000_000n,
+      block: 87000002,
+      ts: 2000,
+    });
+    const trigger = triggerRow(made.txid, {
+      ts: 2000,
+      from: OWNER_HEX20,
+      to: DDYS_HEX20,
+      callValue: 5_000_000,
+    });
+    const leg = trc20Row(made.txid, { ts: 2000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000002,
+      ts: 2000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      tx: [page([trigger])],
+      trc20: [page([leg])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.changes).toStrictEqual([
+      { direction: "out", asset: "sun", amount: "5000000", listed: true },
+      {
+        direction: "in",
+        asset: DDYS,
+        amount: "44766592",
+        decimals: 6,
+        symbol: "DDYS",
+        listed: false,
+      },
+    ]);
+    expect(entry?.direction).toBe("self");
+    expect(entry?.verified).toBe(true);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a call_value outflow missing from the indexer but present in the raw contract mismatches", async () => {
+    const made = triggerBody({
+      owner: OWNER,
+      contract: DDYS,
+      callValue: 5_000_000n,
+      block: 87000002,
+      ts: 2000,
+    });
+    // The indexer's row hides the movement: it renders the trigger without its call_value.
+    const trigger = triggerRow(made.txid, { ts: 2000, from: OWNER_HEX20, to: DDYS_HEX20 });
+    const leg = trc20Row(made.txid, { ts: 2000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000002,
+      ts: 2000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      tx: [page([trigger])],
+      trc20: [page([leg])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
+    });
+    const [entry] = await drain(s);
+    expect(flagsOf(entry)).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
+  });
+
+  it("a call_token_value TRC-10 outflow shows and binds the raw contract", async () => {
+    const made = triggerBody({
+      owner: OWNER,
+      contract: DDYS,
+      callTokenValue: 123n,
+      tokenId: 1_002_000n,
+      block: 87000003,
+      ts: 3000,
+    });
+    const trigger = triggerRow(made.txid, {
+      ts: 3000,
+      from: OWNER_HEX20,
+      to: DDYS_HEX20,
+      callTokenValue: 123,
+      tokenId: 1_002_000,
+    });
+    const { stream: s } = stream({
+      tx: [page([trigger])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info: made.info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.changes).toStrictEqual([
+      { direction: "out", asset: "trc10:1002000", amount: "123", listed: false },
+    ]);
+    expect(entry?.direction).toBe("out");
+    expect(entry?.verified).toBe(true);
+  });
+
+  it("a failed transaction moves no value — no completeness check on its trigger", async () => {
+    const made = triggerBody({
+      owner: OWNER,
+      contract: DDYS,
+      callValue: 5_000_000n,
+      block: 87000002,
+      ts: 2000,
+      failed: true,
+    });
+    const trigger = triggerRow(made.txid, {
+      ts: 2000,
+      from: OWNER_HEX20,
+      to: DDYS_HEX20,
+      callValue: 5_000_000,
+    });
+    const { stream: s } = stream({
+      tx: [page([trigger])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info: made.info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.status).toBe("failed");
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a duplicated TRC-20 row with only one Transfer log is a chain-mismatch", async () => {
+    const txid = "c4".repeat(32);
+    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg, leg])],
+      api: nodeApi({ [txid]: { info } }),
+    });
+    const [entry] = await drain(s);
+    expect(flagsOf(entry)).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
+  });
+
+  it("two identical TRC-20 rows bind two identical logs — two changes, verified", async () => {
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const leg = trc20Row(made.txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [
+        transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n }),
+        transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n }),
+      ],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg, leg])],
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.changes).toHaveLength(2);
+    expect(entry?.verified).toBe(true);
+  });
+
+  it("a TRC-20-only entry without a body is claimed, not verified", async () => {
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const leg = trc20Row(made.txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({ [made.txid]: { info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.verified).toBe(false);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a body the decoder cannot read is claimed, not verified — never a mismatch", async () => {
+    /* Bytes whose sha256 is the txid but that fail the phase-1 decode. */
+    const raw = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    const txid = bytesToHex(sha256(raw));
+    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({
+        [txid]: {
+          tx: { txID: txid, block_timestamp: 4000, raw_data_hex: bytesToHex(raw) },
+          info,
+        },
+      }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.verified).toBe(false);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a body whose sha256 is not the txid mismatches even without transfer claims", async () => {
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const txid = "c6".repeat(32);
+    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({ [txid]: { tx: { ...made.body, txID: txid }, info } }),
+    });
+    const [entry] = await drain(s);
+    expect(flagsOf(entry)).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
   });
 });
 

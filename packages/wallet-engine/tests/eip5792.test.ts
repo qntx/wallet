@@ -600,6 +600,17 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
     expect(transactions2.batchById(SITE, "kept")?.id).toBe("kept");
   });
 
+  it("lock clears the batch map; init restores it from the store", async () => {
+    const w = world();
+    await w.start();
+    await w.connect();
+    await recordBatch(w, ["a"], true, "kept");
+    w.transactions.lock();
+    expect(w.transactions.batchById(SITE, "kept")).toBeUndefined();
+    await w.transactions.init();
+    expect(w.transactions.batchById(SITE, "kept")?.id).toBe("kept");
+  });
+
   it("two origins using the same id each keep their own record", async () => {
     const w = world();
     await w.start();

@@ -1,15 +1,23 @@
 /**
  * Broadcast with an outcome that is never guessed. The signed bytes and their locally computed id
  * are persisted, and what the transaction consumes (nonce, inputs) is held, before anything leaves;
- * a failed send then fails the transaction only when the node itself refuses those bytes. Any other
- * failure — transport error, 5xx, timeout, an endpoint naming another id — may have reached the
- * mempool, so the transaction stays `submitted` and the tracker resolves it by id.
+ * a failed send then fails the transaction only when the node itself refuses those bytes — and that
+ * refusal is persisted durably, so bytes the user was told failed are never broadcast again. Any
+ * other failure — transport error, 5xx, timeout, an endpoint naming another id — may have reached
+ * the mempool, so the transaction stays `submitted` and the tracker resolves it by id.
  */
 import { errorMessage, submitTx } from "./route.ts";
 import type { RouteContext, TrackedTransaction } from "./route.ts";
 
-/** How long a transaction may stay unknown to the network before it is given up as dropped. */
-export const UNKNOWN_DROP_MS = 1_800_000;
+/**
+ * How long the network may not know a transaction before its row turns `stuck` — never terminal:
+ * the bytes may still land, so the nonce or inputs stay held and the poll drops to the finality
+ * interval until a chain answer resolves it.
+ */
+export const STUCK_AFTER_MS = 1_800_000;
+/** The note a stuck row carries; its remedies are speed-up and cancel. */
+export const STUCK_NOTE =
+  "the network has not seen this transaction for 30 minutes — speed up or cancel it";
 /** Rebroadcast backoff for a transaction the node does not know: base doubling up to the cap. */
 export const RESUBMIT_BASE_MS = 15_000;
 export const RESUBMIT_MAX_MS = 600_000;
@@ -130,8 +138,11 @@ export type SignedBroadcast = BroadcastAttempt & {
 /**
  * Persists the signed bytes and id on `tx` — throwing, with nothing sent, when the vault locked
  * first — holds what it consumes, then broadcasts. Accepted or unknown → `submitted` and tracked;
- * refused → `failed`, released, and a `BroadcastRefusedError` thrown. That refusal is the only
- * error allowed out once the send was attempted: anything else here happens before bytes leave.
+ * refused → released, `failed` is written durably so the refused bytes can never be recovered as
+ * `signed` later — a `signed` row the failed write lost would resurrect them — and a
+ * `BroadcastRefusedError` is thrown. A locked vault or failed write cannot block the refusal: the
+ * terminal row then lands through the bookkeeping retry like any other. The refusal is the only
+ * error allowed out once the send was attempted: anything else happens before bytes leave.
  */
 export const submitSigned = async (
   ctx: RouteContext,
@@ -160,12 +171,20 @@ export const submitSigned = async (
   const outcome = await broadcastOutcome(signed);
   if (outcome.kind === "refused") {
     signed.release();
-    await ctx.transition(persisted, {
+    const failed: Partial<TrackedTransaction> = {
       state: "failed",
       hash: undefined,
       raw: undefined,
       error: errorMessage(outcome.error),
-    });
+    };
+    try {
+      await ctx.transition(persisted, failed, true);
+    } catch {
+      /* The vault locked or the store failed: the refusal still stands, so park the terminal
+         row for the bookkeeping retry — a `signed` row left on disk would resurrect the
+         refused bytes as `submitted` at the next unlock. */
+      await ctx.transition(persisted, failed);
+    }
     throw new BroadcastRefusedError(outcome.error);
   }
   if (outcome.kind === "unknown") {

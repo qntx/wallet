@@ -504,8 +504,9 @@ describe("transaction polling on the one-shot timer", () => {
     release();
     await vi.advanceTimersByTimeAsync(POLL_MS); // let the hung read's continuation finish
 
-    // The receipt that landed mid-lock settles nothing — and the run did not re-arm.
-    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    // The receipt that landed mid-lock settles nothing — the locked vault holds no rows — and
+    // the run did not re-arm.
+    expect(ctl.getState().txs[tx.id]).toBeUndefined();
     const saved = await w.persistedTx(tx.id);
     expect(saved?.["state"]).toBe("submitted");
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);

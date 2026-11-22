@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { CLIENT_ID_HEADER, PROVIDERS_HEADER } from "@qntx/wallet-engine/gateway/contract";
+import {
+  CLIENT_ID_HEADER,
+  PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
+} from "@qntx/wallet-engine/gateway/contract";
 
 import { requireClientId } from "./middleware/client-id.ts";
 import type { ClientIdVariables } from "./middleware/client-id.ts";
@@ -63,7 +67,7 @@ export function createGateway(
   app.use(
     cors({
       origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
-      allowHeaders: ["content-type", "if-none-match", CLIENT_ID_HEADER],
+      allowHeaders: ["content-type", "if-none-match", CLIENT_ID_HEADER, PROVIDER_PIN_HEADER],
       allowMethods: ["GET", "POST", "OPTIONS"],
       exposeHeaders: [PROVIDERS_HEADER, "etag", "retry-after"],
       maxAge: 600,

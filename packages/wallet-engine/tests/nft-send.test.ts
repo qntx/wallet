@@ -347,6 +347,10 @@ const solanaWorld = (o: {
         return reply({ value: { err: null, logs: [], unitsConsumed: 21_000 } });
       case "getRecentPrioritizationFees":
         return reply([]);
+      case "getGenesisHash":
+        return reply("5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d");
+      case "isBlockhashValid":
+        return reply({ context: { slot: 5000 }, value: true });
       case "sendTransaction":
         return reply(`sig${"a".repeat(80)}`);
       case "getSignatureStatuses":

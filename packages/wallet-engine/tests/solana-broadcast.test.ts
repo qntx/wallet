@@ -337,6 +337,33 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 
+  it("a signed row recovered after a restart is watched but never resent", async () => {
+    const w = world();
+    const first = await w.boot();
+    w.setSendMode({ kind: "ok" });
+    const tx = await send(first.ctl, SEND);
+    expect(tx.state).toBe("submitted");
+
+    /* The process dies after the signed row persisted but before the broadcast outcome could:
+       disk says `signed` — bytes the wallet never settled stay bytes it never posts again. */
+    const stored = await w.persistedTx(tx.id);
+    await createMemoryEngineStore(w.backing)
+      .collection("transactions")
+      .put(tx.id, new TextEncoder().encode(JSON.stringify({ ...stored, state: "signed" })));
+
+    const second = await w.boot();
+    const recovered = second.ctl.getState().txs[tx.id];
+    expect(recovered?.state).toBe("submitted");
+    expect(recovered?.rebroadcast).toBe(false);
+
+    // Past the stored expiry with the blockhash still alive, the poll puts nothing on the wire.
+    w.env.blockHeight = LVBH + 1;
+    w.env.blockhashAlive = true;
+    const before = w.attempts.length;
+    await second.timers.fire(POLL_MS);
+    expect(w.attempts).toHaveLength(before);
+  });
+
   it("a restart restores the blockhash expiry and rebroadcasts the persisted wire", async () => {
     const w = world();
     const first = await w.boot();

@@ -556,7 +556,8 @@ describe("evm inclusion, finality and reorgs", () => {
     ctl.lock();
     release();
     await inflight;
-    expect(ctl.getState().txs[tx.id]?.final).toBe(false);
+    // The locked vault holds no rows — the mid-flight answer settles nothing.
+    expect(ctl.getState().txs[tx.id]).toBeUndefined();
     const saved = await w.persistedTx(tx.id);
     expect(saved?.["final"]).toBe(false);
 

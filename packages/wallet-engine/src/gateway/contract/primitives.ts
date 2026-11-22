@@ -2,6 +2,11 @@ import * as z from "zod/mini";
 
 export const CLIENT_ID_HEADER = "x-client-id";
 export const PROVIDERS_HEADER = "x-gateway-providers";
+/**
+ * A request naming one provider id from an earlier `x-gateway-providers` answer is served by that
+ * provider only — TRON node paths, so a sequence of reads comes from one upstream.
+ */
+export const PROVIDER_PIN_HEADER = "x-gateway-provider";
 
 /**
  * 128 random bits as lowercase hex — drawn per engine session for each gateway scope, never derived

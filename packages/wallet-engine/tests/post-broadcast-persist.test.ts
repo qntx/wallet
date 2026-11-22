@@ -333,15 +333,18 @@ describe("an EVM send whose post-broadcast write fails", () => {
     expect(tx.hash).toBe(hash);
     const request = Object.values(requests.getState().requests).find((r) => r.method === "send");
     expect(request?.stage).toBe("submitted");
-    // The tracker is armed even though the row never reached the store.
-    expect(timers.armed(POLL_MS)).toBe(1);
+    // The tracker is armed even though the row never reached the store — and so is the
+    // bookkeeping retry that lands it.
+    expect(timers.armed(POLL_MS)).toBe(2);
     await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "signed", hash });
 
-    // The failed write is retried before the poll's own work — once the bomb is spent it lands.
+    // The failed write is retried by the bookkeeping loop — once the bomb is spent it lands.
     w.bomb.fail = undefined;
     await timers.fire(POLL_MS);
     await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "submitted", hash });
-    expect(w.warnings.some((m) => m.includes("not persisted; the next poll retries"))).toBe(true);
+    expect(w.warnings.some((m) => m.includes("not persisted; the retry loop stores it"))).toBe(
+      true,
+    );
   });
 
   it("a failed included write keeps the memory row confirmed until the retry lands", async () => {
@@ -365,7 +368,7 @@ describe("an EVM send whose post-broadcast write fails", () => {
     expect(timers.armed(POLL_MS * 15)).toBe(1);
 
     w.bomb.fail = undefined;
-    await timers.fire(POLL_MS * 15);
+    await timers.fire();
     await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "confirmed", hash });
   });
 });
@@ -380,7 +383,7 @@ describe("a Solana send whose post-broadcast write fails", () => {
     expect(tx.state).toBe("submitted");
     expect(tx.hash).not.toBe("");
     expect(w.wires).toHaveLength(1);
-    expect(timers.armed(POLL_MS)).toBe(1);
+    expect(timers.armed(POLL_MS)).toBe(2); // the poll and the bookkeeping retry
     await expect(w.persistedTx(tx.id)).resolves.toMatchObject({ state: "signed" });
 
     w.bomb.fail = undefined;
@@ -402,7 +405,7 @@ describe("a Bitcoin send whose post-broadcast write fails", () => {
     const tx = await w.send(booted, 10_000n, "req-1");
     expect(tx.state).toBe("submitted");
     expect(w.broadcasts).toHaveLength(1);
-    expect(booted.timers.armed(POLL_MS)).toBe(1);
+    expect(booted.timers.armed(POLL_MS)).toBe(2); // the poll and the bookkeeping retry
 
     w.bomb.fail = undefined;
     await booted.polls(1);

@@ -711,6 +711,15 @@ export class SolanaChainAdapter {
     };
   }
 
+  /** `getGenesisHash` → the cluster's chain identity; a malformed answer throws. */
+  async genesisHash(rpc: SolanaRpc): Promise<string> {
+    const result = await this.rpc(rpc, "getGenesisHash", []);
+    if (typeof result !== "string" || result === "") {
+      throw new TypeError("getGenesisHash returned a malformed answer");
+    }
+    return result;
+  }
+
   /** `getBlockHeight` at `commitment`; a malformed answer throws rather than reading as 0. */
   async blockHeight(rpc: SolanaRpc, commitment: "processed" | "confirmed"): Promise<bigint> {
     const result = await this.rpc(rpc, "getBlockHeight", [{ commitment }]);
@@ -784,5 +793,50 @@ export class SolanaChainAdapter {
       slot:
         typeof context === "number" || typeof context === "bigint" ? BigInt(context) : undefined,
     };
+  }
+  /**
+   * `getSignaturesForAddress` → the account's signatures newest-first, each with its slot, `err`,
+   * `confirmationStatus` and `blockTime` (undefined when the entry carries none). A malformed entry
+   * throws rather than narrowing what history proves.
+   */
+  async signaturesForAddress(
+    rpc: SolanaRpc,
+    account: string,
+  ): Promise<
+    ReadonlyArray<{
+      readonly signature: string;
+      readonly slot: number;
+      readonly err: unknown;
+      readonly confirmationStatus: "processed" | "confirmed" | "finalized";
+      readonly blockTime: number | undefined;
+    }>
+  > {
+    const result = await this.rpc(rpc, "getSignaturesForAddress", [account, { limit: 1000 }]);
+    const list = Array.isArray(result) ? result : undefined;
+    if (list === undefined) {
+      throw new TypeError("getSignaturesForAddress returned a malformed answer");
+    }
+    return list.map((raw) => {
+      const entry = obj(raw);
+      const slot = entry?.["slot"];
+      const blockTime = entry?.["blockTime"];
+      const status = entry?.["confirmationStatus"];
+      if (
+        typeof entry?.["signature"] !== "string" ||
+        typeof slot !== "number" ||
+        !Number.isSafeInteger(slot) ||
+        slot < 0 ||
+        (blockTime !== null && (typeof blockTime !== "number" || !Number.isSafeInteger(blockTime)))
+      ) {
+        throw new TypeError("getSignaturesForAddress returned a malformed entry");
+      }
+      return {
+        signature: entry["signature"],
+        slot,
+        err: entry["err"],
+        confirmationStatus: status === "confirmed" || status === "finalized" ? status : "processed",
+        blockTime: blockTime ?? undefined,
+      };
+    });
   }
 }

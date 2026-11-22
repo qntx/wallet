@@ -13,6 +13,7 @@ import type {
   HyperliquidCancelOutcome,
   HyperliquidExchange,
   HyperliquidOrderOutcome,
+  HyperliquidOutcomeCorrection,
 } from "./exchange.ts";
 
 /** `place`/`close` results: the order outcomes plus the entry cap to show the user. */
@@ -91,6 +92,16 @@ export type HyperliquidTrade = {
     group: HyperliquidGroup,
     params: { readonly coin: string; readonly slippageBps: number },
   ) => Promise<HyperliquidPlaceResult>;
+  /**
+   * Corrections for orders whose outcome was `unknown`: the exchange re-asks them by cloid for ten
+   * minutes after the call returned and learns others from live user-view frames. Nothing is ever
+   * re-sent.
+   */
+  readonly corrections: {
+    readonly subscribe: (
+      listener: (correction: HyperliquidOutcomeCorrection) => void,
+    ) => () => void;
+  };
 };
 
 export function createHyperliquidTrade(options: {
@@ -177,5 +188,6 @@ export function createHyperliquidTrade(options: {
         order: { kind: "market", slippageBps: params.slippageBps },
       });
     },
+    corrections: options.exchange.corrections,
   };
 }

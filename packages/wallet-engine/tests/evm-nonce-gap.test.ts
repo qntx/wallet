@@ -11,7 +11,7 @@ import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
-import { UNKNOWN_DROP_MS } from "../src/transactions/broadcast.ts";
+import { STUCK_AFTER_MS } from "../src/transactions/broadcast.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { approval } from "./approval.ts";
 import {
@@ -398,7 +398,7 @@ describe("a released lower nonce is filled by the next send", () => {
     expect(node.known.has(txHash(c))).toBe(true);
   });
 
-  it("an unknown lower nonce dropped after 30 min is re-filled the same way", async () => {
+  it("an unknown lower nonce stuck after 30 min keeps its nonce held", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     const node = w.primary;
@@ -417,17 +417,20 @@ describe("a released lower nonce is filled by the next send", () => {
     // A's bytes still never propagate, however often the tracker rebroadcasts them.
     node.dropSend = true;
 
-    await timers.fire(POLL_MS); // first unknown sighting starts the drop window
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    await timers.fire(POLL_MS); // first unknown sighting starts the window
+    w.clock.t += STUCK_AFTER_MS + 1;
     await timers.fire(POLL_MS);
-    expect(ctl.getState().txs[a.id]?.state).toBe("dropped");
+    // Thirty minutes unseen is never terminal: A marks stuck and nonce 0 stays held — a later
+    // inclusion can still confirm it, so it must never be re-issued either.
+    expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
+    expect(ctl.getState().txs[a.id]?.stuck).toBe(true);
     expect(ctl.getState().txs[b.id]?.state).toBe("submitted");
 
     node.dropSend = false;
     node.pending = 0;
     const c = await send(ctl, SEND);
     expect(c.state).toBe("submitted");
-    expect(c.nonce).toBe(0); // the dropped nonce is re-issued
+    expect(c.nonce).toBe(2); // the stuck nonce is never re-issued
   });
 
   it("a build prepared above a since-freed nonce goes stale before it can sign", async () => {
@@ -582,13 +585,15 @@ describe("a stale session's late answer cannot write", () => {
     const b = await send(ctl, SEND);
     expect(b.nonce).toBe(1);
 
-    // Only when the new session itself drops A past the unknown window is nonce 0 free again.
+    // Thirty minutes unseen in the new session marks A stuck — its nonce stays held, so the
+    // next send takes 2, never the held 0.
     await timers.fire(POLL_MS);
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await timers.fire(POLL_MS);
-    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("submitted");
+    expect(ctl.getState().txs[txKey(a)]?.stuck).toBe(true);
     const c = await send(ctl, SEND);
-    expect(c.nonce).toBe(0);
+    expect(c.nonce).toBe(2);
   });
 
   it("the old session's acceptance lands after unlock: no second poll timer, no re-write", async () => {
@@ -606,22 +611,26 @@ describe("a stale session's late answer cannot write", () => {
     await ctl.init();
     expect(timers.armed(POLL_MS)).toBe(1);
 
-    // The new session settles A as dropped first — then the stale acceptance arrives.
+    // The new session marks A stuck first — then the stale acceptance arrives.
     node.dropSend = true;
     await timers.fire(POLL_MS);
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await timers.fire(POLL_MS);
-    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("submitted");
+    expect(ctl.getState().txs[txKey(a)]?.stuck).toBe(true);
     expect(timers.armed(POLL_MS)).toBe(0);
+    expect(timers.armed(15 * POLL_MS)).toBe(1);
 
     node.dropSend = false;
     w.releaseSendGate();
     const late = await sendA;
     expect(late.state).toBe("submitted"); // the old request reports what it saw…
-    // …but the dead session rewrites nothing: the row stays dropped and no poll re-arms.
-    expect(ctl.getState().txs[txKey(a)]?.state).toBe("dropped");
-    const droppedRow = await w.persistedTx(txKey(a));
-    expect(droppedRow?.["state"]).toBe("dropped");
+    // …but the dead session rewrites nothing: the row stays stuck and no poll re-arms.
+    expect(ctl.getState().txs[txKey(a)]?.state).toBe("submitted");
+    expect(ctl.getState().txs[txKey(a)]?.stuck).toBe(true);
+    const stuckRow = await w.persistedTx(txKey(a));
+    expect(stuckRow?.["state"]).toBe("submitted");
+    expect(stuckRow?.["stuck"]).toBe(true);
     expect(timers.armed(POLL_MS)).toBe(0);
   });
 
@@ -640,12 +649,11 @@ describe("a stale session's late answer cannot write", () => {
     await until(raised(w.pollGateAwaited), "the poll's receipt read");
 
     ctl.lock();
-    /* With no store row to reload, the in-memory row keeps its identity across init — the case
-       a failed bookkeeping write (`unsaved`) leaves behind. The row-identity check alone would
-       not drop the answer that lands next; the session generation does. */
+    /* Locking dropped the in-memory rows; deleting the store copy leaves the new session
+       empty — then only the stale-session check stands between the late answer and a write. */
     w.forgetTx(a.id);
     await ctl.init();
-    expect(ctl.getState().txs[a.id]).toBe(a);
+    expect(ctl.getState().txs[a.id]).toBeUndefined();
 
     node.receipts.set(hash, {
       status: "0x1",
@@ -656,7 +664,7 @@ describe("a stale session's late answer cannot write", () => {
     await fired;
 
     // The old session's `included` applies nowhere: state, store and timers are untouched.
-    expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
+    expect(ctl.getState().txs[a.id]).toBeUndefined();
     await expect(w.persistedTx(a.id)).resolves.toBeUndefined();
     expect(timers.armed(POLL_MS)).toBe(0);
   });

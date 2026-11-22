@@ -15,6 +15,7 @@ import { scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import { EsploraError, estimateVsize } from "../src/chains/bitcoin.ts";
 import type { PreparedBitcoinPsbt } from "../src/requests/types.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { STUCK_AFTER_MS } from "../src/transactions/broadcast.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { SignResult, TrackedTransaction } from "../src/transactions/route.ts";
 import {
@@ -24,6 +25,7 @@ import {
   stateOf,
   NET,
   OUR_ADDR,
+  POLL_MS,
   RECIP,
   VERIFY,
   world,
@@ -49,9 +51,6 @@ const firstInputValued = (v: unknown, value: number): ReadonlyArray<Record<strin
   }
   return [{ ...head, value }, ...inputs.slice(1)];
 };
-
-/** Mirrors src/transactions/broadcast.ts's UNKNOWN_DROP_MS — how long unseen may last. */
-const UNKNOWN_DROP_MS = 1_800_000;
 
 /** The txid of the persisted wire — computed from the bytes alone, like the node would. */
 const txidOf = (tx: TrackedTransaction): string => {
@@ -150,7 +149,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     expect(stateOf(booted.ctl, tx)).toBe("confirmed");
   });
 
-  it("a transaction no endpoint knows for UNKNOWN_DROP_MS is dropped and its inputs freed", async () => {
+  it("a transaction no endpoint knows for STUCK_AFTER_MS turns stuck and keeps its inputs", async () => {
     const w = world();
     const u = w.fund(1, 50_000);
     const booted = await w.boot();
@@ -162,17 +161,22 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     // Every rebroadcast is refused; the status stays a 404.
     w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 400", false) });
     await booted.polls(1); // first unseen poll — starts the clock
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await booted.polls(1);
-    expect(stateOf(booted.ctl, tx)).toBe("dropped");
+    // Never terminal on a timer: the row marks stuck and the inputs stay locked.
+    expect(stateOf(booted.ctl, tx)).toBe("submitted");
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
 
+    // The stuck inputs are never re-issued — the next send funds itself from a fresh UTXO.
+    const u2 = w.fund(2, 50_000);
     w.setPost({ kind: "ok" });
     const next = await w.send(booted, 10_000n, "req-2");
     expect(next.state).toBe("submitted");
-    expect(next.btc?.inputs.map((i) => i.txid)).toContain(u.txid);
+    expect(next.btc?.inputs.map((i) => i.txid)).toContain(u2.txid);
+    expect(next.btc?.inputs.map((i) => i.txid)).not.toContain(u.txid);
   });
 
-  it("a transaction the independent endpoint knows is not dropped", async () => {
+  it("a transaction the independent endpoint knows does not turn stuck", async () => {
     const w = world({ independent: true });
     w.fund(1, 50_000);
     const booted = await w.boot();
@@ -185,9 +189,10 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     // The primary never knows it, but the independent endpoint does.
     w.setIndependentStatus(hashOf(tx), { confirmed: false });
     await booted.polls(1);
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("submitted");
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBeUndefined();
   });
 
   it("a refused speed-up fails and the original keeps its inputs locked", async () => {
@@ -282,13 +287,13 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     expect(bumped.replaces).toBe(original.id);
 
     // The pool evicted the original (404), which a submitted speed-up explains: its raw is
-    // neither rebroadcast nor its drop clock started, however long the gap lasts.
+    // neither rebroadcast nor its unseen clock started, however long the gap lasts.
     w.setStatus(hashOf(bumped), { confirmed: false });
     const postsOfOriginal = (): number => w.posts.filter((p) => p === original.raw).length;
     expect(postsOfOriginal()).toBe(1); // its own broadcast only
 
     await booted.polls(1);
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await booted.polls(3);
     expect(stateOf(booted.ctl, original)).toBe("submitted");
     expect(stateOf(booted.ctl, bumped)).toBe("submitted");
@@ -307,14 +312,141 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
 
     await booted.polls(1); // the primary's 404 starts the unseen clock
 
-    // At drop time the independent endpoint only 503s — "may know it" — so no drop.
+    // At window's end the independent endpoint only 503s — "may know it" — so no stuck mark.
     w.setIndependentStatus(
       hashOf(tx),
       new EsploraError(`esplora /tx/${hashOf(tx)}/status: 503`, true),
     );
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("submitted");
+  });
+});
+
+/** A stuck row polls at the finality interval — `polls` only fires the base one. */
+const FINALITY_MS = 15 * POLL_MS;
+
+describe("a stuck Bitcoin transaction", () => {
+  /** A send whose broadcast answer is lost, driven past the unseen window. */
+  const stuckSend = async (w: BtcWorld, booted: Booted): Promise<TrackedTransaction> => {
+    w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 502", true) });
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).toBe("submitted");
+    w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 400", false) });
+    await booted.polls(1); // first unseen poll — starts the window
+    w.clock.t += STUCK_AFTER_MS + 1;
+    await booted.polls(1);
+    return tx;
+  };
+
+  it("stays stuck across a restart without flapping", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const first = await w.boot();
+    const tx = await stuckSend(w, first);
+    expect(first.ctl.getState().txs[tx.id]?.stuck).toBe(true);
+
+    const second = await w.boot(first.backing);
+    const row = second.ctl.getState().txs[tx.id];
+    expect(row?.state).toBe("submitted");
+    expect(row?.stuck).toBe(true);
+    // Tracked at the finality interval from the start, not the base one.
+    expect(second.timers.armed(POLL_MS)).toBe(0);
+    expect(second.timers.armed(FINALITY_MS)).toBe(1);
+    // One poll at the finality interval: still stuck — the watch resumed already inside the
+    // window, it did not un-mark and re-mark.
+    await second.timers.fire(FINALITY_MS);
+    const after = second.ctl.getState().txs[tx.id];
+    expect(after?.state).toBe("submitted");
+    expect(after?.stuck).toBe(true);
+    expect(after?.error).toBe(
+      "the network has not seen this transaction for 30 minutes — speed up or cancel it",
+    );
+  });
+
+  it("clears the mark once an endpoint knows it again", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await stuckSend(w, booted);
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
+
+    w.setStatus(hashOf(tx), { confirmed: false });
+    await booted.timers.fire(FINALITY_MS);
+    const row = booted.ctl.getState().txs[tx.id];
+    expect(row?.state).toBe("submitted");
+    expect(row?.stuck).toBeUndefined();
+    expect(row?.error).toBeUndefined();
+  });
+
+  it("a foreign spend confirming later still ends it replaced and frees the lock", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await stuckSend(w, booted);
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
+
+    // The reason it never landed surfaces: its input was spent by someone else — proof at last.
+    w.spendBy(u.txid, u.vout, "ef".repeat(32), true);
+    await booted.timers.fire(FINALITY_MS);
+    const row = booted.ctl.getState().txs[tx.id];
+    expect(row?.state).toBe("replaced");
+    expect(row?.stuck).toBeUndefined();
+  });
+
+  it("speeds up — the replacement confirms and the original is replaced", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await stuckSend(w, booted);
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
+
+    const prepared = await booted.ctl.prepareReplacement(
+      { method: "speed-up", txId: tx.id },
+      "req-2",
+    );
+    w.setPost({ kind: "ok" });
+    const bumped = await prepared.submit(VERIFY, () => undefined);
+    expect(bumped.state).toBe("submitted");
+    expect(bumped.replaces).toBe(tx.id);
+    // A live replacement explains the original's absence — its next poll clears the mark.
+    await booted.timers.fire(FINALITY_MS);
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBeUndefined();
+
+    w.setStatus(hashOf(bumped), {
+      confirmed: true,
+      block_height: 100,
+      block_hash: "aa".repeat(32),
+    });
+    await booted.polls(2);
+    const row = booted.ctl.getState().txs[tx.id];
+    expect(row?.state).toBe("replaced");
+    expect(row?.stuck).toBeUndefined();
+  });
+
+  it("cancels — the sweep confirms and the original is replaced", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await stuckSend(w, booted);
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
+
+    const prepared = await booted.ctl.prepareReplacement(
+      { method: "cancel", txId: tx.id },
+      "req-2",
+    );
+    w.setPost({ kind: "ok" });
+    const cancel = await prepared.submit(VERIFY, () => undefined);
+    expect(cancel.state).toBe("submitted");
+    expect(cancel.replaces).toBe(tx.id);
+
+    w.setStatus(hashOf(cancel), {
+      confirmed: true,
+      block_height: 100,
+      block_hash: "aa".repeat(32),
+    });
+    await booted.polls(2);
+    expect(booted.ctl.getState().txs[tx.id]?.state).toBe("replaced");
   });
 });
 
@@ -340,7 +472,7 @@ describe("a Bitcoin transaction a foreign spend has evicted", () => {
     expect(locks[`${u.txid}:${u.vout}`]?.status).toBe("confirmed");
   });
 
-  it("an input spent by an unconfirmed foreign tx is not rebroadcast but still drops", async () => {
+  it("an input spent by an unconfirmed foreign tx is not rebroadcast but still turns stuck", async () => {
     const w = world();
     const u = w.fund(1, 50_000);
     const booted = await w.boot();
@@ -355,9 +487,11 @@ describe("a Bitcoin transaction a foreign spend has evicted", () => {
     // The bytes conflict with a live mempool tx — rebroadcasting is pointless.
     expect(w.posts).toHaveLength(1);
 
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await booted.polls(1);
-    expect(stateOf(booted.ctl, tx)).toBe("dropped");
+    // A live conflicting spend is a mark, not a proof — the row turns stuck, never dropped.
+    expect(stateOf(booted.ctl, tx)).toBe("submitted");
+    expect(booted.ctl.getState().txs[tx.id]?.stuck).toBe(true);
   });
 
   it("an unreadable outspends answer is a missed check, not a poll failure", async () => {

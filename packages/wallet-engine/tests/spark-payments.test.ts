@@ -24,6 +24,7 @@ import { SparkControllerError } from "../src/spark/errors.ts";
 import {
   decodePaymentRecord,
   encodePaymentRecord,
+  findPayments,
   RECONCILE_BASE_MS,
 } from "../src/spark/payments.ts";
 import type { SparkPaymentRecord } from "../src/spark/payments.ts";
@@ -377,6 +378,47 @@ describe("Spark payment records", () => {
       payment: { id: TID2, state: "settled" },
     });
     await r.c.destroy();
+  });
+
+  it("a commit error the lagging listing does not carry stays unknown — a later listing settles it", async () => {
+    /* The listing lags the commit: the first probe is a complete page without the id, and only
+       the operator's own answer may decide — absence is not evidence of an outcome. */
+    let listed: ReadonlyArray<SparkPayment> = [];
+    const r = rig({
+      script: { send: [new SparkInputError("the committed id is unknown")] },
+      scan: async () => Promise.resolve({ payments: listed }),
+    });
+    await r.c.init();
+    const error = await failure(send(r.c));
+    expect(error).toMatchObject({ category: "unknown", payment: { id: TID, state: "unknown" } });
+    expect(r.records()[TID]?.state).toBe("unknown");
+    /* The id turns up completed — the operator did accept it — and the open record folds to
+       settled on the next reconcile pass instead of latching failed. */
+    listed = [payment(TID, "completed")];
+    await r.timers.fire();
+    await until(r.records, (records) => records[TID]?.state === "settled");
+    await r.c.destroy();
+  });
+
+  it("findPayments turns a page for an id the operator lists just within the clock skew", async () => {
+    /* `createdAt` at the skew boundary is not proof the scan passed the payment — the operator's
+       clock may lag the device's `since`; dropping the skew margin would stop one page early. */
+    const target = "01936f00-2222-7222-8222-222222222222";
+    type Listing = Awaited<ReturnType<SparkClient["transfers"]["history"]>>;
+    const queue: Listing[] = [
+      { payments: [payment(TID, "completed", NOW - 600_000)], nextOffset: 100 },
+      { payments: [payment(target, "completed", NOW)], nextOffset: undefined },
+    ];
+    const seen: number[] = [];
+    const history: SparkClient["transfers"]["history"] = async (page) => {
+      await Promise.resolve();
+      // eslint-disable-next-line vitest/no-conditional-in-test -- the page argument is optional in the seam
+      seen.push(page?.offset ?? 0);
+      return queue.shift()!;
+    };
+    const found = await findPayments(history, new Set([target]), NOW);
+    expect(found.has(target)).toBe(true);
+    expect(seen).toStrictEqual([0, 100]);
   });
 
   it("a returned payment settles from the recent page and leaves no row", async () => {

@@ -67,12 +67,14 @@ const normalize = (value: unknown): unknown => {
     return value.map(normalize);
   }
   if (typeof value === "object" && value !== null) {
-    const out: Record<string, unknown> = {};
-    const entries: Array<[string, unknown]> = Object.entries(value);
-    for (const [key, item] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
-      out[key] = normalize(item);
-    }
-    return out;
+    /* `Object.fromEntries` makes a `__proto__` key an own property — assigning it
+       (`out[key] = …`) would set the output's prototype and drop the key from the canonical
+       JSON, collapsing distinct payloads onto one subscription id. */
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([key, item]) => [key, normalize(item)]),
+    );
   }
   return value;
 };
