@@ -7,12 +7,13 @@ import type { AppAvailability } from "@qntx/wallet-engine/gateway/contract";
  *
  * Sources:
  *
- * - Hyperliquid Terms of Use §1.6 (2026-06-15) — archived evidence/docs/pm-geoblock.md. §1.6(a) names
- *   the United States and Ontario; §1.6(b) covers comprehensively-sanctioned jurisdictions, which
- *   the terms do not enumerate — the OFAC comprehensive set is taken as published by Polymarket's
- *   geo-block table below.
- * - Polymarket geo-block table (2026-06-15) — https://polymarket.com/tos + geoblock list, archived
- *   evidence/docs/pm-geoblock.md.
+ * - Hyperliquid Terms of Use §1.6 — https://app.hyperliquid.xyz/terms ("Last updated on June 15,
+ *   2026", §1.6 unchanged 2026-11-22). §1.6(a) names the United States and Ontario; §1.6(b) covers
+ *   comprehensively-sanctioned jurisdictions but names none, so that set stays as published by
+ *   Polymarket's geo-block table below. RU/BY/Sevastopol are not added: neither platform lists
+ *   them.
+ * - Polymarket geo-block table — https://docs.polymarket.com/api-reference/geoblock (2026-11-22:
+ *   lists identical to the code).
  */
 
 /** Iran, Syria, Cuba, North Korea, Crimea/Donetsk/Luhansk (UA-43/14/09) — sanctioned set. */
