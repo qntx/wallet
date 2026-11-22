@@ -50,6 +50,64 @@ const firstEvm = (count: number) =>
   PRODUCTION_NETWORKS.filter((n) => n.id.startsWith("eip155:")).slice(0, count);
 
 const REPORT = process.env["CAPACITY_REPORT"];
+/** `CAPACITY_LIMITS=off`: every limiter and budget accepts and only records — raw demand. */
+const UNCONSTRAINED = process.env["CAPACITY_LIMITS"] === "off";
+
+const BURST_WINDOWS_MS = [1000, 2000, 5000, 10_000, 60_000] as const;
+
+/** Largest unit sum inside any `windowMs`-wide window over the takes (endpoints inclusive). */
+const maxBurst = (
+  takes: ReadonlyArray<{ units: number; at: number }>,
+  windowMs: number,
+): number => {
+  const pts = takes.map((t) => [t.at, t.units] as const).toSorted((a, b) => a[0] - b[0]);
+  let best = 0;
+  let sum = 0;
+  let lo = 0;
+  for (const [at, units] of pts) {
+    sum += units;
+    while (pts[lo] !== undefined && (pts[lo]?.[0] ?? 0) < at - windowMs) {
+      sum -= pts[lo]?.[1] ?? 0;
+      lo += 1;
+    }
+    best = Math.max(best, sum);
+  }
+  return best;
+};
+
+/** A limiter key with the engine's random client id replaced by its gateway scope. */
+const decodeLimiterKey = (key: string, scopes: ReadonlyMap<string, string>): string => {
+  const clientId = key.slice(0, 32);
+  const scope = scopes.get(clientId);
+  return scope === undefined ? key : `${scope}${key.slice(32)}`;
+};
+
+/** Per limiter, the single-key maximum windowed count reached in this row's takes. */
+const limiterMaxima = (r: Readings): Map<string, { key: string; count: number }> => {
+  const max = new Map<string, { key: string; count: number }>();
+  for (const { limiter, key, count } of r.limiterTakes) {
+    const cur = max.get(limiter);
+    if (cur === undefined || count > cur.count) {
+      max.set(limiter, { key: decodeLimiterKey(key, r.clientScopes), count });
+    }
+  }
+  return max;
+};
+
+/** Per account, the max budget units inside each sliding window. */
+const burstMaxima = (r: Readings): Map<string, number[]> => {
+  const byAccount = new Map<string, Array<{ units: number; at: number }>>();
+  for (const t of r.takes) {
+    const list = byAccount.get(t.account) ?? [];
+    list.push({ units: t.units, at: t.at });
+    byAccount.set(t.account, list);
+  }
+  return new Map(
+    [...byAccount].map(
+      ([account, takes]) => [account, BURST_WINDOWS_MS.map((w) => maxBurst(takes, w))] as const,
+    ),
+  );
+};
 
 type Row = { readonly name: string } & Readings;
 
@@ -71,7 +129,34 @@ const table = (rows: ReadonlyArray<Row>): string => {
     ];
     return `| ${cells.join(" | ")} |`;
   });
-  return [head, sep, ...lines].join("\n");
+  const limiterSection = [
+    "",
+    "| scenario | ip key:count | rpc key:count | default key:count | share key:count |",
+    "|---|---|---|---|---|",
+    ...rows.map((r) => {
+      const max = limiterMaxima(r);
+      const cell = (name: string): string => {
+        const m = max.get(name);
+        return m === undefined ? "-" : `${m.key}:${String(m.count)}`;
+      };
+      return `| ${r.name} | ${cell("ip")} | ${cell("rpc")} | ${cell("default")} | ${cell("share")} |`;
+    }),
+  ];
+  const burstRows = rows.flatMap((r) =>
+    [...burstMaxima(r)].map(
+      ([account, bursts]) => `| ${r.name} | ${account} | ${bursts.map(String).join(" | ")} |`,
+    ),
+  );
+  const burstSection =
+    burstRows.length === 0
+      ? []
+      : [
+          "",
+          `| scenario | account | ${BURST_WINDOWS_MS.map((w) => `${String(w / 1000)}s`).join(" | ")} |`,
+          `|---|${"---|".repeat(1 + BURST_WINDOWS_MS.length)}`,
+          ...burstRows,
+        ];
+  return [head, sep, ...lines, ...limiterSection, ...burstSection].join("\n");
 };
 
 const toJson = (rows: ReadonlyArray<Row>): string =>
@@ -87,6 +172,18 @@ const toJson = (rows: ReadonlyArray<Row>): string =>
       shareDeltaByKey: Object.fromEntries(r.share),
       prices: r.prices,
       maxShareDeltaSum: Math.max(0, ...r.share.values()),
+      limiterMax: Object.fromEntries(limiterMaxima(r)),
+      burst: Object.fromEntries(
+        [...burstMaxima(r)].map(
+          ([account, bursts]) =>
+            [
+              account,
+              Object.fromEntries(
+                bursts.map((v, i) => [`${String((BURST_WINDOWS_MS[i] ?? 0) / 1000)}s`, v] as const),
+              ),
+            ] as const,
+        ),
+      ),
     })),
     undefined,
     2,
@@ -215,6 +312,7 @@ describe("engine gateway capacity", () => {
         model,
         networks,
         tronAddress: addresses.tron,
+        unconstrained: UNCONSTRAINED,
       });
       const before = world.snapshot();
       await actions(world);
@@ -244,6 +342,7 @@ describe("engine gateway capacity", () => {
         model: used,
         networks,
         tronAddress: addresses.tron,
+        unconstrained: UNCONSTRAINED,
       });
       const waitReady = async () => {
         for (
@@ -290,6 +389,7 @@ describe("engine gateway capacity", () => {
       model: used,
       networks: PRODUCTION_NETWORKS,
       tronAddress: addresses.tron,
+      unconstrained: UNCONSTRAINED,
     });
     for (let i = 0; i < 300 && sendWorld.engine.accounts.getState().status !== "ready"; i += 1) {
       // oxlint-disable-next-line no-await-in-loop -- sequential polling

@@ -22,6 +22,8 @@ import { tokenListSources } from "../../../../apps/gateway/src/tokens/sources.ts
 import type { Limiters, RateLimiter } from "../../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../../src/engine.ts";
 import type { WalletEngine } from "../../src/engine.ts";
+import { gatewayScope } from "../../src/gateway/client.ts";
+import { CLIENT_ID_HEADER } from "../../src/gateway/contract/index.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../../src/store/memory.ts";
 import type { Stub, WalletModel } from "./upstream.ts";
 import { stubUpstream, tokenListFetch } from "./upstream.ts";
@@ -93,6 +95,8 @@ export const windowedCountBefore = (
   limit: number,
   periodMs: number,
   now: () => number,
+  report?: (key: string, count: number) => void,
+  unconstrained = false,
 ): RateLimiter => {
   const state = new Map<string, { window: number; count: number }>();
   return {
@@ -101,10 +105,12 @@ export const windowedCountBefore = (
       const window = Math.floor(now() / periodMs);
       const entry = state.get(key);
       const count = entry === undefined || entry.window !== window ? 0 : entry.count;
-      if (count >= limit) {
+      if (!unconstrained && count >= limit) {
         return { success: false };
       }
-      state.set(key, { window, count: count + delta });
+      const next = count + delta;
+      state.set(key, { window, count: next });
+      report?.(key, next);
       return { success: true };
     },
   };
@@ -218,6 +224,12 @@ export type Readings = {
   readonly budget: Map<string, number>;
   readonly share: Map<string, number>;
   readonly prices: PricesRead[];
+  /** Every accepted limiter take's post-take windowed count — per-limiter maxima come from this. */
+  readonly limiterTakes: ReadonlyArray<{ limiter: string; key: string; count: number }>;
+  /** Every budget take with its timestamp — sliding-window burst maxima come from this. */
+  readonly takes: ReadonlyArray<{ account: string; units: number; at: number }>;
+  /** `x-client-id` → gateway scope, seen on requests — decodes `clientId:prefix` limiter keys. */
+  readonly clientScopes: ReadonlyMap<string, string>;
 };
 
 export const emptyReadings = (): Readings => ({
@@ -229,6 +241,9 @@ export const emptyReadings = (): Readings => ({
   budget: new Map(),
   share: new Map(),
   prices: [],
+  limiterTakes: [],
+  takes: [],
+  clientScopes: new Map(),
 });
 
 export type World = {
@@ -239,6 +254,8 @@ export type World = {
   /** In-flight gateway requests — cold-start waits for 500 ms of quiet. */
   readonly inflight: () => number;
   readonly snapshot: () => Readings;
+  /** `x-client-id` → gateway scope, seen on requests — decodes `clientId:prefix` limiter keys. */
+  readonly clientScopes: Map<string, string>;
 };
 
 const deepCopy = <K, T>(m: ReadonlyMap<K, T>): Map<K, T> => new Map(m);
@@ -252,6 +269,9 @@ export const snapshotOf = (r: Readings): Readings => ({
   budget: deepCopy(r.budget),
   share: deepCopy(r.share),
   prices: [...r.prices],
+  limiterTakes: [...r.limiterTakes],
+  takes: [...r.takes],
+  clientScopes: deepCopy(r.clientScopes),
 });
 
 export const diffReadings = (after: Readings, before: Readings): Readings => ({
@@ -277,6 +297,9 @@ export const diffReadings = (after: Readings, before: Readings): Readings => ({
   budget: new Map([...after.budget].map(([k, v]) => [k, v - (before.budget.get(k) ?? 0)] as const)),
   share: new Map([...after.share].map(([k, v]) => [k, v - (before.share.get(k) ?? 0)] as const)),
   prices: after.prices.slice(before.prices.length),
+  limiterTakes: after.limiterTakes.slice(before.limiterTakes.length),
+  takes: after.takes.slice(before.takes.length),
+  clientScopes: after.clientScopes,
 });
 
 const memoryStore = (): TokenListStore => {
@@ -326,18 +349,35 @@ export const createWorld = async (opts: {
   readonly model: WalletModel;
   readonly networks?: ReadonlyArray<(typeof PRODUCTION_NETWORKS)[number]>;
   readonly tronAddress?: string;
+  /** "off": every limiter/budget accepts and only records — raw demand, no refusals or retries. */
+  readonly unconstrained?: boolean;
 }): Promise<World> => {
   const networks = opts.networks ?? PRODUCTION_NETWORKS;
   // The limiter/budget clock is fake: a refusal advances it by the announced wait instead of
   // real time, so a burst that hits a production window becomes instant virtual minutes, not a
   // 20-minute test. Refused calls are still recorded in statuses — the table shows them.
+  const unconstrained = opts.unconstrained === true;
   let nowMs = Date.now();
-  const now = () => nowMs;
+  // Unconstrained runs get the real clock: no refusals ever advance the fake one, and the burst
+  // windows then read the engine's actual pacing.
+  const now = unconstrained ? () => Date.now() : () => nowMs;
   const limits = productionLimits();
   const stub = stubUpstream(opts.model, providerPrefixes(networks), opts.tronAddress ?? "");
 
+  const limiterTakes: Array<{ limiter: string; key: string; count: number }> = [];
+  const reportCount =
+    (limiter: string) =>
+    (key: string, count: number): void => {
+      limiterTakes.push({ limiter, key, count });
+    };
   const shareCalls: Array<{ key: string; delta: number }> = [];
-  const shareInner = windowedCountBefore(limits["SHARE_LIMITER"]?.limit ?? 1000, 60_000, now);
+  const shareInner = windowedCountBefore(
+    limits["SHARE_LIMITER"]?.limit ?? 1000,
+    60_000,
+    now,
+    reportCount("share"),
+    unconstrained,
+  );
   const share: RateLimiter = {
     limit: async ({ key, delta = 1 }) => {
       shareCalls.push({ key, delta });
@@ -345,18 +385,36 @@ export const createWorld = async (opts: {
     },
   };
   const limiters: Limiters = {
-    ip: windowedCountBefore(limits["IP_LIMITER"]?.limit ?? 300, 10_000, now),
-    rpc: windowedCountBefore(limits["RPC_LIMITER"]?.limit ?? 100, 10_000, now),
-    default: windowedCountBefore(limits["DEFAULT_LIMITER"]?.limit ?? 50, 10_000, now),
+    ip: windowedCountBefore(
+      limits["IP_LIMITER"]?.limit ?? 300,
+      10_000,
+      now,
+      reportCount("ip"),
+      unconstrained,
+    ),
+    rpc: windowedCountBefore(
+      limits["RPC_LIMITER"]?.limit ?? 100,
+      10_000,
+      now,
+      reportCount("rpc"),
+      unconstrained,
+    ),
+    default: windowedCountBefore(
+      limits["DEFAULT_LIMITER"]?.limit ?? 50,
+      10_000,
+      now,
+      reportCount("default"),
+      unconstrained,
+    ),
     share,
   };
 
-  const budgetTakes: Array<{ account: string; units: number }> = [];
+  const budgetTakes: Array<{ account: string; units: number; at: number }> = [];
   const budgetInner = localBudget(PRODUCTION_ACCOUNTS, now);
   const budget = {
     take: async (account: string, units: number) => {
-      budgetTakes.push({ account, units });
-      return budgetInner.take(account, units);
+      budgetTakes.push({ account, units, at: now() });
+      return unconstrained ? { ok: true as const } : budgetInner.take(account, units);
     },
   };
 
@@ -426,12 +484,19 @@ export const createWorld = async (opts: {
   });
 
   const readings = emptyReadings();
+  const clientScopes = new Map<string, string>();
   let inflight = 0;
   const engineFetch: typeof globalThis.fetch = async (input, init) => {
     const target = input instanceof Request ? input.url : String(input);
     const url = new URL(target);
     if (url.origin !== GATEWAY_URL) {
       return stub.fetch(input, init);
+    }
+    const clientId =
+      (init?.headers === undefined ? undefined : new Headers(init.headers).get(CLIENT_ID_HEADER)) ??
+      (input instanceof Request ? input.headers.get(CLIENT_ID_HEADER) : undefined);
+    if (clientId !== null && clientId !== undefined) {
+      clientScopes.set(clientId, gatewayScope(url));
     }
     const path = url.pathname;
     const route = routeClass(path);
@@ -562,8 +627,12 @@ export const createWorld = async (opts: {
       upstream: upstreamUnits,
       budget: new Map(),
       prices: [],
+      limiterTakes,
+      takes: budgetTakes,
+      clientScopes,
     },
     inflight: () => inflight,
+    clientScopes,
     snapshot: () => {
       // Recompute attribution so far: budget takes by account, upstream calls by account, share
       // sums per key. Routes/statuses stream into `readings` continuously.
@@ -591,6 +660,9 @@ export const createWorld = async (opts: {
           return m;
         })(),
         share: shareSums(),
+        limiterTakes: [...limiterTakes],
+        takes: [...budgetTakes],
+        clientScopes: new Map(clientScopes),
       };
     },
   };
