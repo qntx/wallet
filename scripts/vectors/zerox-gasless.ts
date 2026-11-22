@@ -206,21 +206,24 @@ const viemArgs = (data: TypedDataDoc) => {
       }),
     ),
   };
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- identical runtime shape; viem's TypedData types are nominal
-  return args as never;
+  return args;
 };
 
-const digest = (data: TypedDataDoc): string => hashTypedData(viemArgs(data));
+/* viem's TypedData types are nominal — the args carry the identical runtime shape. */
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion
+const viemParams = (data: TypedDataDoc) => viemArgs(data) as never;
+
+const digest = (data: TypedDataDoc): string => hashTypedData(viemParams(data));
 
 /* The real document must hash to the published tradeHash and recover the published signer. */
 const realDigest = digest(REAL);
 if (realDigest !== REAL_HASH) {
   throw new Error(`hashTypedData ${realDigest} != published tradeHash ${REAL_HASH}`);
 }
-const recovered = await recoverTypedDataAddress({
-  ...viemArgs(REAL),
-  signature: REAL_SIGNATURE,
-});
+const recovered = await recoverTypedDataAddress(
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- viem's TypedData types are nominal
+  { ...viemArgs(REAL), signature: REAL_SIGNATURE } as never,
+);
 if (recovered.toLowerCase() !== REAL_SIGNER) {
   throw new Error(`recovered ${recovered} != ${REAL_SIGNER}`);
 }
@@ -245,12 +248,9 @@ type Variant = {
   readonly expected: "order" | "variant";
 };
 
-const base = (
-  chainId: number,
-  patch: (m: Record<string, unknown>) => void = () => {},
-): TypedDataDoc => {
+const base = (chainId: number, patch?: (m: Record<string, unknown>) => void): TypedDataDoc => {
   const message = structuredClone(REAL.message);
-  patch(message);
+  patch?.(message);
   return {
     ...REAL,
     domain: { name: "Permit2", chainId, verifyingContract: PERMIT2 },
@@ -262,17 +262,20 @@ const deadlinePast = (message: Record<string, unknown>) => {
   message["deadline"] = "2000000000";
 };
 
-const mainnet = (patch: (m: Record<string, unknown>) => void): TypedDataDoc =>
+const mainnet = (
+  patch: (m: Record<string, unknown>, slippage: Record<string, unknown>) => void,
+): TypedDataDoc =>
   base(1, (m) => {
     deadlinePast(m);
     m["permitted"] = { token: MAINNET_USDC, amount: "1000000" };
-    m["slippageAndActions"] = {
+    const slippage: Record<string, unknown> = {
       recipient: account.address,
       buyToken: MAINNET_WETH,
       minAmountOut: "400000000000000",
       actions: ["0x1234", "0x"],
     };
-    patch(m);
+    m["slippageAndActions"] = slippage;
+    patch(m, slippage);
   });
 
 const near = (description: string, data: TypedDataDoc, network?: string): Variant => ({
@@ -305,9 +308,9 @@ const variants: Variant[] = [
   ),
   near(
     "a zero minAmountOut (the contract treats it as no bound)",
-    mainnet((m) => {
+    mainnet((m, slippage) => {
       m["spender"] = settler(1, 3n, 20);
-      (m["slippageAndActions"] as Record<string, unknown>)["minAmountOut"] = "0";
+      slippage["minAmountOut"] = "0";
     }),
   ),
   near("an extra type entry", {
@@ -333,9 +336,9 @@ const variants: Variant[] = [
   ),
   {
     description: "a native buyToken (0xEeee… sentinel)",
-    data: mainnet((m) => {
+    data: mainnet((m, slippage) => {
       m["spender"] = settler(1, 3n, 20);
-      (m["slippageAndActions"] as Record<string, unknown>)["buyToken"] = NATIVE_SENTINEL;
+      slippage["buyToken"] = NATIVE_SENTINEL;
     }),
     network: "eip155:1",
     expected: "order",
@@ -373,11 +376,9 @@ const variants: Variant[] = [
 
 const signed: Array<Record<string, unknown>> = [];
 for (const variant of variants) {
-  signed.push({
-    ...variant,
-    digest: digest(variant.data),
-    signature: await account.signTypedData(viemArgs(variant.data)),
-  });
+  // oxlint-disable-next-line eslint/no-await-in-loop -- deterministic order, local signing is fast
+  const signature = await account.signTypedData(viemParams(variant.data));
+  signed.push({ ...variant, digest: digest(variant.data), signature });
 }
 
 const orderExpected = {

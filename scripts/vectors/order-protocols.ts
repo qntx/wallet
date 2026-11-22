@@ -1127,7 +1127,7 @@ for (const target of TARGETS) {
    is not a fixed address — Deployer redeploys it monthly — so the record carries the current
    owner and the feature nonce that derives it via the documented
    `salt = feature<<128 | chainId<<64 | nonce`, CREATE2 shim, CREATE child construction. */
-const ZEROX_DEPLOYER = "0x00000000000004533Fe15556B1E086BB1A72cEae";
+const ZEROX_DEPLOYER = "0x00000000000004533fe15556b1e086bb1a72ceae";
 const ZEROX_CHAINS = [1, 10, 56, 137, 8453, 999, 42161, 43114, 11155111] as const;
 const SHIM_INIT_CODE_HASH =
   "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f" as const;
@@ -1136,9 +1136,7 @@ const zeroxSettler = (chainId: number, feature: bigint, nonce: number): string =
   const salt = toHex(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce), {
     size: 32,
   });
-  const shim = keccak256(
-    concat(["0xff", ZEROX_DEPLOYER.toLowerCase() as `0x${string}`, salt, SHIM_INIT_CODE_HASH]),
-  );
+  const shim = keccak256(concat(["0xff", ZEROX_DEPLOYER, salt, SHIM_INIT_CODE_HASH]));
   return getAddress(`0x${keccak256(`0xd694${shim.slice(26)}01`).slice(26)}`);
 };
 
