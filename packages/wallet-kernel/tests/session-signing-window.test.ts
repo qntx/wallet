@@ -7,13 +7,10 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { recoverTypedDataAddress } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
+import { hyperliquidL1Document } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 import { ValidationError } from "@qntx/wallet/protocol";
 
-import {
-  l1ConnectionId,
-  phantomAgentTypedData,
-} from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
 import { hyperliquidL1Params } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
@@ -230,10 +227,7 @@ describe("sessions.sign hyperliquid-l1-agent signing window", () => {
     ).toString("hex")}`;
     await h.call("sessions.delete", { address }, session);
     const doc = JSON.parse(
-      phantomAgentTypedData(
-        l1ConnectionId({ action: ACTION as never, nonce, expiresAfter }),
-        "Mainnet",
-      ),
+      hyperliquidL1Document({ action: ACTION as never, nonce, expiresAfter }, "Mainnet"),
     ) as {
       types: Record<string, Array<{ name: string; type: string }>>;
       primaryType: string;

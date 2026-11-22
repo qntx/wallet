@@ -34,6 +34,13 @@ export {
   parseTypedData,
   typedDataFields,
 } from "./typed-data.ts";
+export { hyperliquidL1Document } from "./hyperliquid-l1.ts";
+export type {
+  HyperliquidL1Action,
+  HyperliquidL1Order,
+  HyperliquidL1Params,
+  HyperliquidNetwork,
+} from "./hyperliquid-l1.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
 export type { EvmToken, EvmTokenTable } from "./tokens.ts";
 
