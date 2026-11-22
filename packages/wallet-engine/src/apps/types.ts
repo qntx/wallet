@@ -70,7 +70,9 @@ export type AppGroupState = {
 /** The gateway's per-app availability for this jurisdiction — `unknown`/`error` refuse enables. */
 export type AppsEligibility = {
   readonly status: "unknown" | "ready" | "error";
-  readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+  /* Keyed by any app id the gateway configures — an app absent from a ready answer is unknown:
+     it refuses `enable`/`renew` exactly as when not ready and never takes the overlay. */
+  readonly apps?: Readonly<Record<string, AppAvailability>>;
   readonly country?: EligibilityResponse["country"];
   readonly region?: EligibilityResponse["region"];
   readonly checkedAt?: number;

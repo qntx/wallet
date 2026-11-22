@@ -281,7 +281,7 @@ type AppsControllerDeps = {
 // @public
 type AppsEligibility = {
     readonly status: "unknown" | "ready" | "error";
-    readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+    readonly apps?: Readonly<Record<string, AppAvailability>>;
     readonly country?: EligibilityResponse["country"];
     readonly region?: EligibilityResponse["region"];
     readonly checkedAt?: number;
@@ -644,18 +644,11 @@ type EligibilityResponse = z.infer<typeof eligibilityResponse>;
 const eligibilityResponse: z.ZodMiniObject<{
     country: z.ZodMiniNullable<z.ZodMiniString<string>>;
     region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniObject<{
-        hyperliquid: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-        polymarket: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-    }, z.core.$strip>;
+    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+        available: "available";
+        blocked: "blocked";
+        "close-only": "close-only";
+    }>>;
 }, z.core.$strip>;
 
 // @public

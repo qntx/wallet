@@ -124,18 +124,11 @@ export const difference: (a: HashList, b: HashList) => HashList;
 export const eligibility: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
     country: z.ZodMiniNullable<z.ZodMiniString<string>>;
     region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniObject<{
-        hyperliquid: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-        polymarket: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-    }, z.core.$strip>;
+    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+        available: "available";
+        blocked: "blocked";
+        "close-only": "close-only";
+    }>>;
 }, z.core.$strip>>;
 
 // @public (undocumented)
@@ -148,18 +141,11 @@ export type EligibilityResponse = z.infer<typeof eligibilityResponse>;
 export const eligibilityResponse: z.ZodMiniObject<{
     country: z.ZodMiniNullable<z.ZodMiniString<string>>;
     region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniObject<{
-        hyperliquid: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-        polymarket: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-    }, z.core.$strip>;
+    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+        available: "available";
+        blocked: "blocked";
+        "close-only": "close-only";
+    }>>;
 }, z.core.$strip>;
 
 // @public (undocumented)

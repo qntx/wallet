@@ -60,6 +60,30 @@ describe("apps eligibility", () => {
     await w.destroy();
   });
 
+  it("an app absent from a ready answer is unknown — enable refused, no overlay", async () => {
+    const w = await world(0, {
+      hl: {
+        eligibility: () => ({
+          country: "FR",
+          region: null,
+          /* The gateway's config decides which apps appear — hyperliquid is simply absent. */
+          apps: { polymarket: "available" },
+        }),
+      },
+    });
+    expect(w.apps.getState().eligibility.status).toBe("ready");
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    /* An absent app is not `blocked` — the overlay does not apply, the group stays disabled. */
+    expect(w.state()?.status).toBe("disabled");
+    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+      category: "unavailable",
+    });
+    await expect(w.apps.renew(w.group, "hyperliquid")).rejects.toMatchObject({
+      category: "unavailable",
+    });
+    await w.destroy();
+  });
+
   it("a malformed gateway answer leaves eligibility in error", async () => {
     const w = await world(0, {
       hl: {

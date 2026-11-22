@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { eligibility } from "@qntx/wallet-engine/gateway/contract";
 
+import { ELIGIBILITY } from "../src/config/eligibility.ts";
 import { expectContract, fakeFetch, gateway, headers } from "./helpers.ts";
 
 /* Eligibility has no upstream — an empty handler table makes any call throw. */
@@ -23,10 +24,15 @@ const at = async (cf?: { country?: string; regionCode?: string }): Promise<Respo
 type Apps = {
   country: string | null;
   region: string | null;
-  apps: { hyperliquid: string; polymarket: string };
+  apps: Record<string, string>;
 };
 
 describe("eligibility", () => {
+  it("answers exactly the configured apps — no app name appears in the route", async () => {
+    const body = (await expectContract(await at({ country: "FR" }), eligibility.response)) as Apps;
+    expect(Object.keys(body.apps).toSorted()).toStrictEqual(Object.keys(ELIGIBILITY).toSorted());
+  });
+
   it("answers blocked for the US (Hyperliquid) and close-only for Polymarket", async () => {
     const body = (await expectContract(await at({ country: "US" }), eligibility.response)) as Apps;
     expect(body.country).toBe("US");

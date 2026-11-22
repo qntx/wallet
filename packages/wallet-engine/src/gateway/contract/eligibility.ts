@@ -12,15 +12,18 @@ export const appAvailability = z.enum(["available", "close-only", "blocked"]);
 
 export const eligibilityRequest = z.undefined();
 
+/**
+ * An app id — `^[a-z][a-z0-9-]{1,31}$`. The gateway's config decides which apps appear in the
+ * answer; a client treats an absent app as unknown.
+ */
+const appId = z.string().check(z.regex(/^[a-z][a-z0-9-]{1,31}$/));
+
 export const eligibilityResponse = z.object({
   /** The caller's country as the edge resolved it (ISO-3166 alpha-2), null when unknown. */
   country: z.nullable(z.string()),
   /** The caller's subdivision code as the edge resolved it, null when unknown. */
   region: z.nullable(z.string()),
-  apps: z.object({
-    hyperliquid: appAvailability,
-    polymarket: appAvailability,
-  }),
+  apps: z.record(appId, appAvailability),
 });
 export type EligibilityResponse = z.infer<typeof eligibilityResponse>;
 
