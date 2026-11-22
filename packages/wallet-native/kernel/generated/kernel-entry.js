@@ -18468,7 +18468,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-IqlvSzc5.mjs
+	// packages/wallet-chains/dist/typed-data-DIVzugKo.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_objectSpread2();
@@ -18729,7 +18729,7 @@
 	};
 	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
 	var MAX_UINT48 = 2n ** 48n - 1n;
-	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+	var isHexBytes = (value) => typeof value === "string" && /^0x(?:[0-9a-fA-F]{2})*$/.test(value);
 	/** A `bytes` field value: `0x`-prefixed hex of even length. */
 	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
 	/**
@@ -18889,7 +18889,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-C9euyNN9.mjs
+	// packages/wallet-chains/dist/token-call-CmtgRdAi.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var USDC$1 = Object.freeze({
@@ -31038,7 +31038,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/typed-data-CnXGTOCv.mjs
+	// packages/wallet-chains/dist/typed-data-8KO-lrHQ.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -42180,10 +42180,14 @@ zoo`.split("\n"));
 	/** At most 16 live agents per vault — the protocol's sessions.list cap is 64. */
 	var MAX_AGENTS = 16;
 	/**
-	* Every signature carries `expiresAfter` at most 60 s after it was made (kernel clock) and
-	* Hyperliquid rejects an action after its `expiresAfter` (docs exchange-endpoint §Expires After),
-	* so a signature can be submitted at most 60 s after it was made — the post-lock exposure. The
-	* nonce keeps the same 60 s symmetric window so a compromised runtime cannot pre-sign far ahead.
+	* Every signature carries `expiresAfter` at most 60 s after it was made and Hyperliquid rejects an
+	* action after its `expiresAfter` (docs exchange-endpoint §Expires After), so a signature can be
+	* submitted at most 60 s after it was made — the post-lock exposure. The nonce keeps the same 60 s
+	* symmetric window so a compromised runtime cannot pre-sign far ahead.
+	*
+	* Both are on the device clock — the kernel has no trusted time: a clock S ahead makes it S + 60 s
+	* of real time (Hyperliquid takes nonces up to a day ahead). The engine's `assertClock()` is the
+	* mitigation; a compromised main runtime can skip it (SECURITY.md).
 	*/
 	var EXPIRES_AFTER_MS = 6e4;
 	var NONCE_WINDOW_MS = 6e4;
