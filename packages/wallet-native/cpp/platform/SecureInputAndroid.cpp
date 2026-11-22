@@ -34,15 +34,14 @@ void deliver(
     return;
   }
   jint kind = 0;
-  jstring label = nullptr;
+  // make_jstring handles all of UTF-8; NewStringUTF's modified UTF-8
+  // rejects astral characters and aborts under CheckJNI.
+  jni::local_ref<jstring> label;
   if (prompt.has_value()) {
     kind = prompt->kind == SecureInputKind::accessCode ? 0 : 1;
-    label = env->NewStringUTF(prompt->label.c_str());
+    label = jni::make_jstring(prompt->label);
   }
-  env->CallVoidMethod(field.get(), g_deliver, kind, label);
-  if (label != nullptr) {
-    env->DeleteLocalRef(label);
-  }
+  env->CallVoidMethod(field.get(), g_deliver, kind, label.get());
 }
 
 } // namespace

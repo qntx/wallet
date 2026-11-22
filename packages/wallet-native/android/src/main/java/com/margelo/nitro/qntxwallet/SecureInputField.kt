@@ -48,6 +48,7 @@ class SecureInputField(context: Context) : LinearLayout(context) {
   private var state = SecureInputState.IDLE
   private var secureSet = false
   private var hadSecureFlag = false
+  private var disarming = false
 
   init {
     orientation = VERTICAL
@@ -121,16 +122,25 @@ class SecureInputField(context: Context) : LinearLayout(context) {
       }
     }
     emit(SecureInputState.EMPTY)
+    // A mounted view that just armed takes the keyboard; the latest
+    // attach wins over fields armed earlier.
+    if (isAttachedToWindow) {
+      field.requestFocus()
+      showKeyboard()
+    }
   }
 
   private fun disarm(submitted: Boolean = false) {
     // Editable content cannot be erased; overwrite it before clearing — the
-    // best the platform can do.
+    // best the platform can do. The overwrite fires the watcher, so
+    // suppress it: the runtime sees (submitted then) idle, nothing else.
+    disarming = true
     val text = field.text
     if (text.isNotEmpty()) {
       text.replace(0, text.length, "0".repeat(text.length))
     }
     text.clear()
+    disarming = false
     field.isEnabled = false
     field.clearFocus()
     if (secureSet) {
@@ -159,6 +169,7 @@ class SecureInputField(context: Context) : LinearLayout(context) {
   }
 
   private fun onTextChanged() {
+    if (disarming) return
     emit(
       if (field.text.isEmpty()) SecureInputState.EMPTY else SecureInputState.FILLED,
     )
@@ -196,6 +207,13 @@ class SecureInputField(context: Context) : LinearLayout(context) {
       context.getSystemService(Context.INPUT_METHOD_SERVICE)
         as android.view.inputmethod.InputMethodManager
     imm.hideSoftInputFromWindow(field.windowToken, 0)
+  }
+
+  private fun showKeyboard() {
+    val imm =
+      context.getSystemService(Context.INPUT_METHOD_SERVICE)
+        as android.view.inputmethod.InputMethodManager
+    imm.showSoftInput(field, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
   }
 
   @Keep

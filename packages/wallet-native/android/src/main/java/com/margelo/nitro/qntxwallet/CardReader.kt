@@ -58,16 +58,18 @@ object CardReader {
   private var endedStatus = UNAVAILABLE
   private var endedDetail: String? = null
 
+  // `closed` and `sheet` cross the worker/main boundary; the rest is
+  // worker-only.
   private class Session(
     val token: Long,
     val activity: Activity,
     val adapter: NfcAdapter,
-    val sheet: CardSheet,
   ) {
+    @Volatile var sheet: CardSheet? = null
     var isoDep: IsoDep? = null
     var txToken: Long = -1L
     var readerOn = false
-    var closed = false
+    @Volatile var closed = false
   }
 
   @JvmStatic
@@ -86,20 +88,26 @@ object CardReader {
       }
       endedStatus = UNAVAILABLE
       endedDetail = null
+      // The session record exists before the sheet so a close() queued
+      // behind this open cannot slip past it.
+      val session = Session(token, activity, adapter)
+      this@CardReader.session = session
       main.post {
-        if (activity.isFinishing || activity.isDestroyed) {
-          return@post nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
+        if (session.closed || activity.isFinishing || activity.isDestroyed) {
+          return@post // closed sessions are already settled; a dead
+          // activity can never show the sheet
         }
-        val session = Session(token, activity, adapter, CardSheet(activity))
-        worker.execute { this@CardReader.session = session }
-        session.sheet.onCancel = { worker.execute { endSession(session, CANCELLED, null) } }
-        session.sheet.onFocusChange = { hasFocus ->
+        val sheet = CardSheet(activity)
+        session.sheet = sheet
+        sheet.onCancel = { worker.execute { endSession(session, CANCELLED, null) } }
+        sheet.onFocusChange = { hasFocus ->
           worker.execute {
             if (this@CardReader.session !== session || session.closed) return@execute
             if (hasFocus) {
               if (!session.readerOn) {
                 session.readerOn = true
                 main.post {
+                  if (session.closed) return@post
                   adapter.enableReaderMode(
                     activity,
                     { tag -> worker.execute { onTag(session, tag) } },
@@ -116,8 +124,9 @@ object CardReader {
             }
           }
         }
-        session.sheet.showPrompt(prompt)
-        session.sheet.show()
+        sheet.showPrompt(prompt)
+        sheet.show()
+        if (session.closed) dismissSheet(session)
       }
     }
   }
@@ -166,12 +175,19 @@ object CardReader {
         // The session is over either way.
       }
       main.post {
-        session.adapter.disableReaderMode(session.activity)
+        val activity = session.activity
+        if (!activity.isFinishing && !activity.isDestroyed) {
+          session.adapter.disableReaderMode(activity)
+        }
+        val sheet = session.sheet
+        if (sheet == null) {
+          return@post
+        }
         if (text.isEmpty()) {
-          session.sheet.dismiss()
+          dismissSheet(session)
         } else {
-          session.sheet.showEnd(text)
-          main.postDelayed({ session.sheet.dismiss() }, END_TEXT_DELAY_MS)
+          sheet.showEnd(text)
+          main.postDelayed({ dismissSheet(session) }, END_TEXT_DELAY_MS)
         }
       }
     }
@@ -212,8 +228,21 @@ object CardReader {
       // The session is over either way.
     }
     main.post {
-      session.adapter.disableReaderMode(session.activity)
-      session.sheet.dismiss()
+      val activity = session.activity
+      if (!activity.isFinishing && !activity.isDestroyed) {
+        session.adapter.disableReaderMode(activity)
+      }
+      dismissSheet(session)
+    }
+  }
+
+  // The sheet's window may already be gone when a late close or session
+  // end reaches the main thread.
+  private fun dismissSheet(session: Session) {
+    val sheet = session.sheet ?: return
+    val activity = session.activity
+    if (sheet.isShowing && !activity.isFinishing && !activity.isDestroyed) {
+      sheet.dismiss()
     }
   }
 

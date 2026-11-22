@@ -139,6 +139,11 @@
     _field.font = [UIFont monospacedDigitSystemFontOfSize:17 weight:UIFontWeightRegular];
   }
   [self emit:QntxSecureInputStateEmpty];
+  // A mounted view that just armed takes the keyboard; the latest attach
+  // wins over fields armed earlier.
+  if (_field.window != nil) {
+    [_field becomeFirstResponder];
+  }
 }
 
 - (void)disarm:(BOOL)submitted {
