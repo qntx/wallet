@@ -463,6 +463,18 @@ const TARGETS: ReadonlyArray<{
     reactor: false,
   },
   {
+    label: "farcaster-key-gateway",
+    chainId: 10,
+    address: "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B",
+    reactor: false,
+  },
+  {
+    label: "farcaster-key-request-validator",
+    chainId: 10,
+    address: "0x00000000FC700472606ED4fA22623Acf62c60553",
+    reactor: false,
+  },
+  {
     label: "kyber-dslo",
     chainId: 1,
     address: "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C",
