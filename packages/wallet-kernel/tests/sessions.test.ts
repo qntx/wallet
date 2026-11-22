@@ -391,6 +391,12 @@ describe("protocol: strict action validation", () => {
 
   it.each([
     { type: "order", orders: [order], grouping: "na" },
+    {
+      type: "order",
+      orders: [order],
+      grouping: "na",
+      builder: { b: `0x${"00".repeat(20)}`, f: 1000 },
+    },
     { type: "cancel", cancels: [{ a: 0, o: 1 }] },
     { type: "cancel", cancels: [{ a: 0, o: 1 }], f: true },
     { type: "cancelByCloid", cancels: [{ asset: 0, cloid: `0x${"00".repeat(16)}` }] },
@@ -440,6 +446,16 @@ describe("protocol: strict action validation", () => {
 
   it.each([
     ["{p} grouping", { type: "order", orders: [order], grouping: { p: 1 } }],
+    ["priority-fee grouping", { type: "order", orders: [order], grouping: "p" }],
+    [
+      "builder fee above the cap",
+      {
+        type: "order",
+        orders: [order],
+        grouping: "na",
+        builder: { b: `0x${"00".repeat(20)}`, f: 1001 },
+      },
+    ],
     [
       "builder split list",
       {
