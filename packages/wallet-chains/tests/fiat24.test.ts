@@ -3,6 +3,7 @@ import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "../src/evm/decode.ts";
+import { isFiat24Contract } from "../src/evm/fiat24.ts";
 import { encodeBatchExecute, fiat24SessionMessage, normalizeEvm } from "../src/evm/index.ts";
 import { ChainError } from "../src/index.ts";
 import type { ApprovalChange, EvmTransaction, SignRequest } from "../src/index.ts";
@@ -69,6 +70,17 @@ const tx = (to: string | undefined, data: string, value = "0x0", chainId = 42161
     maxFeePerGas: "0x3b9aca00",
     maxPriorityFeePerGas: "0x1",
   } as EvmTransaction,
+});
+
+describe("isFiat24Contract", () => {
+  it("is true only for the pinned proxies on Arbitrum One", () => {
+    for (const proxy of PROXIES) {
+      expect(isFiat24Contract(42161, proxy)).toBe(true);
+      expect(isFiat24Contract(1, proxy)).toBe(false);
+      expect(isFiat24Contract(421614, proxy)).toBe(false);
+    }
+    expect(isFiat24Contract(42161, OTHER)).toBe(false);
+  });
 });
 
 const fn = (abi: Parameters<typeof encodeFunctionData>[0]["abi"], name: string, args: unknown[]) =>
@@ -331,6 +343,8 @@ describe("Fiat24 moneyExchange", () => {
   it("value on an exchange is claimed blind", () => {
     const intent = decodeEvm(tx(DEPOSIT, exchangeIn(USD24, EUR24, 20000n), "0x1"), SIGNER);
     expect(intent.blind).toBe("fiat24-function");
+    const exactOut = decodeEvm(tx(DEPOSIT, exchangeOut(USD24, EUR24, 30000n), "0x1"), SIGNER);
+    expect(exactOut.blind).toBe("fiat24-function");
   });
 
   it("an exchange to another chain or contract is claimed blind", () => {
@@ -420,6 +434,11 @@ describe("Fiat24 payouts", () => {
 
   it.each([
     ["value on clientPayout", fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]), "0x1"],
+    [
+      "value on clientPayoutRef",
+      fn(TOKEN_ABI, "clientPayoutRef", [20000n, "peggy", 42n, "r1"]),
+      "0x1",
+    ],
     ["trailing bytes", `${fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"])}0011`, "0x0"],
     ["truncated calldata", fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]).slice(0, -10), "0x0"],
   ])("a near miss is claimed blind: %s", (_name, data, value) => {

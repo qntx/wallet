@@ -7,9 +7,9 @@ import { decodeEvm } from "../src/evm/index.ts";
 import type { EvmTransaction, SignRequest } from "../src/index.ts";
 
 /**
- * vectors/chains/fiat24-mainnet.json — real Arbitrum One calls into the pinned Fiat24 proxies,
- * collected by scripts/vectors/fiat24-mainnet.ts from archive logs. The expected class per
- * (to, selector) below is written by hand from the decoder's rules, not captured from it.
+ * Vectors/chains/fiat24-mainnet.json — real Arbitrum One calls into the pinned Fiat24 proxies,
+ * collected by scripts/vectors/fiat24-mainnet.ts from archive logs. The expected class per (to,
+ * selector) below is written by hand from the decoder's rules, not captured from it.
  */
 type CorpusTx = {
   readonly hash: string;
@@ -28,10 +28,7 @@ type CorpusTx = {
 };
 
 const corpus = JSON.parse(
-  readFileSync(
-    resolve(import.meta.dirname, "../../../vectors/chains/fiat24-mainnet.json"),
-    "utf8",
-  ),
+  readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/fiat24-mainnet.json"), "utf8"),
 ) as { cases: ReadonlyArray<CorpusTx> };
 
 const USD24 = "0xbe00f3db78688d9704bcb4e0a827aea3a9cc0d62";
@@ -66,6 +63,18 @@ const EXPECTED: Readonly<Record<string, { summary: string; blind?: string }>> = 
   [`${CARD}:0xc645f854`]: { summary: "contract-call", blind: "fiat24-function" },
 };
 
+/** The expectation for a (to, selector) key — throws when the table does not cover it. */
+const keyOf = (c: CorpusTx): string =>
+  `${(c.to ?? "").toLowerCase()}:${c.input.slice(0, 10).toLowerCase()}`;
+
+const expectedFor = (key: string): { summary: string; blind?: string } => {
+  const expected = EXPECTED[key];
+  if (expected === undefined) {
+    throw new Error(`missing expectation for ${key}`);
+  }
+  return expected;
+};
+
 const tx = (c: CorpusTx): SignRequest => {
   const base = {
     chainId: Number(c.chainId),
@@ -96,15 +105,14 @@ const tx = (c: CorpusTx): SignRequest => {
 describe("Fiat24 mainnet corpus", () => {
   it("every (to, selector) in the corpus has a hand-written expectation", () => {
     for (const c of corpus.cases) {
-      const key = `${(c.to ?? "").toLowerCase()}:${c.input.slice(0, 10).toLowerCase()}`;
-      expect(EXPECTED[key], `missing expectation for ${key}`).toBeDefined();
+      expect(expectedFor(keyOf(c))).toBeDefined();
     }
   });
+
   it.each(corpus.cases.map((c) => [c.hash, c] as const))("%s", (_hash, c) => {
-    const key = `${(c.to ?? "").toLowerCase()}:${c.input.slice(0, 10).toLowerCase()}`;
-    const expected = EXPECTED[key];
+    const expected = expectedFor(keyOf(c));
     const intent = decodeEvm(tx(c), c.from);
-    expect(intent.summary).toBe(expected?.summary);
-    expect(intent.blind).toBe(expected?.blind);
+    expect(intent.summary).toBe(expected.summary);
+    expect(intent.blind).toBe(expected.blind);
   });
 });

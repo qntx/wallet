@@ -1,30 +1,44 @@
+/* oxlint-disable typescript/no-unsafe-type-assertion -- RPC and JSON oracle payloads are untyped */
+import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+
 /// <reference types="node" />
 // oxlint-disable eslint/no-await-in-loop -- requests are sequential and throttled by design
 /**
- * Regenerates vectors/chains/fiat24.json: the Fiat24 calls the EVM decoder describes, the
- * near-miss calls that must stay blind, the raw access-grant texts and the wallet-built
- * evm.fiat24-session requests.
+ * Regenerates vectors/chains/fiat24.json: the Fiat24 calls the EVM decoder describes, the near-miss
+ * calls that must stay blind, the raw access-grant texts and the wallet-built evm.fiat24-session
+ * requests.
  *
  * Oracles:
- * - the contract ABIs are downloaded at generation time from Sourcify v2
+ *
+ * - The contract ABIs are downloaded at generation time from Sourcify v2
  *   (`https://sourcify.dev/server/v2/contract/42161/<impl>?fields=abi` for the seven pinned
  *   implementation addresses); the file records the URL and keccak256 of the canonical ABI JSON.
- * - every calldata is built with viem's `encodeFunctionData` (the decoder uses ox) and
- *   cross-checked byte-for-byte against `cast calldata "<signature>" <args>`; generation fails
- *   on a mismatch.
- * - the session grant cases re-derive label, digest and signature with `cast keccak`,
- *   `cast hash-message` and `cast wallet sign`, and are asserted equal to the independent
- *   @qntx/fiat24 vectors in ~/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json.
+ * - Every calldata is built with viem's `encodeFunctionData` (the decoder uses ox) and cross-checked
+ *   byte-for-byte against `cast calldata "<signature>" <args>`; generation fails on a mismatch.
+ * - The session grant cases re-derive label, digest and signature with `cast keccak`, `cast
+ *   hash-message` and `cast wallet sign`, and are asserted equal to the independent
+ *
+ * @qntx/fiat24 vectors in ~/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json.
  *
  * Every expected prompt is written by hand here — nothing is captured from the decoder.
  *
  * Run from the repo root: bun scripts/vectors/fiat24.ts
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
-import { readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
+// The repo does not depend on @types/bun; declare the used surface.
+declare const Bun: {
+  spawn: (
+    cmd: ReadonlyArray<string>,
+    opts: { stdout: "pipe"; stderr: "pipe" },
+  ) => {
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+  };
+};
 
 const require = createRequire(import.meta.url);
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS require is untyped
@@ -37,8 +51,8 @@ const { encodeFunctionData } = require("viem") as {
 };
 
 const OUT = "vectors/chains/fiat24.json";
-const SESSION_VECTORS = `${process.env["HOME"]}/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json`;
-const CALLDATA_VECTORS = `${process.env["HOME"]}/Desktop/qntx/fiat24-wt/chain/vectors/calls/calldata.json`;
+const SESSION_VECTORS = `${process.env["HOME"] ?? ""}/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json`;
+const CALLDATA_VECTORS = `${process.env["HOME"] ?? ""}/Desktop/qntx/fiat24-wt/chain/vectors/calls/calldata.json`;
 
 /* Pinned deployment (Sourcify v2, exact match; see evidence SOURCIFY rows). */
 const USD24 = "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62";
@@ -66,18 +80,10 @@ const IMPL = {
   Fiat24CardAuthorizationMarqeta: "0x96AA3D05755C54D2745d0Dc98Ea55E163DA5Bb16",
 } as const;
 
-const baseTx = {
-  type: "0x2",
-  chainId: "0xa4b1",
-  nonce: "0x1",
-  gas: "0x30000",
-  maxFeePerGas: "0x59682f00",
-  maxPriorityFeePerGas: "0x3b9aca00",
-  gasPrice: "0x59682f00",
-  value: "0x0",
-};
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const run = async (args: ReadonlyArray<string>): Promise<string> => {
   const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
@@ -93,8 +99,10 @@ const run = async (args: ReadonlyArray<string>): Promise<string> => {
 };
 
 /** `cast calldata` — the independent encoder every viem-built call is checked against. */
-const castCalldata = async (signature: string, args: ReadonlyArray<string>): Promise<string> =>
-  (await run(["cast", "calldata", signature, ...args])).toLowerCase();
+const castCalldata = async (signature: string, args: ReadonlyArray<string>): Promise<string> => {
+  const out = await run(["cast", "calldata", signature, ...args]);
+  return out.toLowerCase();
+};
 
 /** Downloads a Sourcify v2 ABI and returns it plus the provenance the file records. */
 const fetchAbi = async (
@@ -118,8 +126,8 @@ const fetchAbi = async (
 };
 
 /**
- * Builds calldata with viem over the Sourcify ABI and fails the run unless `cast calldata`
- * agrees byte-for-byte — two independent encoders must produce identical bytes.
+ * Builds calldata with viem over the Sourcify ABI and fails the run unless `cast calldata` agrees
+ * byte-for-byte — two independent encoders must produce identical bytes.
  */
 const data = async (
   abi: unknown,
@@ -128,10 +136,7 @@ const data = async (
   args: ReadonlyArray<unknown>,
 ): Promise<string> => {
   const viem = encodeFunctionData({ abi, functionName: name, args }).toLowerCase();
-  const cast = await castCalldata(
-    signature,
-    args.map((a) => String(a)),
-  );
+  const cast = await castCalldata(signature, args.map(String));
   if (viem !== cast) {
     throw new Error(`${name}: viem ${viem} != cast ${cast}`);
   }
@@ -242,9 +247,10 @@ const grantPrompt = (text: string): Prompt2 => ({
   "zh-Hans": `确认盲签\n${GRANT_ZH}\n消息：\n· ${text}`,
 });
 
+const pad2 = (n: number): string => String(n).padStart(2, "0");
 const sessionPrompt = (tokenId: string, deadline: string, message: string): Prompt2 => {
   const d = new Date(Number(deadline) * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const pad = pad2;
   const stamp = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
   return {
     en: `Allow Fiat24 account access\n${NET_EN}\nFiat24 account #${tokenId}\nExpires ${stamp} (UTC)\n${SES_POWER_EN}\nSigns: ${message}`,
@@ -269,6 +275,32 @@ const fnAbi = (
   }
   return fns;
 };
+
+const call = async (
+  abi: ReadonlyArray<Record<string, unknown>>,
+  signature: string,
+  name: string,
+  args: ReadonlyArray<unknown>,
+): Promise<string> => data(fnAbi(abi, name, args.length), signature, name, args);
+
+const sendPrompt = (amt: string, sym: string, id: string, warn?: [string, string]) =>
+  txPrompt(
+    "Confirm transfer",
+    "确认转账",
+    [`Send ${amt} ${sym} to Fiat24 account #${id} (whoever holds it when the transaction runs)`],
+    [`发送 ${amt} ${sym} 到 Fiat24 账户 #${id}（收款人是交易执行时该账户的持有者）`],
+    warn === undefined ? [] : [warn[0]],
+    warn === undefined ? [] : [warn[1]],
+  );
+const INTERNAL_EN = (id: string) =>
+  `Fiat24 account #${id} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`;
+const INTERNAL_ZH = (id: string) =>
+  `Fiat24 账户 #${id} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`;
+
+const UNLIM_EN = (role: string) =>
+  `Danger: an unlimited allowance lets the Fiat24 ${role} contract take your entire balance of this token`;
+const UNLIM_ZH = (role: string) =>
+  `危险：无限额度授权允许 Fiat24 ${role}合约转走你此代币的全部余额`;
 
 const main = async () => {
   /* Fetch every implementation ABI from Sourcify v2; each is recorded with its URL and the
@@ -303,13 +335,6 @@ const main = async () => {
   const ACCOUNT_ABI = need("Fiat24Account");
   const DEPOSIT_ABI = need("Fiat24CryptoDeposit");
 
-  const call = (
-    abi: ReadonlyArray<Record<string, unknown>>,
-    signature: string,
-    name: string,
-    args: ReadonlyArray<unknown>,
-  ): Promise<string> => data(fnAbi(abi, name, args.length), signature, name, args);
-
   /* The real clientPayoutRef with a NUL-padded reference, recorded from tx
      0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3 in the @qntx/fiat24
      calls vectors — an oracle independent of either encoder here. */
@@ -329,29 +354,12 @@ const main = async () => {
   const NUL_REF_DATA = nulRef.output.data.toLowerCase();
 
   const cases: VectorCase[] = [];
-  const add = (c: VectorCase) => cases.push(c);
+  const add = (c: VectorCase) => {
+    cases.push(c);
+  };
 
   /* transferByAccountId on all four cash tokens; the EUR24 case addresses an issuer-internal
      account and carries the internal-account warning. */
-  const sendPrompt = (
-    amt: string,
-    sym: string,
-    id: string,
-    warn: [string, string] | undefined = undefined,
-  ) =>
-    txPrompt(
-      "Confirm transfer",
-      "确认转账",
-      [`Send ${amt} ${sym} to Fiat24 account #${id} (whoever holds it when the transaction runs)`],
-      [`发送 ${amt} ${sym} 到 Fiat24 账户 #${id}（收款人是交易执行时该账户的持有者）`],
-      warn === undefined ? [] : [warn[0]],
-      warn === undefined ? [] : [warn[1]],
-    );
-  const INTERNAL_EN = (id: string) =>
-    `Fiat24 account #${id} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`;
-  const INTERNAL_ZH = (id: string) =>
-    `Fiat24 账户 #${id} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`;
-
   for (const [name, token, abi, sym, id, amount, pretty] of [
     ["transferByAccountId-usd24", USD24, USD24_ABI, "USD24", "10365", 20000n, "200"],
     ["transferByAccountId-chf24", CHF24, CHF24_ABI, "CHF24", "2050", 50050n, "500.5"],
@@ -362,12 +370,10 @@ const main = async () => {
       signer: SIGNER,
       request: evmTx(
         token,
-        await call(
-          abi,
-          "transferByAccountId(uint256,uint256)",
-          "transferByAccountId",
-          [BigInt(id), amount],
-        ),
+        await call(abi, "transferByAccountId(uint256,uint256)", "transferByAccountId", [
+          BigInt(id),
+          amount,
+        ]),
       ),
       expect: {
         summary: "transfer",
@@ -382,12 +388,10 @@ const main = async () => {
     signer: SIGNER,
     request: evmTx(
       EUR24,
-      await call(
-        EUR24_ABI,
-        "transferByAccountId(uint256,uint256)",
-        "transferByAccountId",
-        [9102n, 100n],
-      ),
+      await call(EUR24_ABI, "transferByAccountId(uint256,uint256)", "transferByAccountId", [
+        9102n,
+        100n,
+      ]),
     ),
     expect: {
       summary: "transfer",
@@ -425,12 +429,12 @@ const main = async () => {
     signer: SIGNER,
     request: evmTx(
       EUR24,
-      await call(
-        EUR24_ABI,
-        "clientPayoutRef(uint256,string,uint256,string)",
-        "clientPayoutRef",
-        [1000n, "EA-0000002", 42n, "INV-0001"],
-      ),
+      await call(EUR24_ABI, "clientPayoutRef(uint256,string,uint256,string)", "clientPayoutRef", [
+        1000n,
+        "EA-0000002",
+        42n,
+        "INV-0001",
+      ]),
     ),
     expect: {
       summary: "payout",
@@ -553,7 +557,8 @@ const main = async () => {
   });
 
   /* The three top-ups; only non-USDC inputs carry the swap-quote warning. */
-  const QUOTE_EN = "The swap to USDC is priced inside the transaction itself; you set no slippage limit";
+  const QUOTE_EN =
+    "The swap to USDC is priced inside the transaction itself; you set no slippage limit";
   const QUOTE_ZH = "到 USDC 的兑换在交易内部定价；你没有设置滑点上限";
   add({
     name: "depositTokenViaUsdc",
@@ -608,12 +613,11 @@ const main = async () => {
     signer: SIGNER,
     request: evmTx(
       DEPOSIT,
-      await call(
-        DEPOSIT_ABI,
-        "depositTokenViaEth(address,address,uint256)",
-        "depositTokenViaEth",
-        [GMX, EUR24, 1000000000000000000n],
-      ),
+      await call(DEPOSIT_ABI, "depositTokenViaEth(address,address,uint256)", "depositTokenViaEth", [
+        GMX,
+        EUR24,
+        1000000000000000000n,
+      ]),
     ),
     expect: {
       summary: "swap",
@@ -622,8 +626,14 @@ const main = async () => {
       prompt: txPrompt(
         "Confirm swap",
         "确认兑换",
-        [`Send 1000000000000000000 base units of unverified token ${GMX} to ${DEPOSIT}`, RECV_EN("EUR24")],
-        [`发送 1000000000000000000 个最小单位（未验证代币 ${GMX}） 到 ${DEPOSIT}`, RECV_ZH("EUR24")],
+        [
+          `Send 1000000000000000000 base units of unverified token ${GMX} to ${DEPOSIT}`,
+          RECV_EN("EUR24"),
+        ],
+        [
+          `发送 1000000000000000000 个最小单位（未验证代币 ${GMX}） 到 ${DEPOSIT}`,
+          RECV_ZH("EUR24"),
+        ],
         [RATE_EN, QUOTE_EN],
         [RATE_ZH, QUOTE_ZH],
       ),
@@ -660,12 +670,7 @@ const main = async () => {
     signer: SIGNER,
     request: evmTx(
       ACCOUNT,
-      await call(
-        ACCOUNT_ABI,
-        "mintByClientWithETH(uint256)",
-        "mintByClientWithETH",
-        [123456n],
-      ),
+      await call(ACCOUNT_ABI, "mintByClientWithETH(uint256)", "mintByClientWithETH", [123456n]),
       "0x38d7ea4c68000",
     ),
     expect: {
@@ -740,14 +745,7 @@ const main = async () => {
   const CARD_PULL_EN =
     "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment";
   const CARD_PULL_ZH = "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你";
-  const UNLIM_EN = (role: string) =>
-    `Danger: an unlimited allowance lets the Fiat24 ${role} contract take your entire balance of this token`;
-  const UNLIM_ZH = (role: string) =>
-    `危险：无限额度授权允许 Fiat24 ${role}合约转走你此代币的全部余额`;
-  const approvePrompt = (
-    line: [string, string],
-    warns: ReadonlyArray<readonly [string, string]>,
-  ) =>
+  const approvePrompt = (line: [string, string], warns: ReadonlyArray<readonly [string, string]>) =>
     txPrompt(
       "Confirm approval",
       "确认授权",
@@ -805,10 +803,7 @@ const main = async () => {
   add({
     name: "approve-card-zero",
     signer: SIGNER,
-    request: evmTx(
-      USD24,
-      await call(USD24_ABI, "approve(address,uint256)", "approve", [CARD, 0n]),
-    ),
+    request: evmTx(USD24, await call(USD24_ABI, "approve(address,uint256)", "approve", [CARD, 0n])),
     expect: {
       summary: "approve",
       verifiability: "partial",
@@ -911,7 +906,7 @@ const main = async () => {
         verifiability: "opaque",
         blind: "fiat24-function",
         warnings: [],
-        prompt: blindPrompt(to, TRANSFER_SEL, chain as "arb" | "eth"),
+        prompt: blindPrompt(to, TRANSFER_SEL, chain),
       },
     });
   }
@@ -1048,14 +1043,14 @@ const main = async () => {
   };
   for (const row of sessionVectors.cases) {
     const args = row["args"] as Record<string, string> | undefined;
-    const label = row["label"];
+    const { label } = row;
     if (args === undefined || typeof label !== "string") {
       continue;
     }
-    const digest = (await run(["cast", "keccak", row["preimage"] as string])).toLowerCase();
-    const eip191 = (
-      await run(["cast", "hash-message", row["message"] as string])
-    ).toLowerCase();
+    const digestOut = await run(["cast", "keccak", row["preimage"] as string]);
+    const digest = digestOut.toLowerCase();
+    const eip191Out = await run(["cast", "hash-message", row["message"] as string]);
+    const eip191 = eip191Out.toLowerCase();
     if (digest !== (row["digest"] as string).toLowerCase()) {
       throw new Error(`session ${label}: cast keccak ${digest} != vector ${String(row["digest"])}`);
     }
@@ -1064,16 +1059,15 @@ const main = async () => {
     }
     let signature = "";
     if (row["signature"] !== undefined) {
-      signature = (
-        await run([
-          "cast",
-          "wallet",
-          "sign",
-          "--private-key",
-          ANVIL_KEY,
-          row["message"] as string,
-        ])
-      ).toLowerCase();
+      const sigOut = await run([
+        "cast",
+        "wallet",
+        "sign",
+        "--private-key",
+        ANVIL_KEY,
+        row["message"] as string,
+      ]);
+      signature = sigOut.toLowerCase();
       if (signature !== (row["signature"] as string).toLowerCase()) {
         throw new Error(`session ${label}: cast signature ${signature} != vector`);
       }

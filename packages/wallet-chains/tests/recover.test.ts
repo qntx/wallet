@@ -7,6 +7,7 @@ import * as Address from "ox/Address";
 import * as Secp256k1 from "ox/Secp256k1";
 import { describe, expect, it } from "vite-plus/test";
 
+import { fiat24SessionMessage } from "../src/evm/fiat24.ts";
 import { recoverEvmSigner } from "../src/evm/recover.ts";
 import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
 import type { EvmTransaction, SignRequest } from "../src/index.ts";
@@ -86,6 +87,24 @@ const txRequest = (type: "legacy" | "eip1559" | "eip2930"): SignRequest => ({
 });
 
 describe("recoverEvmSigner", () => {
+  it("recovers the signer of a wallet-built Fiat24 session grant", () => {
+    const request: SignRequest = {
+      kind: "evm.fiat24-session",
+      network: "eip155:42161",
+      account: { kind: "imported", keyId: "k", family: "evm" },
+      tokenId: "123456",
+      deadline: 1795278000,
+    };
+    const signature = signEvmPersonalMessage(
+      new TextEncoder().encode(fiat24SessionMessage(42161, "123456", 1795278000)),
+      KEY,
+    );
+    expect(recoverEvmSigner(request, { signature })).toBe(ADDR);
+    /* A signature over any other message does not recover to the account. */
+    const other = signEvmPersonalMessage(new TextEncoder().encode("123456"), KEY);
+    expect(recoverEvmSigner(request, { signature: other })).not.toBe(ADDR);
+  });
+
   it("recovers the signer of a personal message", () => {
     const signature = signEvmPersonalMessage(new TextEncoder().encode("hello"), KEY);
     expect(recoverEvmSigner(personal, { signature })).toBe(ADDR);
