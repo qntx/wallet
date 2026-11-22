@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { base64 } from "@scure/base";
-import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
+import { getCreateAccountInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -823,10 +823,24 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
       const url = "http://127.0.0.1:8897";
       const r = rpc(url);
       await waitHealthy(r, ledger, Date.now() + 120_000);
-      const payer = await generateKeyPairSigner();
       const recipient = await generateKeyPairSigner();
       const a = new SolanaChainAdapter();
-      await waitFunded(r, payer.address, Date.now() + 120_000);
+
+      const { wallet, walletId } = await realWallet();
+      const hdAccount = {
+        kind: "hd" as const,
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change" as const,
+      };
+      const acct = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: hdAccount.template,
+        network: NETWORK,
+      });
+      const from = solAddress(solFrom(acct));
+      await waitFunded(r, from, Date.now() + 120_000);
 
       const freshLifetime = async () => {
         const result = (await r.call("getLatestBlockhash", [{ commitment: "confirmed" }])) as {
@@ -852,15 +866,28 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
           createTransactionMessage({ version: 1 }),
         );
         const withIx = appendTransactionMessageInstructions(instructions, withConfig);
-        const withPayer = setTransactionMessageFeePayer(payer.address, withIx);
+        const withPayer = setTransactionMessageFeePayer(from, withIx);
         const withLifetime = setTransactionMessageLifetimeUsingBlockhash(lifetime, withPayer);
         return new Uint8Array(
           getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(withLifetime)),
         );
       };
 
+      // The wallet's own sign path — kernel normalize → decode → sign — produces
+      // the signature the cluster verifies, not a kit key.
       const sendV1 = async (message: Uint8Array): Promise<string> => {
-        const wire = a.finalize(message, await sign(payer, message));
+        const signed = await chains(wallet).sign({
+          request: {
+            kind: "solana.transaction",
+            network: NETWORK,
+            account: hdAccount,
+            message,
+          },
+          verify: BVERIFY,
+        });
+        const { signature } = signed as Extract<typeof signed, { kind: "solana.transaction" }>;
+        expect(signature).toHaveLength(64);
+        const wire = a.finalize(message, [signature]);
         // The wallet writes the v1 wire message-first: the message bytes are at
         // the head, signatures trail them without a count prefix.
         expect(wire.slice(0, message.length)).toStrictEqual(message);
@@ -868,13 +895,20 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
         return a.broadcast(r, wire);
       };
 
+      const transferData = new Uint8Array(12);
+      const transferView = new DataView(transferData.buffer);
+      transferView.setUint32(0, 2, true);
+      transferView.setBigUint64(4, 1_000_000n, true);
       const v1Hash = await sendV1(
         await v1Message([
-          getTransferSolInstruction({
-            source: payer,
-            destination: recipient,
-            amount: 1_000_000n,
-          }),
+          {
+            programAddress: solAddress("11111111111111111111111111111111"),
+            accounts: [
+              { address: from, role: AccountRole.WRITABLE_SIGNER },
+              { address: recipient.address, role: AccountRole.WRITABLE },
+            ],
+            data: transferData,
+          },
         ]),
       );
       await waitConfirmed(a, r, v1Hash, Date.now() + 60_000);
@@ -890,7 +924,7 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
       const bigMessage = await v1Message([
         {
           programAddress: solAddress("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
-          accounts: [{ address: payer.address, role: AccountRole.WRITABLE_SIGNER }],
+          accounts: [{ address: from, role: AccountRole.WRITABLE_SIGNER }],
           data: memoData,
         },
       ]);
