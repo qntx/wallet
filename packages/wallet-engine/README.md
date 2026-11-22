@@ -236,6 +236,7 @@ const engine = createWalletEngine({/* … */});
 const apps = await createApps({
   wallet, // the same Wallet the engine was built on
   requests: engine.requests, // user-signed actions open approval requests here
+  networks: engine.networks, // chain reads (the Hyperliquid CCTP deposit's allowance/burn limit)
   fetch: globalThis.fetch.bind(globalThis),
   now: () => Date.now(),
   setTimer: (ms, fn) => {
@@ -264,9 +265,10 @@ await apps.destroy();
 ```
 
 `apps.controller` is a `HostController<AppsState>` (the usual `store` facade) with
-`acknowledgeTerms`, `enable`, `renew`, `disable`, `cancel` and `refreshEligibility`; the provider
-itself is `apps.hyperliquid`. The full composition — engine, apps, approvals, orders, live views —
-is in `tests/migration/hyperliquid.ts`.
+`acknowledgeTerms`, `enable`, `renew`, `approveBuilder`, `disable`, `cancel` and
+`refreshEligibility`; the providers are `apps.hyperliquid` and `apps.polymarket`. The full
+composition — engine, apps, approvals, orders, live views — is in `tests/migration/hyperliquid.ts`
+and `tests/migration/polymarket.ts`.
 
 ### Enabling
 
@@ -341,11 +343,13 @@ the `requestId` to render and an `outcome` promise (`ok`, or `unknown` — may h
 
 ### Builder fees
 
-An optional `hyperliquid.builder` attaches `{ b, f }` to signed order actions — but only after
-the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured) and
-this session confirmed `maxBuilderFee` still covers it. There is no default fee, the attached
-rate is never above the approved one, and `feeRateTenthsBps` is 1–100 (tenths of a basis point,
-0.1–10 bp).
+An optional `hyperliquid({ builder })` attaches `{ b, f }` to signed order actions — but only
+after the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured)
+and this session confirmed `maxBuilderFee` still covers it. Declining the approval still finishes
+`enabled` with `builder: "declined"` (orders carry no builder); the decline persists across
+unlock, renew and re-enable until `controller.approveBuilder(group, "hyperliquid")` obtains an
+approval. There is no default fee, the attached rate is never above the approved one, and
+`feeRateTenthsBps` is 1–100 (tenths of a basis point, 0.1–10 bp).
 
 ### Scope
 
@@ -375,6 +379,7 @@ the Data API.
 const apps = createApps({
   wallet,
   requests,
+  networks,
   fetch,
   now,
   setTimer,
