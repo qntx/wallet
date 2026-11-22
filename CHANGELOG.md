@@ -884,6 +884,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-engine`: TRON history collapses duplicated TRX/TRC-10 claims, shows
   `call_value` / `call_token_value` movements, and verifies an entry only on a decoded, sha256-pinned
   body; an unclaimed movement is `chain-mismatch`.
+- `@qntx/wallet-engine`: typed-data and message requests (`evm-sign`, `tron-sign`) whose decode
+  moves value — an EIP-3009 transfer authorization, a Hyperliquid `usdSend` — carry the same
+  recipient findings as a transaction (`first-recipient`, `address-poisoning`), from any origin.
 - `@qntx/wallet-engine/apps`: Hyperliquid account views clear their data when closed or locked;
   `AppsController.lock()` clears `groups`.
 - **gateway:** client shares, POLICY budgets and flood limiters (IP 3,000 / RPC 1,500 / default 400 per 60 s) are sized from measured engine usage so a fresh all-family cold start uses at most a third of one client prefix's allowance; the README states the concurrency target and its arithmetic.
