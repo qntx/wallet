@@ -867,8 +867,14 @@ const requesterText = (catalog: Catalog, text: string): ReadonlyArray<string> =>
   return [...lines.map(quoted), ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
 };
 
-/** One requester-chosen value on a single line. */
-const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
+/**
+ * One requester-chosen value on a single line; a dropped remainder is marked with an ellipsis so
+ * a second line or tail can never hide inside it.
+ */
+const field = (raw: string): string => {
+  const { lines, omitted } = displayExcerpt(raw, 1, FIELD_CODE_POINTS);
+  return `${lines[0] ?? ""}${omitted === 0 ? "" : "…"}`;
+};
 
 /** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
 function tronOperationNames(operations: string): ReadonlyArray<string> {

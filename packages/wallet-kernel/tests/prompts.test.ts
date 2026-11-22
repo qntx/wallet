@@ -3568,6 +3568,32 @@ describe("requester text lines cannot imitate kernel lines", () => {
     }
   });
 
+  it("a domain name with a second line shows as a marked truncated field", () => {
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account,
+        typedData: JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "chainId", type: "uint256" },
+            ],
+            Note: [{ name: "text", type: "string" }],
+          },
+          primaryType: "Note",
+          domain: { name: "Evil\nNetwork: Fake", chainId: 1 },
+          message: { text: "hi" },
+        }),
+      },
+      SIGNER,
+    );
+    const { description } = chainPrompt("en", intent);
+    expect(description).toContain("App: Evil…");
+    expect(description.split("\n").filter((line) => line === "Network: Fake")).toHaveLength(0);
+  });
+
   it("no catalog template emits a requester-marked line", () => {
     type CatalogKey = keyof (typeof CATALOGS)["en"];
     const addr = "0x2222222222222222222222222222222222222222";
