@@ -333,9 +333,17 @@ restrictions; the gateway answer only decides what the UI offers.
   `trade.place` requires `slippageBps` (there is no default — the host must show the computed
   cap it is about to sign).
 - `trade.place`/`close` answer `{ outcomes, price }`; each outcome is `resting`, `filled`,
-  `rejected`, `not-placed` or `unknown` per cloid. `unknown` means the POST's result is
-  unknowable and the action may have committed — the engine reconciles it by cloid and
-  **nothing is ever re-sent**. Give every order a stable `cloid` so reconciliation can find it.
+  `rejected` or `unknown` per cloid. `unknown` means the POST's result is unknowable and the
+  action may have committed — the engine reconciles it by cloid and **nothing is ever
+  re-sent**. Give every order a stable `cloid` so reconciliation can find it.
+- `unknown` is never proven "not placed": no documented consistency between an info read and
+  L1 state means an `unknownOid` answer cannot rule out a committed order. `trade.corrections`
+  is the follow-up channel — `subscribe` gets `{ group, cloid, outcome }` every time a pending
+  cloid is proven later: by `orderStatus` re-asks for ten minutes after the call returned
+  (every 10 s, bounded set of 64), or by live user-view frames — an `openOrders` frame carrying
+  the cloid corrects to `resting` immediately, a `fills` frame carrying it triggers an
+  immediate `orderStatus` check (a fill alone cannot prove a full fill). Locking the vault
+  drops the pending set.
 - `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`scheduleCancel`/`twap`/
   `twapCancel`/`setLeverage`/`adjustMargin`/`close` round out the action set.
 

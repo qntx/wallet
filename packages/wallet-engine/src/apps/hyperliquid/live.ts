@@ -103,6 +103,11 @@ export type HyperliquidLiveOptions = {
   readonly random: (length: number) => Uint8Array;
   /** Lock-following: a vault that is not `unlocked` closes every user view. */
   readonly wallet: Wallet;
+  /**
+   * Every `openOrders`/`userFills` frame is reported to the exchange — a pending unknown cloid the
+   * frame carries is proven (resting) or re-asked (a fill cannot prove a full fill).
+   */
+  readonly sighted?: (user: string, entry: OpenOrdersEvent | UserFillsEvent) => void;
 };
 
 const TRADES_CAP = 100;
@@ -480,7 +485,10 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
             matches: match("openOrders", { type: "openOrders", user }),
             start: async (listener, onError) =>
               subOpenOrders(config, { user }, listener, { onError }),
-            frame: (_current, message) => message,
+            frame: (_current, message) => {
+              options.sighted?.(user, message);
+              return message;
+            },
           }),
         group,
       ),
@@ -492,6 +500,7 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
             start: async (listener, onError) =>
               subUserFills(config, { user }, listener, { onError }),
             frame: (current, message) => {
+              options.sighted?.(user, message);
               /* The server re-sends `isSnapshot` on resubscribe — it replaces. */
               if (message.isSnapshot === true) {
                 return dedupeByTid(message.fills);

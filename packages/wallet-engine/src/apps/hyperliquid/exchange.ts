@@ -54,8 +54,18 @@ export type HyperliquidOrderOutcome =
       readonly reason: HyperliquidRejectReason;
       readonly message: string;
     }
-  | { readonly kind: "not-placed"; readonly cloid?: string | undefined }
   | { readonly kind: "unknown"; readonly cloid?: string | undefined };
+
+/**
+ * An `unknown` order outcome proven later — by the late reconciler or by a live user-view frame
+ * that saw the cloid. `unknown` can never be proven "not placed": Hyperliquid documents no
+ * consistency between an info read and L1 state, so only a definite later answer counts.
+ */
+export type HyperliquidOutcomeCorrection = {
+  readonly group: HyperliquidGroup;
+  readonly cloid: string;
+  readonly outcome: HyperliquidOrderOutcome;
+};
 
 /** What happened to one entry of a cancel action. */
 export type HyperliquidCancelOutcome =
@@ -73,6 +83,21 @@ const EXPIRES_AFTER_MS = 15_000;
 
 /** Poll cadence for cloid reconciliation — orderStatus is weight 2, the deadline is seconds away. */
 const RECONCILE_POLL_MS = 1000;
+
+/**
+ * Late reconciliation cadence for `unknown` cloids — orderStatus is weight 2, so a 10 s cadence
+ * over {@link MAX_UNRESOLVED} entries stays far under the 1200 weight/min limit.
+ */
+const RECONCILE_LATE_POLL_MS = 10_000;
+
+/**
+ * Endpoint catch-up budget: past ten minutes a pending cloid is dropped from the set silently — its
+ * outcome stays `unknown`, it is simply no longer re-asked.
+ */
+const RECONCILE_LATE_WINDOW_MS = 600_000;
+
+/** Outstanding cloids cannot grow without bound — past the cap the oldest entry is evicted. */
+const MAX_UNRESOLVED = 64;
 
 /** After `expiresAfter` plus the skew bound the action can no longer commit; +2 s of slack. */
 const reconcileDeadline = (expiresAfter: number): number => expiresAfter + MAX_SKEW_MS + 2000;
@@ -331,6 +356,18 @@ export type HyperliquidExchange = {
     group: HyperliquidGroup,
     action: HyperliquidL1Action,
   ) => Promise<HyperliquidActionOutcome>;
+  /**
+   * Corrections for outcomes returned `unknown`: the late reconciler re-asks pending cloids for
+   * {@link RECONCILE_LATE_WINDOW_MS} and live user-view frames prove or re-ask them too. Nothing is
+   * ever re-sent.
+   */
+  readonly corrections: {
+    readonly subscribe: (
+      listener: (correction: HyperliquidOutcomeCorrection) => void,
+    ) => () => void;
+  };
+  /** A live user-view frame for `user` — proves or re-asks pending cloids it carries. */
+  readonly sighted: (user: string, entry: unknown) => void;
 };
 
 export function createHyperliquidExchange(options: {
@@ -356,12 +393,126 @@ export function createHyperliquidExchange(options: {
     options.clock.assertSkew();
   };
 
+  const listeners = new Set<(correction: HyperliquidOutcomeCorrection) => void>();
+  const emit = (correction: HyperliquidOutcomeCorrection): void => {
+    for (const listener of listeners) {
+      listener(correction);
+    }
+  };
+
+  type Pending = {
+    readonly group: HyperliquidGroup;
+    readonly master: string;
+    readonly cloid: string;
+    readonly since: number;
+  };
+  /* C-loids returned `unknown`, awaiting a provable outcome — keyed `master|cloid`, insertion
+     order is eviction order. */
+  const pending = new Map<string, Pending>();
+  let pollCancel: (() => void) | undefined;
+  let lockWatch: (() => void) | undefined;
+
+  /** One orderStatus read for a pending cloid — a definite answer corrects and drops it. */
+  const probe = async (entry: Pending): Promise<void> => {
+    let outcome: HyperliquidOrderOutcome | undefined;
+    try {
+      outcome = statusOutcome(
+        await options.account.orderStatus({ user: entry.master, oid: entry.cloid }),
+        entry.cloid,
+      );
+    } catch {
+      return; // a failed late read stays pending — the timer re-asks
+    }
+    if (outcome !== undefined && pending.get(`${entry.master}|${entry.cloid}`) === entry) {
+      pending.delete(`${entry.master}|${entry.cloid}`);
+      emit({ group: entry.group, cloid: entry.cloid, outcome });
+    }
+  };
+
+  const schedulePoll = (): void => {
+    if (pollCancel === undefined && pending.size > 0) {
+      pollCancel = options.setTimer(RECONCILE_LATE_POLL_MS, () => {
+        pollCancel = undefined;
+        void (async (): Promise<void> => {
+          for (const entry of pending.values()) {
+            if (options.now() - entry.since >= RECONCILE_LATE_WINDOW_MS) {
+              pending.delete(`${entry.master}|${entry.cloid}`); // expired: stays unknown
+            } else {
+              // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls keep the weight bounded.
+              await probe(entry);
+            }
+          }
+          schedulePoll();
+        })();
+      });
+    }
+  };
+
+  const registerPending = (group: HyperliquidGroup, master: string, cloid: string): void => {
+    if (options.wallet.getSnapshot().vault !== "unlocked") {
+      return; // a locked session drops its pending cloids — nothing account-bound survives it
+    }
+    /* The vault is the boundary: a lock drops every pending cloid and stops the poll — the
+       corrections a new session earns are its own. Subscribed lazily so a reads-only provider
+       never needs the wallet's subscription channel. */
+    lockWatch ??= options.wallet.subscribe(() => {
+      if (options.wallet.getSnapshot().vault !== "unlocked") {
+        pending.clear();
+        pollCancel?.();
+        pollCancel = undefined;
+      }
+    });
+    const key = `${master}|${cloid}`;
+    if (!pending.has(key) && pending.size >= MAX_UNRESOLVED) {
+      const [oldest] = pending.keys();
+      if (oldest !== undefined) {
+        pending.delete(oldest);
+      }
+    }
+    pending.set(key, { group, master, cloid, since: options.now() });
+    schedulePoll();
+  };
+
+  /* A live user-view frame is a second proof channel: `openOrders` carrying a pending cloid is
+     the order resting; `userFills` carrying it only means a fill exists — re-ask orderStatus. */
+  const sighted = (user: string, entry: unknown): void => {
+    if (!isRecord(entry) || pending.size === 0) {
+      return;
+    }
+    const { orders } = entry;
+    if (Array.isArray(orders)) {
+      for (const order of orders) {
+        const cloid = isRecord(order) ? stringOf(order["cloid"]) : undefined;
+        const oid = isRecord(order) ? numberOf(order["oid"]) : undefined;
+        if (cloid === undefined || oid === undefined) {
+          continue;
+        }
+        const hit = pending.get(`${user}|${cloid}`);
+        if (hit !== undefined) {
+          pending.delete(`${user}|${cloid}`);
+          emit({ group: hit.group, cloid, outcome: { kind: "resting", oid, cloid } });
+        }
+      }
+    }
+    const { fills } = entry;
+    if (Array.isArray(fills)) {
+      for (const fill of fills) {
+        const cloid = isRecord(fill) ? stringOf(fill["cloid"]) : undefined;
+        const hit = cloid === undefined ? undefined : pending.get(`${user}|${cloid}`);
+        if (hit !== undefined) {
+          void probe(hit);
+        }
+      }
+    }
+  };
+
   /**
    * The POST's outcome is unknown — the action may have committed. Poll orderStatus by cloid every
    * second; never re-POST. Deadline: `expiresAfter + MAX_SKEW + 2 s` — past it the action cannot be
    * accepted anymore.
    */
   const reconcile = async (
+    group: HyperliquidGroup,
     master: string,
     cloid: string | undefined,
     expiresAfter: number,
@@ -370,7 +521,6 @@ export function createHyperliquidExchange(options: {
       return { kind: "unknown" };
     }
     const deadline = reconcileDeadline(expiresAfter);
-    let lastPollFailed = false;
     while (options.now() <= deadline) {
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls are the protocol.
@@ -379,17 +529,19 @@ export function createHyperliquidExchange(options: {
         if (outcome !== undefined) {
           return outcome;
         }
-        lastPollFailed = false;
       } catch {
-        lastPollFailed = true;
+        // A failed read is not an answer — keep polling until the deadline.
       }
       if (options.now() <= deadline) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls are the protocol.
         await sleep(RECONCILE_POLL_MS);
       }
     }
-    // Every answer was unknownOid → never placed; an unanswered last poll → unknown.
-    return lastPollFailed ? { kind: "unknown", cloid } : { kind: "not-placed", cloid };
+    /* Every answer was unknownOid or a failed read — "not placed" cannot be proven: no
+       documented consistency between an info read and L1 state, nor which server answered the
+       polls. The cloid stays pending for late reconciliation instead. */
+    registerPending(group, master, cloid);
+    return { kind: "unknown", cloid };
   };
 
   const sign = async (
@@ -494,12 +646,14 @@ export function createHyperliquidExchange(options: {
           /* A malformed/short answered response is as unknown as a lost POST — reconcile the
              cloids it could not account for instead of fabricating rejections. */
           if (entries === undefined || entries.length !== count) {
-            return Promise.all(known.map(async (cloid) => reconcile(master, cloid, expiresAfter)));
+            return Promise.all(
+              known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter)),
+            );
           }
           return Promise.all(
             entries.map(async (entry, index) => {
               const outcome = orderStatusOutcome(entry, known[index]);
-              return outcome ?? reconcile(master, known[index], expiresAfter);
+              return outcome ?? reconcile(group, master, known[index], expiresAfter);
             }),
           );
         },
@@ -508,7 +662,9 @@ export function createHyperliquidExchange(options: {
           if (known.length === 0) {
             return [{ kind: "unknown" }];
           }
-          return Promise.all(known.map(async (cloid) => reconcile(master, cloid, expiresAfter)));
+          return Promise.all(
+            known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter)),
+          );
         },
       ),
     cancel: async (group, action) => {
@@ -534,5 +690,14 @@ export function createHyperliquidExchange(options: {
         (body) => singleStatus(body) ?? { kind: "ok" },
         () => ({ kind: "unknown" }),
       ),
+    corrections: {
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    },
+    sighted,
   };
 }
