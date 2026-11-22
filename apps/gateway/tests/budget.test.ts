@@ -11,7 +11,16 @@ import { localBudget } from "../src/budget/local.ts";
 import type { Account, BudgetWindow } from "../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
 import type { ProviderBudget } from "../src/types.ts";
-import { SEPOLIA, allowAll, call, fakeFetch, gateway, post, rpcOk } from "./helpers.ts";
+import {
+  SEPOLIA,
+  TEST_ACCOUNTS,
+  allowAll,
+  call,
+  fakeFetch,
+  gateway,
+  post,
+  rpcOk,
+} from "./helpers.ts";
 
 const seconds = (n: number): { units: number; seconds: number } => ({ units: n, seconds: n });
 
@@ -261,6 +270,29 @@ describe("account budget through the forwarder", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
     expect(upstream.callsTo("https://a.test")).toHaveLength(0);
+  });
+
+  it("refuses without an upstream call when the budget object throws", async () => {
+    const upstream = fakeFetch({
+      "https://a.test": () => rpcOk("0x1"),
+      "https://b.test": () => rpcOk("0x1"),
+    });
+    const stub: BudgetStub = {
+      lease: async () => {
+        await Promise.resolve();
+        throw new Error("object unreachable");
+      },
+    };
+    const budget = durableBudget(
+      { idFromName: (name: string) => name, get: () => stub } as unknown as BudgetNamespace,
+      TEST_ACCOUNTS,
+      Date.now,
+      () => undefined,
+    );
+    const app = gateway({ fetch: upstream.fetch, budget });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(503);
+    expect(upstream.calls).toHaveLength(0);
   });
 
   it("answers 503 with the smallest announced wait when every account is spent", async () => {
