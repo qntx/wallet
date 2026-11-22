@@ -111,16 +111,16 @@ NSString* nsString(const std::string& text) {
       done({qntx::CardReaderStatus::unavailable, {}, "ios:nfc-unavailable"});
       return;
     }
-    if (_queuedOpen.has_value()) {
+    if (self->_queuedOpen.has_value()) {
       // A contract violation: the kernel serializes opens, so this never
       // fires — but the completion contract still must be kept.
       done({qntx::CardReaderStatus::unavailable, {}, "ios:busy"});
       return;
     }
-    if (_session != nil || _closing != nil) {
+    if (self->_session != nil || self->_closing != nil) {
       // didInvalidate has not arrived yet: a session cannot be reused or
       // re-begun until it does (I8). Hold the open.
-      _queuedOpen = std::make_pair(std::move(prompt), std::move(done));
+      self->_queuedOpen = std::make_pair(std::move(prompt), std::move(done));
       return;
     }
     [self beginWithPrompt:std::move(prompt) done:std::move(done)];
@@ -143,12 +143,12 @@ NSString* nsString(const std::string& text) {
 
 - (void)transmitApdu:(std::vector<uint8_t>)apdu done:(qntx::CardReaderDone)done {
   dispatch_async(_queue, ^{
-    if (_session == nil || _isoTag == nil) {
-      done(_ended.value_or(
+    if (self->_session == nil || self->_isoTag == nil) {
+      done(self->_ended.value_or(
           qntx::CardReaderResult{qntx::CardReaderStatus::unavailable, {}, {}}));
       return;
     }
-    if (_txDone != nullptr) {
+    if (self->_txDone != nullptr) {
       done({qntx::CardReaderStatus::unavailable, {}, "ios:busy"});
       return;
     }
@@ -158,25 +158,25 @@ NSString* nsString(const std::string& text) {
       done({qntx::CardReaderStatus::unavailable, {}, "qntx:bad-apdu"});
       return;
     }
-    _txDone = std::move(done);
-    NFCTagReaderSession* session = _session;
-    id<NFCISO7816Tag> isoTag = _isoTag;
+    self->_txDone = std::move(done);
+    NFCTagReaderSession* session = self->_session;
+    id<NFCISO7816Tag> isoTag = self->_isoTag;
     [isoTag sendCommandAPDU:command
          completionHandler:^(NSData* _Nullable data, uint8_t sw1, uint8_t sw2,
                              NSError* _Nullable error) {
-           if (session != _session) {
+           if (session != self->_session) {
              // The call belonged to a session that close() already moved
              // aside — its done was completed cancelled there.
              return;
            }
-           auto txDone = std::move(_txDone);
-           _txDone = nullptr;
+           auto txDone = std::move(self->_txDone);
+           self->_txDone = nullptr;
            if (error != nil) {
              // Every failure ends the session, silently.
              auto result = resultOf(error);
-             [_session invalidateSession];
-             _isoTag = nil;
-             _ended = result;
+             [self->_session invalidateSession];
+             self->_isoTag = nil;
+             self->_ended = result;
              txDone(result);
              return;
            }
@@ -192,17 +192,17 @@ NSString* nsString(const std::string& text) {
 
 - (void)closeWithSuccess:(BOOL)success text:(std::string)text {
   dispatch_async(_queue, ^{
-    auto queued = std::move(_queuedOpen);
-    _queuedOpen = std::nullopt;
+    auto queued = std::move(self->_queuedOpen);
+    self->_queuedOpen = std::nullopt;
     if (queued.has_value() && queued->second != nullptr) {
       queued->second({qntx::CardReaderStatus::cancelled, {}, {}});
     }
     // Anything still in flight on the closing session is cancelled now —
     // its didInvalidate later must not complete a newer session's calls.
-    auto openDone = std::move(_openDone);
-    _openDone = nullptr;
-    auto txDone = std::move(_txDone);
-    _txDone = nullptr;
+    auto openDone = std::move(self->_openDone);
+    self->_openDone = nullptr;
+    auto txDone = std::move(self->_txDone);
+    self->_txDone = nullptr;
     const qntx::CardReaderResult cancelled{qntx::CardReaderStatus::cancelled, {}, {}};
     if (openDone != nullptr) {
       openDone(cancelled);
@@ -210,22 +210,22 @@ NSString* nsString(const std::string& text) {
     if (txDone != nullptr) {
       txDone(cancelled);
     }
-    if (_session == nil) {
+    if (self->_session == nil) {
       return;
     }
     if (success && !text.empty()) {
-      _session.alertMessage = nsString(text);
-      [_session invalidateSession];
+      self->_session.alertMessage = nsString(text);
+      [self->_session invalidateSession];
     } else if (!success && !text.empty()) {
-      [_session invalidateSessionWithErrorMessage:nsString(text)];
+      [self->_session invalidateSessionWithErrorMessage:nsString(text)];
     } else {
-      [_session invalidateSession];
+      [self->_session invalidateSession];
     }
     // Keep the invalidated session: its didInvalidate still has to arrive
     // and must be told apart from a newer session's events.
-    _closing = _session;
-    _session = nil;
-    _isoTag = nil;
+    self->_closing = self->_session;
+    self->_session = nil;
+    self->_isoTag = nil;
   });
 }
 
@@ -244,22 +244,22 @@ NSString* nsString(const std::string& text) {
   id<NFCTag> tag = tags.firstObject;
   [session connectToTag:tag
       completionHandler:^(NSError* _Nullable error) {
-        if (session != _session) {
+        if (session != self->_session) {
           return;
         }
         if (error != nil) {
           auto result = resultOf(error);
-          [_session invalidateSession];
-          _isoTag = nil;
-          _ended = result;
-          auto openDone = std::move(_openDone);
-          _openDone = nullptr;
+          [self->_session invalidateSession];
+          self->_isoTag = nil;
+          self->_ended = result;
+          auto openDone = std::move(self->_openDone);
+          self->_openDone = nullptr;
           openDone(result);
           return;
         }
-        _isoTag = (id<NFCISO7816Tag>)tag;
-        auto openDone = std::move(_openDone);
-        _openDone = nullptr;
+        self->_isoTag = (id<NFCISO7816Tag>)tag;
+        auto openDone = std::move(self->_openDone);
+        self->_openDone = nullptr;
         openDone({qntx::CardReaderStatus::ok, {}, {}});
       }];
 }
