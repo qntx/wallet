@@ -1796,3 +1796,53 @@ await chains(wallet).sign({
   network, and `chain.sign` reports the refusal as `invalid-input`.
 - The engine does not submit this kind yet: its dApp path refuses it. Apps keep the existing rule
   that they sign typed data only.
+
+## 35. Polymarket outcomes and deposit wallets, recipient risk, Solana drop proofs
+
+Compiled snippet: `tests/migration/polymarket-outcome.ts`. Changes affect `@qntx/wallet-engine`
+hosts. Nothing changes in the vault or the kernel protocol.
+
+### Polymarket `not-found` is gone
+
+`PolymarketOrderOutcome` no longer has `not-found`. A `place` whose POST may have committed and
+whose order no reconcile read saw now resolves `unknown`:
+
+- Before resolving, the engine sends one `DELETE /order` for the locally computed order id. Its
+  result is `outcome.cancel` (`PolymarketCancelAttempt`: `canceled`, `not-canceled` with the CLOB's
+  reason, or `failed`). `cancel` is absent when a read did see the order.
+- The order keeps reconciling for ten minutes. Subscribe to `trade.corrections` to receive the
+  first provable status as a `PolymarketOutcomeCorrection`. A lock drops every pending order.
+- Never offer "try again" on `unknown`. Polymarket orders sign no expiry, so the first order can
+  still land and a retry would open a second position.
+
+An exhaustive `switch` over the outcome loses its `not-found` case; see `describeOutcome` in the
+snippet.
+
+### Polymarket deposit wallets are proven on-chain
+
+`locate`, and with it `trade.place`, `fund.deposit` and the enable flow, reads `eth_getCode` for
+the three account candidates on Polygon and cross-checks it with the host endpoint when one is
+configured. A disagreement between the relayer, the chain RPC and the host endpoint, or code that
+is not the deposit-wallet template, throws `PolymarketError` with the new category
+`deployment-mismatch`. A host endpoint that cannot answer throws `unavailable`. Handle
+`deployment-mismatch` like `unavailable` and do not retry it in a loop.
+
+`AppContext.networks` and `CreateAppsOptions.networks` now need `independentClient` next to
+`client`. `engine.networks` already has both. Only a host that passes its own object to `createApps`
+has to add it.
+
+### Recipient risk covers every request
+
+`first-recipient` and `address-poisoning` now also come from `solana-sign` transactions,
+`bitcoin-sign` PSBT outputs, typed-data order receivers, Seaport consideration recipients, Safe
+destinations, Hyperliquid user-signed destinations, swap and bridge settlement recipients and
+staking withdrawals and delegations. The signer's own address and burned outputs are never
+flagged. A host that renders risk findings needs no change. A request that used to arrive without
+findings can now carry these two.
+
+### Solana `dropped` needs a second source
+
+A Solana transaction ends `dropped` only when a configured host endpoint proves the same drop, or,
+without one, after three consecutive polls more than 60 s apart from first to last. It can stay
+`submitted` about a minute longer than before. Gateways must be deployed with the pinned JSON-RPC
+route (`x-gateway-provider`): an older gateway ignores the pin.

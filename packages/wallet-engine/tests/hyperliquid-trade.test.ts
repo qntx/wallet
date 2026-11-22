@@ -546,6 +546,50 @@ describe("hyperliquid trade on the node host", () => {
     expect(signCalls()).toBe(1);
   });
 
+  it("a sign primes the skew estimate with an info read when none exists", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {});
+    await createEnabledAgent(provider, wallet, walletId);
+    /* The registry's verified list is kernel state — enabling touched no wire endpoint, so the
+       clock has no estimate and the sign must fetch one first. */
+    expect(posted).toHaveLength(0);
+    await provider.trade.scheduleCancel(GROUP(walletId), NOW + 60_000);
+    /* scheduleCancel needs no market data — the allMids read is the clock's priming read. */
+    const endpoints = posted.map((entry) => entry.endpoint);
+    const mids = posted.map((entry) => entry.body["type"]).indexOf("allMids");
+    const exchange = endpoints.indexOf("exchange");
+    expect(mids).toBeGreaterThanOrEqual(0);
+    expect(endpoints[mids]).toBe("info");
+    expect(mids).toBeLessThan(exchange);
+  });
+
+  it("a user-signed send primes the estimate the same way and refuses on a skewed clock", async () => {
+    const priming: Posted[] = [];
+    const { provider: fresh, walletId } = await rig(priming, manualTimer(), {});
+    /* This rig wires no request pipeline — assertClock runs before it, so the priming read is
+       still observable before the refusal. */
+    await fresh.userSigned
+      .usdSend(GROUP(walletId), { destination: `0x${"00".repeat(20)}`, amount: "1" })
+      .catch(() => undefined);
+    const infoPosts = priming.filter((entry) => entry.endpoint === "info");
+    expect(infoPosts.some((entry) => entry.body["type"] === "allMids")).toBe(true);
+
+    const skewed: Posted[] = [];
+    const { provider, walletId: id2 } = await rig(skewed, manualTimer(), {
+      serverOffset: 10_000,
+    });
+    await expect(
+      category(
+        provider.userSigned.usdSend(GROUP(id2), {
+          destination: `0x${"00".repeat(20)}`,
+          amount: "1",
+        }),
+      ),
+    ).resolves.toBe("clock-skew");
+    expect(exchangePost(skewed)).toBeUndefined();
+  });
+
   it("refuses to sign when the device clock is beyond the skew bound", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();

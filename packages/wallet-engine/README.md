@@ -88,6 +88,12 @@ the package root.
   `AcknowledgementRequiredError`. If a re-simulation changes the outcome at approval it throws
   `SimulationChangedError` and the request stays approvable. A blind request throws
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
+  Every recipient a decoded intent names — outflows, the settlement terms
+  (`minimumReceived`, bridge refunds, Hyperliquid deposits, staking withdrawals and
+  delegations), typed-data order/consideration/Safe/Hyperliquid destinations and any
+  nested calls — is assessed against the contacts and paid history, except the signer
+  itself: an unseen recipient warns `first-recipient`, a lookalike of a known address
+  raises `address-poisoning`.
 - `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
   entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
@@ -145,9 +151,17 @@ transaction for thirty minutes the row turns `stuck: true` — still `submitted`
 nonce or inputs, polled at the finality interval — and the host should offer `speed-up` /
 `cancel`. A row recovered from a broadcast whose outcome never settled carries
 `rebroadcast: false`: watched, never resent. TRON and Solana keep proof-based expiry (chain
-expiration, blockhash / durable-nonce validity). A durable-nonce transaction is `dropped` only
-when the nonce account's signature history provably covers the window since submission and
-still does not list the transaction — a trimmed ledger can make a landed send read absent.
+expiration, blockhash / durable-nonce validity), and neither trusts one upstream's word for an
+absence: every read of a poll is pinned to a single upstream (the gateway is pinned to one
+provider once it answers), and `dropped` is reached only when a configured host endpoint's own
+pinned client proves the same drop, or — without one — after three consecutive matching polls.
+On Solana the streak must span more than one blockhash processing age (~60 seconds): a
+blockhash transaction is `dropped` only when its blockhash is past its last valid height, the
+status ledger holds no entry, and the status bank is no older than the reads that expired it;
+a durable-nonce transaction only when the nonce account has provably moved past the submitted
+nonce (a status bank behind the nonce read proves nothing) and the account's signature
+history covers the window since submission without listing the transaction — a trimmed
+ledger can make a landed send read absent.
 
 Chain binding on the gateway path: when the gateway serves a TRON or Solana network, the value
 that binds the signed bytes to the chain — TRON's reference block, Solana's recent blockhash —
@@ -408,8 +422,11 @@ signature allow-list covers only the owner account's actions.
 > illiquid market, which "trades" funds to the attacker; it can attach a builder fee up to the
 > rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
 > kernel does not sign those actions. The window is the unlocked period plus at most 60 seconds —
-> each agent signature carries an `expiresAfter` at most 60 s after it was made (kernel clock) and
-> Hyperliquid rejects the action afterwards; actions already submitted keep their effects (resting
+> each agent signature carries an `expiresAfter` at most 60 s after it was made and Hyperliquid
+> rejects the action afterwards. Both bounds are on the device clock (the kernel has no trusted
+> time): `assertClock()` refuses to sign when the device is more than 5 s off Hyperliquid's server
+> time, but a compromised main runtime can skip that check, so a device clock running S ahead
+> stretches the window by S (Hyperliquid accepts nonces up to a day ahead); actions already submitted keep their effects (resting
 > orders, a scheduled cancel); deleting the local agent does not revoke it on Hyperliquid (it stays
 > valid until `validUntil`), but nothing can sign with it again.
 
@@ -419,8 +436,8 @@ Polymarket support lives under `apps.polymarket` when `createApps` lists `polyma
 `@qntx/wallet-engine/apps/polymarket`. The provider trades from the account's **deposit wallet** —
 a Polymarket smart contract wallet the relayer deploys to a deterministic CREATE2 address derived
 from the group's `evm.bip44` signer. Everything else is discovered, not persisted: credentials
-live in the engine's encrypted apps store, deployment is read from the relayer, approvals from
-the Data API.
+live in the engine's encrypted apps store, deployment is proven on-chain (relayer answers are
+hints only), approvals from the Data API.
 
 ```ts
 const apps = createApps({
@@ -458,12 +475,21 @@ EOA orders only for allow-listed accounts, and the deposit wallet covers everyon
 `account.locate(group)` returns `{ signer, wallet, kind, deployed, legacySafe? }`; a deposit wallet
 that coexists with a deployed Safe surfaces `legacySafe` for display.
 
+`locate` never trusts the unauthenticated relayer's `/deployed` answer: it reads `eth_getCode` on
+all three CREATE2 candidates over the Polygon RPC — cross-checked byte-for-byte against the host
+endpoint when the gateway serves the network — requires a deposit wallet's code to equal the
+template's expected runtime exactly (the Safe's CREATE2 address already commits to its init-code
+hash, so any code proves it), and then insists every relayer hint agree. Any disagreement, or a
+deposit-wallet-shaped candidate carrying other code, is `PolymarketError("deployment-mismatch")`
+and nothing is chosen; a host endpoint that cannot answer fails closed with `unavailable`. A
+deposit — or any trading path — therefore never targets a wallet the chain does not prove.
+
 ### What works without a builder
 
 | Capability                                                                           | Without a builder                                    | Why                                                                               |
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Market data, search, book, history, positions/trades/value (Gamma/CLOB/Data, public) | works                                                | no authentication                                                                 |
-| Locating an existing deposit wallet (both derivations + relayer `/deployed`)         | works                                                | public read                                                                       |
+| Locating an existing deposit wallet (derivations + `eth_getCode`, relayer as hint)   | works                                                | public reads                                                                      |
 | Deploying the deposit wallet                                                         | `builder-required`                                   | relayer `WALLET-CREATE` only accepts builder credentials                          |
 | `ClobAuth` → L2 credentials                                                          | works                                                | the CLOB does not require a builder                                               |
 | The 8-call approvals batch, withdraw, future redeems                                 | `builder-required`                                   | all are relayer `WALLET` transactions                                             |
@@ -521,9 +547,14 @@ has no such fields) and shown as such. `orderId` is the order's EIP-712 hash, kn
 approval.
 
 Outcomes: `resting`, `matched`, `delayed`, `unmatched`, `rejected` (classified reason), `canceled`,
-`not-found`, and `unknown`. An `unknown` — timeout, network error, 5xx, or an answer that cannot be
-tied to the hash — is reconciled by reads at 0/+2 s/+5 s and **never re-posted**: a V2 order has no
-expiry, so a lost-but-valid order could still be submitted by whoever holds it. Cancels
+and `unknown`. An `unknown` — timeout, network error, 5xx, or an answer that cannot be tied to the
+hash — is reconciled by reads at 0/+2 s/+5 s and **never re-posted**: a V2 order has no expiry, so
+a lost-but-valid order could still be submitted by whoever holds it. An order no reconcile read
+saw is **not** proven absent, so the engine attempts `DELETE /order` by id before resolving — the
+attempt's result rides the outcome as `cancel` — and registers the id for the late reconcile:
+`trade.corrections` re-asks `order` every 10 s for 10 minutes and emits the eventual status once.
+`unknown` means the order may or may not exist — it MUST NOT be blindly re-placed, because a
+later-landing first order plus the retry is a duplicate position. Cancels
 (`cancel`, `cancelMany` ≤ 500, `cancelAll`, `cancelMarket`) are never eligibility-gated.
 
 ### Close-only

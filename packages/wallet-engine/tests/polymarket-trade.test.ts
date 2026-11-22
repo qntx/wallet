@@ -43,7 +43,15 @@ import type { PolymarketTrading } from "../src/apps/polymarket/trade.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { AppGroup } from "../src/apps/types.ts";
 import type { AppAvailability } from "../src/gateway/contract/eligibility.ts";
-import { MNEMONIC, VERIFY, manualTimer, until, world } from "./apps-helpers.ts";
+import {
+  MNEMONIC,
+  VERIFY,
+  manualTimer,
+  networksStub,
+  pmChainCode,
+  until,
+  world,
+} from "./apps-helpers.ts";
 
 const API = {
   apiKey: "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
@@ -214,6 +222,14 @@ let w: Awaited<ReturnType<typeof world>>;
 let group: AppGroup;
 const depositWallet = derivePolymarketWallets(accountAt(0).address).beacon;
 
+/* The chain read mirrors makeFetch's fixed `/deployed` answer — beacon only. */
+const NETWORKS = networksStub(
+  pmChainCode(
+    (address, type) => type === "WALLET" && address === depositWallet.toLowerCase(),
+    accountAt(0).address,
+  ),
+);
+
 beforeAll(async () => {
   w = await world();
   group = { walletId: w.walletId, groupIndex: 0 };
@@ -237,6 +253,7 @@ const env = (
     now: () => timers.time,
     wallet: w.wallet,
     credentials: w.credentials,
+    networks: NETWORKS,
     requests: {
       prepare: async (input) => {
         prepares += 1;
@@ -646,20 +663,22 @@ describe("polymarket trade — place", () => {
   });
 
   it.each([
-    [["absent", "absent", "absent"], "not-found"],
-    [["error", "error", "error"], "unknown"],
-    [["error", "absent"], "not-found"],
+    [["absent", "absent", "absent"]],
+    [["error", "error", "error"]],
+    [["error", "absent"]],
   ] as const)(
-    "reconcile reads %j settle %s — never a re-post",
+    "reconcile reads %j never saw the order — unknown plus the cancel attempt, never a re-post",
     { timeout: 20_000 },
-    async (lookup, want) => {
+    async (lookup) => {
       const e = env({ post: { status: 503, body: {} }, orderLookup: [...lookup] });
       const placed = await e.provider.trade.place(group, LIMIT_BUY);
       await e.approve(placed.requestId);
       await expect(settled(e, placed.outcome)).resolves.toStrictEqual({
-        kind: want,
+        kind: "unknown",
         orderId: placed.orderId,
+        cancel: { kind: "not-canceled", reason: expect.any(String) },
       });
+      expect(e.requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
       expect(e.posts()).toHaveLength(1);
     },
   );
@@ -742,6 +761,7 @@ it("masks the salt to 53 bits — it always serializes as an exact JSON number",
     now: () => timers.time,
     wallet: w.wallet,
     credentials: w.credentials,
+    networks: NETWORKS,
     requests: {
       prepare: async (input) => {
         saltSeen =

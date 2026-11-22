@@ -37,3 +37,11 @@ disclosure timeline with you.
   not an active attacker running script in the page (XSS, malicious
   dependencies). Reports that need such an attacker are in scope only where
   they defeat the Worker boundary itself.
+- **Session keys** (`hyperliquid-l1-agent`): the kernel bounds every agent
+  signature to an `expiresAfter` at most 60 s out and a nonce within ±60 s, both
+  on the device clock — the kernel has no trusted time. A device clock running S
+  ahead of real time stretches the post-lock exposure to S + 60 s (Hyperliquid
+  accepts nonces up to a day ahead). The engine's `assertClock()` refuses to sign
+  when the device is more than 5 s off Hyperliquid's server time, but it runs in
+  the main runtime: a compromised main runtime can skip it, so the residual
+  exposure is the device's own clock error plus 60 s.

@@ -198,6 +198,13 @@ const expectedBlind = (operation: number, to: string, data: string): BlindReason
 };
 
 describe("decodeEvm: Safe transactions", () => {
+  it("odd-length data is not recognised", () => {
+    /* "0xabc" is odd: ox would left-pad it when hashing — the decoder must not describe it. */
+    const d = doc(safeTx({ data: "0xabc" }));
+    expect(safeOf(d)).toBeUndefined();
+    expect(decode(d).blind).toBe("typed-data-variant");
+  });
+
   it("recognizes a call SafeTx and decodes the inner call", () => {
     const intent = decode(doc(safeTx({ value: "1000000000000000000" })));
     expect(intent.summary).toBe("transfer");

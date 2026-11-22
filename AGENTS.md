@@ -74,6 +74,22 @@ change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, k
 dependencies) needs `bun run native:kernel` and the regenerated files in the same PR; CI's
 native-host-test fails on a stale bundle.
 
+`bun run smoke:hermes` runs the kernel and chains bundles in a bare Hermes CLI and needs `HERMES`
+pointing at that binary (it exits 1 without it). CI builds the CLI from the facebook/hermes
+commit pinned as `hermes-commit` in `.github/workflows/hermes.yml`; build the same one locally
+(needs cmake, ninja and ICU):
+
+```bash
+commit=$(sed -n 's/^ *hermes-commit: *\([0-9a-f]\{40\}\).*/\1/p' .github/workflows/hermes.yml)
+git init ~/hermes-src && git -C ~/hermes-src fetch --depth 1 https://github.com/facebook/hermes.git "$commit"
+git -C ~/hermes-src checkout FETCH_HEAD
+cmake -S ~/hermes-src -B ~/hermes-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build ~/hermes-build --target hermes
+HERMES=~/hermes-build/bin/hermes bun run smoke:hermes
+```
+
+Run it whenever kernel or `@qntx/wallet-chains` code changes.
+
 `@qntx/wallet-worker` has two Vitest projects: `node` (`bun run test`) and `web`, which runs the
 Web enclave's source in Chromium (`bun run --cwd packages/wallet-worker test:web`, after
 `bunx playwright install chromium`). Its coverage gate (`coverage`) counts both and runs in the

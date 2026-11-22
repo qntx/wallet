@@ -455,6 +455,15 @@ describe("polymarket batch near misses", () => {
     const intent = decodeEvm(request(d, "eip155:137"), OTHER);
     expect(intent.blind).toBe("typed-data-variant");
   });
+
+  it("an odd-length call data is not recognised", () => {
+    /* "0x1" is odd: ox would left-pad it when hashing — the decoder must not describe it. */
+    const d = base();
+    const [first] = calls(d) as Array<Record<string, unknown> | undefined>;
+    must(first, "a batch call")["data"] = "0x1";
+    const intent = decodeEvm(request(d, "eip155:137"), OTHER);
+    expect(intent.blind).toBe("typed-data-variant");
+  });
 });
 
 const STRUCTURAL_KINDS = [

@@ -64,6 +64,7 @@ import {
   assessSeaport,
   assessSignIn,
   assessRecipients,
+  assessIntentRecipients,
   assessSimulation,
   impersonatesBuiltIn,
   impersonatesTronToken,
@@ -1145,11 +1146,7 @@ export class RequestController extends Controller<RequestControllerState> {
           : [];
       const recipientRisk = isTransaction
         ? []
-        : assessRecipients(
-            prepared.intent.family,
-            prepared.intent.outflows.map(recipientOf),
-            this.knownAddresses(prepared.intent.family),
-          );
+        : this.recipientRisk(prepared.intent, prepared.signer);
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -1163,7 +1160,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: isTransaction
-          ? this.chainRisk(prepared.intent)
+          ? this.chainRisk(prepared.intent, prepared.signer)
           : mergeRisk(
               mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk),
               mergeRisk(recipientRisk, blindRisk),
@@ -1195,11 +1192,7 @@ export class RequestController extends Controller<RequestControllerState> {
         message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
       const recipientRisk = isTransaction
         ? []
-        : assessRecipients(
-            prepared.intent.family,
-            prepared.intent.outflows.map(recipientOf),
-            this.knownAddresses(prepared.intent.family),
-          );
+        : this.recipientRisk(prepared.intent, prepared.signer);
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -1212,7 +1205,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: isTransaction
-          ? mergeRisk(this.chainRisk(prepared.intent), prepared.risk ?? [])
+          ? mergeRisk(this.chainRisk(prepared.intent, prepared.signer), prepared.risk ?? [])
           : mergeRisk(mergeRisk(signInRisk, permitRisk), mergeRisk(recipientRisk, blindRisk)),
         run: { ...prepared, factor: "required" },
         ...(prepared.tronFee === undefined ? {} : { tronFee: prepared.tronFee }),
@@ -1269,7 +1262,10 @@ export class RequestController extends Controller<RequestControllerState> {
               ...intents,
             ].flatMap((intent) => this.blindRisk(intent)),
           ),
-          intents.flatMap((intent) => assessApprovals(intent)),
+          mergeRisk(
+            intents.flatMap((intent) => assessApprovals(intent)),
+            intents.flatMap((intent) => this.recipientRisk(intent, input.account.address)),
+          ),
         ),
         run: {
           factor: "required",
@@ -1307,8 +1303,11 @@ export class RequestController extends Controller<RequestControllerState> {
           intents.some((i) => i.verifiability !== "full") ? ["decode-partial"] : [],
         ),
         risk: mergeRisk(
-          assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
-          intents.flatMap((intent) => this.blindRisk(intent)),
+          mergeRisk(
+            assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
+            intents.flatMap((intent) => this.blindRisk(intent)),
+          ),
+          intents.flatMap((intent) => this.recipientRisk(intent, undefined)),
         ),
         run: {
           factor: "required",
@@ -1492,7 +1491,7 @@ export class RequestController extends Controller<RequestControllerState> {
       ]),
       risk:
         input.method === "send" || internal
-          ? mergeRisk(this.chainRisk(prepared.intent), prepared.risk ?? [])
+          ? mergeRisk(this.chainRisk(prepared.intent, prepared.signer), prepared.risk ?? [])
           : this.blindRisk(prepared.intent),
       run: { ...prepared, factor: "required" },
       ...(prepared.tronFee === undefined ? {} : { tronFee: prepared.tronFee }),
@@ -1921,16 +1920,17 @@ export class RequestController extends Controller<RequestControllerState> {
     return assessed.risk;
   }
 
-  private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
+  /** Every recipient the decoded intent names, minus the signer — the one rule for all requests. */
+  private recipientRisk(
+    intent: DisplayIntent,
+    self: string | undefined,
+  ): ReadonlyArray<RiskFinding> {
+    return assessIntentRecipients(intent, self, this.knownAddresses(intent.family));
+  }
+
+  private chainRisk(intent: DisplayIntent, self: string | undefined): ReadonlyArray<RiskFinding> {
     return mergeRisk(
-      mergeRisk(
-        assessRecipients(
-          intent.family,
-          intent.outflows.map(recipientOf),
-          this.knownAddresses(intent.family),
-        ),
-        assessApprovals(intent),
-      ),
+      mergeRisk(this.recipientRisk(intent, self), assessApprovals(intent)),
       this.blindRisk(intent),
     );
   }

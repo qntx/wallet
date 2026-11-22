@@ -176,7 +176,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 type AppContext = {
     readonly wallet: Wallet;
     readonly requests: AppRequests;
-    readonly networks: Pick<NetworkController, "client">;
+    readonly networks: Pick<NetworkController, "client" | "independentClient">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
@@ -1175,6 +1175,7 @@ class NetworkController extends Controller<NetworkControllerState> {
     independentEnsClient(network: string): Independent<PublicClient>;
     // (undocumented)
     independentEsplora(network: string): Independent<Esplora>;
+    independentPinnedSolanaRpc(network: string): Independent<SolanaRpc>;
     independentPinnedTronApi(network: string): Independent<TronApi>;
     // (undocumented)
     independentSolanaRpc(network: string): Independent<SolanaRpc>;
@@ -1185,6 +1186,7 @@ class NetworkController extends Controller<NetworkControllerState> {
     init(): Promise<void>;
     // (undocumented)
     lock(): void;
+    pinnedSolanaRpc(network: string): SolanaRpc;
     pinnedTronApi(network: string, until?: () => number): TronApi;
     solanaRpc(network: string): SolanaRpc;
     tronApi(network: string): TronApi;
@@ -1404,6 +1406,7 @@ type PreparedRequest = {
     readonly network: string;
     readonly target?: string;
     readonly intent: DisplayIntent;
+    readonly signer?: string;
     readonly checks: ReadonlyArray<RequestCheckCode>;
     readonly risk?: ReadonlyArray<RiskFinding>;
     readonly tronFee?: TronFeeQuote;

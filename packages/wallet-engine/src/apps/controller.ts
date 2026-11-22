@@ -56,7 +56,7 @@ export type CreateAppsOptions = {
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
   /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
-  readonly networks: Pick<NetworkController, "client">;
+  readonly networks: Pick<NetworkController, "client" | "independentClient">;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
   readonly setTimer: SetTimer;

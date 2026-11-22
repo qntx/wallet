@@ -192,7 +192,7 @@ export type AppContext = {
   /** The request pipeline stamped `{ kind: "app", id }` with the definition's own id. */
   readonly requests: AppRequests;
   /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
-  readonly networks: Pick<NetworkController, "client">;
+  readonly networks: Pick<NetworkController, "client" | "independentClient">;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
   readonly setTimer: SetTimer;

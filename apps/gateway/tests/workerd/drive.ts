@@ -10,16 +10,17 @@
  * Scenarios: steady | s1 | s2 | s4 | s5 | s6 | s7 | storm. Output is plain text; redirect it to the
  * evidence directory. The process exits non-zero when a scenario assertion fails.
  *
- * | scenario | servers | SCALE      | what it does                                                                       |
- * | -------- | ------- | ---------- | ---------------------------------------------------------------------------------- |
- * | `steady` | A       | production | 20 eth_call/s for 20 s, rotating IPs; lease RPCs/s must amortise, not 1:1          |
- * | `s1`     | A       | production | 200 sequential + 200 concurrent eth_call, unique IPs; lease RPCs vs upstream calls |
- * | `s2`     | A+B     | small      | 15 s concurrent drive on both isolates; upstream units vs `400 + 80×elapsed`       |
- * | `s4`     | B       | small      | A stopped ⇒ every DO call fails; requests fail closed, no upstream is contacted    |
- * | `s5`     | A       | production | TRON 1/s×70, prices eur/usd, Jupiter 1/5s×15, Esplora ×30 burst — one IP           |
- * | `s6`     | A       | production | IP keying on eth_chainId: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair |
- * | `s7`     | A       | production | 100 concurrent eth_call from 100 IPs; wall time + DO lease RPC count               |
- * | `storm`  | A+B     | small      | 30 s concurrent drive on two isolates; DO RPCs vs refusals; fails on over-grant    |
+ * | scenario | servers | SCALE      | what it does                                                                        |
+ * | -------- | ------- | ---------- | ----------------------------------------------------------------------------------- |
+ * | `steady` | A       | production | 20 eth_call/s for 20 s, rotating IPs; lease RPCs/s must amortise, not 1:1           |
+ * | `s1`     | A       | production | 200 sequential + 200 concurrent eth_call, unique IPs; lease RPCs vs upstream calls  |
+ * | `s2`     | A+B     | small      | 15 s concurrent drive on both isolates; upstream units vs `400 + 80×elapsed`        |
+ * | `s4`     | B       | small      | A stopped ⇒ every DO call fails; requests fail closed, no upstream is contacted     |
+ * | `s5`     | A       | production | TRON 1/s×70, prices eur/usd, Jupiter 1/5s×15, Esplora ×30 burst — one IP            |
+ * | `s6`     | A       | production | IP keying on eth_chainId: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair  |
+ * | `s7`     | A       | production | 100 concurrent eth_call from 100 IPs; wall time + DO lease RPC count                |
+ * | `pin`    | A       | production | Solana getSlot with x-gateway-provider: answered by the pin only; unknown pin → 400 |
+ * | `storm`  | A+B     | small      | 30 s concurrent drive on two isolates; DO RPCs vs refusals; fails on over-grant     |
  *
  * Vars: `SCALE` = `production` (default, PRODUCTION_ACCOUNTS) or `small` (alchemy `[{400,5s}]`, all
  * other accounts `[{10,5s}]` — exhaustion in seconds); `UPSTREAM_DELAY_MS` adds latency to the stub
@@ -547,6 +548,61 @@ const s7 = async (base: string): Promise<void> => {
   );
 };
 
+/**
+ * The `x-gateway-provider` pin on the JSON-RPC route: a pinned Solana call is served by the named
+ * provider alone — the walk never touches the leading one — and a pin naming no provider is a 400
+ * before any upstream call.
+ */
+const pin = async (base: string): Promise<void> => {
+  await reset(base);
+  const SOLANA = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+  const ip = "198.51.100.23";
+  const getSlot = { jsonrpc: "2.0", id: 1, method: "getSlot", params: [] };
+  const solanaRpc = async (pinHeader: string | undefined): Promise<Response> =>
+    fetch(`${base}/v1/rpc/${SOLANA}`, {
+      method: "POST",
+      headers: {
+        ...headers(ip),
+        ...(pinHeader === undefined ? {} : { "x-gateway-provider": pinHeader }),
+      },
+      body: JSON.stringify(getSlot),
+    });
+
+  // Solana's providers are alchemy then drpc: a drpc pin must skip alchemy entirely.
+  const pinned = await solanaRpc("drpc");
+  await pinned.text();
+  const answeredBy = pinned.headers.get("x-gateway-providers");
+  console.log(
+    `PIN: getSlot x-gateway-provider=drpc → ${String(pinned.status)} ` +
+      `x-gateway-providers=${answeredBy ?? "-"}`,
+  );
+  expect(pinned.status === 200, `pin: pinned getSlot got ${String(pinned.status)}`);
+  expect(answeredBy === "drpc", `pin: answered by ${answeredBy ?? "-"}, not drpc`);
+
+  const pinnedStats = await showStats(base, "after the pinned call");
+  expect(pinnedStats.upstream["drpc"]?.calls === 1, "pin: drpc not called exactly once");
+  expect(
+    (pinnedStats.upstream["alchemy"]?.calls ?? 0) === 0,
+    "pin: alchemy contacted despite the drpc pin",
+  );
+
+  const unpinned = await solanaRpc(undefined);
+  await unpinned.text();
+  console.log(
+    `PIN: unpinned getSlot → ${String(unpinned.status)} ` +
+      `x-gateway-providers=${unpinned.headers.get("x-gateway-providers") ?? "-"}`,
+  );
+  expect(
+    unpinned.headers.get("x-gateway-providers") === "alchemy",
+    "pin: unpinned getSlot not answered by the leading provider",
+  );
+
+  const unknown = await solanaRpc("nobody");
+  await unknown.text();
+  console.log(`PIN: unknown pin → ${String(unknown.status)}`);
+  expect(unknown.status === 400, `pin: unknown pin got ${String(unknown.status)}`);
+};
+
 const storm = async (a: string, b: string): Promise<void> => {
   await Promise.all([reset(a), reset(b)]);
   const DURATION_MS = 30_000;
@@ -589,7 +645,7 @@ const main = async (): Promise<void> => {
   const needsB = scenario === "s2" || scenario === "storm";
   if (scenario === undefined || a === undefined || (needsB && b === undefined)) {
     console.log(
-      "usage: bun drive.ts <steady|s1|s2|s4|s5|s6|s7|storm> <url-a> [url-b]  (s2/storm need both; s4 drives the url given)",
+      "usage: bun drive.ts <steady|s1|s2|s4|s5|s6|s7|pin|storm> <url-a> [url-b]  (s2/storm need both; s4 drives the url given)",
     );
     process.exit(2);
   }
@@ -615,6 +671,9 @@ const main = async (): Promise<void> => {
       break;
     case "s7":
       await s7(a);
+      break;
+    case "pin":
+      await pin(a);
       break;
     case "storm":
       await storm(a, b ?? a);

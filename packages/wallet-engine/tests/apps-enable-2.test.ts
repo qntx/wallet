@@ -984,7 +984,7 @@ describe("app-sourced request origins", () => {
     const created = createApps({
       wallet,
       requests,
-      networks: {} as Pick<NetworkController, "client">,
+      networks: {} as Pick<NetworkController, "client" | "independentClient">,
       fetch: async () => Promise.reject(new Error("unused")),
       now: () => 0,
       setTimer: () => () => undefined,

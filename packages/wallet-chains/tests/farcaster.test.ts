@@ -151,6 +151,15 @@ describe("Farcaster KeyGateway Add", () => {
     expect(intent.blind).toBe("typed-data-variant");
   });
 
+  it.each([
+    ["a key with an odd number of nibbles", { key: `0x${"a".repeat(63)}` }],
+    ["metadata with an odd number of nibbles", { metadata: "0xabc" }],
+  ])("%s is a claimed variant, blind", (_label, message) => {
+    /* ox would left-pad odd-length hex when hashing — the decoder must not describe it. */
+    const intent = decodeEvm(typed(addDoc(message)), SIGNER);
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
   it("metadata that is not the canonical tuple is a claimed variant, blind", () => {
     const intent = decodeEvm(typed(addDoc({ metadata: `${METADATA}00` })), SIGNER);
     expect(intent.blind).toBe("typed-data-variant");

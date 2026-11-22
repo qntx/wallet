@@ -17,10 +17,14 @@ const AGENT_MAX_TTL_MS = 180 * 86_400_000;
 /** At most 16 live agents per vault — the protocol's sessions.list cap is 64. */
 const MAX_AGENTS = 16;
 /**
- * Every signature carries `expiresAfter` at most 60 s after it was made (kernel clock) and
- * Hyperliquid rejects an action after its `expiresAfter` (docs exchange-endpoint §Expires After),
- * so a signature can be submitted at most 60 s after it was made — the post-lock exposure. The
- * nonce keeps the same 60 s symmetric window so a compromised runtime cannot pre-sign far ahead.
+ * Every signature carries `expiresAfter` at most 60 s after it was made and Hyperliquid rejects an
+ * action after its `expiresAfter` (docs exchange-endpoint §Expires After), so a signature can be
+ * submitted at most 60 s after it was made — the post-lock exposure. The nonce keeps the same 60 s
+ * symmetric window so a compromised runtime cannot pre-sign far ahead.
+ *
+ * Both are on the device clock — the kernel has no trusted time: a clock S ahead makes it S + 60 s
+ * of real time (Hyperliquid takes nonces up to a day ahead). The engine's `assertClock()` is the
+ * mitigation; a compromised main runtime can skip it (SECURITY.md).
  */
 const EXPIRES_AFTER_MS = 60_000;
 const NONCE_WINDOW_MS = 60_000;

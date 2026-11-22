@@ -51,13 +51,14 @@ const GROUPS: Record<string, { readonly workers: ReadonlyArray<Worker>; readonly
     s5: { workers: [WORKER_A], scale: "production" },
     s6: { workers: [WORKER_A], scale: "production" },
     s7: { workers: [WORKER_A], scale: "production" },
+    pin: { workers: [WORKER_A], scale: "production" },
     s2: { workers: [WORKER_A, WORKER_B], scale: "small" },
     storm: { workers: [WORKER_A, WORKER_B], scale: "small" },
     // B alone: its `script_name` binding cannot reach A's objects — the outage scenario.
     s4: { workers: [WORKER_B], scale: "small" },
   };
 
-const DEFAULT_SUITE = ["smoke", "steady", "s1", "s7", "s6", "s5", "s2", "storm", "s4"];
+const DEFAULT_SUITE = ["smoke", "steady", "s1", "s7", "s6", "s5", "s2", "storm", "s4", "pin"];
 
 type Running = { readonly exited: Promise<number>; kill: () => void };
 

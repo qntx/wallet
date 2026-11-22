@@ -11,6 +11,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../../events.ts";
 import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
+import type { NetworkController } from "../../networks/controller.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppSocket } from "../socket.ts";
 import type { AppGroup, AppRequests } from "../types.ts";
@@ -59,6 +60,8 @@ export type PolymarketProviderOptions = {
   readonly requests: Pick<AppRequests, "prepare" | "outcome">;
   /** Order salts come from this — 8 bytes → 53-bit. */
   readonly random: (length: number) => Uint8Array;
+  /** The Polygon RPC `locate` proves account-wallet code against — a relayer hint is never proof. */
+  readonly networks: Pick<NetworkController, "client" | "independentClient">;
   /** The gateway availability for `polymarket` — `undefined` refuses BUY orders (fail closed). */
   readonly availability: () => AppAvailability | undefined;
   /** The WebSocket factory live views stream over — `(url) => new WebSocket(url)`. */
@@ -120,7 +123,7 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
   const account = createPolymarketAccount({
     http,
     l2,
-    wallets: createPolymarketWallets(http),
+    wallets: createPolymarketWallets(http, options.networks),
     signerOf,
   });
   const markets = createPolymarketMarkets(http);
@@ -129,6 +132,7 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     account,
     markets,
     requests: options.requests,
+    wallet: options.wallet,
     random: options.random,
     now: options.now,
     setTimer: options.setTimer,

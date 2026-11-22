@@ -42,6 +42,7 @@ export function polymarket(
         credentials,
         requests: context.requests,
         random: context.random,
+        networks: context.networks,
         socket: context.socket,
         logger: context.logger,
         /* The last ready eligibility answer's per-app availability — `undefined` (unknown or

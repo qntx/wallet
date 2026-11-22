@@ -191,7 +191,9 @@ function solanaRig(outcomes: ReadonlyArray<SimulationOutcome>) {
       }
       return Promise.resolve(outcome);
     },
-    transactions: {} as unknown as TransactionController,
+    transactions: {
+      getState: () => ({ txs: {} }),
+    } as unknown as TransactionController,
     ...bookDeps(),
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),

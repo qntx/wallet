@@ -87,6 +87,10 @@ const transfers = vectors.docs
     },
   }));
 const cancels = vectors.docs.filter((doc) => doc.expected["kind"] === "cancel");
+const [FIRST_CANCEL] = cancels;
+if (FIRST_CANCEL === undefined) {
+  throw new Error("vector file has no cancel doc");
+}
 
 describe("EIP-3009 registry corpus", () => {
   it.each(transfers)("$description", ({ data, signer, expected, expectedAuthorization }) => {
@@ -182,6 +186,22 @@ describe("EIP-3009 guards", () => {
     data.message["nonce"] = "0x1234";
     const intent = decodeEvm(request(data), String(data.message["from"]));
     expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("an odd-length nonce is not decoded — transfer and cancel alike", () => {
+    /* `0x` + 63 nibbles: ox would left-pad it to bytes32 while the decoder must not accept it
+       as the document's own bytes. */
+    const odd = `0x${"1".repeat(63)}`;
+    const transfer = base();
+    transfer.message["nonce"] = odd;
+    expect(decodeEvm(request(transfer), String(transfer.message["from"])).blind).toBe(
+      "typed-data-variant",
+    );
+    const cancelData = structuredClone(FIRST_CANCEL.data);
+    cancelData.message["nonce"] = odd;
+    expect(decodeEvm(request(cancelData), String(cancelData.message["authorizer"])).blind).toBe(
+      "typed-data-variant",
+    );
   });
 
   it("a document on an unlisted token is partial with an unverified asset", () => {

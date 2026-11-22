@@ -410,6 +410,8 @@ export type PreparedRequest = {
   /** The transaction being replaced or accelerated; absent for a plain send. */
   readonly target?: string;
   readonly intent: DisplayIntent;
+  /** The address the route resolved for `account` — what recipient risk calls self. */
+  readonly signer?: string;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   /** Findings a route can only see on-chain (contract recipient, empty token balance). */
   readonly risk?: ReadonlyArray<RiskFinding>;

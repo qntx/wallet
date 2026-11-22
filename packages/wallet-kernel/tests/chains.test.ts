@@ -48,6 +48,7 @@ import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wall
 import { buildTronRawData, verifyTronTransactionSignature } from "@qntx/wallet-chains/tron";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { executeBitcoin } from "../src/modules/chains/bitcoin.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import type { Pbkdf2 } from "../src/platform.ts";
 import { createHarness } from "./harness.ts";
@@ -164,10 +165,14 @@ const btcVector = (template: string) => {
 };
 
 /** Child node of the vector wallet's account at `change/index` under `template`. */
-const btcChild = (template: string, change: number, index: number): HDKey => {
+const btcChild = (template: string, change: number, index: number): HDKey =>
+  btcChildAt(template, 0, change, index);
+
+/** Same at coin element `coin` — 0' for mainnet, 1' for every test network. */
+const btcChildAt = (template: string, coin: number, change: number, index: number): HDKey => {
   const purpose = BTC_PURPOSE_T[template] ?? 84;
   return HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(
-    `m/${purpose}'/0'/0'/${change}/${index}`,
+    `m/${purpose}'/${coin}'/0'/${change}/${index}`,
   );
 };
 
@@ -192,6 +197,8 @@ type PsbtOpts = {
   readonly template: string;
   readonly change?: number;
   readonly index?: number;
+  readonly coin?: number;
+  readonly crossScript?: boolean;
   readonly fingerprint?: number;
   readonly wrongPub?: boolean;
   readonly wrongScript?: boolean;
@@ -213,20 +220,28 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   const change = opts.change ?? 0;
   const index = opts.index ?? 0;
   const fp = opts.fingerprint ?? MASTER_FP;
+  const coin = opts.coin ?? 0;
   const foreignPub = btcChild(opts.template, 0, 7).publicKey!;
   const foreignXonly = foreignPub.slice(1);
-  const child = btcChild(opts.template, change, index);
+  const child = btcChildAt(opts.template, coin, change, index);
   const pub = child.publicKey!;
   const xonly = pub.slice(1);
+  /* `crossScript` spends the *other* coin's key at the same change/index while the derivation
+     entry still claims `coin` — the network the request runs under decides which is wrong. */
+  const scriptPub =
+    opts.crossScript === true
+      ? btcChildAt(opts.template, coin === 0 ? 1 : 0, change, index).publicKey!
+      : pub;
+  const scriptXonly = scriptPub.slice(1);
   const spend =
     purpose === 86
-      ? p2tr(xonly)
+      ? p2tr(scriptXonly)
       : purpose === 49
-        ? p2sh(p2wpkh(pub))
+        ? p2sh(p2wpkh(scriptPub))
         : purpose === 44
-          ? p2pkh(pub)
-          : p2wpkh(pub);
-  const path = [purpose + HARDENED, HARDENED, HARDENED, change, index];
+          ? p2pkh(scriptPub)
+          : p2wpkh(scriptPub);
+  const path = [purpose + HARDENED, coin + HARDENED, HARDENED, change, index];
   const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
   const input: Record<string, unknown> = {
     txid: hex("0707".repeat(16)),
@@ -244,7 +259,7 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   };
 
   if (purpose === 86) {
-    input["tapInternalKey"] = opts.wrongScript === true ? foreignXonly : xonly;
+    input["tapInternalKey"] = opts.wrongScript === true ? foreignXonly : scriptXonly;
     input["tapBip32Derivation"] = [
       [
         opts.wrongPub === true ? foreignPub.slice(1) : xonly,
@@ -258,7 +273,7 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   }
   if (purpose === 49) {
     input["redeemScript"] =
-      opts.wrongScript === true ? p2wpkh(foreignPub).script : p2wpkh(pub).script;
+      opts.wrongScript === true ? p2wpkh(foreignPub).script : p2wpkh(scriptPub).script;
     if (opts.wrongScript === true) {
       input["witnessUtxo"] = {
         script: p2sh(p2wpkh(foreignPub)).script,
@@ -273,7 +288,7 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
       purpose === 44
         ? opts.wrongScript === true
           ? p2pkh(foreignPub).script
-          : p2pkh(pub).script
+          : p2pkh(scriptPub).script
         : (input["witnessUtxo"] as { script: Uint8Array }).script;
     const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
     prev.addInput({ txid: hex("1111".repeat(16)), index: 0, sequence: 0xffffffff });
@@ -573,6 +588,47 @@ describe("wallet.accounts", () => {
       expect(field(res, "xpub")).toBe(v.xpub);
       expect(field(res, "fingerprint")).toBe(vectors.master.fingerprint);
       expect(field(res, "path")).toBe(v.path);
+    }
+  });
+
+  it("separates bitcoin accounts by coin type — 0' mainnet, 1' for every test network", async () => {
+    const { h, session, walletId } = await setup();
+    const TEST_NETS = [
+      "bip122:00000000da84f2bafbbc53dee25a72ae", // testnet
+      "bip122:00000008819873e925422c1ff0f99f7c", // signet
+      "bip122:0f9188f13cb7b2c71f2a335e3a4fc328", // regtest
+    ];
+    const NETWORKS = [BTC_NETWORK, ...TEST_NETS];
+    const TEMPLATES: ReadonlyArray<readonly [string, number]> = [
+      ["btc.bip44", 44],
+      ["btc.bip49", 49],
+      ["btc.bip84", 84],
+      ["btc.bip86", 86],
+    ];
+    const results = await Promise.all(
+      TEMPLATES.flatMap(([template]) =>
+        NETWORKS.map(async (network) =>
+          ok(
+            await h.call(
+              "wallet.accounts",
+              { walletId, groupIndex: 0, template, network },
+              session,
+            ),
+          ),
+        ),
+      ),
+    );
+    for (const [t, [, purpose]] of TEMPLATES.entries()) {
+      const at = (n: number) => results[t * NETWORKS.length + n]!;
+      const main = at(0);
+      expect(field(main, "path")).toBe(`m/${purpose}'/0'/0'`);
+      for (const n of [1, 2, 3]) {
+        const test = at(n);
+        expect(field(test, "path")).toBe(`m/${purpose}'/1'/0'`);
+        expect(field(test, "xpub")).not.toBe(field(main, "xpub"));
+        /* No value lives on the test networks, so they share the coin-1' account. */
+        expect(field(test, "xpub")).toBe(field(at(1), "xpub"));
+      }
     }
   });
 
@@ -1342,6 +1398,104 @@ describe("chain.sign", () => {
       index: 0,
     };
     expect("err" in (await callSign(h, session, legacy))).toBe(true);
+  });
+
+  describe("bitcoin network separation", () => {
+    const TESTNET = "bip122:00000000da84f2bafbbc53dee25a72ae";
+    const seed = mnemonicToSeedSync(vectors.mnemonic);
+    const rng = () => new Uint8Array(32);
+    const account = { kind: "hd" as const, walletId: "w", groupIndex: 0 };
+
+    const signedPsbtOf = (res: ReturnType<typeof executeBitcoin>): Uint8Array => {
+      if (!("signedPsbt" in res)) {
+        throw new Error("expected a signed psbt");
+      }
+      return res.signedPsbt;
+    };
+    const partialSigner = (psbt: Uint8Array): Uint8Array => {
+      const signer = Transaction.fromPSBT(psbt).getInput(0).partialSig?.[0]?.[0];
+      if (signer === undefined) {
+        throw new Error("expected a partial signature");
+      }
+      return signer;
+    };
+    const asHex = (b: Uint8Array): string =>
+      Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+
+    it("refuses a coin-0' derivation claim under a test network before normalize", () => {
+      /* The kernel's childAt guard — not normalize's coin-type check — is what refuses the
+         claim, so assert its exact message on a raw (un-normalized) request. */
+      const request = {
+        kind: "bitcoin.psbt",
+        network: TESTNET,
+        account,
+        psbt: btcPsbt({ template: "btc.bip84" }),
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
+      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+        "derivation path is not this account's",
+      );
+    });
+
+    it("refuses a coin-1' derivation claim under mainnet the same way", () => {
+      const request = {
+        kind: "bitcoin.psbt",
+        network: BTC_NETWORK,
+        account,
+        psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
+      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+        "derivation path is not this account's",
+      );
+    });
+
+    it("refuses a prevout script of the other coin's key at the claimed path", () => {
+      /* The coin-1' path and pubkey are consistent, only the spent script is the mainnet
+         key's — the prevout binding, not the path guard, is what refuses. */
+      const request = {
+        kind: "bitcoin.psbt",
+        network: TESTNET,
+        account,
+        psbt: btcPsbt({ template: "btc.bip84", coin: 1, crossScript: true }),
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
+      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+        "prevout script is not this key's",
+      );
+    });
+
+    it("refuses a message for a mainnet address under a test network", () => {
+      const account84 = { ...account, template: "btc.bip84" as const };
+      const request = {
+        kind: "bitcoin.message",
+        network: TESTNET,
+        account: account84,
+        address: btcVector("btc.bip84").receive[0]!,
+        message: "hi",
+        format: "bip322-simple",
+        change: 0,
+        index: 0,
+      } as const;
+      expect(() => executeBitcoin(rng, request, account84, seed, false)).toThrow(
+        "address is not ours",
+      );
+    });
+
+    it("signs a testnet PSBT with the coin-1' key — not the mainnet key at the same path", () => {
+      /* One sorted sign entry — already in normalized form for `deepEqual(normalized, request)`. */
+      const request = {
+        kind: "bitcoin.psbt",
+        network: TESTNET,
+        account,
+        psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
+      const res = executeBitcoin(rng, request, account, seed, false);
+      const signer = partialSigner(signedPsbtOf(res));
+      expect(asHex(signer)).toBe(asHex(btcChildAt("btc.bip84", 1, 0, 0).publicKey!));
+      expect(asHex(signer)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));
+    });
   });
 });
 

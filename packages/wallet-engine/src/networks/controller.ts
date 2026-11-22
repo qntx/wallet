@@ -18,6 +18,8 @@ import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
 import {
+  PROVIDERS_HEADER,
+  PROVIDER_PIN_HEADER,
   parseWith,
   esploraBasePath,
   networksPath,
@@ -168,6 +170,46 @@ const esploraClient = (
     deps,
   );
 
+/**
+ * One JSON-RPC POST. `provider` is the answering upstream's id when the response names one (the
+ * gateway's `x-gateway-providers` header); a request carrying `pin` repeats it in
+ * `x-gateway-provider` so the gateway serves the call from that one upstream. A transport error, a
+ * non-JSON body, a body that is not a JSON object, or a JSON-RPC `error` throws — the callers
+ * decide whether to move on to the next URL or propagate.
+ */
+const solanaPost = async (
+  url: string,
+  fetchFn: typeof globalThis.fetch,
+  method: string,
+  params: unknown[],
+  pin: string | undefined,
+): Promise<{ readonly result: unknown; readonly provider: string | undefined }> => {
+  const res = await fetchFn(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(pin === undefined ? {} : { [PROVIDER_PIN_HEADER]: pin }),
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    // A non-JSON body (a proxy's error page) is an HTTP-level failure: name the status
+    // and endpoint instead of leaking the parser's SyntaxError.
+    throw new Error(`${method}: HTTP ${res.status} from ${url}`);
+  }
+  if (!isObject(body)) {
+    throw new Error(`malformed response from ${url}`);
+  }
+  if (body["error"] !== undefined) {
+    const msg = isObject(body["error"]) ? body["error"]["message"] : undefined;
+    throw new Error(typeof msg === "string" ? msg : method);
+  }
+  return { result: body["result"], provider: res.headers.get(PROVIDERS_HEADER) ?? undefined };
+};
+
 const solanaCaller = (
   urls: ReadonlyArray<string>,
   fetchFn: typeof globalThis.fetch,
@@ -179,27 +221,8 @@ const solanaCaller = (
         throw last instanceof Error ? last : new Error(typeof last === "string" ? last : method);
       }
       try {
-        const res = await fetchFn(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        });
-        let body: unknown;
-        try {
-          body = await res.json();
-        } catch {
-          // A non-JSON body (a proxy's error page) is an HTTP-level failure: name the status
-          // and endpoint instead of leaking the parser's SyntaxError.
-          return await attempt(next, new Error(`${method}: HTTP ${res.status} from ${url}`));
-        }
-        if (!isObject(body)) {
-          return await attempt(next, new Error(`malformed response from ${url}`));
-        }
-        if (body["error"] !== undefined) {
-          const msg = isObject(body["error"]) ? body["error"]["message"] : undefined;
-          return await attempt(next, new Error(typeof msg === "string" ? msg : method));
-        }
-        return body["result"];
+        const { result } = await solanaPost(url, fetchFn, method, params, undefined);
+        return result;
       } catch (error) {
         return attempt(next, error);
       }
@@ -207,6 +230,41 @@ const solanaCaller = (
     return attempt(urls, undefined);
   },
 });
+
+/**
+ * Ordered failover only until the first answer: whichever URL answers first is pinned and every
+ * later call goes to it alone, so a sequence of reads comes from one upstream. When the answer
+ * named a provider, later calls send `x-gateway-provider` so the gateway too serves them from that
+ * one node. A pinned call that fails throws — no failover mid-sequence.
+ */
+export const pinnedSolanaCaller = (
+  urls: ReadonlyArray<string>,
+  fetchFn: typeof globalThis.fetch,
+): SolanaRpc => {
+  let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
+  return {
+    call: async (method, params) => {
+      if (pinned !== undefined) {
+        const { result } = await solanaPost(pinned.url, fetchFn, method, params, pinned.provider);
+        return result;
+      }
+      const attempt = async (rest: ReadonlyArray<string>, last: unknown): Promise<unknown> => {
+        const [url, ...next] = rest;
+        if (url === undefined) {
+          throw last instanceof Error ? last : new Error(typeof last === "string" ? last : method);
+        }
+        try {
+          const { result, provider } = await solanaPost(url, fetchFn, method, params, undefined);
+          pinned = { url, provider };
+          return result;
+        } catch (error) {
+          return attempt(next, error);
+        }
+      };
+      return attempt(urls, undefined);
+    },
+  };
+};
 
 export class NetworkController extends Controller<NetworkControllerState> {
   private readonly options: Options;
@@ -419,6 +477,14 @@ export class NetworkController extends Controller<NetworkControllerState> {
     return this.independent(network, (hosts) => solanaCaller(hosts, this.options.fetch));
   }
 
+  /**
+   * Fresh pinned host-endpoint Solana client — for proofs whose reads must all come from one
+   * upstream.
+   */
+  independentPinnedSolanaRpc(network: string): Independent<SolanaRpc> {
+    return this.independent(network, (hosts) => pinnedSolanaCaller(hosts, this.options.fetch));
+  }
+
   /** Host-endpoint TRON client for cross-checking pre-signing reads; never sends the install id. */
   independentTronApi(network: string): Independent<TronApi> {
     return this.independent(network, (hosts) => tronCaller(hosts, this.options.fetch));
@@ -461,6 +527,18 @@ export class NetworkController extends Controller<NetworkControllerState> {
       throw new Error(`no rpc endpoint for ${network}`);
     }
     return solanaCaller(urls, this.gatewayFetch);
+  }
+
+  /**
+   * Fresh one-upstream Solana client: failover on the first call, then pinned — for a sequence of
+   * reads that must agree with each other.
+   */
+  pinnedSolanaRpc(network: string): SolanaRpc {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no rpc endpoint for ${network}`);
+    }
+    return pinnedSolanaCaller(urls, this.gatewayFetch);
   }
 
   /** TRON node API over the ordered endpoint list — plain POSTs fail over like Solana's. */

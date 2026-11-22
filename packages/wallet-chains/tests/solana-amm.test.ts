@@ -560,6 +560,11 @@ describe("Meteora DLMM", () => {
       cat(dlmmData(DLMM_SWAP2, 5n, 1n), new Uint8Array([1, 0, 0, 0, 7, 1])),
       dlmmMetas(undefined, undefined, SIGNER, true),
     ],
+    [
+      "swap2 with AccountsType tag 5 — one past the known set",
+      cat(dlmmData(DLMM_SWAP2, 5n, 1n), new Uint8Array([1, 0, 0, 0, 5, 1])),
+      dlmmMetas(undefined, undefined, SIGNER, true),
+    ],
     ["truncated swap data", dlmmData(DLMM_SWAP, 5n, 1n).subarray(0, 22), dlmmMetas()],
   ])("falls back for %s", (_name, data, metas) => {
     const intent = intentOf([ix(METEORA_DLMM_PROGRAM, metas, data)]);

@@ -16,6 +16,7 @@ import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
 import { createBitcoinRoute } from "./bitcoin.ts";
+import type { DropEvidence } from "./drop-evidence.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
   AccountRef,
@@ -52,7 +53,6 @@ import {
   prepareTronStake,
   submitDappTron,
 } from "./tron.ts";
-import type { TronDropEvidence } from "./tron.ts";
 
 export type {
   AccountRef,
@@ -331,8 +331,8 @@ export class TransactionController extends Controller<TransactionControllerState
   private readonly unsaved = new Map<string, TrackedTransaction>();
   /** The running flush loop while `unsaved` is non-empty and the vault is unlocked. */
   private unsavedFlush: (() => void) | undefined;
-  /** In-flight TRON drop/reorg corroboration — poll streaks die with the session. */
-  private tronEvidence: TronDropEvidence = new Map();
+  /** In-flight drop/reorg corroboration — poll streaks die with the session. */
+  private dropEvidence: DropEvidence = new Map();
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -466,7 +466,7 @@ export class TransactionController extends Controller<TransactionControllerState
     this.update(() => ({ txs: {} }));
     this.batches.clear();
     this.engineStore = undefined;
-    this.tronEvidence = new Map();
+    this.dropEvidence = new Map();
     this.evmRoute = createEvmRoute();
     this.bitcoinRoute.lock();
     this.bitcoinRoute = createBitcoinRoute();
@@ -1025,9 +1025,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const ctx = this.routeCtx();
     const answer =
       tx.family === "solana"
-        ? await pollSolana(ctx, tx)
+        ? await pollSolana(ctx, tx, this.dropEvidence)
         : tx.family === "tron"
-          ? await pollTron(ctx, tx, this.tronEvidence)
+          ? await pollTron(ctx, tx, this.dropEvidence)
           : tx.family === "bitcoin"
             ? await this.bitcoinRoute.poll(ctx, tx)
             : await this.evmRoute.poll(ctx, tx);

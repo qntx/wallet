@@ -459,6 +459,25 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     expect(timers.time).toBeGreaterThan(NOW + 22_000);
   });
 
+  it("a status first answering in the deadline's last seconds still reconciles", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => {
+        throw new Error("connection reset");
+      },
+      /* The endpoint catches up only at now+20 s — inside the last 10 s of the 22 s window. */
+      info: orderStatusAfter(() => timers.time >= NOW + 20_000, orderFound("filled", { sz: "0" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await drive(timers, provider.trade.place(group, ORDER));
+
+    expect(result.outcomes).toStrictEqual([
+      { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.05" },
+    ]);
+  });
+
   it("orderStatus failures until the deadline leave the outcome unknown", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();
