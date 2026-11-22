@@ -14,7 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
 
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
@@ -192,12 +192,12 @@ const rig = async (
   walletId: string;
 }> => {
   const { wallet, walletId } = await nodeWallet();
-  const api = hyperliquid(wallet);
+  const api = sessions(wallet);
   let signCalls = 0;
-  const { signL1 } = api;
-  (api as { signL1: typeof signL1 }).signL1 = async (params) => {
+  const { sign } = api;
+  (api as { sign: typeof sign }).sign = async (params) => {
     signCalls += 1;
-    return signL1(params);
+    return sign(params);
   };
   const provider = createHyperliquidProvider({
     network: "Testnet",
@@ -288,9 +288,10 @@ const createEnabledAgent = async (
   const key = `${groupIndex}:${validUntil}`;
   let address = agents.get(key);
   if (address === undefined) {
-    address = await hyperliquid(wallet).createAgent({
+    address = await sessions(wallet).create({
+      scheme: "hyperliquid-l1-agent",
       owner: { walletId, groupIndex },
-      network: "Testnet",
+      scope: "Testnet",
       name: `a${groupIndex}t`,
       validUntil,
     });

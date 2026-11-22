@@ -37,10 +37,10 @@
       "import": "./dist/host.mjs",
       "default": "./dist/host.mjs"
     },
-    "./hyperliquid": {
-      "types": "./dist/hyperliquid.d.mts",
-      "import": "./dist/hyperliquid.mjs",
-      "default": "./dist/hyperliquid.mjs"
+    "./sessions": {
+      "types": "./dist/sessions.d.mts",
+      "import": "./dist/sessions.mjs",
+      "default": "./dist/sessions.mjs"
     },
     "./nostr": {
       "types": "./dist/nostr.d.mts",

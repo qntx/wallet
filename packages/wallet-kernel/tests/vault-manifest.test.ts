@@ -294,7 +294,7 @@ const vector = loadVectors("vault-manifest.json") as {
   dek: string;
   nonce: string;
   manifest: VectorRow;
-  withAgent: {
+  withSession: {
     image: {
       meta: {
         format: number;
@@ -312,9 +312,9 @@ const vector = loadVectors("vault-manifest.json") as {
 };
 
 const fromHex = (row: VectorRow) => ({ ...row, sealed: hexToBytes(row.sealed) });
-const renamedAgent = (records: ReadonlyArray<StoredRecord>): StoredRecord[] =>
+const renamedSession = (records: ReadonlyArray<StoredRecord>): StoredRecord[] =>
   records.map((r) =>
-    r.kind === "hl-agent" ? { ...r, header: r.header.replace('"bot-1"', '"bot-9"') } : r,
+    r.kind === "session-key" ? { ...r, header: r.header.replace('"bot-1"', '"bot-9"') } : r,
   );
 const vectorImage: VaultImage = {
   meta: vector.image.meta,
@@ -411,27 +411,27 @@ describe("manifest vector", () => {
     ).toStrictEqual(corrupted);
   });
 
-  it("digests and authenticates an image carrying an hl-agent row", () => {
-    const agentImage: VaultImage = {
-      meta: vector.withAgent.image.meta,
-      records: vector.withAgent.image.records.map(fromHex),
-      factors: vector.withAgent.image.factors.map(fromHex),
+  it("digests and authenticates an image carrying session-key rows", () => {
+    const sessionImage: VaultImage = {
+      meta: vector.withSession.image.meta,
+      records: vector.withSession.image.records.map(fromHex),
+      factors: vector.withSession.image.factors.map(fromHex),
     };
-    expect(manifestDigest(agentImage)).toStrictEqual(hexToBytes(vector.withAgent.digest));
+    expect(manifestDigest(sessionImage)).toStrictEqual(hexToBytes(vector.withSession.digest));
     const sealed: VaultImage = {
-      ...agentImage,
-      records: [...agentImage.records, fromHex(vector.withAgent.manifest)],
+      ...sessionImage,
+      records: [...sessionImage.records, fromHex(vector.withSession.manifest)],
     };
     expect(() => {
       assertManifest(vectorDek(), sealed);
     }).not.toThrow();
     const corrupted = { code: "integrity", corrupted: true };
-    // Dropping or rewriting the agent row fails authentication like any other record.
+    // Dropping or rewriting the session-key rows fails authentication like any other record.
     expect(
       structureFailure(() =>
         assertManifest(vectorDek(), {
           ...sealed,
-          records: sealed.records.filter((r) => r.kind !== "hl-agent"),
+          records: sealed.records.filter((r) => r.kind !== "session-key"),
         }),
       ),
     ).toStrictEqual(corrupted);
@@ -439,7 +439,7 @@ describe("manifest vector", () => {
       structureFailure(() =>
         assertManifest(vectorDek(), {
           ...sealed,
-          records: renamedAgent(sealed.records),
+          records: renamedSession(sealed.records),
         }),
       ),
     ).toStrictEqual(corrupted);

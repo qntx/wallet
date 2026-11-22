@@ -4,7 +4,6 @@ import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
-import { HL_AGENT_KIND, parseAgentHeader } from "./modules/apps/record.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
 import {
   parseBackupKeyHeader,
@@ -53,11 +52,11 @@ const FACTOR_KINDS = new Set(["device", "hardware", "password", "passkey"]);
 
 /**
  * Snapshot contents for the `status` payload — the record-ownership composition point, and the
- * image's health assessment. The core parses the kinds it owns (entropy, data-key), claimed records
- * are partitioned per module and each module's own status function is called explicitly. An
- * unclaimed kind or a newer format marks the vault `unsupported` — the data stays untouched and the
- * user must update; a malformed known header marks it `corrupted`. Locked snapshots are
- * display-only data from unauthenticated public headers.
+ * image's health assessment. The core parses the kinds it owns (entropy, data-key), every record a
+ * module claims is re-parsed by that module's `parseHeader`, and each module's own status function
+ * is called explicitly. An unclaimed kind or a newer format marks the vault `unsupported` — the
+ * data stays untouched and the user must update; a malformed known header marks it `corrupted`.
+ * Locked snapshots are display-only data from unauthenticated public headers.
  */
 export function statusContents(
   image: VaultImage,
@@ -144,13 +143,17 @@ export function statusContents(
         } else {
           unsupported = true;
         }
-      } else if (record.kind === HL_AGENT_KIND) {
-        // A malformed agent header is vault corruption, like any other authenticated public row.
-        parseAgentHeader(record.header);
-      } else if (modules.some((module) => module.ownsRecord(record.kind))) {
-        owned.push(record);
       } else {
-        unsupported = true; // a record kind no module of this build owns
+        /* An owned record's header is checked by its module — malformed is vault corruption like
+           any other authenticated public row. The record joins `owned` before the parse so the
+           module's status section still sees it when the parse throws. */
+        const owner = modules.find((module) => module.ownsRecord(record.kind));
+        if (owner === undefined) {
+          unsupported = true; // a record kind no module of this build owns
+        } else {
+          owned.push(record);
+          owner.parseHeader(record);
+        }
       }
     } catch {
       corrupted = true;

@@ -17,34 +17,6 @@ type AccountRef = {
 };
 
 // @public (undocumented)
-export const APPS_METHODS: {
-    readonly "hyperliquid.createAgent": MethodSpec<{
-        readonly owner: {
-            readonly walletId: string;
-            readonly groupIndex: number;
-        };
-        readonly network: HyperliquidNetwork;
-        readonly name: string;
-        readonly validUntil: number;
-    }, {
-        readonly address: string;
-    }>;
-    readonly "hyperliquid.listAgents": MethodSpec<NullValue, ReadonlyArray<HyperliquidAgentInfo>>;
-    readonly "hyperliquid.deleteAgent": MethodSpec<{
-        readonly address: string;
-    }, NullValue>;
-    readonly "hyperliquid.signL1": MethodSpec<{
-        readonly agent: string;
-        readonly action: HyperliquidL1Action;
-        readonly nonce: number;
-        readonly vaultAddress?: string;
-        readonly expiresAfter?: number;
-    }, {
-        readonly signature: Uint8Array;
-    }>;
-};
-
-// @public (undocumented)
 export function arr<T>(item: Validator<T>, max: number, min?: number): Validator<ReadonlyArray<T>>;
 
 // @public (undocumented)
@@ -557,18 +529,6 @@ export type HtlcTimeoutSignRequest = {
     readonly hashLockPublicKey: Uint8Array;
 };
 
-// @public (undocumented)
-export type HyperliquidAgentInfo = {
-    readonly address: string;
-    readonly owner: string;
-    readonly walletId: string;
-    readonly groupIndex: number;
-    readonly network: HyperliquidNetwork;
-    readonly name: string;
-    readonly validUntil: number;
-    readonly createdAt: number;
-};
-
 // @public
 export type HyperliquidL1Action = {
     readonly type: "order";
@@ -633,9 +593,6 @@ export type HyperliquidL1Action = {
     readonly t: number;
 };
 
-// @public
-export const hyperliquidL1Action: Validator<HyperliquidL1Action>;
-
 // @public (undocumented)
 export type HyperliquidL1Order = {
     readonly a: number;
@@ -655,6 +612,14 @@ export type HyperliquidL1Order = {
         };
     };
     readonly c?: string;
+};
+
+// @public (undocumented)
+export type HyperliquidL1Params = {
+    readonly action: HyperliquidL1Action;
+    readonly nonce: number;
+    readonly vaultAddress?: string;
+    readonly expiresAfter?: number;
 };
 
 // @public (undocumented)
@@ -755,7 +720,7 @@ export type MethodName = keyof typeof METHODS;
 // @public (undocumented)
 export const METHODS: {
     readonly status: MethodSpec<NullValue, StatusPayload>;
-} & typeof CORE_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof APPS_METHODS;
+} & typeof CORE_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof SESSIONS_METHODS;
 
 // @public (undocumented)
 export type MethodSpec<P, R> = {
@@ -766,7 +731,7 @@ export type MethodSpec<P, R> = {
 };
 
 // @public (undocumented)
-export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof APPS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof APPS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof APPS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof APPS_METHODS & keyof typeof SPARK_METHODS>];
+export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>];
 
 // @public (undocumented)
 export const NOSTR_METHODS: {
@@ -1006,6 +971,58 @@ export type Rumor = {
     readonly created_at: number;
     readonly tags: ReadonlyArray<ReadonlyArray<string>>;
     readonly content: string;
+};
+
+// @public (undocumented)
+export type SessionInfo = {
+    readonly address: string;
+    readonly scheme: string;
+    readonly supported: boolean;
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly owner: string;
+    readonly scope: string;
+    readonly name: string;
+    readonly validUntil: number;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+export const SESSIONS_METHODS: {
+    readonly "sessions.create": MethodSpec<{
+        readonly scheme: string;
+        readonly owner: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+        };
+        readonly scope: string;
+        readonly name: string;
+        readonly validUntil: number;
+    }, {
+        readonly address: string;
+    }>;
+    readonly "sessions.list": MethodSpec<NullValue, ReadonlyArray<SessionInfo>>;
+    readonly "sessions.delete": MethodSpec<{
+        readonly address: string;
+    }, NullValue>;
+    readonly "sessions.sign": MethodSpec<{
+        readonly scheme: string;
+        readonly address: string;
+        readonly params: ProtocolValue;
+    }, {
+        readonly signature: Uint8Array;
+    }>;
+};
+
+// @public (undocumented)
+export type SessionSchemeId = keyof SessionSchemes;
+
+// @public
+export type SessionSchemes = {
+    readonly "hyperliquid-l1-agent": {
+        readonly scope: HyperliquidNetwork;
+        readonly params: HyperliquidL1Params;
+    };
 };
 
 // @public (undocumented)

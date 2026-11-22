@@ -1,6 +1,7 @@
 /**
- * The Hyperliquid apps module: `hl-agent` lifecycle, deterministic msgpack, L1 phantom-agent
- * signing against the oracle vectors, agent key isolation, and the ApproveAgent binding.
+ * The sessions module: `session-key` lifecycle, deterministic msgpack, L1 phantom-agent signing
+ * against the oracle vectors, session key isolation, the ApproveAgent binding, and unknown schemes
+ * staying inert.
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -9,14 +10,22 @@ import { describe, expect, it } from "vite-plus/test";
 import { evmAddressFromPublicKey, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import { signL1 } from "../src/modules/apps/agents.ts";
-import { createAppsModule } from "../src/modules/apps/index.ts";
-import { l1ConnectionId } from "../src/modules/apps/l1.ts";
-import { packArray, packBool, packInt, packMap, packStr } from "../src/modules/apps/msgpack.ts";
-import { encodeAgentHeader, findAgent, HL_AGENT_KIND } from "../src/modules/apps/record.ts";
-import { Secret } from "../src/secret/secret.ts";
+import { createSessionsModule } from "../src/modules/sessions/index.ts";
+import { encodeSessionHeader, findSession, SESSION_KIND } from "../src/modules/sessions/record.ts";
+import { l1ConnectionId } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
+import {
+  packArray,
+  packBool,
+  packInt,
+  packMap,
+  packStr,
+} from "../src/modules/sessions/schemes/hyperliquid-l1-agent/msgpack.ts";
+import { signSession } from "../src/modules/sessions/sessions.ts";
+import { Secret, wipe } from "../src/secret/secret.ts";
+import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
+import { withManifest } from "../src/vault/manifest.ts";
 import type { VaultImage } from "../src/vault/store.ts";
-import { sealRecord } from "../src/vault/vault.ts";
+import { openRecord, sealRecord } from "../src/vault/vault.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
@@ -41,6 +50,7 @@ const EVM_SECRET = hexToBytes("822e9959e022b78423eb653a62ea0020cd283e71a2a8133a6
 const EVM_ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const T0 = Date.parse("2026-06-01T00:00:00Z");
 const DAY = 86_400_000;
+const SCHEME = "hyperliquid-l1-agent";
 
 function ok(response: KernelResponse): ProtocolValue {
   if ("err" in response) {
@@ -100,33 +110,40 @@ const createParams = (
   walletId: string,
   extra?: Record<string, unknown>,
 ): Record<string, unknown> => ({
+  scheme: SCHEME,
   owner: { walletId, groupIndex: 0 },
-  network: "Mainnet",
+  scope: "Mainnet",
   name: "bot-1",
   validUntil: T0 + DAY,
   ...extra,
 });
 
-async function createAgent(
+async function createSession(
   h: Harness,
   session: string,
   walletId: string,
   extra?: Record<string, unknown>,
 ): Promise<string> {
-  const res = ok(await h.call("hyperliquid.createAgent", createParams(walletId, extra), session));
+  const res = ok(await h.call("sessions.create", createParams(walletId, extra), session));
   return strField(res, "address");
 }
 
-const agentRecord = (image: {
-  records: ReadonlyArray<{ kind: string; id: string; header: string; sealed: Uint8Array }>;
-}) => image.records.find((r) => r.kind === HL_AGENT_KIND);
+const sessionRecord = (
+  image: {
+    records: ReadonlyArray<{ kind: string; id: string; header: string; sealed: Uint8Array }>;
+  },
+  id?: string,
+) =>
+  image.records.find(
+    (r) => r.kind === SESSION_KIND && (id === undefined || r.id === id.toLowerCase()),
+  );
 
-const mustAgentRecord = (image: {
+const mustSessionRecord = (image: {
   records: ReadonlyArray<{ kind: string; id: string; header: string; sealed: Uint8Array }>;
 }) => {
-  const record = agentRecord(image);
+  const record = sessionRecord(image);
   if (record === undefined) {
-    throw new Error("missing agent record");
+    throw new Error("missing session record");
   }
   return record;
 };
@@ -138,8 +155,8 @@ const flipByte = (bytes: Uint8Array): Uint8Array => {
 };
 
 /**
- * Every `key` record id is 16-hex — the structural proof a kind+id lookup can never reach an
- * agent's `0x`-prefixed 40-hex id.
+ * Every `key` record id is 16-hex — the structural proof a kind+id lookup can never reach a
+ * session's `0x`-prefixed 40-hex id.
  */
 const keyIdsAre16Hex = (image: { records: ReadonlyArray<{ kind: string; id: string }> }) =>
   image.records.every((r) => r.kind !== "key" || /^[0-9a-f]{16}$/.test(r.id));
@@ -147,7 +164,7 @@ const keyIdsAre16Hex = (image: { records: ReadonlyArray<{ kind: string; id: stri
 /**
  * A Random that serves `key` for 32-byte draws made while armed and deterministic bytes otherwise —
  * platform.random is also the seal-nonce source, so the oracle key goes only to the draw inside
- * createAgent.
+ * sessions.create.
  */
 const injectingRandom = (
   key: Uint8Array,
@@ -191,8 +208,12 @@ const l1IdArgs = (vector: L1Case) => ({
   ...(vector.expiresAfter === undefined ? {} : { expiresAfter: vector.expiresAfter }),
 });
 
-/** SignL1 params for a vector. */
-const l1SignParams = (agent: string, vector: L1Case) => ({ agent, ...l1IdArgs(vector) });
+/** Sessions.sign params for a vector. */
+const signParams = (address: string, vector: L1Case) => ({
+  scheme: SCHEME,
+  address,
+  params: l1IdArgs(vector),
+});
 
 const l1Cases = (loadVectors("chains/hyperliquid.json") as { l1: L1Case[] }).l1;
 const allowListed = l1Cases.filter((c) => c.action["type"] !== "dummy");
@@ -273,10 +294,10 @@ describe("L1 connectionId against the oracle vectors", () => {
   });
 });
 
-describe("hyperliquid.signL1 against the oracle vectors", () => {
+describe("sessions.sign against the oracle vectors", () => {
   it.each(allowListed)("$name signs byte-identically", async (vector) => {
     const keyBytes = hexToBytes(vector.privateKey.slice(2));
-    const expectedAgent = evmAddressFromPublicKey(
+    const expectedAddress = evmAddressFromPublicKey(
       secp256k1.getPublicKey(keyBytes, true),
     ).toLowerCase();
     const injected = injectingRandom(keyBytes);
@@ -293,10 +314,11 @@ describe("hyperliquid.signL1 against the oracle vectors", () => {
     injected.arm(true);
     const created = ok(
       await h.call(
-        "hyperliquid.createAgent",
+        "sessions.create",
         {
+          scheme: SCHEME,
           owner: { walletId, groupIndex: 0 },
-          network: vector.network,
+          scope: vector.network,
           name: "bot-1",
           validUntil: vector.nonce + DAY,
         },
@@ -304,22 +326,26 @@ describe("hyperliquid.signL1 against the oracle vectors", () => {
       ),
     );
     injected.arm(false);
-    const agent = strField(created, "address").toLowerCase();
-    expect(agent).toBe(expectedAgent);
-    const signed = ok(await h.call("hyperliquid.signL1", l1SignParams(agent, vector), session));
+    const address = strField(created, "address").toLowerCase();
+    expect(address).toBe(expectedAddress);
+    const signed = ok(await h.call("sessions.sign", signParams(address, vector), session));
     expect(bytesToHex(bytesField(signed, "signature"))).toBe(vector.signature.slice(2));
   });
 
   it.each(dummies)("$name is rejected as invalid-input", async (vector) => {
     const { h, session, walletId } = await setup(vector.nonce);
-    const agent = await createAgent(h, session, walletId, {
+    const address = await createSession(h, session, walletId, {
       validUntil: vector.nonce + DAY,
     });
     expect(
       errCode(
         await h.call(
-          "hyperliquid.signL1",
-          { agent, action: vector.action, nonce: vector.nonce },
+          "sessions.sign",
+          {
+            scheme: SCHEME,
+            address,
+            params: { action: vector.action, nonce: vector.nonce },
+          },
           session,
         ),
       ),
@@ -339,17 +365,23 @@ describe("protocol: strict action validation", () => {
   const sign = async (
     h: Harness,
     session: string,
-    agent: string,
+    address: string,
     action: unknown,
   ): Promise<string | undefined> =>
-    errCode(await h.call("hyperliquid.signL1", { agent, action, nonce: T0 }, session));
+    errCode(
+      await h.call(
+        "sessions.sign",
+        { scheme: SCHEME, address, params: { action, nonce: T0 } },
+        session,
+      ),
+    );
 
-  async function withAgent(
-    run: (h: Harness, session: string, agent: string) => Promise<void>,
+  async function withSession(
+    run: (h: Harness, session: string, address: string) => Promise<void>,
   ): Promise<void> {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId);
-    await run(h, session, agent);
+    const address = await createSession(h, session, walletId);
+    await run(h, session, address);
   }
 
   it.each([
@@ -367,8 +399,8 @@ describe("protocol: strict action validation", () => {
     { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
     { type: "twapCancel", a: 0, t: 1 },
   ])("allow-listed action %j is accepted", async (action) => {
-    await withAgent(async (h, session, agent) => {
-      await expect(sign(h, session, agent, action)).resolves.toBeUndefined();
+    await withSession(async (h, session, address) => {
+      await expect(sign(h, session, address, action)).resolves.toBeUndefined();
     });
   });
 
@@ -396,8 +428,8 @@ describe("protocol: strict action validation", () => {
     { type: "trailingStop" },
     { type: "userOutcome" },
   ])("excluded action %j answers invalid-input", async (action) => {
-    await withAgent(async (h, session, agent) => {
-      await expect(sign(h, session, agent, action)).resolves.toBe("invalid-input");
+    await withSession(async (h, session, address) => {
+      await expect(sign(h, session, address, action)).resolves.toBe("invalid-input");
     });
   });
 
@@ -442,17 +474,17 @@ describe("protocol: strict action validation", () => {
     ["extra key", { type: "cancel", cancels: [{ a: 0, o: 1 }], extra: 1 }],
     ["extra key inside order", { type: "order", orders: [{ ...order, extra: 1 }], grouping: "na" }],
   ])("malformed action %s answers invalid-input", async (_name, action) => {
-    await withAgent(async (h, session, agent) => {
-      await expect(sign(h, session, agent, action)).resolves.toBe("invalid-input");
+    await withSession(async (h, session, address) => {
+      await expect(sign(h, session, address, action)).resolves.toBe("invalid-input");
     });
   });
 });
 
-describe("hl-agent lifecycle", () => {
+describe("session-key lifecycle", () => {
   it("create/list/delete round trip with header fields and derived owner", async () => {
     const { h, session, walletId } = await setup(T0);
-    const address = await createAgent(h, session, walletId, {
-      network: "Testnet",
+    const address = await createSession(h, session, walletId, {
+      scope: "Testnet",
       name: "bot-2",
       validUntil: T0 + 30 * DAY,
     });
@@ -460,34 +492,34 @@ describe("hl-agent lifecycle", () => {
     expect(address).not.toBe(address.toLowerCase());
 
     const image = await h.store.load();
-    const record = agentRecord(image);
+    const record = sessionRecord(image);
     expect(record?.id).toBe(address.toLowerCase());
     expect(record?.header).toBe(
-      `{"walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","network":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0}}`,
+      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0}}`,
     );
 
-    const list = ok(await h.call("hyperliquid.listAgents", null, session)) as unknown as Array<
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
       Record<string, unknown>
     >;
     expect(list).toStrictEqual([
       {
         address,
+        scheme: SCHEME,
+        supported: true,
         owner: EVM_ADDRESS,
         walletId,
         groupIndex: 0,
-        network: "Testnet",
+        scope: "Testnet",
         name: "bot-2",
         validUntil: T0 + 30 * DAY,
         createdAt: T0,
       },
     ]);
 
-    ok(await h.call("hyperliquid.deleteAgent", { address }, session));
-    const after = ok(await h.call("hyperliquid.listAgents", null, session)) as unknown as unknown[];
+    ok(await h.call("sessions.delete", { address }, session));
+    const after = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(after).toHaveLength(0);
-    expect(errCode(await h.call("hyperliquid.deleteAgent", { address }, session))).toBe(
-      "not-found",
-    );
+    expect(errCode(await h.call("sessions.delete", { address }, session))).toBe("not-found");
   });
 
   it.each([
@@ -498,96 +530,110 @@ describe("hl-agent lifecycle", () => {
   ])("validUntil %s → %s", async (_label, validUntil, code) => {
     const { h, session, walletId } = await setup(T0);
     expect(
-      errCode(
-        await h.call("hyperliquid.createAgent", createParams(walletId, { validUntil }), session),
-      ),
+      errCode(await h.call("sessions.create", createParams(walletId, { validUntil }), session)),
     ).toBe(code);
   });
 
-  it("caps live agents at 16", async () => {
+  it("an unknown scheme cannot be created", async () => {
     const { h, session, walletId } = await setup(T0);
-    for (let i = 0; i < 16; i++) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
-      await createAgent(h, session, walletId, { name: `bot-${i}` });
-    }
     expect(
       errCode(
         await h.call(
-          "hyperliquid.createAgent",
-          createParams(walletId, { name: "bot-16" }),
+          "sessions.create",
+          createParams(walletId, { scheme: "future-scheme" }),
           session,
         ),
       ),
+    ).toBe("unsupported");
+  });
+
+  it("caps live sessions of one scheme at 16", async () => {
+    const { h, session, walletId } = await setup(T0);
+    for (let i = 0; i < 16; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
+      await createSession(h, session, walletId, { name: `bot-${i}` });
+    }
+    expect(
+      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-16" }), session)),
     ).toBe("conflict");
-    const list = ok(await h.call("hyperliquid.listAgents", null, session)) as unknown as unknown[];
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(16);
   });
 
-  it("createAgent needs a live session and a real wallet", async () => {
+  it("sessions.create needs a live session and a real wallet", async () => {
     const { h, session, walletId } = await setup(T0);
-    expect(
-      errCode(await h.call("hyperliquid.createAgent", createParams(walletId), "00".repeat(16))),
-    ).toBe("locked");
-    expect(
-      errCode(await h.call("hyperliquid.createAgent", createParams("ff".repeat(8)), session)),
-    ).toBe("not-found");
+    expect(errCode(await h.call("sessions.create", createParams(walletId), "00".repeat(16)))).toBe(
+      "locked",
+    );
+    expect(errCode(await h.call("sessions.create", createParams("ff".repeat(8)), session))).toBe(
+      "not-found",
+    );
   });
 });
 
-describe("hyperliquid.signL1 checks", () => {
+describe("sessions.sign checks", () => {
   const orderAction = {
     type: "order",
     orders: [{ a: 0, b: true, p: "30000", s: "0.1", r: false, t: { limit: { tif: "Gtc" } } }],
     grouping: "na",
   };
+  const signCall = async (
+    h: Harness,
+    session: string,
+    params: Record<string, unknown>,
+  ): Promise<KernelResponse> => h.call("sessions.sign", params, session);
 
   it("a foreign session cannot sign", async () => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId);
+    const address = await createSession(h, session, walletId);
     expect(
       errCode(
-        await h.call(
-          "hyperliquid.signL1",
-          { agent, action: orderAction, nonce: T0 },
-          "00".repeat(16),
-        ),
+        await signCall(h, "00".repeat(16), {
+          scheme: SCHEME,
+          address,
+          params: { action: orderAction, nonce: T0 },
+        }),
       ),
     ).toBe("locked");
   });
 
-  it("a session that idled out cannot sign with a previously valid agent", async () => {
+  it("a session that idled out cannot sign with a previously valid key", async () => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId);
+    const address = await createSession(h, session, walletId);
     h.advance(15 * 60_000 + 1);
     await h.settle();
     expect(
       errCode(
-        await h.call("hyperliquid.signL1", { agent, action: orderAction, nonce: T0 }, session),
+        await signCall(h, session, {
+          scheme: SCHEME,
+          address,
+          params: { action: orderAction, nonce: T0 },
+        }),
       ),
     ).toBe("locked");
   });
 
-  it("an expired agent cannot sign", async () => {
+  it("an expired session key cannot sign", async () => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId, { validUntil: T0 + 1000 });
+    const address = await createSession(h, session, walletId, { validUntil: T0 + 1000 });
     h.advanceWall(1000); // now == validUntil ⇒ expired
     expect(
       errCode(
-        await h.call(
-          "hyperliquid.signL1",
-          { agent, action: orderAction, nonce: h.wallNow() },
-          session,
-        ),
+        await signCall(h, session, {
+          scheme: SCHEME,
+          address,
+          params: { action: orderAction, nonce: h.wallNow() },
+        }),
       ),
     ).toBe("invalid-input");
     h.advanceWall(1000);
     expect(
       errCode(
-        await h.call(
-          "hyperliquid.signL1",
-          { agent, action: orderAction, nonce: h.wallNow() },
-          session,
-        ),
+        await signCall(h, session, {
+          scheme: SCHEME,
+          address,
+          params: { action: orderAction, nonce: h.wallNow() },
+        }),
       ),
     ).toBe("invalid-input");
   });
@@ -599,72 +645,90 @@ describe("hyperliquid.signL1 checks", () => {
     ["-300_001", -300_001, "invalid-input"],
   ])("nonce %s of now → %s", async (_label, delta, code) => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId, { validUntil: T0 + 400_000 });
+    const address = await createSession(h, session, walletId, { validUntil: T0 + 400_000 });
     expect(
       errCode(
-        await h.call(
-          "hyperliquid.signL1",
-          { agent, action: orderAction, nonce: T0 + delta },
-          session,
-        ),
+        await signCall(h, session, {
+          scheme: SCHEME,
+          address,
+          params: { action: orderAction, nonce: T0 + delta },
+        }),
       ),
     ).toBe(code);
   });
 
-  it("an imported key's address and the HD account's address are not agents", async () => {
+  it("an imported key's address and the HD account's address are not sessions", async () => {
     const { h, session } = await setup(T0);
     const imported = ok(
       await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
     );
     const importedAddress = strField(imported, "address").toLowerCase();
-    for (const agent of [importedAddress, EVM_ADDRESS.toLowerCase()]) {
+    for (const address of [importedAddress, EVM_ADDRESS.toLowerCase()]) {
       expect(
         errCode(
-          // oxlint-disable-next-line eslint/no-await-in-loop -- agent lookups are sequential
-          await h.call("hyperliquid.signL1", { agent, action: orderAction, nonce: T0 }, session),
+          // oxlint-disable-next-line eslint/no-await-in-loop -- lookups are sequential
+          await signCall(h, session, {
+            scheme: SCHEME,
+            address,
+            params: { action: orderAction, nonce: T0 },
+          }),
         ),
       ).toBe("not-found");
     }
   });
+
+  it("a scheme mismatch with the record answers invalid-input", async () => {
+    const { h, session, walletId } = await setup(T0);
+    const address = await createSession(h, session, walletId);
+    expect(
+      errCode(
+        await signCall(h, session, {
+          scheme: "future-scheme",
+          address,
+          params: { action: orderAction, nonce: T0 },
+        }),
+      ),
+    ).toBe("invalid-input");
+  });
 });
 
-describe("agent defense-in-depth checks", () => {
+describe("session defense-in-depth checks", () => {
   const imageOf = (
     ...records: ReadonlyArray<{ kind: string; id: string; header: string; sealed: Uint8Array }>
   ): VaultImage => ({ meta: undefined, records: [...records], factors: [] });
 
-  it("findAgent only matches hl-agent records — a `key` record is never an agent", () => {
+  it("findSession only matches session-key records — a `key` record is never a session", () => {
     const image = imageOf(
       { kind: "key", id: `0x${"ab".repeat(20)}`, header: "{}", sealed: new Uint8Array(1) },
       {
-        kind: HL_AGENT_KIND,
+        kind: SESSION_KIND,
         id: `0x${"cd".repeat(20)}`,
         header: "{}",
         sealed: new Uint8Array(1),
       },
     );
-    expect(findAgent(image, `0x${"ab".repeat(20)}`)).toBeUndefined();
-    expect(findAgent(image, `0x${"cd".repeat(20)}`)).toBeDefined();
+    expect(findSession(image, `0x${"ab".repeat(20)}`)).toBeUndefined();
+    expect(findSession(image, `0x${"cd".repeat(20)}`)).toBeDefined();
   });
 
   it("claimUnlocked latches corrupted when the sealed key is not the record id", () => {
-    const { vault } = createAppsModule();
+    const { vault } = createSessionsModule();
     const key = new Uint8Array(32).fill(9); // a valid secret whose address is not 0x00…
     expect(() =>
-      vault.claimUnlocked([{ kind: HL_AGENT_KIND, id: `0x${"00".repeat(20)}`, plaintext: key }]),
-    ).toThrow("agent key does not match its record");
+      vault.claimUnlocked([{ kind: SESSION_KIND, id: `0x${"00".repeat(20)}`, plaintext: key }]),
+    ).toThrow("session key does not match its record");
   });
 
-  it("claimUnlocked claims a well-formed agent and returns the rest", () => {
-    const { vault } = createAppsModule();
+  it("claimUnlocked claims a well-formed session and returns the rest", () => {
+    const { vault } = createSessionsModule();
     const key = new Uint8Array(EVM_SECRET);
     const id = evmAddressFromPublicKey(secp256k1.getPublicKey(key, true)).toLowerCase();
     const other = { kind: "key", id: "0123456789abcdef", plaintext: new Uint8Array(32) };
-    const rest = vault.claimUnlocked([{ kind: HL_AGENT_KIND, id, plaintext: key }, other]);
+    const rest = vault.claimUnlocked([{ kind: SESSION_KIND, id, plaintext: key }, other]);
     expect(rest).toStrictEqual([other]);
   });
 
-  it("signL1 refuses a record whose sealed key is not the record id", () => {
+  it("sessions.sign refuses a record whose sealed key is not the record id", () => {
     const dek = Secret.take(new Uint8Array(32).fill(7));
     const platform = {
       now: () => T0,
@@ -674,13 +738,14 @@ describe("agent defense-in-depth checks", () => {
     const record = sealRecord(
       platform as never,
       dek,
-      HL_AGENT_KIND,
+      SESSION_KIND,
       wrongId,
-      encodeAgentHeader({
+      encodeSessionHeader({
+        scheme: SCHEME,
         walletId: "aa".repeat(8),
         groupIndex: 0,
         owner: EVM_ADDRESS,
-        network: "Mainnet",
+        scope: "Mainnet",
         name: "bot-1",
         validUntil: T0 + DAY,
         createdAt: T0,
@@ -691,53 +756,56 @@ describe("agent defense-in-depth checks", () => {
       platform,
       image: imageOf(record),
       session: { require: () => ({ dek }) },
-    } as unknown as Parameters<typeof signL1>[0];
+    } as unknown as Parameters<typeof signSession>[0];
     expect((): unknown =>
-      signL1(
+      signSession(
         ctx,
         {
-          agent: wrongId,
-          action: {
-            type: "order",
-            orders: [{ a: 0, b: true, p: "1", s: "1", r: false, t: { limit: { tif: "Gtc" } } }],
-            grouping: "na",
+          scheme: SCHEME,
+          address: wrongId,
+          params: {
+            action: {
+              type: "order",
+              orders: [{ a: 0, b: true, p: "1", s: "1", r: false, t: { limit: { tif: "Gtc" } } }],
+              grouping: "na",
+            },
+            nonce: T0,
           },
-          nonce: T0,
         },
         "00".repeat(16),
       ),
-    ).toThrow("agent key does not match its record");
+    ).toThrow("session key does not match its record");
   });
 });
 
-describe("agent key isolation", () => {
-  it("keys.list/export/remove never see agents", async () => {
+describe("session key isolation", () => {
+  it("keys.list/export/remove never see sessions", async () => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId);
+    const address = await createSession(h, session, walletId);
     const list = ok(await h.call("keys.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(0);
     // The `0x`-prefixed address fails the 16-hex keyId envelope shape.
-    expect(errCode(await h.call("keys.export", { verify: PASSKEY(), keyId: agent }, session))).toBe(
-      "integrity",
-    );
-    expect(errCode(await h.call("keys.remove", { verify: PASSKEY(), keyId: agent }, session))).toBe(
-      "integrity",
-    );
+    expect(
+      errCode(await h.call("keys.export", { verify: PASSKEY(), keyId: address }, session)),
+    ).toBe("integrity");
+    expect(
+      errCode(await h.call("keys.remove", { verify: PASSKEY(), keyId: address }, session)),
+    ).toBe("integrity");
     // And a well-formed id colliding with nothing answers not-found.
     expect(
       errCode(
         await h.call(
           "keys.export",
-          { verify: PASSKEY(), keyId: agent.toLowerCase().slice(2, 18) },
+          { verify: PASSKEY(), keyId: address.toLowerCase().slice(2, 18) },
           session,
         ),
       ),
     ).toBe("not-found");
   });
 
-  it("chain.sign imported lookup cannot reach an agent record", async () => {
+  it("chain.sign imported lookup cannot reach a session record", async () => {
     const { h, session, walletId } = await setup(T0);
-    const agent = await createAgent(h, session, walletId);
+    const address = await createSession(h, session, walletId);
     const typedData = JSON.stringify({
       types: {
         EIP712Domain: [{ name: "name", type: "string" }],
@@ -747,25 +815,25 @@ describe("agent key isolation", () => {
       primaryType: "Mail",
       message: { m: "hi" },
     });
-    // The agent record id is a `0x`-prefixed 40-hex address; the imported keyId validator accepts
+    // The session record id is a `0x`-prefixed 40-hex address; the imported keyId validator accepts
     // only 16-hex, so the address form is rejected at the envelope — before any record lookup.
     const requests = [
       normalizeEvm({
         kind: "evm.typed-data",
         network: "eip155:1",
-        account: { kind: "imported", keyId: agent, family: "evm" },
+        account: { kind: "imported", keyId: address, family: "evm" },
         typedData,
       }),
       normalizeEvm({
         kind: "evm.personal-message",
         network: "eip155:1",
-        account: { kind: "imported", keyId: agent, family: "evm" },
+        account: { kind: "imported", keyId: address, family: "evm" },
         message: utf8ToBytes("hi"),
       }),
       normalizeEvm({
         kind: "evm.transaction",
         network: "eip155:1",
-        account: { kind: "imported", keyId: agent, family: "evm" },
+        account: { kind: "imported", keyId: address, family: "evm" },
         tx: {
           type: "eip1559",
           chainId: 1,
@@ -804,14 +872,14 @@ describe("agent key isolation", () => {
         ),
       ),
     ).toBe("not-found");
-    // …and every `key` record id is 16-hex, so kind+id lookup can never land on an agent id.
+    // …and every `key` record id is 16-hex, so kind+id lookup can never land on a session id.
     const image = await h.store.load();
     expect(keyIdsAre16Hex(image)).toBe(true);
   });
 
-  it("backups never contain agents", async () => {
+  it("backups never contain sessions", async () => {
     const { h, session, walletId } = await setup(T0);
-    await createAgent(h, session, walletId);
+    await createSession(h, session, walletId);
     ok(await h.call("backup.enable", { verify: PASSKEY(), factors: [backupPassword()] }, session));
     const envelope = strField(ok(await h.call("backup.update", null, session)), "envelope");
 
@@ -825,17 +893,15 @@ describe("agent key isolation", () => {
       }),
     );
     const session2 = strField(res, "session");
-    const list = ok(
-      await restored.call("hyperliquid.listAgents", null, session2),
-    ) as unknown as unknown[];
+    const list = ok(await restored.call("sessions.list", null, session2)) as unknown as unknown[];
     expect(list).toHaveLength(0);
     const image = await restored.store.load();
-    expect(image.records.every((r) => r.kind !== HL_AGENT_KIND)).toBe(true);
+    expect(image.records.every((r) => r.kind !== SESSION_KIND)).toBe(true);
   });
 
-  it("wallet.delete removes that wallet's agents only", async () => {
+  it("wallet.delete removes that wallet's sessions only", async () => {
     const { h, session, walletId } = await setup(T0);
-    await createAgent(h, session, walletId);
+    await createSession(h, session, walletId);
     // Second wallet inside the same session — `factor` is establish-only.
     const res2 = ok(
       await h.call(
@@ -849,24 +915,22 @@ describe("agent key isolation", () => {
       ),
     );
     const walletId2 = strField(field(res2, "wallet"), "walletId");
-    await createAgent(h, session, walletId2);
-    const before = ok(
-      await h.call("hyperliquid.listAgents", null, session),
-    ) as unknown as unknown[];
+    await createSession(h, session, walletId2);
+    const before = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(before).toHaveLength(2);
 
     ok(await h.call("wallet.delete", { walletId, verify: PASSKEY() }, session));
-    const list = ok(await h.call("hyperliquid.listAgents", null, session)) as unknown as Array<{
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<{
       walletId: string;
     }>;
     expect(list.map((a) => a.walletId)).toStrictEqual([walletId2]);
   });
 
-  it("tampered agent plaintext corrupts the vault on reconcile", async () => {
+  it("tampered session plaintext corrupts the vault on reconcile", async () => {
     const { h, session, walletId } = await setup(T0);
-    await createAgent(h, session, walletId);
+    await createSession(h, session, walletId);
     const image = await h.store.load();
-    const record = mustAgentRecord(image);
+    const record = mustSessionRecord(image);
     await h.store.commit([
       { op: "put-record", record: { ...record, sealed: flipByte(record.sealed) } },
     ]);
@@ -875,14 +939,196 @@ describe("agent key isolation", () => {
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 
-  it("a malformed hl-agent header corrupts status", async () => {
+  it("a malformed session-key header corrupts status", async () => {
     const { h, session, walletId } = await setup(T0);
-    await createAgent(h, session, walletId);
+    await createSession(h, session, walletId);
     const image = await h.store.load();
-    const record = mustAgentRecord(image);
+    const record = mustSessionRecord(image);
     await h.store.commit([{ op: "put-record", record: { ...record, header: '{"walletId":1}' } }]);
     await h.settle();
     expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+  });
+
+  it("a known scheme's invalid scope corrupts status", async () => {
+    const { h, session, walletId } = await setup(T0);
+    await createSession(h, session, walletId);
+    const image = await h.store.load();
+    const record = mustSessionRecord(image);
+    await h.store.commit([
+      {
+        op: "put-record",
+        record: { ...record, header: record.header.replace('"Mainnet"', '"Devnet"') },
+      },
+    ]);
+    await h.settle();
+    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+  });
+});
+
+describe("unknown schemes stay inert", () => {
+  const FUTURE_SCOPE = `0x${"11".repeat(20)}`;
+  const sealer = {
+    random: (n: number) => new Uint8Array(n).fill(3),
+    now: () => T0,
+  } as never;
+
+  /** The session DEK, unwrapped the way unlock does — from the test passkey factor's KEK. */
+  const sessionDek = async (h: Harness): Promise<Secret> => {
+    const image = await h.store.load();
+    const factor = image.factors.find((f) => f.kind === "passkey");
+    if (factor === undefined) {
+      throw new Error("missing passkey factor");
+    }
+    const kek = passkeyKek(new Uint8Array(32).fill(1), utf8ToBytes("credential-1"));
+    try {
+      return unwrapDek(kek, factor);
+    } finally {
+      wipe(kek);
+    }
+  };
+
+  /**
+   * A stored session-key record under a scheme this build does not know: a real record's key is
+   * resealed under the DEK with an unknown-scheme header — authentic through the AEAD binding.
+   */
+  async function injectUnknown(h: Harness, session: string, walletId: string): Promise<string> {
+    const address = await createSession(h, session, walletId, { name: "future" });
+    const dek = await sessionDek(h);
+    try {
+      const image = await h.store.load();
+      const record = sessionRecord(image, address);
+      if (record === undefined) {
+        throw new Error("missing session record");
+      }
+      const plaintext = openRecord(dek, record);
+      let resealed;
+      try {
+        resealed = sealRecord(
+          sealer,
+          dek,
+          SESSION_KIND,
+          record.id,
+          encodeSessionHeader({
+            scheme: "future-scheme",
+            walletId,
+            groupIndex: 0,
+            owner: EVM_ADDRESS,
+            scope: FUTURE_SCOPE,
+            name: "future",
+            validUntil: T0 + DAY,
+            createdAt: T0,
+          }),
+          plaintext,
+        );
+      } finally {
+        wipe(plaintext);
+      }
+      await h.store.commit(
+        withManifest(sealer, image, [{ op: "put-record", record: resealed }], dek),
+      );
+    } finally {
+      dek.wipe();
+    }
+    return address;
+  }
+
+  it("unlocks healthy, lists as unsupported, cannot sign, deletes", async () => {
+    const { h, session, walletId } = await setup(T0);
+    const address = await injectUnknown(h, session, walletId);
+    await h.settle();
+    expect(field(ok(await h.call("status")), "vault")).toBe("unlocked");
+
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
+      Record<string, unknown>
+    >;
+    expect(list).toStrictEqual([
+      {
+        address,
+        scheme: "future-scheme",
+        supported: false,
+        scope: FUTURE_SCOPE,
+        walletId,
+        groupIndex: 0,
+        owner: EVM_ADDRESS,
+        name: "future",
+        validUntil: T0 + DAY,
+        createdAt: T0,
+      },
+    ]);
+
+    expect(
+      errCode(
+        await h.call(
+          "sessions.sign",
+          { scheme: "future-scheme", address, params: { nonce: T0 } },
+          session,
+        ),
+      ),
+    ).toBe("unsupported");
+    // The record's own scheme must be passed; signing with the known scheme is a mismatch.
+    expect(
+      errCode(
+        await h.call(
+          "sessions.sign",
+          { scheme: SCHEME, address, params: { action: {}, nonce: T0 } },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+
+    ok(await h.call("sessions.delete", { address }, session));
+    const after = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
+    expect(after).toHaveLength(0);
+  });
+
+  it("wallet.delete removes unknown-scheme records with the known ones", async () => {
+    const { h, session, walletId } = await setup(T0);
+    await createSession(h, session, walletId, { name: "known" });
+    const address = await injectUnknown(h, session, walletId);
+    await h.settle();
+    const before = ok(await h.call("sessions.list", null, session)) as unknown as Array<{
+      scheme: string;
+    }>;
+    expect(before.map((s) => s.scheme)).toStrictEqual([SCHEME, "future-scheme"]);
+
+    ok(await h.call("wallet.delete", { walletId, verify: PASSKEY() }, session));
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
+    expect(list).toHaveLength(0);
+    const image = await h.store.load();
+    expect(image.records.every((r) => r.id !== address.toLowerCase())).toBe(true);
+  });
+
+  it("an unknown-scheme record whose key is not its id latches integrity at unlock", async () => {
+    const { h, session, walletId } = await setup(T0);
+    const dek = await sessionDek(h);
+    try {
+      const forged = sealRecord(
+        sealer,
+        dek,
+        SESSION_KIND,
+        // A valid address that EVM_SECRET does not derive — authentic seal, false binding.
+        `0x${"22".repeat(20)}`,
+        encodeSessionHeader({
+          scheme: "future-scheme",
+          walletId,
+          groupIndex: 0,
+          owner: EVM_ADDRESS,
+          scope: FUTURE_SCOPE,
+          name: "forged",
+          validUntil: T0 + DAY,
+          createdAt: T0,
+        }),
+        new Uint8Array(EVM_SECRET),
+      );
+      await h.store.commit(
+        withManifest(sealer, await h.store.load(), [{ op: "put-record", record: forged }], dek),
+      );
+    } finally {
+      dek.wipe();
+    }
+    await h.settle();
+    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 });
 
@@ -961,7 +1207,7 @@ describe("ApproveAgent binding", () => {
   it("a locally held agent renders the held line and signs", async () => {
     const { h, fk, session, walletId } = await keystoreSetup();
     const validUntil = T0 + 180 * DAY;
-    const agent = await createAgent(h, session, walletId, { validUntil });
+    const agent = await createSession(h, session, walletId, { validUntil });
     ok(
       await h.call(
         "chain.sign",
@@ -999,7 +1245,7 @@ describe("ApproveAgent binding", () => {
   it("a record that disagrees with the approval is refused", async () => {
     const { h, session, walletId } = await keystoreSetup();
     const validUntil = T0 + 180 * DAY;
-    const agent = await createAgent(h, session, walletId, { validUntil });
+    const agent = await createSession(h, session, walletId, { validUntil });
     for (const name of [
       "bot-1", // right name, missing the expiry the record holds
       `bot-1 valid_until ${validUntil + 1}`, // wrong expiry

@@ -3,13 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { nobleBackend } from "@qntx/nostr";
 
-import { encodeAgentHeader, parseAgentHeader } from "../src/modules/apps/record.ts";
 import {
   encodeNostrKeyHeader,
   encodeSyncKeyHeader,
   parseNostrKeyHeader,
   parseSyncKeyHeader,
 } from "../src/modules/nostr/record.ts";
+import { encodeSessionHeader, parseSessionHeader } from "../src/modules/sessions/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import {
   encodeHeader,
@@ -54,10 +54,10 @@ describe("record and factor header vectors", () => {
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
 
-  it.each(byKind("hl-agent"))("$name encodes and parses byte-for-byte", (vector) => {
-    const parsed = parseAgentHeader(vector.text);
+  it.each(byKind("session-key"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseSessionHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
-    expect(encodeAgentHeader(parsed)).toBe(vector.text);
+    expect(encodeSessionHeader(parsed)).toBe(vector.text);
   });
 
   it.each(byKind("nostr-derived"))("$name encodes and parses byte-for-byte", (vector) => {

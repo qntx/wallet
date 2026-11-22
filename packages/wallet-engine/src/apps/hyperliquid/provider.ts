@@ -2,7 +2,7 @@ import type { PublicClient } from "viem";
 
 import type { Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
 
 import type { EvmFeeTier } from "../../chains/evm.ts";
 import type { EngineLogger } from "../../events.ts";
@@ -71,8 +71,8 @@ export type HyperliquidProvider = {
   /** The skew/nonce clock the transport feeds — exposed so callers can gate signing on it. */
   readonly clock: HyperliquidClock;
   /**
-   * L1 trading: every method signs the exact action it posts through `signL1` with the group's
-   * enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
+   * L1 trading: every method signs the exact action it posts through `sessions(wallet).sign` with
+   * the group's enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
    */
   readonly trade: HyperliquidTrade;
   /** Funding moves on the signature chain: the CCTP deposit into Hyperliquid. */
@@ -305,7 +305,7 @@ export type HyperliquidProviderOptions = Pick<
   HyperliquidTransportOptions,
   "network" | "fetch" | "setTimer" | "now" | "timeoutMs"
 > & {
-  /** The wallet the kernel signs L1 actions for — `hyperliquid(wallet)` and `chains(wallet)`. */
+  /** The wallet the kernel signs L1 actions for — `sessions(wallet)` and `chains(wallet)`. */
   readonly wallet: Wallet;
   /** Randomness for cloids — the engine's injected source. */
   readonly random: (length: number) => Uint8Array;
@@ -354,7 +354,7 @@ export function createHyperliquidProvider(
     /* Deferred so a provider built for reads only does not need a live wallet object — the
        first agent or signing call resolves it. */
     agents: {
-      listAgents: async () => hyperliquid(options.wallet).listAgents(),
+      list: async () => sessions(options.wallet).list(),
     },
     evmAddress: async (group) => {
       // The signature chain names the group account: Arbitrum One / Sepolia (design §2).

@@ -11,7 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
 
 import { createHyperliquidAgentRegistry } from "../src/apps/hyperliquid/agents.ts";
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
@@ -234,9 +234,10 @@ const enable = async (
   wallet: Wallet,
   walletId: string,
 ): Promise<{ address: string; group: { walletId: string; groupIndex: number } }> => {
-  agentAddress ??= await hyperliquid(wallet).createAgent({
+  agentAddress ??= await sessions(wallet).create({
+    scheme: "hyperliquid-l1-agent",
     owner: { walletId, groupIndex: 0 },
-    network: "Testnet",
+    scope: "Testnet",
     name: "reconcile",
     validUntil: NOW + DAY,
   });
@@ -976,16 +977,18 @@ describe("hyperliquid trade — agents and vectors", () => {
     const walletGroup = { walletId: "w1", groupIndex: 0 };
     const agent = {
       address: "0xagent",
+      scheme: "hyperliquid-l1-agent" as const,
+      supported: true,
       owner: "0xSomeoneElse",
       walletId: "w1",
       groupIndex: 0,
-      network: "Testnet" as const,
+      scope: "Testnet" as const,
       name: "forged",
       validUntil: NOW + DAY,
       createdAt: NOW,
     };
     const registry = createHyperliquidAgentRegistry({
-      agents: { listAgents: async () => Promise.resolve([agent]) },
+      agents: { list: async () => Promise.resolve([agent]) },
       evmAddress: async () => Promise.resolve("0xGroupOwner"),
       network: "Testnet",
       now: () => NOW,
@@ -1000,17 +1003,19 @@ describe("hyperliquid trade — agents and vectors", () => {
   it("the registry picks the qualifying agent with the latest validUntil", async () => {
     const mk = (address: string, validUntil: number) => ({
       address,
+      scheme: "hyperliquid-l1-agent" as const,
+      supported: true,
       owner: "0xGroupOwner",
       walletId: "w1",
       groupIndex: 0,
-      network: "Testnet" as const,
+      scope: "Testnet" as const,
       name: address,
       validUntil,
       createdAt: NOW,
     });
     const registry = createHyperliquidAgentRegistry({
       agents: {
-        listAgents: async () =>
+        list: async () =>
           Promise.resolve([
             mk("0xaaa", NOW + 10_000),
             mk("0xbbb", NOW + 20_000),
@@ -1033,14 +1038,16 @@ describe("hyperliquid trade — agents and vectors", () => {
   it("rejects network-filtered agents of another network", async () => {
     const registry = createHyperliquidAgentRegistry({
       agents: {
-        listAgents: async () =>
+        list: async () =>
           Promise.resolve([
             {
               address: "0xother",
+              scheme: "hyperliquid-l1-agent" as const,
+              supported: true,
               owner: "0xGroupOwner",
               walletId: "w1",
               groupIndex: 0,
-              network: "Mainnet" as const,
+              scope: "Mainnet" as const,
               name: "main",
               validUntil: NOW + DAY,
               createdAt: NOW,

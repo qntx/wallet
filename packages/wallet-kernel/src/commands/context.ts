@@ -3,7 +3,7 @@ import type { MethodName, ParamsOf, ResultOf } from "@qntx/wallet/protocol";
 import type { KernelPlatform } from "../platform.ts";
 import type { Secret } from "../secret/secret.ts";
 import type { Session } from "../session/session.ts";
-import type { StoreOp, VaultImage } from "../vault/store.ts";
+import type { StoreOp, StoredRecord, VaultImage } from "../vault/store.ts";
 import type { OpenedRecord } from "../vault/vault.ts";
 
 /**
@@ -31,6 +31,11 @@ export type VaultHooks = {
    * bookkeeping is needed here.
    */
   readonly walletDeleteOps: (image: VaultImage, walletId: string) => ReadonlyArray<StoreOp>;
+  /**
+   * Throws when the public header of a record this module owns is malformed — status marks the
+   * vault corrupted.
+   */
+  readonly parseHeader: (record: StoredRecord) => void;
 };
 
 /** Vault health, recomputed on every load; only ok serves the full method set. */

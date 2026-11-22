@@ -55,7 +55,7 @@ const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
 const WALLETCONNECT_EXTERNAL = [
   ...Object.keys(pkg.peerDependencies),
   "@qntx/wallet/chains",
-  "@qntx/wallet/hyperliquid",
+  "@qntx/wallet/sessions",
   ...Object.keys(pkg.dependencies).filter(
     (name) => !name.startsWith("@reown/") && !name.startsWith("@walletconnect/"),
   ),
@@ -82,7 +82,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
     source: "src/apps/index.ts",
     /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
     budget: 26 * 1024,
-    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: [],
   },
   {

@@ -7,8 +7,8 @@
  * approvals go through the request pipeline.
  */
 import type { Wallet } from "@qntx/wallet";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
-import type { HyperliquidAgentInfo, HyperliquidNetwork } from "@qntx/wallet/protocol";
+import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
+import { sessions } from "@qntx/wallet/sessions";
 
 import type { EngineLogger } from "../../events.ts";
 import type { RequestController } from "../../requests/controller.ts";
@@ -85,19 +85,20 @@ const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> =>
 
 export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppProvider {
   const { provider, userSigned } = options;
-  const wallet = (): ReturnType<typeof hyperliquid> => hyperliquid(options.wallet);
+  const wallet = (): ReturnType<typeof sessions> => sessions(options.wallet);
   const sleep = async (ms: number): Promise<void> =>
     new Promise((resolve) => {
       options.setTimer(ms, resolve);
     });
 
   /** The group's kernel agents on this network, owner-verified (the registry's own read). */
-  const kernelAgents = async (group: AppGroup): Promise<ReadonlyArray<HyperliquidAgentInfo>> => {
-    const listed = await wallet().listAgents();
+  const kernelAgents = async (group: AppGroup): Promise<ReadonlyArray<SessionInfo>> => {
+    const listed = await wallet().list();
     const owner = await provider.agents.owner(group);
     return listed.filter(
       (agent) =>
-        agent.network === options.network &&
+        agent.scheme === "hyperliquid-l1-agent" &&
+        agent.scope === options.network &&
         agent.walletId === group.walletId &&
         agent.groupIndex === group.groupIndex &&
         agent.owner.toLowerCase() === owner,
@@ -106,7 +107,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
 
   const deleteAgent = async (address: string): Promise<void> => {
     try {
-      await wallet().deleteAgent(address);
+      await wallet().delete(address);
     } catch (error) {
       options.logger.warn(`hyperliquid agent ${address} delete failed`, error);
     }
@@ -173,7 +174,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
     group: AppGroup,
     flow: AppFlow,
     owner: string,
-    agent: HyperliquidAgentInfo,
+    agent: SessionInfo,
   ): Promise<void> => {
     if (flow.current().step !== "verify" && flow.current().step !== "approve-builder") {
       flow.write({ step: "approve-agent" });
@@ -281,9 +282,10 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
             (a) => a.address.toLowerCase() === flow.current().agent?.address.toLowerCase(),
           );
     if (agent === undefined) {
-      const address = await wallet().createAgent({
+      const address = await wallet().create({
+        scheme: "hyperliquid-l1-agent",
         owner: group,
-        network: options.network,
+        scope: options.network,
         name: options.agentName,
         validUntil: now + AGENT_VALID_MS,
       });
@@ -298,7 +300,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         address: agent.address,
         name: agent.name,
         validUntil: agent.validUntil,
-        network: agent.network,
+        network: agent.scope,
       },
     });
     await approveAgent(group, flow, owner, agent);
@@ -320,10 +322,10 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
   return {
     id: "hyperliquid",
     groups: async () => {
-      const listed = await wallet().listAgents();
+      const listed = await wallet().list();
       const seen = new Map<string, AppGroup>();
       for (const agent of listed) {
-        if (agent.network === options.network) {
+        if (agent.scheme === "hyperliquid-l1-agent" && agent.scope === options.network) {
           seen.set(`${agent.walletId}/${agent.groupIndex}`, {
             walletId: agent.walletId,
             groupIndex: agent.groupIndex,
@@ -409,7 +411,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
                   address: old.address,
                   name: old.name,
                   validUntil: old.validUntil,
-                  network: old.network,
+                  network: old.scope,
                 },
                 step: undefined,
                 requestId: undefined,
@@ -437,9 +439,10 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
              throwaway valid for ten minutes does it, and is deleted in every outcome. */
           let throwaway: string | undefined;
           try {
-            const address = await wallet().createAgent({
+            const address = await wallet().create({
+              scheme: "hyperliquid-l1-agent",
               owner: group,
-              network: options.network,
+              scope: options.network,
               name: options.agentName,
               validUntil: options.now() + REVOKE_VALID_MS,
             });
@@ -521,7 +524,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
             address: restored.address,
             name: restored.name,
             validUntil: restored.validUntil,
-            network: restored.network,
+            network: restored.scope,
           },
           step: undefined,
           requestId: undefined,
@@ -564,7 +567,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
               address: newest.address,
               name: newest.name,
               validUntil: newest.validUntil,
-              network: newest.network,
+              network: newest.scope,
             },
           });
         } else {
@@ -607,7 +610,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
               address: newest.address,
               name: newest.name,
               validUntil: newest.validUntil,
-              network: newest.network,
+              network: newest.scope,
             },
             builder: "declined",
             renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,
@@ -622,7 +625,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
             address: newest.address,
             name: newest.name,
             validUntil: newest.validUntil,
-            network: newest.network,
+            network: newest.scope,
           },
         });
         return;
@@ -638,7 +641,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
           address: newest.address,
           name: newest.name,
           validUntil: newest.validUntil,
-          network: newest.network,
+          network: newest.scope,
         },
         ...(builder === undefined || builderConfirmed ? { builder: "approved" as const } : {}),
         renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,

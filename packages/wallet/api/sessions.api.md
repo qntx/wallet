@@ -70,43 +70,6 @@ type FactorInfo = {
     readonly createdAt: number;
 };
 
-// @public (undocumented)
-export function hyperliquid(wallet: Wallet): HyperliquidApi;
-
-// @public (undocumented)
-export type HyperliquidAgentInfo = {
-    readonly address: string;
-    readonly owner: string;
-    readonly walletId: string;
-    readonly groupIndex: number;
-    readonly network: HyperliquidNetwork;
-    readonly name: string;
-    readonly validUntil: number;
-    readonly createdAt: number;
-};
-
-// @public (undocumented)
-export type HyperliquidApi = {
-    readonly createAgent: (params: {
-        readonly owner: {
-            readonly walletId: string;
-            readonly groupIndex: number;
-        };
-        readonly network: HyperliquidNetwork;
-        readonly name: string;
-        readonly validUntil: number;
-    }) => Promise<string>;
-    readonly listAgents: () => Promise<ReadonlyArray<HyperliquidAgentInfo>>;
-    readonly deleteAgent: (address: string) => Promise<void>;
-    readonly signL1: (params: {
-        readonly agent: string;
-        readonly action: HyperliquidL1Action;
-        readonly nonce: number;
-        readonly vaultAddress?: string;
-        readonly expiresAfter?: number;
-    }) => Promise<Uint8Array>;
-};
-
 // @public
 export type HyperliquidL1Action = {
     readonly type: "order";
@@ -193,6 +156,14 @@ export type HyperliquidL1Order = {
 };
 
 // @public (undocumented)
+export type HyperliquidL1Params = {
+    readonly action: HyperliquidL1Action;
+    readonly nonce: number;
+    readonly vaultAddress?: string;
+    readonly expiresAfter?: number;
+};
+
+// @public (undocumented)
 export type HyperliquidNetwork = "Mainnet" | "Testnet";
 
 // @public
@@ -245,6 +216,55 @@ type NostrKeyRef = {
     readonly kind: "derived";
     readonly walletId: string;
     readonly index: number;
+};
+
+// @public (undocumented)
+export type SessionInfo = {
+    readonly address: string;
+    readonly scheme: string;
+    readonly supported: boolean;
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly owner: string;
+    readonly scope: string;
+    readonly name: string;
+    readonly validUntil: number;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+export function sessions(wallet: Wallet): SessionsApi;
+
+// @public (undocumented)
+export type SessionsApi = {
+    readonly create: <K extends SessionSchemeId>(params: {
+        readonly scheme: K;
+        readonly owner: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+        };
+        readonly scope: SessionSchemes[K]["scope"];
+        readonly name: string;
+        readonly validUntil: number;
+    }) => Promise<string>;
+    readonly list: () => Promise<ReadonlyArray<SessionInfo>>;
+    readonly delete: (address: string) => Promise<void>;
+    readonly sign: <K extends SessionSchemeId>(params: {
+        readonly scheme: K;
+        readonly address: string;
+        readonly params: SessionSchemes[K]["params"];
+    }) => Promise<Uint8Array>;
+};
+
+// @public (undocumented)
+export type SessionSchemeId = keyof SessionSchemes;
+
+// @public
+export type SessionSchemes = {
+    readonly "hyperliquid-l1-agent": {
+        readonly scope: HyperliquidNetwork;
+        readonly params: HyperliquidL1Params;
+    };
 };
 
 // @public
