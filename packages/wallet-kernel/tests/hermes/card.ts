@@ -267,7 +267,7 @@ async function access(): Promise<void> {
     await Promise.resolve();
     return mark;
   };
-  const hash = await accessHash("hunter2!", card, fake);
+  const hash = await accessHash(utf8ToBytes("hunter2!"), card, fake);
   check(hash === mark, "accessHash returns the derived bytes");
   check(
     captured !== undefined && captured.every((byte) => byte === 0),
