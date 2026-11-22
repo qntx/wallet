@@ -1,10 +1,9 @@
-import { secp256k1 } from "@noble/curves/secp256k1.js";
 /**
  * BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
  * https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
  */
 import { sha256 } from "@noble/hashes/sha2.js";
-import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import { ChainError } from "../index.ts";
 
@@ -127,55 +126,21 @@ const base64 = (bytes: Uint8Array): string => {
 };
 
 /**
- * Signs the BIP-322 to_sign input through a btc-signer Transaction and returns the `smp`-prefixed
- * base64 witness encoding. `scriptPubKey` is the message address's output script (P2WPKH or P2TR).
+ * The `smp`-prefixed base64 witness encoding of a BIP-322 simple signature: a count varint then
+ * each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
  */
-export const signBip322Simple = (
-  message: string,
-  scriptPubKey: Uint8Array,
-  privateKey: Uint8Array,
-  auxRand: (n: number) => Uint8Array,
-): string => {
-  const tx = bip322ToSign(scriptPubKey, message);
-  const pub = secp256k1.getPublicKey(privateKey, true);
-  tx.updateInput(0, {
-    bip32Derivation: [[pub, { fingerprint: 0, path: [] }]],
-    ...(scriptPubKey[0] === 0x51 ? { tapInternalKey: pub.slice(1) } : {}),
-  });
-  const isTaproot = scriptPubKey[0] === 0x51;
-  const ok = tx.signIdx(
-    privateKey,
-    0,
-    isTaproot ? [SigHash.DEFAULT, SigHash.ALL] : [SigHash.ALL],
-    auxRand(0),
-  );
-  if (!ok) {
-    throw new ChainError("invalid-request", "key cannot sign this BIP-322 input");
-  }
-  tx.finalizeIdx(0);
-  const witness = tx.getInput(0).finalScriptWitness;
-  if (witness === undefined) {
-    throw new ChainError("invalid-request", "BIP-322 input produced no witness");
-  }
+export const encodeBip322Simple = (witness: ReadonlyArray<Uint8Array>): string => {
   const raw = concat(varint(witness.length), ...witness.map(pushData));
   return `smp${base64(raw)}`;
 };
 
-/**
- * Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
- * 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
- */
 /** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
 export const legacyMessageHash = (message: string): Uint8Array =>
   sha256(sha256(concat(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
 
-export const signLegacyMessage = (message: string, privateKey: Uint8Array): string => {
-  const hash = legacyMessageHash(message);
-  const recovered = secp256k1.sign(hash, privateKey, {
-    lowS: true,
-    format: "recovered",
-    prehash: false,
-  });
-  const header = 27 + (recovered[0] ?? 0) + 4;
-  return base64(concat(Uint8Array.of(header), recovered.slice(1)));
-};
+/**
+ * The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte
+ * header + 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
+ */
+export const encodeLegacySignature = (yParity: 0 | 1, compact: Uint8Array): string =>
+  base64(concat(Uint8Array.of(27 + yParity + 4), compact));
