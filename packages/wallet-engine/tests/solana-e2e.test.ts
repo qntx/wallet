@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { base64 } from "@scure/base";
-import { getCreateAccountInstruction } from "@solana-program/system";
+import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -21,7 +21,20 @@ import {
   getMintToCheckedInstruction as mintTo22,
   TOKEN_2022_PROGRAM_ADDRESS,
 } from "@solana-program/token-2022";
-import { address as solAddress, generateKeyPairSigner } from "@solana/kit";
+import {
+  AccountRole,
+  appendTransactionMessageInstructions,
+  blockhash,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageConfig,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  address as solAddress,
+  generateKeyPairSigner,
+} from "@solana/kit";
+import type { Instruction } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
@@ -41,7 +54,7 @@ import { approval } from "./approval.ts";
 import { send as sendTx, idleNetworkDeps, requestsFor } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
-// Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v3.1.11
+// Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v4.4.0
 // from the anza-xyz/agave release tarball, SHA-256 verified.
 const VALIDATOR = process.env["SOLANA_TEST_VALIDATOR"] ?? "solana-test-validator";
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -785,4 +798,113 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       rmSync(ledger, { recursive: true, force: true });
     }
   }, 600_000);
+});
+
+describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
+  it("a v1 transfer and a >1232-byte v1 memo land on the local validator", async () => {
+    const ledger = mkdtempSync(join(tmpdir(), "sol-v1-"));
+    const validator = spawn(
+      VALIDATOR,
+      [
+        "--reset",
+        "--ledger",
+        ledger,
+        "--quiet",
+        "--bind-address",
+        "127.0.0.1",
+        "--rpc-port",
+        "8897",
+        "--faucet-port",
+        "9907",
+      ],
+      { stdio: "ignore" },
+    );
+    try {
+      const url = "http://127.0.0.1:8897";
+      const r = rpc(url);
+      await waitHealthy(r, ledger, Date.now() + 120_000);
+      const payer = await generateKeyPairSigner();
+      const recipient = await generateKeyPairSigner();
+      const a = new SolanaChainAdapter();
+      await waitFunded(r, payer.address, Date.now() + 120_000);
+
+      const freshLifetime = async () => {
+        const result = (await r.call("getLatestBlockhash", [{ commitment: "confirmed" }])) as {
+          value: { blockhash: string; lastValidBlockHeight: number };
+        };
+        return {
+          blockhash: blockhash(result.value.blockhash),
+          lastValidBlockHeight: BigInt(result.value.lastValidBlockHeight),
+        };
+      };
+
+      const v1Message = async (instructions: Instruction[]): Promise<Uint8Array> => {
+        const lifetime = await freshLifetime();
+        /* v1 config values are hard limits, not hints: an unset compute-unit or
+           loaded-data limit is a 0 cap, so a landable tx must set them both. The
+           memo program's log costs push the big tx past 400k units. */
+        const withConfig = setTransactionMessageConfig(
+          {
+            priorityFeeLamports: 5000n,
+            computeUnitLimit: 1_400_000,
+            loadedAccountsDataSizeLimit: 32 * 1024 * 1024,
+          },
+          createTransactionMessage({ version: 1 }),
+        );
+        const withIx = appendTransactionMessageInstructions(instructions, withConfig);
+        const withPayer = setTransactionMessageFeePayer(payer.address, withIx);
+        const withLifetime = setTransactionMessageLifetimeUsingBlockhash(lifetime, withPayer);
+        return new Uint8Array(
+          getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(withLifetime)),
+        );
+      };
+
+      const sendV1 = async (message: Uint8Array): Promise<string> => {
+        const wire = a.finalize(message, await sign(payer, message));
+        // The wallet writes the v1 wire message-first: the message bytes are at
+        // the head, signatures trail them without a count prefix.
+        expect(wire.slice(0, message.length)).toStrictEqual(message);
+        expect(wire).toHaveLength(message.length + 64);
+        return a.broadcast(r, wire);
+      };
+
+      const v1Hash = await sendV1(
+        await v1Message([
+          getTransferSolInstruction({
+            source: payer,
+            destination: recipient,
+            amount: 1_000_000n,
+          }),
+        ]),
+      );
+      await waitConfirmed(a, r, v1Hash, Date.now() + 60_000);
+      const recipientBal = (await r.call("getBalance", [
+        recipient.address,
+        { commitment: "confirmed" },
+      ])) as { value: number };
+      expect(recipientBal.value).toBe(1_000_000);
+
+      // A v1 transaction is not bound by the legacy 1232-byte packet rule:
+      // a ~1100-byte memo payload pushes the wire past it.
+      const memoData = new TextEncoder().encode("v".repeat(1100));
+      const bigMessage = await v1Message([
+        {
+          programAddress: solAddress("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+          accounts: [{ address: payer.address, role: AccountRole.WRITABLE_SIGNER }],
+          data: memoData,
+        },
+      ]);
+      expect(bigMessage.length + 64).toBeGreaterThan(1232);
+      const bigHash = await sendV1(bigMessage);
+      await waitConfirmed(a, r, bigHash, Date.now() + 60_000);
+      await expect(a.signatureStatus(r, bigHash)).resolves.toMatchObject({
+        entry: expect.objectContaining({
+          commitment: expect.stringMatching(/confirmed|finalized/),
+        }),
+      });
+    } finally {
+      validator.kill("SIGKILL");
+      rmSync(ledger, { recursive: true, force: true });
+    }
+  }, 300_000);
 });

@@ -85,6 +85,33 @@ const durableWire = async (): Promise<{ wire: Uint8Array; nonceAccount: string }
   return { wire, nonceAccount: nonceAccount.address };
 };
 
+const v1DurableWire = async (): Promise<{ wire: Uint8Array; nonceAccount: string }> => {
+  const payer = await generateKeyPairSigner();
+  const nonceAccount = await generateKeyPairSigner();
+  const recipient = await generateKeyPairSigner();
+  const message = setTransactionMessageLifetimeUsingDurableNonce(
+    {
+      nonce: NONCE_VALUE as Nonce,
+      nonceAccountAddress: nonceAccount.address,
+      nonceAuthorityAddress: payer.address,
+    },
+    appendTransactionMessageInstructions(
+      [
+        getTransferSolInstruction({
+          source: payer,
+          destination: recipient.address,
+          amount: 1000,
+        }),
+      ],
+      setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 1 })),
+    ),
+  );
+  const wire = new Uint8Array(
+    getTransactionEncoder().encode(await signTransactionMessageWithSigners(message)),
+  );
+  return { wire, nonceAccount: nonceAccount.address };
+};
+
 const blockhashWire = async (): Promise<Uint8Array> => {
   const payer = await generateKeyPairSigner();
   const recipient = await generateKeyPairSigner();
@@ -243,6 +270,25 @@ describe("a durable-nonce transaction is tracked without a height bound", () => 
     expect(rpc.calls.indexOf("getAccountInfo")).toBeLessThan(
       rpc.calls.indexOf("getSignatureStatuses"),
     );
+  });
+
+  it("a v1 dApp wire is tracked durable, identified by its trailing signature", async () => {
+    const { wire, nonceAccount } = await v1DurableWire();
+    const signature = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
+    const rpc = mockRpc(signature, {
+      account: {
+        value: { owner: SYSTEM_PROGRAM_ADDRESS, data: [nonceAccountValue(NONCE_VALUE), "base64"] },
+      },
+      tip: { slot: 9_000_000, height: 9_000_000 },
+    });
+    const { ctx, tx, sig } = await trackTx(rpc, wire);
+    expect(sig).toBe(signature);
+    expect(tx.durableNonce).toStrictEqual({ account: nonceAccount, value: NONCE_VALUE });
+    expect(tx.lastValidBlockHeight).toBeUndefined();
+
+    const state = await pollSolana(ctx, tx);
+    expect(state).toBeUndefined();
+    expect(rpc.calls).not.toContain("getEpochInfo");
   });
 
   it("an advanced nonce with no entry on a bank at least as fresh is dropped", async () => {
