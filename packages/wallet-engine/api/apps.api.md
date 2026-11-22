@@ -151,6 +151,7 @@ export type AppContext = {
 // @public
 export type AppDefinition<Id extends AppId, Api> = {
     readonly id: Id;
+    readonly enableWhen: ReadonlyArray<Exclude<AppAvailability, "blocked">>;
     readonly create: (context: AppContext) => AppInstance<Api>;
 };
 
@@ -199,7 +200,7 @@ export type AppGroupState = {
 };
 
 // @public
-export type AppId = "hyperliquid" | "polymarket";
+export type AppId = string;
 
 // @public
 export type AppInstance<Api> = {
@@ -218,7 +219,6 @@ type AppOrigin = {
 
 // @public
 type AppProvider = {
-    readonly id: AppId;
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
@@ -229,6 +229,12 @@ type AppProvider = {
         readonly revoke: boolean;
     }, flow: AppFlow) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+};
+
+// @public
+type AppRegistration = {
+    readonly provider: AppProvider;
+    readonly enableWhen: ReadonlyArray<Exclude<AppAvailability, "blocked">>;
 };
 
 // @public
@@ -270,7 +276,7 @@ export class AppsController extends Controller<AppsState> {
 
 // @public (undocumented)
 type AppsControllerDeps = {
-    readonly providers: ReadonlyMap<AppId, AppProvider>;
+    readonly registrations: ReadonlyMap<AppId, AppRegistration>;
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "reject">;
     readonly openStore: () => Promise<EngineStore>;

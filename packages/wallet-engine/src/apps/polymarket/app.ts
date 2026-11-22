@@ -29,6 +29,9 @@ export function polymarket(
 
   return {
     id: "polymarket",
+    /* `close-only` enables too — users need credentials to sell; the trade path gates opening
+       positions itself. */
+    enableWhen: ["available", "close-only"],
     create: (context: AppContext) => {
       const credentials = createPolymarketCredentials({
         storage: context.storage,

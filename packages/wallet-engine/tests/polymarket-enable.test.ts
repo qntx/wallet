@@ -954,7 +954,7 @@ describe("polymarket enable — gates and controller integration", () => {
     await w1.apps.acknowledgeTerms(w1.group, "polymarket");
     await until(() => w1.pmState()?.termsAcknowledged === true);
     /* A fresh controller over the same store must find the polymarket record — the record key
-       is parsed with isAppId, not a hard-coded app name. */
+       is checked against the registered ids, not a hard-coded app name. */
     const w2 = await pmWorld({ transactions: [], nonce: "0", approvals: [] }, { openStore });
     await until(() => w2.pmState()?.termsAcknowledged === true);
     expect(w2.pmState()?.termsAcknowledged).toBe(true);

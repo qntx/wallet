@@ -5,7 +5,7 @@
  * refuse too (fail closed). `disable`/`cancel`/trading stay ungated: this is a UI boundary only.
  */
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
-import { describe, expect, finishFlow, it, world } from "./apps-helpers.ts";
+import { describe, expect, finishFlow, it, swallow, until, world } from "./apps-helpers.ts";
 
 const BLOCKED = (): EligibilityResponse => ({
   country: "US",
@@ -127,4 +127,79 @@ describe("apps eligibility", () => {
     expect(w.state()?.status).toBe("unavailable");
     await w.destroy();
   });
+
+  it("each app gates on its own enableWhen — the eligibility matrix", async () => {
+    let eligibility: () => EligibilityResponse = () => ({
+      country: "FR",
+      region: null,
+      apps: { hyperliquid: "close-only", polymarket: "close-only" },
+    });
+    const w = await world(0, {
+      polymarket: {},
+      hl: { eligibility: () => eligibility() },
+    });
+    const enable = async (app: "hyperliquid" | "polymarket") => w.apps.enable(w.group, app);
+    /* close-only: the Polymarket definition admits it — `invalid-input` (unacknowledged terms)
+       means the flow started; Hyperliquid's does not — the gate refuses before the flow runs. */
+    await expect(enable("hyperliquid")).rejects.toMatchObject({ category: "unavailable" });
+    await expect(enable("polymarket")).rejects.toMatchObject({ category: "invalid-input" });
+    /* blocked refuses both — each in the app's own error category. */
+    eligibility = () => ({
+      country: "FR",
+      region: null,
+      apps: { hyperliquid: "blocked", polymarket: "blocked" },
+    });
+    await w.apps.refreshEligibility();
+    await expect(enable("hyperliquid")).rejects.toMatchObject({ category: "unavailable" });
+    await expect(enable("polymarket")).rejects.toMatchObject({ category: "blocked" });
+    /* An app absent from a ready answer is unknown — refused like a non-ready answer. */
+    eligibility = () => ({
+      country: "FR",
+      region: null,
+      apps: { polymarket: "available" },
+    });
+    await w.apps.refreshEligibility();
+    await expect(enable("hyperliquid")).rejects.toMatchObject({ category: "unavailable" });
+    eligibility = () => ({
+      country: "FR",
+      region: null,
+      apps: { hyperliquid: "available" },
+    });
+    await w.apps.refreshEligibility();
+    await expect(enable("polymarket")).rejects.toMatchObject({ category: "blocked" });
+    /* An eligibility error fails closed. */
+    eligibility = () => {
+      throw new Error("gateway down");
+    };
+    await w.apps.refreshEligibility();
+    await expect(enable("hyperliquid")).rejects.toMatchObject({ category: "unavailable" });
+    await expect(enable("polymarket")).rejects.toMatchObject({ category: "blocked" });
+    /* `available` starts both: Hyperliquid proceeds to its approval request (then cancelled);
+       Polymarket runs and refuses inside on unacknowledged terms. */
+    eligibility = AVAILABLE;
+    await w.apps.refreshEligibility();
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const started = w.apps.enable(w.group, "hyperliquid");
+    void swallow(started);
+    await until(() => w.state()?.requestId !== undefined);
+    await w.apps.cancel(w.group, "hyperliquid");
+    await swallow(started);
+    await expect(enable("polymarket")).rejects.toMatchObject({ category: "invalid-input" });
+    await w.destroy();
+  }, 30000);
+
+  it("a running flow isolates per group+app — the sibling is neither busy nor staled", async () => {
+    const w = await world(0, { polymarket: {}, hl: { eligibility: AVAILABLE } });
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const started = w.apps.enable(w.group, "hyperliquid");
+    void swallow(started);
+    /* Parked at the approval request — a group-keyed `busy` would refuse the other app's flow. */
+    await until(() => w.state()?.requestId !== undefined);
+    await w.apps.disable(w.group, "polymarket", { revoke: false });
+    /* A group-keyed `flowGen` bump would stale the Hyperliquid view — its writes must land. */
+    await swallow(w.apps.cancel(w.group, "polymarket"));
+    await finishFlow(w, started, "enabled");
+    expect(w.state()?.status).toBe("enabled");
+    await w.destroy();
+  }, 30000);
 });

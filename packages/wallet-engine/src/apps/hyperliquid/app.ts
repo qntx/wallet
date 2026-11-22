@@ -49,6 +49,7 @@ export function hyperliquid(
 
   return {
     id: "hyperliquid",
+    enableWhen: ["available"],
     create: (context: AppContext) => {
       const socket = createHyperliquidSocket({
         network,
@@ -74,7 +75,7 @@ export function hyperliquid(
             return undefined;
           }
           const state =
-            context.state()?.groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
+            context.state()?.groups[`${group.walletId}/${group.groupIndex}`]?.["hyperliquid"];
           return state?.builder === "approved" ? builder : undefined;
         },
       });

@@ -1,15 +1,15 @@
 /**
- * `createApps` — the app-enablement composition: the host lists the app definitions it wants
- * (`apps: [hyperliquid({…}), polymarket({…})]`), each built over one shared `AppContext`; an
- * `AppsController` persists each group's terms flag and last-enabled agent through lock/unlock; and
- * the serialized lock lifecycle from engine.ts (`transition`/`schedule` on `wallet.subscribe`)
- * drives every app's `unlock`/`lock`/`close` hooks.
+ * `createApps` — the app-enablement composition: the host lists the app definitions it wants, each
+ * built over one shared `AppContext`; an `AppsController` persists each group's terms flag and
+ * last-enabled agent through lock/unlock; and the serialized lock lifecycle from engine.ts
+ * (`transition`/`schedule` on `wallet.subscribe`) drives every app's `unlock`/`lock`/`close`
+ * hooks.
  */
 import type { Wallet } from "@qntx/wallet";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
-import { eligibility as eligibilityContract } from "../gateway/contract/eligibility.ts";
+import { APP_ID, eligibility as eligibilityContract } from "../gateway/contract/eligibility.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
 import { parseWith } from "../gateway/contract/endpoint.ts";
 import { CLIENT_ID_HEADER } from "../gateway/contract/primitives.ts";
@@ -21,7 +21,6 @@ import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
 import type { AppSocket } from "./socket.ts";
 import { createAppStorage } from "./storage.ts";
-import { isAppId } from "./types.ts";
 import type {
   AppApis,
   AppContext,
@@ -55,7 +54,7 @@ type StoredGroup = {
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
-  /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
+  /** The chain clients an app's deposit path reads allowance/burn limits through. */
   readonly networks: Pick<NetworkController, "client" | "independentClient">;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
@@ -124,8 +123,15 @@ const isGroupState = (value: unknown): value is AppGroupState =>
     value.status === "needs-migration" ||
     value.status === "unavailable");
 
+/** One registered app — the provider plus the availability set `enable`/`renew` start under. */
+export type AppRegistration = {
+  readonly provider: AppProvider;
+  readonly enableWhen: ReadonlyArray<Exclude<AppAvailability, "blocked">>;
+};
+
 export type AppsControllerDeps = {
-  readonly providers: ReadonlyMap<AppId, AppProvider>;
+  /** The registered apps — the controller names none of them; the map key is the id. */
+  readonly registrations: ReadonlyMap<AppId, AppRegistration>;
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "reject">;
   readonly openStore: () => Promise<EngineStore>;
@@ -137,15 +143,15 @@ export type AppsControllerDeps = {
 
 /**
  * Per-group, per-app state machine owner. `init`/`lock` follow the engine's unlock lifecycle; host
- * calls run provider flows under a per-group generation so a superseding call or a lock drops stale
- * writes, and one flow per group+app runs at a time (`busy` otherwise).
+ * calls run provider flows under a per-group+app generation so a superseding call or a lock drops
+ * stale writes, and one flow per group+app runs at a time (`busy` otherwise).
  */
 export class AppsController extends Controller<AppsState> {
   private readonly deps: AppsControllerDeps;
   private engineStore: EngineStore | undefined;
   private generation = 0;
   private readonly flowGen = new Map<string, number>();
-  /** Groups with a flow in flight — a second enable/renew/disable is `busy`. */
+  /** Group+app pairs with a flow in flight — a second enable/renew/disable is `busy`. */
   private readonly busy = new Set<string>();
   /** Request ids the flows opened and have not resolved — rejected on lock/cancel. */
   private readonly pendingRequests = new Set<string>();
@@ -174,7 +180,7 @@ export class AppsController extends Controller<AppsState> {
       const slash = key.lastIndexOf("/");
       const group = key.slice(0, slash);
       const suffix = key.slice(slash + 1);
-      const app = isAppId(suffix) ? suffix : undefined;
+      const app = this.deps.registrations.has(suffix) ? suffix : undefined;
       if (stored === undefined || app === undefined) {
         this.deps.logger.warn(`apps record ${key} skipped: malformed`);
       } else {
@@ -201,12 +207,12 @@ export class AppsController extends Controller<AppsState> {
         groupIndex: Number(key.slice(slash + 1)),
       });
     }
-    for (const provider of this.deps.providers.values()) {
+    for (const [id, { provider }] of this.deps.registrations) {
       /* A lock mid-init turns the kernel enumeration into an error — groups() fails closed and
          the post-init vault check (transition) runs the lock path. */
       // oxlint-disable-next-line eslint/no-await-in-loop -- providers enumerate in order.
       const discovered = await provider.groups().catch((error: unknown): AppGroup[] => {
-        this.deps.logger.warn(`apps groups ${provider.id} failed`, error);
+        this.deps.logger.warn(`apps groups ${id} failed`, error);
         return [];
       });
       for (const group of discovered) {
@@ -243,12 +249,16 @@ export class AppsController extends Controller<AppsState> {
     await store?.close();
   }
 
-  private providerFor(app: AppId): AppProvider {
-    const provider = this.deps.providers.get(app);
-    if (provider === undefined) {
+  private registrationFor(app: AppId): AppRegistration {
+    const registration = this.deps.registrations.get(app);
+    if (registration === undefined) {
       throw new Error(`app ${app} is not implemented`);
     }
-    return provider;
+    return registration;
+  }
+
+  private providerFor(app: AppId): AppProvider {
+    return this.registrationFor(app).provider;
   }
 
   private requireUnlocked(app: AppId): void {
@@ -264,19 +274,17 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /**
-   * `enable`/`renew` gate: unless eligibility is `ready` and the app is enabled for the
-   * jurisdiction, the flow must not start — `unknown`/`error` refuse too (a jurisdiction gate fails
-   * closed). Hyperliquid needs `available`; Polymarket also enables under `close-only` — its users
-   * need credentials to sell, and the trade path gates opening positions itself. This is a UI
-   * boundary only: `disable`/`cancel`/trading are not gated, and the platform enforces its own
+   * `enable`/`renew` gate: unless eligibility is `ready` and the answer is one the app's
+   * `enableWhen` declares, the flow must not start — `unknown`/`error`, an app absent from a ready
+   * answer and any undeclared availability all refuse (a jurisdiction gate fails closed). This is a
+   * UI boundary only: `disable`/`cancel`/trading are not gated, and the platform enforces its own
    * restrictions. The thrown error is the app's own type.
    */
   private requireAvailable(app: AppId): void {
     const availability = this.availability(app);
     const open =
-      app === "polymarket"
-        ? availability === "available" || availability === "close-only"
-        : availability === "available";
+      availability !== undefined &&
+      this.registrationFor(app).enableWhen.some((allowed) => allowed === availability);
     if (!open) {
       const { country, region } = this.getState().eligibility;
       const where =
@@ -326,7 +334,9 @@ export class AppsController extends Controller<AppsState> {
     for (const [gkey, apps] of Object.entries(groups)) {
       for (const [app, group] of Object.entries(apps)) {
         const blocked =
-          isAppId(app) && eligibility.status === "ready" && eligibility.apps?.[app] === "blocked";
+          this.deps.registrations.has(app) &&
+          eligibility.status === "ready" &&
+          eligibility.apps?.[app] === "blocked";
         if (group?.status === "disabled" && blocked) {
           patched[gkey] = { ...patched[gkey], [app]: { ...group, status: "unavailable" } };
           changed = true;
@@ -350,11 +360,11 @@ export class AppsController extends Controller<AppsState> {
     const gkey = groupKey(group);
     const { generation } = this;
     /* The flow generation captured at creation — a `start` bump or a lock makes it stale. */
-    const myGen = this.flowGen.get(gkey) ?? 0;
+    const myGen = this.flowGen.get(key) ?? 0;
     const current = (): AppGroupState => this.getState().groups[gkey]?.[app] ?? DEFAULT_GROUP;
     const stale = (): boolean =>
       generation !== this.generation ||
-      (this.flowGen.get(gkey) ?? 0) !== myGen ||
+      (this.flowGen.get(key) ?? 0) !== myGen ||
       this.getState().locked;
     const persist = (record: StoredGroup): void => {
       const { engineStore } = this;
@@ -430,10 +440,10 @@ export class AppsController extends Controller<AppsState> {
     return { walletId: group.walletId, groupIndex: group.groupIndex };
   }
 
-  /** Bump the group's flow generation — a running flow's writes go stale — then hand out a view. */
+  /** Bump the group+app's flow generation — a running flow's writes go stale — then hand out a view. */
   private start(group: AppGroup, app: AppId): AppFlow {
-    const gkey = groupKey(group);
-    this.flowGen.set(gkey, (this.flowGen.get(gkey) ?? 0) + 1);
+    const key = recordKey(group, app);
+    this.flowGen.set(key, (this.flowGen.get(key) ?? 0) + 1);
     return this.view(group, app);
   }
 
@@ -450,17 +460,17 @@ export class AppsController extends Controller<AppsState> {
     run: (provider: AppProvider, flow: AppFlow) => Promise<void>,
   ): Promise<void> {
     this.requireUnlocked(app);
-    const gkey = groupKey(group);
+    const key = recordKey(group, app);
     const provider = this.providerFor(app);
-    if (this.busy.has(gkey)) {
+    if (this.busy.has(key)) {
       throw provider.error("busy", "an enablement flow is already running");
     }
     const view = this.start(this.groupOf(group), app);
-    this.busy.add(gkey);
+    this.busy.add(key);
     try {
       await run(provider, view);
     } finally {
-      this.busy.delete(gkey);
+      this.busy.delete(key);
     }
   }
 
@@ -496,12 +506,12 @@ export class AppsController extends Controller<AppsState> {
     await provider.cancel(this.groupOf(group), view);
   }
 
-  /** Re-derive the group's state from the kernel and Hyperliquid — never a flow. */
+  /** Re-derive the group's state from the kernel and the apps' own reads — never a flow. */
   async reconcile(group: AppGroup): Promise<void> {
     if (this.getState().locked) {
       return;
     }
-    for (const [app, provider] of this.deps.providers) {
+    for (const [app, { provider }] of this.deps.registrations) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- providers reconcile in order.
       await provider
         .reconcile(this.groupOf(group), this.view(this.groupOf(group), app))
@@ -563,17 +573,26 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     state: () => controllerRef.current?.getState(),
     storage: createAppStorage(id, () => (unlocked() ? sessionStore : undefined)),
   });
-  const providers = new Map<AppId, AppProvider>();
+  const registrations = new Map<AppId, AppRegistration>();
   const instances: Array<AppInstance<unknown>> = [];
   const apis: Record<string, unknown> = {};
   const registered: AppId[] = [];
   for (const definition of options.apps) {
     const { id } = definition;
-    if (providers.has(id)) {
+    if (!APP_ID.test(id)) {
+      throw new Error(`app ${id} must match ^[a-z][a-z0-9-]{1,31}$`);
+    }
+    if (registrations.has(id)) {
       throw new Error(`app ${id} is defined twice`);
     }
+    if (
+      definition.enableWhen.length === 0 ||
+      definition.enableWhen.some((allowed) => allowed !== "available" && allowed !== "close-only")
+    ) {
+      throw new Error(`app ${id} enableWhen must list "available" and/or "close-only"`);
+    }
     const instance = definition.create(context(id));
-    providers.set(id, instance.provider);
+    registrations.set(id, { provider: instance.provider, enableWhen: definition.enableWhen });
     instances.push(instance);
     apis[id] = instance.api;
     registered.push(id);
@@ -608,7 +627,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
   const eligibilityFetch = async (input: URL): Promise<Response> =>
     options.fetch(input, { headers: { [CLIENT_ID_HEADER]: clientId } });
   const controller = new AppsController({
-    providers,
+    registrations,
     wallet: options.wallet,
     fetchEligibility: async (): Promise<EligibilityResponse> => {
       const url = new URL(eligibilityContract.path, options.gateway.url);

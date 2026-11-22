@@ -961,6 +961,7 @@ describe("app-sourced request origins", () => {
     const contexts = new Map<AppId, AppContext>();
     const stub = (id: AppId): AppDefinition<AppId, unknown> => ({
       id,
+      enableWhen: ["available"],
       create: (context) => {
         contexts.set(id, context);
         return { api: {}, provider: {} as AppProvider };
@@ -970,6 +971,7 @@ describe("app-sourced request origins", () => {
        that mutates its own id cannot re-stamp — registration captured the id beforehand. */
     const mutable: AppDefinition<"polymarket", unknown> = {
       id: "polymarket",
+      enableWhen: ["available"],
       create(context) {
         (this as { id: AppId }).id = "hyperliquid";
         contexts.set("polymarket", context);
@@ -1032,5 +1034,65 @@ describe("app-sourced request origins", () => {
       { kind: "app", id: "polymarket" },
     ]);
     await created.destroy();
+  });
+
+  it("createApps validates each definition's id and enableWhen at registration", () => {
+    const stub = (
+      id: AppId,
+      enableWhen: AppDefinition<AppId, unknown>["enableWhen"] = ["available"],
+    ): AppDefinition<AppId, unknown> => ({
+      id,
+      enableWhen,
+      create: () => ({ api: {}, provider: {} as AppProvider }),
+    });
+    /* A locked wallet never transitions — registration throws before any lifecycle runs. */
+    const options = (apps: ReadonlyArray<AppDefinition<AppId, unknown>>) => ({
+      wallet: {
+        getSnapshot: () => ({ vault: "locked", wallets: [] }),
+        subscribe: () => () => undefined,
+      } as unknown as Wallet,
+      requests: {
+        prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
+        outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
+        reject: () => undefined,
+      },
+      networks: {} as Pick<NetworkController, "client" | "independentClient">,
+      fetch: async () => Promise.reject(new Error("unused")),
+      now: () => 0,
+      setTimer: () => () => undefined,
+      random: (length: number) => new Uint8Array(length),
+      logger: { warn: () => undefined },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      socket: () => ({
+        readyState: 0,
+        send: () => undefined,
+        close: () => undefined,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      }),
+      gateway: { url: "https://gateway.test" },
+      apps,
+    });
+    expect(() => createApps(options([stub("Bad_Id")]))).toThrow(
+      "app Bad_Id must match ^[a-z][a-z0-9-]{1,31}$",
+    );
+    expect(() => createApps(options([stub("hyperliquid"), stub("hyperliquid")]))).toThrow(
+      "app hyperliquid is defined twice",
+    );
+    expect(() => createApps(options([stub("hyperliquid", [])]))).toThrow(
+      'app hyperliquid enableWhen must list "available" and/or "close-only"',
+    );
+    /* A JS caller can declare anything — the cast simulates an untyped definition, which
+       TypeScript itself forbids ("blocked" is never a start availability). */
+    const blocked = {
+      id: "hyperliquid",
+      enableWhen: ["blocked"],
+      create: stub("hyperliquid").create,
+    } as unknown as AppDefinition<AppId, unknown>;
+    expect(() => createApps(options([blocked]))).toThrow(
+      'app hyperliquid enableWhen must list "available" and/or "close-only"',
+    );
   });
 });

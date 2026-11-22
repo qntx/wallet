@@ -116,7 +116,7 @@ export async function enableGroup(
   await apps.controller.acknowledgeTerms(group, "polymarket");
   const state = apps.controller.store;
   const unsubscribe = state.subscribe((s) => {
-    const id = s.groups[`${group.walletId}/${group.groupIndex}`]?.polymarket?.requestId;
+    const id = s.groups[`${group.walletId}/${group.groupIndex}`]?.["polymarket"]?.requestId;
     if (id !== undefined) {
       // oxlint-disable-next-line promise/prefer-await-to-then -- a subscribe callback cannot await.
       void engine.requests.approve(id, "evm-sign", { verify }).catch(() => undefined);

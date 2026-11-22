@@ -415,7 +415,6 @@ export function createPolymarketEnable(options: PolymarketEnableOptions): AppPro
   };
 
   return {
-    id: "polymarket",
     error: (category, message) =>
       new PolymarketError(
         /* The controller's `unavailable` is the jurisdiction gate — Polymarket reports it as

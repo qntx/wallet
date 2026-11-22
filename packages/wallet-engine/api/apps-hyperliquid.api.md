@@ -190,6 +190,7 @@ type AppContext = {
 // @public
 type AppDefinition<Id extends AppId, Api> = {
     readonly id: Id;
+    readonly enableWhen: ReadonlyArray<Exclude<AppAvailability, "blocked">>;
     readonly create: (context: AppContext) => AppInstance<Api>;
 };
 
@@ -238,7 +239,7 @@ type AppGroupState = {
 };
 
 // @public
-type AppId = "hyperliquid" | "polymarket";
+type AppId = string;
 
 // @public
 type AppInstance<Api> = {
@@ -257,7 +258,6 @@ type AppOrigin = {
 
 // @public
 type AppProvider = {
-    readonly id: AppId;
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
