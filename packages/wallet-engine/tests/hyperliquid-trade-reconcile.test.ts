@@ -687,6 +687,69 @@ describe("hyperliquid trade — late reconciliation", () => {
     expect(corrected.size).toBe(64);
   });
 
+  it("a checksummed user and a mixed-case cloid still match the pending entry", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { wallet, walletId } = await nodeWallet();
+    const clock = createHyperliquidClock(timers.now);
+    const transport = createHyperliquidTransport({
+      network: "Testnet",
+      fetch: serve(posted, timers, { exchange: async () => new Promise<never>(() => {}) }),
+      setTimer: timers.setTimer,
+      now: timers.now,
+      clock,
+    });
+    agentAddress ??= await hyperliquid(wallet).createAgent({
+      owner: { walletId, groupIndex: 0 },
+      network: "Testnet",
+      name: "reconcile",
+      validUntil: NOW + DAY,
+    });
+    const group: HyperliquidGroup = { walletId, groupIndex: 0 };
+    const exchange = createHyperliquidExchange({
+      wallet,
+      transport,
+      clock,
+      markets: createHyperliquidMarkets({ transport }),
+      account: createHyperliquidAccount({ transport }),
+      registry: {
+        require: () => ({ address: agentAddress!, owner: MASTER, validUntil: NOW + DAY }),
+      } as unknown as HyperliquidAgentRegistry,
+      now: timers.now,
+      setTimer: timers.setTimer,
+    });
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    exchange.corrections.subscribe((correction) => corrections.push(correction));
+
+    const cloid = "0xabcdef0123456789abcdef0123456789";
+    const action: HyperliquidL1Action = {
+      type: "order",
+      orders: [
+        {
+          a: 0,
+          b: true,
+          p: "58000",
+          s: "0.05",
+          r: false,
+          t: { limit: { tif: "Gtc" } },
+          c: cloid,
+        },
+      ],
+      grouping: "na",
+    };
+    const outcomes = await drive(timers, exchange.order(group, action));
+    expect(outcomes).toStrictEqual([{ kind: "unknown", cloid }]);
+
+    /* The echo spells the owner checksummed and the cloid upper-cased — the same order. */
+    const upper = `0X${cloid.slice(2).toUpperCase()}`;
+    exchange.sighted(MASTER.toUpperCase(), {
+      orders: [{ coin: "BTC", oid: 99, cloid: upper }],
+    });
+    expect(corrections).toStrictEqual([
+      { group, cloid: upper, outcome: { kind: "resting", oid: 99, cloid: upper } },
+    ]);
+  });
+
   it("an openOrders frame carrying the pending cloid corrects to resting without a poll", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();

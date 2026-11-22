@@ -191,6 +191,10 @@ const AGENT_REJECTION =
 
 const cloidOf = (entry: Record<string, unknown>): string | undefined => stringOf(entry["cloid"]);
 
+/* Pending keys normalize case: a checksummed owner or an upper-case cloid in a WebSocket frame
+   is the same pending order — the map must still match it. */
+const pendingKey = (master: string, cloid: string): string => `${master}|${cloid}`.toLowerCase();
+
 /**
  * An answered order status — strict on the documented shapes: anything else means the response was
  * misread, and a misread "rejected" is how duplicate orders happen. `undefined` → reconcile.
@@ -423,8 +427,8 @@ export function createHyperliquidExchange(options: {
     } catch {
       return; // a failed late read stays pending — the timer re-asks
     }
-    if (outcome !== undefined && pending.get(`${entry.master}|${entry.cloid}`) === entry) {
-      pending.delete(`${entry.master}|${entry.cloid}`);
+    if (outcome !== undefined && pending.get(pendingKey(entry.master, entry.cloid)) === entry) {
+      pending.delete(pendingKey(entry.master, entry.cloid));
       emit({ group: entry.group, cloid: entry.cloid, outcome });
     }
   };
@@ -436,7 +440,7 @@ export function createHyperliquidExchange(options: {
         void (async (): Promise<void> => {
           for (const entry of pending.values()) {
             if (options.now() - entry.since >= RECONCILE_LATE_WINDOW_MS) {
-              pending.delete(`${entry.master}|${entry.cloid}`); // expired: stays unknown
+              pending.delete(pendingKey(entry.master, entry.cloid)); // expired: stays unknown
             } else {
               // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls keep the weight bounded.
               await probe(entry);
@@ -462,7 +466,7 @@ export function createHyperliquidExchange(options: {
         pollCancel = undefined;
       }
     });
-    const key = `${master}|${cloid}`;
+    const key = pendingKey(master, cloid);
     if (!pending.has(key) && pending.size >= MAX_UNRESOLVED) {
       const [oldest] = pending.keys();
       if (oldest !== undefined) {
@@ -487,9 +491,9 @@ export function createHyperliquidExchange(options: {
         if (cloid === undefined || oid === undefined) {
           continue;
         }
-        const hit = pending.get(`${user}|${cloid}`);
+        const hit = pending.get(pendingKey(user, cloid));
         if (hit !== undefined) {
-          pending.delete(`${user}|${cloid}`);
+          pending.delete(pendingKey(user, cloid));
           emit({ group: hit.group, cloid, outcome: { kind: "resting", oid, cloid } });
         }
       }
@@ -498,7 +502,7 @@ export function createHyperliquidExchange(options: {
     if (Array.isArray(fills)) {
       for (const fill of fills) {
         const cloid = isRecord(fill) ? stringOf(fill["cloid"]) : undefined;
-        const hit = cloid === undefined ? undefined : pending.get(`${user}|${cloid}`);
+        const hit = cloid === undefined ? undefined : pending.get(pendingKey(user, cloid));
         if (hit !== undefined) {
           void probe(hit);
         }
