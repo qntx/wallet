@@ -45,7 +45,7 @@ const cannotSign = (index: number): ChainError =>
  * exactly and the signing vectors guard against drift.
  */
 type LegacyPreimage = {
-  preimageLegacy(idx: number, script: Uint8Array, sighash: number): Uint8Array;
+  readonly preimageLegacy: (idx: number, script: Uint8Array, sighash: number) => Uint8Array;
 };
 
 const preimageLegacy = (
