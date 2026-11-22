@@ -514,6 +514,18 @@ describe("ed25519Stream chunks", () => {
     expect(chunkNames(messageLength)).toStrictEqual(expected);
   });
 
+  it("never sends an empty finish (B2: finish carries 1–236 bytes)", () => {
+    for (let messageLength = 0; messageLength <= 3 * 236; messageLength += 1) {
+      const chunks = cmd.ed25519Stream(r, a, new Uint8Array(messageLength));
+      const finish = requireCase(chunks.at(-1));
+      expect(finish.name).toBe("ed25519-finish");
+      expect(finish.data.length).toBeGreaterThanOrEqual(1);
+      expect(finish.data.length).toBeLessThanOrEqual(236);
+      expect(chunks.slice(0, -1).every((chunk) => chunk.name === "ed25519-update")).toBe(true);
+      expect(chunks.every((chunk) => chunk.data.length > 0)).toBe(true);
+    }
+  });
+
   it("chunks the 4032-byte oracle message into 17 updates and a finish", () => {
     const message = requireCase(
       ed25519.accepted.find((vector) => vector.message.length === 4032 * 2),

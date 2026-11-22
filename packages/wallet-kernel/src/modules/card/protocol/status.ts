@@ -3,6 +3,12 @@
  * response into its data or into the CardError the design's allow-list assigns. A failure word the
  * command can never produce — including `6700`, `6A86`, `6D00` — and any data carried by a failure
  * are `card-fault`.
+ *
+ * Two owner-approved behavioural amendments to protocol.md @ 1d97c60e (spec proposals B1, B2) are
+ * followed ahead of the spec text: the `VERIFY` wait gate answers `6986` (`wait-required`), so
+ * `6985` is a wrong card state for every command; and `finish` carries 1–236 bytes, so the host
+ * never sends an empty one (`cmd.ed25519Stream`). Their spec vectors arrive with the applet's next
+ * vector drop; until then the tests here transcribe the amended mapping by hand.
  */
 import type { CommandName, Inner } from "./commands.ts";
 import { CardError } from "./errors.ts";
@@ -17,7 +23,7 @@ export type CardStatus =
 const ALLOWED: Readonly<Record<CommandName, ReadonlyArray<number>>> = {
   status: [],
   create: [0x6985, 0x6a80],
-  verify: [0x6983, 0x6985],
+  verify: [0x6983, 0x6985, 0x6986],
   change: [0x6985, 0x6982],
   erase: [0x6985, 0x6982],
   wait: [0x6985],
@@ -55,10 +61,11 @@ export function result(command: Inner, response: InnerResponse): Uint8Array {
   if (sw === 0x6983) {
     throw new CardError("wallet-erased", "failure count reached the erase limit", sw);
   }
+  if (sw === 0x6986) {
+    throw new CardError("wait-required", "verify is gated by the wait counter", sw);
+  }
   if (sw === 0x6985) {
-    throw name === "verify"
-      ? new CardError("wait-required", "verify is gated by the wait counter", sw)
-      : new CardError("wrong-state", "command is not allowed in this card state", sw);
+    throw new CardError("wrong-state", "command is not allowed in this card state", sw);
   }
   if (sw === 0x6982) {
     throw new CardError("not-verified", "command requires a verified session", sw);
@@ -71,7 +78,7 @@ export function result(command: Inner, response: InnerResponse): Uint8Array {
 export const ACCESS_LIMITS = { failures: 10, free: 3, waits: 15 } as const;
 
 /**
- * Waits needed before a `VERIFY` so the card accepts it without `6985` (§9.5 step 3, §9.15): `W`
+ * Waits needed before a `VERIFY` so the card accepts it without `6986` (§9.5 step 3, §9.15): `W`
  * while `tries ≤ L − F`, else `0`. `BLANK` — no wallet — and `tries = 0` — the next attempt would
  * erase without comparing — are `wrong-state`.
  */

@@ -80,6 +80,7 @@ describe("result() status-word matrix", () => {
     0x6982,
     0x6983,
     0x6985,
+    0x6986,
     0x6a80,
     0x6a86,
     0x6d00,
@@ -88,11 +89,12 @@ describe("result() status-word matrix", () => {
     0x0000,
   ];
 
-  // the design's allow-list, transcribed; 63C1–63C9 is a range, listed separately
+  // the design's allow-list with the approved B1 amendment (VERIFY's wait gate is 6986),
+  // transcribed; 63C1–63C9 is a range, listed separately
   const ALLOWED: Readonly<Record<CommandName, ReadonlyArray<number>>> = {
     status: [],
     create: [0x6985, 0x6a80],
-    verify: [0x6983, 0x6985],
+    verify: [0x6983, 0x6985, 0x6986],
     change: [0x6985, 0x6982],
     erase: [0x6985, 0x6982],
     wait: [0x6985],
@@ -128,8 +130,11 @@ describe("result() status-word matrix", () => {
     if (sw === 0x6983) {
       return { code: "wallet-erased", remaining: undefined };
     }
+    if (sw === 0x6986) {
+      return { code: "wait-required", remaining: undefined };
+    }
     if (sw === 0x6985) {
-      return { code: name === "verify" ? "wait-required" : "wrong-state", remaining: undefined };
+      return { code: "wrong-state", remaining: undefined };
     }
     if (sw === 0x6982) {
       return { code: "not-verified", remaining: undefined };
@@ -160,6 +165,18 @@ describe("result() status-word matrix", () => {
 
   it.each(NAMES)("command=%s failing with data is card-fault", (name) => {
     expect(cardError(() => result(innerOf(name), respond(SOME_DATA, 0x6982)))).toBe("card-fault");
+  });
+
+  it("tells VERIFY's wait gate (6986) from a wrong card state (6985)", () => {
+    expect(cardError(() => result(innerOf("verify"), respond(NO_DATA, 0x6986)))).toBe(
+      "wait-required",
+    );
+    expect(cardError(() => result(innerOf("verify"), respond(NO_DATA, 0x6985)))).toBe(
+      "wrong-state",
+    );
+    for (const name of NAMES.filter((other) => other !== "verify")) {
+      expect(cardError(() => result(innerOf(name), respond(NO_DATA, 0x6986)))).toBe("card-fault");
+    }
   });
 
   it("maps 6F00 to card-fault with its own message", () => {

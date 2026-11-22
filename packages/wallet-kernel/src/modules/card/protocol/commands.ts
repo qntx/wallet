@@ -197,7 +197,11 @@ export const cmd = {
     return inner("sign-bip340", 0, 0, concatBytes(message, tweak, encodePath(path, false)));
   },
   ed25519Begin: (path: CardPath): Inner => inner("ed25519-begin", 0, 0, encodePath(path, true)),
-  /** §9.11/§12.3: the stream `encode(R) ‖ encode(A) ‖ M` in ≤236-byte chunks; the last is finish. */
+  /**
+   * §9.11/§12.3: the stream `encode(R) ‖ encode(A) ‖ M` in ≤236-byte chunks; the last is finish.
+   * The stream is at least 64 bytes, so every chunk — finish included (amendment B2: 1–236 bytes) —
+   * is non-empty.
+   */
   ed25519Stream: (
     encodedR: Uint8Array,
     publicKey: Uint8Array,
