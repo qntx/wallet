@@ -22,13 +22,9 @@ const MAX_AGENTS = 16;
  * submitted at most 60 s after it was made — the post-lock exposure. The nonce keeps the same 60 s
  * symmetric window so a compromised runtime cannot pre-sign far ahead.
  *
- * Both windows are measured on the device clock (`platform.now()`): the kernel has no trusted time.
- * Hyperliquid compares `expiresAfter` with its own time and accepts nonces up to a day ahead of its
- * block timestamp (docs §Nonces and API wallets), so a device clock running S ahead of real time
- * stretches the real-time exposure to S + 60 s. The engine's `assertClock()` refuses to sign when
- * the device disagrees with Hyperliquid's server time by more than 5 s; that check runs in the main
- * runtime, so a compromised main runtime can skip it — the residual exposure is then the device's
- * own clock error plus 60 s, never more.
+ * Both are on the device clock — the kernel has no trusted time: a clock S ahead makes it S + 60 s
+ * of real time (Hyperliquid takes nonces up to a day ahead). The engine's `assertClock()` is the
+ * mitigation; a compromised main runtime can skip it (SECURITY.md).
  */
 const EXPIRES_AFTER_MS = 60_000;
 const NONCE_WINDOW_MS = 60_000;
