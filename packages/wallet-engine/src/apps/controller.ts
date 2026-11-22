@@ -520,9 +520,11 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
   /* `state` is lazy: definitions capture it at `create`, but the controller only exists once
      every definition ran — gates read it per call. `sessionStore` is the store the controller
      last opened: set on open, cleared synchronously when that store's `close` runs (the
-     controller closes it on lock), which is what makes `AppStorage` throw `closed`. */
+     controller closes it on lock), which is what makes `AppStorage` throw `closed` — and a
+     locked vault reads as closed even before the queued transition closes the store. */
   const controllerRef: { current: AppsController | undefined } = { current: undefined };
   let sessionStore: EngineStore | undefined;
+  const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
   const openStore = async (): Promise<EngineStore> => {
     const store = await options.openStore();
     sessionStore = store;
@@ -547,7 +549,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     logger: options.logger,
     socket: options.socket,
     state: () => controllerRef.current?.getState(),
-    storage: createAppStorage(definition.id, () => sessionStore),
+    storage: createAppStorage(definition.id, () => (unlocked() ? sessionStore : undefined)),
   });
   const providers = new Map<AppId, AppProvider>();
   const instances: Array<AppInstance<unknown>> = [];
@@ -616,7 +618,6 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
      during an unlock's init cannot interleave. */
   let started = false;
   let chain: Promise<void> = Promise.resolve();
-  const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
   const transition = async (): Promise<void> => {
     if (unlocked() && !started) {
       started = true;

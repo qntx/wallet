@@ -1080,6 +1080,35 @@ describe("credential records", () => {
     await w.wallet.vault.unlock(VERIFY);
   });
 
+  it("the lock snapshot itself fails L2 — no credential read slips in before the transition", async () => {
+    const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
+    deployBeacon(w);
+    await importCreds(w);
+    await w.apps.reconcile(w.group);
+    await until(() => w.pmState()?.status === "enabled");
+    const { pm } = w;
+    if (pm === undefined) {
+      throw new Error("the world has no polymarket provider");
+    }
+    /* The snapshot flips to locked inside `vault.lock`'s notify pass, while the apps
+       transition that closes the session store is still queued — an L2 read issued right
+       there must already fail closed through the app's own credential store. */
+    let l2: Promise<unknown> | undefined;
+    const unsubscribe = w.wallet.subscribe(() => {
+      if (w.wallet.getSnapshot().vault !== "unlocked" && l2 === undefined) {
+        l2 = pm.account.openOrders(w.group, {});
+      }
+    });
+    const calls = w.calls.length;
+    await w.wallet.vault.lock();
+    unsubscribe();
+    expect(l2).toBeDefined();
+    await expect(l2).rejects.toBeInstanceOf(PolymarketError);
+    await expect(l2).rejects.toMatchObject({ category: "unlock-required" });
+    expect(w.calls.slice(calls).filter((c) => c.url.origin === CLOB_HOST)).toHaveLength(0);
+    await w.wallet.vault.unlock(VERIFY);
+  });
+
   it("a deleted wallet's credential records are pruned on the wallet event", async () => {
     const w = await pmWorld({ transactions: [], nonce: "0", approvals: FULL_APPROVALS });
     deployBeacon(w);
