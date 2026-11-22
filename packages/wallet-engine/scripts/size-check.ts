@@ -80,8 +80,10 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
-    budget: 26 * 1024,
+    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB); measured
+       27086 B gzipped after the Hyperliquid late-reconciliation (bounded pending set, corrections
+       emitter, live sightings). */
+    budget: 27 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
     forbidden: [],
   },

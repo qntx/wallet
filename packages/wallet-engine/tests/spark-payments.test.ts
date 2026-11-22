@@ -411,8 +411,10 @@ describe("Spark payment records", () => {
     ];
     const seen: number[] = [];
     const history: SparkClient["transfers"]["history"] = async (page) => {
+      await Promise.resolve();
+      // eslint-disable-next-line vitest/no-conditional-in-test -- the page argument is optional in the seam
       seen.push(page?.offset ?? 0);
-      return queue.shift() as Listing;
+      return queue.shift()!;
     };
     const found = await findPayments(history, new Set([target]), NOW);
     expect(found.has(target)).toBe(true);
