@@ -352,20 +352,26 @@ describe("sessions.sign against the oracle vectors", () => {
 
   /* The seam: sessions.sign's output is the plan → task signer → assemble artefact of the
      scheme's document, not a bespoke signature. */
+  const startFor = (vector: L1Case): number =>
+    vector.expiresAfter === undefined ? vector.nonce : vector.nonce - 1;
+
+  const signedArtefact = (assembled: { kind: string; artefact?: Uint8Array }): Uint8Array => {
+    if (assembled.kind !== "signed" || assembled.artefact === undefined) {
+      throw new Error("expected a signed artefact");
+    }
+    return assembled.artefact;
+  };
+
   it.each(allowListed)("$name is the plan → task signer → assemble artefact", async (vector) => {
-    const start = vector.expiresAfter === undefined ? vector.nonce : vector.nonce - 1;
-    const { signed, keyBytes, header, now } = await signEndToEnd(vector, start);
+    const { signed, keyBytes, header, now } = await signEndToEnd(vector, startFor(vector));
     const document = hyperliquidL1Agent.document(signArgs(vector), header, now);
     const plan = planEvm({ kind: "evm.typed-data", typedData: document } as never, {
       path: [],
       publicKey: secp256k1.getPublicKey(keyBytes, true),
     });
-    const task = plan.tasks[0];
-    const assembled = assembleEvm(plan, [signEvmTask(task, keyBytes)]);
-    expect(assembled.kind).toBe("signed");
-    if (assembled.kind === "signed") {
-      expect(bytesToHex(bytesField(signed, "signature"))).toBe(bytesToHex(assembled.artefact));
-    }
+    const [task] = plan.tasks;
+    const artefact = signedArtefact(assembleEvm(plan, [signEvmTask(task, keyBytes)]));
+    expect(bytesToHex(bytesField(signed, "signature"))).toBe(bytesToHex(artefact));
   });
 
   it.each(dummies)("$name is rejected as invalid-input", async (vector) => {

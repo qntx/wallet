@@ -24,6 +24,6 @@ describe("SecureInput host component", () => {
       "../nitrogen/generated/shared/json/SecureInputViewConfig.json",
       { with: { type: "json" } }
     )) as { default: unknown };
-    expect(configFactory()).toEqual(generated.default);
+    expect(configFactory()).toStrictEqual(generated.default);
   });
 });

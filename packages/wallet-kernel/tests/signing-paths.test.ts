@@ -102,12 +102,14 @@ import "mod-g/side";
     ]);
   });
 
-  it("only run.ts and sessions.ts import a family /sign entry", () => {
+  const SIGN = /^@qntx\/wallet-chains\/(bitcoin|evm|solana|tron)\/sign$/;
+
+  const signImportMap = (): Record<string, Record<string, ReadonlyArray<string>>> => {
     const map: Record<string, Record<string, ReadonlyArray<string>>> = {};
     for (const file of tsFiles(SRC)) {
       const edges: Record<string, ReadonlyArray<string>> = {};
       for (const edge of importsOf(readFileSync(file, "utf8"))) {
-        if (/^@qntx\/wallet-chains\/(bitcoin|evm|solana|tron)\/sign$/.test(edge.specifier)) {
+        if (SIGN.test(edge.specifier)) {
           edges[edge.specifier] = edge.names;
         }
       }
@@ -115,7 +117,11 @@ import "mod-g/side";
         map[relative(SRC, file)] = edges;
       }
     }
-    expect(map).toStrictEqual({
+    return map;
+  };
+
+  it("only run.ts and sessions.ts import a family /sign entry", () => {
+    expect(signImportMap()).toStrictEqual({
       "modules/chains/run.ts": {
         "@qntx/wallet-chains/bitcoin/sign": ["signBitcoinTask"],
         "@qntx/wallet-chains/evm/sign": ["signEvmTask"],
@@ -132,23 +138,28 @@ import "mod-g/side";
 describe("modules/chains internals", () => {
   const CRYPTO = /^@scure\/bip32$|^micro-key-producer\/|^@noble\/curves\//;
 
-  it("only keys.ts imports derivation or curve code; no sibling signs with raw material", () => {
+  const siblings = tsFiles(CHAINS).filter((file) => !file.endsWith("keys.ts"));
+
+  const cryptoHolders = (): string[] => {
     const holders: string[] = [];
-    for (const file of tsFiles(CHAINS)) {
-      if (file.endsWith("keys.ts")) {
-        continue;
-      }
-      const source = readFileSync(file, "utf8");
-      if (importsOf(source).some((edge) => CRYPTO.test(edge.specifier))) {
+    for (const file of siblings) {
+      if (importsOf(readFileSync(file, "utf8")).some((edge) => CRYPTO.test(edge.specifier))) {
         holders.push(relative(CHAINS, file));
       }
+    }
+    return holders;
+  };
+
+  it("only keys.ts imports derivation or curve code; no sibling signs with raw material", () => {
+    expect(cryptoHolders()).toStrictEqual([]);
+    for (const file of siblings) {
+      const source = readFileSync(file, "utf8");
       expect(source).not.toContain("fromMasterSeed");
       expect(source).not.toContain("privateKey");
       // `backend.sign(task)` is the SigningBackend dispatch; any other `.sign(` would be a
       // sibling signing with raw key material outside the keys.ts bridge.
       expect(stripComments(source).replaceAll(/\bbackend\.sign\(/g, "")).not.toContain(".sign(");
     }
-    expect(holders).toStrictEqual([]);
     expect(
       importsOf(readFileSync(join(CHAINS, "keys.ts"), "utf8")).some((edge) =>
         CRYPTO.test(edge.specifier),

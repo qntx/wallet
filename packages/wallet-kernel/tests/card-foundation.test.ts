@@ -324,13 +324,10 @@ describe("accessHash", () => {
     },
     async () => {
       const v = realCostAccepted;
-      const input: SecureInputResult = { ok: true, value: utf8ToBytes(v.code) };
-      if (!input.ok) {
-        throw new Error("unreachable");
-      }
-      let password: Uint8Array | undefined;
+      const input = { ok: true, value: utf8ToBytes(v.code) } satisfies SecureInputResult;
+      const captured: Uint8Array[] = [];
       const real: Argon2id = async (p, salt, cost, length) => {
-        password = p;
+        captured.push(p);
         return Promise.resolve(
           argon2id(p, salt, { m: cost.memoryKiB, t: cost.passes, p: cost.lanes, dkLen: length }),
         );
@@ -338,7 +335,7 @@ describe("accessHash", () => {
       const result = await accessHash(input.value, hex(v.cardId), real);
       expect(bytesToHex(result)).toBe(v.accessHash);
       expect(bytesToHex(input.value)).toBe(bytesToHex(utf8ToBytes(v.code)));
-      expect(password !== undefined && [...password].every((b) => b === 0)).toBe(true);
+      expect(captured).toStrictEqual([new Uint8Array(input.value.length)]);
     },
   );
 

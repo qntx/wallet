@@ -20,6 +20,7 @@ export function secureInputText(state: SecureInputState): string {
       return "Code entered — confirm it";
     case "submitted":
       return "Checking the code against the card";
+    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- §38 wants the never default as the exhaustiveness proof
     default: {
       const exhaustive: never = state;
       return exhaustive;
@@ -41,4 +42,4 @@ export const secureInputProps = { onStateChange: callback(onStateChange) };
 export const secureInputCurrentText = (): string => current;
 
 /** Mount this where the wallet collects the card's access code or printed short ID. */
-export const secureInputView = SecureInput;
+export const secureInputView = (): typeof SecureInput => SecureInput;

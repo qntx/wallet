@@ -1,4 +1,3 @@
-// oxlint-disable typescript/require-await -- test-only callbacks satisfy async contracts
 /**
  * Card client × signing plans × transport — the card protocol's command surface against every task
  * of the committed signing-plan vectors, card-side signature decode and Ed25519 stream assembly
@@ -18,6 +17,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { SignTask } from "@qntx/wallet-chains";
 import { assembleBitcoinPsbt, planBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { assembleEvm, planEvm } from "@qntx/wallet-chains/evm";
 import { assembleSolana, planSolana } from "@qntx/wallet-chains/solana";
@@ -67,6 +67,9 @@ const vectors = JSON.parse(
   }>;
 };
 
+type VectorCase = (typeof vectors.cases)[number];
+type VectorTask = NonNullable<VectorCase["stages"]>[number][number];
+
 const SEED = mnemonicToSeedSync(vectors.mnemonic);
 const root = HDKey.fromMasterSeed(SEED);
 const N = secp256k1.Point.Fn.ORDER;
@@ -78,46 +81,86 @@ const requireBytes = (value: string | undefined, what: string): Uint8Array => {
   return hex(value);
 };
 
+const publicAt = (path: ReadonlyArray<number>): Uint8Array => {
+  const { publicKey } = root.derive(pathString(path));
+  if (publicKey === null) {
+    throw new Error("no public key at the task path");
+  }
+  return publicKey;
+};
+
 const everyTask = vectors.cases.flatMap((c) =>
   c.stages.flatMap((stage) => stage.map((task) => ({ name: c.name, task }))),
 );
 
+const tasksOf = (scheme: string): ReadonlyArray<{ name: string; task: VectorTask }> =>
+  everyTask.filter(({ task }) => task.scheme === scheme);
+
+const TASK_SCHEMES = ["ecdsa-secp256k1", "bip340", "ed25519"] as const;
+
+/** Narrows a signing-plan task to one scheme — throws otherwise. */
+function assertScheme<T extends { scheme: string }, S extends string>(
+  task: T | undefined,
+  scheme: S,
+): asserts task is Extract<T, { scheme: S }> {
+  if (task === undefined || task.scheme !== scheme) {
+    throw new Error(`expected a ${scheme} task`);
+  }
+}
+
+/** Unwraps a chains assemble result — throws unless it is `signed`. */
+const signedArtefact = <A>(assembled: { readonly kind: string; readonly artefact?: A }): A => {
+  if (assembled.kind !== "signed" || assembled.artefact === undefined) {
+    throw new Error("expected a signed artefact");
+  }
+  return assembled.artefact;
+};
+
+const hexByte = (byte: number): boolean =>
+  (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46);
+
 describe("card commands × signing-plan tasks", () => {
-  it.each(everyTask)("$name: the task's commands build", ({ task }) => {
-    if (task.scheme === "ecdsa-secp256k1") {
-      cmd.signEcdsa(requireBytes(task.digest, "digest"), task.path);
-      return;
-    }
-    if (task.scheme === "bip340") {
-      const internal = root.derive(pathString(task.path)).publicKey;
-      if (internal === null) {
-        throw new Error("no public key at the task path");
-      }
+  it.each(tasksOf("ecdsa-secp256k1"))("$name: signEcdsa builds", ({ task }) => {
+    expect(() => cmd.signEcdsa(requireBytes(task.digest, "digest"), task.path)).not.toThrow();
+  });
+
+  it.each(tasksOf("bip340"))(
+    "$name: the card's tweak matches and signBip340 builds",
+    ({ task }) => {
+      const internal = publicAt(task.path);
       // The card computes TapTweak(x(P)) itself; the vector tweak must match it.
       expect(bytesToHex(taprootTweak(internal, new Uint8Array(0)))).toBe(task.tweak);
-      cmd.signBip340(
-        requireBytes(task.message, "message"),
-        requireBytes(task.tweak, "tweak"),
-        task.path,
-      );
-      return;
+      expect(() =>
+        cmd.signBip340(
+          requireBytes(task.message, "message"),
+          requireBytes(task.tweak, "tweak"),
+          task.path,
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  it.each(tasksOf("ed25519"))("$name: the ed25519 stream reassembles R‖A‖M", ({ task }) => {
+    expect(() => cmd.ed25519Begin(task.path)).not.toThrow();
+    const encodedR = new Uint8Array(32).fill(0x42);
+    const publicKey = requireBytes(task.publicKey, "publicKey");
+    const message = requireBytes(task.message, "message");
+    const chunks = cmd.ed25519Stream(encodedR, publicKey, message);
+    for (const chunk of chunks) {
+      expect(chunk.data.length).toBeGreaterThanOrEqual(1);
+      expect(chunk.data.length).toBeLessThanOrEqual(236);
     }
-    if (task.scheme === "ed25519") {
-      cmd.ed25519Begin(task.path);
-      const encodedR = new Uint8Array(32).fill(0x42);
-      const publicKey = requireBytes(task.publicKey, "publicKey");
-      const message = requireBytes(task.message, "message");
-      const chunks = cmd.ed25519Stream(encodedR, publicKey, message);
-      for (const chunk of chunks) {
-        expect(chunk.data.length).toBeGreaterThanOrEqual(1);
-        expect(chunk.data.length).toBeLessThanOrEqual(236);
-      }
-      expect(concatBytes(...chunks.map((chunk) => chunk.data))).toStrictEqual(
-        concatBytes(encodedR, publicKey, message),
-      );
-      return;
+    expect(concatBytes(...chunks.map((chunk) => chunk.data))).toStrictEqual(
+      concatBytes(encodedR, publicKey, message),
+    );
+  });
+
+  it("the vectors use only the three task schemes", () => {
+    const covered = TASK_SCHEMES.map((scheme) => tasksOf(scheme).length).reduce((a, b) => a + b, 0);
+    expect(covered).toBe(everyTask.length);
+    for (const scheme of TASK_SCHEMES) {
+      expect(tasksOf(scheme)).not.toHaveLength(0);
     }
-    throw new Error(`unexpected scheme ${task.scheme}`);
   });
 });
 
@@ -132,7 +175,7 @@ describe("card decode × chains assemble", () => {
     template: "evm.bip44",
   } as const;
 
-  const caseOf = (name: string): (typeof vectors.cases)[number] => {
+  const caseOf = (name: string): VectorCase => {
     const c = vectors.cases.find((entry) => entry.name === name);
     if (c === undefined) {
       throw new Error(`vector case ${name} missing`);
@@ -140,7 +183,7 @@ describe("card decode × chains assemble", () => {
     return c;
   };
 
-  const keyOf = (c: (typeof vectors.cases)[number]) => {
+  const keyOf = (c: VectorCase) => {
     if (c.key === undefined) {
       throw new Error(`${c.name}: no key`);
     }
@@ -175,23 +218,54 @@ describe("card decode × chains assemble", () => {
     return schnorr.sign(task.message, numberToBytesBE(tweaked, 32), new Uint8Array(32));
   };
 
+  /** The card-shaped signature the plan asks for — high-s ECDSA or tweaked BIP-340. */
+  const cardSignature = (task: SignTask): Uint8Array => {
+    const priv = privateAt(task.path);
+    if (task.scheme === "bip340") {
+      const signature = bip340Sign(task, priv);
+      expect(decode.bip340(signature, task.message, publicAt(task.path), task.tweak)).toStrictEqual(
+        signature,
+      );
+      return signature;
+    }
+    if (task.scheme === "ecdsa-secp256k1") {
+      return highS(task.digest, priv);
+    }
+    throw new Error(`unexpected task scheme: ${JSON.stringify(task)}`);
+  };
+
+  const signatureEntries = (c: VectorCase) => {
+    if (typeof c.artefact === "string") {
+      throw new TypeError(`${c.name}: expected signature entries`);
+    }
+    return c.artefact.signatures;
+  };
+
+  const verifyPsbtSignatures = (
+    artefact: Uint8Array,
+    entries: ReturnType<typeof signatureEntries>,
+  ): void => {
+    const tx = Transaction.fromPSBT(artefact);
+    for (const entry of entries) {
+      const input = tx.getInput(entry.index);
+      const got =
+        typeof entry.partialSig === "string" ? input.partialSig?.at(0)?.at(1) : input.tapKeySig;
+      expect(bytesToHex(got ?? new Uint8Array())).toBe(entry.partialSig ?? entry.tapKeySig ?? "");
+    }
+  };
+
   it("evm: a high-s card signature decodes and assembles to the vector", () => {
     const c = caseOf("evm-legacy");
     const request = { ...c.request, account: ACCOUNT };
     const plan = planEvm(request as never, keyOf(c));
-    const task = plan.tasks[0];
-    if (task.scheme !== "ecdsa-secp256k1") {
-      throw new Error("expected an ecdsa task");
-    }
+    const task: SignTask | undefined = plan.tasks.at(0);
+    assertScheme(task, "ecdsa-secp256k1");
     const signature = highS(task.digest, privateAt(task.path));
     // Card-side decode verifies high-s, normalizes to low s and finds the recovery bit.
     const result = decode.ecdsa(signature, task.digest, task.publicKey, []);
     expect(bytesToNumberBE(result.signature.subarray(32))).toBeLessThanOrEqual(N / 2n);
-    const assembled = assembleEvm(plan, [signature]);
-    expect(assembled.kind).toBe("signed");
-    if (assembled.kind === "signed") {
-      expect(bytesToHex(assembled.artefact)).toBe(c.artefact);
-    }
+    const artefact = signedArtefact(assembleEvm(plan, [signature]));
+    expect(bytesToHex(artefact)).toBe(c.artefact);
   });
 
   it("p2tr: the bip340 card signature decodes and the psbt assembles to the vector", () => {
@@ -207,35 +281,10 @@ describe("card decode × chains assemble", () => {
       key: { path, publicKey: hex(publicKey) },
     }));
     const plan = planBitcoinPsbt(hex(c.request["psbt"] as string), inputs);
-    const signatures = plan.tasks.map((task) => {
-      const priv = privateAt(task.path);
-      if (task.scheme === "bip340") {
-        const signature = bip340Sign(task, priv);
-        const internal = root.derive(pathString(task.path)).publicKey;
-        if (internal === null) {
-          throw new Error("no public key at the task path");
-        }
-        expect(decode.bip340(signature, task.message, internal, task.tweak)).toStrictEqual(
-          signature,
-        );
-        return signature;
-      }
-      if (task.scheme === "ecdsa-secp256k1") {
-        return highS(task.digest, priv);
-      }
-      throw new Error(`unexpected task scheme: ${JSON.stringify(task)}`);
-    });
-    const assembled = assembleBitcoinPsbt(plan, signatures);
-    expect(assembled.kind).toBe("signed");
-    if (assembled.kind === "signed" && typeof c.artefact !== "string") {
-      const tx = Transaction.fromPSBT(assembled.artefact);
-      for (const entry of c.artefact.signatures) {
-        const input = tx.getInput(entry.index);
-        const got =
-          typeof entry.partialSig === "string" ? input.partialSig?.[0]?.[1] : input.tapKeySig;
-        expect(bytesToHex(got ?? new Uint8Array())).toBe(entry.partialSig ?? entry.tapKeySig ?? "");
-      }
-    }
+    const signatures = plan.tasks.map((task) => cardSignature(task));
+    expect(signatures).toHaveLength(plan.tasks.length);
+    const artefact = signedArtefact(assembleBitcoinPsbt(plan, signatures));
+    verifyPsbtSignatures(artefact, signatureEntries(c));
   });
 
   it("solana: the ed25519 stream assembly decodes and assembles to the vector", () => {
@@ -246,10 +295,8 @@ describe("card decode × chains assemble", () => {
       message: hex(c.request["message"] as string),
     };
     const plan = planSolana(request as never, keyOf(c));
-    const task = plan.tasks[0];
-    if (task.scheme !== "ed25519") {
-      throw new Error("expected an ed25519 task");
-    }
+    const task: SignTask | undefined = plan.tasks.at(0);
+    assertScheme(task, "ed25519");
     const priv = Slip10.fromMasterSeed(SEED).derive(pathString(task.path)).privateKey;
     const signature = ed25519.sign(task.message, priv);
     // The card streams R‖A‖M and returns le32(S); the client reassembles and verifies.
@@ -261,13 +308,11 @@ describe("card decode × chains assemble", () => {
         task.message,
       ),
     ).toStrictEqual(signature);
-    const assembled = assembleSolana(plan, [signature]);
-    expect(assembled.kind).toBe("signed");
-    if (assembled.kind === "signed") {
-      expect(bytesToHex(assembled.artefact)).toBe(c.artefact);
-    }
+    const artefact = signedArtefact(assembleSolana(plan, [signature]));
+    expect(bytesToHex(artefact)).toBe(c.artefact);
   });
 });
+
 describe("transport bounds", () => {
   // packages/wallet-native/cpp/runtime/KernelCardReader.cpp: kApduMin/kApduMax.
   const APDU_MIN = 4;
@@ -284,19 +329,25 @@ describe("transport bounds", () => {
     new Uint8Array(8).fill(4),
   );
 
+  /** The first stream chunk must be a maximal 236-byte ed25519-update — throws otherwise. */
+  type Stream = ReturnType<typeof cmd.ed25519Stream>;
+  const firstUpdate = (stream: Stream): Stream[number] => {
+    const update = stream.at(0);
+    if (update === undefined || update.name !== "ed25519-update" || update.data.length !== 236) {
+      throw new Error("expected a 236-byte ed25519-update chunk");
+    }
+    return update;
+  };
+
   it("command APDUs fit the reader window", () => {
     const { apdu } = openRequest(() => new Uint8Array(32).fill(1));
     // A 173-byte message makes the first stream chunk a 236-byte update (amendment B2 keeps
     // every chunk non-empty, so a 237-byte stream splits 236 ‖ 1).
     const stream = cmd.ed25519Stream(new Uint8Array(32), new Uint8Array(32), new Uint8Array(173));
-    const update = stream[0];
-    if (update === undefined || update.name !== "ed25519-update" || update.data.length !== 236) {
-      throw new Error("expected a 236-byte ed25519-update chunk");
-    }
     const apdus = [
       SELECT_APDU,
       apdu,
-      session.wrap(update),
+      session.wrap(firstUpdate(stream)),
       session.wrap(
         cmd.create({
           mode: "generate",
@@ -347,9 +398,7 @@ describe("transport bounds", () => {
       const bytes = utf8ToBytes(shortId(hex(identity.compressed)).replace("-", ""));
       // `validFor` in packages/wallet-native/kernel/card.ts: 8 bytes of [0-9A-F].
       expect(bytes).toHaveLength(8);
-      expect(
-        bytes.every((byte) => (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46)),
-      ).toBe(true);
+      expect(bytes.every(hexByte)).toBe(true);
     }
   });
 });

@@ -58,7 +58,7 @@ const SEED = mnemonicToSeedSync(vectors.mnemonic);
 const fromHex = (hex: string): Uint8Array => Uint8Array.from(Buffer.from(hex, "hex"));
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
-const kernelError = async (fn: () => unknown, code?: string): Promise<void> => {
+const kernelError = async (fn: () => unknown, code?: string): Promise<KernelError> => {
   let thrown: unknown;
   try {
     await fn();
@@ -69,6 +69,7 @@ const kernelError = async (fn: () => unknown, code?: string): Promise<void> => {
   if (code !== undefined) {
     expect((thrown as KernelError).code).toBe(code);
   }
+  return thrown as KernelError;
 };
 
 describe("seedKeys material", () => {
@@ -407,9 +408,10 @@ describe("run.ts plan execution", () => {
               prehash: false,
             }),
         };
-        await kernelError(async () => {
+        const error = await kernelError(async () => {
           await signPlan(prepared.plan, backend);
         }, "integrity");
+        expect(error.message).toBe("backend signature refused");
       } finally {
         keys.wipe();
       }
@@ -420,9 +422,10 @@ describe("run.ts plan execution", () => {
       try {
         const prepared = await prepareEvm(request as never, [], keys.material, now());
         const backend = { sign: async () => new Uint8Array(65) };
-        await kernelError(async () => {
+        const error = await kernelError(async () => {
           await signPlan(prepared.plan, backend);
         }, "integrity");
+        expect(error.message).toBe("backend signature refused");
       } finally {
         keys.wipe();
       }
