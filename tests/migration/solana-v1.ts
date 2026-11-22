@@ -7,8 +7,10 @@ export function versionBefore(message: Uint8Array): "legacy" | 0 {
   return parseCompiledMessage(message).version;
 }
 
-/** A v1 message parses; its resource requests and priority fee live in `config`, not in
-    ComputeBudget instructions (which a v1 transaction ignores). */
+/**
+ * A v1 message parses; its resource requests and priority fee live in `config`, not in
+ * ComputeBudget instructions (which a v1 transaction ignores).
+ */
 export function priorityFeeLamports(message: Uint8Array): bigint | undefined {
   const parsed: ParsedSolanaMessage = parseCompiledMessage(message);
   return parsed.version === 1 ? (parsed.config.priorityFeeLamports ?? 0n) : undefined;

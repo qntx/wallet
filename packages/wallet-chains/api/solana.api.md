@@ -376,12 +376,20 @@ type OffchainOrder = {
 export const parseCompiledMessage: (bytes: Uint8Array) => ParsedSolanaMessage;
 
 // @public (undocumented)
-export type ParsedSolanaMessage = {
+export type ParsedSolanaMessage = ParsedSolanaMessageBase & ({
     readonly version: "legacy" | 0;
+} | {
+    readonly version: 1;
+    readonly config: SolanaTransactionConfig;
+});
+
+// @public (undocumented)
+type ParsedSolanaMessageBase = {
     readonly numRequiredSignatures: number;
     readonly numReadonlySignerAccounts: number;
     readonly numReadonlyNonSignerAccounts: number;
     readonly staticAccounts: ReadonlyArray<string>;
+    readonly lifetimeToken: string;
     readonly instructions: ReadonlyArray<CompiledIx>;
     readonly lookups: ReadonlyArray<LookupReference>;
 };
@@ -599,6 +607,14 @@ export type SolanaTokenTable = Readonly<Record<string, Readonly<Record<string, S
 
 // @public (undocumented)
 export const solanaTokenTable: SolanaTokenTable;
+
+// @public
+export type SolanaTransactionConfig = {
+    readonly priorityFeeLamports?: bigint;
+    readonly computeUnitLimit?: number;
+    readonly loadedAccountsDataSizeLimit?: number;
+    readonly heapSize?: number;
+};
 
 // @public
 export type SolanaTransactionForSigner = {
