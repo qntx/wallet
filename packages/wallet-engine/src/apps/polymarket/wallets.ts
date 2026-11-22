@@ -19,6 +19,7 @@
  * keccak256(args)` (docs trading/wallets-auth.md §Derive a Deposit Wallet Address). The oracle is
  * on-chain owner state, not the SDK — vectors/chains/polymarket-wallets.json.
  */
+import type { PublicClient } from "viem";
 import {
   concat,
   encodeAbiParameters,
@@ -28,7 +29,6 @@ import {
   padHex,
 } from "viem";
 
-import { evmRpcHex } from "../../chains/evm.ts";
 import type { NetworkController } from "../../networks/controller.ts";
 import {
   DEPOSIT_WALLET_BEACON,
@@ -157,6 +157,19 @@ export const derivePolymarketWallets = (signer: `0x${string}`): PolymarketWallet
 
 const NETWORK = "eip155:137";
 
+/* Read through the transport directly: the engine's EVM chain module would pull its whole
+   adapter into this entry for one call. */
+const codeAt = async (client: PublicClient, address: `0x${string}`): Promise<string> => {
+  const code: unknown = await client.transport.request({
+    method: "eth_getCode",
+    params: [address, "latest"],
+  });
+  if (typeof code !== "string") {
+    throw new TypeError("eth_getCode returned a malformed result");
+  }
+  return code;
+};
+
 /* `undefined`/`"0x"` are both the empty read. */
 const emptyCode = (code: string | undefined): boolean =>
   code === undefined || code === "0x" || code === "";
@@ -177,8 +190,7 @@ export function createPolymarketWallets(
     derive: derivePolymarketWallets,
     locate: async (signer) => {
       const candidates = derivePolymarketWallets(signer);
-      const chainCode = async (address: `0x${string}`) =>
-        evmRpcHex(networks.client(NETWORK), "eth_getCode", [address, "latest"]);
+      const chainCode = async (address: `0x${string}`) => codeAt(networks.client(NETWORK), address);
       const independent = networks.independentClient(NETWORK);
       /* Relayer hints and chain reads in parallel — the hints decide nothing until the chain
          agrees. A host endpoint that cannot answer fails closed (`unavailable`): a missing
@@ -194,9 +206,9 @@ export function createPolymarketWallets(
         ]),
         independent.kind === "available"
           ? Promise.all([
-              evmRpcHex(independent.client, "eth_getCode", [candidates.uups, "latest"]),
-              evmRpcHex(independent.client, "eth_getCode", [candidates.beacon, "latest"]),
-              evmRpcHex(independent.client, "eth_getCode", [candidates.safe, "latest"]),
+              codeAt(independent.client, candidates.uups),
+              codeAt(independent.client, candidates.beacon),
+              codeAt(independent.client, candidates.safe),
             ]).catch((error: unknown) => {
               throw new PolymarketError(
                 "unavailable",
