@@ -26,6 +26,7 @@ const SPENDER = tronAddressFromPublicKey(
 );
 const TOKEN = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"; // Nile USDT — in the built-in table.
 const SOLID_ID = "ab".repeat(32);
+const GENESIS = "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc";
 const ACCOUNT: AccountRef = { kind: "hd", walletId: "w", groupIndex: 0, template: "tron.bip44" };
 const VERIFY = { kind: "password", password: "pw" } as never;
 const U256_MAX = 2n ** 256n - 1n;
@@ -65,7 +66,7 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     ...over,
   };
   const api: TronApi = {
-    post: async (path, _body) => {
+    post: async (path, body) => {
       await Promise.resolve();
       switch (path) {
         case "/walletsolidity/getnowblock":
@@ -76,7 +77,7 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
         case "/wallet/getblockbynum":
         case "/walletsolidity/getblockbynum":
           return {
-            blockID: SOLID_ID,
+            blockID: ((body as Record<string, unknown>)["num"] ?? 0) === 0 ? GENESIS : SOLID_ID,
             block_header: { raw_data: { number: 100, timestamp: 900_000 } },
           };
         case "/wallet/getchainparameters":
@@ -124,6 +125,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
+          info: () => ({ genesisHash: GENESIS }),
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),

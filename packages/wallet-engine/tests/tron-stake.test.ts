@@ -30,6 +30,7 @@ const CONTRACT = tronAddressFromPublicKey(
   secp256k1.getPublicKey(new Uint8Array(32).fill(0x44), false),
 );
 const SOLID_ID = "ab".repeat(32);
+const GENESIS = "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc";
 const ACCOUNT: AccountRef = { kind: "hd", walletId: "w", groupIndex: 0, template: "tron.bip44" };
 const VERIFY = { kind: "password", password: "pw" } as never;
 
@@ -80,7 +81,10 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     witnessList: [{ address: tronAddressToHex(WITNESS) }],
     broadcastBody: { result: true },
     known: new Set(),
-    blockIds: new Map([[100, SOLID_ID]]),
+    blockIds: new Map([
+      [0, GENESIS],
+      [100, SOLID_ID],
+    ]),
     solidInfo: new Map(),
     fullInfo: new Map(),
     headNumber: 105,
@@ -155,6 +159,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
+          info: () => ({ genesisHash: GENESIS }),
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -531,9 +536,11 @@ describe("claim-rewards", () => {
 const otherBlock = (w: World & { api: TronApi }): TronApi => ({
   post: async (path, body) => {
     if (path === "/walletsolidity/getblockbynum" || path === "/wallet/getblockbynum") {
+      const num = (body as { readonly num?: number }).num ?? 0;
+      // genesis still matches — the disagreement is on the reference block itself
       return {
-        blockID: "ff".repeat(32),
-        block_header: { raw_data: { number: 100, timestamp: 900_000 } },
+        blockID: num === 0 ? GENESIS : "ff".repeat(32),
+        block_header: { raw_data: { number: num, timestamp: 900_000 } },
       };
     }
     await Promise.resolve();

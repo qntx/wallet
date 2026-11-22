@@ -39,6 +39,7 @@ const UNKNOWN_TOKEN = tronAddressFromPublicKey(
 );
 const TRC10 = "1002000";
 const SOLID_ID = "ab".repeat(32);
+const GENESIS = "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc";
 const ACCOUNT: AccountRef = {
   kind: "hd",
   walletId: "w",
@@ -125,7 +126,10 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     known: new Set(),
     solidInfo: new Map(),
     fullInfo: new Map(),
-    blockIds: new Map([[100, SOLID_ID]]),
+    blockIds: new Map([
+      [0, GENESIS],
+      [100, SOLID_ID],
+    ]),
     independent: { kind: "not-needed" },
     posts: [],
     signCalls: [],
@@ -224,6 +228,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
+          info: () => ({ genesisHash: GENESIS }),
         } as never,
         wallet,
         openStore: async () => Promise.resolve({} as never),
@@ -300,6 +305,7 @@ const signedRawData = (w: World & { api: TronApi }): Uint8Array => {
 
 type IndependentFixture = {
   readonly calls?: string[];
+  readonly reject?: ReadonlySet<string>;
   readonly blockId?: string;
   readonly params?: unknown;
   readonly account?: unknown;
@@ -310,11 +316,14 @@ type IndependentFixture = {
 const independentApi = (over: IndependentFixture = {}): TronApi => ({
   post: async (path, body) => {
     over.calls?.push(path);
+    if (over.reject?.has(path)) {
+      return Promise.reject(new TypeError("fetch failed"));
+    }
     const num = (body as { readonly num?: number }).num ?? 100;
     switch (path) {
       case "/wallet/getblockbynum":
         return Promise.resolve({
-          blockID: over.blockId ?? SOLID_ID,
+          blockID: num === 0 ? GENESIS : (over.blockId ?? SOLID_ID),
           block_header: { raw_data: { number: num, timestamp: 900_000 } },
         });
       case "/wallet/getchainparameters":
@@ -598,21 +607,38 @@ describe("prepareTron", () => {
     await expect(prepareTron(ctx(w).ctx, params())).rejects.toThrow(/chain parameters/);
   });
 
-  it("flags reads-unverified when the independent endpoint throws", async () => {
+  it("refuses when the host endpoint cannot confirm the reference block", async () => {
     const w = world({
       independent: {
         kind: "available",
         client: { post: async () => Promise.reject(new TypeError("fetch failed")) },
       },
     });
+    await expect(prepareTron(ctx(w).ctx, params())).rejects.toThrow(
+      /could not confirm the reference block/,
+    );
+    expect(w.signCalls).toHaveLength(0);
+  });
+
+  it("flags reads-unverified when a non-decisive independent read throws", async () => {
+    const w = world({
+      independent: {
+        kind: "available",
+        client: independentApi({
+          reject: new Set(["/wallet/getchainparameters", "/wallet/getaccount"]),
+        }),
+      },
+    });
     const prepared = await prepareTron(ctx(w).ctx, params());
     expect(prepared.checks).toContain("reads-unverified");
   });
 
-  it("flags reads-unverified when no independent endpoint exists", async () => {
+  it("refuses a send only the gateway can vouch for", async () => {
     const w = world({ independent: { kind: "unavailable" } });
-    const prepared = await prepareTron(ctx(w).ctx, params());
-    expect(prepared.checks).toContain("reads-unverified");
+    await expect(prepareTron(ctx(w).ctx, params())).rejects.toThrow(
+      /only the gateway vouches for the reference block/,
+    );
+    expect(w.signCalls).toHaveLength(0);
   });
 
   it("flags fee-mismatch on a >25% energy-estimate gap and keeps the larger estimate", async () => {

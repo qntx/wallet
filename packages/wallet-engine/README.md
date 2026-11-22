@@ -173,7 +173,11 @@ createWalletEngine({
 When the gateway serves the network it is tried first (route `POST /v1/tron/:caip2/*`, an
 allow-list of node-API paths plus the TronGrid indexer feeds); every decisive read is still
 cross-checked against a second provider before anything is built or signed, and a
-`reads-unverified` flag marks a prepare whose cross-check could not run.
+`reads-unverified` flag marks a prepare whose cross-check could not run. Two reads are binding
+rather than flaggable: the reference block — what binds the signed bytes to the chain — must be
+confirmed by a host endpoint when the gateway serves the network, so a gateway-only TRON send is
+refused; and the answering node itself must report the network's genesis block, so a gateway
+provider on another chain is refused before anything is signed.
 
 Request methods are `send`, `tron-stake` and `tron-approve`. A TRON `send` takes the token as a
 TRC-10 decimal id or a TRC-20 `T…` address and an optional `memo` (1–256 UTF-8 bytes, no line
@@ -219,8 +223,12 @@ supplies as `domain`/`types`/`message`, and `wallet_watchAsset` accepts TRC-20 o
 Tracking follows the chain's own rule: the signed bytes bind to the solidified head and stay
 `submitted` — rebroadcast as needed — until the solidified node reports them (solidified
 inclusion is `final`, a failed receipt is `failed`) or its timestamp passes the transaction's
-`expiration`, which is `dropped`. Broadcast answers the node does not classify are never
-guessed: only a definite refusal fails a request.
+`expiration`, which is `dropped`. A poll never trusts one upstream's word for an absence: every
+read of a poll is pinned to a single upstream (the gateway is pinned to one provider once it
+answers), and `dropped` or `reorged` is reached only when a configured host endpoint agrees, or
+— without one — after three consecutive matching polls spanning more than one solidification
+period (~57 seconds). Broadcast answers the node does not classify are never guessed: only a
+definite refusal fails a request.
 
 History is display-only indexer data: the gateway's TronGrid feeds, verified entry by entry on
 the node (the raw data hash must equal the txid and every claimed leg must decode to the claim)

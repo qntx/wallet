@@ -51,6 +51,7 @@ const VERIFY = { kind: "password", password: "pw" } as SendParams["verify"];
 
 /** Full-node head 105; the reference block is the solid head at 100. */
 const SOLID_ID = "ab".repeat(32);
+const GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc";
 const REF_BYTES = "0064";
 const REF_HASH = SOLID_ID.slice(16, 32);
 const EXPIRATION = 1_100_000;
@@ -170,7 +171,10 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     owner: FROM,
     fullHead: 105,
     solidBlock: { number: 100, timestamp: 900_000 },
-    blockIds: new Map([[100, SOLID_ID]]),
+    blockIds: new Map([
+      [0, GENESIS],
+      [100, SOLID_ID],
+    ]),
     energyUsed: 14_630,
     logs: [],
     callOk: true,
@@ -260,6 +264,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
+          info: () => ({ genesisHash: GENESIS }),
         } as never,
         wallet: {} as never,
         openStore: async () => Promise.resolve({} as never),
@@ -439,6 +444,7 @@ describe("prepareDappTron with the SUN.io fixture", () => {
       owner: SUNIO_OWNER,
       fullHead: 65_636,
       blockIds: new Map([
+        [0, GENESIS],
         [52_480, SUNIO_REF_ID],
         [100, SOLID_ID],
       ]),
