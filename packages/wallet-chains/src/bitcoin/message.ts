@@ -139,8 +139,8 @@ export const legacyMessageHash = (message: string): Uint8Array =>
   sha256(sha256(concat(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
 
 /**
- * The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte
- * header + 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
+ * The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
+ * 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
  */
 export const encodeLegacySignature = (yParity: 0 | 1, compact: Uint8Array): string =>
   base64(concat(Uint8Array.of(27 + yParity + 4), compact));

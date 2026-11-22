@@ -1,6 +1,6 @@
 /**
- * /tron/assemble — the verified signature material as the 65-byte `r‖s‖v` (v = 27 + yParity),
- * the tronweb ECKeySign form. Always "signed".
+ * /tron/assemble — the verified signature material as the 65-byte `r‖s‖v` (v = 27 + yParity), the
+ * tronweb ECKeySign form. Always "signed".
  */
 import * as Hex from "ox/Hex";
 import * as Signature from "ox/Signature";

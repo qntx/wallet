@@ -1,16 +1,11 @@
 /**
- * /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task
- * per listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH
- * → ECDSA over the input's sighash preimage); a message plans the BIP-322-simple or legacy
- * signature of the address's key. No key material — do not import ./index.ts (cycle).
+ * /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
+ * listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
+ * ECDSA over the input's sighash preimage); a message plans the BIP-322-simple or legacy signature
+ * of the address's key. No key material — do not import ./index.ts (cycle).
  */
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
-import {
-  getInputType,
-  getPrevOut,
-  SigHash,
-  Transaction,
-} from "@scure/btc-signer/transaction.js";
+import { getInputType, getPrevOut, SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { equalBytes, hash160, tagSchnorr, taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 
 import { ChainError } from "../index.ts";
@@ -47,7 +42,7 @@ const cannotSign = (index: number): ChainError =>
   new ChainError("invalid-request", `input ${index}: key cannot sign`);
 
 /**
- * btc-signer 2.4.1 keeps the legacy sighash preimage builder TS-private — the same call its own
+ * Btc-signer 2.4.1 keeps the legacy sighash preimage builder TS-private — the same call its own
  * signer makes, used here so no sighash code of ours exists. The dependency version is pinned
  * exactly and the signing vectors guard against drift.
  */
@@ -129,7 +124,11 @@ const ecdsaTask = (
 ): EcdsaTask => {
   const pubHash = hash160(key.publicKey);
   let digest: Uint8Array;
-  if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes(type.last.hash, pubHash)) {
+  if (
+    type.txType === "segwit" &&
+    type.last.type === "wpkh" &&
+    equalBytes(type.last.hash, pubHash)
+  ) {
     const scriptCode = OutScript.encode({ type: "pkh", hash: type.last.hash });
     let prevOut;
     try {
@@ -189,7 +188,7 @@ export const planBitcoinPsbt = (
     } catch (error) {
       throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
     }
-    const sighash = type.sighash;
+    const { sighash } = type;
     const allowed =
       sighash === type.defaultSighash ||
       (sighash === SigHash.SINGLE_ANYONECANPAY && index < tx.outputsLength);
@@ -224,8 +223,8 @@ const cannotSignAddress = (): ChainError =>
   new ChainError("invalid-request", "key cannot sign this address");
 
 /**
- * The message plan: the address must decode to the key's own output — P2PKH for `legacy`, P2WPKH
- * or the key's tweaked P2TR for `bip322-simple`.
+ * The message plan: the address must decode to the key's own output — P2PKH for `legacy`, P2WPKH or
+ * the key's tweaked P2TR for `bip322-simple`.
  */
 export const planBitcoinMessage = (
   request: {

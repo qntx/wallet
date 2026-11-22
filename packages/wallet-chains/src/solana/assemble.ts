@@ -1,6 +1,6 @@
 /**
- * /solana/assemble — the verified 64-byte Ed25519 signature is itself the wire artefact
- * (the host attaches it to the compiled transaction). Always "signed".
+ * /solana/assemble — the verified 64-byte Ed25519 signature is itself the wire artefact (the host
+ * attaches it to the compiled transaction). Always "signed".
  */
 import type { Assembled } from "../index.ts";
 import { acceptEd25519, signaturesOf } from "../tasks.ts";

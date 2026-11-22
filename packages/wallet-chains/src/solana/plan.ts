@@ -20,9 +20,7 @@ export const planSolanaMessage = (
   }
   return {
     kind,
-    tasks: [
-      { scheme: "ed25519", path: key.path, publicKey: key.publicKey, message },
-    ],
+    tasks: [{ scheme: "ed25519", path: key.path, publicKey: key.publicKey, message }],
   };
 };
 

@@ -67,7 +67,10 @@ export const assembleBitcoinMessage = (
   signatures: ReadonlyArray<Uint8Array>,
 ): Assembled<string, BitcoinMessagePlan> => {
   signaturesOf(plan.tasks, signatures);
-  const task = plan.tasks[0];
+  const [task] = plan.tasks;
+  if (task === undefined) {
+    throw new ChainError("invalid-signature", "plan has no task");
+  }
   const signature = signatures[0] ?? new Uint8Array();
   if (task.scheme === "bip340") {
     return { kind: "signed", artefact: encodeBip322Simple([acceptBip340(task, signature)]) };
@@ -77,9 +80,6 @@ export const assembleBitcoinMessage = (
     return { kind: "signed", artefact: encodeLegacySignature(yParity, compact(r, s)) };
   }
   // bip322-simple P2WPKH witness: [DER signature ‖ SIGHASH_ALL, compressed pubkey].
-  const witness = [
-    concatBytes(der(r, s), Uint8Array.of(SigHash.ALL)),
-    plan.publicKey,
-  ];
+  const witness = [concatBytes(der(r, s), Uint8Array.of(SigHash.ALL)), plan.publicKey];
   return { kind: "signed", artefact: encodeBip322Simple(witness) };
 };

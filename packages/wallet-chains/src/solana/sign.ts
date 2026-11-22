@@ -1,8 +1,8 @@
 /**
- * /solana/sign — the only file holding private-key code for the family: the local task signer,
- * plus the raw-key API reimplemented as `plan → signSolanaTask → assembleSolana`. Inputs must
- * already be normalized: the kernel calls `normalizeSolana` first. No key caching; the caller
- * wipes key bytes.
+ * /solana/sign — the only file holding private-key code for the family: the local task signer, plus
+ * the raw-key API reimplemented as `plan → signSolanaTask → assembleSolana`. Inputs must already be
+ * normalized: the kernel calls `normalizeSolana` first. No key caching; the caller wipes key
+ * bytes.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 

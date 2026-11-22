@@ -44,10 +44,7 @@ export const planTronTypedData = (typedData: string, key: TaskKey): TronSignPlan
 
 /** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
 export const planTron = (
-  request: Extract<
-    SignRequest,
-    { kind: "tron.transaction" | "tron.message" | "tron.typed-data" }
-  >,
+  request: Extract<SignRequest, { kind: "tron.transaction" | "tron.message" | "tron.typed-data" }>,
   key: TaskKey,
 ): TronSignPlan => {
   if (request.kind === "tron.transaction") {

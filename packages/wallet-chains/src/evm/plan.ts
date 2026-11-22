@@ -42,8 +42,8 @@ const personalDigest = (message: Uint8Array): Uint8Array =>
   Hex.toBytes(PersonalMessage.getSignPayload(Hex.fromBytes(message)));
 
 /**
- * The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm`
- * then returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
+ * The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
+ * returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
  */
 export const planEvmTransaction = (tx: EvmTransaction, key: TaskKey): EvmSignPlan => ({
   kind: "evm.transaction",

@@ -1,12 +1,12 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
 /**
- * Signing tasks — the serialisable middle of the `plan → backend → assemble` split. A plan is
- * plain data (no key material, no closures); a backend returns one 64-byte signature per task;
- * `assemble` verifies every signature against the task's public key before using it. The task
- * types live in the root entry (declaring them here would cycle index ↔ tasks); the helpers
- * stay package-internal.
+ * Signing tasks — the serialisable middle of the `plan → backend → assemble` split. A plan is plain
+ * data (no key material, no closures); a backend returns one 64-byte signature per task; `assemble`
+ * verifies every signature against the task's public key before using it. The task types live in
+ * the root entry (declaring them here would cycle index ↔ tasks); the helpers stay
+ * package-internal.
  */
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
-import { ed25519 } from "@noble/curves/ed25519.js";
 
 import { ChainError } from "./index.ts";
 import type { Assembled, Bip340Task, EcdsaTask, Ed25519Task, SignTask } from "./index.ts";
@@ -15,10 +15,10 @@ const equalBytes = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
- * Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize
- * — the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found
- * by recovering the key for both parities and comparing with the task key — that comparison is
- * the verification.
+ * Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize —
+ * the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found by
+ * recovering the key for both parities and comparing with the task key — that comparison is the
+ * verification.
  */
 export const acceptEcdsa = (
   task: EcdsaTask,
@@ -56,7 +56,7 @@ export const acceptBip340 = (task: Bip340Task, signature: Uint8Array): Uint8Arra
   if (signature.length !== 64) {
     throw new ChainError("invalid-signature", "signature must be 64 bytes");
   }
-  let ok = false;
+  let ok: boolean;
   try {
     ok = schnorr.verify(signature, task.message, task.publicKey);
   } catch {
@@ -73,7 +73,7 @@ export const acceptEd25519 = (task: Ed25519Task, signature: Uint8Array): Uint8Ar
   if (signature.length !== 64) {
     throw new ChainError("invalid-signature", "signature must be 64 bytes");
   }
-  let ok = false;
+  let ok: boolean;
   try {
     ok = ed25519.verify(signature, task.message, task.publicKey, { zip215: false });
   } catch {

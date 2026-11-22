@@ -13,7 +13,7 @@ import { signLocally } from "../tasks.ts";
 import { assembleBitcoinMessage, assembleBitcoinPsbt } from "./assemble.ts";
 import { planBitcoinMessage, planBitcoinPsbt } from "./plan.ts";
 
-const Fn = secp256k1.Point.Fn;
+const { Fn } = secp256k1.Point;
 
 const checkKey = (privateKey: Uint8Array): void => {
   if (privateKey.length !== 32) {
@@ -22,7 +22,7 @@ const checkKey = (privateKey: Uint8Array): void => {
 };
 
 const uint256 = (bytes: Uint8Array): bigint =>
-  bytes.reduce((acc, byte) => (acc << 8n) + BigInt(byte), 0n);
+  bytes.reduce((acc, byte) => acc * 256n + BigInt(byte), 0n);
 
 /** Signs one task with a raw secp256k1 key; `auxRand` feeds only the BIP-340 nonce. */
 export const signBitcoinTask = (
@@ -36,8 +36,7 @@ export const signBitcoinTask = (
   }
   if (task.scheme === "bip340") {
     const d0 = Fn.fromBytes(privateKey);
-    const internal =
-      secp256k1.Point.BASE.multiply(d0).toAffine().y % 2n === 0n ? d0 : Fn.neg(d0);
+    const internal = secp256k1.Point.BASE.multiply(d0).toAffine().y % 2n === 0n ? d0 : Fn.neg(d0);
     const tweak = uint256(task.tweak);
     if (tweak >= Fn.ORDER) {
       throw new ChainError("invalid-request", "tweak is not a valid scalar");
