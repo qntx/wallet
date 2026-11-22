@@ -18,6 +18,7 @@ import type { SessionInfo } from "@qntx/wallet/sessions";
 import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
 import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
 import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
+import type { HyperliquidGroupState } from "../src/apps/hyperliquid/state.ts";
 import { createApps } from "../src/apps/index.ts";
 import type { AppsController } from "../src/apps/index.ts";
 import { polymarket as polymarketApp } from "../src/apps/polymarket/app.ts";
@@ -25,12 +26,12 @@ import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
 import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
 import type { PolymarketCredentialStore } from "../src/apps/polymarket/credentials.ts";
 import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import type { PolymarketGroupState } from "../src/apps/polymarket/state.ts";
 import {
   derivePolymarketWallets,
   expectedPolymarketWalletRuntime,
 } from "../src/apps/polymarket/wallets.ts";
 import { createAppStorage } from "../src/apps/storage.ts";
-import type { AppGroupState } from "../src/apps/types.ts";
 import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -391,6 +392,23 @@ export const until = async (cond: () => boolean, tries = 300): Promise<void> => 
   expect(cond()).toBe(true);
 };
 
+/** Poll an async read until it answers — a fire-and-forget record write lands a tick later. */
+export const untilPresent = async <T>(
+  read: () => Promise<T | undefined>,
+  tries = 50,
+): Promise<T> => {
+  for (let i = 0; i < tries; i++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    const value = await read();
+    if (value !== undefined) {
+      return value;
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    await tick();
+  }
+  throw new Error("read never produced a value");
+};
+
 /** Pump manual timers until `cond` — for flows whose timers drive a verify window. */
 export const pumpUntil = async (
   timers: ReturnType<typeof manualTimer>,
@@ -442,6 +460,12 @@ export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }
   return shared;
 };
 
+/** The group map a world builds — its two app lanes' provider-owned group states. */
+type WorldGroups = {
+  readonly hyperliquid: HyperliquidGroupState;
+  readonly polymarket: PolymarketGroupState;
+};
+
 export type World = {
   wallet: Wallet;
   provider: HyperliquidProvider;
@@ -450,7 +474,7 @@ export type World = {
   /** The Polygon chain facts `locate` reads — set `code` to mirror the relayer feed's claims. */
   poly: PolyChain;
   walletId: string;
-  apps: AppsController;
+  apps: AppsController<WorldGroups>;
   destroy: () => Promise<void>;
   requests: RequestController;
   posted: Posted[];
@@ -464,9 +488,9 @@ export type World = {
   group: { walletId: string; groupIndex: number };
   /** Logger warnings collected for the world (diagnostics). */
   warns: string[];
-  state: () => AppGroupState | undefined;
+  state: () => HyperliquidGroupState | undefined;
   /** The group's `polymarket` app state — undefined until a flow or reconcile writes it. */
-  pmState: () => AppGroupState | undefined;
+  pmState: () => PolymarketGroupState | undefined;
   approve: (id: string) => Promise<void>;
 };
 
@@ -678,9 +702,9 @@ export const world = async (
   await until(() => controller.getState().eligibility.status !== "unknown");
   const group = { walletId, groupIndex };
   const gkey = `${walletId}/${groupIndex}`;
-  const state = (): AppGroupState | undefined =>
+  const state = (): HyperliquidGroupState | undefined =>
     controller.getState().groups[gkey]?.["hyperliquid"];
-  const pmState = (): AppGroupState | undefined =>
+  const pmState = (): PolymarketGroupState | undefined =>
     controller.getState().groups[gkey]?.["polymarket"];
   const approve = async (id: string): Promise<void> => {
     try {

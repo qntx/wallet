@@ -9,7 +9,11 @@ import type { EngineOptions, EngineStore, PublicStore, WalletEngine } from "@qnt
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { AppsController, AppSocket } from "@qntx/wallet-engine/apps";
 import { createApps } from "@qntx/wallet-engine/apps";
-import type { HyperliquidGroup, HyperliquidProvider } from "@qntx/wallet-engine/apps/hyperliquid";
+import type {
+  HyperliquidGroup,
+  HyperliquidGroupState,
+  HyperliquidProvider,
+} from "@qntx/wallet-engine/apps/hyperliquid";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { chains } from "@qntx/wallet/chains";
 
@@ -28,7 +32,7 @@ export function createHost(params: {
 }): {
   engine: WalletEngine;
   apps: {
-    readonly controller: AppsController;
+    readonly controller: AppsController<{ readonly hyperliquid: HyperliquidGroupState }>;
     readonly hyperliquid: HyperliquidProvider;
     readonly destroy: () => Promise<void>;
   };
@@ -94,7 +98,7 @@ export async function enableGroup(
   const state = apps.controller.store;
   // React to the request the flow publishes — in a UI this is a subscription, not a poll.
   const unsubscribe = state.subscribe((s) => {
-    const id = s.groups[`${group.walletId}/${group.groupIndex}`]?.["hyperliquid"]?.requestId;
+    const id = s.groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid?.requestId;
     if (id !== undefined) {
       // oxlint-disable-next-line promise/prefer-await-to-then -- a subscribe callback cannot await.
       void engine.requests.approve(id, "evm-sign", { verify }).catch(() => undefined);
@@ -252,16 +256,16 @@ export async function fundAndWithdraw(
 export { HYPERLIQUID_DEPOSIT } from "@qntx/wallet-engine/apps/hyperliquid";
 
 /**
- * The builder fee is optional now: `AppGroupState.builder` is `"approved" | "declined"` — a refusal
- * during enable finishes `enabled` and trades without the builder. The host offers `approveBuilder`
- * for a later consent; a second refusal stays declined and resolves normally.
+ * The builder fee is optional now: `HyperliquidGroupState.builder` is `"approved" | "declined"` — a
+ * refusal during enable finishes `enabled` and trades without the builder. The host offers
+ * `approveBuilder` for a later consent; a second refusal stays declined and resolves normally.
  */
 export async function offerBuilder(
-  apps: Awaited<ReturnType<typeof createApps>>,
+  apps: ReturnType<typeof createHost>["apps"],
   group: HyperliquidGroup,
 ): Promise<"approved" | "declined" | "unconfigured"> {
   const state =
-    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.["hyperliquid"];
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
   if (state?.builder === "approved") {
     return "approved";
   }
@@ -269,7 +273,7 @@ export async function offerBuilder(
     throw new Error("the group is not enabled");
   }
   try {
-    await apps.controller.approveBuilder(group, "hyperliquid");
+    await apps.hyperliquid.approveBuilder(group);
   } catch (error) {
     if (error instanceof Error && error.name === "HyperliquidError") {
       return "unconfigured";
@@ -277,7 +281,7 @@ export async function offerBuilder(
     throw error;
   }
   return (
-    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.["hyperliquid"]
+    apps.controller.getState().groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid
       ?.builder ?? "declined"
   );
 }

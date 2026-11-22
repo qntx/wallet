@@ -9,6 +9,7 @@ import { createPolymarketCredentials } from "./credentials.ts";
 import { createPolymarketEnable } from "./enable.ts";
 import { createPolymarketProvider } from "./provider.ts";
 import type { PolymarketBuilder, PolymarketProvider } from "./provider.ts";
+import type { PolymarketDetail } from "./state.ts";
 
 export type AppsPolymarketConfig = {
   /**
@@ -21,7 +22,7 @@ export type AppsPolymarketConfig = {
 
 export function polymarket(
   config: AppsPolymarketConfig = {},
-): AppDefinition<"polymarket", PolymarketProvider> {
+): AppDefinition<"polymarket", PolymarketProvider, PolymarketDetail> {
   const { builder } = config;
   if (builder?.code !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(builder.code)) {
     throw new Error("polymarket builder.code must be a 32-byte hex string");
@@ -32,7 +33,7 @@ export function polymarket(
     /* `close-only` enables too — users need credentials to sell; the trade path gates opening
        positions itself. */
     enableWhen: ["available", "close-only"],
-    create: (context: AppContext) => {
+    create: (context: AppContext<PolymarketDetail>) => {
       const credentials = createPolymarketCredentials({
         storage: context.storage,
         logger: context.logger,
@@ -48,12 +49,8 @@ export function polymarket(
         networks: context.networks,
         socket: context.socket,
         logger: context.logger,
-        /* The last ready eligibility answer's per-app availability — `undefined` (unknown or
-           stale) fails BUY orders closed. */
-        availability: () => {
-          const state = context.state()?.eligibility;
-          return state?.status === "ready" ? state.apps?.["polymarket"] : undefined;
-        },
+        /* `undefined` (unknown or failed eligibility) fails BUY orders closed. */
+        availability: context.availability,
         ...(builder === undefined ? {} : { builder }),
       });
       return {

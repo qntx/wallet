@@ -16,6 +16,7 @@ import type { AppFlow, AppGroup, AppProvider, AppRequests } from "../types.ts";
 import { HyperliquidError } from "./errors.ts";
 import type { HyperliquidErrorCategory } from "./errors.ts";
 import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";
+import type { HyperliquidDetail, HyperliquidFlow, HyperliquidHints } from "./state.ts";
 import type { HyperliquidUserSigned } from "./user-signed.ts";
 
 /** Hyperliquid's own bound is 180 days; 179 keeps a day of slack inside it (research §Agents). */
@@ -44,7 +45,7 @@ const feeRate = (tenthsBps: number): string => {
 
 export type HyperliquidEnableOptions = {
   readonly wallet: Wallet;
-  readonly provider: HyperliquidProvider & HyperliquidProviderInternals;
+  readonly provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals;
   readonly userSigned: HyperliquidUserSigned;
   readonly requests: Pick<AppRequests, "reject">;
   readonly network: HyperliquidNetwork;
@@ -55,6 +56,8 @@ export type HyperliquidEnableOptions = {
   readonly now: () => number;
   readonly setTimer: SetTimer;
   readonly logger: EngineLogger;
+  /** The persisted enablement hints every entry point wraps its flow with. */
+  readonly hints: HyperliquidHints;
 };
 
 const errorOf = (error: unknown): { category: string; message: string } =>
@@ -65,13 +68,20 @@ const errorOf = (error: unknown): { category: string; message: string } =>
         message: error instanceof Error ? error.message : String(error),
       };
 
-const fail = (flow: AppFlow, category: HyperliquidErrorCategory, message: string): never => {
+const fail = (
+  flow: AppFlow<HyperliquidDetail>,
+  category: HyperliquidErrorCategory,
+  message: string,
+): never => {
   flow.write({ error: { category, message } });
   throw new HyperliquidError(category, message);
 };
 
 /** Run `body`; a stale flow stops writing but a thrown error still surfaces to the caller. */
-const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> => {
+const guard = async (
+  flow: AppFlow<HyperliquidDetail>,
+  body: () => Promise<void>,
+): Promise<void> => {
   try {
     await body();
   } catch (error) {
@@ -82,7 +92,11 @@ const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> =>
   }
 };
 
-export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppProvider {
+export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
+  readonly provider: AppProvider<HyperliquidDetail>;
+  /** Ask an enabled group for the builder fee approval it declined or never gave. */
+  readonly approveBuilder: (group: AppGroup, flow: AppFlow<HyperliquidDetail>) => Promise<void>;
+} {
   const { provider, userSigned } = options;
   const wallet = (): ReturnType<typeof sessions> => sessions(options.wallet);
   const sleep = async (ms: number): Promise<void> =>
@@ -149,7 +163,10 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
    * Preconditions shared by enable and renew: clock gate, then `userRole` — only a funded master
    * account ("user") may approve agents (research §Roles).
    */
-  const preconditions = async (group: AppGroup, flow: AppFlow): Promise<string> => {
+  const preconditions = async (
+    group: AppGroup,
+    flow: AppFlow<HyperliquidDetail>,
+  ): Promise<string> => {
     if (!flow.current().termsAcknowledged) {
       fail(flow, "invalid-input", "Hyperliquid terms have not been acknowledged");
     }
@@ -171,7 +188,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
   /** Approve the agent on Hyperliquid, then verify it is listed — resumable through `verify`. */
   const approveAgent = async (
     group: AppGroup,
-    flow: AppFlow,
+    flow: AppFlow<HyperliquidDetail>,
     owner: string,
     agent: SessionInfo,
   ): Promise<void> => {
@@ -223,7 +240,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
   /** The builder step: request approveBuilderFee when HL has not confirmed `f` yet. */
   const approveBuilderStep = async (
     group: AppGroup,
-    flow: AppFlow,
+    flow: HyperliquidFlow,
     owner: string,
   ): Promise<"approved" | "declined"> => {
     const { builder } = options;
@@ -265,7 +282,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
   };
 
   /** The enable state machine — every step writes; a failure leaves a resumable state. */
-  const enableFlow = async (group: AppGroup, flow: AppFlow): Promise<void> => {
+  const enableFlow = async (group: AppGroup, flow: HyperliquidFlow): Promise<void> => {
     const now = options.now();
     if (flow.current().status !== "enabling") {
       flow.write({ status: "enabling", step: "create-agent", error: undefined });
@@ -318,7 +335,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
     });
   };
 
-  return {
+  const enableProvider: AppProvider<HyperliquidDetail> = {
     error: (category, message) => new HyperliquidError(category, message),
     groups: async () => {
       const listed = await wallet().list();
@@ -333,43 +350,14 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
       }
       return [...seen.values()];
     },
-    enable: async (group, flow) =>
-      guard(flow, async () => {
+    enable: async (group, raw) => {
+      const flow = await options.hints.track(group, raw);
+      await guard(flow, async () => {
         await enableFlow(group, flow);
-      }),
-    approveBuilder: async (group, flow) => {
-      const { builder } = options;
-      if (builder === undefined) {
-        throw new HyperliquidError("invalid-input", "no builder is configured");
-      }
-      const fee = builder.feeRateTenthsBps;
-      const owner = await provider.agents.owner(group);
-      if ((await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >= fee) {
-        flow.write({ builder: "approved" });
-        return;
-      }
-      const pending = await userSigned.approveBuilderFee(group, {
-        builder: builder.address,
-        maxFeeRate: feeRate(fee),
       });
-      flow.write({ requestId: pending.requestId });
-      try {
-        await pending.outcome;
-      } catch (error) {
-        flow.write({ requestId: undefined });
-        if (error instanceof HyperliquidError && error.category === "approval-rejected") {
-          flow.write({ builder: "declined" });
-          return;
-        }
-        throw error;
-      }
-      flow.write({ requestId: undefined });
-      if (!(await waitBuilderFee(owner, builder.address.toLowerCase(), fee))) {
-        fail(flow, "unavailable", "the builder fee approval never confirmed");
-      }
-      flow.write({ builder: "approved" });
     },
-    renew: async (group, flow) => {
+    renew: async (group, raw) => {
+      const flow = await options.hints.track(group, raw);
       const before = await kernelAgents(group);
       try {
         /* Same name ⇒ Hyperliquid deregisters the old agent when the new one is approved. The
@@ -421,8 +409,9 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         throw error;
       }
     },
-    disable: async (group, { revoke }, flow) =>
-      guard(flow, async () => {
+    disable: async (group, { revoke }, raw) => {
+      const flow = await options.hints.track(group, raw);
+      await guard(flow, async () => {
         await provider.agents.refresh();
         const agents = await kernelAgents(group);
         /* Trading stops first: every kernel agent of the group on this network is deleted
@@ -473,9 +462,12 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
             }
           }
         }
-      }),
-    cancel: async (group, flow) => {
-      const state = flow.current();
+      });
+    },
+    cancel: async (group, raw) => {
+      /* The checks and the request rejection write nothing — they run on `raw` first so the
+         pending request ends in the same tick the host called `cancel`. */
+      const state = raw.current();
       if (state.status !== "enabling") {
         throw new HyperliquidError("invalid-input", "no enablement flow is running");
       }
@@ -486,6 +478,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         /* A request the flow opened but the host never approved just ends. */
         options.requests.reject(state.requestId);
       }
+      const flow = await options.hints.track(group, raw);
       const agents = await kernelAgents(group);
       for (const agent of agents) {
         /* Only the flow's own unenabled agent is an orphan — during a renew the old enabled
@@ -532,7 +525,8 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         });
       }
     },
-    reconcile: async (group, flow) => {
+    reconcile: async (group, raw) => {
+      const flow = await options.hints.track(group, raw);
       const now = options.now();
       const owner = await provider.agents.owner(group);
       const agents = await kernelAgents(group);
@@ -646,6 +640,47 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): AppP
         renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,
         error: undefined,
       });
+    },
+  };
+  return {
+    provider: enableProvider,
+    approveBuilder: async (group, raw) => {
+      const flow = await options.hints.track(group, raw);
+      /* The group must be trading before a late consent is even asked — the check the
+         controller used to run before the provider's own `no builder` guard. */
+      if (flow.current().status !== "enabled") {
+        throw new HyperliquidError("invalid-input", "the group is not enabled");
+      }
+      const { builder } = options;
+      if (builder === undefined) {
+        throw new HyperliquidError("invalid-input", "no builder is configured");
+      }
+      const fee = builder.feeRateTenthsBps;
+      const owner = await provider.agents.owner(group);
+      if ((await provider.account.maxBuilderFee(owner, builder.address.toLowerCase())) >= fee) {
+        flow.write({ builder: "approved" });
+        return;
+      }
+      const pending = await userSigned.approveBuilderFee(group, {
+        builder: builder.address,
+        maxFeeRate: feeRate(fee),
+      });
+      flow.write({ requestId: pending.requestId });
+      try {
+        await pending.outcome;
+      } catch (error) {
+        flow.write({ requestId: undefined });
+        if (error instanceof HyperliquidError && error.category === "approval-rejected") {
+          flow.write({ builder: "declined" });
+          return;
+        }
+        throw error;
+      }
+      flow.write({ requestId: undefined });
+      if (!(await waitBuilderFee(owner, builder.address.toLowerCase(), fee))) {
+        fail(flow, "unavailable", "the builder fee approval never confirmed");
+      }
+      flow.write({ builder: "approved" });
     },
   };
 }

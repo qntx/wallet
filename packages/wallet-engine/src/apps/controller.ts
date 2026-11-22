@@ -1,9 +1,8 @@
 /**
  * `createApps` — the app-enablement composition: the host lists the app definitions it wants, each
- * built over one shared `AppContext`; an `AppsController` persists each group's terms flag and
- * last-enabled agent through lock/unlock; and the serialized lock lifecycle from engine.ts
- * (`transition`/`schedule` on `wallet.subscribe`) drives every app's `unlock`/`lock`/`close`
- * hooks.
+ * built over one shared `AppContext`; an `AppsController` persists each group's terms flag through
+ * lock/unlock; and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
+ * `wallet.subscribe`) drives every app's `unlock`/`lock`/`close` hooks.
  */
 import type { Wallet } from "@qntx/wallet";
 
@@ -14,7 +13,6 @@ import type { AppAvailability, EligibilityResponse } from "../gateway/contract/e
 import { parseWith } from "../gateway/contract/endpoint.ts";
 import { CLIENT_ID_HEADER } from "../gateway/contract/primitives.ts";
 import { gatewaySession } from "../gateway/session.ts";
-import type { NetworkController } from "../networks/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -27,11 +25,14 @@ import type {
   AppDefinition,
   AppFlow,
   AppGroup,
+  AppGroups,
   AppGroupState,
   AppId,
   AppInstance,
+  AppNetworks,
   AppProvider,
   AppsState,
+  AppStates,
 } from "./types.ts";
 
 const COLLECTION = "apps";
@@ -39,23 +40,18 @@ const COLLECTION = "apps";
 const DEFAULT_GROUP: AppGroupState = {
   status: "disabled",
   termsAcknowledged: false,
-  renewalDue: false,
 };
 
-/** What a group's record persists — nothing else is stable across sessions. */
+/** What a group's record persists — the terms flag alone; nothing else is stable across sessions. */
 type StoredGroup = {
-  readonly termsAcknowledged: boolean;
-  /** The last agent that reached `enabled` — `enabledAgent` chooses the reconciled status. */
-  readonly enabledAgent?: string;
-  /** The user declined the builder approval — persisted while `builder` is `declined`. */
-  readonly builderDeclined?: true;
+  readonly termsAcknowledged: true;
 };
 
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
   /** The chain clients an app's deposit path reads allowance/burn limits through. */
-  readonly networks: Pick<NetworkController, "client" | "independentClient">;
+  readonly networks: AppNetworks;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
   readonly setTimer: SetTimer;
@@ -82,34 +78,13 @@ const parseRecord = (raw: Uint8Array): StoredGroup | undefined => {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
-  if (
-    Object.keys(value).some(
-      (k) => k !== "termsAcknowledged" && k !== "enabledAgent" && k !== "builderDeclined",
-    )
-  ) {
+  if (Object.keys(value).some((k) => k !== "termsAcknowledged")) {
     return undefined;
   }
   if (!("termsAcknowledged" in value) || value.termsAcknowledged !== true) {
     return undefined;
   }
-  if (
-    "enabledAgent" in value &&
-    (typeof value.enabledAgent !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value.enabledAgent))
-  ) {
-    return undefined;
-  }
-  if ("builderDeclined" in value && value.builderDeclined !== true) {
-    return undefined;
-  }
-  return {
-    termsAcknowledged: true,
-    ...("enabledAgent" in value && typeof value.enabledAgent === "string"
-      ? { enabledAgent: value.enabledAgent }
-      : {}),
-    ...("builderDeclined" in value && value.builderDeclined === true
-      ? { builderDeclined: true as const }
-      : {}),
-  };
+  return { termsAcknowledged: true };
 };
 
 const isGroupState = (value: unknown): value is AppGroupState =>
@@ -122,6 +97,20 @@ const isGroupState = (value: unknown): value is AppGroupState =>
     value.status === "needs-reauthorization" ||
     value.status === "needs-migration" ||
     value.status === "unavailable");
+
+/**
+ * Merge `next` under `app` into the group's row — the `Partial<G>` map is built dynamically from
+ * base `AppGroupState` values under registered ids, exactly the shape `G`'s key space declares.
+ */
+const mergeGroup = <G extends AppGroups>(
+  apps: Readonly<Partial<G>> | undefined,
+  app: AppId,
+  next: AppGroupState,
+): Readonly<Partial<G>> => {
+  const merged: Record<string, AppGroupState | undefined> = { ...apps, [app]: next };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `merged` holds only base states under app ids, the same shape `Partial<G>` declares.
+  return merged as Readonly<Partial<G>>;
+};
 
 /** One registered app — the provider plus the availability set `enable`/`renew` start under. */
 export type AppRegistration = {
@@ -137,8 +126,33 @@ export type AppsControllerDeps = {
   readonly openStore: () => Promise<EngineStore>;
   /** `GET /v1/eligibility` through the gateway client — throws on transport/malformed answers. */
   readonly fetchEligibility: () => Promise<EligibilityResponse>;
+  /**
+   * The constructor hands out the private flow runner once — `createApps` closes over it so each
+   * definition's `AppContext.flow` binds its own id through the same guards.
+   */
+  readonly bindFlow: (
+    runner: (group: AppGroup, app: AppId, run: (flow: AppFlow) => Promise<void>) => Promise<void>,
+  ) => void;
   readonly now: () => number;
   readonly logger: EngineLogger;
+};
+
+/**
+ * The controller's own patch — an `AppGroupPatch` that may also carry `termsAcknowledged`
+ * (`acknowledgeTerms` writes it; provider patches never do).
+ */
+type ControllerPatch = {
+  readonly [K in keyof AppGroupState]?: AppGroupState[K] | undefined;
+};
+
+/**
+ * A state view for `group`/`app` — `write` merges unless the captured generations went stale.
+ * `acknowledgeTerms` and `reconcile` share it without starting a flow generation.
+ */
+type ControllerFlow = {
+  readonly current: () => AppGroupState;
+  readonly write: (patch: ControllerPatch) => void;
+  readonly stale: () => boolean;
 };
 
 /**
@@ -146,7 +160,7 @@ export type AppsControllerDeps = {
  * calls run provider flows under a per-group+app generation so a superseding call or a lock drops
  * stale writes, and one flow per group+app runs at a time (`busy` otherwise).
  */
-export class AppsController extends Controller<AppsState> {
+export class AppsController<G extends AppGroups = AppGroups> extends Controller<AppsState<G>> {
   private readonly deps: AppsControllerDeps;
   private engineStore: EngineStore | undefined;
   private generation = 0;
@@ -155,10 +169,6 @@ export class AppsController extends Controller<AppsState> {
   private readonly busy = new Set<string>();
   /** Request ids the flows opened and have not resolved — rejected on lock/cancel. */
   private readonly pendingRequests = new Set<string>();
-  /** The last agent each record saw reach `enabled` — reconcile's status hint. */
-  private readonly enabledAgents = new Map<string, string>();
-  /** Records whose builder approval the user declined — reconcile's declined-state hint. */
-  private readonly declinedBuilders = new Set<string>();
 
   constructor(deps: AppsControllerDeps) {
     super({
@@ -166,13 +176,16 @@ export class AppsController extends Controller<AppsState> {
       defaultState: () => ({ locked: true, groups: {}, eligibility: { status: "unknown" } }),
     });
     this.deps = deps;
+    deps.bindFlow(async (group, app, run) => {
+      await this.flow(group, app, async (_provider, view) => run(view));
+    });
   }
 
   async init(): Promise<void> {
     this.engineStore = await this.deps.openStore();
     const collection = this.engineStore.collection(COLLECTION);
     const keys = await collection.list();
-    const groups: AppsState["groups"] = {};
+    const groups: Record<string, Readonly<Partial<G>>> = {};
     for (const key of keys) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- records load sequentially on unlock.
       const raw = await collection.get(key);
@@ -184,16 +197,10 @@ export class AppsController extends Controller<AppsState> {
       if (stored === undefined || app === undefined) {
         this.deps.logger.warn(`apps record ${key} skipped: malformed`);
       } else {
-        groups[group] = {
-          ...groups[group],
-          [app]: { ...DEFAULT_GROUP, termsAcknowledged: stored.termsAcknowledged },
-        };
-        if (stored.enabledAgent !== undefined) {
-          this.enabledAgents.set(key, stored.enabledAgent);
-        }
-        if (stored.builderDeclined === true) {
-          this.declinedBuilders.add(key);
-        }
+        groups[group] = mergeGroup(groups[group], app, {
+          ...DEFAULT_GROUP,
+          termsAcknowledged: stored.termsAcknowledged,
+        });
       }
     }
     this.update((state) => ({ ...state, locked: false, groups }));
@@ -235,9 +242,6 @@ export class AppsController extends Controller<AppsState> {
     this.generation += 1;
     this.flowGen.clear();
     this.busy.clear();
-    /* Agent/decline hints are account data too — `init` re-derives both from the store. */
-    this.enabledAgents.clear();
-    this.declinedBuilders.clear();
     for (const id of this.pendingRequests) {
       this.deps.requests.reject(id);
     }
@@ -329,19 +333,21 @@ export class AppsController extends Controller<AppsState> {
     /* Sweep: apply or lift the overlay on groups already written — `disabled` ↔ `unavailable`
        only; other statuses are never rewritten. */
     const { groups, eligibility } = this.getState();
-    const patched: AppsState["groups"] = { ...groups };
+    const patched: Record<string, Readonly<Partial<G>>> = { ...groups };
     let changed = false;
     for (const [gkey, apps] of Object.entries(groups)) {
-      for (const [app, group] of Object.entries(apps)) {
+      /* `Object.entries` on a generic `Partial<G>` widens to `any` — the controller only ever
+         holds base group states, so the value type is stated once here. */
+      for (const [app, group] of Object.entries<AppGroupState | undefined>(apps)) {
         const blocked =
           this.deps.registrations.has(app) &&
           eligibility.status === "ready" &&
           eligibility.apps?.[app] === "blocked";
         if (group?.status === "disabled" && blocked) {
-          patched[gkey] = { ...patched[gkey], [app]: { ...group, status: "unavailable" } };
+          patched[gkey] = mergeGroup(patched[gkey], app, { ...group, status: "unavailable" });
           changed = true;
         } else if (group?.status === "unavailable" && eligibility.status === "ready" && !blocked) {
-          patched[gkey] = { ...patched[gkey], [app]: { ...group, status: "disabled" } };
+          patched[gkey] = mergeGroup(patched[gkey], app, { ...group, status: "disabled" });
           changed = true;
         }
       }
@@ -351,38 +357,23 @@ export class AppsController extends Controller<AppsState> {
     }
   }
 
-  /**
-   * A state view for `group`/`app` — `write` merges unless the captured generations went stale.
-   * `acknowledgeTerms` and `reconcile` share it without starting a flow generation.
-   */
-  private view(group: AppGroup, app: AppId): AppFlow {
+  private view(group: AppGroup, app: AppId): ControllerFlow {
     const key = recordKey(group, app);
     const gkey = groupKey(group);
     const { generation } = this;
     /* The flow generation captured at creation — a `start` bump or a lock makes it stale. */
     const myGen = this.flowGen.get(key) ?? 0;
-    const current = (): AppGroupState => this.getState().groups[gkey]?.[app] ?? DEFAULT_GROUP;
+    const current = (): AppGroupState => {
+      const apps: Partial<Record<AppId, AppGroupState>> | undefined = this.getState().groups[gkey];
+      return apps?.[app] ?? DEFAULT_GROUP;
+    };
     const stale = (): boolean =>
       generation !== this.generation ||
       (this.flowGen.get(key) ?? 0) !== myGen ||
       this.getState().locked;
-    const persist = (record: StoredGroup): void => {
-      const { engineStore } = this;
-      void (async (): Promise<void> => {
-        try {
-          await engineStore
-            ?.collection(COLLECTION)
-            .put(key, new TextEncoder().encode(JSON.stringify(record)));
-        } catch (error) {
-          this.deps.logger.warn(`apps record ${key} write failed`, error);
-        }
-      })();
-    };
     return {
       current,
       stale,
-      wasEnabledAgent: () => this.enabledAgents.get(key),
-      wasBuilderDeclined: () => this.declinedBuilders.has(key),
       write: (patch) => {
         if (stale()) {
           return;
@@ -410,28 +401,10 @@ export class AppsController extends Controller<AppsState> {
         if (current().requestId !== undefined && patch.requestId !== current().requestId) {
           this.pendingRequests.delete(current().requestId ?? "");
         }
-        /* The persisted record keeps only the terms flag and the last enabled agent. */
-        if (next.status === "enabled" && next.agent !== undefined) {
-          this.enabledAgents.set(key, next.agent.address);
-        } else if (next.status === "disabled" || next.status === "unavailable") {
-          this.enabledAgents.delete(key);
-        }
         this.update((state) => ({
           ...state,
-          groups: { ...state.groups, [gkey]: { ...state.groups[gkey], [app]: next } },
+          groups: { ...state.groups, [gkey]: mergeGroup(state.groups[gkey], app, next) },
         }));
-        /* The decline survives `enabling` rewrites until an approval replaces it. */
-        if (next.builder === "declined") {
-          this.declinedBuilders.add(key);
-        } else if (next.builder === "approved") {
-          this.declinedBuilders.delete(key);
-        }
-        const enabledAgent = this.enabledAgents.get(key);
-        persist({
-          termsAcknowledged: next.termsAcknowledged,
-          ...(enabledAgent === undefined ? {} : { enabledAgent }),
-          ...(this.declinedBuilders.has(key) ? { builderDeclined: true as const } : {}),
-        });
       },
     };
   }
@@ -441,17 +414,27 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /** Bump the group+app's flow generation — a running flow's writes go stale — then hand out a view. */
-  private start(group: AppGroup, app: AppId): AppFlow {
+  private start(group: AppGroup, app: AppId): ControllerFlow {
     const key = recordKey(group, app);
     this.flowGen.set(key, (this.flowGen.get(key) ?? 0) + 1);
     return this.view(group, app);
   }
 
   /** Persisted terms acknowledgement — survives lock/unlock; never supersedes a running flow. */
-  async acknowledgeTerms(group: AppGroup, app: AppId): Promise<void> {
+  async acknowledgeTerms(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
     this.requireUnlocked(app);
+    const key = recordKey(this.groupOf(group), app);
     this.view(this.groupOf(group), app).write({ termsAcknowledged: true });
-    await Promise.resolve();
+    /* The record is exactly the terms flag, written only here and only while unlocked — a lock
+       that landed mid-write dropped the write and the store along with it. */
+    const { engineStore } = this;
+    try {
+      await engineStore
+        ?.collection(COLLECTION)
+        .put(key, new TextEncoder().encode(JSON.stringify({ termsAcknowledged: true })));
+    } catch (error) {
+      this.deps.logger.warn(`apps record ${key} write failed`, error);
+    }
   }
 
   private async flow(
@@ -474,32 +457,26 @@ export class AppsController extends Controller<AppsState> {
     }
   }
 
-  async enable(group: AppGroup, app: AppId): Promise<void> {
+  async enable(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.enable(group, view));
   }
 
-  async renew(group: AppGroup, app: AppId): Promise<void> {
+  async renew(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.renew(group, view));
   }
 
-  /** Ask an enabled group for the builder fee approval — the provider refuses when none exists. */
-  async approveBuilder(group: AppGroup, app: AppId): Promise<void> {
-    await this.flow(group, app, async (provider, view) => {
-      if (view.current().status !== "enabled") {
-        throw provider.error("invalid-input", "the group is not enabled");
-      }
-      await provider.approveBuilder(group, view);
-    });
-  }
-
-  async disable(group: AppGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
+  async disable(
+    group: AppGroup,
+    app: Extract<keyof G, string>,
+    options: { revoke: boolean },
+  ): Promise<void> {
     await this.flow(group, app, async (provider, view) => provider.disable(group, options, view));
   }
 
   /** Abort the running flow: supersede it (its writes die), then reject and clean up. */
-  async cancel(group: AppGroup, app: AppId): Promise<void> {
+  async cancel(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
     this.requireUnlocked(app);
     const provider = this.providerFor(app);
     const view = this.start(this.groupOf(group), app);
@@ -527,17 +504,26 @@ export class AppsController extends Controller<AppsState> {
  * registers its provider under its id (a duplicate id throws), and drives the controller's
  * lifecycle off the wallet's lock state — the same `transition`/`schedule` chain engine.ts
  * serializes on `wallet.subscribe`. The returned surface mirrors the listed definitions: only their
- * apis appear next to `controller`/`destroy`.
+ * apis appear next to `controller`/`destroy`, and the controller's group state is typed by them.
  */
 export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, unknown>>>(
   options: CreateAppsOptions & { readonly apps: A },
-): { readonly controller: AppsController; readonly destroy: () => Promise<void> } & AppApis<A> {
-  /* `state` is lazy: definitions capture it at `create`, but the controller only exists once
-     every definition ran — gates read it per call. `sessionStore` is the store the controller
-     last opened: set on open, cleared synchronously when that store's `close` runs (the
-     controller closes it on lock), which is what makes `AppStorage` throw `closed` — and a
-     locked vault reads as closed even before the queued transition closes the store. */
-  const controllerRef: { current: AppsController | undefined } = { current: undefined };
+): {
+  readonly controller: AppsController<AppStates<A>>;
+  readonly destroy: () => Promise<void>;
+} & AppApis<A> {
+  /* The state accessors and `flow` are lazy: definitions capture them at `create`, but the
+     controller only exists once every definition ran — `controllerRef`/`runFlow` read it per
+     call. `sessionStore` is the store the controller last opened: set on open, cleared
+     synchronously when that store's `close` runs (the controller closes it on lock), which is
+     what makes `AppStorage` throw `closed` — and a locked vault reads as closed even before the
+     queued transition closes the store. */
+  const controllerRef: { current: AppsController<AppStates<A>> | undefined } = {
+    current: undefined,
+  };
+  let runFlow:
+    | ((group: AppGroup, app: AppId, run: (flow: AppFlow) => Promise<void>) => Promise<void>)
+    | undefined;
   let sessionStore: EngineStore | undefined;
   const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
   const openStore = async (): Promise<EngineStore> => {
@@ -570,7 +556,24 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     random: options.random,
     logger: options.logger,
     socket: options.socket,
-    state: () => controllerRef.current?.getState(),
+    availability: () => {
+      /* Eligibility outlives the lock by design — market views keep working without an
+         unlocked wallet, so the last ready answer stays readable. */
+      const eligibility = controllerRef.current?.getState().eligibility;
+      return eligibility?.status === "ready" ? eligibility.apps?.[id] : undefined;
+    },
+    groupState: (group) => {
+      const state: AppsState | undefined = controllerRef.current?.getState();
+      return state !== undefined && !state.locked ? state.groups[groupKey(group)]?.[id] : undefined;
+    },
+    flow: async (group, run) => {
+      if (runFlow === undefined) {
+        /* Cannot happen after `createApps` returned — the controller bound it in its
+           constructor, before any definition's `flow` could run. */
+        throw new Error("apps flow is not bound");
+      }
+      await runFlow(group, id, run);
+    },
     storage: createAppStorage(id, () => (unlocked() ? sessionStore : undefined)),
   });
   const registrations = new Map<AppId, AppRegistration>();
@@ -626,9 +629,12 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
   const clientId = gatewaySession(options.gateway.url, options.random).clientIds.service;
   const eligibilityFetch = async (input: URL): Promise<Response> =>
     options.fetch(input, { headers: { [CLIENT_ID_HEADER]: clientId } });
-  const controller = new AppsController({
+  const controller = new AppsController<AppStates<A>>({
     registrations,
     wallet: options.wallet,
+    bindFlow: (runner) => {
+      runFlow = runner;
+    },
     fetchEligibility: async (): Promise<EligibilityResponse> => {
       const url = new URL(eligibilityContract.path, options.gateway.url);
       const response = await eligibilityFetch(url);
@@ -707,7 +713,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
      mapped type says exactly that; the runtime object is built dynamically. */
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `apis` is the dynamic build of the static `AppApis<A>` shape.
   return { controller, ...apis, destroy } as {
-    readonly controller: AppsController;
+    readonly controller: AppsController<AppStates<A>>;
     readonly destroy: () => Promise<void>;
   } & AppApis<A>;
 }

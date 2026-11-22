@@ -119,38 +119,35 @@ type AddressBookTombstone = {
 // @public (undocumented)
 type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 
-// @public (undocumented)
-type AppAgent = {
-    readonly address: string;
-    readonly name: string;
-    readonly validUntil: number;
-    readonly network: string;
-};
-
 // @public
 type AppAvailability = "available" | "close-only" | "blocked";
 
 // @public
-type AppContext = {
+type AppContext<D extends AppDetail = Record<never, never>> = {
     readonly wallet: Wallet;
     readonly requests: AppRequests;
-    readonly networks: Pick<NetworkController, "client" | "independentClient">;
+    readonly networks: AppNetworks;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
     readonly random: (length: number) => Uint8Array;
     readonly logger: EngineLogger;
     readonly socket: (url: string) => AppSocket;
-    readonly state: () => AppsState | undefined;
+    readonly availability: () => AppAvailability | undefined;
+    readonly groupState: (group: AppGroup) => AppGroupState<D> | undefined;
+    readonly flow: (group: AppGroup, run: (flow: AppFlow<D>) => Promise<void>) => Promise<void>;
     readonly storage: AppStorage;
 };
 
 // @public
-type AppDefinition<Id extends AppId, Api> = {
+type AppDefinition<Id extends AppId, Api, D extends AppDetail = Record<never, never>> = {
     readonly id: Id;
     readonly enableWhen: ReadonlyArray<Exclude<AppAvailability, "blocked">>;
-    readonly create: (context: AppContext) => AppInstance<Api>;
+    readonly create: (context: AppContext<D>) => AppInstance<Api, D>;
 };
+
+// @public
+type AppDetail = { readonly [K in keyof AppGroupBase]?: never; } & Readonly<Record<string, unknown>>;
 
 // @public (undocumented)
 type AppError = {
@@ -159,12 +156,10 @@ type AppError = {
 };
 
 // @public
-type AppFlow = {
-    readonly current: () => AppGroupState;
-    readonly write: (patch: AppGroupPatch) => void;
+type AppFlow<D extends AppDetail = Record<never, never>> = {
+    readonly current: () => AppGroupState<D>;
+    readonly write: (patch: AppGroupPatch<D>) => void;
     readonly stale: () => boolean;
-    readonly wasEnabledAgent: () => string | undefined;
-    readonly wasBuilderDeclined: () => boolean;
 };
 
 // @public
@@ -174,39 +169,33 @@ type AppGroup = {
 };
 
 // @public
-type AppGroupPatch = { readonly [K in keyof AppGroupState]?: AppGroupState[K] | undefined; };
-
-// @public
-type AppGroupState = {
-    readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" |
-    /** Polymarket only: the group resolves to a legacy Safe — read-only until migrated. */
-    "needs-migration" | "unavailable";
+type AppGroupBase = {
+    readonly status: AppStatus;
     readonly termsAcknowledged: boolean;
-    readonly agent?: AppAgent;
-    readonly step?: AppStep;
     readonly requestId?: string;
-    readonly renewalDue: boolean;
-    readonly builder?: "approved" | "declined";
-    readonly account?: {
-        readonly wallet: string;
-        readonly kind: "deposit-wallet" | "safe";
-        readonly deployed: boolean;
-        readonly legacySafe?: string;
-    };
     readonly error?: AppError;
 };
+
+// @public
+type AppGroupPatch<D extends AppDetail = Record<never, never>> = Omit<Clearable<AppGroupBase>, "termsAcknowledged"> & Clearable<D>;
+
+// @public
+type AppGroupState<D extends AppDetail = Record<never, never>> = AppGroupBase & Partial<D>;
 
 // @public
 type AppId = string;
 
 // @public
-type AppInstance<Api> = {
+type AppInstance<Api, D extends AppDetail = Record<never, never>> = {
     readonly api: Api;
-    readonly provider: AppProvider;
+    readonly provider: AppProvider<D>;
     readonly unlock?: () => Promise<void>;
     readonly lock?: () => void;
     readonly close?: () => void;
 };
+
+// @public
+type AppNetworks = Pick<NetworkController, "client" | "independentClient">;
 
 // @public
 type AppOrigin = {
@@ -215,17 +204,16 @@ type AppOrigin = {
 };
 
 // @public
-type AppProvider = {
+type AppProvider<D extends AppDetail = Record<never, never>> = {
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
-    readonly reconcile: (group: AppGroup, flow: AppFlow) => Promise<void>;
-    readonly enable: (group: AppGroup, flow: AppFlow) => Promise<void>;
-    readonly approveBuilder: (group: AppGroup, flow: AppFlow) => Promise<void>;
-    readonly renew: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    readonly reconcile: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly enable: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly renew: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
     readonly disable: (group: AppGroup, options: {
         readonly revoke: boolean;
-    }, flow: AppFlow) => Promise<void>;
-    readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+    }, flow: AppFlow<D>) => Promise<void>;
+    readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
 };
 
 // @public
@@ -239,15 +227,6 @@ type AppRequests = {
 type ApproveOptions = {
     readonly verify?: SendParams["verify"];
     readonly acknowledged?: RequestAcknowledgement;
-};
-
-// @public
-type AppsEligibility = {
-    readonly status: "unknown" | "ready" | "error";
-    readonly apps?: Readonly<Record<string, AppAvailability>>;
-    readonly country?: EligibilityResponse["country"];
-    readonly region?: EligibilityResponse["region"];
-    readonly checkedAt?: number;
 };
 
 // @public
@@ -269,14 +248,12 @@ export type AppsPolymarketConfig = {
 };
 
 // @public (undocumented)
-type AppsState = {
-    readonly locked: boolean;
-    readonly groups: Record<string, Readonly<Partial<Record<AppId, AppGroupState>>>>;
-    readonly eligibility: AppsEligibility;
-};
-
-// @public
-type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "locate-wallet" | "deploy-wallet" | "credentials" | "approvals" | "verify" | "revoke";
+type AppStatus = "disabled" | "enabling" | "enabled" | "needs-reauthorization" |
+/**
+* The venue account must be migrated outside the wallet before it can be enabled — read-only
+* until then.
+*/
+"needs-migration" | "unavailable";
 
 // @public
 type AppStorage = {
@@ -542,6 +519,9 @@ type ChainRequestInput = ({
 type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
 // @public
+type Clearable<T> = { readonly [K in keyof T]?: T[K] | undefined; };
+
+// @public
 abstract class Controller<S extends Record<string, unknown>> {
     protected constructor(options: ControllerOptions<S>);
     // (undocumented)
@@ -576,20 +556,6 @@ type DelegationStatus = {
 
 // @public (undocumented)
 type DisplayIntent = ReturnType<typeof decodeEvm>;
-
-// @public (undocumented)
-type EligibilityResponse = z.infer<typeof eligibilityResponse>;
-
-// @public (undocumented)
-const eligibilityResponse: z.ZodMiniObject<{
-    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
-        available: "available";
-        blocked: "blocked";
-        "close-only": "close-only";
-    }>>;
-}, z.core.$strip>;
 
 // @public
 type EngineCollection = {
@@ -926,7 +892,7 @@ type PhishingState = {
 type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
 
 // @public (undocumented)
-export function polymarket(config?: AppsPolymarketConfig): AppDefinition<"polymarket", PolymarketProvider>;
+export function polymarket(config?: AppsPolymarketConfig): AppDefinition<"polymarket", PolymarketProvider, PolymarketDetail>;
 
 // @public (undocumented)
 export type PolymarketAccount = {
@@ -964,6 +930,14 @@ export type PolymarketAccountReads = {
     }) => Promise<PolymarketBalance>;
     readonly closedOnly: (group: AppGroup) => Promise<boolean>;
     readonly revokeApiKey: (group: AppGroup) => Promise<void>;
+};
+
+// @public
+export type PolymarketAccountState = {
+    readonly wallet: string;
+    readonly kind: "deposit-wallet" | "safe";
+    readonly deployed: boolean;
+    readonly legacySafe?: string;
 };
 
 // @public (undocumented)
@@ -1111,6 +1085,12 @@ export type PolymarketClobMarket = {
     };
 };
 
+// @public
+export type PolymarketDetail = {
+    readonly step?: PolymarketStep;
+    readonly account?: PolymarketAccountState;
+};
+
 // @public (undocumented)
 export class PolymarketError extends Error {
     constructor(category: PolymarketErrorCategory, message: string, options?: {
@@ -1211,6 +1191,9 @@ export type PolymarketFundingOutcome = {
 } | {
     readonly kind: "unknown";
 };
+
+// @public
+export type PolymarketGroupState = AppGroupState<PolymarketDetail>;
 
 // @public (undocumented)
 export type PolymarketHistoryParams = {
@@ -1557,6 +1540,9 @@ type PolymarketServerTime = {
 
 // @public (undocumented)
 export type PolymarketSide = "BUY" | "SELL";
+
+// @public
+export type PolymarketStep = "locate-wallet" | "deploy-wallet" | "credentials" | "approvals" | "verify";
 
 // @public (undocumented)
 export type PolymarketTrade = {
