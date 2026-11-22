@@ -2784,6 +2784,30 @@ describe("blind text prompts", () => {
     });
   });
 
+  it("a grant text carrying hidden characters keeps the hazard under the grant line", () => {
+    const grant =
+      "I agree to access my profile. " +
+      "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82";
+    for (const text of [`${grant}‮`, `${grant}\u{E0041}`]) {
+      const intent = personal(text);
+      expect(intent.blind).toBe("fiat24-session-grant");
+      expect(chainPrompt("en", intent)).toStrictEqual({
+        title: "Confirm blind signing",
+        description:
+          "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.\n" +
+          "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\n" +
+          `Message:\n· ${grant}�`,
+      });
+      expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+        title: "确认盲签",
+        description:
+          "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。\n" +
+          "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n" +
+          `消息：\n· ${grant}�`,
+      });
+    }
+  });
+
   it("a wallet-built Fiat24 access grant names the session it opens, in both locales", () => {
     const message =
       "I agree to access my profile. " +

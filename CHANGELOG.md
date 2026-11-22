@@ -1208,6 +1208,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   payment on the account or payee the calldata names instead of the cash-token contract every such
   payment shares — a payment to a never-paid Fiat24 account or payee is `first-recipient` again,
   and two Fiat24 ids are never compared as address lookalikes.
+- Kernel prompt: a raw Fiat24 access grant whose text carries hidden or reordering characters
+  keeps the hidden-characters warning under the grant line — the blind grant description no longer
+  drops it.
 
 ### Security
 

@@ -1787,7 +1787,7 @@ function messagePrompt(
           ? []
           : signInLines(catalog, message.signIn)
         : intent.blind === "fiat24-session-grant"
-          ? [catalog.fiat24Grant]
+          ? [catalog.fiat24Grant, ...(hazard === undefined ? [] : [catalog.textHazard[hazard]])]
           : hazard === undefined
             ? []
             : [catalog.textHazard[hazard]]),
