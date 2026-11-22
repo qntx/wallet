@@ -24,6 +24,9 @@ export type { SolanaTransactionForSigner } from "./transaction.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
 export { solanaTokenTable } from "./tokens.ts";
+export { planSolana } from "./plan.ts";
+export { assembleSolana } from "./assemble.ts";
+export type { SolanaSignPlan } from "./plan.ts";
 
 const solanaNetwork = (network: string): void => {
   if (!SOLANA_NETWORKS.includes(network)) {

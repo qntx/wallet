@@ -60,6 +60,9 @@ export {
   verifyTronTransactionSignature,
   verifyTronTypedDataSignature,
 } from "./verify.ts";
+export { planTron } from "./plan.ts";
+export { assembleTron } from "./assemble.ts";
+export type { TronSignPlan } from "./plan.ts";
 
 /** The TRON network ids in `BUILT_IN_NETWORKS` — mainnet plus the Shasta and Nile testnets. */
 export const TRON_NETWORKS: ReadonlyArray<string> = Object.freeze(
