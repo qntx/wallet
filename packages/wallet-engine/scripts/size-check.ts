@@ -83,16 +83,17 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Measured 9036 B: the controller (incl. the app storage + prune) + shared socket core —
-       no provider ships in this entry. */
-    budget: 9 * 1024,
+    /* Measured 9779 B: the controller (incl. the app storage + prune) + shared socket core —
+       no provider ships in this entry. The merge added ~740 B: per-app eligibility answers
+       (a record keyed by app id) and the per-definition AppRequests stamping. */
+    budget: 10 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
     name: "apps-hyperliquid",
     source: "src/apps/hyperliquid/index.ts",
-    /* Measured 18754 B: the Hyperliquid SDK client + zod/mini + the provider (incl. the CCTP
+    /* Measured 18798 B: the Hyperliquid SDK client + zod/mini + the provider (incl. the CCTP
        deposit reads through the injected networks client). */
     budget: 19 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
@@ -101,7 +102,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-polymarket",
     source: "src/apps/polymarket/index.ts",
-    /* Measured 39551 B: the full Polymarket client (markets, account, L2 signing + credential
+    /* Measured 39550 B: the full Polymarket client (markets, account, L2 signing + credential
        store, orders, relayer, enable, live market + user channels, funding) incl. viem hashing. */
     budget: 39 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
