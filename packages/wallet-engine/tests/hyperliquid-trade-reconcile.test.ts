@@ -113,7 +113,14 @@ const drive = async <T>(timers: Timers, promise: Promise<T>): Promise<T> => {
     await new Promise((resolve) => {
       setImmediate(resolve);
     });
-    timers.step();
+    if (!timers.step()) {
+      /* Nothing is due on the manual clock, so the call waits on real work — the kernel signing
+         in its worker. Give it real time instead of spinning through the iteration budget. */
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between timer steps.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1);
+      });
+    }
     if (settled) {
       break;
     }
@@ -665,9 +672,6 @@ describe("hyperliquid trade — late reconciliation", () => {
     orderExists = true;
     await pump(timers, 3);
     expect(corrections).toStrictEqual([]);
-    /* One kernel round trip: the shared wallet's post-unlock work has drained before the next test
-       drives a signature through the bounded setImmediate pump. */
-    await sessions(wallet).list();
   });
 
   it("the pending set is capped — the oldest unknown cloid is evicted", async () => {
