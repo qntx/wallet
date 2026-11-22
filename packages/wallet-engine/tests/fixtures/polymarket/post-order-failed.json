@@ -1,0 +1,13 @@
+{
+  "request": { "method": "POST", "url": "https://clob.polymarket.com/order" },
+  "fetchedAt": 0,
+  "source": "evidence/docs/resources_error-codes.md:220-235 + :274 (per-order failure shape and 'not enough balance / allowance'; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "success": false,
+    "orderID": "",
+    "status": "",
+    "makingAmount": "",
+    "takingAmount": "",
+    "errorMsg": "not enough balance / allowance"
+  }
+}

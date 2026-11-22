@@ -1,0 +1,13 @@
+{
+  "request": { "method": "POST", "url": "https://clob.polymarket.com/order" },
+  "fetchedAt": 0,
+  "source": "evidence/apiref/api-reference_trade_post-a-new-order.md:119-127 (delayed_order example; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "success": true,
+    "orderID": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    "status": "delayed",
+    "makingAmount": "100000000",
+    "takingAmount": "200000000",
+    "errorMsg": ""
+  }
+}

@@ -1,11 +1,11 @@
 /**
- * `createApps` — the app-enablement composition: a Hyperliquid provider wired to the request
- * pipeline, an `AppsController` that persists each group's terms flag and last-enabled agent
- * through lock/unlock, and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
- * `wallet.subscribe`).
+ * `createApps` — the app-enablement composition: the host lists the app definitions it wants
+ * (`apps: [hyperliquid({…}), polymarket({…})]`), each built over one shared `AppContext`; an
+ * `AppsController` persists each group's terms flag and last-enabled agent through lock/unlock; and
+ * the serialized lock lifecycle from engine.ts (`transition`/`schedule` on `wallet.subscribe`)
+ * drives every app's `unlock`/`lock`/`close` hooks.
  */
 import type { Wallet } from "@qntx/wallet";
-import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -19,15 +19,21 @@ import type { RequestController } from "../requests/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { SetTimer } from "../timer.ts";
-import type { HyperliquidGroup } from "./hyperliquid/agents.ts";
-import { createHyperliquidEnable } from "./hyperliquid/enable.ts";
-import { HyperliquidError } from "./hyperliquid/errors.ts";
-import { createHyperliquidProvider } from "./hyperliquid/provider.ts";
-import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
-import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
-import type { AppSocket } from "./hyperliquid/socket.ts";
+import type { AppSocket } from "./socket.ts";
+import { createAppStorage } from "./storage.ts";
 import { isAppId } from "./types.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
+import type {
+  AppApis,
+  AppContext,
+  AppDefinition,
+  AppFlow,
+  AppGroup,
+  AppGroupState,
+  AppId,
+  AppInstance,
+  AppProvider,
+  AppsState,
+} from "./types.ts";
 
 const COLLECTION = "apps";
 
@@ -44,20 +50,6 @@ type StoredGroup = {
   readonly enabledAgent?: string;
   /** The user declined the builder approval — persisted while `builder` is `declined`. */
   readonly builderDeclined?: true;
-};
-
-export type AppsBuilderConfig = {
-  /** The builder address the trades attach once `maxBuilderFee` confirms `feeRateTenthsBps`. */
-  readonly address: string;
-  /** Tenths of a basis point: 1..100 (the perps cap is 0.1 %). */
-  readonly feeRateTenthsBps: number;
-};
-
-export type AppsHyperliquidConfig = {
-  readonly network: HyperliquidNetwork;
-  /** The agent name — `^[A-Za-z0-9._-]{1,16}$`, the exchange's limit. */
-  readonly agentName: string;
-  readonly builder?: AppsBuilderConfig;
 };
 
 export type CreateAppsOptions = {
@@ -78,7 +70,6 @@ export type CreateAppsOptions = {
   readonly socket: (url: string) => AppSocket;
   /** The gateway base URL — eligibility is fetched through the engine's gateway client. */
   readonly gateway: { readonly url: string };
-  readonly hyperliquid: AppsHyperliquidConfig;
 };
 
 const recordKey = (group: AppGroup, app: AppId): string =>
@@ -130,6 +121,7 @@ const isGroupState = (value: unknown): value is AppGroupState =>
     value.status === "enabling" ||
     value.status === "enabled" ||
     value.status === "needs-reauthorization" ||
+    value.status === "needs-migration" ||
     value.status === "unavailable");
 
 export type AppsControllerDeps = {
@@ -181,7 +173,8 @@ export class AppsController extends Controller<AppsState> {
       const stored = raw === undefined ? undefined : parseRecord(raw);
       const slash = key.lastIndexOf("/");
       const group = key.slice(0, slash);
-      const app = key.slice(slash + 1) === "hyperliquid" ? ("hyperliquid" as const) : undefined;
+      const suffix = key.slice(slash + 1);
+      const app = isAppId(suffix) ? suffix : undefined;
       if (stored === undefined || app === undefined) {
         this.deps.logger.warn(`apps record ${key} skipped: malformed`);
       } else {
@@ -253,9 +246,9 @@ export class AppsController extends Controller<AppsState> {
     return provider;
   }
 
-  private requireUnlocked(): void {
+  private requireUnlocked(app: AppId): void {
     if (this.getState().locked) {
-      throw new HyperliquidError("unlock-required", "the vault is locked");
+      throw this.providerFor(app).error("unlock-required", "the vault is locked");
     }
   }
 
@@ -266,20 +259,26 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /**
-   * `enable`/`renew` gate: unless eligibility is `ready` and the app is `available`, the flow must
-   * not start — `unknown`/`error` refuse too (a jurisdiction gate fails closed). This is a UI
+   * `enable`/`renew` gate: unless eligibility is `ready` and the app is enabled for the
+   * jurisdiction, the flow must not start — `unknown`/`error` refuse too (a jurisdiction gate fails
+   * closed). Hyperliquid needs `available`; Polymarket also enables under `close-only` — its users
+   * need credentials to sell, and the trade path gates opening positions itself. This is a UI
    * boundary only: `disable`/`cancel`/trading are not gated, and the platform enforces its own
-   * restrictions.
+   * restrictions. The thrown error is the app's own type.
    */
   private requireAvailable(app: AppId): void {
     const availability = this.availability(app);
-    if (availability !== "available") {
+    const open =
+      app === "polymarket"
+        ? availability === "available" || availability === "close-only"
+        : availability === "available";
+    if (!open) {
       const { country, region } = this.getState().eligibility;
       const where =
         country === undefined || country === null
           ? "an unverified"
           : `your (${[country, region].filter(Boolean).join("-")})`;
-      throw new HyperliquidError(
+      throw this.providerFor(app).error(
         "unavailable",
         `this app is not available in ${where} jurisdiction`,
       );
@@ -434,23 +433,23 @@ export class AppsController extends Controller<AppsState> {
   }
 
   /** Persisted terms acknowledgement — survives lock/unlock; never supersedes a running flow. */
-  async acknowledgeTerms(group: HyperliquidGroup, app: AppId): Promise<void> {
-    this.requireUnlocked();
+  async acknowledgeTerms(group: AppGroup, app: AppId): Promise<void> {
+    this.requireUnlocked(app);
     this.view(this.groupOf(group), app).write({ termsAcknowledged: true });
     await Promise.resolve();
   }
 
   private async flow(
-    group: HyperliquidGroup,
+    group: AppGroup,
     app: AppId,
     run: (provider: AppProvider, flow: AppFlow) => Promise<void>,
   ): Promise<void> {
-    this.requireUnlocked();
+    this.requireUnlocked(app);
     const gkey = groupKey(group);
-    if (this.busy.has(gkey)) {
-      throw new HyperliquidError("busy", "an enablement flow is already running");
-    }
     const provider = this.providerFor(app);
+    if (this.busy.has(gkey)) {
+      throw provider.error("busy", "an enablement flow is already running");
+    }
     const view = this.start(this.groupOf(group), app);
     this.busy.add(gkey);
     try {
@@ -460,33 +459,33 @@ export class AppsController extends Controller<AppsState> {
     }
   }
 
-  async enable(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async enable(group: AppGroup, app: AppId): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.enable(group, view));
   }
 
-  async renew(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async renew(group: AppGroup, app: AppId): Promise<void> {
     this.requireAvailable(app);
     await this.flow(group, app, async (provider, view) => provider.renew(group, view));
   }
 
   /** Ask an enabled group for the builder fee approval — the provider refuses when none exists. */
-  async approveBuilder(group: HyperliquidGroup, app: AppId): Promise<void> {
+  async approveBuilder(group: AppGroup, app: AppId): Promise<void> {
     await this.flow(group, app, async (provider, view) => {
       if (view.current().status !== "enabled") {
-        throw new HyperliquidError("invalid-input", "the group is not enabled");
+        throw provider.error("invalid-input", "the group is not enabled");
       }
       await provider.approveBuilder(group, view);
     });
   }
 
-  async disable(group: HyperliquidGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
+  async disable(group: AppGroup, app: AppId, options: { revoke: boolean }): Promise<void> {
     await this.flow(group, app, async (provider, view) => provider.disable(group, options, view));
   }
 
   /** Abort the running flow: supersede it (its writes die), then reject and clean up. */
-  async cancel(group: HyperliquidGroup, app: AppId): Promise<void> {
-    this.requireUnlocked();
+  async cancel(group: AppGroup, app: AppId): Promise<void> {
+    this.requireUnlocked(app);
     const provider = this.providerFor(app);
     const view = this.start(this.groupOf(group), app);
     await provider.cancel(this.groupOf(group), view);
@@ -509,79 +508,90 @@ export class AppsController extends Controller<AppsState> {
 }
 
 /**
- * The apps composition: validates `hyperliquid` config, builds the provider, and drives the
- * controller's lifecycle off the wallet's lock state — the same `transition`/`schedule` chain
- * engine.ts serializes on `wallet.subscribe`.
+ * The apps composition: runs each listed definition's `create` over one shared `AppContext`,
+ * registers its provider under its id (a duplicate id throws), and drives the controller's
+ * lifecycle off the wallet's lock state — the same `transition`/`schedule` chain engine.ts
+ * serializes on `wallet.subscribe`. The returned surface mirrors the listed definitions: only their
+ * apis appear next to `controller`/`destroy`.
  */
-export function createApps(options: CreateAppsOptions): {
-  readonly controller: AppsController;
-  readonly hyperliquid: HyperliquidProvider;
-  readonly destroy: () => Promise<void>;
-} {
-  const { network, agentName, builder } = options.hyperliquid;
-  if (!/^[A-Za-z0-9._-]{1,16}$/.test(agentName)) {
-    throw new Error("hyperliquid agentName must match ^[A-Za-z0-9._-]{1,16}$");
-  }
-  if (builder !== undefined) {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(builder.address)) {
-      throw new Error("hyperliquid builder.address must be a 20-byte hex address");
-    }
-    if (
-      !Number.isInteger(builder.feeRateTenthsBps) ||
-      builder.feeRateTenthsBps < 1 ||
-      builder.feeRateTenthsBps > 100
-    ) {
-      throw new Error("hyperliquid builder.feeRateTenthsBps must be an integer in 1..100");
-    }
-  }
-
+export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, unknown>>>(
+  options: CreateAppsOptions & { readonly apps: A },
+): { readonly controller: AppsController; readonly destroy: () => Promise<void> } & AppApis<A> {
+  /* `state` is lazy: definitions capture it at `create`, but the controller only exists once
+     every definition ran — gates read it per call. `sessionStore` is the store the controller
+     last opened: set on open, cleared synchronously when that store's `close` runs (the
+     controller closes it on lock), which is what makes `AppStorage` throw `closed`. */
   const controllerRef: { current: AppsController | undefined } = { current: undefined };
-  const socket = createHyperliquidSocket({
-    network,
-    socket: options.socket,
-    setTimer: options.setTimer,
-    random: options.random,
-  });
-  const provider = createHyperliquidProvider({
+  let sessionStore: EngineStore | undefined;
+  const openStore = async (): Promise<EngineStore> => {
+    const store = await options.openStore();
+    sessionStore = store;
+    return {
+      collection: (name) => store.collection(name),
+      close: async () => {
+        if (sessionStore === store) {
+          sessionStore = undefined;
+        }
+        return store.close();
+      },
+    };
+  };
+  const context = (definition: AppDefinition<AppId, unknown>): AppContext => ({
     wallet: options.wallet,
-    network,
-    fetch: options.fetch,
-    setTimer: options.setTimer,
-    now: options.now,
-    random: options.random,
-    logger: options.logger,
     requests: options.requests,
     networks: options.networks,
-    socket,
-    builderFor: (group) => {
-      /* Trades carry the builder only while the controller confirmed the fee this session —
-         a lock or a stale approval makes it return undefined and the field is omitted. */
-      if (builder === undefined) {
-        return undefined;
-      }
-      const state = controllerRef.current?.getState().groups[groupKey(group)]?.hyperliquid;
-      return state?.builder === "approved" ? builder : undefined;
-    },
-  });
-  const enable = createHyperliquidEnable({
-    wallet: options.wallet,
-    provider,
-    userSigned: provider.userSigned,
-    requests: options.requests,
-    network,
-    agentName,
-    ...(builder === undefined ? {} : { builder }),
+    fetch: options.fetch,
     now: options.now,
     setTimer: options.setTimer,
+    random: options.random,
     logger: options.logger,
+    socket: options.socket,
+    state: () => controllerRef.current?.getState(),
+    storage: createAppStorage(definition.id, () => sessionStore),
   });
+  const providers = new Map<AppId, AppProvider>();
+  const instances: Array<AppInstance<unknown>> = [];
+  const apis: Record<string, unknown> = {};
+  for (const definition of options.apps) {
+    if (providers.has(definition.id)) {
+      throw new Error(`app ${definition.id} is defined twice`);
+    }
+    const instance = definition.create(context(definition));
+    providers.set(definition.id, instance.provider);
+    instances.push(instance);
+    apis[definition.id] = instance.api;
+  }
+
+  /* Generic prune (design.md 不变量 12): on every unlock and every wallet snapshot change the
+     app collections drop the records of wallets the snapshot no longer lists — the wallet id
+     is the key prefix before the first "/". The controller's own `apps` collection is never
+     touched. */
+  const prune = async (): Promise<void> => {
+    const store = sessionStore;
+    if (store === undefined) {
+      return;
+    }
+    const live = new Set(options.wallet.getSnapshot().wallets.map((entry) => entry.walletId));
+    for (const definition of options.apps) {
+      const collection = store.collection(`apps.${definition.id}`);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- collections list and delete sequentially.
+      for (const key of await collection.list()) {
+        const slash = key.indexOf("/");
+        if (!live.has(slash === -1 ? key : key.slice(0, slash))) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- records delete sequentially.
+          await collection.delete(key);
+        }
+      }
+    }
+  };
+
   /* `gatewayScope("/v1/eligibility")` is "service" — a fixed client id keeps the whole contract
      table (which `gatewayFetch` needs for per-route scopes) out of this entry. */
   const clientId = gatewaySession(options.gateway.url, options.random).clientIds.service;
   const eligibilityFetch = async (input: URL): Promise<Response> =>
     options.fetch(input, { headers: { [CLIENT_ID_HEADER]: clientId } });
   const controller = new AppsController({
-    providers: new Map<AppId, AppProvider>([["hyperliquid", enable]]),
+    providers,
     wallet: options.wallet,
     fetchEligibility: async (): Promise<EligibilityResponse> => {
       const url = new URL(eligibilityContract.path, options.gateway.url);
@@ -597,7 +607,7 @@ export function createApps(options: CreateAppsOptions): {
     },
     now: options.now,
     requests: options.requests,
-    openStore: options.openStore,
+    openStore,
     logger: options.logger,
   });
   controllerRef.current = controller;
@@ -611,7 +621,10 @@ export function createApps(options: CreateAppsOptions): {
     if (unlocked() && !started) {
       started = true;
       try {
-        await provider.agents.refresh();
+        for (const instance of instances) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- apps unlock in list order.
+          await instance.unlock?.();
+        }
         await controller.init();
       } catch (error) {
         started = false;
@@ -623,8 +636,15 @@ export function createApps(options: CreateAppsOptions): {
     if (!unlocked() && started) {
       started = false;
       /* Session marks (enabled/rejected) are per-unlock — the next reconcile re-derives. */
-      provider.agents.reset();
+      for (const instance of instances) {
+        instance.lock?.();
+      }
       await controller.lock();
+    }
+    /* Every event while running prunes — this covers the post-`init` pass and the wallet
+       add/remove/rename snapshots; on a lock the store is already gone and prune no-ops. */
+    if (unlocked() && started) {
+      await prune();
     }
   };
   const schedule = (): void => {
@@ -640,14 +660,19 @@ export function createApps(options: CreateAppsOptions): {
   };
   const unsubscribe = options.wallet.subscribe(schedule);
   schedule();
-  return {
-    controller,
-    hyperliquid: provider,
-    destroy: async () => {
-      unsubscribe();
-      socket.close();
-      await controller.lock();
-      await chain;
-    },
+  const destroy = async (): Promise<void> => {
+    unsubscribe();
+    for (const instance of instances) {
+      instance.close?.();
+    }
+    await controller.lock();
+    await chain;
   };
+  /* Each key in `apis` is the `id` of a definition in `A` holding that definition's `Api` — the
+     mapped type says exactly that; the runtime object is built dynamically. */
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `apis` is the dynamic build of the static `AppApis<A>` shape.
+  return { controller, ...apis, destroy } as {
+    readonly controller: AppsController;
+    readonly destroy: () => Promise<void>;
+  } & AppApis<A>;
 }

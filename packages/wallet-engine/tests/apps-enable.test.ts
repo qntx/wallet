@@ -193,12 +193,6 @@ describe("apps hyperliquid enablement on the node host", () => {
 
   it("locked host methods throw unlock-required and lock closes the store", async () => {
     const w = await world(19);
-    let closed = 0;
-    const tracked = w.store as { close: () => Promise<void> };
-    tracked.close = async () => {
-      closed += 1;
-      await Promise.resolve();
-    };
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     await w.wallet.vault.lock();
     await until(() => w.apps.getState().locked, 2000);
@@ -208,7 +202,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
       category: "unlock-required",
     });
-    expect(closed).toBe(1);
+    expect(w.session()).toBeUndefined();
     await w.wallet.vault.unlock(VERIFY);
     await w.destroy();
   });

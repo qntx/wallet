@@ -14,9 +14,19 @@ import { chains } from "@qntx/wallet/chains";
 import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
 
+import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
+import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
+import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
 import { createApps } from "../src/apps/index.ts";
 import type { AppsController } from "../src/apps/index.ts";
+import { polymarket as polymarketApp } from "../src/apps/polymarket/app.ts";
+import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
+import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
+import type { PolymarketCredentialStore } from "../src/apps/polymarket/credentials.ts";
+import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
+import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
@@ -209,6 +219,50 @@ export const hlFetch =
     return Response.json(response, { headers });
   };
 
+const rpcString = (value: string): string => {
+  // oxlint-disable-next-line unicorn/prefer-spread -- iterates code points, not UTF-16 units.
+  const bytes = Array.from(value)
+    .map((c) => (c.codePointAt(0) ?? 0).toString(16).padStart(2, "0"))
+    .join("");
+  return `0x${"00".repeat(31)}20${value.length.toString(16).padStart(64, "0")}${bytes.padEnd(64, "0")}`;
+};
+
+/* Polygon — the Polymarket `send` deposit resolves pUSD metadata + gas over this endpoint. */
+const polyRpc = async (init?: RequestInit): Promise<Response> => {
+  const body = bodyJson(init);
+  await Promise.resolve();
+  const rpcParams: unknown = body["params"];
+  const firstParam: unknown = Array.isArray(rpcParams) ? rpcParams[0] : undefined;
+  const callData =
+    body["method"] === "eth_call" &&
+    typeof firstParam === "object" &&
+    firstParam !== null &&
+    "data" in firstParam
+      ? String(firstParam.data)
+      : "";
+  const result =
+    body["method"] === "eth_chainId"
+      ? "0x89"
+      : body["method"] === "eth_blockNumber"
+        ? "0x1"
+        : body["method"] === "eth_call" && callData.startsWith("0x313ce567")
+          ? `0x${"00".repeat(31)}06`
+          : body["method"] === "eth_call" && callData.startsWith("0x95d89b41")
+            ? rpcString("pUSD")
+            : body["method"] === "eth_call" && callData.startsWith("0x06fdde03")
+              ? rpcString("Polymarket USD")
+              : body["method"] === "eth_call"
+                ? `0x${"00".repeat(32)}`
+                : body["method"] === "eth_getTransactionCount"
+                  ? "0x0"
+                  : body["method"] === "eth_estimateGas"
+                    ? "0x5208"
+                    : body["method"] === "eth_feeHistory"
+                      ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
+                      : "0x0";
+  return Response.json({ jsonrpc: "2.0", id: 1, result });
+};
+
 const word = (v: bigint | string | number): string =>
   `0x${(typeof v === "bigint" ? v : BigInt(v)).toString(16).padStart(64, "0")}`;
 
@@ -323,7 +377,9 @@ export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }
 
 export type World = {
   wallet: Wallet;
-  provider: Awaited<ReturnType<typeof createApps>>["hyperliquid"];
+  provider: HyperliquidProvider;
+  /** The configured Polymarket provider — `undefined` unless `options.polymarket` was set. */
+  pm: PolymarketProvider | undefined;
   walletId: string;
   apps: AppsController;
   destroy: () => Promise<void>;
@@ -332,10 +388,16 @@ export type World = {
   timers: ReturnType<typeof manualTimer>;
   hl: HlState;
   store: EngineStore;
+  /** The session store the apps controller currently holds — `undefined` while locked. */
+  session: () => EngineStore | undefined;
+  /** The Polymarket credential store over the live session — seeds and reads records. */
+  credentials: PolymarketCredentialStore;
   group: { walletId: string; groupIndex: number };
   /** Logger warnings collected for the world (diagnostics). */
   warns: string[];
   state: () => AppGroupState | undefined;
+  /** The group's `polymarket` app state — undefined until a flow or reconcile writes it. */
+  pmState: () => AppGroupState | undefined;
   approve: (id: string) => Promise<void>;
 };
 
@@ -347,24 +409,48 @@ export const world = async (
     openStore?: () => Promise<EngineStore>;
     hl?: Partial<HlState>;
     builder?: { address: string; feeRateTenthsBps: number };
+    /** Enable the Polymarket lane (provider + enable state machine) with this config. */
+    polymarket?: AppsPolymarketConfig;
+    /** `false` omits the Hyperliquid lane entirely (Polymarket-only worlds). */
+    hyperliquid?: AppsHyperliquidConfig | false;
+    /**
+     * Replaces `hlFetch` for the apps composition — the Polymarket tests script every host
+     * (relayer, CLOB, Data API, eligibility) themselves.
+     */
+    fetch?: typeof globalThis.fetch;
+    /** A caller-anchored clock — Polymarket's kernel-signed L2 ops need real-time alignment. */
+    timers?: ReturnType<typeof manualTimer>;
+    /**
+     * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
+     * documents the flows prepare (approvals still go through `w.requests`).
+     */
+    wrapRequests?: (
+      requests: RequestController,
+    ) => Pick<RequestController, "prepare" | "outcome" | "reject">;
   } = {},
 ): Promise<World> => {
   const { wallet, walletId } = await nodeWallet();
   // A previous test may have locked the shared wallet — restore the unlocked precondition.
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const posted: Posted[] = [];
-  const timers = manualTimer();
+  const timers = options.timers ?? manualTimer();
   const warns: string[] = [];
   const logger = { warn: (...args: unknown[]) => warns.push(String(args[0])) };
   const hl: HlState = { listed: new Map(), maxBuilderFee: 0, role: "user", ...options.hl };
-  const fetch = hlFetch(posted, timers, hl);
+  const fetch = options.fetch ?? hlFetch(posted, timers, hl);
   const networks = new NetworkController({
     ...idleNetworkDeps,
     fetch: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      return url === "https://arb-sepolia.test/rpc" ? arbRpc(init, hl) : fetch(input, init);
+      if (url === "https://arb-sepolia.test/rpc") {
+        return arbRpc(init, hl);
+      }
+      return url === "https://polygon.test/rpc" ? polyRpc(init) : fetch(input, init);
     },
-    rpc: { "eip155:421614": ["https://arb-sepolia.test/rpc"] },
+    rpc: {
+      "eip155:421614": ["https://arb-sepolia.test/rpc"],
+      "eip155:137": ["https://polygon.test/rpc"],
+    },
     openStore: async () => {
       await Promise.resolve();
       return createMemoryEngineStore();
@@ -419,20 +505,65 @@ export const world = async (
     setTimer: timers.setTimer,
     logger,
   });
-  const store = options.store ?? createMemoryEngineStore();
-  const openStore =
+  /* Session stores are restartable facades over `tables` — a lock closes the session, never the
+     records; `w.store` is a persistent read handle over the same backing. A caller-supplied
+     `store` keeps the old single-store wiring (worlds that share one deliberately). */
+  const tables = new Map<string, Map<string, Uint8Array>>();
+  const store = options.store ?? createMemoryEngineStore({ collections: tables });
+  const rawOpenStore =
     options.openStore ??
-    (async () => {
-      await Promise.resolve();
-      return store;
-    });
-  const {
-    controller,
-    hyperliquid: provider,
-    destroy,
-  } = createApps({
+    (options.store === undefined
+      ? restartableStore(tables)
+      : async () => {
+          await Promise.resolve();
+          return store;
+        });
+  /* Tracks the session store the apps controller holds — the same read `createApps` makes — so
+     the world can seed and inspect app records while unlocked. */
+  let session: EngineStore | undefined;
+  const openStore = async (): Promise<EngineStore> => {
+    const next = await rawOpenStore();
+    let closed = false;
+    const facade: EngineStore = {
+      collection: (name) => next.collection(name),
+      close: async () => {
+        if (!closed) {
+          closed = true;
+          session = undefined;
+          await next.close();
+        }
+      },
+    };
+    session = facade;
+    return facade;
+  };
+  const credentials = createPolymarketCredentials({
+    /* The vault flag gates the session like the real close — deterministic under a lock that
+       has resolved but whose transition is still queued. */
+    storage: createAppStorage("polymarket", () =>
+      wallet.getSnapshot().vault === "unlocked" ? session : undefined,
+    ),
+    logger,
+  });
+  const definitions = [
+    /* Only worlds built with `hyperliquid: false` omit the Hyperliquid lane, and they never
+       read `provider`. */
+    ...(options.hyperliquid === false
+      ? []
+      : [
+          hyperliquidApp(
+            options.hyperliquid ?? {
+              network: "Testnet",
+              agentName: options.agentName ?? "qntx-test",
+              ...(options.builder === undefined ? {} : { builder: options.builder }),
+            },
+          ),
+        ]),
+    ...(options.polymarket === undefined ? [] : [polymarketApp(options.polymarket)]),
+  ];
+  const created = createApps({
     wallet,
-    requests,
+    requests: options.wrapRequests === undefined ? requests : options.wrapRequests(requests),
     networks,
     fetch,
     /* Advances 1 ms per read — two clock reads never agree, which is exactly what the
@@ -458,12 +589,13 @@ export const world = async (
     }),
     /* Every existing test enables apps → the stub answers "available" unless overridden. */
     gateway: { url: "https://gateway.test" },
-    hyperliquid: {
-      network: "Testnet",
-      agentName: options.agentName ?? "qntx-test",
-      ...(options.builder === undefined ? {} : { builder: options.builder }),
-    },
+    apps: definitions,
   });
+  const { controller, destroy } = created;
+  /* The `AppApis` surface claims every listed definition's api — a world built with
+     `hyperliquid: false` still lacks `hyperliquid` at runtime. */
+  const provider: HyperliquidProvider | undefined = created.hyperliquid;
+  const polymarket: PolymarketProvider | undefined = created.polymarket;
   await networks.init();
   await transactions.init();
   await requests.init();
@@ -474,6 +606,8 @@ export const world = async (
   const gkey = `${walletId}/${groupIndex}`;
   const state = (): AppGroupState | undefined =>
     controller.getState().groups[gkey]?.["hyperliquid"];
+  const pmState = (): AppGroupState | undefined =>
+    controller.getState().groups[gkey]?.["polymarket"];
   const approve = async (id: string): Promise<void> => {
     try {
       await requests.approve(id, "evm-sign", { verify: VERIFY });
@@ -491,7 +625,15 @@ export const world = async (
   return {
     wallet,
     walletId,
-    provider,
+    /* `provider` is `undefined` for worlds built with `hyperliquid: false` — they never read
+       it, and the getter makes that misuse loud rather than a silent undefined. */
+    get provider(): HyperliquidProvider {
+      if (provider === undefined) {
+        throw new Error("the world was built with hyperliquid: false");
+      }
+      return provider;
+    },
+    pm: polymarket,
     apps: controller,
     destroy,
     requests,
@@ -499,12 +641,27 @@ export const world = async (
     timers,
     hl,
     store,
+    session: () => session,
+    credentials,
     group,
     warns,
     state,
+    pmState,
     approve,
   };
 };
+
+/**
+ * A credential store over `store` — the getter models the engine's session, so a test that returns
+ * `undefined` while the vault is locked gets `unlock-required` from every method.
+ */
+const QUIET_LOGGER: EngineLogger = { warn: () => undefined };
+
+export const credentialsStore = (
+  store: () => EngineStore | undefined,
+  logger: EngineLogger = QUIET_LOGGER,
+): PolymarketCredentialStore =>
+  createPolymarketCredentials({ storage: createAppStorage("polymarket", store), logger });
 
 export const requestId = (w: World): string => w.state()?.requestId ?? "";
 export const agentAddress = (w: World): string => w.state()?.agent?.address ?? "";
@@ -538,9 +695,11 @@ export { KERNEL_URL, MNEMONIC, PASSWORD, VERIFY, DAY };
 /**
  * An EngineStore whose `close()` ends the session but keeps the backing — each `openStore()`
  * returns a fresh facade over the same records, like a real persistent store across lock/unlock.
+ * `collections` may be shared with a read handle so a test can inspect what sessions wrote.
  */
-export const restartableStore = (): (() => Promise<EngineStore>) => {
-  const collections = new Map<string, Map<string, Uint8Array>>();
+export const restartableStore = (
+  collections = new Map<string, Map<string, Uint8Array>>(),
+): (() => Promise<EngineStore>) => {
   return async () => {
     await Promise.resolve();
     let closed = false;

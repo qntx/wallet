@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://data-api.polymarket.com/v2/resolutions?condition=0xe3b423dfad8c22ff75c9899c4e8176f628cf4ad4caa00481764d320e7415f7a9"
+  },
+  "fetchedAt": 1795270109790,
+  "response": {
+    "data": [
+      {
+        "condition_id": "0xe3b423dfad8c22ff75c9899c4e8176f628cf4ad4caa00481764d320e7415f7a9",
+        "status": "resolved",
+        "extended_review": false,
+        "was_disputed": false,
+        "new_version_q": false,
+        "transaction_hash": "0x565a7174721ba7c12e54c39283a05db008db36fac703bbeb7910fca1af2e918d",
+        "log_index": "0",
+        "last_update_timestamp": "2020-11-02T16:31:01Z",
+        "payouts": [0, 1000000],
+        "resolution_source": "reported",
+        "resolved_block": 6533169,
+        "resolved_at": "2020-11-02T16:31:01Z"
+      }
+    ]
+  }
+}

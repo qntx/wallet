@@ -1,0 +1,116 @@
+{
+  "request": { "method": "GET", "url": "wss://ws-subscriptions-clob.polymarket.com/ws/user" },
+  "fetchedAt": 0,
+  "source": "evidence/rework/wss-user-2026-11-22.md — auth frame :123-132, order event :473-494, trade event :780-814 (official AsyncAPI examples; the user channel cannot be recorded without credentials. UPDATE and CANCELLATION reuse the documented order-event shape with only type/size_matched/status changed)",
+  "response": {
+    "subscription": {
+      "auth": {
+        "apiKey": "your-api-key-uuid",
+        "secret": "your-api-secret",
+        "passphrase": "your-passphrase"
+      },
+      "type": "user"
+    },
+    "frames": [
+      {
+        "event_type": "order",
+        "id": "0xff354cd7ca7539dfa9c28d90943ab5779a4eac34b9b37a757d7b32bdfb11790b",
+        "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "market": "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af",
+        "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+        "side": "SELL",
+        "order_owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "original_size": "10",
+        "size_matched": "0",
+        "price": "0.57",
+        "associate_trades": null,
+        "outcome": "YES",
+        "type": "PLACEMENT",
+        "created_at": "1672290687",
+        "expiration": "1234567",
+        "order_type": "GTD",
+        "status": "LIVE",
+        "maker_address": "0x1234...",
+        "timestamp": "1672290687"
+      },
+      {
+        "event_type": "order",
+        "id": "0xff354cd7ca7539dfa9c28d90943ab5779a4eac34b9b37a757d7b32bdfb11790b",
+        "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "market": "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af",
+        "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+        "side": "SELL",
+        "order_owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "original_size": "10",
+        "size_matched": "4",
+        "price": "0.57",
+        "associate_trades": ["28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e"],
+        "outcome": "YES",
+        "type": "UPDATE",
+        "created_at": "1672290687",
+        "expiration": "1234567",
+        "order_type": "GTD",
+        "status": "LIVE",
+        "maker_address": "0x1234...",
+        "timestamp": "1672290701"
+      },
+      {
+        "event_type": "order",
+        "id": "0xff354cd7ca7539dfa9c28d90943ab5779a4eac34b9b37a757d7b32bdfb11790b",
+        "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "market": "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af",
+        "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+        "side": "SELL",
+        "order_owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "original_size": "10",
+        "size_matched": "4",
+        "price": "0.57",
+        "associate_trades": ["28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e"],
+        "outcome": "YES",
+        "type": "CANCELLATION",
+        "created_at": "1672290687",
+        "expiration": "1234567",
+        "order_type": "GTD",
+        "status": "CANCELED",
+        "maker_address": "0x1234...",
+        "timestamp": "1672290710"
+      },
+      {
+        "event_type": "trade",
+        "type": "TRADE",
+        "id": "28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e",
+        "taker_order_id": "0x06bc63e346ed4ceddce9efd6b3af37c8f8f440c92fe7da6b2d0f9e4ccbc50c42",
+        "market": "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af",
+        "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+        "side": "BUY",
+        "size": "10",
+        "price": "0.57",
+        "fee_rate_bps": "0",
+        "status": "MATCHED",
+        "match_time": "1672290701",
+        "last_update": "1672290701",
+        "outcome": "YES",
+        "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "trade_owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+        "maker_address": "0x1234...",
+        "transaction_hash": "",
+        "bucket_index": 0,
+        "maker_orders": [
+          {
+            "order_id": "0xff354cd7ca7539dfa9c28d90943ab5779a4eac34b9b37a757d7b32bdfb11790b",
+            "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+            "maker_address": "0x5678...",
+            "matched_amount": "10",
+            "price": "0.57",
+            "fee_rate_bps": "0",
+            "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+            "outcome": "YES",
+            "side": "SELL"
+          }
+        ],
+        "trader_side": "TAKER",
+        "timestamp": "1672290701"
+      }
+    ]
+  }
+}

@@ -3,7 +3,14 @@
  * their own module so `apps/hyperliquid/enable.ts` and `apps/controller.ts` do not import each
  * other. See design.md §公开类型 / §启用状态机.
  */
+import type { Wallet } from "@qntx/wallet";
+
+import type { EngineLogger } from "../events.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
+import type { NetworkController } from "../networks/controller.ts";
+import type { RequestController } from "../requests/controller.ts";
+import type { SetTimer } from "../timer.ts";
+import type { AppSocket } from "./socket.ts";
 
 /** The apps the controller knows; unimplemented ids are typed, never stubbed. */
 export type AppId = "hyperliquid" | "polymarket";
@@ -11,8 +18,21 @@ export type AppId = "hyperliquid" | "polymarket";
 export const isAppId = (value: string): value is AppId =>
   value === "hyperliquid" || value === "polymarket";
 
-/** The resumable enablement step a group is in; absent when `status` is terminal. */
-export type AppStep = "create-agent" | "approve-agent" | "approve-builder" | "verify" | "revoke";
+/**
+ * The resumable enablement step a group is in; absent when `status` is terminal. The
+ * `create-agent`/`approve-*` steps are Hyperliquid's; `locate-wallet`/`deploy-wallet`/
+ * `credentials`/`approvals` are Polymarket's; `verify`/`revoke` are shared.
+ */
+export type AppStep =
+  | "create-agent"
+  | "approve-agent"
+  | "approve-builder"
+  | "locate-wallet"
+  | "deploy-wallet"
+  | "credentials"
+  | "approvals"
+  | "verify"
+  | "revoke";
 
 export type AppAgent = {
   readonly address: string;
@@ -34,7 +54,14 @@ export type AppGroupState = {
    * the caller's jurisdiction. `enabled`/`enabling` groups keep their status so the user can still
    * disable/cancel — the overlay never hides an existing position.
    */
-  readonly status: "disabled" | "enabling" | "enabled" | "needs-reauthorization" | "unavailable";
+  readonly status:
+    | "disabled"
+    | "enabling"
+    | "enabled"
+    | "needs-reauthorization"
+    /** Polymarket only: the group resolves to a legacy Safe — read-only until migrated. */
+    | "needs-migration"
+    | "unavailable";
   /** `acknowledgeTerms` persists this across lock/unlock. */
   readonly termsAcknowledged: boolean;
   /** The agent the group is enabling or enabled with. */
@@ -51,6 +78,13 @@ export type AppGroupState = {
    * unconfirmed.
    */
   readonly builder?: "approved" | "declined";
+  /** The located Polymarket account — positions/balance reads scope to `wallet`. */
+  readonly account?: {
+    readonly wallet: string;
+    readonly kind: "deposit-wallet" | "safe";
+    readonly deployed: boolean;
+    readonly legacySafe?: string;
+  };
   /** The last failure — keeps `enabling`/`disabled` resumable. */
   readonly error?: AppError;
 };
@@ -103,6 +137,15 @@ export type AppGroup = {
 /** What the controller asks a per-app provider for — Hyperliquid implements it today. */
 export type AppProvider = {
   readonly id: AppId;
+  /**
+   * The app's own error type for the controller's generic failures: `busy` and `unlock-required`
+   * keep their category; `unavailable` is the jurisdiction gate (Polymarket reports `blocked`);
+   * `invalid-input` refuses a flow the group's state does not allow.
+   */
+  readonly error: (
+    category: "busy" | "unlock-required" | "unavailable" | "invalid-input",
+    message: string,
+  ) => Error;
   /** The groups that carry kernel-side app state — Hyperliquid's agents on this network. */
   readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
   /** Re-derive the group's app state from kernel agents and Hyperliquid reads. */
@@ -124,4 +167,68 @@ export type AppProvider = {
   ) => Promise<void>;
   /** Abandon an in-flight flow: reject its request, clean orphans, back to `disabled`. */
   readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+};
+
+/**
+ * What `createApps` hands every app definition's `create` — the host-injected I/O plus a lazy read
+ * of the controller's state. The controller only exists after every `create` ran, so `state` is a
+ * thunk: gates (the Hyperliquid builder gate, the Polymarket availability gate) read it per call,
+ * never at construction.
+ */
+export type AppContext = {
+  readonly wallet: Wallet;
+  readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
+  readonly networks: Pick<NetworkController, "client">;
+  readonly fetch: typeof globalThis.fetch;
+  readonly now: () => number;
+  readonly setTimer: SetTimer;
+  readonly random: (length: number) => Uint8Array;
+  readonly logger: EngineLogger;
+  readonly socket: (url: string) => AppSocket;
+  /** The controller state — `undefined` until `createApps` returns. */
+  readonly state: () => AppsState | undefined;
+  /** The app's own records in the apps store (collection `apps.<id>`) — unlocked sessions only. */
+  readonly storage: AppStorage;
+};
+
+/**
+ * The app's per-group records in the session EngineStore — keys `${walletId}/${groupIndex}/${name}`
+ * inside collection `apps.<id>`. Every method throws `EngineStoreError("closed")` while no session
+ * store is open (the controller closes it on lock).
+ */
+export type AppStorage = {
+  readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
+  readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
+  readonly delete: (group: AppGroup, name: string) => Promise<void>;
+  /** The groups with at least one record — deduplicated. */
+  readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
+};
+
+/** What an app definition's `create` hands back: the public api, the provider, lifecycle hooks. */
+export type AppInstance<Api> = {
+  /** The app surface `createApps` returns under the definition's id. */
+  readonly api: Api;
+  /** The enablement state machine the controller drives. */
+  readonly provider: AppProvider;
+  /** Runs on every unlock before `controller.init` — Hyperliquid refreshes its agents here. */
+  readonly unlock?: () => Promise<void>;
+  /** Runs on every lock before `controller.lock` — Hyperliquid resets its session marks here. */
+  readonly lock?: () => void;
+  /** Runs on destroy before `controller.lock` — Hyperliquid closes its shared socket here. */
+  readonly close?: () => void;
+};
+
+/**
+ * One app, declared: `createApps` calls `create` with the shared context and registers the instance
+ * under `id` — a duplicate `id` throws.
+ */
+export type AppDefinition<Id extends AppId, Api> = {
+  readonly id: Id;
+  readonly create: (context: AppContext) => AppInstance<Api>;
+};
+
+/** The per-app api surface `createApps` returns next to the controller — keyed by app id. */
+export type AppApis<A extends ReadonlyArray<AppDefinition<AppId, unknown>>> = {
+  readonly [D in A[number] as D["id"]]: D extends AppDefinition<AppId, infer Api> ? Api : never;
 };

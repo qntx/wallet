@@ -1,11 +1,10 @@
 /**
- * An `ISubscriptionTransport` over one lazily-opened socket: subscribe/unsubscribe frames,
- * confirmation matching by "payload ⊆ echo" (most specific pending wins), heartbeat pings,
- * exponential-backoff reconnects with resubscription, and the server-side limits enforced
- * client-side. All I/O is injected (`socket` factory, `setTimer`, `random`) — no ambient I/O.
- * Matching mirrors `@nktkas/hyperliquid` `transport/websocket/_id.js` (`isSubset`/
- * `specificity`/`requestToId`) and `transport/websocket/_dispatcher.js` (queue + response
- * handling); the SDK's subscription functions consume `{ detail }` events only
+ * An `ISubscriptionTransport` over the shared apps socket core (`../socket.ts`): subscribe/
+ * unsubscribe frames, confirmation matching by "payload ⊆ echo" (most specific pending wins),
+ * `{"method":"ping"}` heartbeats answered by `{channel:"pong"}`, and the server-side limits
+ * enforced client-side. Matching mirrors `@nktkas/hyperliquid` `transport/websocket/_id.js`
+ * (`isSubset`/`specificity`/`requestToId`) and `transport/websocket/_dispatcher.js` (queue +
+ * response handling); the SDK's subscription functions consume `{ detail }` events only
  * (`api/subscription/_methods/l2Book.js` etc.).
  */
 import { TransportError } from "@nktkas/hyperliquid";
@@ -14,19 +13,11 @@ import type { ISubscription, ISubscriptionTransport } from "@nktkas/hyperliquid"
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
 import type { SetTimer } from "../../timer.ts";
+import { createAppSocketCore } from "../socket.ts";
+import type { AppSocket, AppSocketStatus } from "../socket.ts";
 
-/* oxlint-disable typescript/no-restricted-types -- the standard WebSocket handler fields are `| null` */
-/** The WebSocket property-handler subset every runtime provides (browser, RN, Node ≥ 22). */
-export type AppSocket = {
-  readonly readyState: number;
-  readonly send: (data: string) => void;
-  readonly close: () => void;
-  onopen: (() => void) | null;
-  onmessage: ((event: { readonly data: unknown }) => void) | null;
-  onclose: (() => void) | null;
-  onerror: (() => void) | null;
-};
-/* oxlint-enable typescript/no-restricted-types */
+/* AppSocket moved to the shared core — re-exported for the paths tests and apps/index.ts import. */
+export type { AppSocket } from "../socket.ts";
 
 export type HyperliquidSocketOptions = {
   readonly network: HyperliquidNetwork;
@@ -37,8 +28,7 @@ export type HyperliquidSocketOptions = {
   readonly random: (length: number) => Uint8Array;
 };
 
-/** Connection lifecycle the live layer watches. */
-export type HyperliquidSocketStatus = "connecting" | "open" | "closed";
+export type HyperliquidSocketStatus = AppSocketStatus;
 
 export type HyperliquidSocket = ISubscriptionTransport & {
   readonly isTestnet: boolean;
@@ -64,9 +54,6 @@ const OPEN = 1;
 const PING_MS = 30_000;
 const PONG_MS = 10_000;
 const CONFIRM_MS = 10_000;
-const BACKOFF_MIN_MS = 500;
-const BACKOFF_MAX_MS = 30_000;
-const STABLE_MS = 30_000;
 const MAX_SUBSCRIPTIONS = 1000;
 const MAX_USERS = 10;
 
@@ -136,6 +123,16 @@ const userOf = (payload: unknown): string | undefined => {
   return typeof user === "string" ? user.toLowerCase() : undefined;
 };
 
+/** `{channel:"pong"}` answers `{"method":"ping"}` — checked before the dispatcher sees the frame. */
+const isPong = (raw: string): boolean => {
+  try {
+    const frame: unknown = JSON.parse(raw);
+    return isRecord(frame) && frame["channel"] === "pong";
+  } catch {
+    return false;
+  }
+};
+
 /* `CustomEvent<never>` params accept every `CustomEvent<T>` listener — the SDK's subscription
    functions only ever read `e.detail` — so listener storage needs no cast. */
 type Listener = (event: CustomEvent<never>) => void;
@@ -155,34 +152,11 @@ type Entry = {
 };
 
 export function createHyperliquidSocket(options: HyperliquidSocketOptions): HyperliquidSocket {
-  const url = HYPERLIQUID_WS[options.network];
   const entries = new Map<string, Entry>();
-  const statusListeners = new Set<(status: HyperliquidSocketStatus) => void>();
   const confirmedListeners = new Set<(channel: string, payload: unknown) => void>();
-  let socket: AppSocket | undefined;
-  let status: HyperliquidSocketStatus = "closed";
-  let closedByUser = false;
-  let attempts = 0;
-  let pingCancel: (() => void) | undefined;
-  let pongCancel: (() => void) | undefined;
-  let stableCancel: (() => void) | undefined;
-  let reconnectCancel: (() => void) | undefined;
-
-  const delay = (ms: number, fn: () => void): (() => void) => options.setTimer(ms, fn);
-  const jittered = (ms: number): number =>
-    ms + Math.floor(((options.random(1)[0] ?? 0) / 256) * ms);
-
-  const setStatus = (next: HyperliquidSocketStatus): void => {
-    if (status !== next) {
-      status = next;
-      for (const listener of statusListeners) {
-        listener(next);
-      }
-    }
-  };
 
   const send = (method: "subscribe" | "unsubscribe", payload: unknown): void => {
-    socket?.send(JSON.stringify({ method, subscription: payload }));
+    core.send(JSON.stringify({ method, subscription: payload }));
   };
 
   /** Each caller's unsubscribe drops its own listener; the wire frame goes when the last leaves. */
@@ -194,20 +168,13 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
         entry !== undefined &&
         entry.listeners.size === 0 &&
         entries.delete(id) &&
-        socket?.readyState === OPEN
+        core.readyState() === OPEN
       ) {
         send("unsubscribe", entry.payload);
       }
       await Promise.resolve();
     },
   });
-
-  const stopHeartbeat = (): void => {
-    pingCancel?.();
-    pingCancel = undefined;
-    pongCancel?.();
-    pongCancel = undefined;
-  };
 
   const fail = (id: string, error: TransportError): void => {
     const entry = entries.get(id);
@@ -223,33 +190,6 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
     }
   };
 
-  /* Reconnect: every non-user close/error retries — `close()` is the only way out. */
-  const scheduleReconnect = (): void => {
-    if (closedByUser || reconnectCancel !== undefined) {
-      return;
-    }
-    const backoff = Math.min(BACKOFF_MAX_MS, BACKOFF_MIN_MS * 2 ** attempts);
-    attempts += 1;
-    reconnectCancel = delay(jittered(backoff), () => {
-      reconnectCancel = undefined;
-      connect();
-    });
-  };
-
-  const armPing = (): void => {
-    pingCancel = delay(PING_MS, () => {
-      socket?.send(JSON.stringify({ method: "ping" }));
-      /* No pong within the window: the connection is dead — drop it and reconnect. */
-      pongCancel = delay(PONG_MS, () => socket?.close());
-      armPing();
-    });
-  };
-
-  const startHeartbeat = (): void => {
-    stopHeartbeat();
-    armPing();
-  };
-
   const resubscribe = (): void => {
     for (const entry of entries.values()) {
       entry.confirmed = false;
@@ -257,31 +197,10 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
     }
   };
 
-  const onOpen = (): void => {
-    setStatus("open");
-    stableCancel?.();
-    stableCancel = delay(STABLE_MS, () => {
-      attempts = 0;
-    });
-    startHeartbeat();
-    resubscribe();
-  };
-
-  const onClose = (): void => {
-    stopHeartbeat();
-    stableCancel?.();
-    stableCancel = undefined;
-    setStatus("closed");
-    socket = undefined;
-    if (!closedByUser) {
-      scheduleReconnect();
-    }
-  };
-
-  const onMessage = (event: { readonly data: unknown }): void => {
+  const onMessage = (raw: string): void => {
     let frame: unknown;
     try {
-      frame = JSON.parse(typeof event.data === "string" ? event.data : "");
+      frame = JSON.parse(raw);
     } catch {
       return;
     }
@@ -290,11 +209,6 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
     }
     const { channel } = frame;
     const { data } = frame;
-    if (channel === "pong") {
-      pongCancel?.();
-      pongCancel = undefined;
-      return;
-    }
     if (channel === "subscriptionResponse") {
       /* The echo names the subscription; the most specific pending payload contained in it
          wins (mirrors _dispatcher.js). */
@@ -347,30 +261,30 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
     }
   };
 
-  const connect = (): void => {
-    if (closedByUser || socket !== undefined) {
-      return;
-    }
-    setStatus("connecting");
-    const next = options.socket(url);
-    socket = next;
-    /* oxlint-disable unicorn/prefer-add-event-listener -- AppSocket is the property-handler subset */
-    next.onopen = onOpen;
-    next.onmessage = onMessage;
-    next.onclose = onClose;
-    next.onerror = () => next.close();
-    /* oxlint-enable unicorn/prefer-add-event-listener */
-  };
+  const core = createAppSocketCore({
+    url: HYPERLIQUID_WS[options.network],
+    socket: options.socket,
+    setTimer: options.setTimer,
+    random: options.random,
+    heartbeat: {
+      intervalMs: PING_MS,
+      pongTimeoutMs: PONG_MS,
+      ping: JSON.stringify({ method: "ping" }),
+      isPong,
+    },
+    onOpen: resubscribe,
+    onMessage,
+    onUserClose: () => {
+      for (const id of entries.keys()) {
+        fail(id, new TransportError("the socket was closed"));
+      }
+    },
+  });
 
   return {
     isTestnet: options.network === "Testnet",
-    status: () => status,
-    onStatus: (listener) => {
-      statusListeners.add(listener);
-      return () => {
-        statusListeners.delete(listener);
-      };
-    },
+    status: core.status,
+    onStatus: core.onStatus,
     onConfirmed: (listener) => {
       confirmedListeners.add(listener);
       return () => {
@@ -383,7 +297,7 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
       listener: (data: CustomEvent<T>) => void,
       callOptions?: { signal?: AbortSignal; onError?: (error: TransportError) => void },
     ): Promise<ISubscription> => {
-      if (closedByUser) {
+      if (core.closedByUser()) {
         throw new TransportError("the socket is closed");
       }
       const id = `${channel}:${idOf(payload)}`;
@@ -438,29 +352,19 @@ export function createHyperliquidSocket(options: HyperliquidSocketOptions): Hype
         entry.resolve = resolve;
         entry.reject = reject;
       });
-      entry.timer = delay(CONFIRM_MS, () => {
+      entry.timer = options.setTimer(CONFIRM_MS, () => {
         fail(id, new TransportError("the subscription was not confirmed within 10 s"));
       });
       callOptions?.signal?.addEventListener("abort", () => {
         fail(id, new TransportError("the subscription was aborted"));
       });
       entries.set(id, entry);
-      connect();
-      if (socket?.readyState === OPEN) {
+      core.connect();
+      if (core.readyState() === OPEN) {
         send("subscribe", payload);
       }
       return promise;
     },
-    close: () => {
-      closedByUser = true;
-      reconnectCancel?.();
-      reconnectCancel = undefined;
-      for (const id of entries.keys()) {
-        fail(id, new TransportError("the socket was closed"));
-      }
-      socket?.close();
-      socket = undefined;
-      setStatus("closed");
-    },
+    close: core.close,
   };
 }
