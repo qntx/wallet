@@ -372,7 +372,9 @@ export type IntentWarningKind =
   | "token-2022-extension"
   | "fiat24-internal-account"
   | "fiat24-card-pull"
-  | "fiat24-unlimited-approval";
+  | "fiat24-unlimited-approval"
+  | "fiat24-issuer-rate"
+  | "fiat24-exact-out-unbounded";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
@@ -380,6 +382,19 @@ export type IntentWarning = {
   /** "danger" marks a warning for a risk the prompt words itself must carry (callers may escalate). */
   readonly level?: "danger";
 };
+
+/** A Fiat24 cash token — the four issuers' ERC-20s all carry two decimals. */
+export type Fiat24Token = { readonly asset: string; readonly symbol: string; readonly decimals: 2 };
+
+/** What a recognized call into a Fiat24 contract does, beyond its flows. */
+export type Fiat24Action =
+  | { readonly kind: "exchange"; readonly side: "exact-in"; readonly receive: Fiat24Token }
+  | {
+      readonly kind: "exchange";
+      readonly side: "exact-out";
+      readonly pay: Fiat24Token;
+      readonly receive: AssetAmount;
+    };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
 export type SeaportItem = {
@@ -744,6 +759,8 @@ export type DisplayIntent = {
     readonly dex: "perps" | "spot";
     readonly maxFee: AssetAmount;
   };
+  /** A recognized Fiat24 action the generic lines cannot describe (exchange, payout, …). */
+  readonly fiat24?: Fiat24Action;
   readonly warnings: ReadonlyArray<IntentWarning>;
   /** What a message request signs; absent for transactions. */
   readonly message?: MessageContent;

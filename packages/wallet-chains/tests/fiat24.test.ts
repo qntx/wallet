@@ -269,6 +269,78 @@ describe("Fiat24 spender labels and warnings", () => {
   });
 });
 
+describe("Fiat24 moneyExchange", () => {
+  const exchangeIn = (input: string, output: string, amount: bigint) =>
+    fn(DEPOSIT_ABI, "moneyExchangeExactIn", [input, output, amount]);
+  const exchangeOut = (input: string, output: string, amount: bigint) =>
+    fn(DEPOSIT_ABI, "moneyExchangeExactOut", [input, output, amount]);
+
+  it("exact-in describes the pay side and the issuer-rate receive", () => {
+    const intent = decodeEvm(tx(DEPOSIT, exchangeIn(USD24, EUR24, 20000n)), SIGNER);
+    expect(intent.summary).toBe("swap");
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: DEPOSIT,
+        amount: { asset: USD24, amount: "20000", symbol: "USD24", decimals: 2 },
+        verified: true,
+      },
+    ]);
+    expect(intent.fiat24).toStrictEqual({
+      kind: "exchange",
+      side: "exact-in",
+      receive: { asset: EUR24, symbol: "EUR24", decimals: 2 },
+    });
+    expect(intent.minimumReceived).toBeUndefined();
+    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-issuer-rate", message: "" }]);
+  });
+
+  it("exact-out names the pay token, the receive amount and both warnings", () => {
+    const intent = decodeEvm(tx(DEPOSIT, exchangeOut(USD24, EUR24, 30000n)), SIGNER);
+    expect(intent.summary).toBe("swap");
+    expect(intent.outflows).toStrictEqual([]);
+    expect(intent.fiat24).toStrictEqual({
+      kind: "exchange",
+      side: "exact-out",
+      pay: { asset: USD24, symbol: "USD24", decimals: 2 },
+      receive: { asset: EUR24, amount: "30000", symbol: "EUR24", decimals: 2 },
+    });
+    expect(intent.warnings.map((w) => w.kind)).toStrictEqual([
+      "fiat24-issuer-rate",
+      "fiat24-exact-out-unbounded",
+    ]);
+  });
+
+  it.each([
+    ["exact-in, non-cash input", exchangeIn(USDC_ARB, EUR24, 20000n)],
+    ["exact-in, non-cash output", exchangeIn(USD24, USDC_ARB, 20000n)],
+    ["exact-in, same token in and out", exchangeIn(USD24, USD24, 20000n)],
+    ["exact-out, non-cash input", exchangeOut(USDC_ARB, EUR24, 20000n)],
+    ["exact-out, non-cash output", exchangeOut(USD24, USDC_ARB, 20000n)],
+    ["exact-out, same token in and out", exchangeOut(CHF24, CHF24, 20000n)],
+    ["trailing bytes", `${exchangeIn(USD24, EUR24, 20000n)}0011`],
+    ["truncated calldata", exchangeIn(USD24, EUR24, 20000n).slice(0, -8)],
+    ["truncated exact-out", exchangeOut(USD24, EUR24, 30000n).slice(0, -8)],
+  ])("a near miss is claimed blind: %s", (_name, data) => {
+    const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+
+  it("value on an exchange is claimed blind", () => {
+    const intent = decodeEvm(tx(DEPOSIT, exchangeIn(USD24, EUR24, 20000n), "0x1"), SIGNER);
+    expect(intent.blind).toBe("fiat24-function");
+  });
+
+  it("an exchange to another chain or contract is claimed blind", () => {
+    expect(decodeEvm(tx(DEPOSIT, exchangeIn(USD24, EUR24, 20000n), "0x0", 1), SIGNER).blind).toBe(
+      "fiat24-function",
+    );
+    expect(decodeEvm(tx(OTHER, exchangeIn(USD24, EUR24, 20000n)), SIGNER).blind).toBe(
+      "fiat24-function",
+    );
+  });
+});
+
 describe("Fiat24 calls inside a batch", () => {
   it("inner warnings concatenate and inner approvals are labelled", () => {
     const approveCard = fn(TOKEN_ABI, "approve", [CARD, maxUint256]);
@@ -286,5 +358,27 @@ describe("Fiat24 calls inside a batch", () => {
     ]);
     expect(spenderRole(intent.calls?.[0]?.approvals[0])).toBe("card");
     expect(intent.calls?.[1]?.outflows[0]?.fiat24).toStrictEqual({ account: "9102" });
+  });
+
+  it("a card approval plus an exchange keeps every warning", () => {
+    const data = encodeBatchExecute([
+      { to: USD24, value: 0n, data: fn(TOKEN_ABI, "approve", [CARD, maxUint256]) },
+      {
+        to: DEPOSIT,
+        value: 0n,
+        data: fn(DEPOSIT_ABI, "moneyExchangeExactIn", [USD24, EUR24, 20000n]),
+      },
+    ]);
+    const intent = decodeEvm(tx(SIGNER, data), SIGNER);
+    expect(intent.warnings.map((w) => w.kind)).toStrictEqual([
+      "fiat24-card-pull",
+      "fiat24-unlimited-approval",
+      "fiat24-issuer-rate",
+    ]);
+    expect(intent.calls?.[1]?.fiat24).toStrictEqual({
+      kind: "exchange",
+      side: "exact-in",
+      receive: { asset: EUR24, symbol: "EUR24", decimals: 2 },
+    });
   });
 });

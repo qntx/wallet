@@ -22,6 +22,7 @@ import type {
   TokenAuthorization,
   ChainFamily,
   DisplayIntent,
+  Fiat24Action,
   HyperliquidAction,
   IntentSummary,
   IntentWarningKind,
@@ -57,6 +58,7 @@ export type PromptIntent = Pick<
   | "minimumReceived"
   | "bridge"
   | "hyperliquidDeposit"
+  | "fiat24"
   | "contract"
   | "calls"
   | "blind"
@@ -261,6 +263,8 @@ type Catalog = {
   readonly fiat24SendToAccount: (amount: string, account: string) => string;
   readonly fiat24Spender: Readonly<Record<"card" | "deposit", string>>;
   readonly fiat24Function: string;
+  readonly fiat24ReceiveAtRate: (symbol: string) => string;
+  readonly fiat24ExactOut: (amount: string, pay: string) => string;
 };
 
 const zh: Catalog = {
@@ -377,6 +381,8 @@ const zh: Catalog = {
     "fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
     "fiat24-unlimited-approval": (role) =>
       `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
+    "fiat24-issuer-rate": () => "交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度",
+    "fiat24-exact-out-unbounded": () => "你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -543,6 +549,8 @@ const zh: Catalog = {
   fiat24Spender: { card: "（Fiat24 卡）", deposit: "（Fiat24 充值与兑换）" },
   fiat24Function:
     "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
+  fiat24ReceiveAtRate: (symbol) => `按交易执行时 Fiat24 设定的汇率收到 ${symbol}——没有最低到手额`,
+  fiat24ExactOut: (amount, pay) => `收到 ${amount}；按 Fiat24 设定的汇率支付 ${pay}`,
 };
 
 const en: Catalog = {
@@ -667,6 +675,10 @@ const en: Catalog = {
       "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
     "fiat24-unlimited-approval": (role) =>
       `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up"} contract take your entire balance of this token`,
+    "fiat24-issuer-rate": () =>
+      "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
+    "fiat24-exact-out-unbounded": () =>
+      "What you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -846,6 +858,9 @@ const en: Catalog = {
   fiat24Spender: { card: " (Fiat24 card)", deposit: " (Fiat24 top-up and exchange)" },
   fiat24Function:
     "The wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network",
+  fiat24ReceiveAtRate: (symbol) =>
+    `Receive ${symbol} at the rate Fiat24 sets when the transaction runs — no minimum`,
+  fiat24ExactOut: (amount, pay) => `Receive ${amount}; pay ${pay} at the rate Fiat24 sets`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1089,6 +1104,7 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
           : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)
         : catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account),
     ),
+    ...(intent.fiat24 === undefined ? [] : fiat24Lines(catalog, intent.fiat24)),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
     ...(intent.hyperliquidDeposit === undefined
@@ -1185,6 +1201,16 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
     ]),
   };
 }
+
+/** The lines a recognized Fiat24 action adds to a call's effects. */
+const fiat24Lines = (catalog: Catalog, action: Fiat24Action): ReadonlyArray<string> => {
+  if (action.kind === "exchange") {
+    return action.side === "exact-in"
+      ? [catalog.fiat24ReceiveAtRate(action.receive.symbol)]
+      : [catalog.fiat24ExactOut(formatAmount(catalog, action.receive), action.pay.symbol)];
+  }
+  return [];
+};
 
 /** Every decoder warning line, in the order the decoder raised them. */
 const warningLines = (

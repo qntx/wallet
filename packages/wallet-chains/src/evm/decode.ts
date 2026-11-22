@@ -192,6 +192,7 @@ const protocolIntent = (
       summary: decoded.summary,
       outflows: decoded.outflows,
       warnings: decoded.warnings,
+      ...(decoded.fiat24 === undefined ? {} : { fiat24: decoded.fiat24 }),
       fee,
       verifiability: "partial",
     };

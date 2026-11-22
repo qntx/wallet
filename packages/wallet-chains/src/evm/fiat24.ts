@@ -1,7 +1,8 @@
 import * as AbiFunction from "ox/AbiFunction";
 
 import { ChainError } from "../index.ts";
-import type { IntentSummary, AssetFlow, IntentWarning } from "../index.ts";
+import type { Fiat24Action, IntentSummary, AssetFlow, IntentWarning } from "../index.ts";
+import { checksumEvmAddress } from "./address.ts";
 import { lookupEvmToken } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { assertHex } from "./transaction.ts";
@@ -58,23 +59,42 @@ const INTERNAL_ACCOUNT_MAX = 9299n;
 const TRANSFER_BY_ACCOUNT_ID = AbiFunction.from(
   "function transferByAccountId(uint256 accountId, uint256 amount)",
 );
+const CLIENT_PAYOUT = AbiFunction.from("function clientPayout(uint256 amount, string contactId)");
+const CLIENT_PAYOUT_REF = AbiFunction.from(
+  "function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)",
+);
+const MONEY_EXCHANGE_EXACT_IN = AbiFunction.from(
+  "function moneyExchangeExactIn(address input, address output, uint256 amount)",
+);
+const MONEY_EXCHANGE_EXACT_OUT = AbiFunction.from(
+  "function moneyExchangeExactOut(address input, address output, uint256 amount)",
+);
+const DEPOSIT_TOKEN_VIA_USDC = AbiFunction.from(
+  "function depositTokenViaUsdc(address input, address output, uint256 amount)",
+);
+const DEPOSIT_ETH = AbiFunction.from("function depositETH(address output) payable");
+const DEPOSIT_TOKEN_VIA_ETH = AbiFunction.from(
+  "function depositTokenViaEth(address input, address output, uint256 amount)",
+);
+const MINT_BY_CLIENT = AbiFunction.from("function mintByClient(uint256 tokenId)");
+const MINT_BY_CLIENT_WITH_ETH = AbiFunction.from(
+  "function mintByClientWithETH(uint256 tokenId) payable",
+);
 
 /* The functions only Fiat24 contracts carry — selectors derived from the verified ABIs
    (research §2; each is collision-free in the 4byte directory). A selector's presence in
    calldata claims the Fiat24 family whatever the callee or chain. */
 const FIAT24_FUNCTIONS: ReadonlyArray<AbiFunction.AbiFunction> = [
   TRANSFER_BY_ACCOUNT_ID,
-  AbiFunction.from("function clientPayout(uint256 amount, string contactId)"),
-  AbiFunction.from(
-    "function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)",
-  ),
-  AbiFunction.from("function moneyExchangeExactIn(address input, address output, uint256 amount)"),
-  AbiFunction.from("function moneyExchangeExactOut(address input, address output, uint256 amount)"),
-  AbiFunction.from("function depositTokenViaUsdc(address input, address output, uint256 amount)"),
-  AbiFunction.from("function depositETH(address output) payable"),
-  AbiFunction.from("function depositTokenViaEth(address input, address output, uint256 amount)"),
-  AbiFunction.from("function mintByClient(uint256 tokenId)"),
-  AbiFunction.from("function mintByClientWithETH(uint256 tokenId) payable"),
+  CLIENT_PAYOUT,
+  CLIENT_PAYOUT_REF,
+  MONEY_EXCHANGE_EXACT_IN,
+  MONEY_EXCHANGE_EXACT_OUT,
+  DEPOSIT_TOKEN_VIA_USDC,
+  DEPOSIT_ETH,
+  DEPOSIT_TOKEN_VIA_ETH,
+  MINT_BY_CLIENT,
+  MINT_BY_CLIENT_WITH_ETH,
 ];
 
 const FIAT24_SELECTORS: ReadonlySet<string> = new Set(
@@ -146,11 +166,20 @@ const argUint = (args: ReadonlyArray<unknown>, index: number): bigint => {
   return value;
 };
 
+const argAddress = (args: ReadonlyArray<unknown>, index: number): string => {
+  const value = args[index];
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    throw new ChainError("invalid-request", "decoded argument is not an address");
+  }
+  return checksumEvmAddress(value);
+};
+
 /** What a recognised Fiat24 call contributes to the intent. */
 export type Fiat24Decode = {
   readonly summary: IntentSummary;
   readonly outflows: ReadonlyArray<AssetFlow>;
   readonly warnings: ReadonlyArray<IntentWarning>;
+  readonly fiat24?: Fiat24Action;
 };
 
 const tokenAmount = (token: string, amount: bigint, chainId: number, table: EvmTokenTable) => {
@@ -161,6 +190,15 @@ const tokenAmount = (token: string, amount: bigint, chainId: number, table: EvmT
     ...(known === undefined ? {} : { symbol: known.symbol, decimals: known.decimals }),
   };
 };
+
+/** The cash-token row for an address argument, or undefined for any other token. */
+const cashToken = (address: string) => FIAT24_TOKENS[address.toLowerCase()];
+
+const fiat24Token = (token: { readonly address: string; readonly symbol: string }) => ({
+  asset: token.address,
+  symbol: token.symbol,
+  decimals: 2 as const,
+});
 
 /**
  * A call to a cash token: `transferByAccountId` resolves the recipient on chain at execution — the
@@ -208,6 +246,72 @@ const decodeFiat24Token = (
 };
 
 /**
+ * A call into the deposit/top-up contract: the FX exchanges swap between cash tokens at the
+ * issuer-set rate (the rate is operator storage, so the bytes cannot bound what the call receives).
+ * Everything else the contract carries is the wallet-provider or operator surface — claimed, not
+ * described.
+ */
+const decodeFiat24Deposit = (
+  call: { readonly value: bigint; readonly data: string },
+  chainId: number,
+  table: EvmTokenTable,
+): { readonly decoded: Fiat24Decode } | "claimed" | undefined => {
+  const inArgs = tryCall(MONEY_EXCHANGE_EXACT_IN, call.data);
+  if (inArgs !== undefined) {
+    if (call.value > 0n) {
+      return "claimed";
+    }
+    const input = cashToken(argAddress(inArgs, 0));
+    const output = cashToken(argAddress(inArgs, 1));
+    if (input === undefined || output === undefined || input.address === output.address) {
+      return "claimed";
+    }
+    return {
+      decoded: {
+        summary: "swap",
+        outflows: [
+          {
+            to: FIAT24_DEPOSIT,
+            amount: tokenAmount(input.address, argUint(inArgs, 2), chainId, table),
+            verified: true,
+          },
+        ],
+        warnings: [{ kind: "fiat24-issuer-rate", message: "" }],
+        fiat24: { kind: "exchange", side: "exact-in", receive: fiat24Token(output) },
+      },
+    };
+  }
+  const outArgs = tryCall(MONEY_EXCHANGE_EXACT_OUT, call.data);
+  if (outArgs !== undefined) {
+    if (call.value > 0n) {
+      return "claimed";
+    }
+    const input = cashToken(argAddress(outArgs, 0));
+    const output = cashToken(argAddress(outArgs, 1));
+    if (input === undefined || output === undefined || input.address === output.address) {
+      return "claimed";
+    }
+    return {
+      decoded: {
+        summary: "swap",
+        outflows: [],
+        warnings: [
+          { kind: "fiat24-issuer-rate", message: "" },
+          { kind: "fiat24-exact-out-unbounded", message: "" },
+        ],
+        fiat24: {
+          kind: "exchange",
+          side: "exact-out",
+          pay: fiat24Token(input),
+          receive: tokenAmount(output.address, argUint(outArgs, 2), chainId, table),
+        },
+      },
+    };
+  }
+  return "claimed";
+};
+
+/**
  * Decodes a call to a Fiat24 contract: `{ decoded }` for the calls the rules table describes,
  * `"claimed"` for every other call into one of the seven pinned proxies (the Fiat24 family's
  * near-miss reason applies), `undefined` when the call is not Fiat24's — a cash token's ERC-20
@@ -228,6 +332,9 @@ export const decodeFiat24 = (
   const token = FIAT24_TOKENS[to];
   if (token !== undefined) {
     return decodeFiat24Token(token, call, chainId, table);
+  }
+  if (to === FIAT24_DEPOSIT.toLowerCase()) {
+    return decodeFiat24Deposit(call, chainId, table);
   }
   if (FIAT24_CONTRACTS.has(to)) {
     return "claimed";

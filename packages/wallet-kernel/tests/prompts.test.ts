@@ -3748,6 +3748,8 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24SendToAccount: ["1", "10365"],
     fiat24Spender: [],
     fiat24Function: [],
+    fiat24ReceiveAtRate: ["SYM"],
+    fiat24ExactOut: ["1", "SYM"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {
@@ -3797,6 +3799,10 @@ describe("Fiat24 prompts", () => {
   const TOKEN_ABI = parseAbi([
     "function transferByAccountId(uint256 recipientAccountId, uint256 amount)",
     "function approve(address spender, uint256 amount)",
+  ]);
+  const DEPOSIT_ABI = parseAbi([
+    "function moneyExchangeExactIn(address inputToken, address outputToken, uint256 inputAmount)",
+    "function moneyExchangeExactOut(address inputToken, address outputToken, uint256 outputAmount)",
   ]);
 
   const arbTx = (to: string, data: string, value = "0x0"): PromptIntent =>
@@ -3889,6 +3895,37 @@ describe("Fiat24 prompts", () => {
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
       `网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 ${CARD}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    );
+  });
+
+  it("an exact-in exchange shows the pay side and the rate caveat", () => {
+    const data = encodeFunctionData({
+      abi: DEPOSIT_ABI,
+      functionName: "moneyExchangeExactIn",
+      args: [USD24, EUR24, 20000n],
+    });
+    const intent = arbTx(DEPOSIT, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm swap",
+      description: `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to ${DEPOSIT}\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 ${DEPOSIT}\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度`,
+    );
+  });
+
+  it("an exact-out exchange shows the receive and the unbounded-pay caveat", () => {
+    const data = encodeFunctionData({
+      abi: DEPOSIT_ABI,
+      functionName: "moneyExchangeExactOut",
+      args: [USD24, EUR24, 30000n],
+    });
+    const intent = arbTx(DEPOSIT, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nReceive 300 EUR24; pay USD24 at the rate Fiat24 sets\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n收到 300 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限`,
     );
   });
 
