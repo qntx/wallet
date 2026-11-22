@@ -22,12 +22,7 @@ import { sessions } from "@qntx/wallet/sessions";
 
 import type { HyperliquidProviderInternals } from "../src/apps/hyperliquid/provider.ts";
 import { createApps } from "../src/apps/index.ts";
-import type {
-  AppContext,
-  AppDefinition,
-  AppId,
-  AppProvider,
-} from "../src/apps/types.ts";
+import type { AppContext, AppDefinition, AppId, AppProvider } from "../src/apps/types.ts";
 import type { NetworkController } from "../src/networks/controller.ts";
 import type {
   AppOrigin,
@@ -953,12 +948,14 @@ describe("app-sourced request origins", () => {
   it("createApps stamps each definition's own id — the registered id, never a forged one", async () => {
     const prepared: RequestOrigin[] = [];
     const requests: Pick<RequestController, "prepare" | "outcome" | "reject"> = {
-      prepare: (input: RequestInput, app?: AppOrigin): Promise<PendingRequest> => {
+      prepare: async (input: RequestInput, app?: AppOrigin): Promise<PendingRequest> => {
+        await Promise.resolve();
         void input;
-        prepared.push(app ?? { kind: "internal" });
-        return Promise.resolve({} as PendingRequest);
+        /* Every call in this test carries an origin — `app!` fails the expect if one is lost. */
+        prepared.push(app!);
+        return {} as PendingRequest;
       },
-      outcome: (): Promise<never> => Promise.reject(new Error("unused")),
+      outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
       reject: () => undefined,
     };
     const contexts = new Map<AppId, AppContext>();
@@ -988,12 +985,12 @@ describe("app-sourced request origins", () => {
       wallet,
       requests,
       networks: {} as Pick<NetworkController, "client">,
-      fetch: () => Promise.reject(new Error("unused")),
+      fetch: async () => Promise.reject(new Error("unused")),
       now: () => 0,
       setTimer: () => () => undefined,
       random: (length) => new Uint8Array(length),
       logger: { warn: () => undefined },
-      openStore: () => Promise.resolve(createMemoryEngineStore()),
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
       socket: () => ({
         readyState: 0,
         send: () => undefined,
@@ -1008,25 +1005,22 @@ describe("app-sourced request origins", () => {
     });
     const hyperliquid = contexts.get("hyperliquid");
     const polymarket = contexts.get("polymarket");
-    if (hyperliquid === undefined || polymarket === undefined) {
-      throw new Error("a definition did not run");
-    }
+    expect(hyperliquid).toBeDefined();
+    expect(polymarket).toBeDefined();
     const input = {} as RequestInput;
 
     /* Each definition's pipeline stamps the id it registered under — including the one whose
        `create` overwrote `definition.id` with the other app's. */
-    await hyperliquid.requests.prepare(input);
-    await polymarket.requests.prepare(input);
+    await hyperliquid!.requests.prepare(input);
+    await polymarket!.requests.prepare(input);
     expect(prepared).toStrictEqual([
       { kind: "app", id: "hyperliquid" },
       { kind: "app", id: "polymarket" },
     ]);
 
     /* The stamped prepare takes one argument — a forged origin is ignored outright. */
-    const forge = polymarket.requests.prepare as unknown as (
-      request: RequestInput,
-      origin?: unknown,
-    ) => Promise<PendingRequest>;
+    const forge: (request: RequestInput, origin?: unknown) => Promise<PendingRequest> =
+      polymarket!.requests.prepare;
     await forge(input, { kind: "app", id: "hyperliquid" });
     await forge(input, { kind: "internal" });
     await forge(input, { kind: "browser", origin: "https://dapp.example" });

@@ -54,8 +54,8 @@ export function requestOriginLabel(origin: PendingRequest["origin"]): string {
 }
 
 /**
- * Polymarket requests carry the same `app` origin shape — `{ kind: "app", id: "polymarket" }` —
- * on `PendingRequest.origin` and in the sign log. Show the app, not a web origin.
+ * Polymarket requests carry the same `app` origin shape — `{ kind: "app", id: "polymarket" }` — on
+ * `PendingRequest.origin` and in the sign log. Show the app, not a web origin.
  */
 export function isPolymarketRequest(request: PendingRequest): boolean {
   return request.origin.kind === "app" && request.origin.id === "polymarket";
