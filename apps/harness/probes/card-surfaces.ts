@@ -124,9 +124,8 @@ const runInput = async (kind: string): Promise<void> => {
   const value = result.value;
   const match =
     value.length === expected.length && value.every((byte, i) => byte === expected[i]);
-  const length = value.length;
   value.fill(0);
-  postJson({ input: "ok", kind, match, length });
+  postJson({ input: "ok", kind, match });
 };
 
 let pendingInput: Promise<void> | undefined;
