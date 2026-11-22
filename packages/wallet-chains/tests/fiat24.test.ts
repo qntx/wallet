@@ -839,8 +839,11 @@ describe("Fiat24 session grant text", () => {
     message: new TextEncoder().encode(text),
   });
 
+  const GRANT_TEXT =
+    "I agree to access my profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82";
+
   const GRANTS = [
-    "I agree to access my profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+    GRANT_TEXT,
     "I agree to access my Fiat24 profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
   ];
 
@@ -848,6 +851,26 @@ describe("Fiat24 session grant text", () => {
     const intent = decodeEvm(personal(text), SIGNER);
     expect(intent.blind).toBe("fiat24-session-grant");
     expect(intent.verifiability).toBe("opaque");
+  });
+
+  it.each([
+    ["a trailing space", `${GRANT_TEXT} `],
+    ["a trailing newline", `${GRANT_TEXT}\n`],
+    ["a trailing CRLF", `${GRANT_TEXT}\r\n`],
+    ["a trailing tab", `${GRANT_TEXT}\t`],
+    ["a trailing NBSP", `${GRANT_TEXT}\u00a0`],
+    ["a trailing zero-width space", `${GRANT_TEXT}\u200b`],
+    ["a trailing bidi override", `${GRANT_TEXT}\u202e`],
+    ["a trailing tag character", `${GRANT_TEXT}\u{E0041}`],
+  ])("the grant still claims its blind reason with %s", (_name, text) => {
+    expect(decodeEvm(personal(text), SIGNER).blind).toBe("fiat24-session-grant");
+  });
+
+  it.each([
+    ["a hidden character inside the prefix", GRANT_TEXT.replace("agree", "agr\u200bee")],
+    ["a leading BOM", `\ufeff${GRANT_TEXT}`],
+  ])("a grant-shaped text broken by a hidden character is blind as bytes: %s", (_name, text) => {
+    expect(decodeEvm(personal(text), SIGNER).blind).toBe("message-bytes");
   });
 
   it.each([

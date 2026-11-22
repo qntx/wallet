@@ -449,4 +449,37 @@ describe("chain.sign evm.fiat24-session", () => {
       expect(prompt?.description).toContain(text);
     },
   );
+
+  it.each([
+    ["a trailing CRLF", `${RAW_GRANTS[0]}\r\n`, [RAW_GRANTS[0]]],
+    [
+      "a trailing bidi override",
+      `${RAW_GRANTS[0]}\u202E`,
+      ["This text contains hidden or reordering characters", `${RAW_GRANTS[0]}�`],
+    ],
+  ] as const)(
+    "a raw grant with %s is refused until blind signing is enabled",
+    async (_name, text, shown) => {
+      const fake = fakeKeystore();
+      const h = createHarness({ keystore: fake.keystore });
+      const { session, account } = await fiat24Setup(h);
+      const request = normalizeEvm({
+        kind: "evm.personal-message",
+        network: "eip155:42161",
+        account,
+        message: utf8ToBytes(text),
+      });
+      const refused = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(refused)).toBe("blind-signing-disabled");
+      ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
+      const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(response)).toBeUndefined();
+      const prompt = opens(fake.calls).at(-1);
+      expect(prompt?.title).toBe("Confirm blind signing");
+      expect(prompt?.description).toContain("This is a Fiat24 account access grant:");
+      for (const line of shown) {
+        expect(prompt?.description).toContain(line);
+      }
+    },
+  );
 });
