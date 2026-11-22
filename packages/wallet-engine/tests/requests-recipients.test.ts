@@ -1,6 +1,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import type {
@@ -52,6 +62,7 @@ const TRON_ACCOUNT: AccountRef = {
   groupIndex: 0,
   template: "tron.bip44",
 };
+const SOL_ACCOUNT = { walletId: "w", groupIndex: 0, address: "11111111111111111111111111111112" };
 const BTC_ACCOUNT_REF: AccountRef = {
   kind: "hd",
   walletId: "w",
@@ -66,6 +77,8 @@ const EVM_LOOKALIKE = "0x5290aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9EE7";
 const TRON_SIGNER = "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ";
 const TRON_KNOWN = `TCLB${"9".repeat(26)}QCLQ`;
 const TRON_LOOKALIKE = `TCLB${"8".repeat(26)}QCLQ`;
+const SOL_DEST = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
+const SOL_KNOWN = `8qbH${"9".repeat(36)}VfeR`;
 
 const baseIntent = (family: DisplayIntent["family"], network: string): DisplayIntent =>
   ({
@@ -139,6 +152,41 @@ const trackedTo = (
     submittedAt: 0,
     error: undefined,
   };
+};
+
+/** A legacy Solana transaction: System Program transfer of 1_000_000 lamports signer → `to`. */
+const solanaTx = (signer: string, to: string): Uint8Array => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, 1_000_000n, true);
+  const message = new Uint8Array(
+    getCompiledTransactionMessageEncoder().encode(
+      compileTransactionMessage(
+        appendTransactionMessageInstruction(
+          {
+            programAddress: address("11111111111111111111111111111111"),
+            accounts: [
+              { address: address(signer), role: AccountRole.WRITABLE_SIGNER },
+              { address: address(to), role: AccountRole.WRITABLE },
+            ],
+            data,
+          },
+          setTransactionMessageLifetimeUsingBlockhash(
+            {
+              blockhash: address("11111111111111111111111111111111"),
+              lastValidBlockHeight: 1000n,
+            } as never,
+            setTransactionMessageFeePayer(
+              address(signer),
+              createTransactionMessage({ version: "legacy" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  return new Uint8Array([1, ...new Uint8Array(64), ...message]);
 };
 
 const emptyPrepared = (
@@ -556,6 +604,42 @@ describe("every decoded recipient is assessed", () => {
       },
     });
     expect(codes(request)).toStrictEqual(["address-poisoning", "first-recipient"]);
+  });
+
+  it("a solana-sign transaction paying a lookalike of a known address is flagged", async () => {
+    const { requests } = rig({
+      known: [{ family: "solana", network: SOLANA_NET, address: SOL_KNOWN }],
+    });
+    await requests.init();
+    const request = await requests.prepare({
+      method: "solana-sign",
+      origin: ORIGIN,
+      account: SOL_ACCOUNT,
+      network: SOLANA_NET,
+      request: {
+        kind: "transactions",
+        transactions: [solanaTx(SOL_ACCOUNT.address, SOL_DEST)],
+        send: true,
+      },
+    });
+    expect(codes(request)).toStrictEqual(["address-poisoning", "first-recipient"]);
+  });
+
+  it("a solana-sign transaction paying the signer is not flagged", async () => {
+    const { requests } = rig({});
+    await requests.init();
+    const request = await requests.prepare({
+      method: "solana-sign",
+      origin: ORIGIN,
+      account: SOL_ACCOUNT,
+      network: SOLANA_NET,
+      request: {
+        kind: "transactions",
+        transactions: [solanaTx(SOL_ACCOUNT.address, SOL_ACCOUNT.address)],
+        send: false,
+      },
+    });
+    expect(recipientFindings(request)).toStrictEqual([]);
   });
 
   it("a send to a lookalike of a known address is flagged", async () => {

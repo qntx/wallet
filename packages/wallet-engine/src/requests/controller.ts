@@ -1262,7 +1262,10 @@ export class RequestController extends Controller<RequestControllerState> {
               ...intents,
             ].flatMap((intent) => this.blindRisk(intent)),
           ),
-          intents.flatMap((intent) => assessApprovals(intent)),
+          mergeRisk(
+            intents.flatMap((intent) => assessApprovals(intent)),
+            intents.flatMap((intent) => this.recipientRisk(intent, input.account.address)),
+          ),
         ),
         run: {
           factor: "required",
