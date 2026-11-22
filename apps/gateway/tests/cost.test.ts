@@ -45,6 +45,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
     costs: ALCHEMY_COSTS,
     budget: [{ units: 40_000, seconds: 5 }],
     clientShare: 0.05,
+    source: "https://test.invalid",
   },
 };
 const PER_MINUTE = 40_000 * (60 / 5);
@@ -127,6 +128,7 @@ describe("provider-cost metering", () => {
         costs: ALCHEMY_COSTS,
         budget: [{ units: 60, seconds: 60 }],
         clientShare: 0.05,
+        source: "https://test.invalid",
       },
     };
     const share = recordingLimiter();
@@ -205,7 +207,12 @@ describe("one billed unit per upstream call", () => {
     };
     const accounts: Readonly<Record<string, Account>> = {
       ...TEST_ACCOUNTS,
-      a: { costs, budget: [{ units: 1_000_000, seconds: 60 }], clientShare: 0.05 },
+      a: {
+        costs,
+        budget: [{ units: 1_000_000, seconds: 60 }],
+        clientShare: 0.05,
+        source: "https://test.invalid",
+      },
     };
     const share = recordingLimiter();
     const takes: Array<{ account: string; units: number }> = [];

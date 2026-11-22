@@ -21,11 +21,35 @@ describe.each([
   });
 });
 
+/** Every row of a cost model that carries a billing unit, flattened for source checks. */
+const costRows = (account: Account): ReadonlyArray<{ readonly source: string }> =>
+  account.costs.kind === "request"
+    ? [account.costs.request]
+    : [
+        ...Object.values(account.costs.methods),
+        ...(account.costs.transfers === undefined ? [] : [account.costs.transfers]),
+      ];
+
+describe("account sources", () => {
+  describe.each([
+    ["production", PRODUCTION_ACCOUNTS],
+    ["staging", STAGING_ACCOUNTS],
+  ] as const)("%s", (_env, accounts) => {
+    it.each(Object.entries(accounts))("%s cites the page its budget comes from", (_id, account) => {
+      expect(new URL(account.source).protocol).toBe("https:");
+      for (const row of costRows(account)) {
+        expect(new URL(row.source).protocol).toBe("https:");
+      }
+    });
+  });
+});
+
 describe("share window validation", () => {
   const dayOnly: Account = {
     costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
     budget: [{ units: 10_000, seconds: 86_400 }],
     clientShare: 0.05,
+    source: "https://test.invalid",
   };
 
   it("rejects an account whose only window is longer than a minute", () => {

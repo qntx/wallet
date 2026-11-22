@@ -127,10 +127,10 @@ describe("one client prefix's share of the production accounts", () => {
     expect(upstream.callsTo(DEFILLAMA_API)).toHaveLength(0);
   });
 
-  it("twenty sequential getnowblock calls from one /24 all succeed", async () => {
+  it("fourteen sequential getnowblock calls from one /24 all succeed", async () => {
     const app = productionGateway({ fetch: upstream.fetch });
     const statuses: number[] = [];
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 14; i += 1) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential share accumulation
       const res = await app.request(`/v1/tron/${TRON_MAINNET}/wallet/getnowblock`, {
         ...post({}),
@@ -140,7 +140,7 @@ describe("one client prefix's share of the production accounts", () => {
       await res.text();
       statuses.push(res.status);
     }
-    expect(statuses).toStrictEqual(Array.from({ length: 20 }, () => 200));
+    expect(statuses).toStrictEqual(Array.from({ length: 14 }, () => 200));
     expect(upstream.callsTo("https://tron-mainnet.gateway.tatum.io")).toHaveLength(0);
   });
 

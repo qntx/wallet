@@ -61,6 +61,7 @@ describe("localBudget", () => {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 10, seconds: 10 }],
       clientShare: 0.05,
+      source: "https://test.invalid",
     },
   };
 
@@ -117,6 +118,7 @@ describe("durableBudget", () => {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 1000, seconds: 60 }],
       clientShare: 0.05,
+      source: "https://test.invalid",
     },
   };
 
@@ -284,6 +286,7 @@ describe("durableBudget lease amortisation", () => {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 100_000, seconds: 5 }],
       clientShare: 0.05,
+      source: "https://test.invalid",
     },
   };
 

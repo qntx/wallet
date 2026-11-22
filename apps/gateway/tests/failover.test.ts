@@ -109,6 +109,7 @@ describe("share-limit failover", () => {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
       budget: [{ units: 1, seconds: 60 }],
       clientShare: 0.05,
+      source: "https://test.invalid",
     });
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk("0x1") });
     const app = gateway({

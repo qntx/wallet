@@ -71,6 +71,7 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
         costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
         budget: [{ units: 1_000_000, seconds: 60 }],
         clientShare: 0.05,
+        source: "https://test.invalid",
       } satisfies Account,
     ]),
   ),
@@ -78,6 +79,7 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
     costs: ALCHEMY_COSTS,
     budget: [{ units: 1_000_000, seconds: 60 }],
     clientShare: 0.05,
+    source: "https://test.invalid",
   },
 };
 

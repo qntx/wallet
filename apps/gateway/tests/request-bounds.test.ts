@@ -36,6 +36,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
     costs: ALCHEMY_COSTS,
     budget: [{ units: 40_000, seconds: 5 }],
     clientShare: 0.05,
+    source: "https://test.invalid",
   },
   drpc: {
     costs: {
@@ -44,6 +45,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
     },
     budget: [{ units: 400, seconds: 5 }],
     clientShare: 0.05,
+    source: "https://test.invalid",
   },
 };
 
@@ -115,6 +117,7 @@ describe("per-request parameter bounds", () => {
         costs: ALCHEMY_COSTS,
         budget: [{ units: 60, seconds: 60 }],
         clientShare: 0.05,
+        source: "https://test.invalid",
       },
     };
     const share = countBefore(1000);
