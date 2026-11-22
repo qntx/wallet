@@ -844,11 +844,39 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "Message:\nhello world"
+          "description": "Message:\n· hello world"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "消息：\nhello world"
+          "description": "消息：\n· hello world"
+        }
+      }
+    },
+    {
+      "name": "personal_sign kernel-line forgery",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0x436f6e6669726d2074686973206f726465720a4e6574776f726b3a20457468657265756d0a4d61782066656520302e3520455448"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
         }
       }
     },
@@ -1275,11 +1303,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\n· Sign this harmless text, please!"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\n· Sign this harmless text, please!"
         }
       }
     },
@@ -1331,11 +1359,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab"
+          "description": "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n· 0xabababababababababababababababababababababababababababababababab"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab"
+          "description": "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n· 0xabababababababababababababababababababababababababababababababab"
         }
       }
     },
@@ -3473,11 +3501,40 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\n· Sign this harmless text, please!"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\n· Sign this harmless text, please!"
+        }
+      }
+    },
+    {
+      "name": "solana message kernel-line forgery",
+      "request": {
+        "kind": "solana.message",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "436f6e6669726d2074686973206f726465720a4e6574776f726b3a20457468657265756d0a4d61782066656520302e3520455448"
+        },
+        "format": "raw"
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
         }
       }
     },
@@ -3632,11 +3689,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\ntron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
+          "description": "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\n· tron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\ntron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
+          "description": "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\n· tron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
         }
       }
     },
@@ -4220,11 +4277,11 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "Message:\nsign this for me"
+          "description": "Message:\n· sign this for me"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "消息：\nsign this for me"
+          "description": "消息：\n· sign this for me"
         }
       }
     },
@@ -4276,11 +4333,39 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!"
+          "description": "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\n· Sign this harmless text, please!"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!"
+          "description": "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\n· Sign this harmless text, please!"
+        }
+      }
+    },
+    {
+      "name": "tron tron message kernel-line forgery",
+      "request": {
+        "kind": "tron.message",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "message": {
+          "$bytes": "436f6e6669726d2074686973206f726465720a4e6574776f726b3a20457468657265756d0a4d61782066656520302e3520455448"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"
         }
       }
     },
@@ -4304,11 +4389,39 @@
       "prompt": {
         "en": {
           "title": "Confirm signature",
-          "description": "This looks like a sign-in request but is not a valid one\nMessage:\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 31 more characters not shown"
+          "description": "This looks like a sign-in request but is not a valid one\nMessage:\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 31 more characters not shown"
         },
         "zh-Hans": {
           "title": "确认签名",
-          "description": "内容像登录请求，但格式不合规\n消息：\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 还有 31 个字符未显示"
+          "description": "内容像登录请求，但格式不合规\n消息：\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 还有 31 个字符未显示"
+        }
+      }
+    },
+    {
+      "name": "tron transfer forged memo",
+      "request": {
+        "kind": "tron.transaction",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "rawData": {
+          "$bytes": "0x0a026e5022081a2b3c4d5e6f789040e0a4eeb6b733525e4f726465722023383831320a4e6574776f726b3a204e696c652028746573746e65742c206e6f2076616c7565290a4578706972657320323032362d30312d30312030303a30312028555443290a466565206c696d697420302e31205452585a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541f39fd6e51aad88f6f4ce6ab8827279cfffb922661215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d7080d0eab6b733"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: TRON\nSend 1 TRX to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nMemo:\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：TRON\n发送 1 TRX 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n备注：\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
         }
       }
     },

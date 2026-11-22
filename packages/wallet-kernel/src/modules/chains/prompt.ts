@@ -297,7 +297,7 @@ const zh: Catalog = {
   typedContract: (address) => `验证合约 ${address}`,
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
-  typedField: (path, value) => `· ${path} = ${value}`,
+  typedField: (path, value) => `${path} = ${value}`,
   typedCommitment: "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容",
   typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
@@ -548,7 +548,7 @@ const en: Catalog = {
   typedContract: (address) => `Verifying contract ${address}`,
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
-  typedField: (path, value) => `· ${path} = ${value}`,
+  typedField: (path, value) => `${path} = ${value}`,
   typedCommitment: "It signs a hash or raw bytes; the wallet cannot see what they commit to",
   typedVariant:
     "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
@@ -849,14 +849,26 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
   return `${line}${via}${until}`;
 }
 
+/**
+ * Every line of requester-supplied text carries this prefix — a kernel-generated line never does,
+ * so a forged "Network:" or fee line inside a message or memo can never read as the prompt's own.
+ */
+const REQUESTER_LINE = "· ";
+
+/** A line of requester-supplied text marked as such. */
+const quoted = (line: string): string => `${REQUESTER_LINE}${line}`;
+
+/**
+ * The requester text of a message or memo: each displayed line quoted, plus the kernel's own
+ * "… N more" line (unquoted) when the excerpt does not fit.
+ */
+const requesterText = (catalog: Catalog, text: string): ReadonlyArray<string> => {
+  const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+  return [...lines.map(quoted), ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
+};
+
 /** One requester-chosen value on a single line. */
 const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
-
-/** The "… N more" trailing line when a text memo exceeds the excerpt budget, else none. */
-const displayOmitted = (catalog: Catalog, text: string): ReadonlyArray<string> => {
-  const { omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-  return omitted === 0 ? [] : [catalog.omitted(omitted)];
-};
 
 /** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
 function tronOperationNames(operations: string): ReadonlyArray<string> {
@@ -1044,11 +1056,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
     tron?.memo === undefined
       ? []
       : tron.memo.kind === "text"
-        ? [
-            catalog.tronMemoHeading,
-            ...displayExcerpt(tron.memo.text, MESSAGE_LINES, MESSAGE_CODE_POINTS).lines,
-            ...displayOmitted(catalog, tron.memo.text),
-          ]
+        ? [catalog.tronMemoHeading, ...requesterText(catalog, tron.memo.text)]
         : tron.memo.hex.length - "0x".length <= 128
           ? [catalog.tronMemoData(tron.memo.hex)]
           : [catalog.tronMemoLength((tron.memo.hex.length - "0x".length) / 2)];
@@ -1102,8 +1110,7 @@ function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<strin
 }
 
 function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
-  const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-  return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
+  return [catalog.messageHeading, ...requesterText(catalog, text)];
 }
 
 const CONTROL_CHAR = /\p{Cc}/u;
@@ -1219,7 +1226,7 @@ function typedContentLines(
       ...effectLines(catalog, intent),
       ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       ...(intent.blind === "typed-data-oversize" ? [catalog.typedOversize] : []),
-      ...(message.fields ?? []).map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+      ...(message.fields ?? []).map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value))),
     ];
   }
   if (message.fields !== undefined) {
@@ -1227,7 +1234,7 @@ function typedContentLines(
       ...(intent.blind === "typed-data-variant" ? [catalog.typedVariant] : []),
       ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       catalog.typedUnverified,
-      ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+      ...message.fields.map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value))),
     ];
   }
   if (intent.blind === "typed-data-variant") {

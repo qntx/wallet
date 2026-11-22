@@ -30,6 +30,7 @@ import {
 import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
 
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
+import { buildTronRawData } from "../src/tron/builders.ts";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
 const TRON_SIGNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
@@ -714,7 +715,16 @@ const cases: VectorCase[] = [
     ),
     verifiability: "opaque",
     blind: null,
-    prompt: p("Confirm signature", "确认签名", "Message:\nhello world", "消息：\nhello world"),
+    prompt: p("Confirm signature", "确认签名", "Message:\n· hello world", "消息：\n· hello world"),
+  },
+  {
+    name: "personal_sign kernel-line forgery",
+    request: personal(
+      `0x${[...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+    ),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p("Confirm signature", "确认签名", "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH", "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"),
   },
   {
     name: "EIP-712 SafeMessage(bytes) (commitment)",
@@ -851,8 +861,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
-      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n· ${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n· ${TEXT32}`,
     ),
   },
   {
@@ -877,8 +887,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab",
-      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab",
+      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n· 0xabababababababababababababababababababababababababababababababab",
+      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n· 0xabababababababababababababababababababababababababababababababab",
     ),
   },
   /* Hyperliquid: documents come from vectors/chains/hyperliquid.json (oracles: nktkas 0.33.3 and
@@ -1449,9 +1459,18 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
-      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n· ${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n· ${TEXT32}`,
     ),
+  },
+  {
+    name: "solana message kernel-line forgery",
+    request: solanaMessage(
+      [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join(""),
+    ),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p("Confirm signature", "确认签名", "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH", "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"),
   },
   {
     name: "solana message 32 bytes",
@@ -1556,12 +1575,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm transfer",
         description:
-          "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\ntron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+          "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\n· tron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
       },
       "zh-Hans": {
         title: "确认转账",
         description:
-          "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\ntron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+          "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\n· tron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
       },
     },
   },
@@ -1895,11 +1914,11 @@ const TRON_MSG_CASES = {
     prompt: {
       en: {
         title: "Confirm signature",
-        description: "Message:\nsign this for me",
+        description: "Message:\n· sign this for me",
       },
       "zh-Hans": {
         title: "确认签名",
-        description: "消息：\nsign this for me",
+        description: "消息：\n· sign this for me",
       },
     },
   },
@@ -1928,12 +1947,27 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm blind signing",
         description:
-          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\n· Sign this harmless text, please!",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!",
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\n· Sign this harmless text, please!",
+      },
+    },
+  },
+  "tron message kernel-line forgery": {
+    verifiability: "opaque",
+    blind: null,
+    messageHex: [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join(""),
+    prompt: {
+      en: {
+        title: "Confirm signature",
+        description: "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      },
+      "zh-Hans": {
+        title: "确认签名",
+        description: "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
       },
     },
   },
@@ -1946,12 +1980,12 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm signature",
         description:
-          "This looks like a sign-in request but is not a valid one\nMessage:\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 31 more characters not shown",
+          "This looks like a sign-in request but is not a valid one\nMessage:\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 31 more characters not shown",
       },
       "zh-Hans": {
         title: "确认签名",
         description:
-          "内容像登录请求，但格式不合规\n消息：\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 还有 31 个字符未显示",
+          "内容像登录请求，但格式不合规\n消息：\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 还有 31 个字符未显示",
       },
     },
   },
@@ -1979,6 +2013,49 @@ for (const [name, row] of Object.entries(TRON_MSG_CASES)) {
     prompt: row.prompt,
   });
 }
+
+/* A TRON transfer whose memo is text that imitates the kernel's own prompt lines; every memo
+   line renders as marked requester text. */
+cases.push({
+  name: "tron transfer forged memo",
+  request: tronTx(
+    toHex(
+      buildTronRawData(
+        {
+          refBlock: {
+            number: 76050000,
+            id: "0000000004886e501a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f7890",
+          },
+          expiration: 1_767_225_660_000,
+          timestamp: 1_767_225_600_000,
+          memo: utf8(
+            "Order #8812\nNetwork: Nile (testnet, no value)\nExpires 2026-01-01 00:01 (UTC)\nFee limit 0.1 TRX",
+          ),
+        },
+        {
+          type: "TransferContract",
+          owner: TRON_SIGNER,
+          to: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC",
+          amount: 1_000_000n,
+        },
+      ),
+    ),
+  ),
+  verifiability: "full",
+  blind: null,
+  prompt: {
+    en: {
+      title: "Confirm transfer",
+      description:
+        "Network: TRON\nSend 1 TRX to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nMemo:\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+    },
+    "zh-Hans": {
+      title: "确认转账",
+      description:
+        "网络：TRON\n发送 1 TRX 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n备注：\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+    },
+  },
+});
 
 const TRON_TD_CASES = {
   "typed-data permit2": {

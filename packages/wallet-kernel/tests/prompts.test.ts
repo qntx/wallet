@@ -517,14 +517,14 @@ describe("chain prompts", () => {
   it("a text message shows a sanitised, bounded excerpt", () => {
     expect(chainPrompt("en", messagePromptIntent({ kind: "text", text: "hello" }))).toStrictEqual({
       title: "Confirm signature",
-      description: "Message:\nhello",
+      description: "Message:\n· hello",
     });
     const hostile = `pay \u202Ebob\n\n\n${"x".repeat(400)}\nhidden`;
     /* A bidi override makes the message blind: hazard line first, then the sanitised excerpt. */
     const hostilePrompt = messagePromptIntent({ kind: "text", text: hostile });
     expect(hostilePrompt.blind).toBe("message-bytes");
     expect(chainPrompt("zh-Hans", hostilePrompt).description).toBe(
-      `文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n消息：\npay \uFFFDbob\n${"x".repeat(
+      `文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n消息：\n· pay \uFFFDbob\n· ${"x".repeat(
         312,
       )}\n… 还有 94 个字符未显示`,
     );
@@ -1111,18 +1111,39 @@ describe("chain prompts via the real decoders", () => {
   it("a TRON text memo over the excerpt budget is cut with an omitted count", () => {
     const memo = utf8ToBytes("x".repeat(400));
     expect(chainPrompt("en", tronTransfer(memo)).description).toBe(
-      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo:\n${"x".repeat(320)}\n… 80 more characters not shown\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo:\n· ${"x".repeat(320)}\n… 80 more characters not shown\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
     );
     expect(chainPrompt("zh-Hans", tronTransfer(memo)).description).toBe(
-      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n${"x".repeat(320)}\n… 还有 80 个字符未显示\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n· ${"x".repeat(320)}\n… 还有 80 个字符未显示\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
     );
   });
 
   it("a full 256-byte memo renders without an omitted line", () => {
     const memo = utf8ToBytes("y".repeat(256));
     const en = chainPrompt("en", tronTransfer(memo)).description;
-    expect(en).toContain(`Memo:\n${"y".repeat(256)}`);
+    expect(en).toContain(`Memo:\n· ${"y".repeat(256)}`);
     expect(en).not.toContain("… ");
+  });
+
+  it("memo lines imitating kernel lines stay marked as requester text", () => {
+    const en = utf8ToBytes(
+      "Order #8812\nNetwork: Nile (testnet, no value)\nExpires 2026-01-01 00:01 (UTC)\nFee limit 0.1 TRX",
+    );
+    expect(chainPrompt("en", tronTransfer(en)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo:\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    const zh = CATALOGS["zh-Hans"];
+    const memo = utf8ToBytes(
+      [
+        "Order #8812",
+        zh.networkLine("Nile（测试网）"),
+        zh.tronExpires("2026-01-01 00:01"),
+        zh.tronFeeLimit("0.1 TRX"),
+      ].join("\n"),
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(memo)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n· Order #8812\n· ${zh.networkLine("Nile（测试网）")}\n· ${zh.tronExpires("2026-01-01 00:01")}\n· ${zh.tronFeeLimit("0.1 TRX")}\n${zh.tronExpires("2026-01-01 00:01")}\n${zh.tronBandwidthFee}`,
+    );
   });
 });
 
@@ -1622,7 +1643,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
   it("text that imitates a sign-in is flagged and shown as text", () => {
     const fake = "evil.example wants you to sign in with your Ethereum account:\nnot-an-address";
     expect(chainPrompt("en", personal(fake)).description).toBe(
-      `This looks like a sign-in request but is not a valid one\nMessage:\nevil.example wants you to sign in with your Ethereum account:\nnot-an-address`,
+      `This looks like a sign-in request but is not a valid one\nMessage:\n· evil.example wants you to sign in with your Ethereum account:\n· not-an-address`,
     );
   });
 
@@ -2350,7 +2371,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       chainPrompt("zh-Hans", personal("x wants you to sign in with your Ethereum account:"))
         .description,
     ).toBe(
-      "内容像登录请求，但格式不合规\n消息：\nx wants you to sign in with your Ethereum account:",
+      "内容像登录请求，但格式不合规\n消息：\n· x wants you to sign in with your Ethereum account:",
     );
     expect(
       chainPrompt("zh-Hans", typedIntent({ fields: [{ path: "maker", value: SIGNER }] }))
@@ -2722,11 +2743,11 @@ describe("blind text prompts", () => {
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n${text}`,
+      description: `This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n· ${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n${text}`,
+      description: `文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n· ${text}`,
     });
   });
 
@@ -2737,11 +2758,11 @@ describe("blind text prompts", () => {
     expect(intent.blind).toBe("message-bytes");
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
-      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}\nMessage:\n${text}`,
+      description: `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${hex}\nMessage:\n· ${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
-      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}\n消息：\n${text}`,
+      description: `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${hex}\n消息：\n· ${text}`,
     });
   });
 
@@ -2803,7 +2824,7 @@ describe("blind text prompts", () => {
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
       description:
-        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\nMessage:\npay �bob",
+        "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\nMessage:\n· pay �bob",
     });
   });
 
@@ -2813,11 +2834,11 @@ describe("blind text prompts", () => {
     expect(intent.blind).toBeUndefined();
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm signature",
-      description: `Message:\n${text}`,
+      description: `Message:\n· ${text}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认签名",
-      description: `消息：\n${text}`,
+      description: `消息：\n· ${text}`,
     });
   });
 });
@@ -3517,5 +3538,200 @@ describe("typed field lines cannot imitate kernel lines", () => {
     const zh = chainPrompt("zh-Hans", fieldIntent("网络", "Sepolia (testnet)"));
     expect(zh.description.split("\n").filter((line) => line.startsWith("网络："))).toHaveLength(1);
     expect(zh.description).toContain("\n· 网络 = Sepolia (testnet)");
+  });
+});
+
+describe("requester text lines cannot imitate kernel lines", () => {
+  const account = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "evm" };
+  const SIGNER = "0x52908400098527886E0F7030069857D2E4169EE7";
+  const personal = (text: string) =>
+    decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: new TextEncoder().encode(text),
+      },
+      SIGNER,
+    );
+
+  it("a personal_sign message whose lines read as kernel lines keeps the requester mark", () => {
+    const text = "Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH";
+    for (const locale of ["en", "zh-Hans"] as const) {
+      const { description } = chainPrompt(locale, personal(text));
+      const lines = description.split("\n");
+      expect(lines).toContain("· Network: Ethereum");
+      expect(lines).toContain("· Max fee 0.5 ETH");
+      /* Only the kernel's own lines may appear unmarked. */
+      expect(lines.filter((line) => line === "Network: Ethereum")).toHaveLength(0);
+      expect(lines.filter((line) => line === "Max fee 0.5 ETH")).toHaveLength(0);
+    }
+  });
+
+  it("no catalog template emits a requester-marked line", () => {
+    type CatalogKey = keyof (typeof CATALOGS)["en"];
+    const addr = "0x2222222222222222222222222222222222222222";
+    const args: Readonly<Record<CatalogKey, ReadonlyArray<unknown>>> = {
+      titles: [],
+      blindTitle: [],
+      blindBytes: [],
+      textHazard: [],
+      bytesData: ["0x12"],
+      bytesLength: [7],
+      otherOutflows: [],
+      unverifiedEffects: [],
+      externalInputs: [],
+      solanaPrograms: ["prog"],
+      solanaProgramsWarning: [],
+      programAuthority: ["prog", true],
+      programAuthorityAccounts: ["prog", ["acct"]],
+      programAuthorityYours: ["SYM", addr],
+      programAuthorityMaybeYours: [addr],
+      programAuthorityUnbounded: ["prog"],
+      tokenFunction: ["SYM", addr],
+      accountCode: [],
+      callContract: [addr, "0xdeadbeef"],
+      deployContract: [addr],
+      signInTitle: [],
+      signInTo: ["d"],
+      signInAccount: [addr],
+      signInUri: ["https://x"],
+      signInMalformed: [],
+      messageHeading: [],
+      omitted: [3],
+      typedApp: ["app"],
+      typedContract: [addr],
+      typedType: ["Order"],
+      typedUnverified: [],
+      typedField: ["path", "value"],
+      typedCommitment: [],
+      typedVariant: [],
+      typedOversize: [],
+      orderGive: ["1"],
+      orderReceive: ["r", "1"],
+      anyTokenOf: ["t"],
+      tokenInSet: ["t", "root"],
+      zoneRestriction: ["zone"],
+      moreItems: [2],
+      orderHeader: ["name", "maker"],
+      orderGiveAtMost: ["1"],
+      orderReceiveAtLeast: ["r", "1"],
+      orderExpiry: ["d"],
+      orderNoExpiry: [],
+      orderPartialFill: [],
+      orderAllowedSender: ["0x1234"],
+      orderExclusiveFiller: ["f"],
+      safeTransaction: ["safe", "0"],
+      safeDelegatecall: ["t"],
+      safeRefund: ["r", "1", "1"],
+      send: ["1", "to"],
+      sendTokenAccount: ["1", "ta", "to"],
+      burn: ["1"],
+      burnTokenAccount: ["1", "a"],
+      allow: ["s", "1"],
+      unlimited: ["asset"],
+      revoke: ["s", "asset"],
+      increase: ["s", "1"],
+      decrease: ["s", "1"],
+      takeOnce: ["s", "1"],
+      viaPermit2: [],
+      viaAllowanceHolder: [],
+      receiveMin: ["1", "to"],
+      receiveMinTokenAccount: ["1", "ta"],
+      hyperliquidDeposit: ["1", "dex", "r"],
+      hyperliquidFee: ["1"],
+      until: ["d"],
+      operatorAllow: ["s", "a"],
+      operatorRevoke: ["s", "a"],
+      maxFee: ["1"],
+      feeUnknown: [],
+      networkLine: ["net"],
+      unknownEvmChain: [97],
+      unverifiedToken: ["1", "asset"],
+      delegateTo: ["n", "v"],
+      revokeDelegation: [],
+      stakeLines: [{ kind: "deactivate", account: "acct" }, (line: string) => line],
+      tronTakeover: [["a", "b"]],
+      tronContract: ["c"],
+      tronField: [],
+      tronPermissionKind: [],
+      tronPermission: ["owner", "n", "1", [{ address: "a", weight: "1" }], ["op"]],
+      tronPermissionId: [7],
+      tronMemoHeading: [],
+      tronMemoData: ["0x00"],
+      tronMemoLength: [5],
+      tronExpires: ["d"],
+      tronFeeLimit: ["1"],
+      tronBandwidthFee: [],
+      tronResource: [],
+      warnings: [],
+      bridgeLine: ["net", "1", "to", "d", "r"],
+      stakeAuthority: ["a", "role", "auth"],
+      stakeRole: [],
+      hlChain: [],
+      hlUsdSend: ["1", "d"],
+      hlWithdraw: ["1", "d"],
+      hlWithdrawFee: [],
+      hlSpotSend: ["1", "t", "d"],
+      hlTokenId: [],
+      hlClassTransfer: ["1", true],
+      hlDex: ["dex"],
+      hlSendAsset: ["1", "t", "sd", "d", "dd"],
+      hlSubAccount: ["a"],
+      hlStakeDeposit: ["1"],
+      hlStakeWithdraw: ["1"],
+      hlDelegate: ["1", "v"],
+      hlUndelegate: ["1", "v"],
+      hlApproveAgent: ["agent", "name"],
+      hlAgentExpiry: ["d"],
+      hlAgentNoExpiry: [],
+      hlAgentHeld: [],
+      hlAgentNotHeld: [],
+      hlAgentPowers: [],
+      hlBuilderFee: ["b", "1"],
+      pmOrderTitle: [],
+      pmExchange: ["n", "a"],
+      pmProxyFunds: ["m"],
+      pmSafeFunds: ["m"],
+      pmDepositFunds: ["m"],
+      pmBuyShares: ["1", "t"],
+      pmPayMax: ["1", "0.5"],
+      pmSellShares: ["1", "t"],
+      pmReceiveMin: ["1", "0.5"],
+      pmFeeSetAtMatch: [],
+      pmBuilder: ["0x00"],
+      pmMetadata: ["0x00"],
+      pmAuthFor: ["a"],
+      pmAuthTime: ["d"],
+      pmAuthNonce: ["1"],
+      pmAuthScope: [],
+      pmBatchHeader: ["w", "1", "d"],
+    };
+    const rendered = (value: unknown): ReadonlyArray<string> => {
+      if (typeof value === "string") return [value];
+      if (Array.isArray(value)) return value.flatMap(rendered);
+      if (typeof value === "function") {
+        return rendered((value as (...a: unknown[]) => unknown)(...[]));
+      }
+      if (value !== null && typeof value === "object") {
+        return Object.values(value as Record<string, unknown>).flatMap(rendered);
+      }
+      return [];
+    };
+    for (const locale of ["en", "zh-Hans"] as const) {
+      const catalog = CATALOGS[locale];
+      for (const key of Object.keys(catalog) as CatalogKey[]) {
+        const value = catalog[key];
+        const out: unknown =
+          typeof value === "function"
+            ? (value as (...a: unknown[]) => unknown)(...args[key])
+            : value;
+        for (const line of rendered(out)) {
+          expect(line.startsWith("· "), `${locale}.${key} produced ${JSON.stringify(line)}`).toBe(
+            false,
+          );
+        }
+      }
+    }
   });
 });
