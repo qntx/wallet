@@ -93,7 +93,7 @@ export const typedDataUint = (value: unknown, max: bigint): bigint | undefined =
 export const MAX_UINT48: bigint = 2n ** 48n - 1n;
 
 const isHexBytes = (value: unknown): value is `0x${string}` =>
-  typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+  typeof value === "string" && /^0x(?:[0-9a-fA-F]{2})*$/.test(value);
 
 /** A `bytes` field value: `0x`-prefixed hex of even length. */
 export const typedDataBytes = (value: unknown): `0x${string}` | undefined =>

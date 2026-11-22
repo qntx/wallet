@@ -403,6 +403,20 @@ describe("decodeEvm: UniswapX Permit2 witness orders", () => {
     expect(orderOf(doc, `eip155:${chainId}`)?.protocol).toBe("uniswapx");
   });
 
+  it("odd-length additionalValidationData is not recognised", () => {
+    /* "0x0" is odd: ox would left-pad it when hashing — the decoder must not describe it. */
+    const doc = permitDoc(
+      "ExclusiveDutchOrder",
+      exclusiveWitness(EXCLUSIVE_REACTOR_1, {
+        info: info(EXCLUSIVE_REACTOR_1, { additionalValidationData: "0x0" }),
+      }),
+      { spender: EXCLUSIVE_REACTOR_1 },
+    );
+    /* Unrecognised — the un-described document then blinds as oversize under the field budget. */
+    expect(decode(doc).blind).toBe("typed-data-oversize");
+    expect(orderOf(doc)).toBeUndefined();
+  });
+
   it("a V3 reactor from another chain is not recognised", () => {
     const curve = { relativeBlocks: "10", relativeAmounts: ["0"] };
     const doc = permitDoc(
