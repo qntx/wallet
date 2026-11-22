@@ -648,15 +648,16 @@ describe("Fiat24 claims beyond the pinned proxies", () => {
   const ACCOUNT_IMPL = "0x78726B1ea6422fFB3744eACe66b13e22Df0cB54d";
 
   /* The calls the decoder describes — a Fiat24 selector claims blind wherever it lands. */
+  const LOOKALIKES: Readonly<Record<string, string>> = {
+    [USD24]: "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D60",
+    [DEPOSIT]: "0x4582f67698843Dfb6A9F195C0dDee05B0A8C9730",
+    [ACCOUNT]: "0x133CAEecA096cA54889db71956c7f75862Ead7A1",
+  };
+  /* The calls the decoder describes — a Fiat24 selector claims blind wherever it lands. */
   const DESCRIBED: ReadonlyArray<readonly [string, string, string, string]> = [
     ["transferByAccountId", USD24, sendByAccount(10365n), "0x0"],
     ["clientPayout", USD24, fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]), "0x0"],
-    [
-      "moneyExchangeExactIn",
-      DEPOSIT,
-      exchangeIn(USD24, EUR24, 20000n),
-      "0x0",
-    ],
+    ["moneyExchangeExactIn", DEPOSIT, exchangeIn(USD24, EUR24, 20000n), "0x0"],
     ["depositETH", DEPOSIT, fn(DEPOSIT_ABI, "depositETH", [EUR24]), "0x1"],
     ["mintByClient", ACCOUNT, fn(ACCOUNT_ABI, "mintByClient", [1n]), "0x0"],
   ];
@@ -671,11 +672,10 @@ describe("Fiat24 claims beyond the pinned proxies", () => {
     expect(decodeEvm(tx(to, data, value), SIGNER).blind).toBe("fiat24-function");
   });
 
-  it.each(DESCRIBED.map(([name, to, data, value]) => [name, to, data, value] as const))(
+  it.each(DESCRIBED.map(([name, to, data, value]) => [name, LOOKALIKES[to], data, value] as const))(
     "the same call to a lookalike of %s's proxy is claimed blind",
     (_name, to, data, value) => {
-      const lookalike = to.slice(0, -1) + (to.endsWith("0") ? "1" : "0");
-      expect(decodeEvm(tx(lookalike, data, value), SIGNER).blind).toBe("fiat24-function");
+      expect(decodeEvm(tx(to, data, value), SIGNER).blind).toBe("fiat24-function");
     },
   );
 
@@ -689,48 +689,54 @@ describe("Fiat24 claims beyond the pinned proxies", () => {
   );
 
   it.each([
-    ["depositETH trailing", `${fn(DEPOSIT_ABI, "depositETH", [EUR24])}0011`, "0x1"],
-    ["depositETH truncated", fn(DEPOSIT_ABI, "depositETH", [EUR24]).slice(0, -8), "0x1"],
+    ["depositETH trailing", DEPOSIT, `${fn(DEPOSIT_ABI, "depositETH", [EUR24])}0011`, "0x1"],
+    ["depositETH truncated", DEPOSIT, fn(DEPOSIT_ABI, "depositETH", [EUR24]).slice(0, -8), "0x1"],
     [
       "depositTokenViaEth trailing",
+      DEPOSIT,
       `${fn(DEPOSIT_ABI, "depositTokenViaEth", [USDC_ARB, EUR24, 5n])}0011`,
       "0x0",
     ],
-    ["mintByClient trailing", `${fn(ACCOUNT_ABI, "mintByClient", [1n])}0011`, "0x0"],
-    ["mintByClient truncated", fn(ACCOUNT_ABI, "mintByClient", [1n]).slice(0, -8), "0x0"],
+    ["mintByClient trailing", ACCOUNT, `${fn(ACCOUNT_ABI, "mintByClient", [1n])}0011`, "0x0"],
+    ["mintByClient truncated", ACCOUNT, fn(ACCOUNT_ABI, "mintByClient", [1n]).slice(0, -8), "0x0"],
     [
       "mintByClientWithETH trailing",
+      ACCOUNT,
       `${fn(ACCOUNT_ABI, "mintByClientWithETH", [1n])}0011`,
       "0x1",
     ],
     [
       "mintByClientWithETH truncated",
+      ACCOUNT,
       fn(ACCOUNT_ABI, "mintByClientWithETH", [1n]).slice(0, -8),
       "0x1",
     ],
     [
       "account safeTransferFrom trailing",
+      ACCOUNT,
       `${fn(ACCOUNT_ABI, "safeTransferFrom", [SIGNER, OTHER, 1n])}0011`,
       "0x0",
     ],
     [
       "account safeTransferFrom truncated",
+      ACCOUNT,
       fn(ACCOUNT_ABI, "safeTransferFrom", [SIGNER, OTHER, 1n]).slice(0, -8),
       "0x0",
     ],
     [
       "clientPayoutRef trailing",
+      USD24,
       `${fn(TOKEN_ABI, "clientPayoutRef", [5n, "p", 1n, "r"])}0011`,
       "0x0",
     ],
     [
       "clientPayoutRef truncated",
+      USD24,
       fn(TOKEN_ABI, "clientPayoutRef", [5n, "p", 1n, "r"]).slice(0, -10),
       "0x0",
     ],
-  ])("a near miss is claimed blind: %s", (_name, data, value) => {
-    const target = _name.startsWith("mintByClient") || _name.startsWith("account") ? ACCOUNT : _name.startsWith("deposit") ? DEPOSIT : USD24;
-    expect(decodeEvm(tx(target, data, value), SIGNER).blind).toBe("fiat24-function");
+  ])("a near miss is claimed blind: %s", (_name, to, data, value) => {
+    expect(decodeEvm(tx(to, data, value), SIGNER).blind).toBe("fiat24-function");
   });
 
   it("ordinary USDC and WETH transfers on Arbitrum are unaffected", () => {
@@ -777,9 +783,7 @@ describe("Fiat24 decode properties", () => {
         fc.property(anyData, anyValue, (data, value) => {
           const intent = decodeEvm(tx(proxy, data, value), SIGNER);
           /* Only the Fiat24 blind reason can come out of a pinned contract. */
-          expect(
-            intent.blind === undefined || intent.blind === "fiat24-function",
-          ).toBe(true);
+          expect([undefined, "fiat24-function"]).toContain(intent.blind);
         }),
         { numRuns: 300 },
       );
@@ -791,13 +795,12 @@ describe("Fiat24 decode properties", () => {
       fc.property(
         fc.constantFrom(...SELECTORS),
         fc.uint8Array({ maxLength: 200 }),
-        fc.uint8Array({ minLength: 20, maxLength: 20 }),
+        fc
+          .uint8Array({ minLength: 20, maxLength: 20 })
+          .map(hexBytes)
+          .filter((a) => !PROXIES.some((p) => p.toLowerCase() === a.toLowerCase())),
         fc.constantFrom(1, 10, 137, 5000, 8453, 42161, 421614),
-        (sel, tail, to, chainId) => {
-          const address = hexBytes(to);
-          if (PROXIES.some((p) => p.toLowerCase() === address.toLowerCase())) {
-            return;
-          }
+        (sel, tail, address, chainId) => {
           const data = sel + hexBytes(tail).slice(2);
           const intent = decodeEvm(tx(address, data, "0x0", chainId), SIGNER);
           expect(intent.blind).toBe("fiat24-function");
@@ -806,4 +809,33 @@ describe("Fiat24 decode properties", () => {
       { numRuns: 300 },
     );
   }, 30000);
+});
+
+describe("Fiat24 session grant text", () => {
+  const personal = (text: string): SignRequest => ({
+    kind: "evm.personal-message",
+    network: "eip155:42161",
+    account,
+    message: new TextEncoder().encode(text),
+  });
+
+  const GRANTS = [
+    "I agree to access my profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+    "I agree to access my Fiat24 profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+  ];
+
+  it.each(GRANTS)("the raw grant text is blind: %s", (text) => {
+    const intent = decodeEvm(personal(text), SIGNER);
+    expect(intent.blind).toBe("fiat24-session-grant");
+    expect(intent.verifiability).toBe("opaque");
+  });
+
+  it.each([
+    ["another wording", "I agree to access my Fiat24 profile"],
+    ["a lowercase sentence", "i agree to access my profile. 0x00"],
+    ["leading whitespace", " I agree to access my profile. 0x00"],
+    ["plain text", "hello there"],
+  ])("a text that is not the grant is not claimed: %s", (_name, text) => {
+    expect(decodeEvm(personal(text), SIGNER).blind).not.toBe("fiat24-session-grant");
+  });
 });

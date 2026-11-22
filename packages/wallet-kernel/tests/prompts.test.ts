@@ -2767,6 +2767,22 @@ describe("blind text prompts", () => {
     });
   });
 
+  it("a raw Fiat24 access grant shows the grant line under the blind title", () => {
+    const text =
+      "I agree to access my profile. " +
+      "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82";
+    const intent = personal(text);
+    expect(intent.blind).toBe("fiat24-session-grant");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.\nMessage:\n· ${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。\n消息：\n· ${text}`,
+    });
+  });
+
   it("a non-printable 32-byte text shows only its bytes under the digest-length hazard", () => {
     const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
     const intent = decodeEvm(
@@ -3752,6 +3768,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24ExactOut: ["1", "SYM"],
     fiat24Payout: ["1"],
     fiat24PayoutPayee: ["payee"],
+    fiat24Grant: [],
     fiat24PayoutPurpose: ["42"],
     fiat24PayoutReference: ["ref"],
     fiat24OpenAccount: ["10365"],

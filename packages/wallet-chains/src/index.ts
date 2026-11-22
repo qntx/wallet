@@ -193,7 +193,10 @@ export type BlindReason =
   | "cctp-destination"
   // an undecoded call of a Fiat24 contract, or a Fiat24-specific selector sent to any
   // other contract or network
-  | "fiat24-function";
+  | "fiat24-function"
+  // a Fiat24 account access grant presented as a raw personal message — the wallet signs
+  // grants only from the structured request it builds itself
+  | "fiat24-session-grant";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };

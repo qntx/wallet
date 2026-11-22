@@ -27,7 +27,7 @@ import { decodeCctp, isCctpMessenger } from "./cctp.ts";
 import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { recognizeEip3009 } from "./eip3009.ts";
-import { callNearMiss, typedDataNearMiss } from "./families.ts";
+import { callNearMiss, personalMessageNearMiss, typedDataNearMiss } from "./families.ts";
 import { recognizeFarcaster } from "./farcaster.ts";
 import { decodeFiat24, fiat24Spender } from "./fiat24.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
@@ -610,7 +610,9 @@ export const decodeEvm = (
   }
   if (request.kind === "evm.personal-message") {
     const content = messageContent(request.message, "evm");
-    const blind = messageBlindReason(content);
+    const blind =
+      (content.kind === "text" ? personalMessageNearMiss(content.text) : undefined) ??
+      messageBlindReason(content);
     return {
       family: "evm",
       network: request.network,

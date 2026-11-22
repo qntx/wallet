@@ -20,7 +20,7 @@ import {
 import { SEAPORT_CONTRACTS } from "../src/evm/seaport.ts";
 import { RECOGNISED_FAMILIES } from "../src/families.ts";
 import type { FamilyClaim } from "../src/families.ts";
-import { isBlindIntent } from "../src/index.ts";
+import { isBlindIntent, messageContent } from "../src/index.ts";
 import type { EvmTransaction, SignRequest, TypedDataLeaf } from "../src/index.ts";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
@@ -1856,6 +1856,9 @@ describe("typed-data near misses of decoded families are blind", () => {
         ? tx("0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14", "0xdeadbeef", "0x0", 42161)
         : tx(USDC, "0xdeadbeef");
     }
+    if (claim.surface === "evm.personal-message") {
+      return personal(new TextEncoder().encode(`${claim.prefixes[0]} 0x${"ab".repeat(32)}`));
+    }
     if (claim.surface === "evm.typed-data" && "domainName" in claim) {
       const pattern = "primaryType" in claim ? claim.primaryType : undefined;
       const primaryType =
@@ -1924,6 +1927,13 @@ describe("typed-data near misses of decoded families are blind", () => {
         );
       }
       return lookupEvmToken(evmTokenTable, request.tx.chainId, request.tx.to) !== undefined;
+    }
+    if (claim.surface === "evm.personal-message") {
+      if (request.kind !== "evm.personal-message") {
+        return false;
+      }
+      const text = messageContent(request.message, "evm");
+      return text.kind === "text" && claim.prefixes.some((prefix) => text.text.startsWith(prefix));
     }
     if (claim.surface !== "evm.typed-data" || request.kind !== "evm.typed-data") {
       return false;

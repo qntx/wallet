@@ -33,6 +33,18 @@ export const callNearMiss = (
   })?.nearMiss;
 
 /**
+ * The claim a personal message's text makes: an exact, case-sensitive leading sentence of a
+ * family's grant message. A grant-shaped text claims the family even though the wallet builds
+ * grants only through its own structured request.
+ */
+export const personalMessageNearMiss = (text: string): BlindReason | undefined =>
+  RECOGNISED_FAMILIES.find(
+    (row) =>
+      row.claim.surface === "evm.personal-message" &&
+      row.claim.prefixes.some((prefix) => text.startsWith(prefix)),
+  )?.nearMiss;
+
+/**
  * The claim an unrecognised typed-data document makes: a family primary type, or a verifying
  * contract of Permit2, a canonical Seaport deployment or a listed token (case-insensitive).
  */

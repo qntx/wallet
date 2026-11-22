@@ -270,6 +270,7 @@ type Catalog = {
   readonly fiat24PayoutPurpose: (purposeId: string) => string;
   readonly fiat24PayoutReference: (ref: string) => string;
   readonly fiat24OpenAccount: (account: string) => string;
+  readonly fiat24Grant: string;
 };
 
 const zh: Catalog = {
@@ -568,6 +569,8 @@ const zh: Catalog = {
   fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
   fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
+  fiat24Grant:
+    "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
 };
 
 const en: Catalog = {
@@ -892,6 +895,8 @@ const en: Catalog = {
   fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
   fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
+  fiat24Grant:
+    "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1744,9 +1749,11 @@ function messagePrompt(
         ? message.signIn === undefined
           ? []
           : signInLines(catalog, message.signIn)
-        : hazard === undefined
-          ? []
-          : [catalog.textHazard[hazard]]),
+        : intent.blind === "fiat24-session-grant"
+          ? [catalog.fiat24Grant]
+          : hazard === undefined
+            ? []
+            : [catalog.textHazard[hazard]]),
       ...(digest === undefined ? [] : [catalog.bytesData(digest)]),
       ...(digest !== undefined && !isPlainText(message.text)
         ? []
