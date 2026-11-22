@@ -10,6 +10,10 @@
  *   application subtree, including dependencies nothing else uses. Budgets (architecture study
  *   §5.1): application share ≤ 5 % of the bundle; each session scheme ≤ 8 kB rendered; each
  *   protocol-family decoder ≤ 15 kB rendered. Exit 1 on any breach.
+ * - Card: a third build whose entry re-exports the card protocol index on top of the real entry.
+ *   Nothing imports it yet, so an ablation cannot measure it; an `export *` build keeps every
+ *   export and measures the upper bound of what wiring the client in can add. It is not part of the
+ *   application share — it has its own budget.
  */
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
@@ -22,6 +26,11 @@ import { loadWorkspace, resolveSpecifier } from "./check-boundaries.ts";
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const ENTRY = "packages/wallet-native/kernel/kernel-entry.ts";
 const SHARE_BUDGET = 0.05;
+const CARD_ENTRY = "qntx-budget-card.ts";
+const CARD_ENTRY_ID = "\0qntx-budget-card";
+const CARD_PROTOCOL = /^packages\/wallet-kernel\/src\/modules\/card\/protocol\//;
+// measured 38260 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const CARD_BUDGET = 40_192;
 
 type Unit = {
   readonly name: string;
@@ -95,6 +104,14 @@ const plugins = (ablate: boolean) => [
     name: "qntx-budget-src",
     enforce: "pre" as const,
     resolveId(id: string, importer: string | undefined) {
+      // lib.entry is absolutized before plugins see it, so the virtual entry arrives as a path.
+      if (id === resolve(ROOT, CARD_ENTRY)) {
+        return CARD_ENTRY_ID;
+      }
+      // The virtual entry only references absolute paths; claim them as real files.
+      if (importer === CARD_ENTRY_ID) {
+        return id;
+      }
       if (id.startsWith(".") || id.startsWith("/") || id.startsWith("\0")) {
         return null;
       }
@@ -107,6 +124,9 @@ const plugins = (ablate: boolean) => [
       return target.kind === "file" ? resolve(ROOT, target.path) : null;
     },
     load(id: string) {
+      if (id === CARD_ENTRY_ID) {
+        return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, "packages/wallet-kernel/src/modules/card/protocol/index.ts")}";`;
+      }
       return ablate ? (STUBS[rel(id)] ?? null) : null;
     },
   },
@@ -118,7 +138,7 @@ type Chunk = {
   readonly modules?: Record<string, { renderedLength: number }>;
 };
 
-const run = async (ablate: boolean) => {
+const run = async (ablate: boolean, entry: string = ENTRY) => {
   let bundleOutput: Record<string, Chunk> | undefined;
   await build({
     configFile: false,
@@ -134,7 +154,7 @@ const run = async (ablate: boolean) => {
       },
     ],
     build: {
-      lib: { entry: resolve(ROOT, ENTRY), formats: ["iife"], name: "qntxKernelEntry" },
+      lib: { entry, formats: ["iife"], name: "qntxKernelEntry" },
       write: false,
       minify: false,
       target: "es2017",
@@ -157,6 +177,7 @@ const run = async (ablate: boolean) => {
 
 const full = await run(false);
 const ablated = await run(true);
+const card = await run(false, CARD_ENTRY);
 
 const delta = full.bytes - ablated.bytes;
 const share = delta / full.bytes;
@@ -193,6 +214,22 @@ for (const unit of UNITS) {
   if (over) {
     breaches.push(`${unit.name}: ${bytes} B exceeds ${unit.budget} B`);
   }
+}
+let cardBytes = 0;
+for (const [id, renderedLength] of card.rendered) {
+  if (id.startsWith("packages/wallet-kernel/src/modules/card/protocol/")) {
+    cardBytes += renderedLength;
+  }
+}
+const cardDelta = card.bytes - full.bytes;
+console.log(
+  `  ${"card protocol client".padEnd(26)} ${String(cardBytes).padStart(7)} B / ${CARD_BUDGET} B  ${cardBytes === 0 || cardBytes > CARD_BUDGET ? "BREACH " : ""}— qntx card protocol client, all exports retained (bundle delta +${cardDelta} B)`,
+);
+if (cardBytes === 0) {
+  breaches.push(`card protocol client: no rendered modules matched ${CARD_PROTOCOL.source}`);
+}
+if (cardBytes > CARD_BUDGET) {
+  breaches.push(`card protocol client: ${cardBytes} B exceeds ${CARD_BUDGET} B`);
 }
 console.log(
   "note: prompt rows for hyperliquid/polymarket inside modules/chains/prompt.ts share a file with core rows and are not attributed.",
