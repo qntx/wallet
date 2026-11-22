@@ -316,10 +316,10 @@ describe("polymarket locate chain verification", () => {
   it("a host endpoint answering the same bytes in another case is not a mismatch", async () => {
     const candidates = derivePolymarketWallets(SIGNER);
     const primary = pmChainCode((a) => a === candidates.beacon.toLowerCase(), SIGNER);
-    const upper = (a: string): string => {
-      const code = primary(a);
-      return code === "0x" ? code : `0x${code.slice(2).toUpperCase()}`;
-    };
+    const upper = codeTable([
+      candidates.beacon,
+      expectedPolymarketWalletRuntime("beacon", SIGNER).toUpperCase().replace("0X", "0x"),
+    ]);
     const { account } = await locate(
       deployedSet(["WALLET", candidates.beacon]),
       networksStub(primary, { kind: "available", client: rpcStub(upper) }),
