@@ -1184,6 +1184,34 @@
     "permit2MatchesCanonical": true
   },
   {
+    "label": "uniswapx-v3dutch-4663",
+    "chainId": 4663,
+    "address": "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    "codePresent": false
+  },
+  {
+    "label": "uniswapx-v3dutch-5042",
+    "chainId": 5042,
+    "address": "0x0000000015134054eA82AE0bb9fda66b36402C36",
+    "codePresent": false
+  },
+  {
+    "label": "uniswapx-v3dutch-57073",
+    "chainId": 57073,
+    "address": "0x000000007A1C8e570011EeDF86A2A35593013cBA",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
+    "label": "uniswapx-v3dutch-7777777",
+    "chainId": 7777777,
+    "address": "0x000000002C9A3812e15cf233190992E9a57EDB56",
+    "codePresent": true,
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "permit2MatchesCanonical": true
+  },
+  {
     "label": "velora-portikus",
     "chainId": 1,
     "address": "0x0000000000bbF5c5Fd284e657F01Bd000933C96D",
