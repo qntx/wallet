@@ -256,6 +256,8 @@ type Catalog = {
   readonly authorityUnverified: (c: string) => string;
   readonly snapshotAlias: (x: string) => string;
   readonly signatureDeadline: (date: string) => string;
+  readonly fcAddKey: (key: string, fid: string) => string;
+  readonly fcKeyRequest: (fid: string, key: string) => string;
 };
 
 const zh: Catalog = {
@@ -525,6 +527,9 @@ const zh: Catalog = {
   authorityUnverified: (c) => `钱包不认识合约 ${c}；它可能授予其他权限`,
   snapshotAlias: (x) => `允许 ${x} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
   signatureDeadline: (date) => `此签名在 ${date}（UTC）前可被使用`,
+  fcAddKey: (key, fid) =>
+    `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
+  fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`,
 };
 
 const en: Catalog = {
@@ -814,6 +819,9 @@ const en: Catalog = {
   authorityUnverified: (c) => `The wallet does not know contract ${c}; it may grant other powers`,
   snapshotAlias: (x) => `Let ${x} vote, create proposals and act on Snapshot as you`,
   signatureDeadline: (date) => `This signature can be used until ${date} (UTC)`,
+  fcAddKey: (key, fid) =>
+    `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
+  fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1284,6 +1292,16 @@ function typedContentLines(
   }
   if (message.authority !== undefined) {
     return authorityLines(catalog, message.authority);
+  }
+  if (message.farcaster !== undefined) {
+    return [
+      ...(message.farcaster.kind === "add"
+        ? [catalog.fcAddKey(message.farcaster.key, message.farcaster.requestFid)]
+        : [catalog.fcKeyRequest(message.farcaster.requestFid, message.farcaster.key)]),
+      ...(message.farcaster.deadline === undefined
+        ? []
+        : [catalog.signatureDeadline(utcDateTime(message.farcaster.deadline))]),
+    ];
   }
   if (intent.approvals.length > 0) {
     return [

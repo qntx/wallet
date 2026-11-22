@@ -363,6 +363,27 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     claim: { surface: "evm.typed-data", primaryType: /^DelegationWithSig$/ },
     nearMiss: "typed-data-variant",
   },
+  /* Farcaster signer-key documents (farcasterxyz/contracts@9894509 src/KeyGateway.sol and
+     src/validators/SignedKeyRequestValidator.sol) — the only deployments, probed in
+     vectors/chains/account-authority.json. */
+  {
+    family: "Farcaster KeyGateway",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Farcaster KeyGateway",
+      contracts: ["0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"],
+    },
+    nearMiss: "typed-data-variant",
+  },
+  {
+    family: "Farcaster SignedKeyRequestValidator",
+    claim: {
+      surface: "evm.typed-data",
+      domainName: "Farcaster SignedKeyRequestValidator",
+      contracts: ["0x00000000FC700472606ED4fA22623Acf62c60553"],
+    },
+    nearMiss: "typed-data-variant",
+  },
   /* The TIP-712 permits the TRON decoder recognises: EIP-2612 and DAI Permit on any contract, and
      the Permit2 forms when addressed to the TRON Permit2 deployment. */
   {

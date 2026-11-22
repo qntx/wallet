@@ -27,7 +27,13 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/transaction-messages";
-import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  getContractAddress,
+  parseAbi,
+} from "viem";
 
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import { buildTronRawData } from "../src/tron/builders.ts";
@@ -49,8 +55,13 @@ const netBase = "Network: Base";
 const netBaseZh = "网络：Base";
 const netFlare = "Network: Flare";
 const netFlareZh = "网络：Flare";
+const netOp = "Network: OP Mainnet";
+const netOpZh = "网络：OP Mainnet";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
 const MORPHO = getAddress("0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb");
+const FARCASTER_KEY_GATEWAY = "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B";
+const FARCASTER_VALIDATOR = "0x00000000FC700472606ED4fA22623Acf62c60553";
+const FARCASTER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
 const AAVE_USDC_DEBT = getAddress("0x72E95b8931767C79bA4EeE721354d6E99a61D004");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
@@ -92,6 +103,12 @@ const arbTx = (over: { to?: string; data?: string; value?: string }) => ({
 const typedData = (doc: unknown) => ({
   kind: "evm.typed-data",
   network: "eip155:1",
+  account,
+  typedData: doc,
+});
+const opTypedData = (doc: unknown) => ({
+  kind: "evm.typed-data",
+  network: "eip155:10",
   account,
   typedData: doc,
 });
@@ -1247,6 +1264,106 @@ const cases: VectorCase[] = [
       "确认盲签",
       `App: snapshot\n${net}\nType: Alias\n${typedVariant}\n${typedCaveat}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
       `应用：snapshot\n${netZh}\n类型：Alias\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
+    ),
+  },
+  {
+    name: "Farcaster KeyGateway Add signer key",
+    request: opTypedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Add: [
+          { name: "owner", type: "address" },
+          { name: "keyType", type: "uint32" },
+          { name: "key", type: "bytes" },
+          { name: "metadataType", type: "uint8" },
+          { name: "metadata", type: "bytes" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Add",
+      domain: {
+        name: "Farcaster KeyGateway",
+        version: "1",
+        chainId: 10,
+        verifyingContract: FARCASTER_KEY_GATEWAY,
+      },
+      message: {
+        owner: SIGNER,
+        keyType: 1,
+        key: FARCASTER_KEY,
+        metadataType: 1,
+        metadata: encodeAbiParameters(
+          [
+            {
+              type: "tuple",
+              components: [
+                { name: "requestFid", type: "uint256" },
+                { name: "requestSigner", type: "address" },
+                { name: "signature", type: "bytes" },
+                { name: "deadline", type: "uint256" },
+              ],
+            },
+          ],
+          [
+            {
+              requestFid: 42n,
+              requestSigner: OTHER,
+              signature: `0x${"00".repeat(65)}`,
+              deadline: 1900000000n,
+            },
+          ],
+        ),
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Farcaster KeyGateway\n${netOp}\nVerifying contract ${FARCASTER_KEY_GATEWAY}\nType: Add\nAdd signer key ${FARCASTER_KEY} to your Farcaster account, requested by app fid 42; until you remove it, it can publish posts, reactions and follows as you\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Farcaster KeyGateway\n${netOpZh}\n验证合约 ${FARCASTER_KEY_GATEWAY}\n类型：Add\n向你的 Farcaster 账户添加签名密钥 ${FARCASTER_KEY}（应用 fid 42 请求）；在你移除前，它可以以你的身份发帖、点赞和关注\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Farcaster SignedKeyRequest",
+    request: opTypedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SignedKeyRequest: [
+          { name: "requestFid", type: "uint256" },
+          { name: "key", type: "bytes" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "SignedKeyRequest",
+      domain: {
+        name: "Farcaster SignedKeyRequestValidator",
+        version: "1",
+        chainId: 10,
+        verifyingContract: FARCASTER_VALIDATOR,
+      },
+      message: { requestFid: "42", key: FARCASTER_KEY, deadline: "1900000000" },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      `App: Farcaster SignedKeyRequestValidator\n${netOp}\nVerifying contract ${FARCASTER_VALIDATOR}\nType: SignedKeyRequest\nAs app fid 42, request signer key ${FARCASTER_KEY} for a Farcaster user\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Farcaster SignedKeyRequestValidator\n${netOpZh}\n验证合约 ${FARCASTER_VALIDATOR}\n类型：SignedKeyRequest\n以应用 fid 42 的身份为 Farcaster 用户请求签名密钥 ${FARCASTER_KEY}\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
     ),
   },
   {

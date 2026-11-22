@@ -28,6 +28,7 @@ import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { recognizeEip3009 } from "./eip3009.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
+import { recognizeFarcaster } from "./farcaster.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizeOneinch } from "./oneinch.ts";
@@ -571,7 +572,8 @@ export const decodeEvm = (
   const claimed =
     permit === undefined
       ? (recognizeEip3009(json, chainId, table, signer) ??
-        recognizeAuthority(json, chainId, table, signer))
+        recognizeAuthority(json, chainId, table, signer) ??
+        recognizeFarcaster(json, chainId, signer))
       : undefined;
   const seaport =
     permit === undefined && claimed === undefined

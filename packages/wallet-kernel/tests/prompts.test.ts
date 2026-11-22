@@ -3742,6 +3742,8 @@ describe("requester text lines cannot imitate kernel lines", () => {
     authorityUnverified: ["c"],
     snapshotAlias: ["x"],
     signatureDeadline: ["d"],
+    fcAddKey: ["k", "1"],
+    fcKeyRequest: ["1", "k"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {

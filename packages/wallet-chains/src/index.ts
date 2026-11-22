@@ -602,6 +602,14 @@ export type AccountAuthority =
     }
   | { readonly kind: "snapshot-alias"; readonly alias: string };
 
+/** A Farcaster signer-key document: adding a key to the signer's account, or an app's key request. */
+export type FarcasterKey = {
+  readonly kind: "add" | "request";
+  readonly key: string;
+  readonly requestFid: string;
+  readonly deadline?: number;
+};
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -635,6 +643,8 @@ export type MessageContent =
       readonly authorization?: TokenAuthorization;
       /** A recognized document handing the signer's account authority to someone else. */
       readonly authority?: AccountAuthority;
+      /** A recognized Farcaster signer-key document. */
+      readonly farcaster?: FarcasterKey;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is
