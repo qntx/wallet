@@ -1,0 +1,290 @@
+{
+  "symbols": {
+    "A": "33 bytes: the compressed identity key of the card under test, cert[0..33) \u2014 cert.json's card1",
+    "cert": "97 bytes: cert = A \u2016 r \u2016 s of the card under test under ca1 \u2014 cert.json's card1 certificate",
+    "cert.otherA": "97 bytes: a certificate under ca1 for a different identity key \u2014 cert.json's card2 certificate",
+    "cert.otherCa": "97 bytes: the certificate of this card's A issued under ca2 \u2014 cert.json identity card1 signed by ca2",
+    "caKey": "65 bytes: the uncompressed public key of ca1 \u2014 cert.json cas[0].public",
+    "caKey.prefix03": "65 bytes: caKey with the first byte changed to 0x03 (not an uncompressed point)",
+    "caKey.xIsP": "65 bytes: caKey with x replaced by the field prime p",
+    "caKey.yIsP": "65 bytes: caKey with y replaced by the field prime p",
+    "caKey.offCurve": "65 bytes: caKey with y flipped so y^2 != x^3 + 7 (mod p)",
+    "hostEph": "65 bytes: a valid uncompressed host ephemeral public key \u2014 session.json hostEph",
+    "hostEph.prefix02": "65 bytes: hostEph with the first byte changed to 0x02",
+    "hostEph.offCurve": "65 bytes: hostEph with y flipped so the point is off the curve",
+    "openResponse": "226 bytes: cardEph \u2016 sig \u2016 cert plus SW 9000; verified through Open.response (session.json)",
+    "record0": "24 bytes: ct \u2016 tag of record.json commands[0].apdu \u2014 a well-formed record"
+  },
+  "commands": [
+    {
+      "name": "DISPATCH",
+      "section": "9.1",
+      "cases": [
+        {
+          "name": "wrong-cla",
+          "life": "any",
+          "session": "none",
+          "apdu": "00e0000000",
+          "inner": false,
+          "sw": "6e00"
+        },
+        {
+          "name": "unknown-ins",
+          "life": "any",
+          "session": "none",
+          "apdu": "807f000000",
+          "inner": false,
+          "sw": "6d00"
+        }
+      ]
+    },
+    {
+      "name": "GET_IDENTITY",
+      "section": "14.1",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "80e001000100",
+          "inner": false,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e001000100",
+          "inner": false,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e000000100",
+          "inner": false,
+          "sw": "6700"
+        },
+        {
+          "name": "success",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e0000000",
+          "inner": false,
+          "sw": "9000",
+          "response": "{A}"
+        }
+      ]
+    },
+    {
+      "name": "PERSONALIZE",
+      "section": "14.2",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "80e20100a1{cert}{caKey}",
+          "inner": false,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20100a1{cert}{caKey}",
+          "inner": false,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a1{cert}{caKey}",
+          "inner": false,
+          "sw": "6700"
+        },
+        {
+          "name": "cert-not-this-card",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert.otherA}{caKey}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "cakey-prefix03",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey.prefix03}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "cakey-x-is-p",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey.xIsP}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "cakey-y-is-p",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey.yIsP}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "cakey-off-curve",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey.offCurve}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-under-other-ca",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert.otherCa}{caKey}",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "success",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey}",
+          "inner": false,
+          "sw": "9000"
+        }
+      ]
+    },
+    {
+      "name": "OPEN",
+      "section": "8.1",
+      "cases": [
+        {
+          "name": "life-factory",
+          "life": "FACTORY",
+          "session": "none",
+          "apdu": "801001000100",
+          "inner": false,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "801001000100",
+          "inner": false,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "8010000040{hostEph}",
+          "inner": false,
+          "sw": "6700"
+        },
+        {
+          "name": "hosteph-prefix02",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "8010000041{hostEph.prefix02}00",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "hosteph-off-curve",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "8010000041{hostEph.offCurve}00",
+          "inner": false,
+          "sw": "6a80"
+        },
+        {
+          "name": "success",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "8010000041{hostEph}00",
+          "inner": false,
+          "sw": "9000",
+          "response": "{openResponse}"
+        }
+      ]
+    },
+    {
+      "name": "SESSION",
+      "section": "8.3",
+      "cases": [
+        {
+          "name": "no-session",
+          "life": "BLANK",
+          "session": "none",
+          "apdu": "8012000018{record0}00",
+          "inner": false,
+          "sw": "6985"
+        }
+      ]
+    },
+    {
+      "name": "INNER_DISPATCH",
+      "section": "9.2",
+      "cases": [
+        {
+          "name": "unknown-ins",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "7f0102ff",
+          "inner": true,
+          "sw": "6d00"
+        }
+      ]
+    },
+    {
+      "name": "STATUS",
+      "section": "9.3",
+      "cases": [
+        {
+          "name": "p1p2",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "20010200",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "20000001",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "success-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "200000",
+          "inner": true,
+          "sw": "9000",
+          "response": "0100"
+        },
+        {
+          "name": "success-loaded",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "200000",
+          "inner": true,
+          "sw": "9000",
+          "response": "020a"
+        }
+      ]
+    }
+  ]
+}
