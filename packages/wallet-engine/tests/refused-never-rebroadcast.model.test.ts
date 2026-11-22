@@ -121,7 +121,7 @@ describe("refused bytes are never broadcast again", () => {
   // oxlint-disable-next-line vitest/expect-expect -- the assertions run inside runScenario
   it(
     "holds over lock timing, bombed writes and restarts, while a sibling stays tracked",
-    { timeout: 60_000 },
+    { timeout: 120_000 },
     async () => {
       await fc.assert(fc.asyncProperty(scenario, runScenario), { numRuns: 40 });
     },

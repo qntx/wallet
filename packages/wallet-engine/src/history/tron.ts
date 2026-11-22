@@ -489,8 +489,8 @@ const verifyEntry = async (
     const decoded = contract;
     if (decoded === undefined) {
       checkable = false;
-      // One raw contract binds at most one claim: a second distinct leg mismatches on `.every`.
     } else if (!transfers.every((leg) => transferMatches(leg, decoded))) {
+      // One raw contract binds at most one claim: a second distinct leg mismatches on `.every`.
       mismatch = true;
     }
   } else {

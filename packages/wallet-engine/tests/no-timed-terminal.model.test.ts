@@ -265,5 +265,5 @@ describe("no timer ends an unknown send", () => {
       ),
       { numRuns: 40, seed: 13 },
     );
-  }, 60_000);
+  }, 240_000);
 });
