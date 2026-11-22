@@ -376,6 +376,8 @@ export const createWorld = async (opts: {
   readonly model: WalletModel;
   readonly networks?: ReadonlyArray<(typeof PRODUCTION_NETWORKS)[number]>;
   readonly tronAddress?: string;
+  /** `EngineOptions.rpc` — host endpoints for the cross-checks; `{}` is a gateway-only host. */
+  readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /** "off": every limiter/budget accepts and only records — raw demand, no refusals or retries. */
   readonly unconstrained?: boolean;
   /**
@@ -646,7 +648,7 @@ export const createWorld = async (opts: {
     showCallsStatus: () => undefined,
     // oxlint-disable-next-line typescript/require-await -- the store seam's signature is a promise
     openStore: async () => createMemoryEngineStore(),
-    rpc: {
+    rpc: opts.rpc ?? {
       "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": [HOST_SOLANA_URL],
       "tron:728126428": [HOST_TRON_URL],
     },
