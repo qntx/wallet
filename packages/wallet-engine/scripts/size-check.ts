@@ -80,8 +80,9 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
-    budget: 26 * 1024,
+    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). Measured
+       27293 B gzipped once eligibility became a record keyed by app id (zod/mini record, +695 B). */
+    budget: 27 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: [],
   },
