@@ -5,9 +5,13 @@
  * are `card-fault`.
  */
 import type { CommandName, Inner } from "./commands.ts";
-import type { CardStatus } from "./decode.ts";
 import { CardError } from "./errors.ts";
 import type { InnerResponse } from "./session.ts";
+
+/** Decoded STATUS (§9.3): `01 00` BLANK, or LOADED with `tries` failures remaining. */
+export type CardStatus =
+  | { readonly life: "blank"; readonly tries: 0 }
+  | { readonly life: "loaded"; readonly tries: number };
 
 /** Words each command may legitimately fail with; `verify`'s `63Cx` range is checked separately. */
 const ALLOWED: Readonly<Record<CommandName, ReadonlyArray<number>>> = {

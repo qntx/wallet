@@ -19,13 +19,12 @@ import {
 } from "./signatures.ts";
 import type { EcdsaResult } from "./signatures.ts";
 import { ACCESS_LIMITS } from "./status.ts";
+import type { CardStatus } from "./status.ts";
 import { exportMessage, offerMessage } from "./transfer.ts";
 import type { ExportHead, Offer } from "./transfer.ts";
 import { edwardsEncode } from "./wei25519.ts";
 
-export type CardStatus =
-  | { readonly life: "blank"; readonly tries: 0 }
-  | { readonly life: "loaded"; readonly tries: number };
+export type { CardStatus } from "./status.ts";
 
 /** `masterPublicKey ‖ origin ‖ c ‖ members` from CREATE, VERIFY or IMPORT (§9.2). */
 export type WalletInfo = {
