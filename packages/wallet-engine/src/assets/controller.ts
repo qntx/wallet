@@ -309,9 +309,19 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const table = tronTokenTable[network] ?? {};
     const list = await this.lists.entries(network);
     const owners = symbolOwners([...Object.entries(table), ...list]);
+    // Indexer discovery runs before the built-in reads; `undefined` = no gateway or a failed
+    // call — then every built-in is read as today. An answered indexer, even an empty one,
+    // filters the `balanceOf` fan-out to the contracts it lists as held.
+    const discovered =
+      this.options.gateway === undefined
+        ? undefined
+        : await tronDiscoveredTokens(api, owner).catch(() => undefined);
+    const held = discovered ?? new Map<string, bigint>();
     const builtin = new Map(
       await mapPool(
-        Object.keys(table),
+        discovered === undefined
+          ? Object.keys(table)
+          : Object.keys(table).filter((c) => discovered.has(c)),
         4,
         async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
       ),
@@ -322,16 +332,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
       (contract) => table[contract] === undefined && isTronAddress(contract),
     );
     const customSet = new Set(custom);
-    const discovered =
-      this.options.gateway === undefined
-        ? new Map<string, bigint>()
-        : await tronDiscoveredTokens(api, owner).catch(() => new Map<string, bigint>());
     const trc10 = trc10Balances(row);
 
     // The metadata queue reads each contract/id once per unlock, capped per refresh.
     const wanted = [
       ...custom.filter((c) => !this.tronMeta.has(metaKey(c))),
-      ...[...discovered.keys()]
+      ...[...held.keys()]
         .filter(
           (c) => table[c] === undefined && !customSet.has(c) && !this.tronMeta.has(metaKey(c)),
         )
@@ -349,7 +355,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     });
     const customBalances = new Map(
       await mapPool(
-        custom.filter((c) => !discovered.has(c)),
+        custom.filter((c) => !held.has(c)),
         4,
         async (contract) => [contract, await tronBalanceOf(api, owner, contract)] as const,
       ),
@@ -375,7 +381,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       if (read === undefined || read === "missing") {
         continue;
       }
-      const balance = discovered.get(contract) ?? customBalances.get(contract) ?? 0n;
+      const balance = held.get(contract) ?? customBalances.get(contract) ?? 0n;
       const spam = spamReasons({
         address: contract,
         symbol: read.symbol,
@@ -393,9 +399,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         hidden: this.hiddenFor(network, contract, spam),
       });
     }
-    for (const [contract, balance] of [...discovered.entries()].sort(([a], [b]) =>
-      a < b ? -1 : 1,
-    )) {
+    for (const [contract, balance] of [...held.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
       if (table[contract] !== undefined || customSet.has(contract)) {
         continue;
       }
