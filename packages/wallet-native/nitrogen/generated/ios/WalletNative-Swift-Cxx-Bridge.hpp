@@ -8,13 +8,20 @@
 #pragma once
 
 // Forward declarations of C++ defined types
-
+// Forward declaration of `HybridSecureInputViewSpec` to properly resolve imports.
+namespace margelo::nitro::qntxwallet { class HybridSecureInputViewSpec; }
+// Forward declaration of `SecureInputState` to properly resolve imports.
+namespace margelo::nitro::qntxwallet { enum class SecureInputState; }
 
 // Forward declarations of Swift defined types
-
+// Forward declaration of `HybridSecureInputViewSpec_cxx` to properly resolve imports.
+namespace WalletNative { class HybridSecureInputViewSpec_cxx; }
 
 // Include C++ defined types
-
+#include "HybridSecureInputViewSpec.hpp"
+#include "SecureInputState.hpp"
+#include <functional>
+#include <memory>
 
 /**
  * Contains specialized versions of C++ templated types so they can be accessed from Swift,
@@ -22,6 +29,38 @@
  */
 namespace margelo::nitro::qntxwallet::bridge::swift {
 
+  // pragma MARK: std::function<void(SecureInputState /* state */)>
+  /**
+   * Specialized version of `std::function<void(SecureInputState)>`.
+   */
+  using Func_void_SecureInputState = std::function<void(SecureInputState /* state */)>;
+  /**
+   * Wrapper class for a `std::function<void(SecureInputState / * state * /)>`, this can be used from Swift.
+   */
+  class Func_void_SecureInputState_Wrapper final {
+  public:
+    explicit Func_void_SecureInputState_Wrapper(std::function<void(SecureInputState /* state */)>&& func): _function(std::make_unique<std::function<void(SecureInputState /* state */)>>(std::move(func))) {}
+    inline void call(int state) const noexcept {
+      _function->operator()(static_cast<SecureInputState>(state));
+    }
+  private:
+    std::unique_ptr<std::function<void(SecureInputState /* state */)>> _function;
+  } SWIFT_NONCOPYABLE;
+  Func_void_SecureInputState create_Func_void_SecureInputState(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_SecureInputState_Wrapper wrap_Func_void_SecureInputState(Func_void_SecureInputState value) noexcept {
+    return Func_void_SecureInputState_Wrapper(std::move(value));
+  }
   
+  // pragma MARK: std::shared_ptr<HybridSecureInputViewSpec>
+  /**
+   * Specialized version of `std::shared_ptr<HybridSecureInputViewSpec>`.
+   */
+  using std__shared_ptr_HybridSecureInputViewSpec_ = std::shared_ptr<HybridSecureInputViewSpec>;
+  std::shared_ptr<HybridSecureInputViewSpec> create_std__shared_ptr_HybridSecureInputViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept;
+  void* NON_NULL get_std__shared_ptr_HybridSecureInputViewSpec_(std__shared_ptr_HybridSecureInputViewSpec_ cppType);
+  
+  // pragma MARK: std::weak_ptr<HybridSecureInputViewSpec>
+  using std__weak_ptr_HybridSecureInputViewSpec_ = std::weak_ptr<HybridSecureInputViewSpec>;
+  inline std__weak_ptr_HybridSecureInputViewSpec_ weakify_std__shared_ptr_HybridSecureInputViewSpec_(const std::shared_ptr<HybridSecureInputViewSpec>& strong) noexcept { return strong; }
 
 } // namespace margelo::nitro::qntxwallet::bridge::swift

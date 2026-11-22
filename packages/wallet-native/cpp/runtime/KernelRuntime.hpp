@@ -3,6 +3,7 @@
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
 
+#include "../host/CardReader.hpp"
 #include "KernelBuffer.hpp"
 
 #include <chrono>
@@ -61,6 +62,9 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
     // Fired when post() exceeds the inbound frame queue cap (64) — a transport
     // violation the host maps to an `integrity` exit, not a kernel crash.
     std::function<void()> onIntegrity;
+    // The NFC reader behind __qntx.cardReader; the platform's instance by
+    // default, substituted by tests and the harness.
+    std::shared_ptr<CardReader> cardReader = platformCardReader();
   };
 
   // `vaultDirectory` is the directory the kernel's vault file lives in (the

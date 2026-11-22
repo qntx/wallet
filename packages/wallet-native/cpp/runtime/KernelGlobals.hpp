@@ -2,6 +2,7 @@
 
 #include <jsi/jsi.h>
 
+#include "../host/CardReader.hpp"
 #include "KernelBuffer.hpp"
 
 #include <atomic>
@@ -78,6 +79,11 @@ struct KernelGlobalsState {
   // Kernel thread only.
   std::optional<facebook::jsi::Function> messageHandler;
 
+  // The process-shared NFC reader behind __qntx.cardReader; injected by the
+  // host through KernelRuntime::Hooks so tests and platforms can substitute
+  // their own.
+  std::shared_ptr<CardReader> cardReader;
+
   // Dismiss in-flight system prompts (keystore, passkey); each installer adds
   // one and teardown runs them all. Kernel thread only.
   std::vector<std::function<void()>> cancelCeremonies;
@@ -85,7 +91,8 @@ struct KernelGlobalsState {
 
 // Installs the kernel's capabilities on a fresh runtime:
 //   globalThis.__qntx   frozen { random, now, elapsed, setTimer, pbkdf2, file,
-//                              frames, backends, keystore, passkey }
+//                              frames, backends, keystore, passkey, cardReader,
+//                              secureInput }
 //   globalThis.crypto   frozen { getRandomValues }
 //   globalThis.TextDecoder   the native Hermes decoder (260318099+), frozen
 //                            and rebound hidden

@@ -8,6 +8,29 @@ declare const __qntx: {
     readonly onMessage: (fn: (message: ArrayBuffer) => void) => void;
     readonly onIntegrityViolation: (fn: () => void) => void;
   };
+  readonly cardReader: {
+    readonly open: (
+      prompt: string,
+      done: (code: string | undefined, detail: string | undefined) => void,
+    ) => void;
+    readonly transmit: (
+      apdu: Uint8Array,
+      done: (
+        response: Uint8Array | undefined,
+        code: string | undefined,
+        detail: string | undefined,
+      ) => void,
+    ) => void;
+    readonly close: (outcome: "success" | "failure", text: string) => void;
+  };
+  readonly secureInput: {
+    readonly request: (
+      kind: "access-code" | "short-id",
+      label: string,
+      done: (value: Uint8Array | undefined, code: string | undefined) => void,
+    ) => void;
+    readonly cancel: () => void;
+  };
   readonly pbkdf2: (
     hash: "sha256" | "sha512",
     password: Uint8Array,

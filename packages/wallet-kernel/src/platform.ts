@@ -295,3 +295,60 @@ export type Port = {
   readonly post: (message: ProtocolValue, transfer: ArrayBuffer[]) => void;
   readonly listen: (handler: (message: unknown) => void) => () => void;
 };
+
+/**
+ * Why a card-reader session ended without completing the current call. `cancelled` is the user
+ * dismissing the session, `timeout` the platform's session window expiring, `tag-lost` the card
+ * leaving the field, `interrupted` the platform interrupting the session — the reader surface lost
+ * focus, the app left the foreground, or the system ended the session unexpectedly — and
+ * `unavailable` anything else — including the reader being owned by another runtime or the platform
+ * reporting an out-of-contract outcome.
+ */
+export type CardReaderFailure =
+  | "cancelled"
+  | "timeout"
+  | "tag-lost"
+  | "interrupted"
+  | "unavailable";
+
+/** The outcome of a card-reader call; `detail` is a `"<domain>:<code>"` diagnostic, never text. */
+export type CardReaderResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | {
+      readonly ok: false;
+      readonly failure: CardReaderFailure;
+      readonly detail: string | undefined;
+    };
+
+/**
+ * The trusted NFC card-reader session. `open` shows `prompt` — trusted text only the kernel builds
+ * — while the platform polls for an ISO-DEP card; the text is set once and cannot change
+ * mid-session. `transmit` sends one APDU and resolves with the card's response data and its two
+ * status bytes; only one transmit is in flight. Every failure ends the session. `close` ends it
+ * with the shown outcome; a failure with an empty `text` closes silently. APDU bytes never cross
+ * the main runtime.
+ */
+export type CardReader = {
+  readonly open: (prompt: string) => Promise<CardReaderResult<undefined>>;
+  readonly transmit: (apdu: Uint8Array) => Promise<CardReaderResult<Uint8Array>>;
+  readonly close: (outcome: "success" | "failure", text: string) => void;
+};
+
+/** What the secure input view collects: the qntx card's access code, or its printed short ID. */
+export type SecureInputKind = "access-code" | "short-id";
+
+/** The outcome of a secure-input request; `value` is the confirmed bytes the user entered. */
+export type SecureInputResult =
+  | { readonly ok: true; readonly value: Uint8Array }
+  | { readonly ok: false; readonly failure: "cancelled" | "unavailable" };
+
+/**
+ * The trusted secure-input surface. `request` asks the native view to collect `kind` — the view
+ * shows `label` — and resolves with the entered bytes; the characters never cross the main runtime,
+ * which only sees the view's state. Only one request exists at a time across runtimes. `cancel`
+ * withdraws this runtime's pending request, resolving it `cancelled`.
+ */
+export type SecureInput = {
+  readonly request: (kind: SecureInputKind, label: string) => Promise<SecureInputResult>;
+  readonly cancel: () => void;
+};

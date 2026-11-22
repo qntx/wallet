@@ -15,7 +15,11 @@
 #include <fbjni/fbjni.h>
 #include <NitroModules/HybridObjectRegistry.hpp>
 
+#include "JHybridSecureInputViewSpec.hpp"
+#include "JFunc_void_SecureInputState.hpp"
+#include "views/JHybridSecureInputViewStateUpdater.hpp"
 #include "HybridKernelHost.hpp"
+#include <NitroModules/DefaultConstructableObject.hpp>
 
 namespace margelo::nitro::qntxwallet {
 
@@ -25,14 +29,23 @@ int initialize(JavaVM* vm) {
   });
 }
 
-
+struct JHybridSecureInputViewSpecImpl: public jni::JavaClass<JHybridSecureInputViewSpecImpl, JHybridSecureInputViewSpec::JavaPart> {
+  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/qntxwallet/HybridSecureInputView;";
+  static std::shared_ptr<JHybridSecureInputViewSpec> create() {
+    static const auto constructorFn = javaClassStatic()->getConstructor<JHybridSecureInputViewSpecImpl::javaobject()>();
+    jni::local_ref<JHybridSecureInputViewSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
+    return javaPart->getJHybridSecureInputViewSpec();
+  }
+};
 
 void registerAllNatives() {
   using namespace margelo::nitro;
   using namespace margelo::nitro::qntxwallet;
 
   // Register native JNI methods
-  
+  margelo::nitro::qntxwallet::JHybridSecureInputViewSpec::CxxPart::registerNatives();
+  margelo::nitro::qntxwallet::JFunc_void_SecureInputState_cxx::registerNatives();
+  margelo::nitro::qntxwallet::views::JHybridSecureInputViewStateUpdater::registerNatives();
 
   // Register Nitro Hybrid Objects
   HybridObjectRegistry::registerHybridObjectConstructor(
@@ -42,6 +55,12 @@ void registerAllNatives() {
                     "The HybridObject \"HybridKernelHost\" is not default-constructible! "
                     "Create a public constructor that takes zero arguments to be able to autolink this HybridObject.");
       return std::make_shared<HybridKernelHost>();
+    }
+  );
+  HybridObjectRegistry::registerHybridObjectConstructor(
+    "SecureInputView",
+    []() -> std::shared_ptr<HybridObject> {
+      return JHybridSecureInputViewSpecImpl::create();
     }
   );
 }
