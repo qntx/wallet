@@ -137,6 +137,16 @@ the package root.
   `withdrawLnurl`.
 - `engine.unsubscribe` — stops listening to the wallet and the phishing-list refresh.
 
+Transaction tracking: a send whose outcome is unknown is never declared `dropped` by a timer.
+On EVM a transaction ends on its own receipt, on its nonce being consumed without its receipt
+(cross-checked against the host endpoint), or on a replacement; on Bitcoin only on inclusion or
+on one of its inputs being spent by another confirmed transaction. When no endpoint has known a
+transaction for thirty minutes the row turns `stuck: true` — still `submitted`, still holding its
+nonce or inputs, polled at the finality interval — and the host should offer `speed-up` /
+`cancel`. A row recovered from a broadcast whose outcome never settled carries
+`rebroadcast: false`: watched, never resent. TRON and Solana keep proof-based expiry (chain
+expiration, blockhash / durable-nonce validity).
+
 The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of the collection and
 key, authenticates every value it reads back (a row that fails authentication reads as absent),
 and rebuilds a database keyed by another data key empty.

@@ -39,7 +39,13 @@ import {
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import type { EngineStore } from "../store/port.ts";
-import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
+import {
+  RESUBMIT_BASE_MS,
+  RESUBMIT_MAX_MS,
+  STUCK_AFTER_MS,
+  STUCK_NOTE,
+  submitSigned,
+} from "./broadcast.ts";
 import type { BroadcastVerdict, SignedBroadcast } from "./broadcast.ts";
 import { failTx, includedPoll, newId, replacementStaleReason } from "./route.ts";
 import type {
@@ -454,10 +460,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
 
   /**
    * Esplora `/tx/:txid/status` → `included` on a confirmed status (final once six blocks sit on
-   * top), or `undefined` to keep polling. While the endpoint does not know the transaction (and no
-   * live replacement explains why) its persisted bytes are rebroadcast with backoff; once neither
-   * endpoint has known it for {@link UNKNOWN_DROP_MS} it ends `dropped`. A confirmed transaction
-   * whose block left the chain answers `reorged`.
+   * top), `waiting` while a note changes — `stuck` once neither endpoint has known it for
+   * {@link STUCK_AFTER_MS}, never terminal — or `undefined` to keep polling. While the endpoint
+   * does not know the transaction (and no live replacement explains why) its persisted bytes are
+   * rebroadcast with backoff. A confirmed transaction whose block left the chain answers
+   * `reorged`.
    */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
     if (tx.hash === undefined) {
@@ -480,7 +487,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     unseen.delete(tx.id);
     const block = statusBlock(status);
     if (block === undefined) {
-      return undefined;
+      // Known again: a stuck mark or note from an unseen spell clears.
+      return tx.stuck === true || tx.error !== undefined
+        ? { kind: "waiting", error: undefined }
+        : undefined;
     }
     return {
       kind: "included",
@@ -497,13 +507,16 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     txid: string,
     es: Esplora,
   ): Promise<TxPoll | undefined> => {
-    // A live replacement evicts the original from the pool: it is expected to be unknown then.
+    // A live replacement evicts the original from the pool: it is expected to be unknown then —
+    // and a stuck mark from an earlier unseen spell clears.
     const replaced = Object.values(ctx.txs()).some(
       (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
     );
     if (replaced) {
       unseen.delete(tx.id);
-      return undefined;
+      return tx.stuck === true || tx.error !== undefined
+        ? { kind: "waiting", error: undefined }
+        : undefined;
     }
     // A foreign spend of any input explains the disappearance better than eviction does: mined
     // it settles the tracker; unconfirmed it only proves the bytes can never land.
@@ -513,17 +526,22 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       return { kind: "ended", state: "replaced" };
     }
     const now = ctx.options.now();
-    const watch = unseen.get(tx.id) ?? { since: now, attempt: 0, next: now };
+    // A row persisted stuck resumes already inside the window — restarting never un-marks it.
+    const watch = unseen.get(tx.id) ?? {
+      since: tx.stuck === true ? now - STUCK_AFTER_MS : now,
+      attempt: 0,
+      next: now,
+    };
     unseen.set(tx.id, watch);
-    if (now - watch.since >= UNKNOWN_DROP_MS) {
+    let stuck = false;
+    if (now - watch.since >= STUCK_AFTER_MS) {
+      /* `stuck` needs every endpoint that can answer to not know the transaction: a copy on the
+         host endpoint — or its read failing — is not "the network never saw it". */
       const independent = ctx.options.networks.independentEsplora(tx.network);
       const elsewhere =
         independent.kind === "available" &&
         (await esploraKnows(independent.client, txid).catch(() => true));
-      if (!elsewhere) {
-        unseen.delete(tx.id);
-        return { kind: "ended", state: "dropped" };
-      }
+      stuck = !elsewhere;
     }
     if (
       tx.raw !== undefined &&
@@ -535,7 +553,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       watch.next = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;
     }
-    return undefined;
+    const error = stuck ? STUCK_NOTE : undefined;
+    return tx.error === error && (tx.stuck === true) === stuck
+      ? undefined
+      : { kind: "waiting", error, ...(stuck ? { stuck } : {}) };
   };
 
   const prepare = async (

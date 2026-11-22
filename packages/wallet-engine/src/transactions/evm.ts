@@ -57,7 +57,13 @@ import {
   assertSwapIntent,
   assertSwapSimulation,
 } from "../swaps/index.ts";
-import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
+import {
+  RESUBMIT_BASE_MS,
+  RESUBMIT_MAX_MS,
+  STUCK_AFTER_MS,
+  STUCK_NOTE,
+  submitSigned,
+} from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
 import {
@@ -2096,8 +2102,9 @@ export const createEvmRoute = (): EvmRoute => {
 
   /**
    * Returns `included` once the receipt lands, `reorged` when a confirmed transaction's block
-   * leaves the chain, `ended` once the nonce is settled without our receipt, or `undefined` to keep
-   * polling. While the node does not know the transaction it is rebroadcast with exponential
+   * leaves the chain, `ended` once the nonce is settled without our receipt, `waiting` while the
+   * transaction cannot land yet — gap note, or `stuck` past `STUCK_AFTER_MS` — or `undefined` to
+   * keep polling. While the node does not know the transaction it is rebroadcast with exponential
    * backoff.
    */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxPoll | undefined> => {
@@ -2138,6 +2145,22 @@ export const createEvmRoute = (): EvmRoute => {
       if (watch.consumed < DROP_CONFIRMATIONS) {
         return undefined;
       }
+      /* The nonce passed without our receipt — a pool eviction is only the likelier story, not
+         proof. Before ending, the host endpoint gets to hold the receipt instead: a copy found
+         there keeps the row live, and a failing read proves nothing. */
+      const independent = ctx.options.networks.independentClient(tx.network);
+      if (independent.kind === "available") {
+        let receipt: Awaited<ReturnType<typeof evm.receipt>>;
+        try {
+          receipt = await evm.receipt(independent.client, hash);
+        } catch {
+          return undefined;
+        }
+        if (receipt !== undefined) {
+          watch.consumed = 0;
+          return undefined;
+        }
+      }
       watching.delete(tx.id);
       return {
         kind: "ended",
@@ -2159,8 +2182,14 @@ export const createEvmRoute = (): EvmRoute => {
       gap === undefined
         ? undefined
         : `nonce ${String(gap)} below this transaction was never sent — the next send from this account fills it`;
-    const waiting = (): TxPoll | undefined =>
-      tx.error === note ? undefined : { kind: "waiting", error: note };
+    /* A gap note explains more than the stuck one, so it wins the error text while `stuck`
+       marks the row either way. */
+    const waiting = (stuck: boolean): TxPoll | undefined => {
+      const error = note ?? (stuck ? STUCK_NOTE : undefined);
+      return tx.error === error && (tx.stuck === true) === stuck
+        ? undefined
+        : { kind: "waiting", error, ...(stuck ? { stuck } : {}) };
+    };
 
     const replacerLive = sameNonce(ctx, tx, record.from).some(
       (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
@@ -2169,26 +2198,27 @@ export const createEvmRoute = (): EvmRoute => {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return waiting();
+      return waiting(false);
     }
 
     if (await evm.known(client, hash)) {
       watch.unknownSince = undefined;
       watch.nextResubmit = undefined;
       watch.attempt = 0;
-      return waiting();
+      return waiting(false);
     }
     const now = ctx.options.now();
-    watch.unknownSince ??= now;
-    if (now - watch.unknownSince >= UNKNOWN_DROP_MS) {
+    // A row persisted stuck resumes already inside the window — restarting never un-marks it.
+    watch.unknownSince ??= tx.stuck === true ? now - STUCK_AFTER_MS : now;
+    let stuck = false;
+    if (now - watch.unknownSince >= STUCK_AFTER_MS) {
+      /* `stuck` needs every endpoint that can answer to not know the transaction: a copy on the
+         host endpoint — or its read failing — is not "the network never saw it". */
       const independent = ctx.options.networks.independentClient(tx.network);
       const elsewhere =
         independent.kind === "available" &&
         (await evm.known(independent.client, hash).catch(() => true));
-      if (!elsewhere) {
-        watching.delete(tx.id);
-        return { kind: "ended", state: "dropped" };
-      }
+      stuck = !elsewhere;
     }
     if (
       tx.rebroadcast !== false &&
@@ -2198,7 +2228,7 @@ export const createEvmRoute = (): EvmRoute => {
       watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;
     }
-    return waiting();
+    return waiting(stuck);
   };
 
   const readDelegationState = async (

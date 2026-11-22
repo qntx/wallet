@@ -52,7 +52,8 @@ export type TxBlock = {
  * What one status poll established; a poll returning `undefined` changes nothing. `included` is a
  * transaction in a block — kept tracked until `final`; `reorged` is its block leaving the chain;
  * `ended` is a terminal answer the tracker stops on. `waiting` is still live: its `error` says why
- * the transaction cannot land yet, `undefined` clears an earlier note.
+ * the transaction cannot land yet, `undefined` clears an earlier note; `stuck` marks a row no
+ * endpoint has known for `STUCK_AFTER_MS` — a live mark, never terminal.
  */
 export type TxPoll =
   | {
@@ -65,7 +66,12 @@ export type TxPoll =
     }
   | { readonly kind: "reorged" }
   | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" }
-  | { readonly kind: "waiting"; readonly error: string | undefined };
+  | {
+      readonly kind: "waiting";
+      readonly error: string | undefined;
+      /** Set only when the mark is on; an absent `stuck` clears it — see `TrackedTransaction.stuck`. */
+      readonly stuck?: boolean;
+    };
 
 /** In a block but not final yet: tracked at the finality interval. */
 export const awaitingFinality = (tx: TrackedTransaction): boolean =>
@@ -151,6 +157,12 @@ export type TrackedTransaction = {
    * the bytes are watched but never resent; a speed-up or cancel is the remedy.
    */
   readonly rebroadcast?: false;
+  /**
+   * EVM and Bitcoin: neither endpoint has known this transaction for `STUCK_AFTER_MS`. It stays
+   * `submitted`, still holds its nonce or inputs and is polled at the finality interval; offer
+   * speed-up or cancel.
+   */
+  readonly stuck?: boolean | undefined;
   /**
    * The signed transaction exactly as broadcast — EVM and Bitcoin hex, Solana base64 wire —
    * persisted with `hash` before it leaves, so an unknown outcome is rebroadcast, even after a

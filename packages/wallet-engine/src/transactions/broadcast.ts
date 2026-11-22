@@ -9,8 +9,15 @@
 import { errorMessage, submitTx } from "./route.ts";
 import type { RouteContext, TrackedTransaction } from "./route.ts";
 
-/** How long a transaction may stay unknown to the network before it is given up as dropped. */
-export const UNKNOWN_DROP_MS = 1_800_000;
+/**
+ * How long the network may not know a transaction before its row turns `stuck` — never terminal:
+ * the bytes may still land, so the nonce or inputs stay held and the poll drops to the finality
+ * interval until a chain answer resolves it.
+ */
+export const STUCK_AFTER_MS = 1_800_000;
+/** The note a stuck row carries; its remedies are speed-up and cancel. */
+export const STUCK_NOTE =
+  "the network has not seen this transaction for 30 minutes — speed up or cancel it";
 /** Rebroadcast backoff for a transaction the node does not know: base doubling up to the cap. */
 export const RESUBMIT_BASE_MS = 15_000;
 export const RESUBMIT_MAX_MS = 600_000;

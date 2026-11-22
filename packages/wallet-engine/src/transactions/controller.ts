@@ -244,6 +244,7 @@ const decode = (
     parentId,
     raw: signedRaw,
     rebroadcast,
+    stuck,
     evm,
     btc,
     tron,
@@ -283,6 +284,7 @@ const decode = (
     ...(typeof parentId === "string" ? { parentId } : {}),
     ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),
     ...(rebroadcast === false ? { rebroadcast } : {}),
+    ...(typeof stuck === "boolean" ? { stuck } : {}),
     ...(isEvmRecord(evm)
       ? { evm }
       : (() => {
@@ -973,7 +975,9 @@ export class TransactionController extends Controller<TransactionControllerState
     const row = this.getState().txs[id];
     const pollMs =
       (this.options.pollMs ?? 4000) *
-      (row !== undefined && awaitingFinality(row) ? FINALITY_POLL_FACTOR : 1);
+      (row !== undefined && (awaitingFinality(row) || row.stuck === true)
+        ? FINALITY_POLL_FACTOR
+        : 1);
     this.timers.set(
       id,
       repeat(
@@ -1037,6 +1041,7 @@ export class TransactionController extends Controller<TransactionControllerState
         final: answer.final,
         // A landed transaction carries no stuck note; an on-chain failure carries its reason.
         error: answer.error,
+        stuck: undefined,
       });
       if (firstInclusion) {
         this.settle(updated);
@@ -1065,11 +1070,19 @@ export class TransactionController extends Controller<TransactionControllerState
       return;
     }
     if (answer.kind === "waiting") {
-      await this.transition(tx, { error: answer.error });
+      const updated = await this.transition(tx, {
+        error: answer.error,
+        stuck: answer.stuck === true ? true : undefined,
+      });
+      // Stuck polls at the finality interval — a change in the mark re-arms the loop.
+      if ((tx.stuck === true) !== (updated.stuck === true)) {
+        this.retrack(id, updated.hash ?? "");
+      }
       return;
     }
     this.untrack(id);
-    const updated = await this.transition(tx, { state: answer.state });
+    // A settled row is never stuck — the mark only makes sense while live.
+    const updated = await this.transition(tx, { state: answer.state, stuck: undefined });
     this.settle(updated);
   }
 
@@ -1086,7 +1099,7 @@ export class TransactionController extends Controller<TransactionControllerState
     await Promise.all(
       siblings.map(async (sibling) => {
         this.untrack(sibling.id);
-        this.settle(await this.transition(sibling, { state: "replaced" }));
+        this.settle(await this.transition(sibling, { state: "replaced", stuck: undefined }));
       }),
     );
   }

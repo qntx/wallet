@@ -11,7 +11,7 @@ import { createMemoryEngineStore } from "../src/store/memory.ts";
 import {
   RESUBMIT_BASE_MS,
   RESUBMIT_MAX_MS,
-  UNKNOWN_DROP_MS,
+  STUCK_AFTER_MS,
 } from "../src/transactions/broadcast.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { DROP_CONFIRMATIONS } from "../src/transactions/evm.ts";
@@ -203,7 +203,7 @@ const polls = async (timers: ManualTimers, count = 1): Promise<void> => {
 const attemptTimes = (): number[] => {
   const times: number[] = [];
   let at = 0;
-  for (let attempt = 0; at < UNKNOWN_DROP_MS; attempt += 1) {
+  for (let attempt = 0; at < STUCK_AFTER_MS; attempt += 1) {
     times.push(at);
     at += Math.min(RESUBMIT_BASE_MS * 2 ** attempt, RESUBMIT_MAX_MS);
   }
@@ -221,7 +221,7 @@ const walkBackoff = async (
   attempt = 0,
   at = 0,
 ): Promise<number[]> => {
-  if (at >= UNKNOWN_DROP_MS) {
+  if (at >= STUCK_AFTER_MS) {
     return [];
   }
   const delay = Math.min(RESUBMIT_BASE_MS * 2 ** attempt, RESUBMIT_MAX_MS);
@@ -229,7 +229,7 @@ const walkBackoff = async (
   w.clock.t = start + at;
   await polls(timers);
   const hit = w.primary.sent.length - before;
-  w.clock.t = start + Math.min(at + delay, UNKNOWN_DROP_MS) - 1;
+  w.clock.t = start + Math.min(at + delay, STUCK_AFTER_MS) - 1;
   await polls(timers);
   const early = w.primary.sent.length - before - hit;
   return [hit, early, ...(await walkBackoff(w, timers, start, attempt + 1, at + delay))];
@@ -361,25 +361,28 @@ describe("EVM poll — unknown to the node", () => {
     expect(w.primary.sent).toHaveLength(1);
   });
 
-  it("is dropped after 30 minutes and its nonce is released", async () => {
+  it("turns stuck after 30 minutes and keeps its nonce", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     w.primary.known.delete(hashOf(tx));
     w.primary.accepting = false;
     await polls(timers);
-    w.clock.t += UNKNOWN_DROP_MS - 1;
+    w.clock.t += STUCK_AFTER_MS - 1;
     await polls(timers);
     expect(stateOf(ctl, tx)).toBe("submitted");
+    expect(ctl.getState().txs[tx.id]?.stuck).toBeUndefined();
     w.clock.t += 1;
     await polls(timers);
-    expect(stateOf(ctl, tx)).toBe("dropped");
+    // Never terminal on a timer: the row marks stuck and keeps holding its nonce.
+    expect(stateOf(ctl, tx)).toBe("submitted");
+    expect(ctl.getState().txs[tx.id]?.stuck).toBe(true);
     w.primary.accepting = true;
     const next = await send(ctl, SEND);
-    expect(next.nonce).toBe(tx.nonce);
+    expect(next.nonce).toBe(tx.nonce + 1);
   });
 
-  it("is not dropped while an independent endpoint still knows it", async () => {
+  it("is not stuck while an independent endpoint still knows it", async () => {
     const w = world({ gateway: true });
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
@@ -387,15 +390,17 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.accepting = false;
     w.independent.known.add(hashOf(tx));
     await polls(timers);
-    w.clock.t += UNKNOWN_DROP_MS;
+    w.clock.t += STUCK_AFTER_MS;
     await polls(timers);
     expect(stateOf(ctl, tx)).toBe("submitted");
+    expect(ctl.getState().txs[tx.id]?.stuck).toBeUndefined();
     w.independent.known.delete(hashOf(tx));
     await polls(timers);
-    expect(stateOf(ctl, tx)).toBe("dropped");
+    expect(stateOf(ctl, tx)).toBe("submitted");
+    expect(ctl.getState().txs[tx.id]?.stuck).toBe(true);
   });
 
-  it("an original evicted by its live replacement is neither rebroadcast nor dropped", async () => {
+  it("an original evicted by its live replacement is neither rebroadcast nor marked stuck", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     const original = await send(ctl, SEND);
@@ -404,16 +409,17 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.accepting = false;
     w.primary.sent.length = 0;
     await polls(timers);
-    w.clock.t += UNKNOWN_DROP_MS + 1;
+    w.clock.t += STUCK_AFTER_MS + 1;
     await polls(timers, 2);
     expect(w.primary.sent).toHaveLength(0);
     expect(stateOf(ctl, original)).toBe("submitted");
+    expect(ctl.getState().txs[original.id]?.stuck).toBeUndefined();
     w.primary.accepting = true;
     const next = await send(ctl, SEND);
     expect(next.nonce).toBe(bumped.nonce + 1);
   });
 
-  it("resumes the original's unknown handling once its replacement is gone", async () => {
+  it("a stuck replacement still shields its original's unknown handling", async () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     const original = await send(ctl, SEND);
@@ -421,17 +427,18 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.known.delete(hashOf(original));
     w.primary.known.delete(hashOf(bumped));
     w.primary.accepting = false;
-    await polls(timers);
-    await polls(timers);
-    w.clock.t += UNKNOWN_DROP_MS;
-    await polls(timers);
-    expect(stateOf(ctl, bumped)).toBe("dropped");
     w.primary.sent.length = 0;
     await polls(timers);
-    expect(w.primary.sent).toHaveLength(1);
-    w.clock.t += UNKNOWN_DROP_MS;
     await polls(timers);
-    expect(stateOf(ctl, original)).toBe("dropped");
+    w.clock.t += STUCK_AFTER_MS;
+    await polls(timers);
+    // The replacement turned stuck — still live, so the original's absence stays explained:
+    // it neither rebroadcasts nor marks itself stuck.
+    expect(stateOf(ctl, bumped)).toBe("submitted");
+    expect(ctl.getState().txs[bumped.id]?.stuck).toBe(true);
+    expect(stateOf(ctl, original)).toBe("submitted");
+    expect(ctl.getState().txs[original.id]?.stuck).toBeUndefined();
+    expect(w.primary.sent.filter((raw) => raw === original.raw)).toHaveLength(0);
   });
 
   it("a dropped original does not mark its replacement replaced", async () => {
