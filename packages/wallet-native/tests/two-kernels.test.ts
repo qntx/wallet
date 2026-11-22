@@ -18,7 +18,6 @@ import { createNativeWallet } from "../src/index.ts";
 
 vi.mock("react-native-nitro-modules", () => ({
   NitroModules: { createHybridObject: vi.fn() },
-  getHostComponent: vi.fn(() => ({})),
 }));
 
 const PASSKEY: PasskeyConfig = {

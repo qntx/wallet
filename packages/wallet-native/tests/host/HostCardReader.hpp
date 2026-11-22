@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "host/CardReader.hpp"
+
 namespace qntxTestCardReader {
 
 struct Close {
@@ -24,5 +26,8 @@ int transmits();
 // Fires one held completion ("hold" open / 0xEF transmit) on a detached
 // thread; false when nothing is held.
 bool fireHeld();
+// Same, but completes with the given result instead of the held one —
+// for stale-completion tests that pick the old call's answer.
+bool fireHeldAs(qntx::CardReaderResult result);
 
 } // namespace qntxTestCardReader

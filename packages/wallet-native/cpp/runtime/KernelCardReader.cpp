@@ -218,15 +218,15 @@ void installKernelCardReader(
           }
           auto shared = std::make_shared<CardReaderResult>(std::move(result));
           state->enqueueTask([state, session, call, shared](jsi::Runtime& rt) {
-            if (session->open == call) {
-              session->open.reset();
-            }
-            if (session->phase == Phase::closed) {
-              // The kernel already closed this session: settle the call and
-              // ignore the platform's late answer.
+            if (session->open != call) {
+              // This call is no longer the session's open: the kernel
+              // already closed this session (and possibly opened a new
+              // one). Settle it and leave phase, ownership and the
+              // platform session alone.
               settle(rt, state, call, {ascii(rt, "cancelled"), jsi::Value::undefined()});
               return;
             }
+            session->open.reset();
             if (shared->status == CardReaderStatus::ok) {
               session->phase = Phase::connected;
               settle(rt, state, call, {jsi::Value::undefined(), jsi::Value::undefined()});
@@ -283,15 +283,15 @@ void installKernelCardReader(
           }
           auto shared = std::make_shared<CardReaderResult>(std::move(result));
           state->enqueueTask([state, session, call, shared](jsi::Runtime& rt) {
-            if (session->transmit == call) {
-              session->transmit.reset();
-            }
-            if (session->phase == Phase::closed) {
+            if (session->transmit != call) {
+              // Same rule as open: a late answer for a superseded call is
+              // settled cancelled and must not touch the current session.
               settle(
                   rt, state, call,
                   {jsi::Value::undefined(), ascii(rt, "cancelled"), jsi::Value::undefined()});
               return;
             }
+            session->transmit.reset();
             if (shared->status == CardReaderStatus::ok &&
                 shared->response.size() >= kResponseMin &&
                 shared->response.size() <= kResponseMax) {

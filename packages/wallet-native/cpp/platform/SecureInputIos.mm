@@ -198,7 +198,10 @@
     }
     [filtered appendString:[NSString stringWithCharacters:&c length:1]];
   }
+  // Returning NO suppresses UIControlEventEditingChanged, so the state
+  // transition has to be reported from here.
   _field.text = filtered;
+  [self textChanged];
   return NO;
 }
 

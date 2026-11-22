@@ -79,6 +79,20 @@ int transmits() {
   return state().transmits;
 }
 
+bool fireHeldAs(qntx::CardReaderResult result) {
+  std::optional<Held> held;
+  {
+    std::lock_guard<std::mutex> lock(state().mutex);
+    if (state().held.empty()) {
+      return false;
+    }
+    held = std::move(state().held.front());
+    state().held.pop_front();
+  }
+  completeLater(std::move(held->done), std::move(result));
+  return true;
+}
+
 bool fireHeld() {
   std::optional<Held> held;
   {

@@ -14,7 +14,6 @@ import { spawnFromHost } from "../src/index.ts";
 
 vi.mock("react-native-nitro-modules", () => ({
   NitroModules: { createHybridObject: vi.fn() },
-  getHostComponent: vi.fn(() => ({})),
 }));
 
 const realtime: SetTimer = (delayMs, fn) => {

@@ -70,6 +70,10 @@ NSString* nsString(const std::string& text) {
 @implementation QntxNfcSession {
   dispatch_queue_t _queue;
   NFCTagReaderSession* _session;
+  // A session close() invalidated that has not delivered didInvalidate yet —
+  // its delegate events must never touch `_session`, which may already be a
+  // newer session.
+  NFCTagReaderSession* _closing;
   id<NFCISO7816Tag> _isoTag;
   qntx::CardReaderDone _openDone;
   qntx::CardReaderDone _txDone;
@@ -113,7 +117,7 @@ NSString* nsString(const std::string& text) {
       done({qntx::CardReaderStatus::unavailable, {}, "ios:busy"});
       return;
     }
-    if (_session != nil) {
+    if (_session != nil || _closing != nil) {
       // didInvalidate has not arrived yet: a session cannot be reused or
       // re-begun until it does (I8). Hold the open.
       _queuedOpen = std::make_pair(std::move(prompt), std::move(done));
@@ -155,9 +159,16 @@ NSString* nsString(const std::string& text) {
       return;
     }
     _txDone = std::move(done);
-    [_isoTag sendCommandAPDU:command
+    NFCTagReaderSession* session = _session;
+    id<NFCISO7816Tag> isoTag = _isoTag;
+    [isoTag sendCommandAPDU:command
          completionHandler:^(NSData* _Nullable data, uint8_t sw1, uint8_t sw2,
                              NSError* _Nullable error) {
+           if (session != _session) {
+             // The call belonged to a session that close() already moved
+             // aside — its done was completed cancelled there.
+             return;
+           }
            auto txDone = std::move(_txDone);
            _txDone = nullptr;
            if (error != nil) {
@@ -186,6 +197,19 @@ NSString* nsString(const std::string& text) {
     if (queued.has_value() && queued->second != nullptr) {
       queued->second({qntx::CardReaderStatus::cancelled, {}, {}});
     }
+    // Anything still in flight on the closing session is cancelled now —
+    // its didInvalidate later must not complete a newer session's calls.
+    auto openDone = std::move(_openDone);
+    _openDone = nullptr;
+    auto txDone = std::move(_txDone);
+    _txDone = nullptr;
+    const qntx::CardReaderResult cancelled{qntx::CardReaderStatus::cancelled, {}, {}};
+    if (openDone != nullptr) {
+      openDone(cancelled);
+    }
+    if (txDone != nullptr) {
+      txDone(cancelled);
+    }
     if (_session == nil) {
       return;
     }
@@ -197,6 +221,9 @@ NSString* nsString(const std::string& text) {
     } else {
       [_session invalidateSession];
     }
+    // Keep the invalidated session: its didInvalidate still has to arrive
+    // and must be told apart from a newer session's events.
+    _closing = _session;
     _session = nil;
     _isoTag = nil;
   });
@@ -204,6 +231,9 @@ NSString* nsString(const std::string& text) {
 
 - (void)tagReaderSession:(NFCTagReaderSession*)session
     didDetectTags:(NSArray<id<NFCTag>>*)tags {
+  if (session != _session) {
+    return;
+  }
   if (_openDone == nullptr || tags.count != 1 ||
       tags.firstObject.type != NFCTagTypeISO7816Compatible) {
     // Anything that is not exactly one ISO-DEP tag: keep polling without
@@ -214,6 +244,9 @@ NSString* nsString(const std::string& text) {
   id<NFCTag> tag = tags.firstObject;
   [session connectToTag:tag
       completionHandler:^(NSError* _Nullable error) {
+        if (session != _session) {
+          return;
+        }
         if (error != nil) {
           auto result = resultOf(error);
           [_session invalidateSession];
@@ -233,10 +266,19 @@ NSString* nsString(const std::string& text) {
 
 - (void)tagReaderSession:(NFCTagReaderSession*)session
     didInvalidateWithError:(NSError*)error {
-  _session = nil;
-  _isoTag = nil;
-  [self failAll:resultOf(error)];
-  if (_queuedOpen.has_value()) {
+  if (session == _closing) {
+    // The session close() invalidated delivered its final event: it may
+    // now be replaced.
+    _closing = nil;
+  } else if (session == _session) {
+    _session = nil;
+    _isoTag = nil;
+    [self failAll:resultOf(error)];
+  } else {
+    // A session older than _closing: nothing live refers to it.
+    return;
+  }
+  if (_queuedOpen.has_value() && _session == nil && _closing == nil) {
     auto queued = std::move(_queuedOpen);
     _queuedOpen = std::nullopt;
     [self beginWithPrompt:std::move(queued->first) done:std::move(queued->second)];

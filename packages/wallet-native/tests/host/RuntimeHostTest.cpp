@@ -1286,6 +1286,109 @@ __qntx.cardReader.open("s", function (code) {
   return g_failures;
 }
 
+// A platform answer for a call the kernel already closed must not touch the
+// session that replaced it: an old ok must not mark the new session
+// connected, an old failure must not end it or close the new platform
+// session. Run once with the stale answer ok, once with a failure.
+int cardReaderStale() {
+  for (const bool staleFails : {false, true}) {
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+cr.open("hold", function (code) { __send("stale:" + code); });
+cr.close("failure", "");
+cr.open("hold", function (o) {
+  __send("open2:" + (o === undefined));
+  cr.transmit(new Uint8Array([0, 0xA4, 0, 0, 7]), function (v, c) {
+    cr.close("success", "done");
+    __send("tx:" + (v instanceof Uint8Array && v.length === 3 && v[0] === 7) + ":" + c);
+  });
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    // The kernel's own close settles the held first open cancelled.
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-stale: close never settled");
+    {
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(box.posts[0] == "stale:cancelled", "card-reader-stale: the held open settled wrong");
+    }
+    // The stale answer for the first session lands while the second is
+    // still opening — held at the platform until we release it.
+    const qntx::CardReaderResult stale =
+        staleFails ? qntx::CardReaderResult{qntx::CardReaderStatus::tagLost, {}, "old"}
+                   : qntx::CardReaderResult{qntx::CardReaderStatus::ok, {}, {}};
+    CHECK(qntxTestCardReader::fireHeldAs(stale), "card-reader-stale: the first open was not held");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(
+        qntxTestCardReader::fireHeldAs(qntx::CardReaderResult{qntx::CardReaderStatus::ok, {}, {}}),
+        "card-reader-stale: the second open was not held");
+    CHECK(box.waitPosts(3, std::chrono::seconds(30)) == 3, "card-reader-stale: session two broke");
+    {
+      const auto closes = qntxTestCardReader::closes();
+      // Exactly the kernel's own silent failure close and its closing
+      // message — a stale answer must not close the new platform session.
+      CHECK(
+          closes.size() == 2 && !closes[0].success && closes[0].text.empty() &&
+              closes[1].success && closes[1].text == "done",
+          "card-reader-stale: a stale completion closed or broke the new session");
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(
+          box.posts.size() == 3 && box.posts[1] == "open2:true" && box.posts[2] == "tx:true:undefined",
+          "card-reader-stale: the new session answered wrong");
+      CHECK(box.errors.empty(), "card-reader-stale: unexpected onError");
+    }
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-stale: runtime still running");
+  }
+  {
+    // The same rule for a held transmit: open ok, park a transmit, close,
+    // reopen, then fire the old transmit's answer at the new session.
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+function step(fn) { return new Promise(function (resolve) { fn(function (a, b, c) { resolve([a, b, c]); }); }); }
+step(function (cb) { cr.open("s", cb); }).then(function () {
+  cr.transmit(new Uint8Array([0, 0xEF, 0, 0]), function (v, c) { __send("stale-tx:" + c); });
+  cr.close("failure", "");
+  return step(function (cb) { cr.open("s2", cb); });
+}).then(function (o) {
+  __send("open2:" + (o[0] === undefined));
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xA4, 0, 0, 9]), cb); });
+}).then(function (t) {
+  cr.close("success", "done");
+  __send("tx:" + (t[0] instanceof Uint8Array && t[0].length === 3 && t[0][0] === 9) + ":" + t[1]);
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-stale: close never settled");
+    {
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(box.posts[0] == "stale-tx:cancelled", "card-reader-stale: the held transmit settled wrong");
+    }
+    CHECK(
+        qntxTestCardReader::fireHeldAs(
+            qntx::CardReaderResult{qntx::CardReaderStatus::tagLost, {}, "old"}),
+        "card-reader-stale: the transmit was not held");
+    CHECK(box.waitPosts(3, std::chrono::seconds(30)) == 3, "card-reader-stale: session two broke");
+    {
+      const auto closes = qntxTestCardReader::closes();
+      CHECK(
+          closes.size() == 2 && !closes[0].success && closes[1].success,
+          "card-reader-stale: a stale transmit answer closed the new session");
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(
+          box.posts.size() == 3 && box.posts[1] == "open2:true" && box.posts[2] == "tx:true:undefined",
+          "card-reader-stale: the new session answered wrong");
+      CHECK(box.errors.empty(), "card-reader-stale: unexpected onError");
+    }
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-stale: runtime still running");
+  }
+  return g_failures;
+}
+
 // The secure-input bridge: requests arm the shared hub's prompt, a view's
 // submit returns the bytes as a fresh Uint8Array, a bad submit is refused
 // without completing, cancel maps to cancelled, a second request of the same
@@ -2477,6 +2580,7 @@ int main(int argc, char** argv) {
       {"card-reader-binding", [](const char*) { return cardReaderBinding(); }},
       {"card-reader-busy", [](const char*) { return cardReaderBusy(); }},
       {"card-reader-teardown", [](const char*) { return cardReaderTeardown(); }},
+      {"card-reader-stale", [](const char*) { return cardReaderStale(); }},
       {"secure-input-binding", [](const char*) { return secureInputBinding(); }},
       {"secure-input-teardown", [](const char*) { return secureInputTeardown(); }},
       {"secure-input-hub", [](const char*) { return secureInputHubCase(); }},

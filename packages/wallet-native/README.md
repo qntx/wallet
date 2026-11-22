@@ -57,11 +57,21 @@ To talk to a qntx card the host app needs, on iOS:
   `["F0716E74780101", "D2760000850101"]` — every AID a `SELECT` may name must be declared or
   CoreNFC rejects it (the wallet applet and its NDEF applet, protocol §2).
 
-For the secure-input field, render `SecureInput` exported from this package wherever the wallet
-asks for the card's access code or short ID. Its `onStateChange` callback (and every Nitro view
-callback) must be wrapped with `callback(...)` from `react-native-nitro-modules`. The component
-takes no other props: the kernel decides the kind and the label; the main runtime only observes
-`idle | empty | filled | submitted`.
+For the secure-input field, render `SecureInput` from the `@qntx/wallet-native/secure-input`
+subpath wherever the wallet asks for the card's access code or short ID:
+
+```tsx
+import { callback } from "react-native-nitro-modules";
+
+import { SecureInput } from "@qntx/wallet-native/secure-input";
+
+<SecureInput onStateChange={callback((state) => setState(state))} />;
+```
+
+Its `onStateChange` callback (and every Nitro view callback) must be wrapped with
+`callback(...)`. The component takes no other props: the kernel decides the kind and the label;
+the main runtime only observes `idle | empty | filled | submitted`. The component lives on a
+subpath so importing the package root does not eagerly load the Nitro view machinery.
 
 ## Usage
 
