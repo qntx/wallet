@@ -445,6 +445,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     gateway,
     setTimer,
     random: options.random,
+    now: options.now,
   });
 
   const assets = new AssetsController({

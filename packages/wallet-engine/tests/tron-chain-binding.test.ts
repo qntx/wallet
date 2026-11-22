@@ -14,6 +14,7 @@ import {
   tronRawDataFromJson,
 } from "@qntx/wallet-chains/tron";
 
+import { TronThrottledError, pinnedTronCaller } from "../src/chains/tron.ts";
 import type { TronApi } from "../src/chains/tron.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import type {
@@ -189,6 +190,11 @@ const hostApiFailingNum = (
 });
 
 const NILE = { id: NET, genesisHash: GENESIS, testnet: true } as const;
+const MAINNET_NET = {
+  id: "tron:728126428",
+  genesisHash: MAINNET_GENESIS,
+  testnet: false,
+} as const;
 
 const ctx = (
   w: World & { api: TronApi },
@@ -196,6 +202,7 @@ const ctx = (
   net:
     | typeof NILE
     | { readonly id: string; readonly genesisHash: string; readonly testnet: boolean } = NILE,
+  pinned?: (network: string, until?: () => number) => TronApi,
 ): { ctx: RouteContext; transitions: TrackedTransaction[] } => {
   const transitions: TrackedTransaction[] = [];
   return {
@@ -204,7 +211,7 @@ const ctx = (
       options: {
         networks: {
           tronApi: () => w.api,
-          pinnedTronApi: () => w.api,
+          pinnedTronApi: pinned ?? (() => w.api),
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
           info: () => net,
@@ -488,5 +495,92 @@ describe("a gateway-only mainnet build goes ahead flagged reads-unverified", () 
     wv.blockIds.delete(100);
     wv.independent = { kind: "unavailable" }; // the host endpoint is now gone
     await expect(prepared.staleReason()).resolves.toBeUndefined();
+  });
+});
+
+describe("throttled pinned reads retry inside the validity window", () => {
+  /* The world's answering node behind a real pinnedTronCaller: `reads` counts leading 503
+     answers, `broadcast` answers the broadcast path with 429. The injected clock starts where
+     the ctx's `now` puts the build window, and the `until` the flow hands down is the
+     transaction's remaining validity — exactly what the controller builds in production. */
+  const callerWorld = (
+    net: { readonly id: string; readonly genesisHash: string; readonly testnet: boolean },
+    throttle: { reads: number; broadcast: number },
+  ): {
+    w: ReturnType<typeof world>;
+    c: { ctx: RouteContext; transitions: TrackedTransaction[] };
+    sleeps: number[];
+    broadcastCalls: number[];
+  } => {
+    const w = world({
+      blockIds: new Map([
+        [0, net.genesisHash],
+        [100, SOLID_ID],
+      ]),
+      independent: { kind: "unavailable" },
+    });
+    const sleeps: number[] = [];
+    const broadcastCalls: number[] = [];
+    const clock = { v: 1_000_000 };
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      await Promise.resolve();
+      const url = String(input);
+      const path = url.slice(url.indexOf("/wallet"));
+      if (path.includes("broadcast")) {
+        broadcastCalls.push(1);
+      }
+      if (path.includes("broadcast") && throttle.broadcast > 0) {
+        throttle.broadcast -= 1;
+        return new Response("busy", { status: 429, headers: { "retry-after": "1" } });
+      }
+      if (throttle.reads > 0) {
+        throttle.reads -= 1;
+        return new Response("busy", { status: 503, headers: { "retry-after": "1" } });
+      }
+      const parsed = await w.answerNode(path, JSON.parse(String(init?.body ?? "{}")));
+      return Response.json(parsed ?? {});
+    };
+    const pinned = (_network: string, until?: () => number): TronApi =>
+      pinnedTronCaller(
+        ["https://pin.test"],
+        fetchFn,
+        until === undefined
+          ? undefined
+          : {
+              until,
+              now: () => clock.v,
+              sleep: async (ms) => {
+                await Promise.resolve();
+                sleeps.push(ms);
+                clock.v += ms;
+              },
+            },
+      );
+    return { w, c: ctx(w, () => 1_000_000, net, pinned), sleeps, broadcastCalls };
+  };
+
+  it("a mainnet send whose pinned reads get 503 twice signs, waiting ≤ the stale bound", async () => {
+    const { w, c, sleeps } = callerWorld(MAINNET_NET, { reads: 2, broadcast: 0 });
+    const prepared = await prepareTron(c.ctx, params({ network: MAINNET_NET.id }));
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).toBe("submitted");
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(40_000);
+    expect(w.signCalls).toBe(1);
+  });
+
+  it("a persistently throttled read ends in TronThrottledError, still unsigned", async () => {
+    const { w, c } = callerWorld(MAINNET_NET, { reads: Number.MAX_SAFE_INTEGER, broadcast: 0 });
+    await expect(prepareTron(c.ctx, params({ network: MAINNET_NET.id }))).rejects.toThrow(
+      TronThrottledError,
+    );
+    expect(w.signCalls).toBe(0);
+  });
+
+  it("a broadcast 429 at submit is not retried — the bytes may already be out", async () => {
+    const { c, sleeps, broadcastCalls } = callerWorld(MAINNET_NET, { reads: 0, broadcast: 1 });
+    const prepared = await prepareTron(c.ctx, params({ network: MAINNET_NET.id }));
+    await prepared.submit(VERIFY, () => undefined);
+    expect(sleeps).toStrictEqual([]);
+    expect(broadcastCalls).toHaveLength(1);
   });
 });
