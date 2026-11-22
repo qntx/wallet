@@ -72,7 +72,7 @@ const kernelError = async (fn: () => unknown, code?: string): Promise<void> => {
 
 describe("seedKeys material", () => {
   const PATHS: ReadonlyArray<readonly [string, KeyPath]> = [
-    ["m/", []],
+    ["m", []],
     ["m/44'/60'/0'/0/0", [44 + HARDENED, 60 + HARDENED, HARDENED, 0, 0]],
     ["m/44'/195'/0'/0/0", [44 + HARDENED, 195 + HARDENED, HARDENED, 0, 0]],
     ["m/84'/0'/0'/0/0", [84 + HARDENED, HARDENED, HARDENED, 0, 0]],

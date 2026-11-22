@@ -22,7 +22,7 @@ const HARDENED = 0x80000000;
 
 /** `m/…` notation of a task path — hardened indices print with `'`. */
 export const pathString = (path: KeyPath): string =>
-  `m/${path.map((i) => (i >= HARDENED ? `${i - HARDENED}'` : String(i))).join("/")}`;
+  `m${path.map((i) => (i >= HARDENED ? `/${i - HARDENED}'` : `/${i}`)).join("")}`;
 
 /** Public-key and xpub access the kernel's checks need — never private key material. */
 export type PublicMaterial = {
