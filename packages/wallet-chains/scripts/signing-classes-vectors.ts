@@ -1853,6 +1853,67 @@ const cases: VectorCase[] = [
     ),
   },
   {
+    /* The published 0x gasless-v2 API response document (0xProject/0x-examples@3b296df0
+       gasless-v2-headless-example/README.md, trade.eip712) — a real Base USDC→WETH MetaTxn
+       order through the feature-3 Settler. */
+    name: "0x gasless Settler MetaTxn Permit2 witness (EIP-712)",
+    request: {
+      ...typedData({
+        types: {
+          PermitWitnessTransferFrom: [
+            { name: "permitted", type: "TokenPermissions" },
+            { name: "spender", type: "address" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint256" },
+            { name: "slippageAndActions", type: "SlippageAndActions" },
+          ],
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TokenPermissions: [
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          SlippageAndActions: [
+            { name: "recipient", type: "address" },
+            { name: "buyToken", type: "address" },
+            { name: "minAmountOut", type: "uint256" },
+            { name: "actions", type: "bytes[]" },
+          ],
+        },
+        domain: {
+          name: "Permit2",
+          chainId: 8453,
+          verifyingContract: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        },
+        message: {
+          permitted: { token: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", amount: "100000" },
+          spender: "0x5ce929ddb01804bff35b2f5c77b735bdb094aac8",
+          nonce: "2241959297937691820908574931991581",
+          deadline: "1721085355",
+          slippageAndActions: {
+            recipient: "0x4d2a422db44144996e855ce15fb581a477dbb947",
+            buyToken: "0x4200000000000000000000000000000000000006",
+            minAmountOut: "25345560227526",
+            actions: ["0x0dfeb41900", "0x38c9c14700"],
+          },
+        },
+        primaryType: "PermitWitnessTransferFrom",
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm swap",
+      "确认兑换",
+      `App: Permit2\n${netBase}\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x5CE929DDB01804bfF35B2F5c77b735bdB094AAc8 to take 0.1 USDC once via Permit2 until 2024-07-15 (UTC)\n0x order by ${SIGNER}\nGive at most 0.1 USDC\n0x4D2A422dB44144996E855ce15FB581a477dbB947 receives at least 0.000025345560227526 WETH\nValid until 2024-07-15 23:15 (UTC)`,
+      `应用：Permit2\n${netBaseZh}\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x5CE929DDB01804bfF35B2F5c77b735bdB094AAc8 一次性转走 0.1 USDC 经 Permit2 至 2024-07-15（UTC）\n0x 订单，挂单方 ${SIGNER}\n最多付出 0.1 USDC\n0x4D2A422dB44144996E855ce15FB581a477dbB947 至少收到 0.000025345560227526 WETH\n有效期至 2024-07-15 23:15（UTC）`,
+    ),
+  },
+  {
     name: "Snapshot Vote (EIP-712)",
     request: typedData({
       types: {

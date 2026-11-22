@@ -16,11 +16,12 @@ import {
 } from "./typed-data.ts";
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 import { recognizeUniswapX } from "./uniswapx.ts";
+import { recognizeZeroXMetaTxn } from "./zerox.ts";
 
 export type Permit = {
   readonly approvals: ReadonlyArray<ApprovalChange>;
   readonly warnings: ReadonlyArray<IntentWarning>;
-  /** The order the witness signs when it is a recognised UniswapX order. */
+  /** The order the witness signs when it is a recognised off-chain order. */
   readonly order?: OffchainOrder;
   /**
    * The witness subtree's leaves when no order protocol recognised it, paths under `witness.`;
@@ -192,9 +193,11 @@ const recognizePermit2 = (
   }
   const own = types[primaryType];
   const last = own?.at(-1);
+  /* The last witness field is `witness` for the order protocols, or `slippageAndActions` for a
+     0x gasless MetaTxn document — the recogniser alone decides whether the shape is valid. */
   const fieldsOk = witness
     ? sameFields({ ...types, [primaryType]: own?.slice(0, -1) ?? [] }, primaryType, expected) &&
-      last?.name === "witness" &&
+      (last?.name === "witness" || last?.name === "slippageAndActions") &&
       types[last.type] !== undefined
     : sameFields(types, primaryType, expected);
   const deadline = uint(message["deadline"], MAX_UINT256);
@@ -224,7 +227,13 @@ const witnessOutcome = (
   signer: string,
   chainId: number,
   table: EvmTokenTable,
-): Permit => {
+): Permit | undefined => {
+  /* A `slippageAndActions` witness is recognised only as an exact 0x MetaTxn order; anything
+     else stays unrecognised and the Permit2 claim blinds the document as a variant. */
+  if (json.types[json.primaryType]?.at(-1)?.name === "slippageAndActions") {
+    const order = recognizeZeroXMetaTxn(json, signer, chainId, table);
+    return order === undefined ? undefined : { approvals: result.approvals, warnings: [], order };
+  }
   const uniswapx = recognizeUniswapX(json, signer, chainId, table);
   if (uniswapx?.kind === "order") {
     return { approvals: result.approvals, warnings: [], order: uniswapx.order };

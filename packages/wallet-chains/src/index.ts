@@ -389,7 +389,7 @@ export type SeaportOrder = {
 
 /** A recognised off-chain order: what it can take from the maker and the least each recipient gets. */
 export type OffchainOrder = {
-  readonly protocol: "1inch" | "uniswapx" | "cow";
+  readonly protocol: "1inch" | "uniswapx" | "cow" | "0x";
   /** Whose funds the order spends (EIP-55). */
   readonly maker: string;
   /** The most the order can take from the maker. */

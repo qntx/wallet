@@ -1228,6 +1228,7 @@ const ORDER_PROTOCOL_NAME: Readonly<Record<OffchainOrder["protocol"], string>> =
   "1inch": "1inch",
   uniswapx: "UniswapX",
   cow: "CoW Protocol",
+  "0x": "0x",
 };
 
 /** The lines of a recognised off-chain order: header, the most it gives, the least each gets. */

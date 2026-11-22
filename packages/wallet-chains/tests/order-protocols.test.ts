@@ -14,6 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { GPV2_CHAINS, GPV2_SETTLEMENT } from "../src/evm/cow.ts";
 import { V6_CHAINS, V6_ROUTER, V6_ZKSYNC_ROUTER } from "../src/evm/oneinch.ts";
 import { REACTORS } from "../src/evm/uniswapx.ts";
+import { isZeroExSettler } from "../src/evm/zerox.ts";
 import { RECOGNISED_FAMILIES } from "../src/families.ts";
 
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
@@ -32,6 +33,8 @@ type Vector = {
   readonly separator?: string;
   readonly permit2?: string;
   readonly permit2MatchesCanonical?: boolean;
+  readonly owner?: string;
+  readonly nonce?: number;
 };
 
 const vectors = JSON.parse(
@@ -171,4 +174,14 @@ describe("order-protocols vectors", () => {
   it("an exposed eip712Domain names the family's domain name", () => {
     expect(mismatchedDomains).toStrictEqual([]);
   });
+
+  it.each(vectors.filter((vector) => vector.label === "zerox-metatxn"))(
+    "the probed MetaTxn settler on chain $chainId derives from feature 3",
+    ({ chainId, owner, nonce, codePresent }) => {
+      expect(codePresent).toBe(true);
+      expect(owner).toBeDefined();
+      expect(nonce).toBeDefined();
+      expect(isZeroExSettler(chainId, owner ?? "", 3n)).toBe(true);
+    },
+  );
 });
