@@ -235,13 +235,18 @@ export class AppsController extends Controller<AppsState> {
   async lock(): Promise<void> {
     this.generation += 1;
     this.flowGen.clear();
+    this.busy.clear();
+    /* Agent/decline hints are account data too — `init` re-derives both from the store. */
+    this.enabledAgents.clear();
+    this.declinedBuilders.clear();
     for (const id of this.pendingRequests) {
       this.deps.requests.reject(id);
     }
     this.pendingRequests.clear();
     const store = this.engineStore;
     this.engineStore = undefined;
-    this.update((state) => ({ ...state, locked: true }));
+    /* A locked vault holds no account data — eligibility is not account data and stays. */
+    this.update((state) => ({ ...state, locked: true, groups: {} }));
     await store?.close();
   }
 

@@ -518,4 +518,42 @@ describe("apps hyperliquid enablement on the node host", () => {
     await expect(kernelAgents(w)).resolves.toHaveLength(1);
     await w.destroy();
   });
+
+  it(
+    "lock leaves no group or agent data in state; unlock repopulates it from the store",
+    { timeout: 30000 },
+    async () => {
+      const w = await world(50, { openStore: restartableStore() });
+      await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+      await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+      expect(w.state()?.agent?.address).toMatch(/^0x/);
+      await w.wallet.vault.lock();
+      await until(() => w.apps.getState().locked, 2000);
+      /* Eligibility is not account data — it survives; every group/agent record does not. */
+      expect(w.apps.getState().eligibility.status).toBe("ready");
+      expect(w.apps.getState().groups).toStrictEqual({});
+      await w.wallet.vault.unlock(VERIFY);
+      await until(() => restoredStatus(w), 10_000);
+      expect(w.state()?.agent?.address).toMatch(/^0x/);
+      await w.destroy();
+    },
+  );
+
+  it(
+    "the nonce clock keeps counting across a lock — the first unlock nonce is greater",
+    { timeout: 30000 },
+    async () => {
+      const w = await world(51, { openStore: restartableStore() });
+      const agent = "0x000000000000000000000000000000000000beef";
+      const before = w.provider.clock.nextNonce(agent);
+      await w.wallet.vault.lock();
+      await until(() => w.apps.getState().locked, 2000);
+      await w.wallet.vault.unlock(VERIFY);
+      await until(() => !w.apps.getState().locked, 10_000);
+      /* Two nonce calls would be strictly increasing anyway — the point is the same clock object
+         survives the lock: `lastNonce` is never reset, so no unlock nonce can repeat. */
+      expect(w.provider.clock.nextNonce(agent)).toBeGreaterThan(before);
+      await w.destroy();
+    },
+  );
 });

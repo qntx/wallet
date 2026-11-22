@@ -55,7 +55,10 @@ export type LiveView<T> = {
   readonly getState: () => LiveState<T>;
   /** Listener on every state change; returns an unsubscribe. */
   readonly subscribe: (listener: (state: LiveState<T>) => void) => () => void;
-  /** Drops the subscription — the view keeps its last state and never updates again. */
+  /**
+   * Drops the subscription and never updates again. Market views keep their last state; account
+   * views (`account`, `spotState`, `openOrders`, `fills`) report `stale` with no data.
+   */
   readonly close: () => Promise<void>;
 };
 
@@ -195,6 +198,9 @@ const liveFromPromise = <T>(build: () => Promise<LiveView<T>>): LiveView<T> => {
       await ready;
       innerOff?.();
       await inner?.close();
+      /* A user view serves account data — once closed nothing stays readable, even while the
+         inner view was still being built. */
+      emit({ status: "stale", data: undefined, updatedAt: undefined });
     },
   };
 };
@@ -215,7 +221,9 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
     }
     walletUnsubscribe ??= wallet.subscribe(() => {
       if (wallet.getSnapshot().vault !== "unlocked") {
-        for (const v of userViews) {
+        /* `close` removes the view from the set — iterate a copy. */
+        // oxlint-disable-next-line unicorn/no-useless-spread -- the copy is the point.
+        for (const v of [...userViews]) {
           void v.close();
         }
       }
@@ -245,6 +253,8 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
      * `userFills` frame before its `isSnapshot`).
      */
     readonly frame?: (current: T | undefined, message: M) => T | undefined;
+    /** Account data: `close` clears it — a locked vault leaves nothing account-readable. */
+    readonly accountData?: boolean;
   }): LiveView<T> => {
     const listeners = new Set<(state: LiveState<T>) => void>();
     let data: T | undefined;
@@ -385,7 +395,9 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
         offStatus();
         await started;
         await subscription?.unsubscribe();
-        if (status !== "stale") {
+        if (args.accountData === true) {
+          set({ status: "stale", data: undefined, updatedAt: undefined });
+        } else if (status !== "stale") {
           set({ status: "stale" });
         }
       },
@@ -398,8 +410,17 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
   ): LiveView<T> => {
     /* The group resolves to its owner before subscribing; the view follows the lock. */
     const inner = liveFromPromise<T>(async () => build(await ownerOf(group)));
-    watchLock(inner);
-    return inner;
+    const view: LiveView<T> = {
+      getState: () => inner.getState(),
+      subscribe: (listener) => inner.subscribe(listener),
+      /* A closed user view leaves the lock set — a later lock has nothing left to close. */
+      close: async () => {
+        userViews.delete(view);
+        await inner.close();
+      },
+    };
+    watchLock(view);
+    return view;
   };
 
   return {
@@ -464,6 +485,7 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
             start: async (listener, onError) =>
               subClearinghouse(config, { user }, listener, { onError }),
             frame: (_current, message) => message,
+            accountData: true,
           }),
         group,
       ),
@@ -475,6 +497,7 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
             start: async (listener, onError) =>
               subSpotState(config, { user }, listener, { onError }),
             frame: (_current, message) => message,
+            accountData: true,
           }),
         group,
       ),
@@ -489,6 +512,7 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
               options.sighted?.(user, message);
               return message;
             },
+            accountData: true,
           }),
         group,
       ),
@@ -510,6 +534,7 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
               }
               return dedupeByTid([...message.fills, ...current]);
             },
+            accountData: true,
           }),
         group,
       ),
