@@ -214,7 +214,7 @@ describe("EvmChainAdapter", () => {
     await expect(a.blockHashAt(tipless, 5)).resolves.toBeUndefined();
   });
 
-  it("sums the margined L1 data fee and the operator fee read from the GasPriceOracle", async () => {
+  it("reads the L1 data fee and the operator fee from the GasPriceOracle", async () => {
     const calls: Array<{ to: string; data: string }> = [];
     const operatorAbi = parseAbi([
       "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
@@ -242,7 +242,7 @@ describe("EvmChainAdapter", () => {
       },
       { operatorFee: true, tokenRatio: false },
     );
-    expect(fee).toBe(1290n);
+    expect(fee).toStrictEqual({ raw: 1000n, extra: 40n });
     expect(calls).toHaveLength(2);
     expect(calls.map((c) => c.to.toLowerCase())).toStrictEqual([
       OP_GAS_PRICE_ORACLE.toLowerCase(),
@@ -270,7 +270,7 @@ describe("EvmChainAdapter", () => {
       },
       { operatorFee: false, tokenRatio: false },
     );
-    expect(fee).toBe(1250n);
+    expect(fee).toStrictEqual({ raw: 1000n, extra: 0n });
     expect(calls).toHaveLength(1);
   });
 
@@ -278,7 +278,7 @@ describe("EvmChainAdapter", () => {
     const calls: Array<{ to: string; data: string }> = [];
     const a = new EvmChainAdapter();
     const fee = await a.scrollL1Fee(oracleClient(calls, "0x"), SCROLL_TX);
-    expect(fee).toBe(1250n);
+    expect(fee).toStrictEqual({ raw: 1000n, extra: 0n });
     expect(calls).toHaveLength(1);
     expect(scrollBytes(calls)).toBe(
       serializeTransaction(

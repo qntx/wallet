@@ -155,6 +155,13 @@ must be confirmed by a host endpoint, and the answering node must report the con
 network's genesis. A gateway-only TRON or Solana send is refused rather than signed on one
 party's word.
 
+L1 data fees on OP Stack and Scroll move with the L1's own fee market, so the `l1Data` amount an
+intent displays is a bound, not the raw oracle read: the read plus three L1 price updates of at
+most ×9/8 (two for the inclusion window, one of review headroom). Approval re-reads the oracle
+before signing, and broadcast re-reads it again whenever the signature took longer than one
+12 s L1 slot; when the current price outgrows what the shown maximum covers the request ends
+(`the L1 data fee rose — start over`) — the host re-prepares and the user approves the new bound.
+
 The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of the collection and
 key, authenticates every value it reads back (a row that fails authentication reads as absent),
 and rebuilds a database keyed by another data key empty.

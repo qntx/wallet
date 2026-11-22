@@ -205,22 +205,22 @@ const firstLegacyTx = (requests: ReadonlyArray<Parameters<typeof fakeSignedEvm>[
 };
 
 describe("OP Stack L1 fee", () => {
-  it("adds the margined L1 data fee and the operator fee to the intent", async () => {
+  it("adds the bounded L1 data fee and the operator fee to the intent", async () => {
     const w = world();
     w.primary.l1 = 1000n;
     w.primary.operator = 234n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1484" });
+    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1658" });
     expect(prepared.checks).not.toContain("reads-unverified");
   });
 
-  it("rounds the margined L1 data fee up", async () => {
+  it("rounds the bounded L1 data fee up", async () => {
     const w = world();
     w.primary.l1 = 1001n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1252");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1426");
   });
 
   it("does not margin the operator fee", async () => {
@@ -274,7 +274,7 @@ describe("OP Stack L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
     expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("2500");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2848");
   });
 
   it("keeps the larger primary read when the independent one is smaller", async () => {
@@ -284,7 +284,7 @@ describe("OP Stack L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
     expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("2500");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2848");
   });
 
   it("agreeing reads raise no mismatch", async () => {
@@ -294,7 +294,7 @@ describe("OP Stack L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
     expect(prepared.checks).not.toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1375");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1567");
   });
 
   it("a failed read is reads-unverified and leaves the L1 fee out", async () => {
@@ -313,7 +313,7 @@ describe("OP Stack L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
     expect(prepared.checks).toContain("reads-unverified");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1250");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1424");
   });
 
   it("does not query the oracle on other networks", async () => {
@@ -336,7 +336,7 @@ describe("OP Stack L1 fee", () => {
       { method: "speed-up", txId: original.id },
       "req-2",
     );
-    expect(replacement.intent.fee?.l1Data?.amount).toBe("3750");
+    expect(replacement.intent.fee?.l1Data?.amount).toBe("4272");
   });
 
   it("persists the L1 fee with the transaction", async () => {
@@ -348,7 +348,7 @@ describe("OP Stack L1 fee", () => {
     const reloaded = await w.boot();
     expect(reloaded.getState().txs[tx.id]?.intent?.fee?.l1Data).toStrictEqual({
       asset: "native",
-      amount: "1250",
+      amount: "1424",
     });
   });
 
@@ -359,7 +359,7 @@ describe("OP Stack L1 fee", () => {
     w.primary.ratio = 4339n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(MANTLE, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("5423760");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("6178001");
     expect(w.primary.calls.map((c) => c.data.slice(0, 10)).toSorted()).toStrictEqual(
       [GET_L1_FEE, GET_OPERATOR_FEE, TOKEN_RATIO].toSorted(),
     );
@@ -374,7 +374,7 @@ describe("OP Stack L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(MANTLE, 1n), "req-1");
     expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("7500");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("8543");
   });
 
   it("reads no operator fee on opBNB", async () => {
@@ -382,7 +382,7 @@ describe("OP Stack L1 fee", () => {
     w.primary.l1 = 1000n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(OPBNB, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1250");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1424");
     expect(w.primary.calls.map((c) => c.data.slice(0, 10))).toStrictEqual([GET_L1_FEE]);
   });
 
@@ -405,16 +405,16 @@ describe("Scroll L1 fee", () => {
     w.primary.l1 = 1000n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1250" });
+    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1424" });
     expect(prepared.checks).not.toContain("reads-unverified");
   });
 
-  it("rounds the margined L1 data fee up", async () => {
+  it("rounds the bounded L1 data fee up", async () => {
     const w = world();
     w.primary.l1 = 1001n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1252");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1426");
   });
 
   it("queries the L1GasPriceOracle for the signed encoding, never the OP Stack oracle", async () => {
@@ -451,10 +451,10 @@ describe("Scroll L1 fee", () => {
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(SCROLL, 1n), "req-1");
     expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("2500");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2848");
   });
 
-  it("a replacement carries the margined L1 fee", async () => {
+  it("a replacement carries the bounded L1 fee", async () => {
     const w = world();
     w.primary.l1 = 1000n;
     const ctl = await w.boot();
@@ -465,6 +465,6 @@ describe("Scroll L1 fee", () => {
       { method: "speed-up", txId: original.id },
       "req-2",
     );
-    expect(replacement.intent.fee?.l1Data?.amount).toBe("3750");
+    expect(replacement.intent.fee?.l1Data?.amount).toBe("4272");
   });
 });
