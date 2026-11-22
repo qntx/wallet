@@ -9,6 +9,7 @@ import {
   getAddressDecoder,
   getAddressEncoder,
   getCompiledTransactionMessageEncoder,
+  getTransactionDecoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
@@ -35,20 +36,21 @@ const LOOKED_UP = addr(7);
 const READONLY_LOOKED_UP = addr(8);
 const PROGRAM = addr(9);
 
+const instruction = (accounts: Array<{ address: Address; role: AccountRole }>): Instruction => ({
+  programAddress: PROGRAM,
+  accounts: [{ address: OWNER, role: AccountRole.WRITABLE_SIGNER }, ...accounts],
+  data: new Uint8Array([1]),
+});
+
 const message = (
   accounts: Array<{ address: Address; role: AccountRole }>,
   tables?: Record<Address, Address[]>,
 ): Uint8Array => {
-  const instruction: Instruction = {
-    programAddress: PROGRAM,
-    accounts: [{ address: OWNER, role: AccountRole.WRITABLE_SIGNER }, ...accounts],
-    data: new Uint8Array([1]),
-  };
   const base = setTransactionMessageLifetimeUsingBlockhash(
     { blockhash: blockhash(addr(10)), lastValidBlockHeight: 1n },
     setTransactionMessageFeePayer(OWNER, createTransactionMessage({ version: 0 })),
   );
-  const withIx = appendTransactionMessageInstructions([instruction], base);
+  const withIx = appendTransactionMessageInstructions([instruction(accounts)], base);
   const final =
     tables === undefined
       ? withIx
@@ -166,6 +168,42 @@ describe("SolanaChainAdapter.simulate", () => {
     expect(sent[0]).toBe(1);
     expect(sent.slice(1, 65).every((byte) => byte === 0)).toBe(true);
     expect(sent.slice(65)).toStrictEqual(msg);
+  });
+
+  it("sends a v1 message first — signatures trail it, no count prefix", async () => {
+    const fake = fakeRpc({ pre: {}, post: {} });
+    const msg = new Uint8Array(
+      getCompiledTransactionMessageEncoder().encode(
+        compileTransactionMessage(
+          setTransactionMessageLifetimeUsingBlockhash(
+            { blockhash: blockhash(addr(10)), lastValidBlockHeight: 1n },
+            setTransactionMessageFeePayer(
+              OWNER,
+              appendTransactionMessageInstructions(
+                [instruction([])],
+                createTransactionMessage({ version: 1 }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await simulate(fake, msg);
+    const sent = base64.decode(String(fake.calls[1]?.params[0]));
+    expect(sent.slice(0, msg.length)).toStrictEqual(msg);
+    expect(sent.slice(msg.length).every((byte) => byte === 0)).toBe(true);
+    const decoded = getTransactionDecoder().decode(sent);
+    expect(new Uint8Array(decoded.messageBytes)).toStrictEqual(msg);
+  });
+
+  it("finalize refuses more signatures than the message has accounts", () => {
+    const msg = message([]);
+    const sig = new Uint8Array(64);
+    const adapter = new SolanaChainAdapter();
+    const tooMany = Array.from({ length: 10 }, () => sig);
+    expect(() => adapter.finalize(msg, tooMany)).toThrow(
+      "more signatures than the message has accounts",
+    );
   });
 
   it("sums token deltas per mint over the owner's token accounts only", async () => {

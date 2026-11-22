@@ -1,3 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import {
+  getCompiledTransactionMessageDecoder,
+  getCompiledTransactionMessageEncoder,
+} from "@solana/transaction-messages";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -5,7 +12,7 @@ import { decodeBitcoinPsbt } from "../src/bitcoin/index.ts";
 import { decodeEvm, normalizeEvm } from "../src/evm/index.ts";
 import { ChainError, parseSignIn } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
-import { normalizeSolana } from "../src/solana/index.ts";
+import { decodeSolana, normalizeSolana, parseCompiledMessage } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
 import { normalizeTron } from "../src/tron/index.ts";
 import { tronRawDataFromJson } from "../src/tron/json.ts";
@@ -168,6 +175,22 @@ describe("Solana and Bitcoin decode fuzz", () => {
     );
   });
 
+  it("normalizeSolana on arbitrary 0x81-prefixed bytes returns a value or a ChainError", () => {
+    fc.assert(
+      fc.property(fc.uint8Array(), (suffix) => {
+        const message = new Uint8Array([0x81, ...suffix]);
+        const request: SignRequest = {
+          kind: "solana.transaction",
+          network: SOL_NET,
+          account: SOL_ACCOUNT,
+          message,
+        };
+        expect(okOrChainError(attempt(() => normalizeSolana(request, SOL_SIGNER)))).toBe(true);
+      }),
+      { numRuns },
+    );
+  });
+
   it("decodeBitcoinPsbt on arbitrary bytes throws only a ChainError", () => {
     fc.assert(
       fc.property(fc.uint8Array(), (psbt) => {
@@ -176,6 +199,125 @@ describe("Solana and Bitcoin decode fuzz", () => {
       { numRuns },
     );
   });
+});
+
+const v1Vectors = (
+  JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/solana-v1.json"), "utf8"),
+  ) as { cases: Array<{ name: string; message: string; signer: string }> }
+).cases;
+const v1Mainnet = (
+  JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, "../../../vectors/chains/solana-mainnet-v1.json"),
+      "utf8",
+    ),
+  ) as Array<{ wire: string }>
+).map((f) => Uint8Array.from(Buffer.from(f.wire, "base64")));
+const V1_VECTOR_MESSAGES = v1Vectors.map((c) => Uint8Array.from(Buffer.from(c.message, "hex")));
+/* A v1 mainnet fixture's message is its wire minus the trailing signature block. */
+const V1_MAINNET_MESSAGES = v1Mainnet.map((wire) =>
+  wire.subarray(0, wire.length - 64 * (wire[1] ?? 0)),
+);
+const V1_MESSAGES = [...V1_VECTOR_MESSAGES, ...V1_MAINNET_MESSAGES];
+const V1_SIGNERS = v1Vectors.map((c) => c.signer);
+const v1Decoder = getCompiledTransactionMessageDecoder();
+const v1Encoder = getCompiledTransactionMessageEncoder();
+
+/** One or two single-byte mutations applied to a valid v1 message. */
+const mutatedV1 = fc
+  .tuple(
+    fc.integer({ min: 0, max: V1_MESSAGES.length - 1 }),
+    fc.nat({ max: 4200 }),
+    fc.integer({ min: 1, max: 255 }),
+    fc.nat({ max: 4200 }),
+    fc.integer({ min: 1, max: 255 }),
+  )
+  .map(([vi, p1, x1, p2, x2]) => {
+    const base = V1_MESSAGES[vi] ?? new Uint8Array(0);
+    const bytes = new Uint8Array(base);
+    if (base.length > 0) {
+      bytes[p1 % base.length] = ((bytes[p1 % base.length] ?? 0) + x1) % 256;
+      bytes[p2 % base.length] = ((bytes[p2 % base.length] ?? 0) + x2) % 256;
+    }
+    return { bytes, signer: V1_SIGNERS[vi] ?? SOL_SIGNER };
+  });
+
+/* A mutated v1 message either is refused with a ChainError or is a frame the wallet accepts —
+   and then kit's own decode→encode must reproduce the bytes exactly (the wallet only accepts
+   fixed-size frames), and decodeSolana yields a known verifiability or a ChainError. */
+const mutatedV1Outcome = (bytes: Uint8Array, signer: string): boolean => {
+  const r = attempt(() => parseCompiledMessage(bytes));
+  if (!r.ok) {
+    return r.error instanceof ChainError;
+  }
+  const [decoded] = v1Decoder.read(bytes, 0);
+  const reencoded = new Uint8Array(v1Encoder.encode(decoded));
+  if (Buffer.compare(Buffer.from(reencoded), Buffer.from(bytes)) !== 0) {
+    return false;
+  }
+  const request: Extract<SignRequest, { kind: "solana.transaction" }> = {
+    kind: "solana.transaction",
+    network: SOL_NET,
+    account: SOL_ACCOUNT,
+    message: bytes,
+  };
+  return intentOrChainError(attempt(() => decodeSolana(request, signer)));
+};
+
+/* A (fixture, length) pair mapped to a strict prefix of that mainnet v1 message. */
+const truncatedMainnetV1 = fc
+  .tuple(
+    fc.integer({ min: 0, max: V1_MAINNET_MESSAGES.length - 1 }),
+    fc.integer({ min: 0, max: 4096 }),
+  )
+  .map(([vi, rawLength]) => {
+    const base = V1_MAINNET_MESSAGES[vi] ?? new Uint8Array(0);
+    return base.subarray(0, base.length === 0 ? 0 : rawLength % base.length);
+  });
+
+/** A strict prefix of a v1 message fails, and only with a ChainError. */
+const truncatedV1Outcome = (bytes: Uint8Array): boolean => {
+  const r = attempt(() => parseCompiledMessage(bytes));
+  return !r.ok && r.error instanceof ChainError;
+};
+
+describe("Solana v1 fuzz", () => {
+  it(
+    "mutated v1 vectors re-encode byte-identically or throw only a ChainError",
+    () => {
+      fc.assert(
+        fc.property(mutatedV1, ({ bytes, signer }) => {
+          expect(mutatedV1Outcome(bytes, signer)).toBe(true);
+        }),
+        { numRuns },
+      );
+    },
+    // 20_000 runs (weekly job) take ~150 s — keep 4× headroom over the default 5 s.
+    600_000,
+  );
+
+  it("every truncation of each v1 vector throws only a ChainError", () => {
+    for (const base of V1_VECTOR_MESSAGES) {
+      for (let length = 0; length < base.length; length += 1) {
+        expect(truncatedV1Outcome(base.subarray(0, length))).toBe(true);
+      }
+    }
+  });
+
+  it(
+    "a truncated mainnet v1 message throws only a ChainError",
+    () => {
+      fc.assert(
+        fc.property(truncatedMainnetV1, (bytes) => {
+          expect(truncatedV1Outcome(bytes)).toBe(true);
+        }),
+        { numRuns },
+      );
+    },
+    // 20_000 runs (weekly job) of up-to-3.7 KiB parses take ~15 s — keep 4× headroom.
+    120_000,
+  );
 });
 
 const TRON_NET = "tron:728126428";

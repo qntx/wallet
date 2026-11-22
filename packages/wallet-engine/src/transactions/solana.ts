@@ -17,10 +17,11 @@ import {
   decodeSolana,
   MPL_CORE_PROGRAM,
   netAfterTransferFee,
+  parseCompiledMessage,
   parseMintExtensions,
   PROGRAM_IDS,
 } from "@qntx/wallet-chains/solana";
-import type { MintExtensionSummary } from "@qntx/wallet-chains/solana";
+import type { MintExtensionSummary, ParsedSolanaMessage } from "@qntx/wallet-chains/solana";
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
 import { chains } from "@qntx/wallet/chains";
 
@@ -117,10 +118,12 @@ const NONCE_DISCRIMINATOR = getAdvanceNonceAccountDiscriminatorBytes();
 export const durableNonceOfMessage = (
   messageBytes: Uint8Array,
 ): { readonly account: string | undefined; readonly value: string } | undefined => {
-  const compiled = getCompiledTransactionMessageDecoder().decode(messageBytes);
-  if (!("instructions" in compiled)) {
-    return undefined;
-  }
+  /* `parseCompiledMessage` maps every supported version onto one model — kit's own decoder
+     gives a v1 message instruction headers/payloads instead of `instructions`, which would
+     silently misclassify a v1 durable nonce. A message that fails to parse is not
+     blockhash-lifetime: the error propagates so the poll cannot misclassify a durable
+     transaction and drop it while it can still land. */
+  const compiled: ParsedSolanaMessage = parseCompiledMessage(messageBytes);
   const [first] = compiled.instructions;
   const data = first?.data;
   const accountIndices = first?.accountIndices;
@@ -138,7 +141,7 @@ export const durableNonceOfMessage = (
     return undefined;
   }
   return {
-    account: nonceAccount === undefined ? undefined : String(nonceAccount),
+    account: nonceAccount,
     value: compiled.lifetimeToken,
   };
 };

@@ -67,7 +67,7 @@ const transfer = (from: string, lamports: bigint): Instruction => {
 type Built = { transaction: string; message: string; signed: string };
 
 const build = async (options: {
-  version: "legacy" | 0;
+  version: "legacy" | 0 | 1;
   feePayer: string;
   ixs: ReadonlyArray<Instruction>;
   presignedBy?: Awaited<ReturnType<typeof createKeyPairFromBytes>>;
@@ -142,6 +142,35 @@ const main = async (): Promise<void> => {
       name: "v0-sponsored",
       ...(await build({
         version: 0,
+        feePayer: sponsorAddress,
+        ixs: [transfer(walletAddress, 1000n)],
+        presignedBy: sponsor,
+        wallet,
+      })),
+    },
+    {
+      name: "v1-single-signer",
+      ...(await build({
+        version: 1,
+        feePayer: walletAddress,
+        ixs: [transfer(walletAddress, 1000n)],
+        wallet,
+      })),
+    },
+    {
+      name: "v1-cosigner-signed",
+      ...(await build({
+        version: 1,
+        feePayer: walletAddress,
+        ixs: [transfer(cosignerAddress, 1000n)],
+        presignedBy: cosigner,
+        wallet,
+      })),
+    },
+    {
+      name: "v1-sponsored",
+      ...(await build({
+        version: 1,
         feePayer: sponsorAddress,
         ixs: [transfer(walletAddress, 1000n)],
         presignedBy: sponsor,

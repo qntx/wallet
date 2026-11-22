@@ -30,7 +30,8 @@ import {
  * sendTransaction(skipPreflight:false, maxRetries:0) re-sent every 2 s while the blockhash is live;
  * an expired lastValidBlockHeight without confirmation is `dropped` only once `isBlockhashValid` on
  * the same endpoint says the hash is dead — a bound read from a lagging endpoint is never enough. A
- * 1232-byte compiled message is rejected before signing.
+ * 1232-byte compiled message is rejected before signing (wallet-built sends stay v0); finalize also
+ * wraps the v1 messages Wallet Standard and WalletConnect callers hand us.
  */
 import {
   address,
@@ -42,6 +43,7 @@ import {
   createTransactionMessage,
   getAddressDecoder,
   getCompiledTransactionMessageEncoder,
+  getTransactionEncoder,
   getU64Decoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
@@ -611,20 +613,31 @@ export class SolanaChainAdapter {
     return { status: "success", changes };
   }
 
-  /** Wire transaction bytes — sigCount shortvec + each 64-byte sig + message. */
+  /**
+   * Wire transaction bytes: kit's encoder lays the envelope out for the message version — legacy/v0
+   * put a sig-count shortvec and the slots first, a SIMD-0385 v1 wire is the message followed by
+   * the slots. Slots are keyed by the message's static accounts in order; object keys that look
+   * like array indices iterate in numeric order, but a base58 address is never a canonical integer
+   * key, so entry order is insertion order here.
+   */
   finalize(messageBytes: Uint8Array, signatures: ReadonlyArray<Uint8Array>): Uint8Array {
-    for (const sig of signatures) {
+    const { staticAccounts } = parseCompiledMessage(messageBytes);
+    const slots: Record<string, Uint8Array> = {};
+    for (const [i, sig] of signatures.entries()) {
       if (sig.length !== 64) {
         throw new Error(`solana signature must be 64 bytes, got ${sig.length}`);
       }
+      const account = staticAccounts[i];
+      if (account === undefined) {
+        throw new Error("solana wire has more signatures than the message has accounts");
+      }
+      slots[account] = sig;
     }
-    const out = new Uint8Array(1 + 64 * signatures.length + messageBytes.length);
-    out[0] = signatures.length;
-    for (const [i, sig] of signatures.entries()) {
-      out.set(sig, 1 + 64 * i);
-    }
-    out.set(messageBytes, 1 + 64 * signatures.length);
-    return out;
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- kit brands the wire parts (TransactionMessageBytes/SignatureBytes); the encoder reads plain bytes
+    const tx = { messageBytes, signatures: slots } as unknown as Parameters<
+      ReturnType<typeof getTransactionEncoder>["encode"]
+    >[0];
+    return new Uint8Array(getTransactionEncoder().encode(tx));
   }
 
   async broadcast(rpc: SolanaRpc, wireBytes: Uint8Array): Promise<string> {

@@ -284,7 +284,7 @@ const signRequest: Validator<ChainSignRequest> = union(
     kind: literal("solana.transaction"),
     network: caip2,
     account: accountRef,
-    message: bytes(1, 1232),
+    message: bytes(1, 4096),
     lookupTables: opt(arr(obj({ address: solanaAddress, addresses: arr(solanaAddress, 256) }), 64)),
   }),
   obj({

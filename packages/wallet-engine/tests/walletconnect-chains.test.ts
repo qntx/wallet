@@ -24,6 +24,7 @@ import {
   getSignatureFromTransaction,
   getTransactionDecoder,
   getTransactionEncoder,
+  setTransactionMessageConfig,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
@@ -538,6 +539,25 @@ const foreignPayerTx = (signer: string): Uint8Array => {
   return new Uint8Array(getTransactionEncoder().encode(compileTransaction(withIx)));
 };
 
+/** An unsigned v1 wire (message first, no signature-count prefix) the wallet's account pays for. */
+const v1SolTx = (feePayer: string): Uint8Array => {
+  const message = setTransactionMessageLifetimeUsingBlockhash(
+    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    setTransactionMessageFeePayer(
+      address(feePayer),
+      setTransactionMessageConfig(
+        { priorityFeeLamports: 7n },
+        createTransactionMessage({ version: 1 }),
+      ),
+    ),
+  );
+  const withIx = appendTransactionMessageInstruction(
+    transferIx(feePayer, DEST, 1000n),
+    message as never,
+  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(withIx)));
+};
+
 /** A PSBT spending one prevout of `from` (a wallet address) to `to`, as a dApp builds it. */
 const dappPsbt = (opts: {
   from: string;
@@ -713,6 +733,40 @@ describe("walletconnect solana", () => {
   );
 
   it(
+    "signs a v1 transaction and returns the message-first wire intact",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client, solanaNamespaces([SOL_MAIN]));
+      const account = accountOf(session, SOL_MAIN);
+      const wire = v1SolTx(account);
+      const sign = await call(
+        r,
+        client,
+        live,
+        "solana_signTransaction",
+        {
+          transaction: base64.encode(wire),
+          pubkey: account,
+        },
+        SOL_MAIN,
+      );
+      await sign.approve("solana-sign");
+      const result = value(await sign.settled) as { signature: string; transaction: string };
+      const decoded = getTransactionDecoder().decode(base64.decode(result.transaction));
+      const ours = decoded.signatures[address(account)];
+      expect(ours === null || ours === undefined).toBe(false);
+      expect(base58.encode(new Uint8Array(ours ?? []))).toBe(result.signature);
+      const messageBytes = new Uint8Array(decoded.messageBytes);
+      expect(messageBytes[0]).toBe(0x81);
+      expect(verifySolanaSignature(messageBytes, new Uint8Array(ours ?? []), account)).toBe(true);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
     "signs every transaction of a solana_signAllTransactions call in order",
     { timeout: 120_000 },
     async () => {
@@ -742,6 +796,47 @@ describe("walletconnect solana", () => {
             decoded.signatures[address(account)] === undefined,
         ).toBe(false);
         // Order is preserved: the message bytes match the input in the same position.
+        expect(base64.encode(new Uint8Array(decoded.messageBytes))).toBe(
+          base64.encode(
+            new Uint8Array(
+              getTransactionDecoder().decode(txs[index] ?? new Uint8Array()).messageBytes,
+            ),
+          ),
+        );
+      }
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "signs a mixed legacy/v1 solana_signAllTransactions batch in order",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client, solanaNamespaces([SOL_MAIN]));
+      const account = accountOf(session, SOL_MAIN);
+      const txs = [solTx(account), v1SolTx(account)];
+      const sign = await call(
+        r,
+        client,
+        live,
+        "solana_signAllTransactions",
+        {
+          transactions: txs.map((tx) => base64.encode(tx)),
+        },
+        SOL_MAIN,
+      );
+      await sign.approve("solana-sign");
+      const result = value(await sign.settled) as { transactions: string[] };
+      expect(result.transactions).toHaveLength(2);
+      for (const [index, encoded] of result.transactions.entries()) {
+        const decoded = getTransactionDecoder().decode(base64.decode(encoded));
+        expect(
+          decoded.signatures[address(account)] === null ||
+            decoded.signatures[address(account)] === undefined,
+        ).toBe(false);
         expect(base64.encode(new Uint8Array(decoded.messageBytes))).toBe(
           base64.encode(
             new Uint8Array(

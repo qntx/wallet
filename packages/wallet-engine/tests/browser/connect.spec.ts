@@ -677,8 +677,8 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
       "solana:signMessage": "1.0.0",
       "solana:signIn": "1.0.0",
     },
-    txVersions: ["legacy", 0],
-    sendVersions: ["legacy", 0],
+    txVersions: ["legacy", 0, 1],
+    sendVersions: ["legacy", 0, 1],
     unsubscribe: "function",
     accountsLive: true,
   });
