@@ -1,4 +1,7 @@
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import type { BlindReason, Fiat24Action, IntentSummary, SignRequest } from "@qntx/wallet-chains";
+import type { AccountRef } from "@qntx/wallet-engine";
+import { chains } from "@qntx/wallet/chains";
 import type { ChainSignResult } from "@qntx/wallet/protocol";
 
 /**
@@ -160,4 +163,34 @@ export function describeFiat24Action(action: Fiat24Action): string {
       return exhaustive;
     }
   }
+}
+
+/**
+ * Grant Fiat24 API access for an account: the wallet builds the grant message itself and the
+ * signature verifies against `account` before `chain.sign` returns. `hash` is the session label the
+ * API hashes the grant under; `sign` is the 0x-hex signature to send with it — until `deadline` it
+ * authorises profile and card reads plus card, payee and email changes.
+ */
+export async function grantFiat24Session(
+  wallet: Wallet,
+  account: AccountRef,
+  tokenId: string,
+  deadline: number,
+  verify: VerifyFactor,
+): Promise<{ readonly hash: string; readonly sign: string }> {
+  const result = await chains(wallet).sign({
+    request: {
+      kind: "evm.fiat24-session",
+      network: "eip155:42161",
+      account,
+      tokenId,
+      deadline,
+    },
+    verify,
+  });
+  if (result.kind !== "evm.fiat24-session") {
+    throw new Error(`unexpected chain.sign result kind: ${result.kind}`);
+  }
+  const sign = `0x${[...result.signature].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  return { hash: `fiat24-session-v1:42161:${tokenId}:${deadline}`, sign };
 }
