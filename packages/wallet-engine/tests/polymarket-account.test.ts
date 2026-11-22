@@ -39,7 +39,14 @@ import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { AppGroup } from "../src/apps/types.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
-import { credentialsStore, MNEMONIC, nodeWallet, VERIFY } from "./apps-helpers.ts";
+import {
+  credentialsStore,
+  MNEMONIC,
+  networksStub,
+  nodeWallet,
+  pmChainCode,
+  VERIFY,
+} from "./apps-helpers.ts";
 
 const API_A = {
   apiKey: "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
@@ -219,6 +226,16 @@ const provider = (
     now,
     wallet,
     credentials,
+    /* The chain read mirrors makeFetch's `/deployed` answer — beacon only unless overridden. */
+    networks: networksStub(
+      pmChainCode(
+        (address, type) =>
+          state.deployed?.(address, type) ??
+          (type === "WALLET" &&
+            address === derivePolymarketWallets(accountAt(0).address).beacon.toLowerCase()),
+        accountAt(0).address,
+      ),
+    ),
     requests: NO_REQUESTS,
     random: () => new Uint8Array(8).fill(1),
     availability: () => "available",

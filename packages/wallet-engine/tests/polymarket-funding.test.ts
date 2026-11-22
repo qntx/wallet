@@ -17,7 +17,7 @@ import { PUSD } from "../src/apps/polymarket/constants.ts";
 import type { PolymarketBuilder } from "../src/apps/polymarket/provider.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
-import { MNEMONIC, pumpUntil, world } from "./apps-helpers.ts";
+import { MNEMONIC, pmChainCode, pumpUntil, world } from "./apps-helpers.ts";
 
 const OWNER = mnemonicToAccount(MNEMONIC, { addressIndex: 0 });
 const SIGNER = OWNER.address;
@@ -109,6 +109,8 @@ const funded = async (feed: Feed, opts?: { builder?: PolymarketBuilder | false }
   const w = await world(0, {
     polymarket: opts?.builder === false ? {} : { builder: opts?.builder ?? builderFor() },
     fetch: scripted(feed),
+    /* The chain read mirrors the relayer feed — locate refuses a target they disagree on. */
+    polyCode: pmChainCode((a, t) => feed.deployed?.(a, t) ?? false, SIGNER),
   });
   feed.deployed ??= (address, type) =>
     type === "WALLET" && address.toLowerCase() === WALLETS.beacon.toLowerCase();
@@ -136,6 +138,51 @@ describe("polymarket funding", () => {
     expect(outflow?.amount?.asset?.toLowerCase()).toBe(PUSD.toLowerCase());
     expect(outflow?.amount?.amount).toBe("2500000");
     void pending.outcome.catch(() => undefined);
+    await w.destroy();
+  });
+
+  it("a relayer-deployed UUPS the chain proves is the deposit target", async () => {
+    const w = await funded({
+      transactions: [],
+      deployed: (address, type) =>
+        type === "WALLET" && address.toLowerCase() === WALLETS.uups.toLowerCase(),
+    });
+    const pending = await w.pm!.fund.deposit(w.group, { amount: 2_500_000n, fee: "normal" });
+    const request = w.requests.getState().requests[pending.requestId] as
+      | { display?: { outflows?: Array<{ to?: string }> } }
+      | undefined;
+    expect(request?.display?.outflows?.[0]?.to?.toLowerCase()).toBe(WALLETS.uups.toLowerCase());
+    void pending.outcome.catch(() => undefined);
+    await w.destroy();
+  });
+
+  it("deposit refuses a target the chain does not prove — no send is prepared", async () => {
+    /* The relayer claims UUPS is deployed but eth_getCode reads nothing anywhere — the hint
+       alone must never address the pUSD send. */
+    const w = await funded({
+      transactions: [],
+      deployed: (address, type) =>
+        type === "WALLET" && address.toLowerCase() === WALLETS.uups.toLowerCase(),
+    });
+    w.poly.code = () => "0x";
+    await expect(
+      w.pm!.fund.deposit(w.group, { amount: 2_500_000n, fee: "normal" }),
+    ).rejects.toMatchObject({ category: "deployment-mismatch" });
+    expect(Object.keys(w.requests.getState().requests)).toHaveLength(0);
+    await w.destroy();
+  });
+
+  it("deposit refuses a deployed claim whose on-chain code is not the template", async () => {
+    const w = await funded({
+      transactions: [],
+      deployed: (address, type) =>
+        type === "WALLET" && address.toLowerCase() === WALLETS.beacon.toLowerCase(),
+    });
+    w.poly.code = () => "0x60016001";
+    await expect(
+      w.pm!.fund.deposit(w.group, { amount: 2_500_000n, fee: "normal" }),
+    ).rejects.toMatchObject({ category: "deployment-mismatch" });
+    expect(Object.keys(w.requests.getState().requests)).toHaveLength(0);
     await w.destroy();
   });
 
@@ -228,7 +275,11 @@ describe("polymarket funding", () => {
       }
       return base(input, init);
     };
-    const w = await world(0, { polymarket: { builder }, fetch: flakyFetch });
+    const w = await world(0, {
+      polymarket: { builder },
+      fetch: flakyFetch,
+      polyCode: pmChainCode((a, t) => feed.deployed?.(a, t) ?? false, SIGNER),
+    });
     feed.deployed = (address, type) =>
       type === "WALLET" && address.toLowerCase() === WALLETS.beacon.toLowerCase();
     const { requestId, outcome } = await w.pm!.fund.withdraw(w.group, { amount: 1_000_000n });

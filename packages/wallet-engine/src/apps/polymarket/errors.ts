@@ -28,7 +28,12 @@ export type PolymarketErrorCategory =
   /** A blocked jurisdiction, or an unknown/error eligibility answer — the gate fails closed. */
   | "blocked"
   /** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
-  | "needs-migration";
+  | "needs-migration"
+  /**
+   * The relayer, the chain RPC and the host endpoint disagree on which account wallet exists, or
+   * the code there is not the expected template — nothing is chosen.
+   */
+  | "deployment-mismatch";
 
 export class PolymarketError extends Error {
   readonly category: PolymarketErrorCategory;

@@ -84,6 +84,17 @@ describe.runIf(RUN)("polymarket e2e: mainnet reads + live book", () => {
         random,
         availability: () => "available",
         socket: (url) => new WebSocket(url) as AppSocket,
+        /* locate proofs its target on-chain — a live e2e reads the real Polygon RPC. */
+        networks: new NetworkController({
+          ...idleNetworkDeps,
+          fetch,
+          rpc: { "eip155:137": ["https://polygon-bor-rpc.publicnode.com"] },
+          openStore: async () => {
+            await Promise.resolve();
+            return createMemoryEngineStore();
+          },
+          logger,
+        }),
         logger,
       });
       /* Public reads. `events`/`markets` lists can carry rows whose conditionId is not a 32-byte

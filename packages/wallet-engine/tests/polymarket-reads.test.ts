@@ -17,7 +17,7 @@ import { createPolymarketHttp } from "../src/apps/polymarket/http.ts";
 import { createPolymarketMarkets } from "../src/apps/polymarket/markets.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
-import { credentialsStore } from "./apps-helpers.ts";
+import { credentialsStore, networksStub } from "./apps-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
 
 type Fixture = {
@@ -102,6 +102,8 @@ const provider = () =>
     now: () => 1_800_000_000_000,
     wallet: NO_WALLET,
     credentials: NO_CREDENTIALS,
+    /* Reads never locate — an always-empty chain read is enough. */
+    networks: networksStub(() => "0x"),
     requests: NO_REQUESTS,
     random: () => new Uint8Array(8),
     availability: () => "available",

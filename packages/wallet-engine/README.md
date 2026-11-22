@@ -436,8 +436,8 @@ Polymarket support lives under `apps.polymarket` when `createApps` lists `polyma
 `@qntx/wallet-engine/apps/polymarket`. The provider trades from the account's **deposit wallet** —
 a Polymarket smart contract wallet the relayer deploys to a deterministic CREATE2 address derived
 from the group's `evm.bip44` signer. Everything else is discovered, not persisted: credentials
-live in the engine's encrypted apps store, deployment is read from the relayer, approvals from
-the Data API.
+live in the engine's encrypted apps store, deployment is proven on-chain (relayer answers are
+hints only), approvals from the Data API.
 
 ```ts
 const apps = createApps({
@@ -475,12 +475,21 @@ EOA orders only for allow-listed accounts, and the deposit wallet covers everyon
 `account.locate(group)` returns `{ signer, wallet, kind, deployed, legacySafe? }`; a deposit wallet
 that coexists with a deployed Safe surfaces `legacySafe` for display.
 
+`locate` never trusts the unauthenticated relayer's `/deployed` answer: it reads `eth_getCode` on
+all three CREATE2 candidates over the Polygon RPC — cross-checked byte-for-byte against the host
+endpoint when the gateway serves the network — requires a deposit wallet's code to equal the
+template's expected runtime exactly (the Safe's CREATE2 address already commits to its init-code
+hash, so any code proves it), and then insists every relayer hint agree. Any disagreement, or a
+deposit-wallet-shaped candidate carrying other code, is `PolymarketError("deployment-mismatch")`
+and nothing is chosen; a host endpoint that cannot answer fails closed with `unavailable`. A
+deposit — or any trading path — therefore never targets a wallet the chain does not prove.
+
 ### What works without a builder
 
 | Capability                                                                           | Without a builder                                    | Why                                                                               |
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Market data, search, book, history, positions/trades/value (Gamma/CLOB/Data, public) | works                                                | no authentication                                                                 |
-| Locating an existing deposit wallet (both derivations + relayer `/deployed`)         | works                                                | public read                                                                       |
+| Locating an existing deposit wallet (derivations + `eth_getCode`, relayer as hint)   | works                                                | public reads                                                                      |
 | Deploying the deposit wallet                                                         | `builder-required`                                   | relayer `WALLET-CREATE` only accepts builder credentials                          |
 | `ClobAuth` → L2 credentials                                                          | works                                                | the CLOB does not require a builder                                               |
 | The 8-call approvals batch, withdraw, future redeems                                 | `builder-required`                                   | all are relayer `WALLET` transactions                                             |

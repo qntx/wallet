@@ -1,3 +1,4 @@
+import type { PublicClient } from "viem";
 import { expect } from "vite-plus/test";
 
 /**
@@ -24,11 +25,16 @@ import type { AppsPolymarketConfig } from "../src/apps/polymarket/app.ts";
 import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
 import type { PolymarketCredentialStore } from "../src/apps/polymarket/credentials.ts";
 import type { PolymarketProvider } from "../src/apps/polymarket/provider.ts";
+import {
+  derivePolymarketWallets,
+  expectedPolymarketWalletRuntime,
+} from "../src/apps/polymarket/wallets.ts";
 import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
 import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import type { Independent } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -227,8 +233,67 @@ const rpcString = (value: string): string => {
   return `0x${"00".repeat(31)}20${value.length.toString(16).padStart(64, "0")}${bytes.padEnd(64, "0")}`;
 };
 
-/* Polygon — the Polymarket `send` deposit resolves pUSD metadata + gas over this endpoint. */
-const polyRpc = async (init?: RequestInit): Promise<Response> => {
+/** The Polygon chain-evidence a world's `locate` reads — set to mirror the relayer feed's claims. */
+export type PolyChain = { code?: (address: string) => string | undefined };
+
+/**
+ * The `eth_getCode` a consistent chain would hold for `signer`'s account candidates given the
+ * relayer feed's `deployed` claim — claimed deposit wallets get their expected runtime, a claimed
+ * Safe any non-empty code.
+ */
+export const pmChainCode = (
+  deployed: (address: string, type: string) => boolean,
+  signer: `0x${string}`,
+): ((address: string) => string) => {
+  const candidates = derivePolymarketWallets(signer);
+  const deposit = (address: string, kind: "beacon" | "uups"): string =>
+    deployed(address, "WALLET") ? expectedPolymarketWalletRuntime(kind, signer) : "0x";
+  return (address) => {
+    const a = address.toLowerCase();
+    if (a === candidates.beacon.toLowerCase()) {
+      return deposit(a, "beacon");
+    }
+    if (a === candidates.uups.toLowerCase()) {
+      return deposit(a, "uups");
+    }
+    return a === candidates.safe.toLowerCase() && deployed(a, "SAFE") ? "0x6001" : "0x";
+  };
+};
+
+/** A PublicClient stub answering `eth_getCode` from `codeOf` ("0x" when it returns undefined). */
+export const rpcStub = (codeOf: (address: string) => string | undefined): PublicClient => {
+  const client = {
+    transport: {
+      request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+        await Promise.resolve();
+        if (method !== "eth_getCode") {
+          throw new Error(`unstubbed rpc ${method}`);
+        }
+        const args = Array.isArray(params) ? params : [];
+        return codeOf(typeof args[0] === "string" ? args[0] : "") ?? "0x";
+      },
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the stub only covers transport.request.
+  return client as unknown as PublicClient;
+};
+
+/**
+ * The `networks` option for tests that build `createPolymarketWallets` or
+ * `createPolymarketProvider` directly: `client` answers `eth_getCode` from `codeOf`;
+ * `independentClient` defaults to `not-needed` (the primary reads are already the hosts').
+ */
+export const networksStub = (
+  codeOf: (address: string) => string | undefined,
+  independent?: Independent<PublicClient>,
+): Pick<NetworkController, "client" | "independentClient"> => ({
+  client: () => rpcStub(codeOf),
+  independentClient: () => independent ?? { kind: "not-needed" },
+});
+
+/* Polygon — the Polymarket `send` deposit resolves pUSD metadata + gas over this endpoint, and
+   `locate` reads eth_getCode on the account candidates from `poly.code`. */
+const polyRpc = async (init: RequestInit | undefined, poly: PolyChain): Promise<Response> => {
   const body = bodyJson(init);
   await Promise.resolve();
   const rpcParams: unknown = body["params"];
@@ -253,13 +318,15 @@ const polyRpc = async (init?: RequestInit): Promise<Response> => {
               ? rpcString("Polymarket USD")
               : body["method"] === "eth_call"
                 ? `0x${"00".repeat(32)}`
-                : body["method"] === "eth_getTransactionCount"
-                  ? "0x0"
-                  : body["method"] === "eth_estimateGas"
-                    ? "0x5208"
-                    : body["method"] === "eth_feeHistory"
-                      ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
-                      : "0x0";
+                : body["method"] === "eth_getCode"
+                  ? (poly.code?.(typeof firstParam === "string" ? firstParam : "") ?? "0x")
+                  : body["method"] === "eth_getTransactionCount"
+                    ? "0x0"
+                    : body["method"] === "eth_estimateGas"
+                      ? "0x5208"
+                      : body["method"] === "eth_feeHistory"
+                        ? { baseFeePerGas: ["0x1"], gasUsedRatio: [0.1], oldestBlock: "0x1" }
+                        : "0x0";
   return Response.json({ jsonrpc: "2.0", id: 1, result });
 };
 
@@ -380,6 +447,8 @@ export type World = {
   provider: HyperliquidProvider;
   /** The configured Polymarket provider — `undefined` unless `options.polymarket` was set. */
   pm: PolymarketProvider | undefined;
+  /** The Polygon chain facts `locate` reads — set `code` to mirror the relayer feed's claims. */
+  poly: PolyChain;
   walletId: string;
   apps: AppsController;
   destroy: () => Promise<void>;
@@ -411,6 +480,8 @@ export const world = async (
     builder?: { address: string; feeRateTenthsBps: number };
     /** Enable the Polymarket lane (provider + enable state machine) with this config. */
     polymarket?: AppsPolymarketConfig;
+    /** The `eth_getCode` answers `locate` reads on Polygon — must mirror the relayer feed. */
+    polyCode?: PolyChain["code"];
     /** `false` omits the Hyperliquid lane entirely (Polymarket-only worlds). */
     hyperliquid?: AppsHyperliquidConfig | false;
     /**
@@ -437,6 +508,9 @@ export const world = async (
   const warns: string[] = [];
   const logger = { warn: (...args: unknown[]) => warns.push(String(args[0])) };
   const hl: HlState = { listed: new Map(), maxBuilderFee: 0, role: "user", ...options.hl };
+  /* The chain facts `locate` reads on Polygon — init-time reconciles already locate, so the
+     option must be in place before createApps runs. */
+  const poly: PolyChain = options.polyCode === undefined ? {} : { code: options.polyCode };
   const fetch = options.fetch ?? hlFetch(posted, timers, hl);
   const networks = new NetworkController({
     ...idleNetworkDeps,
@@ -445,7 +519,7 @@ export const world = async (
       if (url === "https://arb-sepolia.test/rpc") {
         return arbRpc(init, hl);
       }
-      return url === "https://polygon.test/rpc" ? polyRpc(init) : fetch(input, init);
+      return url === "https://polygon.test/rpc" ? polyRpc(init, poly) : fetch(input, init);
     },
     rpc: {
       "eip155:421614": ["https://arb-sepolia.test/rpc"],
@@ -634,6 +708,7 @@ export const world = async (
       return provider;
     },
     pm: polymarket,
+    poly,
     apps: controller,
     destroy,
     requests,

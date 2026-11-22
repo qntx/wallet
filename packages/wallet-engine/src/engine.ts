@@ -190,7 +190,14 @@ export type HostController<
 export type WalletEngine = {
   readonly networks: HostController<
     NetworkController,
-    "endpoints" | "info" | "enabled" | "client" | "solanaRpc" | "esplora" | "addRpc"
+    | "endpoints"
+    | "info"
+    | "enabled"
+    | "client"
+    | "independentClient"
+    | "solanaRpc"
+    | "esplora"
+    | "addRpc"
   >;
   readonly assets: HostController<
     AssetsController,

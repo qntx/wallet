@@ -22,7 +22,15 @@ import type {
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import type { AppGroup } from "../src/apps/types.ts";
 import type { AppAvailability } from "../src/gateway/contract/eligibility.ts";
-import { MNEMONIC, VERIFY, manualTimer, until, world } from "./apps-helpers.ts";
+import {
+  MNEMONIC,
+  VERIFY,
+  manualTimer,
+  networksStub,
+  pmChainCode,
+  until,
+  world,
+} from "./apps-helpers.ts";
 
 const API = {
   apiKey: "7b1e2d60-6f9a-4dd7-8f3e-21b8f94c77a2",
@@ -76,7 +84,11 @@ const makeFetch = (
       ...(typeof init?.body === "string" ? { body: init.body } : {}),
     });
     if (url.origin === RELAYER_HOST && url.pathname === "/deployed") {
-      return Response.json({ deployed: true });
+      const address = (url.searchParams.get("address") ?? "").toLowerCase();
+      const type = url.searchParams.get("type") ?? "SAFE";
+      return Response.json({
+        deployed: type === "WALLET" && address === depositWallet.toLowerCase(),
+      });
     }
     if (url.origin !== CLOB_HOST) {
       throw new Error(`unrecorded request: ${url.toString()}`);
@@ -137,6 +149,14 @@ let w: Awaited<ReturnType<typeof world>>;
 let group: AppGroup;
 const depositWallet = derivePolymarketWallets(mnemonicToAccount(MNEMONIC).address).beacon;
 
+/* The chain read mirrors makeFetch's `/deployed` answer — beacon only. */
+const NETWORKS = networksStub(
+  pmChainCode(
+    (address, type) => type === "WALLET" && address === depositWallet.toLowerCase(),
+    mnemonicToAccount(MNEMONIC).address,
+  ),
+);
+
 beforeAll(async () => {
   w = await world(0, { hyperliquid: false });
   group = { walletId: w.walletId, groupIndex: 0 };
@@ -155,6 +175,7 @@ const env = (
     now: () => timers.time,
     wallet: w.wallet,
     credentials: w.credentials,
+    networks: NETWORKS,
     requests: {
       prepare: async (input) => w.requests.prepare(input),
       outcome: async (id) => w.requests.outcome(id),

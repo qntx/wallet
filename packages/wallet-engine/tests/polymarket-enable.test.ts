@@ -43,6 +43,7 @@ import {
   MNEMONIC,
   VERIFY,
   manualTimer,
+  pmChainCode,
   pumpUntil,
   restartableStore,
   swallow,
@@ -347,6 +348,8 @@ const pmWorld = async (
       reject: (id) => requests.reject(id),
     }),
     polymarket: options.builder === false ? {} : { builder: builderFor(builderSigns) },
+    /* The chain read mirrors the relayer feed — locate refuses a target they disagree on. */
+    polyCode: pmChainCode((a, t) => feed.deployed?.(a, t) ?? false, SIGNER),
     ...(options.openStore === undefined ? {} : { openStore: options.openStore }),
   });
   /* No `{...w}` — the world's `provider` getter throws for hyperliquid-less worlds. */
