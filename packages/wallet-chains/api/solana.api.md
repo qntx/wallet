@@ -6,6 +6,27 @@
 
 import { MessageFields } from '@qntx/siwx';
 
+// @public
+type AccountAuthority = {
+    readonly kind: "morpho";
+    readonly contract: string;
+    readonly verified: boolean;
+    readonly authorized: string;
+    readonly grant: boolean;
+    readonly deadline?: number;
+} | {
+    readonly kind: "aave-credit";
+    readonly contract: string;
+    readonly verified: boolean;
+    readonly delegatee: string;
+    readonly amount: AssetAmount;
+    readonly unlimited: boolean;
+    readonly deadline?: number;
+} | {
+    readonly kind: "snapshot-alias";
+    readonly alias: string;
+};
+
 // @public (undocumented)
 type AccountRef = {
     readonly kind: "hd";
@@ -228,6 +249,14 @@ export const EXT: {
 };
 
 // @public
+type FarcasterKey = {
+    readonly kind: "add" | "request";
+    readonly key: string;
+    readonly requestFid: string;
+    readonly deadline?: number;
+};
+
+// @public
 type HyperliquidAction = {
     readonly kind: "usd-send" | "withdraw";
     readonly chain: HyperliquidChain;
@@ -328,6 +357,9 @@ type MessageContent = {
     readonly safe?: SafeTransaction;
     readonly hyperliquid?: HyperliquidAction;
     readonly polymarket?: PolymarketContent;
+    readonly authorization?: TokenAuthorization;
+    readonly authority?: AccountAuthority;
+    readonly farcaster?: FarcasterKey;
     readonly fields?: ReadonlyArray<TypedDataLeaf>;
 };
 
@@ -359,7 +391,7 @@ export const normalizeSolana: (request: unknown, signer: string) => SignRequest;
 
 // @public
 type OffchainOrder = {
-    readonly protocol: "1inch" | "uniswapx" | "cow";
+    readonly protocol: "1inch" | "uniswapx" | "cow" | "0x";
     readonly maker: string;
     readonly give: AssetAmount;
     readonly receive: ReadonlyArray<{
@@ -685,6 +717,19 @@ type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public
+type TokenAuthorization = {
+    readonly kind: "transfer" | "receive";
+    readonly to: string;
+    readonly amount: AssetAmount;
+    readonly validAfter: number;
+    readonly validBefore?: number;
+} | {
+    readonly kind: "cancel";
+    readonly token: string;
+    readonly nonce: string;
 };
 
 // @public
