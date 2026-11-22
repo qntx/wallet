@@ -17,7 +17,7 @@
  * | `s2`     | A+B     | small      | 15 s concurrent drive on both isolates; upstream units vs `400 + 80×elapsed`       |
  * | `s4`     | B       | small      | A stopped ⇒ every DO call fails; requests fail closed, no upstream is contacted    |
  * | `s5`     | A       | production | TRON 1/s×70, prices eur/usd, Jupiter 1/5s×15, Esplora ×30 burst — one IP           |
- * | `s6`     | A       | production | IP keying: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair                |
+ * | `s6`     | A       | production | IP keying on eth_chainId: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair |
  * | `s7`     | A       | production | 100 concurrent eth_call from 100 IPs; wall time + DO lease RPC count               |
  * | `storm`  | A+B     | small      | 30 s concurrent drive on two isolates; DO RPCs vs refusals; fails on over-grant    |
  *
@@ -449,29 +449,49 @@ const s5 = async (base: string): Promise<void> => {
   );
 };
 
+/** Miniflare aligns limiter windows to the wall clock — wait until just past a 10 s rollover. */
+const freshWindow = async (): Promise<void> => {
+  await sleep(10_000 - (Date.now() % 10_000) + 50);
+};
+
 const s6 = async (base: string): Promise<void> => {
-  const untilBlocked = async (ip: string, client = CLIENT_ID): Promise<number[]> => {
-    const statuses: number[] = [];
-    for (let i = 0; i < 60; i++) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- until refusal
-      const res = await tronBlock(base, ip, client);
-      // oxlint-disable-next-line eslint/no-await-in-loop -- body must be consumed
-      await res.text();
-      statuses.push(res.status);
-      if (res.status !== 200) {
-        break;
-      }
-    }
-    return statuses;
-  };
-  const one = async (ip: string, client = CLIENT_ID): Promise<number> => {
-    const res = await tronBlock(base, ip, client);
+  /* One JSON-RPC batch charges every keyed limiter `batch.length` units (the middleware's one
+     plus `charge(length - 1)`; the contract caps a batch at RPC_BATCH_MAX = 20), so a few
+     20-call posts drive a key to its limit inside one limiter window. Miniflare aligns limiter
+     windows to the wall clock, so each phase waits for a fresh 10 s epoch first — a boundary
+     mid-phase would reset the counters and the flood would never refuse. The /v1/rpc route
+     keeps the provider budget (alchemy 480k CU/min) far above the flood-limiter numbers, so
+     refusals always come from a keyed limiter, never the upstream budget. Rotating the client
+     id leaves only the IP-limiter keys to fill: the /48 pair shares its IP-limiter bucket, not
+     a client-scoped one. */
+  const rpcIp = async (ip: string, client: string, size: number): Promise<number> => {
+    const body = Array.from({ length: size }, (_, i) => ({
+      jsonrpc: "2.0",
+      id: i + 1,
+      method: "eth_chainId",
+      params: [],
+    }));
+    const res = await fetch(`${base}/v1/rpc/eip155:1`, {
+      method: "POST",
+      headers: headers(ip, client),
+      body: JSON.stringify(size === 1 ? body[0] : body),
+    });
     await res.text();
     return res.status;
   };
+  const flood = async (ip: string, posts: number, rotate: boolean): Promise<number[]> => {
+    const statuses: number[] = [];
+    for (let i = 0; i < posts; i++) {
+      const client = rotate ? (i + 1).toString(16).padStart(32, "0") : CLIENT_ID;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- count to the refusal
+      statuses.push(await rpcIp(ip, client, 20));
+    }
+    return statuses;
+  };
 
-  const a1 = await untilBlocked("::ffff:198.51.100.1");
-  const a2 = await one("::ffff:203.0.113.9");
+  await freshWindow();
+  const a1 = await flood("::ffff:198.51.100.1", 6, false);
+  const a2 = await rpcIp("::ffff:203.0.113.9", CLIENT_ID, 1);
   console.log(
     `S6a mapped-v4: first ::ffff:198.51.100.1 → ${statusCounts(a1)}; second ::ffff:203.0.113.9 → ${String(a2)}`,
   );
@@ -479,24 +499,22 @@ const s6 = async (base: string): Promise<void> => {
   expect(a1.at(-1) === 429, "s6a: first mapped address never refused");
   expect(a2 === 200, `s6a: second mapped address got ${String(a2)}`);
 
-  const b1 = await untilBlocked("none");
-  const b2 = await one("none", CLIENT_ID_B);
+  const b1 = await rpcIp("none", CLIENT_ID, 1);
+  const b2 = await rpcIp("none", CLIENT_ID_B, 1);
   console.log(
-    `S6b no-ip: client A → ${statusCounts(b1)}; client B (different client id) → ${String(b2)}`,
+    `S6b no-ip: client A → ${String(b1)}; client B (different client id) → ${String(b2)}`,
   );
   // The gateway requires a parseable client address — a missing one is a 400, not a shared bucket.
-  expect(
-    b1.every((status) => status === 400),
-    "s6b: missing address not rejected with 400",
-  );
+  expect(b1 === 400, "s6b: missing address not rejected with 400");
   expect(b2 === 400, `s6b: second client's missing address got ${String(b2)}`);
 
-  const c1 = await untilBlocked("2001:db8:1:1::1");
-  const c2 = await one("2001:db8:1:2::1");
+  await freshWindow();
+  const c1 = await flood("2001:db8:1:1::1", 16, true);
+  const c2 = await rpcIp("2001:db8:1:2::1", CLIENT_ID, 1);
   console.log(
     `S6c same-/48: first 2001:db8:1:1::1 → ${statusCounts(c1)}; second 2001:db8:1:2::1 → ${String(c2)}`,
   );
-  // Distinct /64s inside one /48 share the /48 share key — the neighbour is refused too.
+  // Distinct /64s inside one /48 share the /48 IP-limiter key — the neighbour is refused too.
   expect(c1.at(-1) === 429, "s6c: first /64 never refused");
   expect(c2 === 429, `s6c: same-/48 neighbour got ${String(c2)}`);
 };

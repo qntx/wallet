@@ -4,12 +4,17 @@
  * readiness, runs the drive scenario, and always stops the wrangler processes. Usage:
  *
  * Bun tests/workerd/run.ts # the default suite bun tests/workerd/run.ts <scenario> # one of
- * steady|s1|s2|s4|s5|s6|s7|storm
+ * smoke|steady|s1|s2|s4|s5|s6|s7|storm
+ *
+ * `smoke` runs the real deploy smoke plan (scripts/smoke-plan.ts runSmoke, env production) against
+ * worker A — the entry's stub upstream answers the smoke calls.
  *
  * Fixed ports: A on 8801 owns the Durable Objects; B on 8802 reaches them through the local dev
  * registry (`script_name` in wrangler.peer.json), which also means B alone exercises the
  * object-down path. The exit code is the aggregate drive result.
  */
+import { runSmoke } from "../../scripts/smoke-plan.ts";
+
 declare const process: {
   readonly argv: ReadonlyArray<string>;
   readonly env: { readonly TMPDIR?: string };
@@ -40,6 +45,7 @@ const WORKER_B: Worker = { config: "wrangler.peer.json", port: PORT_B };
 
 const GROUPS: Record<string, { readonly workers: ReadonlyArray<Worker>; readonly scale: string }> =
   {
+    smoke: { workers: [WORKER_A], scale: "production" },
     steady: { workers: [WORKER_A], scale: "production" },
     s1: { workers: [WORKER_A], scale: "production" },
     s5: { workers: [WORKER_A], scale: "production" },
@@ -51,7 +57,7 @@ const GROUPS: Record<string, { readonly workers: ReadonlyArray<Worker>; readonly
     s4: { workers: [WORKER_B], scale: "small" },
   };
 
-const DEFAULT_SUITE = ["steady", "s1", "s7", "s6", "s5", "s2", "storm", "s4"];
+const DEFAULT_SUITE = ["smoke", "steady", "s1", "s7", "s6", "s5", "s2", "storm", "s4"];
 
 type Running = { readonly exited: Promise<number>; kill: () => void };
 
@@ -114,6 +120,28 @@ const start = async (worker: Worker, scale: string, persistTo: string): Promise<
   }
 };
 
+/** The deploy smoke plan against the real worker — 0 when every check passes. */
+const smokeAgainst = async (base: string): Promise<number> => {
+  // Local workerd does not set cf-connecting-ip the way the edge does — the harness entry maps
+  // x-test-ip into it, and the gateway requires a client address.
+  const { passed, failures } = await runSmoke({
+    fetch: async (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set("x-test-ip", "203.0.113.50");
+      return globalThis.fetch(input, { ...init, headers });
+    },
+    baseUrl: base,
+    env: "production",
+  });
+  for (const name of passed) {
+    console.log(`smoke: pass ${name}`);
+  }
+  for (const failure of failures) {
+    console.log(`smoke: FAIL ${failure}`);
+  }
+  return failures.length === 0 ? 0 : 1;
+};
+
 const main = async (): Promise<void> => {
   const [requested] = process.argv.slice(2);
   const scenarios = requested === undefined ? DEFAULT_SUITE : [requested];
@@ -138,12 +166,16 @@ const main = async (): Promise<void> => {
       }
       const urls = group.workers.map((worker) => `http://localhost:${String(worker.port)}`);
       console.log(`run: ${scenario} → ${urls.join(" ")}`);
+      const runScenario = async (): Promise<number> =>
+        scenario === "smoke"
+          ? smokeAgainst(urls[0] ?? "")
+          : Bun.spawn(["bun", "drive.ts", scenario, ...urls], {
+              cwd: HERE,
+              stdout: "inherit",
+              stderr: "inherit",
+            }).exited;
       // oxlint-disable-next-line eslint/no-await-in-loop -- scenarios run one at a time
-      const code = await Bun.spawn(["bun", "drive.ts", scenario, ...urls], {
-        cwd: HERE,
-        stdout: "inherit",
-        stderr: "inherit",
-      }).exited;
+      const code = await runScenario();
       if (code !== 0) {
         failures += 1;
         console.log(`run: ${scenario} exited ${String(code)}`);

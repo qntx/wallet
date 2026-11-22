@@ -20,6 +20,7 @@ import type { Account } from "../../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../../src/config/networks.ts";
 import type { UpstreamAuthId } from "../../src/types.ts";
+import { upstreamAnswer } from "../upstream-stub.ts";
 
 export { ProviderBudgetObject } from "../../src/budget/durable.ts";
 
@@ -202,7 +203,11 @@ const upstream = (delayMs: number): typeof globalThis.fetch => {
       const stat = upstreamStat(account);
       stat.calls += 1;
       stat.units += units;
-      return rpcReply(parsed);
+      // Single calls go through the shared smoke stub (a real chain id, the genesis hash, a
+      // defined result for everything else); batches keep the generic echo reply.
+      return calls !== undefined && !Array.isArray(calls)
+        ? upstreamAnswer({ url: raw, body })
+        : rpcReply(parsed);
     }
 
     const stat = upstreamStat(account);
@@ -216,40 +221,8 @@ const upstream = (delayMs: number): typeof globalThis.fetch => {
       if (url.pathname.endsWith("/getnowblock")) {
         return json(TRON_BLOCK);
       }
-      return json({});
-    }
-    if (account === "blockstream") {
-      return new Response("1", { headers: { "content-type": "text/plain" } });
-    }
-    if (account === "coingecko") {
-      if (url.pathname.endsWith("/ping")) {
-        return json({ gecko_says: "(V3) To the Moon!" });
-      }
-      // /simple/price?ids=a,b&vs_currencies=x — every id gets a quote in `vs_currencies`.
-      const ids = url.searchParams.get("ids")?.split(",") ?? [];
-      const contracts = url.searchParams.get("contract_addresses")?.split(",") ?? [];
-      const currency = url.searchParams.get("vs_currencies") ?? "usd";
-      const quote = {
-        [currency]: 3000,
-        [`${currency}_24h_change`]: 1.5,
-        last_updated_at: Math.floor(Date.now() / 1000),
-      };
-      return json(Object.fromEntries([...ids, ...contracts].map((id) => [id, quote])));
-    }
-    if (account === "defillama") {
-      // /prices/current/<keys> and /percentage/<keys>?period=24h — every key quoted.
-      const keys = url.pathname.split("/").pop()?.split(",") ?? [];
-      if (url.pathname.startsWith("/percentage/")) {
-        return json({ coins: Object.fromEntries(keys.map((key) => [key, 1.5])) });
-      }
-      return json({
-        coins: Object.fromEntries(
-          keys.map((key) => [
-            key,
-            { price: 3000, timestamp: Math.floor(Date.now() / 1000), confidence: 1 },
-          ]),
-        ),
-      });
+      // /wallet/getchainparameters and every other proxied path — the smoke stub answers them.
+      return upstreamAnswer({ url: raw, body });
     }
     if (account === "jupiter") {
       return json({
@@ -267,8 +240,12 @@ const upstream = (delayMs: number): typeof globalThis.fetch => {
         transactionVersion: 0,
       });
     }
-    // across / 0x and any future provider: a bare object — enough for malformed/failover paths.
-    return json({});
+    // across / 0x are not network providers — the shared stub has no answer for them.
+    if (account === "across" || account === "0x") {
+      return json({});
+    }
+    // blockstream (genesis hash text) and the price providers — the smoke stub answers them.
+    return upstreamAnswer({ url: raw, body });
   };
   return fetchStub;
 };
