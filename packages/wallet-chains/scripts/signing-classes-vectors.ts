@@ -724,7 +724,12 @@ const cases: VectorCase[] = [
     ),
     verifiability: "opaque",
     blind: null,
-    prompt: p("Confirm signature", "确认签名", "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH", "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"),
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+    ),
   },
   {
     name: "EIP-712 SafeMessage(bytes) (commitment)",
@@ -1466,11 +1471,18 @@ const cases: VectorCase[] = [
   {
     name: "solana message kernel-line forgery",
     request: solanaMessage(
-      [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join(""),
+      [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")]
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(""),
     ),
     verifiability: "opaque",
     blind: null,
-    prompt: p("Confirm signature", "确认签名", "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH", "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH"),
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+    ),
   },
   {
     name: "solana message 32 bytes",
@@ -1959,7 +1971,9 @@ const TRON_MSG_CASES = {
   "tron message kernel-line forgery": {
     verifiability: "opaque",
     blind: null,
-    messageHex: [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join(""),
+    messageHex: [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
     prompt: {
       en: {
         title: "Confirm signature",

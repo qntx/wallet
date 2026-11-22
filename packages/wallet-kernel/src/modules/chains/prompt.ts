@@ -859,8 +859,8 @@ const REQUESTER_LINE = "· ";
 const quoted = (line: string): string => `${REQUESTER_LINE}${line}`;
 
 /**
- * The requester text of a message or memo: each displayed line quoted, plus the kernel's own
- * "… N more" line (unquoted) when the excerpt does not fit.
+ * The requester text of a message or memo: each displayed line quoted, plus the kernel's own "… N
+ * more" line (unquoted) when the excerpt does not fit.
  */
 const requesterText = (catalog: Catalog, text: string): ReadonlyArray<string> => {
   const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
@@ -868,8 +868,8 @@ const requesterText = (catalog: Catalog, text: string): ReadonlyArray<string> =>
 };
 
 /**
- * One requester-chosen value on a single line; a dropped remainder is marked with an ellipsis so
- * a second line or tail can never hide inside it.
+ * One requester-chosen value on a single line; a dropped remainder is marked with an ellipsis so a
+ * second line or tail can never hide inside it.
  */
 const field = (raw: string): string => {
   const { lines, omitted } = displayExcerpt(raw, 1, FIELD_CODE_POINTS);
