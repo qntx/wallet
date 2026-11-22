@@ -1303,8 +1303,11 @@ export class RequestController extends Controller<RequestControllerState> {
           intents.some((i) => i.verifiability !== "full") ? ["decode-partial"] : [],
         ),
         risk: mergeRisk(
-          assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
-          intents.flatMap((intent) => this.blindRisk(intent)),
+          mergeRisk(
+            assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
+            intents.flatMap((intent) => this.blindRisk(intent)),
+          ),
+          intents.flatMap((intent) => this.recipientRisk(intent, undefined)),
         ),
         run: {
           factor: "required",

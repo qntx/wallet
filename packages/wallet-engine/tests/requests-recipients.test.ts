@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { OutScript } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import {
   AccountRole,
   address,
@@ -63,6 +65,7 @@ const TRON_ACCOUNT: AccountRef = {
   template: "tron.bip44",
 };
 const SOL_ACCOUNT = { walletId: "w", groupIndex: 0, address: "11111111111111111111111111111112" };
+const BTC_GROUP = { walletId: "w", groupIndex: 0 };
 const BTC_ACCOUNT_REF: AccountRef = {
   kind: "hd",
   walletId: "w",
@@ -79,6 +82,8 @@ const TRON_KNOWN = `TCLB${"9".repeat(26)}QCLQ`;
 const TRON_LOOKALIKE = `TCLB${"8".repeat(26)}QCLQ`;
 const SOL_DEST = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
 const SOL_KNOWN = `8qbH${"9".repeat(36)}VfeR`;
+const BTC_DEST = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+const BTC_KNOWN = `bc1q${"z".repeat(34)}f3t4`;
 
 const baseIntent = (family: DisplayIntent["family"], network: string): DisplayIntent =>
   ({
@@ -152,6 +157,21 @@ const trackedTo = (
     submittedAt: 0,
     error: undefined,
   };
+};
+
+/** The one-input-one-output PSBT paying `to`. */
+const psbtTo = (to: string): Uint8Array => {
+  const tx = new Transaction({ allowUnknownOutputs: true });
+  tx.addInput({
+    txid: "00".repeat(32),
+    index: 0,
+    witnessUtxo: {
+      script: OutScript.encode({ type: "wpkh", hash: new Uint8Array(20).fill(1) }),
+      amount: 10_000n,
+    },
+  });
+  tx.addOutputAddress(to, 1000n);
+  return tx.toPSBT(0);
 };
 
 /** A legacy Solana transaction: System Program transfer of 1_000_000 lamports signer → `to`. */
@@ -640,6 +660,30 @@ describe("every decoded recipient is assessed", () => {
       },
     });
     expect(recipientFindings(request)).toStrictEqual([]);
+  });
+
+  it("a bitcoin-sign psbt paying a lookalike of a known address is flagged", async () => {
+    const { requests } = rig({
+      known: [{ family: "bitcoin", network: BITCOIN_NET, address: BTC_KNOWN }],
+    });
+    await requests.init();
+    const request = await requests.prepare({
+      method: "bitcoin-sign",
+      origin: ORIGIN,
+      account: BTC_GROUP,
+      network: BITCOIN_NET,
+      request: {
+        kind: "psbt",
+        psbts: [
+          {
+            psbt: psbtTo(BTC_DEST),
+            sign: [{ index: 0, sigHash: "ALL" as const, template: "btc.bip84" as const }],
+          },
+        ],
+        send: false,
+      },
+    });
+    expect(codes(request)).toStrictEqual(["address-poisoning", "first-recipient"]);
   });
 
   it("a send to a lookalike of a known address is flagged", async () => {
