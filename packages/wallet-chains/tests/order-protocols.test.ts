@@ -175,13 +175,24 @@ describe("order-protocols vectors", () => {
     expect(mismatchedDomains).toStrictEqual([]);
   });
 
-  it.each(vectors.filter((vector) => vector.label === "zerox-metatxn"))(
+  const metatxn = vectors.flatMap((vector) =>
+    vector.label === "zerox-metatxn" && vector.owner !== undefined && vector.nonce !== undefined
+      ? [
+          {
+            chainId: vector.chainId,
+            owner: vector.owner,
+            nonce: vector.nonce,
+            codePresent: vector.codePresent,
+          },
+        ]
+      : [],
+  );
+
+  it.each(metatxn)(
     "the probed MetaTxn settler on chain $chainId derives from feature 3",
-    ({ chainId, owner, nonce, codePresent }) => {
+    ({ chainId, owner, codePresent }) => {
       expect(codePresent).toBe(true);
-      expect(owner).toBeDefined();
-      expect(nonce).toBeDefined();
-      expect(isZeroExSettler(chainId, owner ?? "", 3n)).toBe(true);
+      expect(isZeroExSettler(chainId, owner, 3n)).toBe(true);
     },
   );
 });

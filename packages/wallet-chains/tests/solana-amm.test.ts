@@ -484,7 +484,7 @@ const dlmmData = (disc: Uint8Array, a: bigint, b: bigint): Uint8Array =>
   cat(disc, u64le(a), u64le(b));
 
 describe("Meteora DLMM", () => {
-  it("the instruction discriminators are sha256(\"global:<name>\")[0..8]", async () => {
+  it('the instruction discriminators are sha256("global:<name>")[0..8]', async () => {
     const { sha256 } = await import("@noble/hashes/sha2.js");
     const enc = new TextEncoder();
     expect(sha256(enc.encode("global:swap")).subarray(0, 8)).toStrictEqual(DLMM_SWAP);
