@@ -1,0 +1,9 @@
+repository https://github.com/qntx/wallet-applet
+commit 1d97c60e7b98a951d032aa7c74efa9cf986a03dd
+path spec/vectors
+licence MIT OR Apache-2.0
+a50755f3522c4dc71e15b794143cff7f77107bb83932b1b68f64d0182000a149  apdu.json
+aae30fa7e5cb652762ee07110d7d72c8c2c279e1846e5ce30ddc1d5a208455ec  cert.json
+0a85d0605f445f3245aaaa310d1c7615545d30315283e16c9491eeb57f6991d3  kdf.json
+876fdd12b4dcf11e0f901c1bc4a73b4462f7e94bbda84878722ae159dc082c95  record.json
+4229e90df737ca66a1b182d838cdcb80b68cdff6e033edbdc8216e376e52f94b  session.json

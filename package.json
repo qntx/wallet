@@ -23,7 +23,7 @@
     "fuzz": "vp run @qntx/wallet-engine#build && bun run --filter './packages/*' fuzz",
     "test:browser": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run @qntx/wallet-engine#test:browser && vp run @qntx/wallet-worker#test:browser && vp run @qntx/playground#test:browser",
     "check:pkg": "bun scripts/check-links.ts && vp run @qntx/wallet#check:pkg && vp run @qntx/wallet-worker#check:pkg && vp run @qntx/wallet-engine#check:pkg && vp run @qntx/wallet-chains#check:pkg && vp run @qntx/wallet-native#check:pkg",
-    "smoke:hermes": "bun run --cwd packages/wallet-worker smoke:hermes && bun run --cwd packages/wallet-chains smoke:hermes",
+    "smoke:hermes": "bun run --cwd packages/wallet-worker smoke:hermes && bun run --cwd packages/wallet-chains smoke:hermes && bun run --cwd packages/wallet-kernel smoke:hermes",
     "harness:bundles": "vp run @qntx/wallet-chains#build && bun scripts/harness-bundles.ts",
     "native:host-test": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && bun scripts/native-host-test.ts",
     "release": "bumpp",
