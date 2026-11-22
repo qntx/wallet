@@ -1113,15 +1113,10 @@ paid plan.
 
 ### Vault
 
-- New record kind `hl-agent` (id: the agent's lowercase address; header
-  `{ walletId, groupIndex, owner, network, name, validUntil, createdAt }`; sealed payload: the
-  32-byte agent private key). `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows
-  like every other record.
-- No data migration: existing vaults are unchanged until the first `hyperliquid.createAgent`.
-- Downgrade: once a vault holds an `hl-agent` record, a build without this change reports the
-  vault `unsupported` (an unclaimed record kind) and leaves it untouched. Delete all agents
-  (`hyperliquid.deleteAgent`) before downgrading.
-- Backups never contain agent keys. After a restore, create and approve a new agent.
+Superseded by §28: the agent key this section described is a generic `session-key` record of the
+`hyperliquid-l1-agent` scheme — the record shape, the unknown-scheme rules and the downgrade
+warning live there. `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows like every
+other record.
 
 ### Host-visible behaviour
 
@@ -1131,12 +1126,12 @@ paid plan.
   (`typed-data-variant`; `typed-data-commitment` for the Hyperliquid `Exchange`/`Agent` document)
   and are refused unless the vault's blind-signing policy is on — previously they were shown as a
   generic field list.
-- `chain.sign` of an `approveAgent` for an agent address this vault holds is refused with
-  `invalid-input` unless the signer is the agent's owner and `hyperliquidChain`, the agent name and
-  `valid_until` equal the values given to `hyperliquid.createAgent`. Build the name as
-  `` `${name} valid_until ${validUntil}` ``.
-- New methods `hyperliquid.createAgent`, `hyperliquid.listAgents`, `hyperliquid.deleteAgent`,
-  `hyperliquid.signL1` (session required). `hyperliquid.signL1` does not refresh the idle timer.
+- `chain.sign` of an `approveAgent` is bound to the held agent — superseded by §28: the check
+  compares the signer and the approval's fields against the held `hyperliquid-l1-agent` session's
+  `scope`, `name` and `validUntil`.
+- New methods `sessions.create`, `sessions.list`, `sessions.delete`, `sessions.sign` (session
+  required) — superseded by §28: generic session keys, the M-1 signing window and the
+  `sessions(wallet)` facade under `@qntx/wallet/sessions`.
 
 ## 19. Signing classification: message text, typed-data commitments, orders, Solana program authority
 
@@ -1296,14 +1291,15 @@ apps entry uses this for Hyperliquid user-signed actions; hosts showing approval
 ready for an `evm-sign` request with an internal origin (show it as the wallet's own request; the
 prompt content is the kernel's decode of the typed data, `display.message.hyperliquid`).
 
-### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/hyperliquid`
+### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/sessions`
 
 Opt-in entries; a host that does not import them bundles nothing new. The complete host
 composition (engine + apps, terms, enable with the approval request, orders with quote previews,
 a live book, close, withdraw, Bridge2 deposit) is the typechecked file
 `tests/migration/hyperliquid.ts`, compiled by `bun run typecheck`
 (`tsc --noEmit -p tests/migration`). The engine README's "Hyperliquid" section describes every
-option.
+option. The kernel-held agent it enables is a `hyperliquid-l1-agent` session key under
+`@qntx/wallet/sessions` — superseded by §28.
 
 Host checklist:
 
@@ -1526,5 +1522,56 @@ await apps.destroy();
 
 ### `@qntx/wallet` and the vault
 
-No change: Polymarket adds no `@qntx/wallet` subpath, protocol method or vault record. The kernel
-bundle is byte-identical.
+No change from Polymarket itself: it adds no `@qntx/wallet` subpath, protocol method or vault
+record. The kernel bundle does change in this release, but only for §28 (session keys).
+
+## 28. Session keys and app-attributed requests
+
+Compiled snippet: `tests/migration/sessions.ts`.
+
+### Vault
+
+- New record kind `session-key` (id: the key's lowercase EVM address; header
+  `{ scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt }`; sealed payload:
+  the 32-byte secp256k1 private key). `VAULT_FORMAT` stays 5, and the vault manifest covers the new
+  rows like every other record.
+- No data migration: an existing vault is unchanged until its first `sessions.create`.
+- A record whose `scheme` this build does not know stays inert: `sessions.list` shows it with
+  `supported: false`, `sessions.sign` answers `unsupported`, and `sessions.delete` and wallet
+  deletion remove it. The vault stays `ok`. A build older than this change does not know the
+  `session-key` kind at all. Once such a record exists, an older build reports the vault
+  `unsupported` and leaves it untouched, so delete all sessions before downgrading.
+- Backups never contain session keys. After a restore, create and approve a new session.
+
+### Host-visible behaviour
+
+- The `chain.sign` prompt bullets about Hyperliquid and Polymarket typed data are unchanged from
+  the current §18 text.
+- `chain.sign` of an `approveAgent` for an address this vault holds as a `hyperliquid-l1-agent`
+  session is refused with `invalid-input` unless the signer is the session's owner and
+  `hyperliquidChain`, the agent name and `valid_until` equal the session's `scope`, `name` and
+  `validUntil`. An address held by a session of another scheme is refused too.
+- New methods `sessions.create`, `sessions.list`, `sessions.delete` and `sessions.sign` (session
+  required), wrapped by `sessions(wallet)` from `@qntx/wallet/sessions`. `sessions.sign` does not
+  refresh the idle timer.
+- `hyperliquid-l1-agent` signing needs `params.expiresAfter`, with `now < expiresAfter ≤ now + 60
+  s`, and a nonce within ±60 s of the kernel clock. A `scheduleCancel` time must be at least 5 s
+  out and no later than the session's `validUntil`. Anything else answers `invalid-input`. The
+  engine's Hyperliquid provider already sends `expiresAfter = now + 15 s`.
+
+### `RequestOrigin` gains `app`
+
+- `RequestOrigin` is now `{ kind: "internal" } | { kind: "app"; id: string } | DappOrigin`.
+  Requests that an in-engine app opens through `createApps` carry `{ kind: "app", id }` on
+  `PendingRequest.origin` and in the sign log — Hyperliquid's user-signed actions and CCTP deposit
+  with `{ kind: "app", id: "hyperliquid" }`, and Polymarket's enable-time credential and approvals
+  requests, orders, deposit and withdraw with `{ kind: "app", id: "polymarket" }`. An exhaustive
+  `switch` over `origin.kind` in host code needs an `"app"` case. Show the app as the requester;
+  it is not a web origin. See `originLabel` in `tests/migration/walletconnect.ts` and the snippet
+  in `tests/migration/sessions.ts`.
+- Sign-log entries written before this change keep their `internal` origin.
+
+### Gateway eligibility
+
+`EligibilityResponse["apps"]` is a map keyed by app id. Treat a missing app as unknown, not as
+available (`tests/migration/sessions.ts`).

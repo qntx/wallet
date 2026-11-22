@@ -53,6 +53,14 @@ export function requestOriginLabel(origin: PendingRequest["origin"]): string {
   return `${origin.name} <${origin.url}>`;
 }
 
+/**
+ * Polymarket requests carry the same `app` origin shape — `{ kind: "app", id: "polymarket" }` —
+ * on `PendingRequest.origin` and in the sign log. Show the app, not a web origin.
+ */
+export function isPolymarketRequest(request: PendingRequest): boolean {
+  return request.origin.kind === "app" && request.origin.id === "polymarket";
+}
+
 /** `apps` is keyed by app id — the gateway's config decides which appear; absent is unknown. */
 export function appAvailability(
   answer: EligibilityResponse,
