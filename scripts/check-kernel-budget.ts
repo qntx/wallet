@@ -28,7 +28,7 @@ const ENTRY = "packages/wallet-native/kernel/kernel-entry.ts";
 const SHARE_BUDGET = 0.05;
 const CARD_ENTRY = "qntx-budget-card.ts";
 const CARD_ENTRY_ID = "\0qntx-budget-card";
-const CARD_PROTOCOL = /^packages\/wallet-kernel\/src\/modules\/card\/protocol\//;
+const CARD_PROTOCOL = "packages/wallet-kernel/src/modules/card/protocol/";
 // measured 38260 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
 const CARD_BUDGET = 40_192;
 
@@ -125,7 +125,7 @@ const plugins = (ablate: boolean) => [
     },
     load(id: string) {
       if (id === CARD_ENTRY_ID) {
-        return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, "packages/wallet-kernel/src/modules/card/protocol/index.ts")}";`;
+        return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, CARD_PROTOCOL, "index.ts")}";`;
       }
       return ablate ? (STUBS[rel(id)] ?? null) : null;
     },
@@ -217,7 +217,7 @@ for (const unit of UNITS) {
 }
 let cardBytes = 0;
 for (const [id, renderedLength] of card.rendered) {
-  if (id.startsWith("packages/wallet-kernel/src/modules/card/protocol/")) {
+  if (id.startsWith(CARD_PROTOCOL)) {
     cardBytes += renderedLength;
   }
 }
@@ -226,7 +226,7 @@ console.log(
   `  ${"card protocol client".padEnd(26)} ${String(cardBytes).padStart(7)} B / ${CARD_BUDGET} B  ${cardBytes === 0 || cardBytes > CARD_BUDGET ? "BREACH " : ""}— qntx card protocol client, all exports retained (bundle delta +${cardDelta} B)`,
 );
 if (cardBytes === 0) {
-  breaches.push(`card protocol client: no rendered modules matched ${CARD_PROTOCOL.source}`);
+  breaches.push(`card protocol client: no rendered modules under ${CARD_PROTOCOL}`);
 }
 if (cardBytes > CARD_BUDGET) {
   breaches.push(`card protocol client: ${cardBytes} B exceeds ${CARD_BUDGET} B`);

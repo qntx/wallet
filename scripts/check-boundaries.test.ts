@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { exportTarget, ENCLAVE_CONDITIONS, RULES } from "./check-boundaries.ts";
-import type { Edge, Violation } from "./check-boundaries.ts";
+import type { Edge } from "./check-boundaries.ts";
 
 describe("exportTarget", () => {
   it("returns a plain string export", () => {
@@ -67,18 +67,9 @@ describe("exportTarget", () => {
 const PROTOCOL = "packages/wallet-kernel/src/modules/card/protocol";
 
 const violationsOf = (from: string, target: Edge["target"]): string[] =>
-  RULES.flatMap((rule): Violation[] => {
-    const message = rule.check({ from, specifier: "x", typeOnly: false, line: 1, target });
-    return message === undefined
-      ? []
-      : [
-          {
-            edge: { from, specifier: "x", typeOnly: false, line: 1, target },
-            rule: rule.id,
-            message,
-          },
-        ];
-  }).map((violation) => violation.rule);
+  RULES.filter(
+    (rule) => rule.check({ from, specifier: "x", typeOnly: false, line: 1, target }) !== undefined,
+  ).map((rule) => rule.id);
 
 const fileTarget = (path: string): Edge["target"] => ({ kind: "file", path });
 const packageTarget = (name: string): Edge["target"] => ({ kind: "package", name, subpath: "." });
