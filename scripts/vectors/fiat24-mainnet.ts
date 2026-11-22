@@ -7,11 +7,10 @@ import { writeFileSync } from "node:fs";
  * Regenerates vectors/chains/fiat24-mainnet.json: real Arbitrum One transactions that call the
  * pinned Fiat24 proxies — the mainnet corpus the decoder tests replay.
  *
- * Event windows are seeded at the recorded last-seen block of each event family and searched
- * with eth_getLogs in
- * windows of at most 10000 blocks — Arbitrum endpoints return wrong results on wide windows.
- * Requests are sequential and throttled; the Tenderly archive endpoint is tried first and the
- * BlastAPI archive is the fallback. tx
+ * Event windows are seeded at the recorded last-seen block of each event family and searched with
+ * eth_getLogs in windows of at most 10000 blocks — Arbitrum endpoints return wrong results on wide
+ * windows. Requests are sequential and throttled; the Tenderly archive endpoint is tried first and
+ * the BlastAPI archive is the fallback. tx
  * 0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3 is always included. At most
  * three transactions are kept per (contract, selector); selectors with no mainnet sample are listed
  * in `missingSelectors`.
