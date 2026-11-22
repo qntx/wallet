@@ -305,6 +305,14 @@ describe("normalize", () => {
     expect(() => normalizeSolana(bad, FEE_PAYER)).toThrow(ChainError);
   });
 
+  it("rejects lookup tables on a v1 transaction — v1 has no address lookup tables", () => {
+    const withTables = {
+      ...req(compile([transferIx()], 1)),
+      lookupTables: [{ address: LOOKUP_TABLE, addresses: [DEST] }],
+    };
+    expect(() => normalizeSolana(withTables, FEE_PAYER)).toThrow(/no address lookup tables/);
+  });
+
   it("rejects solana.message bytes that decode as a transaction", () => {
     const asMessage = { ...req(compile([transferIx()])), kind: "solana.message", format: "raw" };
     expect(() => normalizeSolana(asMessage, FEE_PAYER)).toThrow(ChainError);
@@ -369,11 +377,12 @@ describe("transaction-message refusal of raw solana.message", () => {
     expect(() => normalizeSolana(asRaw(compile([transferIx()], 1)), FEE_PAYER)).toThrow(ChainError);
   });
 
-  it("refuses a v1 transaction and every other versioned prefix as unsupported", () => {
-    expect(codeOf(() => normalizeSolana(req(compile([transferIx()], 1)), FEE_PAYER))).toBe(
-      "unsupported",
+  it("accepts a v1 transaction and refuses only the higher versioned prefixes", () => {
+    expect(normalizeSolana(req(compile([transferIx()], 1)), FEE_PAYER).kind).toBe(
+      "solana.transaction",
     );
-    for (const first of [0x81, 0x82, 0xfe]) {
+    expect(codeOf(() => parseCompiledMessage(new Uint8Array([0x81, 0])))).toBe("invalid-request");
+    for (const first of [0x82, 0xfe]) {
       expect(codeOf(() => parseCompiledMessage(new Uint8Array([first, 0])))).toBe("unsupported");
     }
   });

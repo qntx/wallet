@@ -353,6 +353,36 @@ describe("durableNonceOfMessage", () => {
     expect(durableNonceOfMessage(plainBytes)).toBeUndefined();
   });
 
+  it("detects a durable nonce in a v1 message", async () => {
+    const payer = await generateKeyPairSigner();
+    const nonceAccount = await generateKeyPairSigner();
+    const recipient = await generateKeyPairSigner();
+    const message = setTransactionMessageLifetimeUsingDurableNonce(
+      {
+        nonce: NONCE_VALUE as Nonce,
+        nonceAccountAddress: nonceAccount.address,
+        nonceAuthorityAddress: payer.address,
+      },
+      appendTransactionMessageInstructions(
+        [
+          getTransferSolInstruction({
+            source: payer,
+            destination: recipient.address,
+            amount: 1000,
+          }),
+        ],
+        setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 1 })),
+      ),
+    );
+    const compiled = new Uint8Array(
+      getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
+    );
+    expect(durableNonceOfMessage(compiled)).toStrictEqual({
+      account: nonceAccount.address,
+      value: NONCE_VALUE,
+    });
+  });
+
   it("a nonce account loaded from a lookup table is still durable — the account reads as undefined", () => {
     // A v0 message whose AdvanceNonceAccount index resolves past the static keys, into the
     // lookup-table space: on chain that IS the nonce account, so the message is durable even
