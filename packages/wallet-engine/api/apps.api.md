@@ -137,7 +137,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 export type AppContext = {
     readonly wallet: Wallet;
     readonly requests: AppRequests;
-    readonly networks: Pick<NetworkController, "client">;
+    readonly networks: Pick<NetworkController, "client" | "independentClient">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
@@ -609,7 +609,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
 export type CreateAppsOptions = {
     readonly wallet: Wallet;
     readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
-    readonly networks: Pick<NetworkController, "client">;
+    readonly networks: Pick<NetworkController, "client" | "independentClient">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;

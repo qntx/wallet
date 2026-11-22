@@ -3053,7 +3053,7 @@ type WalletConnectVerify = {
 
 // @public (undocumented)
 type WalletEngine = {
-    readonly networks: HostController<NetworkController, "endpoints" | "info" | "enabled" | "client" | "solanaRpc" | "esplora" | "addRpc">;
+    readonly networks: HostController<NetworkController, "endpoints" | "info" | "enabled" | "client" | "independentClient" | "solanaRpc" | "esplora" | "addRpc">;
     readonly assets: HostController<AssetsController, "setVisible" | "refresh" | "refreshBitcoinGroup" | "isTracked" | "tokenMetadata" | "addToken" | "setTokenHidden">;
     readonly prices: HostController<PricesController, "setVisible" | "setCurrency" | "refresh">;
     readonly portfolio: {

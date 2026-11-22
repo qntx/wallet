@@ -134,7 +134,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 type AppContext = {
     readonly wallet: Wallet;
     readonly requests: AppRequests;
-    readonly networks: Pick<NetworkController, "client">;
+    readonly networks: Pick<NetworkController, "client" | "independentClient">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
@@ -1067,6 +1067,23 @@ export type PolymarketBuilderHeaders = {
     readonly POLY_BUILDER_TIMESTAMP: string;
 };
 
+// @public
+export type PolymarketCancelAttempt =
+/** The CLOB listed our order id under `canceled`. */
+    {
+    readonly kind: "canceled";
+} |
+/** The CLOB refused — `reason` is its `not_canceled[id]` text, or that it listed neither. */
+    {
+    readonly kind: "not-canceled";
+    readonly reason: string;
+} |
+/** The DELETE itself never produced an answer. */
+    {
+    readonly kind: "failed";
+    readonly message: string;
+};
+
 // @public (undocumented)
 export type PolymarketCancelResult = {
     readonly canceled: ReadonlyArray<string>;
@@ -1136,7 +1153,12 @@ export type PolymarketErrorCategory =
 /** A blocked jurisdiction, or an unknown/error eligibility answer — the gate fails closed. */
 "blocked" |
 /** The group resolves to a legacy Safe — read-only until migrated to a deposit wallet. */
-"needs-migration";
+"needs-migration" |
+/**
+* The relayer, the chain RPC and the host endpoint disagree on which account wallet exists, or
+* the code there is not the expected template — nothing is chosen.
+*/
+"deployment-mismatch";
 
 // @public (undocumented)
 export type PolymarketEvent = {
@@ -1370,19 +1392,27 @@ export type PolymarketOrderOutcome =
     readonly kind: "canceled";
     readonly orderId: string;
 } |
-/** The CLOB has no such order after every reconcile read — the POST did not land. */
-    {
-    readonly kind: "not-found";
-    readonly orderId: string;
-} |
-/** The POST's fate is unknowable — refresh the account; the order may be live. */
+/**
+* The POST's fate is unknowable — the order may or may not exist; never blindly re-place (a
+* later-landing first order plus the retry is a duplicate position). `cancel` — present iff the
+* order was never seen — records the defensive `DELETE /order` attempt; `trade.corrections`
+* reports the eventual status for up to ten minutes.
+*/
     {
     readonly kind: "unknown";
     readonly orderId: string;
+    readonly cancel?: PolymarketCancelAttempt;
 };
 
 // @public (undocumented)
 export type PolymarketOrderType = "GTC" | "GTD" | "FOK" | "FAK";
+
+// @public
+export type PolymarketOutcomeCorrection = {
+    readonly group: AppGroup;
+    readonly orderId: string;
+    readonly outcome: PolymarketOrderOutcome;
+};
 
 // @public (undocumented)
 export type PolymarketPage<T> = {
@@ -1569,6 +1599,9 @@ export type PolymarketTrading = {
         readonly market?: string;
         readonly assetId?: string;
     }) => Promise<PolymarketCancelResult>;
+    readonly corrections: {
+        readonly subscribe: (listener: (correction: PolymarketOutcomeCorrection) => void) => () => void;
+    };
 };
 
 // @public (undocumented)

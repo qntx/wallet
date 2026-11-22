@@ -176,7 +176,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 type AppContext = {
     readonly wallet: Wallet;
     readonly requests: AppRequests;
-    readonly networks: Pick<NetworkController, "client">;
+    readonly networks: Pick<NetworkController, "client" | "independentClient">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
     readonly setTimer: SetTimer;
