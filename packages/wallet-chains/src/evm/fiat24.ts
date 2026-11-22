@@ -1,3 +1,5 @@
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import * as AbiFunction from "ox/AbiFunction";
 
 import { ChainError } from "../index.ts";
@@ -577,4 +579,21 @@ export const decodeFiat24 = (
     return "claimed";
   }
   return undefined;
+};
+
+/* The grant message the Fiat24 API verifies: "I agree to access my profile. " followed by the
+   deadline hash (integration guide part-2-api-reference, Secured APIs). The label the wallet
+   hashes is its own convention — it pins the session to the chain, account token and deadline
+   so a grant cannot be replayed under different terms. */
+const sessionLabel = (chainId: number, tokenId: string, deadline: number): string =>
+  `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+
+/** The exact personal-message text a `evm.fiat24-session` request signs. */
+export const fiat24SessionMessage = (
+  chainId: number,
+  tokenId: string,
+  deadline: number,
+): string => {
+  const digest = `0x${bytesToHex(keccak_256(utf8ToBytes(sessionLabel(chainId, tokenId, deadline) + deadline)))}`;
+  return `I agree to access my profile. ${digest}`;
 };

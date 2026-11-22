@@ -85,6 +85,15 @@ export type SignRequest =
       readonly account: AccountRef;
       readonly message: Uint8Array;
     }
+  /* A Fiat24 session grant the wallet builds itself — the signed text is derived from these
+     fields, never supplied. `tokenId` decimal; `deadline` Unix seconds. */
+  | {
+      readonly kind: "evm.fiat24-session";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly tokenId: string;
+      readonly deadline: number;
+    }
   | {
       readonly kind: "evm.typed-data";
       readonly network: string;
@@ -411,7 +420,8 @@ export type Fiat24Action =
       readonly ref?: string;
     }
   | { readonly kind: "top-up"; readonly receive: Fiat24Token }
-  | { readonly kind: "open-account"; readonly account: string };
+  | { readonly kind: "open-account"; readonly account: string }
+  | { readonly kind: "session-grant"; readonly account: string; readonly deadline: number };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
 export type SeaportItem = {

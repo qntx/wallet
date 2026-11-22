@@ -913,7 +913,7 @@ export class RequestController extends Controller<RequestControllerState> {
     this.preparing.set(id, preparing);
     let built: Built;
     try {
-      built = await this.build(input, id);
+      built = await this.build(input, id, app);
     } catch (error) {
       this.unclaim(id);
       throw error;
@@ -1051,7 +1051,7 @@ export class RequestController extends Controller<RequestControllerState> {
     }
   }
 
-  private async build(input: RequestInput, id: string): Promise<Built> {
+  private async build(input: RequestInput, id: string, app?: AppOrigin): Promise<Built> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
         input.method === "pay"
@@ -1123,7 +1123,13 @@ export class RequestController extends Controller<RequestControllerState> {
       return this.sparkBuilt(input.account, action);
     }
     if (input.method === "evm-sign") {
-      if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
+      /* An attributed request — a dApp origin or an app id — shows what it signs; only the
+         truly internal (unattributed) path is limited to typed data. */
+      if (
+        input.origin === undefined &&
+        app === undefined &&
+        input.request.kind !== "evm.typed-data"
+      ) {
         throw new Error("an internal request can only sign typed data");
       }
       const prepared = await this.options.transactions.prepareDapp(input.account, input.request);

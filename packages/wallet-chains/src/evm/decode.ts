@@ -29,7 +29,7 @@ import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { recognizeEip3009 } from "./eip3009.ts";
 import { callNearMiss, personalMessageNearMiss, typedDataNearMiss } from "./families.ts";
 import { recognizeFarcaster } from "./farcaster.ts";
-import { decodeFiat24, fiat24Spender } from "./fiat24.ts";
+import { decodeFiat24, fiat24SessionMessage, fiat24Spender } from "./fiat24.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizeOneinch } from "./oneinch.ts";
@@ -624,6 +624,30 @@ export const decodeEvm = (
       message: content,
       verifiability: "opaque",
       ...(blind === undefined ? {} : { blind }),
+    };
+  }
+  if (request.kind === "evm.fiat24-session") {
+    /* The wallet built the message itself: the Fiat24 session family's described intent.
+       The deadline is shown, not trusted — the kernel re-checks it on every sign pass. */
+    const chainId = networkChainId(request.network);
+    return {
+      family: "evm",
+      network: request.network,
+      summary: "message",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      warnings: [],
+      message: {
+        kind: "text",
+        text: fiat24SessionMessage(chainId, request.tokenId, request.deadline),
+      },
+      fiat24: {
+        kind: "session-grant",
+        account: request.tokenId,
+        deadline: request.deadline,
+      },
+      verifiability: "partial",
     };
   }
   if (request.kind !== "evm.typed-data") {

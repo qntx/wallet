@@ -3,7 +3,8 @@ import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "../src/evm/decode.ts";
-import { encodeBatchExecute } from "../src/evm/index.ts";
+import { encodeBatchExecute, fiat24SessionMessage, normalizeEvm } from "../src/evm/index.ts";
+import { ChainError } from "../src/index.ts";
 import type { ApprovalChange, EvmTransaction, SignRequest } from "../src/index.ts";
 
 /* Fiat24 pins — Arbitrum One only; the same constants the decoder carries. */
@@ -837,5 +838,72 @@ describe("Fiat24 session grant text", () => {
     ["plain text", "hello there"],
   ])("a text that is not the grant is not claimed: %s", (_name, text) => {
     expect(decodeEvm(personal(text), SIGNER).blind).not.toBe("fiat24-session-grant");
+  });
+});
+
+describe("evm.fiat24-session", () => {
+  const session = (
+    tokenId: unknown = "123456",
+    deadline: unknown = 1795278000,
+    network = "eip155:42161",
+  ): SignRequest => ({
+    kind: "evm.fiat24-session",
+    network,
+    account,
+    tokenId: tokenId as string,
+    deadline: deadline as number,
+  });
+
+  /* Independent of the wallet's own builder: the cast-generated vector in @qntx/fiat24
+     vectors/api/session.json (SPEC §9.2 — label, preimage = label + deadline, keccak digest). */
+  const VECTOR_MESSAGE =
+    "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+
+  it("builds the grant message byte-for-byte as the cast vector", () => {
+    expect(fiat24SessionMessage(42161, "123456", 1795278000)).toBe(VECTOR_MESSAGE);
+    expect(fiat24SessionMessage(42161, "1", 1795305600)).toBe(
+      "I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+    );
+  });
+
+  it("normalize accepts a canonical request unchanged", () => {
+    expect(normalizeEvm(session())).toStrictEqual(session());
+  });
+
+  it.each([
+    ["a token id of zero", session("0"), "invalid-request"],
+    ["a leading-zero token id", session("01"), "invalid-request"],
+    ["a non-decimal token id", session("0x10"), "invalid-request"],
+    ["a token id at 2^256", session((2n ** 256n).toString()), "invalid-request"],
+    ["a zero deadline", session("123456", 0), "invalid-request"],
+    ["a fractional deadline", session("123456", 1795278000.5), "invalid-request"],
+    ["a non-number deadline", session("123456", "1795278000"), "invalid-request"],
+    ["a non-Arbitrum network", session("123456", 1795278000, "eip155:1"), "unsupported"],
+  ])("normalize refuses %s", (_name, request, code) => {
+    let caught: unknown;
+    try {
+      normalizeEvm(request);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ChainError);
+    expect((caught as ChainError).code).toBe(code);
+  });
+
+  it("token id just under 2^256 is accepted", () => {
+    expect(normalizeEvm(session((2n ** 256n - 1n).toString())).kind).toBe("evm.fiat24-session");
+  });
+
+  it("decode describes the wallet-built grant without going blind", () => {
+    const intent = decodeEvm(session(), SIGNER);
+    expect(intent.blind).toBeUndefined();
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.summary).toBe("message");
+    expect(intent.message).toStrictEqual({ kind: "text", text: VECTOR_MESSAGE });
+    expect(intent.fiat24).toStrictEqual({
+      kind: "session-grant",
+      account: "123456",
+      deadline: 1795278000,
+    });
   });
 });

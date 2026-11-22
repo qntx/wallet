@@ -230,6 +230,7 @@ const checkResult = async (
   switch (request.kind) {
     case "evm.transaction":
     case "evm.personal-message":
+    case "evm.fiat24-session":
     case "evm.typed-data":
       return checkEvm(internals, request, result);
     case "solana.transaction":

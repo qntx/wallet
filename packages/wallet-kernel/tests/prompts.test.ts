@@ -2783,6 +2783,39 @@ describe("blind text prompts", () => {
     });
   });
 
+  it("a wallet-built Fiat24 access grant names the session it opens, in both locales", () => {
+    const message =
+      "I agree to access my profile. " +
+      "0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+    const intent = decodeEvm(
+      {
+        kind: "evm.fiat24-session",
+        network: "eip155:42161",
+        account,
+        tokenId: "123456",
+        deadline: 1795278000,
+      },
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Allow Fiat24 account access",
+      description:
+        `Network: Arbitrum One\nFiat24 account #123456\nExpires 2026-11-21 16:20 (UTC)\n` +
+        "Until then, anyone holding this signature can read your Fiat24 profile and contact " +
+        "data, view your card details, create and change cards and payees, and change your " +
+        `email — the channel for card one-time passwords\nSigns: ${message}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "授权访问 Fiat24 账户",
+      description:
+        `网络：Arbitrum One\nFiat24 账户 #123456\n2026-11-21 16:20（UTC）过期\n` +
+        "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、" +
+        "创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n" +
+        `签名消息：${message}`,
+    });
+  });
+
   it("a non-printable 32-byte text shows only its bytes under the digest-length hazard", () => {
     const bytes = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
     const intent = decodeEvm(
@@ -3769,6 +3802,11 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24Payout: ["1"],
     fiat24PayoutPayee: ["payee"],
     fiat24Grant: [],
+    fiat24SessionTitle: [],
+    fiat24SessionAccount: ["123456"],
+    fiat24SessionExpires: ["2026-10-13 12:00"],
+    fiat24SessionPower: [],
+    fiat24SessionSigns: ["I agree to access my profile. 0x00"],
     fiat24PayoutPurpose: ["42"],
     fiat24PayoutReference: ["ref"],
     fiat24OpenAccount: ["10365"],

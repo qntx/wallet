@@ -1,3 +1,4 @@
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * Signer recovery for `chain.sign` results: the host re-derives the signer address of the requested
  * transaction, message or typed data and compares it with the account's `wallet.accounts` address —
@@ -17,6 +18,8 @@ import * as TypedData from "ox/TypedData";
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
 import { evmAuthorization, evmEnvelope } from "./envelope.ts";
+import { fiat24SessionMessage } from "./fiat24.ts";
+import { networkChainId } from "./transaction.ts";
 import { parseTypedData } from "./typed-data.ts";
 
 function assertEip1559Hex(hex: `0x${string}`): asserts hex is `0x02${string}` {
@@ -130,6 +133,17 @@ export const recoverEvmSigner = (
   const signature = Signature.from(result.signature);
   if (request.kind === "evm.personal-message") {
     const payload = PersonalMessage.getSignPayload(Hex.fromBytes(request.message));
+    return Secp256k1.recoverAddress({ payload, signature });
+  }
+  if (request.kind === "evm.fiat24-session") {
+    /* The signed text is rebuilt from the request, never trusted — a signature over any other
+       grant fails recovery against the account address. */
+    const message = fiat24SessionMessage(
+      networkChainId(request.network),
+      request.tokenId,
+      request.deadline,
+    );
+    const payload = PersonalMessage.getSignPayload(Hex.fromBytes(utf8ToBytes(message)));
     return Secp256k1.recoverAddress({ payload, signature });
   }
   if (request.kind === "evm.typed-data") {
