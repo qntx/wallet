@@ -8,9 +8,19 @@ import type { Wallet } from "@qntx/wallet";
 import type { EngineLogger } from "../events.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
 import type { NetworkController } from "../networks/controller.ts";
-import type { RequestController } from "../requests/controller.ts";
+import type { PendingRequest, RequestController, RequestInput } from "../requests/controller.ts";
 import type { SetTimer } from "../timer.ts";
 import type { AppSocket } from "./socket.ts";
+
+/**
+ * The request pipeline stamped to one app's origin: `prepare` opens a request attributed `{ kind:
+ * "app", id }` — a provider cannot choose its origin or carry a dApp one.
+ */
+export type AppRequests = {
+  readonly prepare: (input: RequestInput) => Promise<PendingRequest>;
+  readonly outcome: RequestController["outcome"];
+  readonly reject: RequestController["reject"];
+};
 
 /** The apps the controller knows; unimplemented ids are typed, never stubbed. */
 export type AppId = "hyperliquid" | "polymarket";
@@ -93,7 +103,9 @@ export type AppGroupState = {
 /** The gateway's per-app availability for this jurisdiction — `unknown`/`error` refuse enables. */
 export type AppsEligibility = {
   readonly status: "unknown" | "ready" | "error";
-  readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+  /* Keyed by any app id the gateway configures — an app absent from a ready answer is unknown:
+     it refuses `enable`/`renew` exactly as when not ready and never takes the overlay. */
+  readonly apps?: Readonly<Record<string, AppAvailability>>;
   readonly country?: EligibilityResponse["country"];
   readonly region?: EligibilityResponse["region"];
   readonly checkedAt?: number;
@@ -177,7 +189,8 @@ export type AppProvider = {
  */
 export type AppContext = {
   readonly wallet: Wallet;
-  readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  /** The request pipeline stamped `{ kind: "app", id }` with the definition's own id. */
+  readonly requests: AppRequests;
   /** The chain clients `hyperliquid.fund.deposit` reads CCTP allowance/burn limits through. */
   readonly networks: Pick<NetworkController, "client">;
   readonly fetch: typeof globalThis.fetch;

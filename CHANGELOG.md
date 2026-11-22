@@ -247,18 +247,28 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   not capped on-chain. Near misses under the three domains are blind `typed-data-variant`.
 - Kernel prompts for every described Hyperliquid and Polymarket shape in English and Simplified
   Chinese.
-- `@qntx/wallet/protocol`: `hyperliquid.createAgent`, `hyperliquid.listAgents`,
-  `hyperliquid.deleteAgent` and `hyperliquid.signL1`, with `HyperliquidL1Action`,
-  `HyperliquidL1Order`, `HyperliquidAgentInfo` and `HyperliquidNetwork`.
-- Kernel: a Hyperliquid agent key per approval, generated in the enclave and sealed as a new
-  `hl-agent` vault record. It is never exported or backed up and is deleted with its wallet.
-  `hyperliquid.signL1` signs only the allow-listed trading actions (`order`, `cancel`,
-  `cancelByCloid`, `modify`, `batchModify`, `scheduleCancel`, `updateLeverage`,
-  `updateIsolatedMargin`, `twapOrder`, `twapCancel`), re-encoding the action and computing the
-  connectionId itself, only while the vault is unlocked, before the agent's `validUntil` and with a
-  nonce within five minutes of the kernel clock.
-- Kernel: signing an `approveAgent` with `chain.sign` says whether the agent key is held by this
-  wallet, and refuses an approval whose terms differ from the held agent's.
+- `@qntx/wallet/protocol`: `sessions.create`, `sessions.list`, `sessions.delete` and
+  `sessions.sign`. Types: `SessionInfo`, `SessionSchemes`, `SessionSchemeId`, `HyperliquidL1Action`,
+  `HyperliquidL1Order`, `HyperliquidL1Params` and `HyperliquidNetwork`.
+- Kernel: generic session keys. Each is a secp256k1 key generated in the enclave for one HD
+  account and sealed as a `session-key` vault record. A session key is never exported or backed
+  up, is deleted with its wallet, and belongs to a scheme from a compile-time table. A record whose
+  scheme this build does not know is listed as unsupported. It cannot sign and can still be
+  deleted, and it never makes the vault `unsupported`.
+- Kernel: the `hyperliquid-l1-agent` session scheme. It signs only the allow-listed L1 trading
+  actions (`order`, `cancel`, `cancelByCloid`, `modify`, `batchModify`, `scheduleCancel`,
+  `updateLeverage`, `updateIsolatedMargin`, `twapOrder`, `twapCancel`). The kernel re-encodes each
+  action and computes the connectionId itself. It signs only while the vault is unlocked and before
+  the session's `validUntil`. Each signature needs a nonce within 60 seconds of the kernel clock and
+  an `expiresAfter` at most 60 seconds ahead. Hyperliquid rejects an action after its
+  `expiresAfter`, so a signature can be submitted at most a minute after it was made, including
+  after a lock. A `scheduleCancel` time must be at least 5 seconds out and within the session's
+  validity.
+- Kernel: when `chain.sign` signs an `approveAgent`, it reports whether this wallet holds the agent
+  as a `hyperliquid-l1-agent` session key. It refuses an approval whose terms differ from the held
+  session's.
+- Vault: `VaultHooks.parseHeader` lets each module check the public headers of its own records, so
+  status no longer imports module parsers.
 - Vectors: `vectors/chains/hyperliquid.json` (from `@nktkas/hyperliquid` 0.33.3, asserting the
   nktkas and Python SDK published signatures) and `vectors/chains/polymarket.json` (from
   `@polymarket/clob-client-v2` 1.2.1, checked against each exchange's on-chain `hashOrder`); new
@@ -331,9 +341,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   Tatum on mainnet, TronGrid then NileEx on Nile) with schema-checked answers and broadcast
   no-double-relay; TronGrid `/v1/accounts` indexer for history and discovery. New production
   secrets `TRONGRID_API_KEY`, `TATUM_API_KEY`. CoinGecko/DefiLlama price rows for TRX and TRC-20.
-- `@qntx/wallet/hyperliquid`: `hyperliquid(wallet)` exposes the kernel-held Hyperliquid agent
-  methods (`createAgent`, `listAgents`, `deleteAgent`, `signL1`) the way `spark(wallet)` and
-  `nostr(wallet)` expose theirs.
+- `@qntx/wallet/sessions`: `sessions(wallet)` exposes the kernel-held session keys (`create`,
+  `list`, `delete`, `sign`) the way `spark(wallet)` and `nostr(wallet)` expose their protocols.
+  `create` and `sign` are typed per scheme.
 - `@qntx/wallet-engine/apps`: a separate entry (hosts that do not import it bundle nothing new).
   `createApps({ wallet, requests, networks, fetch, socket, now, setTimer, random, logger, openStore,
   gateway, apps: [hyperliquid({ network, agentName, builder? })] })` returns an `AppsController` and
@@ -352,10 +362,24 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   - L1 actions are signed by the account's own kernel-held agent without a per-order prompt;
     user-signed actions go through the request pipeline as kernel-described typed data. A lost
     order POST is reconciled by client order id and never re-sent.
-- Gateway `GET /v1/eligibility`: per-app availability (`available`, `close-only`, `blocked`) from
-  the request country/region against sourced restricted-jurisdiction lists for Hyperliquid and
-  Polymarket. Display only — not a security boundary. Contract: `eligibility` in
-  `@qntx/wallet-engine/gateway/contract`.
+- `@qntx/wallet-engine`: `AppOrigin` (`{ kind: "app", id }`) joins `RequestOrigin`, and
+  `RequestController.prepare(input, app?)` attributes a request to an in-engine app. `createApps`
+  stamps every request each listed app opens with that app's own id — Hyperliquid (user-signed
+  actions, the CCTP deposit's approve and burn) with `{ kind: "app", id: "hyperliquid" }` and
+  Polymarket (the enable flow's credential and approvals requests, orders, pUSD deposit and
+  withdraw) with `{ kind: "app", id: "polymarket" }`. A provider cannot choose its origin. The
+  pending request and the sign log carry that origin, so a host can show which app asked.
+  Otherwise the pipeline treats these requests as internal: typed data only for
+  `evm-sign`/`tron-sign`, no phishing check, no per-origin queue.
+- Repository: `scripts/check-kernel-budget.ts`, run by `bun run lint`, measures the application
+  share of the native kernel bundle by ablation. Current values: 1.92 % against a 5 % budget,
+  plus per-unit budgets for each protocol-family decoder and session scheme. `AGENTS.md` records
+  the kernel growth rule.
+- Gateway `GET /v1/eligibility`: per-app availability (`available`, `close-only`, `blocked`),
+  computed from the request's country and region against sourced restricted-jurisdiction lists.
+  The answer's `apps` is a map keyed by app id, and the gateway's configuration decides which apps
+  appear (today Hyperliquid and Polymarket). A client treats an absent app as unknown. Display
+  only — not a security boundary. Contract: `eligibility` in `@qntx/wallet-engine/gateway/contract`.
 - `@qntx/wallet-chains`: Solana swap decoders for Raydium AMM v4, Raydium CPMM, Raydium CLMM
   `swap_v2` and Orca Whirlpool `swap_v2`. A swap whose layout bounds the signer's worst case is
   described as a swap: at most `maxIn` leaves the source account and at least `minOut` reaches the
@@ -782,7 +806,7 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   polymarket(…)]` instead of a `hyperliquid` config field and returns `controller`, `destroy` and
   one api per listed app id. The entry now carries only the controller and shared core; providers
   ship in the `/apps/hyperliquid` and `/apps/polymarket` sub-entries, so a host pays only for the
-  apps it imports (gzip: core 9.0 kB, Hyperliquid 18.8 kB, Polymarket 39.6 kB).
+  apps it imports (gzip: core 9.8 kB, Hyperliquid 18.8 kB, Polymarket 39.6 kB).
   `AppGroupState.status` gains `"needs-migration"`, `AppStep` gains `"locate-wallet" |
   "deploy-wallet" | "credentials" | "approvals"`, and groups carry an optional `account`. The
   shared WebSocket core moved to `src/apps/socket.ts` (Hyperliquid behaviour unchanged).

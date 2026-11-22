@@ -22,9 +22,9 @@ import type { LockReason } from "@qntx/wallet/types";
 import type { CommitOptions, Handler, KernelContext } from "./commands/context.ts";
 import { CORE_HANDLERS } from "./commands/index.ts";
 import { KernelError } from "./errors.ts";
-import { createAppsModule } from "./modules/apps/index.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
+import { createSessionsModule } from "./modules/sessions/index.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
 import { serializeCeremonies } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
@@ -135,14 +135,14 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   const nostr = createNostrModule(platform.backends.nostr);
   const spark = createSparkModule();
   const chains = createChainsModule();
-  const apps = createAppsModule();
+  const sessions = createSessionsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
     ...CORE_HANDLERS,
     ...chains.handlers,
     ...nostr.handlers,
     ...spark.handlers,
-    ...apps.handlers,
+    ...sessions.handlers,
   } satisfies { [M in MethodName]: Handler<M> };
 
   let dirty = false; // a commit happened since the last status event
@@ -315,7 +315,7 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault, spark.vault, chains.vault, apps.vault],
+    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault],
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {

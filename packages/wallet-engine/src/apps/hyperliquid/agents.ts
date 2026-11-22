@@ -1,4 +1,4 @@
-import type { HyperliquidAgentInfo, HyperliquidNetwork } from "@qntx/wallet/protocol";
+import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 
 import type { EngineLogger } from "../../events.ts";
 import { HyperliquidError } from "./errors.ts";
@@ -18,9 +18,9 @@ export type HyperliquidAgent = {
 
 export type HyperliquidAgentRegistry = {
   /**
-   * Reload kernel-listed agents, keep only this network's, and verify each agent's `owner` against
-   * the group's `evm.bip44` address. Mismatched agents are logged and never usable — they are not
-   * deleted, only excluded.
+   * Reload kernel-listed sessions, keep only this scheme's on this network, and verify each agent's
+   * `owner` against the group's `evm.bip44` address. Mismatched agents are logged and never usable
+   * — they are not deleted, only excluded.
    */
   readonly refresh: () => Promise<void>;
   /** Mark a listed agent enabled — layer 3's enable flow calls this after HL confirmation. */
@@ -47,9 +47,9 @@ export type HyperliquidAgentRegistry = {
 const keyOf = (group: HyperliquidGroup): string => `${group.walletId}:${group.groupIndex}`;
 
 export function createHyperliquidAgentRegistry(options: {
-  /** `hyperliquid(wallet)` — the kernel agent list. */
+  /** `sessions(wallet)` — the kernel session list. */
   readonly agents: {
-    readonly listAgents: () => Promise<ReadonlyArray<HyperliquidAgentInfo>>;
+    readonly list: () => Promise<ReadonlyArray<SessionInfo>>;
   };
   /** The group's `evm.bip44` address on the signature chain — `chains(wallet).account`. */
   readonly evmAddress: (group: HyperliquidGroup) => Promise<string>;
@@ -59,8 +59,8 @@ export function createHyperliquidAgentRegistry(options: {
 }): HyperliquidAgentRegistry {
   /** Group key → the lowercase evm.bip44 address, derived once per group. */
   const owners = new Map<string, string>();
-  /** Kernel-listed, network-matched, owner-verified agents. */
-  let verified: ReadonlyArray<HyperliquidAgentInfo> = [];
+  /** Kernel-listed, scheme- and network-matched, owner-verified agents. */
+  let verified: ReadonlyArray<SessionInfo> = [];
   const enabled = new Set<string>();
   const rejected = new Set<string>();
 
@@ -78,10 +78,10 @@ export function createHyperliquidAgentRegistry(options: {
   return {
     owner: ownerOf,
     refresh: async () => {
-      const listed = await options.agents.listAgents();
-      const next: HyperliquidAgentInfo[] = [];
+      const listed = await options.agents.list();
+      const next: SessionInfo[] = [];
       for (const agent of listed) {
-        if (agent.network !== options.network) {
+        if (agent.scheme !== "hyperliquid-l1-agent" || agent.scope !== options.network) {
           continue;
         }
         // oxlint-disable-next-line eslint/no-await-in-loop -- one owner lookup per distinct group.
@@ -121,7 +121,7 @@ export function createHyperliquidAgentRegistry(options: {
       const usable = marked.filter(
         (agent) => !rejected.has(agent.address.toLowerCase()) && agent.validUntil > options.now(),
       );
-      let agent: HyperliquidAgentInfo | undefined;
+      let agent: SessionInfo | undefined;
       for (const candidate of usable) {
         if (agent === undefined || candidate.validUntil > agent.validUntil) {
           agent = candidate;

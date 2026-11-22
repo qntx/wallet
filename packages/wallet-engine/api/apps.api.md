@@ -136,7 +136,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 // @public
 export type AppContext = {
     readonly wallet: Wallet;
-    readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+    readonly requests: AppRequests;
     readonly networks: Pick<NetworkController, "client">;
     readonly fetch: typeof globalThis.fetch;
     readonly now: () => number;
@@ -211,6 +211,12 @@ export type AppInstance<Api> = {
 };
 
 // @public
+type AppOrigin = {
+    readonly kind: "app";
+    readonly id: string;
+};
+
+// @public
 type AppProvider = {
     readonly id: AppId;
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
@@ -223,6 +229,13 @@ type AppProvider = {
         readonly revoke: boolean;
     }, flow: AppFlow) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow) => Promise<void>;
+};
+
+// @public
+type AppRequests = {
+    readonly prepare: (input: RequestInput) => Promise<PendingRequest>;
+    readonly outcome: RequestController["outcome"];
+    readonly reject: RequestController["reject"];
 };
 
 // @public (undocumented)
@@ -269,7 +282,7 @@ type AppsControllerDeps = {
 // @public
 type AppsEligibility = {
     readonly status: "unknown" | "ready" | "error";
-    readonly apps?: Readonly<Record<AppId, AppAvailability>>;
+    readonly apps?: Readonly<Record<string, AppAvailability>>;
     readonly country?: EligibilityResponse["country"];
     readonly region?: EligibilityResponse["region"];
     readonly checkedAt?: number;
@@ -629,18 +642,11 @@ type EligibilityResponse = z.infer<typeof eligibilityResponse>;
 const eligibilityResponse: z.ZodMiniObject<{
     country: z.ZodMiniNullable<z.ZodMiniString<string>>;
     region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniObject<{
-        hyperliquid: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-        polymarket: z.ZodMiniEnum<{
-            available: "available";
-            blocked: "blocked";
-            "close-only": "close-only";
-        }>;
-    }, z.core.$strip>;
+    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+        available: "available";
+        blocked: "blocked";
+        "close-only": "close-only";
+    }>>;
 }, z.core.$strip>;
 
 // @public
@@ -1071,7 +1077,7 @@ class RequestController extends Controller<RequestControllerState> {
     lock(): void;
     outcome(id: string): Promise<RequestResult>;
     // (undocumented)
-    prepare(input: RequestInput): Promise<PendingRequest>;
+    prepare(input: RequestInput, app?: AppOrigin): Promise<PendingRequest>;
     // (undocumented)
     reject(id: string): void;
     signLog(): Promise<ReadonlyArray<SignLogEntry>>;
@@ -1126,7 +1132,7 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sig
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | DappOrigin;
+} | AppOrigin | DappOrigin;
 
 // @public
 type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;

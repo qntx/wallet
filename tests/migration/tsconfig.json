@@ -22,6 +22,9 @@
       "@qntx/wallet-engine/apps/polymarket": [
         "../../packages/wallet-engine/src/apps/polymarket/index.ts"
       ],
+      "@qntx/wallet-engine/gateway/contract": [
+        "../../packages/wallet-engine/src/gateway/contract/index.ts"
+      ],
       "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"]
     }
   },

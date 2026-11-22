@@ -636,13 +636,13 @@
 	var keyFamily = union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron"));
 	var publicKey = str(64, /^[0-9a-f]{64}$/);
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
-	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
+	var safeTime$1 = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
 	var keyInfo = obj({
 		keyId,
 		family: keyFamily,
 		address: str(90, /^.+$/),
-		createdAt: safeTime
+		createdAt: safeTime$1
 	});
 	/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
 	var identityIndex = int(0, 2147483646);
@@ -665,20 +665,20 @@
 	var factorInfo$1 = union(obj({
 		kind: literal("device"),
 		id: sessionId,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	}), obj({
 		kind: literal("hardware"),
 		id: sessionId,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	}), obj({
 		kind: literal("passkey"),
 		id: sessionId,
 		credentialId,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	}), obj({
 		kind: literal("password"),
 		id: sessionId,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	}));
 	var RP_ID = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
@@ -732,7 +732,7 @@
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
 		passphrase: bool,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	});
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
@@ -978,155 +978,8 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DHHAM4kV.mjs
+	// packages/wallet/dist/protocol-BQdtHsFg.mjs
 	init_objectSpread2();
-	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
-	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
-	var lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
-	/** A positive canonical decimal (nktkas's normalised output) — prices, sizes, trigger prices. */
-	var positive = str(24, /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/);
-	var cloid = str(34, /^0x[0-9a-f]{32}$/);
-	var asset = int(0, 4294967295);
-	var id = int(0, 9007199254740991);
-	var orderWire$1 = obj({
-		a: asset,
-		b: bool,
-		p: positive,
-		s: positive,
-		r: bool,
-		t: union(obj({ limit: obj({ tif: union(literal("Gtc"), literal("Ioc"), literal("Alo"), literal("FrontendMarket")) }) }), obj({ trigger: obj({
-			isMarket: bool,
-			triggerPx: positive,
-			tpsl: union(literal("tp"), literal("sl"))
-		}) })),
-		c: opt(cloid)
-	});
-	var oid = union(id, cloid);
-	/**
-	* The strict wire validator: every action is an exact-key object; unknown `type` or extra keys
-	* fail. `grouping` admits only the free groupings — `{p}` is a priority fee of up to 100 % of
-	* notional (nktkas order.ts:69-84) — and builder `s` splits are not accepted; twapOrder's optional
-	* `details` is rejected too.
-	*/
-	var hyperliquidL1Action = union(obj({
-		type: literal("order"),
-		orders: arr(orderWire$1, 64, 1),
-		grouping: union(literal("na"), literal("normalTpsl"), literal("positionTpsl")),
-		builder: opt(obj({
-			b: lowerAddress,
-			f: int(0, 1e3)
-		}))
-	}), obj({
-		type: literal("cancel"),
-		cancels: arr(obj({
-			a: asset,
-			o: id
-		}), 64, 1),
-		f: opt(literal(true))
-	}), obj({
-		type: literal("cancelByCloid"),
-		cancels: arr(obj({
-			asset,
-			cloid
-		}), 64, 1),
-		f: opt(literal(true))
-	}), obj({
-		type: literal("modify"),
-		oid,
-		order: orderWire$1,
-		a: opt(literal(true))
-	}), obj({
-		type: literal("batchModify"),
-		modifies: arr(obj({
-			oid,
-			order: orderWire$1
-		}), 64, 1),
-		a: opt(literal(true))
-	}), obj({
-		type: literal("scheduleCancel"),
-		time: opt(id)
-	}), obj({
-		type: literal("updateLeverage"),
-		asset,
-		isCross: bool,
-		leverage: int(1, 1e3)
-	}), obj({
-		type: literal("updateIsolatedMargin"),
-		asset,
-		isBuy: bool,
-		ntli: int(-9007199254740991, 9007199254740991)
-	}), obj({
-		type: literal("twapOrder"),
-		twap: obj({
-			a: asset,
-			b: bool,
-			s: positive,
-			r: bool,
-			m: int(5, 1440),
-			t: bool
-		})
-	}), obj({
-		type: literal("twapCancel"),
-		a: asset,
-		t: id
-	}));
-	/**
-	* Pass-through for `signL1`'s `action`: the strict check is `hyperliquidL1Action` inside the
-	* kernel's handler, where a malformed action answers `invalid-input`; a params-layer rejection
-	* would answer `integrity`. The declared type still names the strict shape so host callers get
-	* compile-time checking; the kernel revalidates what actually arrives.
-	*/
-	var actionValue = (value) => value;
-	var agentInfo$1 = obj({
-		address: evmAddress$1,
-		owner: evmAddress$1,
-		walletId,
-		groupIndex,
-		network: hyperliquidNetwork,
-		name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-		validUntil: safeTime,
-		createdAt: safeTime
-	});
-	var APPS_METHODS = {
-		"hyperliquid.createAgent": {
-			session: true,
-			presence: true,
-			params: obj({
-				owner: obj({
-					walletId,
-					groupIndex
-				}),
-				network: hyperliquidNetwork,
-				name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-				validUntil: safeTime
-			}),
-			result: obj({ address: evmAddress$1 })
-		},
-		"hyperliquid.listAgents": {
-			session: true,
-			presence: false,
-			params: nullValue,
-			result: arr(agentInfo$1, 16)
-		},
-		"hyperliquid.deleteAgent": {
-			session: true,
-			presence: true,
-			params: obj({ address: evmAddress$1 }),
-			result: nullValue
-		},
-		"hyperliquid.signL1": {
-			session: true,
-			presence: false,
-			params: obj({
-				agent: evmAddress$1,
-				action: actionValue,
-				nonce: safeTime,
-				vaultAddress: opt(lowerAddress),
-				expiresAfter: opt(safeTime)
-			}),
-			result: obj({ signature: bytes(65, 65) })
-		}
-	};
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
 	* the host-side `parseBackupHeader` share — version 3, bounded fields, `obj` rejects unknown keys.
@@ -1172,7 +1025,7 @@
 	var backupInfo = obj({
 		id: str(32, /^[0-9a-f]{32}$/),
 		factors: arr(union(literal("passkey"), literal("password")), 5, 1),
-		createdAt: safeTime
+		createdAt: safeTime$1
 	});
 	var template = union(literal("evm.bip44"), literal("solana.bip44-change"), literal("tron.bip44"), union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")), literal("btc.bip86"));
 	var btcTemplate = union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86"));
@@ -1194,12 +1047,12 @@
 	}));
 	var hexQuantity = str(66, /^0x[0-9a-fA-F]+$/);
 	var hexData = str(4e4, /^0x[0-9a-fA-F]*$/);
-	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
+	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
 	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 	var safeInt = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
-		address: evmAddress,
+		address: evmAddress$1,
 		storageKeys: arr(str(66, /^0x[0-9a-fA-F]{64}$/), 256)
 	}), 256);
 	var txBase = {
@@ -1208,7 +1061,7 @@
 		gas: hexQuantity,
 		value: hexQuantity,
 		data: hexData,
-		to: opt(evmAddress)
+		to: opt(evmAddress$1)
 	};
 	var evmTx = union(obj(_objectSpread2(_objectSpread2({}, txBase), {}, {
 		type: literal("legacy"),
@@ -1224,11 +1077,11 @@
 		accessList: accessList$1
 	})), obj(_objectSpread2(_objectSpread2({}, txBase), {}, {
 		type: literal("eip7702"),
-		to: evmAddress,
+		to: evmAddress$1,
 		maxFeePerGas: hexQuantity,
 		maxPriorityFeePerGas: hexQuantity,
 		accessList: accessList$1,
-		authorization: obj({ address: evmAddress })
+		authorization: obj({ address: evmAddress$1 })
 	})));
 	var signRequest = union(obj({
 		kind: literal("evm.transaction"),
@@ -1353,7 +1206,7 @@
 			index: identityIndex
 		}),
 		publicKey,
-		createdAt: safeTime
+		createdAt: safeTime$1
 	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
@@ -1364,7 +1217,7 @@
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
 	var signEventInput = obj({
 		kind: int(0, 65535),
-		created_at: safeTime,
+		created_at: safeTime$1,
 		tags,
 		content: str(MAX_TEXT),
 		pubkey: opt(publicKey)
@@ -1374,7 +1227,7 @@
 		pubkey: publicKey,
 		sig: hex128,
 		kind: int(0, 65535),
-		created_at: safeTime,
+		created_at: safeTime$1,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1382,7 +1235,7 @@
 		id: publicKey,
 		pubkey: publicKey,
 		kind: int(0, 65535),
-		created_at: safeTime,
+		created_at: safeTime$1,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1506,6 +1359,61 @@
 				text: str(MAX_TEXT * 4)
 			}),
 			result: textResult
+		}
+	};
+	var schemeId = str(32, /^[a-z][a-z0-9-]{1,31}$/);
+	var scope = str(64, /^[A-Za-z0-9._:-]{1,64}$/);
+	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
+	var sessionInfo$1 = obj({
+		address: evmAddress,
+		scheme: schemeId,
+		supported: bool,
+		walletId,
+		groupIndex,
+		owner: evmAddress,
+		scope,
+		name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
+		validUntil: safeTime$1,
+		createdAt: safeTime$1
+	});
+	var paramsValue = (value) => value;
+	var SESSIONS_METHODS = {
+		"sessions.create": {
+			session: true,
+			presence: true,
+			params: obj({
+				scheme: schemeId,
+				owner: obj({
+					walletId,
+					groupIndex
+				}),
+				scope,
+				name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
+				validUntil: safeTime$1
+			}),
+			result: obj({ address: evmAddress })
+		},
+		"sessions.list": {
+			session: true,
+			presence: false,
+			params: nullValue,
+			result: arr(sessionInfo$1, 64)
+		},
+		"sessions.delete": {
+			session: true,
+			presence: true,
+			params: obj({ address: evmAddress }),
+			result: nullValue
+		},
+		"sessions.sign": {
+			session: true,
+			presence: false,
+			params: obj({
+				scheme: schemeId,
+				address: evmAddress,
+				params: paramsValue
+			}),
+			result: obj({ signature: bytes(65, 65) })
 		}
 	};
 	/**
@@ -1646,13 +1554,13 @@
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
 		description: str(512),
-		timestamp: safeTime
+		timestamp: safeTime$1
 	}), obj({
 		kind: literal("lightning-address"),
 		action: literal("unregister"),
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
-		timestamp: safeTime
+		timestamp: safeTime$1
 	}));
 	var htlcTimeoutRequest = obj({
 		transaction: bytes(1, MAX_TX_BYTES),
@@ -1958,11 +1866,11 @@
 		presence: false,
 		params: nullValue,
 		result: statusPayload$1
-	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), APPS_METHODS);
+	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS);
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
-		retryAt: opt(safeTime),
+		retryAt: opt(safeTime$1),
 		detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/))
 	});
 	obj({
@@ -33395,512 +33303,6 @@ zoo`.split("\n"));
 		"keys.remove": async (ctx, params, session) => removeKey$1(ctx, params, session),
 		"keys.export": async (ctx, params, session) => exportKey$1(ctx, params, session)
 	};
-	// packages/wallet-chains/dist/evm-sign.mjs
-	/**
-	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
-	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
-	* key caching; the caller wipes key bytes.
-	*/
-	var key$1 = (privateKey) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		return fromBytes$2(privateKey);
-	};
-	var sign$2 = (payload, privateKey) => sign$3({
-		payload,
-		privateKey,
-		as: "Object"
-	});
-	/** Signs a normalized transaction; returns the serialized signed envelope. */
-	var signEvmTransaction = (tx, privateKey) => {
-		const privateKeyHex = key$1(privateKey);
-		const envelope = evmEnvelope(tx, tx.type === "eip7702" ? sign$2(getSignPayload$5(evmAuthorization(tx)), privateKeyHex) : void 0);
-		return toBytes$1(envelope.serialize(sign$2(envelope.payload, privateKeyHex)));
-	};
-	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
-	var rs_v = (signature) => toBytes(signature);
-	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from(sign$2(getSignPayload(fromBytes$2(message)), key$1(privateKey))));
-	};
-	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmTypedData = (typedData, privateKey) => {
-		const { json } = parseTypedData(typedData);
-		let payload;
-		try {
-			payload = getSignPayload$6(json);
-		} catch (_unused) {
-			throw new ChainError("invalid-typed-data", "typedData failed to encode");
-		}
-		return rs_v(from(sign$2(payload, key$1(privateKey))));
-	};
-	// packages/wallet-kernel/src/modules/apps/msgpack.ts
-	/**
-	* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
-	* form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
-	* order is semantic — it changes the phantom-agent connectionId).
-	*
-	* Byte-for-byte compatible with the encoder nktkas uses
-	* (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
-	* `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
-	* fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
-	* exactly like @std/msgpack's integer path.
-	*
-	* `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
-	* its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
-	* order, exactly what must not happen.
-	*/
-	var utf8$1 = new TextEncoder();
-	function concat$2(...chunks) {
-		let length = 0;
-		for (const chunk of chunks) length += chunk.length;
-		const out = new Uint8Array(length);
-		let offset = 0;
-		for (const chunk of chunks) {
-			out.set(chunk, offset);
-			offset += chunk.length;
-		}
-		return out;
-	}
-	var u16be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(2);
-		new DataView(out.buffer).setUint16(0, value);
-		return out;
-	};
-	var u32be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(4);
-		new DataView(out.buffer).setUint32(0, value);
-		return out;
-	};
-	var i64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigInt64(0, value);
-		return out;
-	};
-	var u64be$1 = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, value);
-		return out;
-	};
-	/** Safe integers only — the L1 schemas bound every numeric field well inside them. */
-	function packInt(value) {
-		if (!Number.isSafeInteger(value)) throw new KernelError("integrity", "unreachable: non-integer msgpack field");
-		if (value >= 0) {
-			if (value <= 127) return new Uint8Array([value]);
-			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$2(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$2(new Uint8Array([206]), u32be(value));
-			return concat$2(new Uint8Array([207]), u64be$1(BigInt(value)));
-		}
-		if (value >= -32) return new Uint8Array([value + 256]);
-		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$2(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$2(new Uint8Array([210]), u32be(value + 4294967296));
-		return concat$2(new Uint8Array([211]), i64be(BigInt(value)));
-	}
-	function packStr(value) {
-		const bytes = utf8$1.encode(value);
-		const { length } = bytes;
-		if (length < 32) return concat$2(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$2(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$2(new Uint8Array([218]), u16be(length), bytes);
-		return concat$2(new Uint8Array([219]), u32be(length), bytes);
-	}
-	function packBool(value) {
-		return new Uint8Array([value ? 195 : 194]);
-	}
-	function packArray(items) {
-		return concat$2(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$2(new Uint8Array([220]), u16be(items.length)) : (() => {
-			throw new KernelError("integrity", "unreachable: msgpack array over 65535 items");
-		})(), ...items);
-	}
-	/**
-	* Entries arrive already in encoding order — the caller spells the schema's key order out
-	* literally; this writer never iterates an object.
-	*/
-	function packMap(entries) {
-		return concat$2(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$2(new Uint8Array([222]), u16be(entries.length)) : (() => {
-			throw new KernelError("integrity", "unreachable: msgpack map over 65535 entries");
-		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
-	}
-	// packages/wallet-kernel/src/modules/apps/l1.ts
-	/**
-	* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
-	* literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
-	*
-	* ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
-	* : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
-	* python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
-	* 0x00/0x01.)
-	*
-	* The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
-	* {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
-	* testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
-	*/
-	init_utils$2();
-	var u64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, BigInt(value));
-		return out;
-	};
-	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
-	var orderWire = (order) => {
-		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
-			["isMarket", packBool(order.t.trigger.isMarket)],
-			["triggerPx", packStr(order.t.trigger.triggerPx)],
-			["tpsl", packStr(order.t.trigger.tpsl)]
-		])]]);
-		const entries = [
-			["a", packInt(order.a)],
-			["b", packBool(order.b)],
-			["p", packStr(order.p)],
-			["s", packStr(order.s)],
-			["r", packBool(order.r)],
-			["t", t]
-		];
-		if (order.c !== void 0) entries.push(["c", packStr(order.c)]);
-		return packMap(entries);
-	};
-	var packOid = (oid) => typeof oid === "number" ? packInt(oid) : packStr(oid);
-	/**
-	* Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
-	* over the action union; a trailing return is unreachable code (TS7027).
-	*/
-	function encodeL1Action(action) {
-		switch (action.type) {
-			case "order": {
-				const entries = [
-					["type", packStr("order")],
-					["orders", packArray(action.orders.map(orderWire))],
-					["grouping", packStr(action.grouping)]
-				];
-				if (action.builder !== void 0) entries.push(["builder", packMap([["b", packStr(action.builder.b)], ["f", packInt(action.builder.f)]])]);
-				return packMap(entries);
-			}
-			case "cancel": {
-				const entries = [["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "cancelByCloid": {
-				const entries = [["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "modify": {
-				const entries = [
-					["type", packStr("modify")],
-					["oid", packOid(action.oid)],
-					["order", orderWire(action.order)]
-				];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
-			case "batchModify": {
-				const entries = [["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire(modify.order)]])))]];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
-			case "scheduleCancel": {
-				const entries = [["type", packStr("scheduleCancel")]];
-				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
-				return packMap(entries);
-			}
-			case "updateLeverage": return packMap([
-				["type", packStr("updateLeverage")],
-				["asset", packInt(action.asset)],
-				["isCross", packBool(action.isCross)],
-				["leverage", packInt(action.leverage)]
-			]);
-			case "updateIsolatedMargin": return packMap([
-				["type", packStr("updateIsolatedMargin")],
-				["asset", packInt(action.asset)],
-				["isBuy", packBool(action.isBuy)],
-				["ntli", packInt(action.ntli)]
-			]);
-			case "twapOrder": return packMap([["type", packStr("twapOrder")], ["twap", packMap([
-				["a", packInt(action.twap.a)],
-				["b", packBool(action.twap.b)],
-				["s", packStr(action.twap.s)],
-				["r", packBool(action.twap.r)],
-				["m", packInt(action.twap.m)],
-				["t", packBool(action.twap.t)]
-			])]]);
-			case "twapCancel": return packMap([
-				["type", packStr("twapCancel")],
-				["a", packInt(action.a)],
-				["t", packInt(action.t)]
-			]);
-		}
-	}
-	/**
-	* Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
-	* ? 0x00 ‖ u64be(expiresAfter) : ε)).
-	*/
-	function l1ConnectionId(args) {
-		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$2(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$2(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$2(packed, u64be(args.nonce), vault, expiry));
-	}
-	/**
-	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
-	* never supplies one. `source` is "a" on mainnet, "b" on testnet.
-	*/
-	function phantomAgentTypedData(connectionId, network) {
-		return JSON.stringify({
-			types: {
-				EIP712Domain: [
-					{
-						name: "name",
-						type: "string"
-					},
-					{
-						name: "version",
-						type: "string"
-					},
-					{
-						name: "chainId",
-						type: "uint256"
-					},
-					{
-						name: "verifyingContract",
-						type: "address"
-					}
-				],
-				Agent: [{
-					name: "source",
-					type: "string"
-				}, {
-					name: "connectionId",
-					type: "bytes32"
-				}]
-			},
-			primaryType: "Agent",
-			domain: {
-				name: "Exchange",
-				version: "1",
-				chainId: 1337,
-				verifyingContract: "0x0000000000000000000000000000000000000000"
-			},
-			message: {
-				source: network === "Mainnet" ? "a" : "b",
-				connectionId: `0x${bytesToHex$4(connectionId)}`
-			}
-		});
-	}
-	// packages/wallet-kernel/src/modules/apps/record.ts
-	/**
-	* The `hl-agent` record: one sealed secp256k1 private key per record, keyed by the agent's
-	* lowercase EVM address. The header is the authenticated public side — the wallet and account it
-	* belongs to, the Hyperliquid network, the name the user gave it, and the signing deadline. A
-	* distinct kind, not a `key` record with a scope flag: every path that enumerates `key` records
-	* (chain.sign imported pass, keys.list/export/remove, backups) structurally cannot see it.
-	*/
-	init_objectSpread2();
-	/** The record kind this module owns. */
-	var HL_AGENT_KIND = "hl-agent";
-	var ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-	var NAME = /^[A-Za-z0-9._-]{1,16}$/;
-	var HEADER_KEYS = [
-		"walletId",
-		"groupIndex",
-		"owner",
-		"network",
-		"name",
-		"validUntil",
-		"createdAt"
-	];
-	var asAddress = (value) => {
-		if (typeof value !== "string" || !ADDRESS.test(value)) throw headerFailure();
-		return value;
-	};
-	var asNetwork = (value) => {
-		if (value !== "Mainnet" && value !== "Testnet") throw headerFailure();
-		return value;
-	};
-	var asName = (value) => {
-		if (typeof value !== "string" || !NAME.test(value)) throw headerFailure();
-		return value;
-	};
-	/** Stored JSON, key order fixed so the text is a stable authenticated byte string. */
-	function encodeAgentHeader(header) {
-		return JSON.stringify({
-			walletId: header.walletId,
-			groupIndex: header.groupIndex,
-			owner: header.owner,
-			network: header.network,
-			name: header.name,
-			validUntil: header.validUntil,
-			createdAt: header.createdAt
-		});
-	}
-	function parseAgentHeader(text) {
-		const object = headerObject(text);
-		expectKeys(object, HEADER_KEYS);
-		return {
-			walletId: asWalletId(object["walletId"]),
-			groupIndex: asGroupIndex(object["groupIndex"]),
-			owner: asAddress(object["owner"]),
-			network: asNetwork(object["network"]),
-			name: asName(object["name"]),
-			validUntil: asCreatedAt(object["validUntil"]),
-			createdAt: asCreatedAt(object["createdAt"])
-		};
-	}
-	/** The public snapshot of one stored agent — the record id is the lowercase address. */
-	function agentInfo(record) {
-		return _objectSpread2({ address: checksumEvmAddress(record.id) }, parseAgentHeader(record.header));
-	}
-	/** The stored agent record for an address (any case), or undefined — never throws. */
-	function findAgent(image, address) {
-		const id = address.toLowerCase();
-		return image.records.find((record) => record.kind === "hl-agent" && record.id === id);
-	}
-	// packages/wallet-kernel/src/modules/apps/agents.ts
-	init_secp256k1();
-	init_bip32();
-	init_objectSpread2();
-	/** At most 16 live agents — also the protocol's listAgents array cap. */
-	var MAX_AGENTS = 16;
-	/**
-	* Hyperliquid allows an agent name's `valid_until` at most 180 days out (docs exchange-endpoint
-	* §Approve an API wallet).
-	*/
-	var AGENT_MAX_TTL_MS = 15552e6;
-	/**
-	* The kernel accepts a nonce within ±5 minutes of wall time. Hyperliquid itself accepts nonces in
-	* (T−2d, T+1d) (docs nonces-and-api-wallets); the tighter window bounds how far ahead a compromised
-	* runtime can pre-sign while the vault happens to be unlocked.
-	*/
-	var NONCE_WINDOW_MS = 3e5;
-	/** Random draws retried before giving up on a valid secp256k1 scalar. */
-	var MAX_KEY_DRAWS = 8;
-	/** `platform.random(32)` until the bytes are a valid secret key; rejects are wiped. */
-	var drawAgentKey = (platform) => {
-		for (let attempt = 0; attempt < MAX_KEY_DRAWS; attempt++) {
-			const draw = platform.random(32);
-			if (secp256k1.utils.isValidSecretKey(draw)) return draw;
-			wipe(draw);
-		}
-		throw new KernelError("integrity", "could not draw a valid agent key");
-	};
-	var createAgent = async (ctx, params, session) => {
-		const { dek } = ctx.session.require(session);
-		const now = ctx.platform.now();
-		if (!(now < params.validUntil && params.validUntil <= now + AGENT_MAX_TTL_MS)) throw new KernelError("invalid-input", "agent validity is out of range");
-		if (ctx.image.records.filter((record) => record.kind === "hl-agent").length >= MAX_AGENTS) throw new KernelError("conflict", "agent limit reached");
-		const entropy = findRecord(ctx.image, "entropy", params.owner.walletId);
-		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
-			const master = HDKey$1.fromMasterSeed(seed);
-			try {
-				const child = master.derive(`m/44'/60'/0'/0/${params.owner.groupIndex}`);
-				try {
-					if (child.publicKey === null) throw new KernelError("integrity", "no public key at account path");
-					return evmAddressFromPublicKey(child.publicKey);
-				} finally {
-					child.wipePrivateData();
-				}
-			} finally {
-				master.wipePrivateData();
-			}
-		});
-		const priv = drawAgentKey(ctx.platform);
-		try {
-			const address = evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
-			const header = encodeAgentHeader({
-				walletId: params.owner.walletId,
-				groupIndex: params.owner.groupIndex,
-				owner,
-				network: params.network,
-				name: params.name,
-				validUntil: params.validUntil,
-				createdAt: now
-			});
-			const record = sealRecord(ctx.platform, dek, HL_AGENT_KIND, address.toLowerCase(), header, priv);
-			await ctx.commit([{
-				op: "put-record",
-				record
-			}]);
-			return { address };
-		} finally {
-			wipe(priv);
-		}
-	};
-	var listAgents = (ctx, _params, session) => {
-		ctx.session.require(session);
-		return ctx.image.records.filter((record) => record.kind === HL_AGENT_KIND).map((record) => agentInfo(record));
-	};
-	var deleteAgent = async (ctx, params, session) => {
-		ctx.session.require(session);
-		const record = findRecord(ctx.image, HL_AGENT_KIND, params.address.toLowerCase());
-		await ctx.commit([{
-			op: "delete-record",
-			kind: record.kind,
-			id: record.id
-		}]);
-		return null;
-	};
-	var signL1 = (ctx, params, session) => {
-		const { dek } = ctx.session.require(session);
-		const record = findAgent(ctx.image, params.agent);
-		if (record === void 0) throw new KernelError("not-found", "no such agent");
-		const header = parseAgentHeader(record.header);
-		const now = ctx.platform.now();
-		if (now >= header.validUntil) throw new KernelError("invalid-input", "the agent has expired");
-		if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
-		const action = validate$5(hyperliquidL1Action, params.action);
-		if (action === void 0) throw new KernelError("invalid-input", "malformed action");
-		const typedData = phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
-			action,
-			nonce: params.nonce
-		}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), params.expiresAfter === void 0 ? {} : { expiresAfter: params.expiresAfter })), header.network);
-		const priv = openRecord(dek, record);
-		try {
-			if (priv.length !== 32 || !secp256k1.utils.isValidSecretKey(priv) || evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)).toLowerCase() !== record.id) throw new KernelError("integrity", "agent key does not match its record", void 0, true);
-			return { signature: signEvmTypedData(typedData, priv) };
-		} finally {
-			wipe(priv);
-		}
-	};
-	// packages/wallet-kernel/src/modules/apps/index.ts
-	init_secp256k1();
-	function createAppsModule() {
-		return {
-			vault: {
-				ownsRecord: (kind) => kind === HL_AGENT_KIND,
-				claimUnlocked: (records) => {
-					const unclaimed = [];
-					for (const record of records) {
-						if (record.kind !== "hl-agent") {
-							unclaimed.push(record);
-							continue;
-						}
-						const matches = record.plaintext.length === 32 && secp256k1.utils.isValidSecretKey(record.plaintext) && evmAddressFromPublicKey(secp256k1.getPublicKey(record.plaintext, true)).toLowerCase() === record.id;
-						wipe(record.plaintext);
-						if (!matches) throw new KernelError("integrity", "agent key does not match its record", void 0, true);
-					}
-					return unclaimed;
-				},
-				forget: () => void 0,
-				lock: () => void 0,
-				walletDeleteOps: (image, walletId) => {
-					const ops = [];
-					for (const record of image.records) if (record.kind === "hl-agent" && parseAgentHeader(record.header).walletId === walletId) ops.push({
-						op: "delete-record",
-						kind: HL_AGENT_KIND,
-						id: record.id
-					});
-					return ops;
-				}
-			},
-			handlers: {
-				"hyperliquid.createAgent": createAgent,
-				"hyperliquid.listAgents": listAgents,
-				"hyperliquid.deleteAgent": deleteAgent,
-				"hyperliquid.signL1": signL1
-			}
-		};
-	}
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
 	* Validates that a value is a non-negative bigint.
@@ -37134,10 +36536,10 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8 = (s) => new TextEncoder().encode(s);
+	var utf8$1 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
-	var concat$1 = (...parts) => {
+	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
+	var concat$2 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -37152,7 +36554,7 @@ zoo`.split("\n"));
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$1(varint(data.length), data);
+		return concat$2(varint(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -37166,8 +36568,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8(message)));
+		const tag = sha256$1(utf8$1(BIP322_TAG));
+		return sha256$1(concat$2(tag, tag, utf8$1(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -37175,8 +36577,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$1(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$1(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$2(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$2(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -37248,14 +36650,14 @@ zoo`.split("\n"));
 		tx.finalizeIdx(0);
 		const witness = tx.getInput(0).finalScriptWitness;
 		if (witness === void 0) throw new ChainError("invalid-request", "BIP-322 input produced no witness");
-		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$2(varint(witness.length), ...witness.map(pushData)))}`;
 	};
 	/**
 	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
 	*/
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$2(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
 		const hash = legacyMessageHash(message);
@@ -37265,7 +36667,7 @@ zoo`.split("\n"));
 			prehash: false
 		});
 		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
-		return base64(concat$1(Uint8Array.of(header), recovered.slice(1)));
+		return base64(concat$2(Uint8Array.of(header), recovered.slice(1)));
 	};
 	// packages/wallet-chains/dist/bitcoin.mjs
 	init_payment();
@@ -37532,6 +36934,68 @@ zoo`.split("\n"));
 	};
 	/** Decodes the message `address` into the scriptPubKey the signer needs. */
 	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
+	// packages/wallet-kernel/src/modules/sessions/record.ts
+	/**
+	* The `session-key` record: one sealed secp256k1 private key per record, keyed by the key's
+	* lowercase EVM address. The record format itself fixes the secp256k1 key, the id and the 32-byte
+	* plaintext — independent of the scheme; the scheme only decides what the key signs. The header is
+	* the authenticated public side — the scheme id, the wallet and account it belongs to, the scheme's
+	* scope, the name the user gave it, and the signing deadline. A distinct kind, not a `key` record
+	* with a scope flag: every path that enumerates `key` records (chain.sign imported pass,
+	* keys.list/export/remove, backups) structurally cannot see it.
+	*/
+	/** The record kind this module owns. */
+	var SESSION_KIND = "session-key";
+	var SCHEME = /^[a-z][a-z0-9-]{1,31}$/;
+	var OWNER = /^0x[0-9a-fA-F]{40}$/;
+	var SCOPE = /^[A-Za-z0-9._:-]{1,64}$/;
+	var NAME = /^[A-Za-z0-9._-]{1,16}$/;
+	var HEADER_KEYS = [
+		"scheme",
+		"walletId",
+		"groupIndex",
+		"owner",
+		"scope",
+		"name",
+		"validUntil",
+		"createdAt"
+	];
+	var asField = (pattern) => (value) => {
+		if (typeof value !== "string" || !pattern.test(value)) throw headerFailure();
+		return value;
+	};
+	/** Stored JSON, key order fixed so the text is a stable authenticated byte string. */
+	function encodeSessionHeader(header) {
+		return JSON.stringify({
+			scheme: header.scheme,
+			walletId: header.walletId,
+			groupIndex: header.groupIndex,
+			owner: header.owner,
+			scope: header.scope,
+			name: header.name,
+			validUntil: header.validUntil,
+			createdAt: header.createdAt
+		});
+	}
+	function parseSessionHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, HEADER_KEYS);
+		return {
+			scheme: asField(SCHEME)(object["scheme"]),
+			walletId: asWalletId(object["walletId"]),
+			groupIndex: asGroupIndex(object["groupIndex"]),
+			owner: asField(OWNER)(object["owner"]),
+			scope: asField(SCOPE)(object["scope"]),
+			name: asField(NAME)(object["name"]),
+			validUntil: asCreatedAt(object["validUntil"]),
+			createdAt: asCreatedAt(object["createdAt"])
+		};
+	}
+	/** The stored session-key record for an address (any case), or undefined — never throws. */
+	function findSession(image, address) {
+		const id = address.toLowerCase();
+		return image.records.find((record) => record.kind === "session-key" && record.id === id);
+	}
 	// packages/wallet-chains/dist/bitcoin-sign.mjs
 	init_payment();
 	init_transaction();
@@ -38579,6 +38043,44 @@ zoo`.split("\n"));
 			master.wipePrivateData();
 		}
 	};
+	// packages/wallet-chains/dist/evm-sign.mjs
+	/**
+	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
+	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
+	* key caching; the caller wipes key bytes.
+	*/
+	var key$1 = (privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+		return fromBytes$2(privateKey);
+	};
+	var sign$2 = (payload, privateKey) => sign$3({
+		payload,
+		privateKey,
+		as: "Object"
+	});
+	/** Signs a normalized transaction; returns the serialized signed envelope. */
+	var signEvmTransaction = (tx, privateKey) => {
+		const privateKeyHex = key$1(privateKey);
+		const envelope = evmEnvelope(tx, tx.type === "eip7702" ? sign$2(getSignPayload$5(evmAuthorization(tx)), privateKeyHex) : void 0);
+		return toBytes$1(envelope.serialize(sign$2(envelope.payload, privateKeyHex)));
+	};
+	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
+	var rs_v = (signature) => toBytes(signature);
+	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signEvmPersonalMessage = (message, privateKey) => {
+		return rs_v(from(sign$2(getSignPayload(fromBytes$2(message)), key$1(privateKey))));
+	};
+	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signEvmTypedData = (typedData, privateKey) => {
+		const { json } = parseTypedData(typedData);
+		let payload;
+		try {
+			payload = getSignPayload$6(json);
+		} catch (_unused) {
+			throw new ChainError("invalid-typed-data", "typedData failed to encode");
+		}
+		return rs_v(from(sign$2(payload, key$1(privateKey))));
+	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
 	init_secp256k1();
 	init_bip32();
@@ -38941,20 +38443,20 @@ zoo`.split("\n"));
 	};
 	/**
 	* The approve-agent binding (design.md §ApproveAgent 绑定): when the decoded intent approves a
-	* Hyperliquid agent, look the agent address up among this vault's hl-agent records. A record whose
-	* owner, network, name and validUntil all match the signed action marks the prompt "held"; a record
-	* that exists but disagrees means the approval describes a different agent under the same address
-	* and is refused; no record marks it "not held".
+	* Hyperliquid agent, look the agent address up among this vault's session-key records. A
+	* hyperliquid-l1-agent record whose owner, scope, name and validUntil all match the signed action
+	* marks the prompt "held"; a record that exists but disagrees means the approval describes a
+	* different agent under the same address and is refused; no record marks it "not held".
 	*/
 	var bindAgent = (ctx, prompt, signer) => {
 		var _message$hyperliquid;
 		const { message } = prompt;
 		if ((message === null || message === void 0 ? void 0 : message.kind) !== "typed-data" || ((_message$hyperliquid = message.hyperliquid) === null || _message$hyperliquid === void 0 ? void 0 : _message$hyperliquid.kind) !== "approve-agent") return prompt;
 		const action = message.hyperliquid;
-		const record = findAgent(ctx.image, action.agent);
+		const record = findSession(ctx.image, action.agent);
 		if (record === void 0) return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: false });
-		const header = parseAgentHeader(record.header);
-		if (header.owner !== signer || header.network !== action.chain || header.name !== action.name || header.validUntil !== action.validUntil) throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
+		const header = parseSessionHeader(record.header);
+		if (header.scheme !== "hyperliquid-l1-agent" || header.owner !== signer || header.scope !== action.chain || header.name !== action.name || header.validUntil !== action.validUntil) throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
 		return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: true });
 	};
 	var chainSign = async (ctx, params, session) => {
@@ -38984,7 +38486,8 @@ zoo`.split("\n"));
 				lock: () => {
 					accounts = /* @__PURE__ */ new WeakMap();
 				},
-				walletDeleteOps: () => []
+				walletDeleteOps: () => [],
+				parseHeader: () => void 0
 			},
 			handlers: {
 				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
@@ -40704,6 +40207,10 @@ zoo`.split("\n"));
 						});
 					}
 					return ops;
+				},
+				parseHeader: (record) => {
+					if (record.kind === "nostr-key") parseNostrKeyHeader(record.header);
+					else parseSyncKeyHeader(record.header);
 				}
 			},
 			handlers: {
@@ -40723,6 +40230,589 @@ zoo`.split("\n"));
 				"nostr.syncDecrypt": async (ctx, params, session) => syncDecrypt(ctx, syncPool, params, session)
 			},
 			status: (records) => nostrStatus(records)
+		};
+	}
+	// packages/wallet-kernel/src/modules/sessions/scheme.ts
+	function defineSessionScheme(definition) {
+		return {
+			id: definition.id,
+			maxTtlMs: definition.maxTtlMs,
+			maxPerVault: definition.maxPerVault,
+			parseScope: definition.parseScope,
+			document: (params, header, now) => {
+				let checked;
+				let scope;
+				try {
+					checked = definition.params(params);
+					scope = definition.parseScope(header.scope);
+				} catch (_unused) {
+					throw new KernelError("invalid-input", "malformed params");
+				}
+				return definition.document(checked, header, scope, now);
+			}
+		};
+	}
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/msgpack.ts
+	/**
+	* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
+	* form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
+	* order is semantic — it changes the phantom-agent connectionId).
+	*
+	* Byte-for-byte compatible with the encoder nktkas uses
+	* (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
+	* `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
+	* fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
+	* exactly like @std/msgpack's integer path.
+	*
+	* `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
+	* its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
+	* order, exactly what must not happen.
+	*/
+	var utf8 = new TextEncoder();
+	function concat$1(...chunks) {
+		let length = 0;
+		for (const chunk of chunks) length += chunk.length;
+		const out = new Uint8Array(length);
+		let offset = 0;
+		for (const chunk of chunks) {
+			out.set(chunk, offset);
+			offset += chunk.length;
+		}
+		return out;
+	}
+	var u16be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(2);
+		new DataView(out.buffer).setUint16(0, value);
+		return out;
+	};
+	var u32be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	};
+	var i64be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigInt64(0, value);
+		return out;
+	};
+	var u64be$1 = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigUint64(0, value);
+		return out;
+	};
+	/** Safe integers only — the L1 schemas bound every numeric field well inside them. */
+	function packInt(value) {
+		if (!Number.isSafeInteger(value)) throw new KernelError("integrity", "unreachable: non-integer msgpack field");
+		if (value >= 0) {
+			if (value <= 127) return new Uint8Array([value]);
+			if (value <= 255) return new Uint8Array([204, value]);
+			if (value <= 65535) return concat$1(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$1(new Uint8Array([206]), u32be(value));
+			return concat$1(new Uint8Array([207]), u64be$1(BigInt(value)));
+		}
+		if (value >= -32) return new Uint8Array([value + 256]);
+		if (value >= -128) return new Uint8Array([208, value + 256]);
+		if (value >= -32768) return concat$1(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$1(new Uint8Array([210]), u32be(value + 4294967296));
+		return concat$1(new Uint8Array([211]), i64be(BigInt(value)));
+	}
+	function packStr(value) {
+		const bytes = utf8.encode(value);
+		const { length } = bytes;
+		if (length < 32) return concat$1(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$1(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$1(new Uint8Array([218]), u16be(length), bytes);
+		return concat$1(new Uint8Array([219]), u32be(length), bytes);
+	}
+	function packBool(value) {
+		return new Uint8Array([value ? 195 : 194]);
+	}
+	function packArray(items) {
+		return concat$1(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$1(new Uint8Array([220]), u16be(items.length)) : (() => {
+			throw new KernelError("integrity", "unreachable: msgpack array over 65535 items");
+		})(), ...items);
+	}
+	/**
+	* Entries arrive already in encoding order — the caller spells the schema's key order out
+	* literally; this writer never iterates an object.
+	*/
+	function packMap(entries) {
+		return concat$1(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$1(new Uint8Array([222]), u16be(entries.length)) : (() => {
+			throw new KernelError("integrity", "unreachable: msgpack map over 65535 entries");
+		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
+	}
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts
+	/**
+	* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
+	* literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
+	*
+	* ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
+	* : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
+	* python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
+	* 0x00/0x01.)
+	*
+	* The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
+	* {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
+	* testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
+	*/
+	init_utils$2();
+	var u64be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		new DataView(out.buffer).setBigUint64(0, BigInt(value));
+		return out;
+	};
+	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
+	var orderWire$1 = (order) => {
+		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
+			["isMarket", packBool(order.t.trigger.isMarket)],
+			["triggerPx", packStr(order.t.trigger.triggerPx)],
+			["tpsl", packStr(order.t.trigger.tpsl)]
+		])]]);
+		const entries = [
+			["a", packInt(order.a)],
+			["b", packBool(order.b)],
+			["p", packStr(order.p)],
+			["s", packStr(order.s)],
+			["r", packBool(order.r)],
+			["t", t]
+		];
+		if (order.c !== void 0) entries.push(["c", packStr(order.c)]);
+		return packMap(entries);
+	};
+	var packOid = (oid) => typeof oid === "number" ? packInt(oid) : packStr(oid);
+	/**
+	* Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
+	* over the action union; a trailing return is unreachable code (TS7027).
+	*/
+	function encodeL1Action(action) {
+		switch (action.type) {
+			case "order": {
+				const entries = [
+					["type", packStr("order")],
+					["orders", packArray(action.orders.map(orderWire$1))],
+					["grouping", packStr(action.grouping)]
+				];
+				if (action.builder !== void 0) entries.push(["builder", packMap([["b", packStr(action.builder.b)], ["f", packInt(action.builder.f)]])]);
+				return packMap(entries);
+			}
+			case "cancel": {
+				const entries = [["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]];
+				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
+				return packMap(entries);
+			}
+			case "cancelByCloid": {
+				const entries = [["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]];
+				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
+				return packMap(entries);
+			}
+			case "modify": {
+				const entries = [
+					["type", packStr("modify")],
+					["oid", packOid(action.oid)],
+					["order", orderWire$1(action.order)]
+				];
+				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
+				return packMap(entries);
+			}
+			case "batchModify": {
+				const entries = [["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]];
+				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
+				return packMap(entries);
+			}
+			case "scheduleCancel": {
+				const entries = [["type", packStr("scheduleCancel")]];
+				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
+				return packMap(entries);
+			}
+			case "updateLeverage": return packMap([
+				["type", packStr("updateLeverage")],
+				["asset", packInt(action.asset)],
+				["isCross", packBool(action.isCross)],
+				["leverage", packInt(action.leverage)]
+			]);
+			case "updateIsolatedMargin": return packMap([
+				["type", packStr("updateIsolatedMargin")],
+				["asset", packInt(action.asset)],
+				["isBuy", packBool(action.isBuy)],
+				["ntli", packInt(action.ntli)]
+			]);
+			case "twapOrder": return packMap([["type", packStr("twapOrder")], ["twap", packMap([
+				["a", packInt(action.twap.a)],
+				["b", packBool(action.twap.b)],
+				["s", packStr(action.twap.s)],
+				["r", packBool(action.twap.r)],
+				["m", packInt(action.twap.m)],
+				["t", packBool(action.twap.t)]
+			])]]);
+			case "twapCancel": return packMap([
+				["type", packStr("twapCancel")],
+				["a", packInt(action.a)],
+				["t", packInt(action.t)]
+			]);
+		}
+	}
+	/**
+	* Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
+	* ? 0x00 ‖ u64be(expiresAfter) : ε)).
+	*/
+	function l1ConnectionId(args) {
+		const packed = encodeL1Action(args.action);
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$1(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$1(new Uint8Array([0]), u64be(args.expiresAfter));
+		return keccak_256(concat$1(packed, u64be(args.nonce), vault, expiry));
+	}
+	/**
+	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
+	* never supplies one. `source` is "a" on mainnet, "b" on testnet.
+	*/
+	function phantomAgentTypedData(connectionId, network) {
+		return JSON.stringify({
+			types: {
+				EIP712Domain: [
+					{
+						name: "name",
+						type: "string"
+					},
+					{
+						name: "version",
+						type: "string"
+					},
+					{
+						name: "chainId",
+						type: "uint256"
+					},
+					{
+						name: "verifyingContract",
+						type: "address"
+					}
+				],
+				Agent: [{
+					name: "source",
+					type: "string"
+				}, {
+					name: "connectionId",
+					type: "bytes32"
+				}]
+			},
+			primaryType: "Agent",
+			domain: {
+				name: "Exchange",
+				version: "1",
+				chainId: 1337,
+				verifyingContract: "0x0000000000000000000000000000000000000000"
+			},
+			message: {
+				source: network === "Mainnet" ? "a" : "b",
+				connectionId: `0x${bytesToHex$4(connectionId)}`
+			}
+		});
+	}
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts
+	/**
+	* The strict validators of the hyperliquid-l1-agent scheme — the network scope and the wire params
+	* with the ten allow-listed action schemas (research H2-T). They moved into the kernel with the
+	* scheme: the main runtime does not need them, and a failure inside `document` answers
+	* `invalid-input`.
+	*/
+	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
+	var lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
+	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
+	/** A positive canonical decimal (nktkas's normalised output) — prices, sizes, trigger prices. */
+	var positive = str(24, /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/);
+	var cloid = str(34, /^0x[0-9a-f]{32}$/);
+	var asset = int(0, 4294967295);
+	var id = int(0, 9007199254740991);
+	var orderWire = obj({
+		a: asset,
+		b: bool,
+		p: positive,
+		s: positive,
+		r: bool,
+		t: union(obj({ limit: obj({ tif: union(literal("Gtc"), literal("Ioc"), literal("Alo"), literal("FrontendMarket")) }) }), obj({ trigger: obj({
+			isMarket: bool,
+			triggerPx: positive,
+			tpsl: union(literal("tp"), literal("sl"))
+		}) })),
+		c: opt(cloid)
+	});
+	var oid = union(id, cloid);
+	/** The params `sessions.sign` takes for this scheme — `expiresAfter` is required. */
+	var hyperliquidL1Params = obj({
+		action: union(obj({
+			type: literal("order"),
+			orders: arr(orderWire, 64, 1),
+			grouping: union(literal("na"), literal("normalTpsl"), literal("positionTpsl")),
+			builder: opt(obj({
+				b: lowerAddress,
+				f: int(0, 1e3)
+			}))
+		}), obj({
+			type: literal("cancel"),
+			cancels: arr(obj({
+				a: asset,
+				o: id
+			}), 64, 1),
+			f: opt(literal(true))
+		}), obj({
+			type: literal("cancelByCloid"),
+			cancels: arr(obj({
+				asset,
+				cloid
+			}), 64, 1),
+			f: opt(literal(true))
+		}), obj({
+			type: literal("modify"),
+			oid,
+			order: orderWire,
+			a: opt(literal(true))
+		}), obj({
+			type: literal("batchModify"),
+			modifies: arr(obj({
+				oid,
+				order: orderWire
+			}), 64, 1),
+			a: opt(literal(true))
+		}), obj({
+			type: literal("scheduleCancel"),
+			time: opt(id)
+		}), obj({
+			type: literal("updateLeverage"),
+			asset,
+			isCross: bool,
+			leverage: int(1, 1e3)
+		}), obj({
+			type: literal("updateIsolatedMargin"),
+			asset,
+			isBuy: bool,
+			ntli: int(-9007199254740991, 9007199254740991)
+		}), obj({
+			type: literal("twapOrder"),
+			twap: obj({
+				a: asset,
+				b: bool,
+				s: positive,
+				r: bool,
+				m: int(5, 1440),
+				t: bool
+			})
+		}), obj({
+			type: literal("twapCancel"),
+			a: asset,
+			t: id
+		})),
+		nonce: safeTime,
+		vaultAddress: opt(lowerAddress),
+		expiresAfter: safeTime
+	});
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/index.ts
+	/**
+	* The hyperliquid-l1-agent session scheme: Hyperliquid L1 trading, scoped to a network, signed as
+	* the phantom-agent `Agent(string source,bytes32 connectionId)` typed data the kernel builds.
+	*/
+	init_objectSpread2();
+	/**
+	* Hyperliquid allows an agent name's `valid_until` at most 180 days out (docs exchange-endpoint
+	* §Approve an API wallet).
+	*/
+	var AGENT_MAX_TTL_MS = 15552e6;
+	/** At most 16 live agents per vault — the protocol's sessions.list cap is 64. */
+	var MAX_AGENTS = 16;
+	/**
+	* Every signature carries `expiresAfter` at most 60 s after it was made (kernel clock) and
+	* Hyperliquid rejects an action after its `expiresAfter` (docs exchange-endpoint §Expires After),
+	* so a signature can be submitted at most 60 s after it was made — the post-lock exposure. The
+	* nonce keeps the same 60 s symmetric window so a compromised runtime cannot pre-sign far ahead.
+	*/
+	var EXPIRES_AFTER_MS = 6e4;
+	var NONCE_WINDOW_MS = 6e4;
+	/**
+	* A scheduled cancel must land at least 5 s out (docs exchange-endpoint §Schedule cancel) and no
+	* later than the session's own validUntil — the protocol publishes no maximum, so the kernel signs
+	* no scheduled effect past the authorisation the user approved.
+	*/
+	var SCHEDULE_CANCEL_MIN_MS = 5e3;
+	// packages/wallet-kernel/src/modules/sessions/schemes/index.ts
+	var SESSION_SCHEMES = { "hyperliquid-l1-agent": defineSessionScheme({
+		id: "hyperliquid-l1-agent",
+		maxTtlMs: AGENT_MAX_TTL_MS,
+		maxPerVault: MAX_AGENTS,
+		parseScope: hyperliquidNetwork,
+		params: hyperliquidL1Params,
+		document: (params, header, scope, now) => {
+			if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
+			if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
+			if (params.action.type === "scheduleCancel" && params.action.time !== void 0 && !(params.action.time >= now + SCHEDULE_CANCEL_MIN_MS && params.action.time <= header.validUntil)) throw new KernelError("invalid-input", "schedule time outside the session");
+			return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
+				action: params.action,
+				nonce: params.nonce
+			}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), {}, { expiresAfter: params.expiresAfter })), scope);
+		}
+	}) };
+	function isSchemeId(id) {
+		return Object.hasOwn(SESSION_SCHEMES, id);
+	}
+	function schemeOf(id) {
+		return isSchemeId(id) ? SESSION_SCHEMES[id] : void 0;
+	}
+	// packages/wallet-kernel/src/modules/sessions/sessions.ts
+	init_secp256k1();
+	init_bip32();
+	/** At most 64 live session keys across schemes — also the protocol's sessions.list array cap. */
+	var MAX_SESSIONS = 64;
+	/** Random draws retried before giving up on a valid secp256k1 scalar. */
+	var MAX_KEY_DRAWS = 8;
+	/** `platform.random(32)` until the bytes are a valid secret key; rejects are wiped. */
+	var drawSessionKey = (platform) => {
+		for (let attempt = 0; attempt < MAX_KEY_DRAWS; attempt++) {
+			const draw = platform.random(32);
+			if (secp256k1.utils.isValidSecretKey(draw)) return draw;
+			wipe(draw);
+		}
+		throw new KernelError("integrity", "could not draw a valid session key");
+	};
+	/** The public snapshot of one stored session — the record id is the lowercase address. */
+	function sessionInfo(record) {
+		const header = parseSessionHeader(record.header);
+		return {
+			address: checksumEvmAddress(record.id),
+			scheme: header.scheme,
+			supported: isSchemeId(header.scheme),
+			walletId: header.walletId,
+			groupIndex: header.groupIndex,
+			owner: header.owner,
+			scope: header.scope,
+			name: header.name,
+			validUntil: header.validUntil,
+			createdAt: header.createdAt
+		};
+	}
+	var createSession = async (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const scheme = schemeOf(params.scheme);
+		if (scheme === void 0) throw new KernelError("unsupported", "unsupported session scheme");
+		const now = ctx.platform.now();
+		if (!(now < params.validUntil && params.validUntil <= now + scheme.maxTtlMs)) throw new KernelError("invalid-input", "session validity is out of range");
+		let scope;
+		try {
+			scope = scheme.parseScope(params.scope);
+		} catch (_unused) {
+			throw new KernelError("invalid-input", "invalid session scope");
+		}
+		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
+		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
+		const entropy = findRecord(ctx.image, "entropy", params.owner.walletId);
+		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
+			const master = HDKey$1.fromMasterSeed(seed);
+			try {
+				const child = master.derive(`m/44'/60'/0'/0/${params.owner.groupIndex}`);
+				try {
+					if (child.publicKey === null) throw new KernelError("integrity", "no public key at account path");
+					return evmAddressFromPublicKey(child.publicKey);
+				} finally {
+					child.wipePrivateData();
+				}
+			} finally {
+				master.wipePrivateData();
+			}
+		});
+		const priv = drawSessionKey(ctx.platform);
+		try {
+			const address = evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
+			const header = encodeSessionHeader({
+				scheme: scheme.id,
+				walletId: params.owner.walletId,
+				groupIndex: params.owner.groupIndex,
+				owner,
+				scope,
+				name: params.name,
+				validUntil: params.validUntil,
+				createdAt: now
+			});
+			const record = sealRecord(ctx.platform, dek, SESSION_KIND, address.toLowerCase(), header, priv);
+			await ctx.commit([{
+				op: "put-record",
+				record
+			}]);
+			return { address };
+		} finally {
+			wipe(priv);
+		}
+	};
+	var listSessions = (ctx, _params, session) => {
+		ctx.session.require(session);
+		return ctx.image.records.filter((record) => record.kind === SESSION_KIND).map((record) => sessionInfo(record));
+	};
+	var deleteSession = async (ctx, params, session) => {
+		ctx.session.require(session);
+		const record = findRecord(ctx.image, SESSION_KIND, params.address.toLowerCase());
+		await ctx.commit([{
+			op: "delete-record",
+			kind: record.kind,
+			id: record.id
+		}]);
+		return null;
+	};
+	var signSession = (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const record = findSession(ctx.image, params.address);
+		if (record === void 0) throw new KernelError("not-found", "no such session");
+		const header = parseSessionHeader(record.header);
+		if (params.scheme !== header.scheme) throw new KernelError("invalid-input", "the scheme does not match the session's record");
+		const scheme = schemeOf(header.scheme);
+		if (scheme === void 0) throw new KernelError("unsupported", "this kernel does not support the session's scheme");
+		const now = ctx.platform.now();
+		if (now >= header.validUntil) throw new KernelError("invalid-input", "the session has expired");
+		const typedData = scheme.document(params.params, header, now);
+		const priv = openRecord(dek, record);
+		try {
+			if (priv.length !== 32 || !secp256k1.utils.isValidSecretKey(priv) || evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)).toLowerCase() !== record.id) throw new KernelError("integrity", "session key does not match its record", void 0, true);
+			return { signature: signEvmTypedData(typedData, priv) };
+		} finally {
+			wipe(priv);
+		}
+	};
+	// packages/wallet-kernel/src/modules/sessions/index.ts
+	init_secp256k1();
+	function createSessionsModule() {
+		return {
+			vault: {
+				ownsRecord: (kind) => kind === SESSION_KIND,
+				claimUnlocked: (records) => {
+					const unclaimed = [];
+					for (const record of records) {
+						if (record.kind !== "session-key") {
+							unclaimed.push(record);
+							continue;
+						}
+						const matches = record.plaintext.length === 32 && secp256k1.utils.isValidSecretKey(record.plaintext) && evmAddressFromPublicKey(secp256k1.getPublicKey(record.plaintext, true)).toLowerCase() === record.id;
+						wipe(record.plaintext);
+						if (!matches) throw new KernelError("integrity", "session key does not match its record", void 0, true);
+					}
+					return unclaimed;
+				},
+				forget: () => void 0,
+				lock: () => void 0,
+				parseHeader: (record) => {
+					var _schemeOf;
+					const header = parseSessionHeader(record.header);
+					(_schemeOf = schemeOf(header.scheme)) === null || _schemeOf === void 0 || _schemeOf.parseScope(header.scope);
+				},
+				walletDeleteOps: (image, walletId) => {
+					const ops = [];
+					for (const record of image.records) if (record.kind === "session-key" && parseSessionHeader(record.header).walletId === walletId) ops.push({
+						op: "delete-record",
+						kind: SESSION_KIND,
+						id: record.id
+					});
+					return ops;
+				}
+			},
+			handlers: {
+				"sessions.create": createSession,
+				"sessions.list": listSessions,
+				"sessions.delete": deleteSession,
+				"sessions.sign": signSession
+			}
 		};
 	}
 	// packages/wallet-kernel/src/modules/spark/prompt.ts
@@ -50493,7 +50583,8 @@ zoo`.split("\n"));
 				walletDeleteOps: (_image, walletId) => {
 					disposeWallet(state, walletId);
 					return [];
-				}
+				},
+				parseHeader: () => void 0
 			},
 			handlers: {
 				"spark.identityPublicKey": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.identityPublicKey()),
@@ -50530,11 +50621,11 @@ zoo`.split("\n"));
 	]);
 	/**
 	* Snapshot contents for the `status` payload — the record-ownership composition point, and the
-	* image's health assessment. The core parses the kinds it owns (entropy, data-key), claimed records
-	* are partitioned per module and each module's own status function is called explicitly. An
-	* unclaimed kind or a newer format marks the vault `unsupported` — the data stays untouched and the
-	* user must update; a malformed known header marks it `corrupted`. Locked snapshots are
-	* display-only data from unauthenticated public headers.
+	* image's health assessment. The core parses the kinds it owns (entropy, data-key), every record a
+	* module claims is re-parsed by that module's `parseHeader`, and each module's own status function
+	* is called explicitly. An unclaimed kind or a newer format marks the vault `unsupported` — the
+	* data stays untouched and the user must update; a malformed known header marks it `corrupted`.
+	* Locked snapshots are display-only data from unauthenticated public headers.
 	*/
 	function statusContents(image, modules, nostr) {
 		const factors = [];
@@ -50580,9 +50671,14 @@ zoo`.split("\n"));
 					parsePolicyHeader(record.header);
 					blindSigning = true;
 				} else unsupported = true;
-			} else if (record.kind === "hl-agent") parseAgentHeader(record.header);
-			else if (modules.some((module) => module.ownsRecord(record.kind))) owned.push(record);
-			else unsupported = true;
+			} else {
+				const owner = modules.find((module) => module.ownsRecord(record.kind));
+				if (owner === void 0) unsupported = true;
+				else {
+					owned.push(record);
+					owner.parseHeader(record);
+				}
+			}
 		} catch (_unused) {
 			corrupted = true;
 		}
@@ -50679,8 +50775,8 @@ zoo`.split("\n"));
 		const nostr = createNostrModule(platform.backends.nostr);
 		const spark = createSparkModule();
 		const chains = createChainsModule();
-		const apps = createAppsModule();
-		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), apps.handlers);
+		const sessions = createSessionsModule();
+		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers);
 		let dirty = false;
 		let inRequest = false;
 		let pendingLock;
@@ -50809,7 +50905,7 @@ zoo`.split("\n"));
 				nostr.vault,
 				spark.vault,
 				chains.vault,
-				apps.vault
+				sessions.vault
 			],
 			image: EMPTY_IMAGE,
 			health: "ok",

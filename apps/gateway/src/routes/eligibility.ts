@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { eligibility } from "@qntx/wallet-engine/gateway/contract";
 
-import { availabilityFor } from "../config/eligibility.ts";
+import { ELIGIBILITY, availabilityFor } from "../config/eligibility.ts";
 
 /**
  * `GET /v1/eligibility` — the edge resolves the caller's IP to `cf.country`/`cf.regionCode`. A
@@ -20,13 +20,14 @@ export const eligibilityRoutes = new Hono().get(eligibility.path, (c) => {
   const cf = isRecord(raw) && isRecord(raw["cf"]) ? raw["cf"] : undefined;
   const country = typeof cf?.["country"] === "string" ? cf["country"] : null;
   const region = typeof cf?.["regionCode"] === "string" ? cf["regionCode"] : null;
-  const resolved =
-    country === null || country === "XX" || country === "T1"
-      ? { hyperliquid: "blocked" as const, polymarket: "blocked" as const }
-      : {
-          hyperliquid: availabilityFor("hyperliquid", country, region ?? undefined),
-          polymarket: availabilityFor("polymarket", country, region ?? undefined),
-        };
+  const resolved = Object.fromEntries(
+    Object.entries(ELIGIBILITY).map(([app, table]) => [
+      app,
+      country === null || country === "XX" || country === "T1"
+        ? "blocked"
+        : availabilityFor(table, country, region ?? undefined),
+    ]),
+  );
   return c.json({ country, region, apps: resolved }, 200, {
     "cache-control": "private, no-store",
   });

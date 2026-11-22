@@ -45,6 +45,7 @@ import {
   swapQuoteSolanaResponse,
   servedNetworksResponse,
   solanaRpcRequest,
+  eligibilityResponse,
   tokenList,
   tokenListPath,
   tokenListResponse,
@@ -998,5 +999,22 @@ describe("tokenListResponse", () => {
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: "6" })]))).toBe(false);
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 0 })]))).toBe(true);
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 255 })]))).toBe(true);
+  });
+});
+
+describe("eligibilityResponse", () => {
+  const row = (apps: unknown): unknown => ({ country: "FR", region: null, apps });
+
+  it("accepts any configured app id", () => {
+    expect(ok(eligibilityResponse, row({ hyperliquid: "available" }))).toBe(true);
+    expect(ok(eligibilityResponse, row({ "future-app-9": "close-only" }))).toBe(true);
+    expect(ok(eligibilityResponse, row({}))).toBe(true);
+  });
+
+  it("rejects a malformed app id or availability", () => {
+    expect(ok(eligibilityResponse, row({ "Bad id": "available" }))).toBe(false);
+    expect(ok(eligibilityResponse, row({ x: "available" }))).toBe(false);
+    expect(ok(eligibilityResponse, row({ hyperliquid: "yes" }))).toBe(false);
+    expect(ok(eligibilityResponse, row({ hyperliquid: 1 }))).toBe(false);
   });
 });

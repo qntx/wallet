@@ -119,36 +119,38 @@ const heldRequest = (port: GatedPort): { id: number; method: string } => {
   return entry;
 };
 
-describe("hyperliquid methods ride the channel", () => {
-  const AGENT = {
+describe("sessions methods ride the channel", () => {
+  const SESSION = {
     address: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+    scheme: "hyperliquid-l1-agent",
+    supported: true,
     owner: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
     walletId: "aa".repeat(8),
     groupIndex: 0,
-    network: "Mainnet",
+    scope: "Mainnet",
     name: "bot-1",
     validUntil: 1_812_902_400_000,
     createdAt: 1_812_902_400_000,
   };
 
-  it("posts hyperliquid.listAgents as a plain method and validates the result", async () => {
+  it("posts sessions.list as a plain method and validates the result", async () => {
     const { channel, port } = await connect();
-    const call = channel.call("hyperliquid.listAgents", null);
+    const call = channel.call("sessions.list", null);
     await tick();
     const entry = heldRequest(port);
-    expect(entry.method).toBe("hyperliquid.listAgents");
-    port.send({ v: 3, id: entry.id, ok: [AGENT] });
-    await expect(call).resolves.toStrictEqual([AGENT]);
+    expect(entry.method).toBe("sessions.list");
+    port.send({ v: 3, id: entry.id, ok: [SESSION] });
+    await expect(call).resolves.toStrictEqual([SESSION]);
     channel.destroy();
   });
 
-  it("rejects an off-schema hyperliquid.listAgents result", async () => {
+  it("rejects an off-schema sessions.list result", async () => {
     const { channel, port } = await connect();
-    const call = channel.call("hyperliquid.listAgents", null);
+    const call = channel.call("sessions.list", null);
     await tick();
     const entry = heldRequest(port);
-    expect(entry.method).toBe("hyperliquid.listAgents");
-    port.send({ v: 3, id: entry.id, ok: [{ network: "Nowhere" }] });
+    expect(entry.method).toBe("sessions.list");
+    port.send({ v: 3, id: entry.id, ok: [{ scope: "Nowhere" }] });
     await expect(call).rejects.toBeInstanceOf(WalletError);
     channel.destroy();
   });

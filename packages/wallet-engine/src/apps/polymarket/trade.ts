@@ -22,9 +22,8 @@ import type * as z from "zod/mini";
 
 import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
-import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
-import type { AppGroup } from "../types.ts";
+import type { AppGroup, AppRequests } from "../types.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PolymarketError } from "./errors.ts";
 import type { PolymarketL2 } from "./l2.ts";
@@ -170,7 +169,7 @@ export type PolymarketTradeOptions = {
   readonly l2: PolymarketL2;
   readonly account: PolymarketAccountReads;
   readonly markets: PolymarketMarkets;
-  readonly requests: Pick<RequestController, "prepare" | "outcome">;
+  readonly requests: Pick<AppRequests, "prepare" | "outcome">;
   readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
   readonly setTimer: SetTimer;

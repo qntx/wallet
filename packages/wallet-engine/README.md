@@ -363,8 +363,11 @@ signature allow-list covers only the owner account's actions.
 > vaults — including filling against an attacker's resting orders at extreme prices in an
 > illiquid market, which "trades" funds to the attacker; it can attach a builder fee up to the
 > rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
-> kernel does not sign those actions. The window is the unlocked period plus nonces pre-signed
-> up to 5 minutes before the lock.
+> kernel does not sign those actions. The window is the unlocked period plus at most 60 seconds —
+> each agent signature carries an `expiresAfter` at most 60 s after it was made (kernel clock) and
+> Hyperliquid rejects the action afterwards; actions already submitted keep their effects (resting
+> orders, a scheduled cancel); deleting the local agent does not revoke it on Hyperliquid (it stays
+> valid until `validUntil`), but nothing can sign with it again.
 
 ## Polymarket
 

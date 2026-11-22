@@ -280,6 +280,12 @@ type AddressBookTombstone = {
 // @public (undocumented)
 export type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 
+// @public
+export type AppOrigin = {
+    readonly kind: "app";
+    readonly id: string;
+};
+
 // @public (undocumented)
 export type ApproveOptions = {
     readonly verify?: SendParams["verify"];
@@ -1961,7 +1967,7 @@ export class RequestController extends Controller<RequestControllerState> {
     lock(): void;
     outcome(id: string): Promise<RequestResult>;
     // (undocumented)
-    prepare(input: RequestInput): Promise<PendingRequest>;
+    prepare(input: RequestInput, app?: AppOrigin): Promise<PendingRequest>;
     // (undocumented)
     reject(id: string): void;
     signLog(): Promise<ReadonlyArray<SignLogEntry>>;
@@ -2023,7 +2029,7 @@ export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "t
 // @public (undocumented)
 export type RequestOrigin = {
     readonly kind: "internal";
-} | DappOrigin;
+} | AppOrigin | DappOrigin;
 
 // @public
 export type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;

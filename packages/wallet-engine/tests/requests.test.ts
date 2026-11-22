@@ -25,6 +25,7 @@ import {
   REQUEST_TTL_MS,
   RequestController,
 } from "../src/requests/controller.ts";
+import { isRequestOrigin } from "../src/requests/types.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -118,6 +119,7 @@ function fake(
     checks?: string[];
     blind?: BlindReason;
     tokens?: ConstructorParameters<typeof RequestController>[0]["tokens"];
+    phishingCheck?: ConstructorParameters<typeof RequestController>[0]["phishing"]["check"];
     dappTron?: (
       ref: AccountRef,
       request: SignRequest,
@@ -198,7 +200,7 @@ function fake(
     return counter;
   };
   const controller = new RequestController({
-    phishing: { check: () => "clear" },
+    phishing: { check: options.phishingCheck ?? (() => "clear") },
     blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: options.tokens ?? tokensStub,
@@ -1470,5 +1472,99 @@ describe("tron-sign", () => {
         request: messageRequest,
       }),
     ).rejects.toThrow("an internal request can only sign typed data");
+  });
+});
+
+const APP = { kind: "app" as const, id: "hyperliquid" };
+const SITE = "https://app.example";
+
+describe("app origins", () => {
+  it("prepare stamps the app origin on the pending request and the sign log persists it", async () => {
+    const f = fake();
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS, APP);
+    expect(request.origin).toStrictEqual(APP);
+    await f.controller.approve(request.id, "send", approval(request, VERIFY));
+    const signLog = await f.controller.signLog();
+    const entries = signLog.filter((e) => e.id === request.id);
+    expect(entries.map((e) => e.outcome)).toStrictEqual(["submitted"]);
+    /* The persisted row re-parses through `isRequestOrigin` — an app origin round-trips. */
+    expect(isRequestOrigin(entries[0]?.origin)).toBe(true);
+    expect(entries[0]?.origin).toStrictEqual(APP);
+  });
+
+  it("an app request cannot carry a dApp origin and a malformed app id is refused", async () => {
+    const f = fake();
+    await f.controller.init();
+    await expect(
+      f.controller.prepare({ ...PARAMS, origin: { kind: "browser", origin: SITE } }, APP),
+    ).rejects.toThrow("an app request cannot carry a dApp origin");
+    await expect(f.controller.prepare(PARAMS, { kind: "app", id: "Hyperliquid" })).rejects.toThrow(
+      "an app request needs a well-formed app id",
+    );
+    await expect(
+      f.controller.prepare(PARAMS, { kind: "app", id: "hyperliquid", extra: 1 } as never),
+    ).rejects.toThrow("an app request needs a well-formed app id");
+  });
+
+  it("an app request may only sign typed data, like an internal one", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare(
+        {
+          method: "evm-sign",
+          account: ACCOUNT,
+          network: SEPOLIA,
+          request: {
+            kind: "evm.personal-message",
+            network: SEPOLIA,
+            account: ACCOUNT,
+            message: new TextEncoder().encode("hello"),
+          },
+        },
+        APP,
+      ),
+    ).rejects.toThrow("an internal request can only sign typed data");
+  });
+
+  it("a page invalidating its origin leaves an app request live", async () => {
+    const f = fake();
+    await f.controller.init();
+    const appRequest = await f.controller.prepare(PARAMS, APP);
+    const pageRequest = await f.controller.prepare({
+      ...PARAMS,
+      origin: { kind: "browser", origin: SITE },
+    });
+    f.controller.invalidateOrigin(SITE);
+    expect(f.controller.getState().requests[pageRequest.id]?.stage).toBe("invalidated");
+    expect(f.controller.getState().requests[appRequest.id]?.stage).toBe("awaiting-approval");
+  });
+
+  it("an app request never reaches the phishing list — it has no URL to check", async () => {
+    const checked: string[] = [];
+    const f = fake({
+      phishingCheck: (url) => {
+        checked.push(url);
+        return "blocked";
+      },
+    });
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS, APP);
+    /* Even a list that blocks everything cannot stop an app request — it is never consulted. */
+    await f.controller.approve(request.id, "send", approval(request, VERIFY));
+    expect(checked).toStrictEqual([]);
+    const signLog = await f.controller.signLog();
+    const entries = signLog.filter((e) => e.id === request.id);
+    expect(entries.map((e) => e.outcome)).toStrictEqual(["submitted"]);
+  });
+
+  it("isRequestOrigin accepts an app origin and refuses malformed shapes", () => {
+    expect(isRequestOrigin(APP)).toBe(true);
+    expect(isRequestOrigin({ kind: "app" })).toBe(false);
+    expect(isRequestOrigin({ kind: "app", id: "hyperliquid", extra: 1 })).toBe(false);
+    expect(isRequestOrigin({ kind: "app", id: "Hyperliquid" })).toBe(false);
+    expect(isRequestOrigin({ kind: "app", id: "x" })).toBe(false);
+    expect(isRequestOrigin({ kind: "app", id: 42 })).toBe(false);
   });
 });

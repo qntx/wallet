@@ -13,7 +13,7 @@
  * its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
  * order, exactly what must not happen.
  */
-import { KernelError } from "../../errors.ts";
+import { KernelError } from "../../../../errors.ts";
 
 const utf8 = new TextEncoder();
 

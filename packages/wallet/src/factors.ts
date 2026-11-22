@@ -11,6 +11,7 @@ import type {
   Factor,
   MethodName,
   ParamsOf,
+  ProtocolValue,
   VerifyFactor as WireVerifyFactor,
 } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
@@ -258,18 +259,22 @@ export type SecretField =
   | "secret"
   | "answers";
 
-/** True when any field reachable through T's objects, arrays or union members is a SecretField. */
-type CarriesSecret<T> = T extends Uint8Array
+/* True when any field reachable through T's objects, arrays or union members is a SecretField. The
+   `ProtocolValue extends T` stop keeps the walk out of the recursive wire type — a pass-through
+   `params` field is its method's own validation domain, so the classifier treats it as public. */
+type CarriesSecret<T> = ProtocolValue extends T
   ? false
-  : T extends ReadonlyArray<infer E>
-    ? CarriesSecret<E>
-    : T extends Readonly<Record<PropertyKey, unknown>>
-      ? true extends {
-          [K in keyof T]: K extends SecretField ? true : CarriesSecret<T[K]>;
-        }[keyof T]
-        ? true
-        : false
-      : false;
+  : T extends Uint8Array
+    ? false
+    : T extends ReadonlyArray<infer E>
+      ? CarriesSecret<E>
+      : T extends Readonly<Record<PropertyKey, unknown>>
+        ? true extends {
+            [K in keyof T]: K extends SecretField ? true : CarriesSecret<T[K]>;
+          }[keyof T]
+          ? true
+          : false
+        : false;
 
 /** Methods whose params can carry secret bytes — they may only be sent through callWithSecrets. */
 export type SecretMethod = {
@@ -341,6 +346,7 @@ export type PublicBytesField =
   | "message"
   | "ownerPublicKey"
   | "package"
+  | "params"
   | "partialTransaction"
   | "paymentHash"
   | "psbt"

@@ -20,9 +20,9 @@ import {
 
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import type { RequestController } from "../../requests/controller.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
 import type { SignatureResult } from "../../transactions/route.ts";
+import type { AppRequests } from "../types.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import type { HyperliquidGroup } from "./agents.ts";
 import type { HyperliquidClock } from "./clock.ts";
@@ -101,7 +101,7 @@ export type HyperliquidUserSigned = {
 };
 
 export type HyperliquidUserSignedOptions = {
-  readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  readonly requests: AppRequests;
   readonly transport: IRequestTransport;
   readonly clock: HyperliquidClock;
   readonly markets: HyperliquidMarkets;

@@ -107,6 +107,14 @@ export function createNostrModule(backend: NostrBackend): NostrModule {
       }
       return ops;
     },
+
+    parseHeader: (record) => {
+      if (record.kind === NOSTR_KEY_KIND) {
+        parseNostrKeyHeader(record.header);
+      } else {
+        parseSyncKeyHeader(record.header);
+      }
+    },
   };
 
   const handlers: { [M in keyof typeof NOSTR_METHODS & MethodName]: Handler<M> } = {

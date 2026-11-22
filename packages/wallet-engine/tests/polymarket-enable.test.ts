@@ -337,11 +337,11 @@ const pmWorld = async (
     timers,
     fetch: makeFetch(feed, calls, () => timers.time),
     wrapRequests: (requests) => ({
-      prepare: async (input) => {
+      prepare: async (input, app) => {
         if (input.method === "evm-sign" && input.request.kind === "evm.typed-data") {
           typedData.push(input.request.typedData);
         }
-        return requests.prepare(input);
+        return requests.prepare(input, app);
       },
       outcome: async (id) => requests.outcome(id),
       reject: (id) => requests.reject(id),
@@ -1195,4 +1195,68 @@ describe("secret hygiene", () => {
     }
     await expect(w.credentials.get(w.group)).resolves.toBeUndefined();
   });
+});
+
+describe("app-sourced request origins", () => {
+  const PM_ORIGIN = { kind: "app", id: "polymarket" };
+
+  it("enable, order, deposit and withdraw requests are attributed to the polymarket app", async () => {
+    const w = await pmWorld({ transactions: [], nonce: "0", approvals: [] });
+    deployBeacon(w);
+    const { pm } = w;
+    if (pm === undefined) {
+      throw new Error("the world has no polymarket provider");
+    }
+    await w.apps.acknowledgeTerms(w.group, "polymarket");
+
+    /* The enable flow opens two requests — the ClobAuth credential and the approvals Batch. */
+    const flow = w.apps.enable(w.group, "polymarket");
+    const authId = await pendingId(w);
+    expect(w.requests.getState().requests[authId]?.origin).toStrictEqual(PM_ORIGIN);
+    await w.approve(authId);
+    await until(() => w.pmState()?.step === "approvals" && w.pmState()?.requestId !== undefined);
+    const batchId = w.pmState()?.requestId ?? "";
+    expect(w.requests.getState().requests[batchId]?.origin).toStrictEqual(PM_ORIGIN);
+    await w.approve(batchId);
+    await pumpUntil(w.timers, () => w.pmState()?.status === "enabled", 200);
+    await flow;
+
+    /* The sign log persists the app origin with each approved request. */
+    const signLog = await w.requests.signLog();
+    expect(signLog.find((e) => e.id === authId)?.origin).toStrictEqual(PM_ORIGIN);
+    expect(signLog.find((e) => e.id === batchId)?.origin).toStrictEqual(PM_ORIGIN);
+
+    /* An order opens one evm-sign request stamped the same. */
+    const placed = await pm.trade.place(w.group, {
+      kind: "limit",
+      assetId: "1",
+      side: "SELL",
+      price: "0.55",
+      size: "10",
+      orderType: "GTC",
+    });
+    w.feed.orderId = placed.orderId;
+    expect(w.requests.getState().requests[placed.requestId]?.origin).toStrictEqual(PM_ORIGIN);
+    await w.approve(placed.requestId);
+    await placed.outcome;
+
+    /* The deposit is a described pUSD send; the withdraw a relayer Batch — both app-stamped. */
+    const deposit = await pm.fund.deposit(w.group, { amount: 2_500_000n, fee: "normal" });
+    expect(w.requests.getState().requests[deposit.requestId]?.origin).toStrictEqual(PM_ORIGIN);
+    void deposit.outcome.catch(() => undefined);
+
+    const withdraw = await pm.fund.withdraw(w.group, { amount: 3_000_000n });
+    expect(w.requests.getState().requests[withdraw.requestId]?.origin).toStrictEqual(PM_ORIGIN);
+    await w.approve(withdraw.requestId);
+    let settled: string | undefined;
+    void withdraw.outcome.then((o) => {
+      settled = o.kind;
+      return undefined;
+    });
+    await pumpUntil(w.timers, () => settled !== undefined, 200);
+    await expect(withdraw.outcome).resolves.toStrictEqual({ kind: "ok" });
+    const after = await w.requests.signLog();
+    expect(after.find((e) => e.id === withdraw.requestId)?.origin).toStrictEqual(PM_ORIGIN);
+    await w.destroy();
+  }, 30000);
 });

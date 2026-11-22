@@ -3,7 +3,7 @@
 Public API surface of the qntx wallet: the `Wallet` interface, the immutable `WalletSnapshot`,
 `WalletError`, the core API groups (vault, wallets, dataKeys), the host/kernel wire protocol, and
 the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark`, `./chains` and
-`./hyperliquid` are the other module subpaths). This package contains no runtime of
+`./sessions` are the other module subpaths). This package contains no runtime of
 its own — a `Wallet` comes from a host package that spawns the kernel, currently
 [`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node and
 [`@qntx/wallet-native`](https://www.npmjs.com/package/@qntx/wallet-native) for React Native.
@@ -50,12 +50,15 @@ const event = await signer.signEvent({
 });
 ```
 
-`@qntx/wallet/hyperliquid` manages the kernel-held Hyperliquid agent keys:
-`hyperliquid(wallet).createAgent` derives a secp256k1 key inside the enclave for one HD account on
-one network and returns its address, `listAgents`/`deleteAgent` manage the set, and
-`signL1` produces the agent's signature over an allow-listed L1 action. The agent only
-becomes valid once the owner approves it on Hyperliquid — the kernel binds that signature's
-`agentName` to the recorded validity window — and the private key never leaves the enclave.
+`@qntx/wallet/sessions` manages the kernel-held session keys: `sessions(wallet).create` derives a
+secp256k1 key inside the enclave for one HD account under a named scheme and returns its address,
+`list`/`delete` manage the set, and `sign` produces the key's signature over the document its
+scheme defines — for `hyperliquid-l1-agent`, the phantom-agent signature over an allow-listed L1
+action. A Hyperliquid agent only becomes valid once the owner approves it on Hyperliquid — the
+kernel binds that signature's `agentName` to the recorded validity window — and the private key
+never leaves the enclave. For `hyperliquid-l1-agent` every signature must carry an `expiresAfter`
+at most 60 s after it is made and a nonce within ±60 s of wall time, and a `scheduleCancel` time
+cannot outlive the session's `validUntil`.
 
 ### React
 

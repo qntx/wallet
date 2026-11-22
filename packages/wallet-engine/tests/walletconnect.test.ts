@@ -1177,7 +1177,9 @@ describe("walletconnect session expiry, restart and deletion", () => {
       });
       await r.wallet.wallets.delete(r.walletId, PW);
       await until(() => deleted.includes(live.topic));
-      expect(sessionOf(r, live.topic)).toBeUndefined();
+      // The dApp's session_delete only proves the delete went out — the engine-side cleanup
+      // (pairing disconnect, then connections.revoke) lands after it.
+      await until(() => sessionOf(r, live.topic) === undefined);
       expect(r.core.pairing.getPairings().every((pairing) => !pairing.active)).toBe(true);
       // No repoint ever advertised another wallet's account for this session.
       expect(events.some((e) => e.name === "accountsChanged")).toBe(false);

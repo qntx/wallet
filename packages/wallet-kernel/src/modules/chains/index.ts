@@ -19,6 +19,7 @@ import type {
   ChainTemplate,
   CHAINS_METHODS,
   MethodName,
+  SessionSchemeId,
 } from "@qntx/wallet/protocol";
 
 import type { Handler, VaultHooks } from "../../commands/context.ts";
@@ -31,7 +32,7 @@ import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
-import { findAgent, parseAgentHeader } from "../apps/record.ts";
+import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
@@ -316,10 +317,10 @@ const importedPass = (
 
 /**
  * The approve-agent binding (design.md §ApproveAgent 绑定): when the decoded intent approves a
- * Hyperliquid agent, look the agent address up among this vault's hl-agent records. A record whose
- * owner, network, name and validUntil all match the signed action marks the prompt "held"; a record
- * that exists but disagrees means the approval describes a different agent under the same address
- * and is refused; no record marks it "not held".
+ * Hyperliquid agent, look the agent address up among this vault's session-key records. A
+ * hyperliquid-l1-agent record whose owner, scope, name and validUntil all match the signed action
+ * marks the prompt "held"; a record that exists but disagrees means the approval describes a
+ * different agent under the same address and is refused; no record marks it "not held".
  */
 const bindAgent = (
   ctx: Parameters<Handler<"chain.sign">>[0],
@@ -331,14 +332,15 @@ const bindAgent = (
     return prompt;
   }
   const action = message.hyperliquid;
-  const record = findAgent(ctx.image, action.agent);
+  const record = findSession(ctx.image, action.agent);
   if (record === undefined) {
     return { ...prompt, agentHeld: false };
   }
-  const header = parseAgentHeader(record.header);
+  const header = parseSessionHeader(record.header);
   if (
+    header.scheme !== ("hyperliquid-l1-agent" satisfies SessionSchemeId) ||
     header.owner !== signer ||
-    header.network !== action.chain ||
+    header.scope !== action.chain ||
     header.name !== action.name ||
     header.validUntil !== action.validUntil
   ) {
@@ -386,6 +388,7 @@ export function createChainsModule(): ChainsModule {
       accounts = new WeakMap();
     },
     walletDeleteOps: () => [],
+    parseHeader: () => undefined,
   };
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {

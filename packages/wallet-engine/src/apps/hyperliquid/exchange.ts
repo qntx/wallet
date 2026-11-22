@@ -2,8 +2,8 @@ import type { IRequestTransport } from "@nktkas/hyperliquid";
 
 import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
 import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
+import { sessions } from "@qntx/wallet/sessions";
 
 import { formatDecimal, parseDecimal } from "../../decimal.ts";
 import type { SetTimer } from "../../timer.ts";
@@ -400,11 +400,10 @@ export function createHyperliquidExchange(options: {
   ): Promise<{ readonly r: string; readonly s: string; readonly v: number }> => {
     let signature: Uint8Array;
     try {
-      signature = await hyperliquid(options.wallet).signL1({
-        agent: agent.address,
-        action,
-        nonce,
-        expiresAfter,
+      signature = await sessions(options.wallet).sign({
+        scheme: "hyperliquid-l1-agent",
+        address: agent.address,
+        params: { action, nonce, expiresAfter },
       });
     } catch (error) {
       if (error instanceof WalletError) {

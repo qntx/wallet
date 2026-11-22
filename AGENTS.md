@@ -37,6 +37,20 @@
 - Every vault, backup, template, protocol and chain signing format has fixed vectors in
   vectors/.
 - packages/*/src is platform-neutral; all I/O is injected; no ambient singletons.
+- Kernel code grows for an application only as (a) a protocol-family decoder in
+  `@qntx/wallet-chains` with its prompt rows, or (b) a session scheme under
+  `packages/wallet-kernel/src/modules/sessions/schemes/` that builds the exact signed document from
+  strictly validated params. Applications add no vault record kinds and no kernel command
+  namespaces; material that cannot authorise moving value (API keys, HMAC secrets, bearer tokens)
+  stays out of the vault. A session scheme ships with the worst case of a stolen key argued from
+  the protocol's source (it may trade or cancel, never withdraw), a strict params validator that
+  is the allow-list, time-window and TTL caps, byte-exact signing vectors from the protocol's
+  official SDK, and mutation tests that kill every guard.
+- The application share of the native kernel bundle stays within the budgets enforced by
+  `scripts/check-kernel-budget.ts` (run by `bun run lint`); raising one needs a recorded decision.
+- An application signs only through the request pipeline — requests attributed to it with origin
+  `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a kernel
+  session scheme; it never holds a private key.
 
 `design/` is local-only and never committed.
 

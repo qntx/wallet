@@ -74,6 +74,7 @@ export {
   requiredAcknowledgement,
 } from "./requests/controller.ts";
 export type {
+  AppOrigin,
   ApproveOptions,
   BitcoinAccount,
   BitcoinDisplay,

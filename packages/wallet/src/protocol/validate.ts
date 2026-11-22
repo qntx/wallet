@@ -17,6 +17,15 @@ function fail(): never {
 // oxlint-disable-next-line typescript/no-restricted-types -- JSON null is a protocol value
 export type NullValue = null;
 
+export type ProtocolValue =
+  | NullValue
+  | boolean
+  | number // safe integer
+  | string
+  | Uint8Array
+  | ReadonlyArray<ProtocolValue>
+  | { readonly [key: string]: ProtocolValue };
+
 export function literal<T extends NullValue | boolean | number | string>(
   expected: T,
 ): Validator<T> {
