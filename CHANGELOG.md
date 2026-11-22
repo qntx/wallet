@@ -782,7 +782,7 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   polymarket(…)]` instead of a `hyperliquid` config field and returns `controller`, `destroy` and
   one api per listed app id. The entry now carries only the controller and shared core; providers
   ship in the `/apps/hyperliquid` and `/apps/polymarket` sub-entries, so a host pays only for the
-  apps it imports (gzip: core 9.0 kB, Hyperliquid 18.8 kB, Polymarket 39.4 kB).
+  apps it imports (gzip: core 9.0 kB, Hyperliquid 18.8 kB, Polymarket 39.6 kB).
   `AppGroupState.status` gains `"needs-migration"`, `AppStep` gains `"locate-wallet" |
   "deploy-wallet" | "credentials" | "approvals"`, and groups carry an optional `account`. The
   shared WebSocket core moved to `src/apps/socket.ts` (Hyperliquid behaviour unchanged).
