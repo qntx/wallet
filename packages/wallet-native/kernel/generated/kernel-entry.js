@@ -978,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-Vt1n05RQ.mjs
+	// packages/wallet/dist/protocol-B_olgDm6.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1094,6 +1094,12 @@
 		account: accountRef,
 		message: bytes(0, 65536)
 	}), obj({
+		kind: literal("evm.fiat24-session"),
+		network: caip2,
+		account: accountRef,
+		tokenId: str(78, /^[1-9][0-9]{0,77}$/),
+		deadline: int(1, 9007199254740991)
+	}), obj({
 		kind: literal("evm.typed-data"),
 		network: caip2,
 		account: accountRef,
@@ -1155,7 +1161,7 @@
 		kind: literal("evm.transaction"),
 		signedTransaction: bytes(1, 65536)
 	}), obj({
-		kind: union(literal("evm.personal-message"), literal("evm.typed-data")),
+		kind: union(literal("evm.personal-message"), literal("evm.fiat24-session"), literal("evm.typed-data")),
 		signature: bytes(65, 65)
 	}), obj({
 		kind: union(literal("solana.transaction"), literal("solana.message")),
@@ -15105,30 +15111,6 @@
 			_defineProperty(this, "name", "Bytes.SizeExceedsPaddingSizeError");
 		}
 	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/lru.js
-	init_defineProperty();
-	/**
-	* Map with a bounded FIFO eviction policy. Cheaper than {@link LruMap} on hot
-	* `get` paths because reads do not reorder entries; only writes touch the
-	* eviction queue.
-	*
-	* @internal
-	*/
-	var BoundedMap = class extends Map {
-		constructor(size) {
-			super();
-			_defineProperty(this, "maxSize", void 0);
-			this.maxSize = size;
-		}
-		set(key, value) {
-			if (!super.has(key) && this.maxSize && this.size >= this.maxSize) {
-				const firstKey = this.keys().next().value;
-				if (firstKey !== void 0) this.delete(firstKey);
-			}
-			return super.set(key, value);
-		}
-	};
-	var checksum$1 = { checksum: /*#__PURE__*/ new BoundedMap(32768) }.checksum;
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/engine.js
 	/**
 	* The installed overrides. Empty by default -- a bare object literal, so
@@ -15190,260 +15172,6 @@
 		if (as === "Bytes") return bytes;
 		return fromBytes$2(bytes);
 	}
-	var ZERO$4 = 48;
-	var NINE = 57;
-	var A_UPPER = 65;
-	var F_UPPER = 70;
-	var A_LOWER = 97;
-	var F_LOWER = 102;
-	var X_LOWER = 120;
-	/**
-	* Combined shape + lowercase classification for an Ethereum address string.
-	* Avoids the regex / try-catch / error-allocation overhead in the hot path
-	* and avoids a second pass for callers that need both pieces of metadata
-	* (e.g. strict validation).
-	*
-	* - `0` = invalid shape (not `0x[0-9a-fA-F]{40}`)
-	* - `1` = valid shape, all-lowercase hex body (no checksum to verify)
-	* - `2` = valid shape, contains at least one `A-F` upper char
-	*
-	* @internal
-	*/
-	function classify$2(value) {
-		if (typeof value !== "string" || value.length !== 42) return 0;
-		if (value.charCodeAt(0) !== ZERO$4 || value.charCodeAt(1) !== X_LOWER) return 0;
-		let hasUpper = false;
-		for (let i = 2; i < 42; i++) {
-			const code = value.charCodeAt(i);
-			if (code >= ZERO$4 && code <= NINE) continue;
-			if (code >= A_LOWER && code <= F_LOWER) continue;
-			if (code >= A_UPPER && code <= F_UPPER) {
-				hasUpper = true;
-				continue;
-			}
-			return 0;
-		}
-		return hasUpper ? 2 : 1;
-	}
-	/**
-	* Manual ASCII shape check for an Ethereum address string. Returns `true`
-	* when `value` has the shape `0x[0-9a-fA-F]{40}`. Does not verify checksum
-	* casing.
-	*
-	* @internal
-	*/
-	function hasShape(value) {
-		return classify$2(value) !== 0;
-	}
-	/**
-	* Returns the canonical lowercase form of a shape-validated address, or the
-	* input unchanged when it is already all-lowercase. Pre-condition: caller has
-	* already verified the string is shape-valid via {@link hasShape} or
-	* {@link classify}.
-	*
-	* @internal
-	*/
-	function lowercase(value) {
-		let hasUpper = false;
-		for (let i = 2; i < 42; i++) {
-			const code = value.charCodeAt(i);
-			if (code >= A_UPPER && code <= F_UPPER) {
-				hasUpper = true;
-				break;
-			}
-		}
-		if (!hasUpper) return value;
-		const out = /* @__PURE__ */ new Uint16Array(42);
-		out[0] = ZERO$4;
-		out[1] = X_LOWER;
-		for (let i = 2; i < 42; i++) {
-			const code = value.charCodeAt(i);
-			out[i] = code >= A_UPPER && code <= F_UPPER ? code + 32 : code;
-		}
-		return String.fromCharCode.apply(null, out);
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Address.js
-	init_defineProperty();
-	/**
-	* Asserts that the given value is a valid {@link ox#Address.Address}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.assert('0xA0Cf798816D4b9b9866b5330EEa46a18382f251e')
-	* ```
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.assert('0xdeadbeef')
-	* // @error: InvalidAddressError: Address "0xdeadbeef" is invalid.
-	* ```
-	*
-	* @param value - Value to assert if it is a valid address.
-	* @param options - Assertion options.
-	*/
-	function assert$7(value, options = {}) {
-		const { strict = true } = options;
-		const kind = classify$2(value);
-		if (kind === 0) throw new InvalidAddressError({
-			address: value,
-			cause: new InvalidInputError()
-		});
-		if (strict && kind === 2 && checksum(value) !== value) throw new InvalidAddressError({
-			address: value,
-			cause: new InvalidChecksumError()
-		});
-	}
-	/**
-	* Computes the checksum address for the given {@link ox#Address.Address}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.checksum(
-	*   '0xa0cf798816d4b9b9866b5330eea46a18382f251e'
-	* )
-	* // @log: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
-	* ```
-	*
-	* @param address - The address to compute the checksum for.
-	* @returns The checksummed address.
-	*/
-	function checksum(address) {
-		const direct = checksum$1.get(address);
-		if (direct !== void 0) return direct;
-		if (!hasShape(address)) throw new InvalidAddressError({
-			address,
-			cause: new InvalidInputError()
-		});
-		const key = lowercase(address);
-		if (key !== address) {
-			const cached = checksum$1.get(key);
-			if (cached !== void 0) {
-				checksum$1.set(address, cached);
-				return cached;
-			}
-		}
-		const hash = keccak256(fromString$1(key.slice(2)), { as: "Bytes" });
-		const out = /* @__PURE__ */ new Uint16Array(42);
-		out[0] = 48;
-		out[1] = 120;
-		for (let i = 0; i < 40; i++) {
-			const code = key.charCodeAt(i + 2);
-			const nibble = (i & 1) === 0 ? hash[i >> 1] >> 4 : hash[i >> 1] & 15;
-			out[i + 2] = nibble >= 8 && code >= 97 ? code - 32 : code;
-		}
-		const result = String.fromCharCode.apply(null, out);
-		checksum$1.set(key, result);
-		if (key !== address) checksum$1.set(address, result);
-		return result;
-	}
-	/**
-	* Converts a stringified address to a typed (optionally checksummed) {@link ox#Address.Address}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e')
-	* // @log: '0xa0cf798816d4b9b9866b5330eea46a18382f251e'
-	* ```
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e', {
-	*   checksum: true
-	* })
-	* // @log: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
-	* ```
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.from('hello')
-	* // @error: InvalidAddressError: Address "0xa" is invalid.
-	* ```
-	*
-	* @param address - An address string to convert to a typed Address.
-	* @param options - Conversion options.
-	* @returns The typed Address.
-	*/
-	function from$4(address, options = {}) {
-		const { checksum: checksumVal = false } = options;
-		assert$7(address);
-		if (checksumVal) return checksum(address);
-		return address;
-	}
-	/**
-	* Checks if the given address is a valid {@link ox#Address.Address}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.validate(
-	*   '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
-	* )
-	* // @log: true
-	* ```
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.validate('0xdeadbeef')
-	* // @log: false
-	* ```
-	*
-	* @param address - Value to check if it is a valid address.
-	* @param options - Check options.
-	* @returns Whether the address is a valid address.
-	*/
-	function validate$2(address, options = {}) {
-		const { strict = true } = options !== null && options !== void 0 ? options : {};
-		const kind = classify$2(address);
-		if (kind === 0) return false;
-		if (!strict || kind === 1) return true;
-		return checksum(address) === address;
-	}
-	/**
-	* Thrown when an address is invalid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Address } from 'ox'
-	*
-	* Address.from('0x123')
-	* // @error: Address.InvalidAddressError: Address `0x123` is invalid.
-	* ```
-	*/
-	var InvalidAddressError = class extends BaseError {
-		constructor({ address, cause }) {
-			super(`Address "${address}" is invalid.`, { cause });
-			_defineProperty(this, "name", "Address.InvalidAddressError");
-		}
-	};
-	/** Thrown when an address is not a 20 byte (40 hexadecimal character) value. */
-	var InvalidInputError = class extends BaseError {
-		constructor() {
-			super("Address is not a 20 byte (40 hexadecimal character) value.");
-			_defineProperty(this, "name", "Address.InvalidInputError");
-		}
-	};
-	/** Thrown when an address does not match its checksum counterpart. */
-	var InvalidChecksumError = class extends BaseError {
-		constructor() {
-			super("Address does not match its checksum counterpart.");
-			_defineProperty(this, "name", "Address.InvalidChecksumError");
-		}
-	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/regex.js
 	/** @internal */
 	function execTyped(regex, string) {
@@ -16091,6 +15819,284 @@
 		if (!abiItem) throw new InvalidAbiItemError({ signature });
 		return abiItem;
 	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/lru.js
+	init_defineProperty();
+	/**
+	* Map with a bounded FIFO eviction policy. Cheaper than {@link LruMap} on hot
+	* `get` paths because reads do not reorder entries; only writes touch the
+	* eviction queue.
+	*
+	* @internal
+	*/
+	var BoundedMap = class extends Map {
+		constructor(size) {
+			super();
+			_defineProperty(this, "maxSize", void 0);
+			this.maxSize = size;
+		}
+		set(key, value) {
+			if (!super.has(key) && this.maxSize && this.size >= this.maxSize) {
+				const firstKey = this.keys().next().value;
+				if (firstKey !== void 0) this.delete(firstKey);
+			}
+			return super.set(key, value);
+		}
+	};
+	var checksum$1 = { checksum: /*#__PURE__*/ new BoundedMap(32768) }.checksum;
+	var ZERO$4 = 48;
+	var NINE = 57;
+	var A_UPPER = 65;
+	var F_UPPER = 70;
+	var A_LOWER = 97;
+	var F_LOWER = 102;
+	var X_LOWER = 120;
+	/**
+	* Combined shape + lowercase classification for an Ethereum address string.
+	* Avoids the regex / try-catch / error-allocation overhead in the hot path
+	* and avoids a second pass for callers that need both pieces of metadata
+	* (e.g. strict validation).
+	*
+	* - `0` = invalid shape (not `0x[0-9a-fA-F]{40}`)
+	* - `1` = valid shape, all-lowercase hex body (no checksum to verify)
+	* - `2` = valid shape, contains at least one `A-F` upper char
+	*
+	* @internal
+	*/
+	function classify$2(value) {
+		if (typeof value !== "string" || value.length !== 42) return 0;
+		if (value.charCodeAt(0) !== ZERO$4 || value.charCodeAt(1) !== X_LOWER) return 0;
+		let hasUpper = false;
+		for (let i = 2; i < 42; i++) {
+			const code = value.charCodeAt(i);
+			if (code >= ZERO$4 && code <= NINE) continue;
+			if (code >= A_LOWER && code <= F_LOWER) continue;
+			if (code >= A_UPPER && code <= F_UPPER) {
+				hasUpper = true;
+				continue;
+			}
+			return 0;
+		}
+		return hasUpper ? 2 : 1;
+	}
+	/**
+	* Manual ASCII shape check for an Ethereum address string. Returns `true`
+	* when `value` has the shape `0x[0-9a-fA-F]{40}`. Does not verify checksum
+	* casing.
+	*
+	* @internal
+	*/
+	function hasShape(value) {
+		return classify$2(value) !== 0;
+	}
+	/**
+	* Returns the canonical lowercase form of a shape-validated address, or the
+	* input unchanged when it is already all-lowercase. Pre-condition: caller has
+	* already verified the string is shape-valid via {@link hasShape} or
+	* {@link classify}.
+	*
+	* @internal
+	*/
+	function lowercase(value) {
+		let hasUpper = false;
+		for (let i = 2; i < 42; i++) {
+			const code = value.charCodeAt(i);
+			if (code >= A_UPPER && code <= F_UPPER) {
+				hasUpper = true;
+				break;
+			}
+		}
+		if (!hasUpper) return value;
+		const out = /* @__PURE__ */ new Uint16Array(42);
+		out[0] = ZERO$4;
+		out[1] = X_LOWER;
+		for (let i = 2; i < 42; i++) {
+			const code = value.charCodeAt(i);
+			out[i] = code >= A_UPPER && code <= F_UPPER ? code + 32 : code;
+		}
+		return String.fromCharCode.apply(null, out);
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Address.js
+	init_defineProperty();
+	/**
+	* Asserts that the given value is a valid {@link ox#Address.Address}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.assert('0xA0Cf798816D4b9b9866b5330EEa46a18382f251e')
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.assert('0xdeadbeef')
+	* // @error: InvalidAddressError: Address "0xdeadbeef" is invalid.
+	* ```
+	*
+	* @param value - Value to assert if it is a valid address.
+	* @param options - Assertion options.
+	*/
+	function assert$7(value, options = {}) {
+		const { strict = true } = options;
+		const kind = classify$2(value);
+		if (kind === 0) throw new InvalidAddressError({
+			address: value,
+			cause: new InvalidInputError()
+		});
+		if (strict && kind === 2 && checksum(value) !== value) throw new InvalidAddressError({
+			address: value,
+			cause: new InvalidChecksumError()
+		});
+	}
+	/**
+	* Computes the checksum address for the given {@link ox#Address.Address}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.checksum(
+	*   '0xa0cf798816d4b9b9866b5330eea46a18382f251e'
+	* )
+	* // @log: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
+	* ```
+	*
+	* @param address - The address to compute the checksum for.
+	* @returns The checksummed address.
+	*/
+	function checksum(address) {
+		const direct = checksum$1.get(address);
+		if (direct !== void 0) return direct;
+		if (!hasShape(address)) throw new InvalidAddressError({
+			address,
+			cause: new InvalidInputError()
+		});
+		const key = lowercase(address);
+		if (key !== address) {
+			const cached = checksum$1.get(key);
+			if (cached !== void 0) {
+				checksum$1.set(address, cached);
+				return cached;
+			}
+		}
+		const hash = keccak256(fromString$1(key.slice(2)), { as: "Bytes" });
+		const out = /* @__PURE__ */ new Uint16Array(42);
+		out[0] = 48;
+		out[1] = 120;
+		for (let i = 0; i < 40; i++) {
+			const code = key.charCodeAt(i + 2);
+			const nibble = (i & 1) === 0 ? hash[i >> 1] >> 4 : hash[i >> 1] & 15;
+			out[i + 2] = nibble >= 8 && code >= 97 ? code - 32 : code;
+		}
+		const result = String.fromCharCode.apply(null, out);
+		checksum$1.set(key, result);
+		if (key !== address) checksum$1.set(address, result);
+		return result;
+	}
+	/**
+	* Converts a stringified address to a typed (optionally checksummed) {@link ox#Address.Address}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e')
+	* // @log: '0xa0cf798816d4b9b9866b5330eea46a18382f251e'
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e', {
+	*   checksum: true
+	* })
+	* // @log: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('hello')
+	* // @error: InvalidAddressError: Address "0xa" is invalid.
+	* ```
+	*
+	* @param address - An address string to convert to a typed Address.
+	* @param options - Conversion options.
+	* @returns The typed Address.
+	*/
+	function from$4(address, options = {}) {
+		const { checksum: checksumVal = false } = options;
+		assert$7(address);
+		if (checksumVal) return checksum(address);
+		return address;
+	}
+	/**
+	* Checks if the given address is a valid {@link ox#Address.Address}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.validate(
+	*   '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
+	* )
+	* // @log: true
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.validate('0xdeadbeef')
+	* // @log: false
+	* ```
+	*
+	* @param address - Value to check if it is a valid address.
+	* @param options - Check options.
+	* @returns Whether the address is a valid address.
+	*/
+	function validate$2(address, options = {}) {
+		const { strict = true } = options !== null && options !== void 0 ? options : {};
+		const kind = classify$2(address);
+		if (kind === 0) return false;
+		if (!strict || kind === 1) return true;
+		return checksum(address) === address;
+	}
+	/**
+	* Thrown when an address is invalid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('0x123')
+	* // @error: Address.InvalidAddressError: Address `0x123` is invalid.
+	* ```
+	*/
+	var InvalidAddressError = class extends BaseError {
+		constructor({ address, cause }) {
+			super(`Address "${address}" is invalid.`, { cause });
+			_defineProperty(this, "name", "Address.InvalidAddressError");
+		}
+	};
+	/** Thrown when an address is not a 20 byte (40 hexadecimal character) value. */
+	var InvalidInputError = class extends BaseError {
+		constructor() {
+			super("Address is not a 20 byte (40 hexadecimal character) value.");
+			_defineProperty(this, "name", "Address.InvalidInputError");
+		}
+	};
+	/** Thrown when an address does not match its checksum counterpart. */
+	var InvalidChecksumError = class extends BaseError {
+		constructor() {
+			super("Address does not match its checksum counterpart.");
+			_defineProperty(this, "name", "Address.InvalidChecksumError");
+		}
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cursor.js
 	init_defineProperty();
 	var staticCursor = {
@@ -18462,9 +18468,9 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-DLw7RATn.mjs
-	init_secp256k1();
+	// packages/wallet-chains/dist/typed-data-IqlvSzc5.mjs
 	init_utils$2();
+	init_secp256k1();
 	init_objectSpread2();
 	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
 	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
@@ -18883,11 +18889,9 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-BGB95-QI.mjs
+	// packages/wallet-chains/dist/token-call-C9euyNN9.mjs
 	init_utils$2();
 	init_objectSpread2();
-	/** The native asset id in `AssetFlow` and simulated asset changes. */
-	var EVM_NATIVE_ASSET = "native";
 	var USDC$1 = Object.freeze({
 		symbol: "USDC",
 		decimals: 6,
@@ -19025,7 +19029,27 @@
 		"9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC$1 }),
 		"42161": Object.freeze({
 			"0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1,
-			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH
+			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH,
+			"0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62": Object.freeze({
+				symbol: "USD24",
+				decimals: 2,
+				name: "Fiat24 USD"
+			}),
+			"0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA": Object.freeze({
+				symbol: "EUR24",
+				decimals: 2,
+				name: "Fiat24 EUR"
+			}),
+			"0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4": Object.freeze({
+				symbol: "CHF24",
+				decimals: 2,
+				name: "Fiat24 CHF"
+			}),
+			"0x7288Ac74d211735374A23707D1518DCbbc0144fd": Object.freeze({
+				symbol: "CNH24",
+				decimals: 2,
+				name: "Fiat24 CNH"
+			})
 		}),
 		"42220": Object.freeze({
 			"0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC$1,
@@ -19085,6 +19109,8 @@
 			unlimited: change !== "decrease" && value === max
 		}, extra), {}, { verified: known !== void 0 });
 	};
+	/** The native asset id in `AssetFlow` and simulated asset changes. */
+	var EVM_NATIVE_ASSET = "native";
 	/**
 	* An order leg amount: the chain's native asset when `token` matches `nativeMarker` — each protocol
 	* names its own marker and the leg it applies to (UniswapX: the zero address, outputs only —
@@ -19467,7 +19493,7 @@
 		}
 	};
 	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$3;
-	var tokenAmount$2 = (token, amount, chainId, table) => {
+	var tokenAmount$3 = (token, amount, chainId, table) => {
 		const known = lookupEvmToken(table, chainId, token);
 		return _objectSpread2({
 			asset: checksumEvmAddress(token),
@@ -19506,7 +19532,7 @@
 				};
 			} else if (call.value === 0n) outflow = {
 				to: target,
-				amount: tokenAmount$2(token, amount, chainId, table),
+				amount: tokenAmount$3(token, amount, chainId, table),
 				verified: lookupEvmToken(table, chainId, token) !== void 0
 			};
 			if (outflow !== void 0) {
@@ -19517,7 +19543,7 @@
 					approvals: [],
 					minimumReceived: [{
 						to: slippage.recipient,
-						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount$2(slippage.buyToken, slippage.minAmountOut, chainId, table)
+						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount$3(slippage.buyToken, slippage.minAmountOut, chainId, table)
 					}],
 					verifiability: "partial"
 				};
@@ -19759,12 +19785,12 @@
 	function assertHex$2(data) {
 		if (!/^0x[0-9a-fA-F]*$/.test(data)) throw new ChainError("invalid-request", "call data is not 0x-prefixed hex");
 	}
-	var argAddress$3 = (args, index) => {
+	var argAddress$4 = (args, index) => {
 		const value = args[index];
 		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
 		return checksumEvmAddress(value);
 	};
-	var argUint$3 = (args, index) => {
+	var argUint$4 = (args, index) => {
 		const value = args[index];
 		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
 		return value;
@@ -19774,7 +19800,7 @@
 	* reproduces the input byte-for-byte). Returns undefined on selector mismatch, decode failure or a
 	* non-canonical encoding — the caller falls through to the next candidate or the opaque class.
 	*/
-	var tryCall$5 = (fn, data) => {
+	var tryCall$6 = (fn, data) => {
 		const selector = getSelector(fn);
 		if (!data.toLowerCase().startsWith(selector)) return;
 		try {
@@ -19828,9 +19854,9 @@
 	* safeTransferFrom forms, then ERC-1155 single and batch. `token` is the callee, `data` 0x hex.
 	*/
 	var decodeTokenCall = (token, data, chainId, table) => {
-		const transferArgs = tryCall$5(ERC20_TRANSFER, data);
+		const transferArgs = tryCall$6(ERC20_TRANSFER, data);
 		if (transferArgs !== void 0) {
-			const { flows, verified } = tokenFlow$1(token, argAddress$3(transferArgs, 0), argUint$3(transferArgs, 1), chainId, table);
+			const { flows, verified } = tokenFlow$1(token, argAddress$4(transferArgs, 0), argUint$4(transferArgs, 1), chainId, table);
 			return {
 				summary: "transfer",
 				outflows: flows,
@@ -19843,31 +19869,31 @@
 			[ERC20_INCREASE, "increase"],
 			[ERC20_DECREASE, "decrease"]
 		]) {
-			const args = tryCall$5(fn, data);
+			const args = tryCall$6(fn, data);
 			if (args !== void 0) return {
 				summary: "approve",
 				outflows: [],
-				approvals: [allowanceChange(token, argAddress$3(args, 0), argUint$3(args, 1), change, MAX_UINT256, chainId, table)],
+				approvals: [allowanceChange(token, argAddress$4(args, 0), argUint$4(args, 1), change, MAX_UINT256, chainId, table)],
 				verifiability: "partial"
 			};
 		}
-		const operatorArgs = tryCall$5(SET_APPROVAL_FOR_ALL, data);
+		const operatorArgs = tryCall$6(SET_APPROVAL_FOR_ALL, data);
 		if (operatorArgs !== void 0) return {
 			summary: "approve",
 			outflows: [],
 			approvals: [{
 				kind: "operator",
 				asset: token,
-				spender: argAddress$3(operatorArgs, 0),
+				spender: argAddress$4(operatorArgs, 0),
 				approved: argBool(operatorArgs, 1),
 				verified: false
 			}],
 			verifiability: "partial"
 		};
-		const transferFromArgs = tryCall$5(ERC721_TRANSFER_FROM, data);
+		const transferFromArgs = tryCall$6(ERC721_TRANSFER_FROM, data);
 		if (transferFromArgs !== void 0) {
-			const to = argAddress$3(transferFromArgs, 1);
-			const id = argUint$3(transferFromArgs, 2);
+			const to = argAddress$4(transferFromArgs, 1);
+			const id = argUint$4(transferFromArgs, 2);
 			if (lookupEvmToken(table, chainId, token) !== void 0) return {
 				summary: "transfer",
 				outflows: tokenFlow$1(token, to, id, chainId, table).flows,
@@ -19882,32 +19908,32 @@
 			};
 		}
 		for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
-			const args = tryCall$5(fn, data);
+			const args = tryCall$6(fn, data);
 			if (args !== void 0) return {
 				summary: "transfer",
-				outflows: nftFlow(token, argAddress$3(args, 1), argUint$3(args, 2)),
+				outflows: nftFlow(token, argAddress$4(args, 1), argUint$4(args, 2)),
 				approvals: [],
 				verifiability: "partial"
 			};
 		}
-		const erc1155Args = tryCall$5(ERC1155_SAFE_FROM, data);
+		const erc1155Args = tryCall$6(ERC1155_SAFE_FROM, data);
 		if (erc1155Args !== void 0) return {
 			summary: "transfer",
-			outflows: nftFlow(token, argAddress$3(erc1155Args, 1), argUint$3(erc1155Args, 2), argUint$3(erc1155Args, 3)),
+			outflows: nftFlow(token, argAddress$4(erc1155Args, 1), argUint$4(erc1155Args, 2), argUint$4(erc1155Args, 3)),
 			approvals: [],
 			verifiability: "partial"
 		};
-		const batchArgs = tryCall$5(ERC1155_SAFE_BATCH_FROM, data);
+		const batchArgs = tryCall$6(ERC1155_SAFE_BATCH_FROM, data);
 		if (batchArgs !== void 0) {
 			const ids = argList$2(batchArgs, 2);
 			const values = argList$2(batchArgs, 3);
 			if (ids.length > 0 && ids.length === values.length) {
-				const to = argAddress$3(batchArgs, 1);
+				const to = argAddress$4(batchArgs, 1);
 				return {
 					summary: "transfer",
 					outflows: ids.flatMap((id, i) => {
 						var _values$i;
-						return nftFlow(token, to, argUint$3([id], 0), argUint$3([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0));
+						return nftFlow(token, to, argUint$4([id], 0), argUint$4([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0));
 					}),
 					approvals: [],
 					verifiability: "partial"
@@ -20119,7 +20145,7 @@
 		}) }) }) });
 		return decorate(intent);
 	};
-	// packages/wallet-chains/dist/families-B9NiheX5.mjs
+	// packages/wallet-chains/dist/families-BlgplKAJ.mjs
 	var RECOGNISED_FAMILIES = [
 		{
 			family: "Hyperliquid L1",
@@ -20161,6 +20187,22 @@
 				domainName: "DepositWallet"
 			},
 			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Fiat24",
+			claim: {
+				surface: "evm.call",
+				callee: "fiat24"
+			},
+			nearMiss: "fiat24-function"
+		},
+		{
+			family: "Fiat24 session grant",
+			claim: {
+				surface: "evm.personal-message",
+				prefixes: ["I agree to access my profile.", "I agree to access my Fiat24 profile."]
+			},
+			nearMiss: "fiat24-session-grant"
 		},
 		{
 			family: "built-in token",
@@ -24922,6 +24964,402 @@ zoo`.split("\n"));
 	init_utils$2();
 	init_objectSpread2();
 	/**
+	* The Fiat24 contracts (SR Saphirstein AG) the decoder recognises by address — Arbitrum One only.
+	* The pinned proxies come from the issuer's own list
+	* (https://docs.fiat24.com/developer/integration-guide/part-1-smart-contracts.md) re-read on chain
+	* at block 526439604: EIP-1967 implementation slots, symbol()/decimals() — Sourcify full matches,
+	* solc 0.8.18.
+	*/
+	var FIAT24_CHAIN = 42161;
+	/** The ERC-721 "Fiat24 Account" — each token id is a client account. */
+	var FIAT24_ACCOUNT = "0x133CAEecA096cA54889db71956c7f75862Ead7A0";
+	/** The FX/top-up contract (Fiat24CryptoDeposit). */
+	var FIAT24_DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
+	/** The card-authorisation contract (Fiat24CardAuthorizationMarqeta). */
+	var FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
+	/**
+	* The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
+	* share the one Fiat24Token.sol source and `decimals()` is the constant 2 (Fiat24Token.sol:256-258;
+	* issuer list above).
+	*/
+	var FIAT24_TOKENS = {
+		"0xbe00f3db78688d9704bcb4e0a827aea3a9cc0d62": {
+			address: "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62",
+			symbol: "USD24"
+		},
+		"0x2c5d06f591d0d8cd43ac232c2b654475a142c7da": {
+			address: "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA",
+			symbol: "EUR24"
+		},
+		"0xd41f1f0cf89fd239ca4c1f8e8ada46345c86b0a4": {
+			address: "0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4",
+			symbol: "CHF24"
+		},
+		"0x7288ac74d211735374a23707d1518dcbbc0144fd": {
+			address: "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
+			symbol: "CNH24"
+		}
+	};
+	var INTERNAL_ACCOUNT_MIN = 9100n;
+	var INTERNAL_ACCOUNT_MAX = 9299n;
+	var TRANSFER_BY_ACCOUNT_ID = from$2("function transferByAccountId(uint256 accountId, uint256 amount)");
+	var CLIENT_PAYOUT = from$2("function clientPayout(uint256 amount, string contactId)");
+	var CLIENT_PAYOUT_REF = from$2("function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)");
+	var MONEY_EXCHANGE_EXACT_IN = from$2("function moneyExchangeExactIn(address input, address output, uint256 amount)");
+	var MONEY_EXCHANGE_EXACT_OUT = from$2("function moneyExchangeExactOut(address input, address output, uint256 amount)");
+	var DEPOSIT_TOKEN_VIA_USDC = from$2("function depositTokenViaUsdc(address input, address output, uint256 amount)");
+	var DEPOSIT_ETH = from$2("function depositETH(address output) payable");
+	var DEPOSIT_TOKEN_VIA_ETH = from$2("function depositTokenViaEth(address input, address output, uint256 amount)");
+	var MINT_BY_CLIENT = from$2("function mintByClient(uint256 tokenId)");
+	var MINT_BY_CLIENT_WITH_ETH = from$2("function mintByClientWithETH(uint256 tokenId) payable");
+	var ACCOUNT_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
+	var ACCOUNT_SAFE_TRANSFER = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
+	var ACCOUNT_SAFE_TRANSFER_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
+	var FIAT24_SELECTORS = new Set([
+		TRANSFER_BY_ACCOUNT_ID,
+		CLIENT_PAYOUT,
+		CLIENT_PAYOUT_REF,
+		MONEY_EXCHANGE_EXACT_IN,
+		MONEY_EXCHANGE_EXACT_OUT,
+		DEPOSIT_TOKEN_VIA_USDC,
+		DEPOSIT_ETH,
+		DEPOSIT_TOKEN_VIA_ETH,
+		MINT_BY_CLIENT,
+		MINT_BY_CLIENT_WITH_ETH
+	].map((fn) => getSelector(fn)));
+	var ERC20_SELECTORS = new Set([
+		"function transfer(address to, uint256 amount)",
+		"function approve(address spender, uint256 amount)",
+		"function increaseAllowance(address spender, uint256 amount)",
+		"function decreaseAllowance(address spender, uint256 amount)",
+		"function transferFrom(address from, address to, uint256 amount)"
+	].map((signature) => getSelector(signature)));
+	var FIAT24_CONTRACTS = new Set([
+		FIAT24_ACCOUNT,
+		FIAT24_DEPOSIT,
+		FIAT24_CARD,
+		...Object.keys(FIAT24_TOKENS)
+	].map((a) => a.toLowerCase()));
+	/** `to` is one of the seven pinned Fiat24 proxies on Arbitrum One. */
+	var isFiat24Contract = (chainId, to) => chainId === 42161 && FIAT24_CONTRACTS.has(to.toLowerCase());
+	/** `data` starts with a Fiat24-specific selector (any callee, any chain). */
+	var hasFiat24Selector = (data) => FIAT24_SELECTORS.has(data.slice(0, 10).toLowerCase());
+	/** The spender's role when it is a Fiat24 contract on Arbitrum One. */
+	var fiat24Spender = (chainId, spender) => {
+		if (chainId !== 42161) return;
+		const address = spender.toLowerCase();
+		return address === "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14".toLowerCase() ? "card" : address === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase() ? "deposit" : void 0;
+	};
+	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
+	var tryCall$5 = (fn, data) => {
+		const selector = getSelector(fn);
+		if (!data.toLowerCase().startsWith(selector)) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	var argUint$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
+		return value;
+	};
+	var argAddress$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
+		return checksumEvmAddress(value);
+	};
+	var argString = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string") throw new ChainError("invalid-request", "decoded argument is not a string");
+		return value;
+	};
+	var runCases = (cases, call) => {
+		for (const c of cases) {
+			const args = tryCall$5(c.fn, call.data);
+			if (args === void 0) continue;
+			if (c.payable === true ? call.value === 0n : call.value > 0n) return "claimed";
+			const decoded = c.run(args, call);
+			return decoded === "claimed" ? "claimed" : { decoded };
+		}
+	};
+	var tokenAmount$2 = (token, amount, chainId, table) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2({
+			asset: token,
+			amount: amount.toString(10)
+		}, known === void 0 ? {} : {
+			symbol: known.symbol,
+			decimals: known.decimals
+		});
+	};
+	/** The cash-token row for an address argument, or undefined for any other token. */
+	var cashToken = (address) => FIAT24_TOKENS[address.toLowerCase()];
+	var fiat24Token = (token) => ({
+		asset: token.address,
+		symbol: token.symbol,
+		decimals: 2
+	});
+	/** Verified outflow of a cash-token amount; `fiat24` names the account or payee the bytes carry. */
+	var cashFlow = (token, amount, chainId, table, fiat24) => ({
+		to: token.address,
+		amount: tokenAmount$2(token.address, amount, chainId, table),
+		verified: true,
+		fiat24
+	});
+	var ethFlow = (to, value) => ({
+		to,
+		amount: {
+			asset: EVM_NATIVE_ASSET,
+			amount: value.toString(10)
+		},
+		verified: true
+	});
+	/** A top-up input paid to the deposit contract — verified only when the token table knows it. */
+	var topUpFlow = (input, amount, chainId, table) => ({
+		to: FIAT24_DEPOSIT,
+		amount: tokenAmount$2(input, amount, chainId, table),
+		verified: lookupEvmToken(table, chainId, input) !== void 0
+	});
+	var payout = (token, args, action, chainId, table) => {
+		const contactId = argString(args, 1);
+		return {
+			summary: "payout",
+			outflows: [cashFlow(token, argUint$3(args, 0), chainId, table, { payee: contactId })],
+			warnings: [{
+				kind: "fiat24-payee-offchain",
+				message: ""
+			}],
+			fiat24: action(contactId)
+		};
+	};
+	/** Both exchange sides need two different cash tokens — anything else is a near miss. */
+	var exchangePair = (args) => {
+		const input = cashToken(argAddress$3(args, 0));
+		const output = cashToken(argAddress$3(args, 1));
+		return input === void 0 || output === void 0 || input.address === output.address ? void 0 : {
+			input,
+			output
+		};
+	};
+	var exchangeIn = (args, chainId, table) => {
+		const pair = exchangePair(args);
+		if (pair === void 0) return "claimed";
+		return {
+			summary: "swap",
+			outflows: [{
+				to: FIAT24_DEPOSIT,
+				amount: tokenAmount$2(pair.input.address, argUint$3(args, 2), chainId, table),
+				verified: true
+			}],
+			warnings: [{
+				kind: "fiat24-issuer-rate",
+				message: ""
+			}],
+			fiat24: {
+				kind: "exchange",
+				side: "exact-in",
+				receive: fiat24Token(pair.output)
+			}
+		};
+	};
+	var exchangeOut = (args, chainId, table) => {
+		const pair = exchangePair(args);
+		if (pair === void 0) return "claimed";
+		return {
+			summary: "swap",
+			outflows: [],
+			warnings: [{
+				kind: "fiat24-issuer-rate",
+				message: ""
+			}, {
+				kind: "fiat24-exact-out-unbounded",
+				message: ""
+			}],
+			fiat24: {
+				kind: "exchange",
+				side: "exact-out",
+				pay: fiat24Token(pair.input),
+				receive: tokenAmount$2(pair.output.address, argUint$3(args, 2), chainId, table)
+			}
+		};
+	};
+	/** A top-up's shared shape: pay in, receive a cash token at a rate the transaction cannot bound. */
+	var topUp = (outflows, output, swapsInTx) => ({
+		summary: "swap",
+		outflows,
+		warnings: [{
+			kind: "fiat24-issuer-rate",
+			message: ""
+		}, ...swapsInTx ? [{
+			kind: "fiat24-swap-quote",
+			message: ""
+		}] : []],
+		fiat24: {
+			kind: "top-up",
+			receive: fiat24Token(output)
+		}
+	});
+	var topUpToken = (args, swapsInTx, chainId, table) => {
+		const input = argAddress$3(args, 0);
+		const output = cashToken(argAddress$3(args, 1));
+		if (output === void 0) return "claimed";
+		return topUp([topUpFlow(input, argUint$3(args, 2), chainId, table)], output, swapsInTx(input));
+	};
+	/** Minting an account permanently links the address to the identity Fiat24 verifies. */
+	var openAccount = (id, outflows) => ({
+		summary: "contract-call",
+		outflows,
+		warnings: [{
+			kind: "fiat24-account-link",
+			message: ""
+		}],
+		fiat24: {
+			kind: "open-account",
+			account: id.toString(10)
+		}
+	});
+	var moveAccount = (args) => {
+		const to = argAddress$3(args, 1);
+		const id = argUint$3(args, 2);
+		return {
+			summary: "transfer",
+			outflows: [{
+				to,
+				amount: {
+					asset: FIAT24_ACCOUNT,
+					amount: "1",
+					tokenId: id.toString(10)
+				},
+				verified: false
+			}],
+			warnings: [{
+				kind: "fiat24-account-move",
+				level: "danger",
+				message: `#${id.toString(10)} → ${to}`
+			}]
+		};
+	};
+	var decodeFiat24Token = (token, call, chainId, table) => {
+		const hit = runCases([
+			{
+				fn: TRANSFER_BY_ACCOUNT_ID,
+				run: (args) => {
+					const account = argUint$3(args, 0);
+					return {
+						summary: "transfer",
+						outflows: [cashFlow(token, argUint$3(args, 1), chainId, table, { account: account.toString(10) })],
+						warnings: account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX ? [{
+							kind: "fiat24-internal-account",
+							message: account.toString(10)
+						}] : []
+					};
+				}
+			},
+			{
+				fn: CLIENT_PAYOUT,
+				run: (args) => payout(token, args, (contactId) => ({
+					kind: "payout",
+					contactId
+				}), chainId, table)
+			},
+			{
+				fn: CLIENT_PAYOUT_REF,
+				run: (args) => payout(token, args, (contactId) => ({
+					kind: "payout",
+					contactId,
+					purposeId: argUint$3(args, 2).toString(10),
+					ref: argString(args, 3)
+				}), chainId, table)
+			}
+		], call);
+		if (hit !== void 0) return hit;
+		const selector = call.data.slice(0, 10).toLowerCase();
+		return ERC20_SELECTORS.has(selector) && call.value === 0n ? void 0 : "claimed";
+	};
+	var decodeFiat24Deposit = (call, chainId, table) => {
+		var _runCases;
+		return (_runCases = runCases([
+			{
+				fn: MONEY_EXCHANGE_EXACT_IN,
+				run: (args) => exchangeIn(args, chainId, table)
+			},
+			{
+				fn: MONEY_EXCHANGE_EXACT_OUT,
+				run: (args) => exchangeOut(args, chainId, table)
+			},
+			{
+				fn: DEPOSIT_TOKEN_VIA_USDC,
+				run: (args) => topUpToken(args, (input) => input.toLowerCase() !== "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".toLowerCase(), chainId, table)
+			},
+			{
+				fn: DEPOSIT_ETH,
+				payable: true,
+				run: (args, call) => {
+					const output = cashToken(argAddress$3(args, 0));
+					return output === void 0 ? "claimed" : topUp([ethFlow("0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F", call.value)], output, true);
+				}
+			},
+			{
+				fn: DEPOSIT_TOKEN_VIA_ETH,
+				run: (args) => topUpToken(args, () => true, chainId, table)
+			}
+		], call)) !== null && _runCases !== void 0 ? _runCases : "claimed";
+	};
+	var decodeFiat24Account = (call) => {
+		var _runCases2;
+		return (_runCases2 = runCases([
+			{
+				fn: MINT_BY_CLIENT,
+				run: (args) => openAccount(argUint$3(args, 0), [])
+			},
+			{
+				fn: MINT_BY_CLIENT_WITH_ETH,
+				payable: true,
+				run: (args, call) => openAccount(argUint$3(args, 0), [ethFlow("0x133CAEecA096cA54889db71956c7f75862Ead7A0", call.value)])
+			},
+			{
+				fn: ACCOUNT_SAFE_TRANSFER_DATA,
+				run: moveAccount
+			},
+			{
+				fn: ACCOUNT_SAFE_TRANSFER,
+				run: moveAccount
+			},
+			{
+				fn: ACCOUNT_TRANSFER_FROM,
+				run: moveAccount
+			}
+		], call)) !== null && _runCases2 !== void 0 ? _runCases2 : "claimed";
+	};
+	/**
+	* Decodes a call to a Fiat24 contract: `{ decoded }` for the calls the rules table describes,
+	* `"claimed"` for every other call into one of the seven pinned proxies (the Fiat24 family's
+	* near-miss reason applies), `undefined` when the call is not Fiat24's — a cash token's ERC-20
+	* selectors, or a callee Fiat24 does not own.
+	*
+	* Only `depositETH` and `mintByClientWithETH` are payable; a positive value on any other function
+	* is a near miss.
+	*/
+	var decodeFiat24 = (chainId, call, table) => {
+		if (chainId !== 42161 || call.to === void 0) return;
+		const to = call.to.toLowerCase();
+		const token = FIAT24_TOKENS[to];
+		if (token !== void 0) return decodeFiat24Token(token, call, chainId, table);
+		if (to === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase()) return decodeFiat24Deposit(call, chainId, table);
+		if (to === "0x133CAEecA096cA54889db71956c7f75862Ead7A0".toLowerCase()) return decodeFiat24Account(call);
+		return FIAT24_CONTRACTS.has(to) ? "claimed" : void 0;
+	};
+	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+	/** The exact personal-message text a `evm.fiat24-session` request signs. */
+	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
+		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
+	};
+	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
 	* address only. Verified against the Across deployments registry on 2026-11-08.
 	*/
@@ -24960,7 +25398,7 @@ zoo`.split("\n"));
 			if (!Array.isArray(args)) return;
 			const reencoded = encodeData$1(fn, args).toLowerCase();
 			return data.toLowerCase().startsWith(reencoded) ? args : void 0;
-		} catch (_unused) {
+		} catch (_unused2) {
 			return;
 		}
 	};
@@ -25867,7 +26305,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused2) {
+		} catch (_unused3) {
 			return;
 		}
 	};
@@ -26205,21 +26643,33 @@ zoo`.split("\n"));
 	* claims but which the decoder did not decode is blind with the row's reason.
 	*/
 	/**
-	* The claim an undecoded call into `to` makes on `chainId`: a listed token's selector table did not
-	* decode it, so it is an unrecognised function of a token the owner holds.
+	* The claim an undecoded call into `to` makes on `chainId`: the Fiat24 row's callee is a pinned
+	* contract or a Fiat24-specific selector in `data`; a listed token's claim is the token table.
 	*/
-	var callNearMiss = (to, chainId, table) => {
+	var callNearMiss = (to, chainId, table, data) => {
 		var _RECOGNISED_FAMILIES$;
-		return (_RECOGNISED_FAMILIES$ = RECOGNISED_FAMILIES.find((row) => row.claim.surface === "evm.call" && row.claim.callee === "token-table" && lookupEvmToken(table, chainId, to) !== void 0)) === null || _RECOGNISED_FAMILIES$ === void 0 ? void 0 : _RECOGNISED_FAMILIES$.nearMiss;
+		return (_RECOGNISED_FAMILIES$ = RECOGNISED_FAMILIES.find((row) => {
+			if (row.claim.surface !== "evm.call") return false;
+			return row.claim.callee === "fiat24" ? isFiat24Contract(chainId, to) || hasFiat24Selector(data) : lookupEvmToken(table, chainId, to) !== void 0;
+		})) === null || _RECOGNISED_FAMILIES$ === void 0 ? void 0 : _RECOGNISED_FAMILIES$.nearMiss;
+	};
+	/**
+	* The claim a personal message's text makes: an exact, case-sensitive leading sentence of a
+	* family's grant message. A grant-shaped text claims the family even though the wallet builds
+	* grants only through its own structured request.
+	*/
+	var personalMessageNearMiss = (text) => {
+		var _RECOGNISED_FAMILIES$2;
+		return (_RECOGNISED_FAMILIES$2 = RECOGNISED_FAMILIES.find((row) => row.claim.surface === "evm.personal-message" && row.claim.prefixes.some((prefix) => text.startsWith(prefix)))) === null || _RECOGNISED_FAMILIES$2 === void 0 ? void 0 : _RECOGNISED_FAMILIES$2.nearMiss;
 	};
 	/**
 	* The claim an unrecognised typed-data document makes: a family primary type, or a verifying
 	* contract of Permit2, a canonical Seaport deployment or a listed token (case-insensitive).
 	*/
 	var typedDataNearMiss = (json, chainId, table) => {
-		var _RECOGNISED_FAMILIES$2;
+		var _RECOGNISED_FAMILIES$3;
 		const verifying = typedDataAddress(json.domain["verifyingContract"]);
-		return (_RECOGNISED_FAMILIES$2 = RECOGNISED_FAMILIES.find((row) => {
+		return (_RECOGNISED_FAMILIES$3 = RECOGNISED_FAMILIES.find((row) => {
 			const { claim } = row;
 			if (claim.surface !== "evm.typed-data") return false;
 			if ("contracts" in claim) {
@@ -26231,7 +26681,7 @@ zoo`.split("\n"));
 			if (verifying === void 0) return false;
 			const contract = verifying.toLowerCase();
 			return claim.verifyingContract === "permit2" && contract === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase() || claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract) || claim.verifyingContract === "morpho-blue" && isMorphoBlue(chainId, contract) || claim.verifyingContract === "token-table" && lookupEvmToken(table, chainId, verifying) !== void 0;
-		})) === null || _RECOGNISED_FAMILIES$2 === void 0 ? void 0 : _RECOGNISED_FAMILIES$2.nearMiss;
+		})) === null || _RECOGNISED_FAMILIES$3 === void 0 ? void 0 : _RECOGNISED_FAMILIES$3.nearMiss;
 	};
 	var FARCASTER_CHAIN_ID = 10;
 	var DOMAIN_FIELDS$1 = [
@@ -26288,7 +26738,7 @@ zoo`.split("\n"));
 			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
 			return tuple;
-		} catch (_unused3) {
+		} catch (_unused4) {
 			return;
 		}
 	};
@@ -26368,7 +26818,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused4) {
+		} catch (_unused5) {
 			return;
 		}
 	};
@@ -26597,7 +27047,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused5) {
+		} catch (_unused6) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -26756,7 +27206,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused6) {
+		} catch (_unused7) {
 			return;
 		}
 	};
@@ -26840,7 +27290,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused7) {
+		} catch (_unused8) {
 			return;
 		}
 	};
@@ -26878,6 +27328,28 @@ zoo`.split("\n"));
 			approvals: [],
 			warnings: []
 		};
+		const fiat24 = decodeFiat24(chainId, call, table);
+		if (fiat24 !== void 0) {
+			if (fiat24 === "claimed") {
+				var _call$to, _call$to2;
+				const reason = callNearMiss((_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "", chainId, table, call.data);
+				return _objectSpread2(_objectSpread2({}, base), {}, {
+					summary: "contract-call",
+					outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "") : [],
+					fee,
+					verifiability: "opaque"
+				}, reason === void 0 ? {} : { blind: reason });
+			}
+			const { decoded } = fiat24;
+			return _objectSpread2(_objectSpread2(_objectSpread2({}, base), {}, {
+				summary: decoded.summary,
+				outflows: decoded.outflows,
+				warnings: decoded.warnings
+			}, decoded.fiat24 === void 0 ? {} : { fiat24: decoded.fiat24 }), {}, {
+				fee,
+				verifiability: "partial"
+			});
+		}
 		const zeroX = decodeZeroX(chainId, call, table);
 		if (zeroX !== void 0) {
 			const { summary, outflows, approvals, verifiability, minimumReceived } = zeroX;
@@ -26900,7 +27372,7 @@ zoo`.split("\n"));
 			verifiability: "partial"
 		});
 		if (isCctpMessenger(chainId, call.to)) {
-			var _call$to;
+			var _call$to3;
 			const cctp = decodeCctp(chainId, call, signer, table);
 			if (cctp !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 				summary: "transfer",
@@ -26911,7 +27383,7 @@ zoo`.split("\n"));
 			});
 			return _objectSpread2(_objectSpread2({}, base), {}, {
 				summary: "contract-call",
-				outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "") : [],
+				outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to3 = call.to) !== null && _call$to3 !== void 0 ? _call$to3 : "") : [],
 				fee,
 				verifiability: "opaque",
 				blind: "cctp-destination"
@@ -26937,7 +27409,7 @@ zoo`.split("\n"));
 	};
 	/** The token-standard selectors, else an opaque call. None of them accounts for native value. */
 	var standardIntent = (call, { network, fee, table }) => {
-		var _call$to2;
+		var _call$to4;
 		const chainId = networkChainId(network);
 		const data = call.data.toLowerCase();
 		const base = {
@@ -26953,7 +27425,7 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
-		const token = (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "";
+		const token = (_call$to4 = call.to) !== null && _call$to4 !== void 0 ? _call$to4 : "";
 		if (token.toLowerCase() === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) {
 			const permitArgs = tryCall(PERMIT2_APPROVE, data);
 			if (permitArgs !== void 0) {
@@ -26982,12 +27454,41 @@ zoo`.split("\n"));
 		});
 	};
 	/**
+	* Labels allowance approvals whose spender is a Fiat24 contract and raises the card-pull and
+	* unlimited warnings. Runs on every decoded call, so batch and Safe inner calls get labelled the
+	* same way.
+	*/
+	var labelFiat24Spenders = (intent, chainId) => {
+		const extra = [];
+		let labelled = false;
+		const approvals = intent.approvals.map((change) => {
+			if (change.kind !== "allowance") return change;
+			const role = fiat24Spender(chainId, change.spender);
+			if (role === void 0) return change;
+			if (role === "card" && change.change !== "decrease" && BigInt(change.amount.amount) > 0n) extra.push({
+				kind: "fiat24-card-pull",
+				message: "card"
+			});
+			if (change.unlimited) extra.push({
+				kind: "fiat24-unlimited-approval",
+				level: "danger",
+				message: role
+			});
+			labelled = true;
+			return _objectSpread2(_objectSpread2({}, change), {}, { fiat24Spender: role });
+		});
+		return labelled ? _objectSpread2(_objectSpread2({}, intent), {}, {
+			approvals,
+			warnings: [...intent.warnings, ...extra]
+		}) : intent;
+	};
+	/**
 	* The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
 	* produces the intent; `fee` is `undefined` for a call that is not itself a transaction. Native
 	* value sent along with calldata is always an outflow to the contract that receives it.
 	*/
 	var decodeCall = (call, context) => {
-		var _call$to3, _call$to4;
+		var _call$to5, _call$to6;
 		if (call.data === "0x" && call.to !== void 0) return {
 			family: "evm",
 			network: context.network,
@@ -26998,7 +27499,7 @@ zoo`.split("\n"));
 			warnings: [],
 			verifiability: "full"
 		};
-		const address = (_call$to3 = call.to) !== null && _call$to3 !== void 0 ? _call$to3 : call.created;
+		const address = (_call$to5 = call.to) !== null && _call$to5 !== void 0 ? _call$to5 : call.created;
 		const token = call.to === void 0 ? void 0 : lookupEvmToken(context.table, networkChainId(context.network), call.to);
 		const contract = address === void 0 ? {} : { contract: _objectSpread2(_objectSpread2({
 			address,
@@ -27008,7 +27509,7 @@ zoo`.split("\n"));
 			family: "evm",
 			network: context.network,
 			summary: "contract-call",
-			outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to4 = call.to) !== null && _call$to4 !== void 0 ? _call$to4 : "") : [],
+			outflows: call.value > 0n ? nativeOutflow(call.value, (_call$to6 = call.to) !== null && _call$to6 !== void 0 ? _call$to6 : "") : [],
 			approvals: [],
 			fee: context.fee,
 			warnings: [],
@@ -27016,10 +27517,10 @@ zoo`.split("\n"));
 			blind: "account-code"
 		}, contract);
 		const protocol = protocolIntent(call, context);
-		if (protocol !== void 0) return _objectSpread2(_objectSpread2({}, protocol), contract);
+		if (protocol !== void 0) return labelFiat24Spenders(_objectSpread2(_objectSpread2({}, protocol), contract), networkChainId(context.network));
 		const standard = standardIntent(call, context);
-		const nearMiss = standard.verifiability === "opaque" && call.to !== void 0 ? callNearMiss(call.to, networkChainId(context.network), context.table) : void 0;
-		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, standard), contract), nearMiss === void 0 ? {} : { blind: nearMiss }), {}, { outflows: call.value > 0n && address !== void 0 ? [...nativeOutflow(call.value, address), ...standard.outflows] : standard.outflows });
+		const nearMiss = standard.verifiability === "opaque" && call.to !== void 0 ? callNearMiss(call.to, networkChainId(context.network), context.table, call.data) : void 0;
+		return labelFiat24Spenders(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, standard), contract), nearMiss === void 0 ? {} : { blind: nearMiss }), {}, { outflows: call.value > 0n && address !== void 0 ? [...nativeOutflow(call.value, address), ...standard.outflows] : standard.outflows }), networkChainId(context.network));
 	};
 	/** The delegation field a request carries, present iff the transaction is eip7702. */
 	var delegationOf = (tx) => {
@@ -27076,7 +27577,7 @@ zoo`.split("\n"));
 			return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
 				family: "evm",
 				network: request.network,
-				warnings: [],
+				warnings: decoded.flatMap((d) => d.warnings),
 				fee,
 				summary: "batch",
 				calls: decoded,
@@ -27113,11 +27614,12 @@ zoo`.split("\n"));
 	* account; the token table parameter is for tests.
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
-		var _ref2, _recognizeEip, _recognizeCow, _ref3, _permit$blind, _recognized$summary, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _ref4, _recognized$outflows, _ref5, _permit$approvals, _ref6, _permit$warnings, _ref7, _recognized$verifiabi;
+		var _ref3, _recognizeEip, _recognizeCow, _ref4, _permit$blind, _recognized$summary, _app$summary, _safe$safe$calls$0$su, _safe$safe$calls$, _ref5, _recognized$outflows, _ref6, _permit$approvals, _ref7, _permit$warnings, _ref8, _recognized$verifiabi;
 		if (request.kind === "evm.transaction") return withNativeAmountMeta(decodeTransaction$1(request, signer, table), request.network, EVM_NATIVE_ASSET, 18);
 		if (request.kind === "evm.personal-message") {
+			var _ref2;
 			const content = messageContent(request.message, "evm");
-			const blind = messageBlindReason(content);
+			const blind = (_ref2 = content.kind === "text" ? personalMessageNearMiss(content.text) : void 0) !== null && _ref2 !== void 0 ? _ref2 : messageBlindReason(content);
 			return _objectSpread2({
 				family: "evm",
 				network: request.network,
@@ -27130,12 +27632,34 @@ zoo`.split("\n"));
 				verifiability: "opaque"
 			}, blind === void 0 ? {} : { blind });
 		}
+		if (request.kind === "evm.fiat24-session") {
+			const chainId = networkChainId(request.network);
+			return {
+				family: "evm",
+				network: request.network,
+				summary: "message",
+				outflows: [],
+				approvals: [],
+				fee: void 0,
+				warnings: [],
+				message: {
+					kind: "text",
+					text: fiat24SessionMessage(chainId, request.tokenId, request.deadline)
+				},
+				fiat24: {
+					kind: "session-grant",
+					account: request.tokenId,
+					deadline: request.deadline
+				},
+				verifiability: "partial"
+			};
+		}
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
 		const { json } = parseTypedData(request.typedData);
 		assertNoExecutionGrant(json.domain, signer);
 		const chainId = networkChainId(request.network);
 		const permit = recognizePermit(json, chainId, table, signer);
-		const claimed = permit === void 0 ? (_ref2 = (_recognizeEip = recognizeEip3009(json, chainId, table, signer)) !== null && _recognizeEip !== void 0 ? _recognizeEip : recognizeAuthority(json, chainId, table, signer)) !== null && _ref2 !== void 0 ? _ref2 : recognizeFarcaster(json, chainId, signer) : void 0;
+		const claimed = permit === void 0 ? (_ref3 = (_recognizeEip = recognizeEip3009(json, chainId, table, signer)) !== null && _recognizeEip !== void 0 ? _recognizeEip : recognizeAuthority(json, chainId, table, signer)) !== null && _ref3 !== void 0 ? _ref3 : recognizeFarcaster(json, chainId, signer) : void 0;
 		const seaport = permit === void 0 && claimed === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
 		const safe = permit === void 0 && claimed === void 0 && seaport === void 0 ? recognizeSafe(json, {
 			network: request.network,
@@ -27168,7 +27692,7 @@ zoo`.split("\n"));
 		const shown = unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? typedDataFields(json) : void 0;
 		const fields = shown === null || shown === void 0 ? void 0 : shown.fields;
 		const unclaimedBlind = nearMiss !== null && nearMiss !== void 0 ? nearMiss : unclaimed || (snapshot === null || snapshot === void 0 ? void 0 : snapshot.kind) === "vote" ? shown === void 0 ? "typed-data-oversize" : unclaimed && shown.hasCommitment ? "typed-data-commitment" : void 0 : void 0;
-		const blind = (_ref3 = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : typedDataBlind(safe, seaport, app, unclaimedBlind)) !== null && _ref3 !== void 0 ? _ref3 : typedDataHasHiddenText(json) ? "message-bytes" : void 0;
+		const blind = (_ref4 = (_permit$blind = permit === null || permit === void 0 ? void 0 : permit.blind) !== null && _permit$blind !== void 0 ? _permit$blind : typedDataBlind(safe, seaport, app, unclaimedBlind)) !== null && _ref4 !== void 0 ? _ref4 : typedDataHasHiddenText(json) ? "message-bytes" : void 0;
 		const message = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
@@ -27180,12 +27704,12 @@ zoo`.split("\n"));
 			family: "evm",
 			network: request.network,
 			summary,
-			outflows: (_ref4 = (_recognized$outflows = recognized === null || recognized === void 0 ? void 0 : recognized.outflows) !== null && _recognized$outflows !== void 0 ? _recognized$outflows : app === null || app === void 0 ? void 0 : app.outflows) !== null && _ref4 !== void 0 ? _ref4 : [],
-			approvals: (_ref5 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref5 !== void 0 ? _ref5 : [],
+			outflows: (_ref5 = (_recognized$outflows = recognized === null || recognized === void 0 ? void 0 : recognized.outflows) !== null && _recognized$outflows !== void 0 ? _recognized$outflows : app === null || app === void 0 ? void 0 : app.outflows) !== null && _ref5 !== void 0 ? _ref5 : [],
+			approvals: (_ref6 = (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : app === null || app === void 0 ? void 0 : app.approvals) !== null && _ref6 !== void 0 ? _ref6 : [],
 			fee: void 0,
-			warnings: (_ref6 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref6 !== void 0 ? _ref6 : [],
+			warnings: (_ref7 = (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : app === null || app === void 0 ? void 0 : app.warnings) !== null && _ref7 !== void 0 ? _ref7 : [],
 			message,
-			verifiability: (_ref7 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref7 !== void 0 ? _ref7 : permit === void 0 && order === void 0 ? "opaque" : "partial"
+			verifiability: (_ref8 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref8 !== void 0 ? _ref8 : permit === void 0 && order === void 0 ? "opaque" : "partial"
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
 	/**
@@ -27473,6 +27997,19 @@ zoo`.split("\n"));
 				network,
 				account,
 				message
+			};
+		}
+		if (request["kind"] === "evm.fiat24-session") {
+			if (chainId !== 42161) throw new ChainError("unsupported", `fiat24 sessions exist only on eip155:${FIAT24_CHAIN}`);
+			const { tokenId, deadline } = request;
+			if (typeof tokenId !== "string" || !/^[1-9][0-9]*$/.test(tokenId) || BigInt(tokenId) > MAX_UINT256) throw new ChainError("invalid-request", "fiat24-session tokenId is not a canonical id");
+			if (typeof deadline !== "number" || !Number.isSafeInteger(deadline) || deadline < 1) throw new ChainError("invalid-request", "fiat24-session deadline must be a positive integer");
+			return {
+				kind: "evm.fiat24-session",
+				network,
+				account,
+				tokenId,
+				deadline
 			};
 		}
 		if (request["kind"] === "evm.typed-data") {
@@ -30501,9 +31038,9 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/typed-data-CZCBZp5N.mjs
-	init_secp256k1();
+	// packages/wallet-chains/dist/typed-data-CnXGTOCv.mjs
 	init_utils$2();
+	init_secp256k1();
 	init_sha2();
 	init_base();
 	init_objectSpread2();
@@ -38169,7 +38706,8 @@ zoo`.split("\n"));
 			authorization: "确认账户授权",
 			batch: "确认批量交易",
 			stake: "确认质押",
-			bridge: "确认跨链"
+			bridge: "确认跨链",
+			payout: "确认出金"
 		},
 		blindTitle: "确认盲签",
 		blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
@@ -38257,7 +38795,16 @@ zoo`.split("\n"));
 			"permit2-witness": () => "此许可附带附加条款（witness）",
 			"delegation-replaced": (message) => message,
 			"token-2022-transfer-fee": (message) => message,
-			"token-2022-extension": (message) => message
+			"token-2022-extension": (message) => message,
+			"fiat24-internal-account": (message) => `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+			"fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
+			"fiat24-unlimited-approval": (role) => `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
+			"fiat24-issuer-rate": () => "交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度",
+			"fiat24-exact-out-unbounded": () => "你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限",
+			"fiat24-payee-offchain": () => "Fiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金",
+			"fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
+			"fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
+			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -38363,7 +38910,26 @@ zoo`.split("\n"));
 		snapshotAlias: (x) => `允许 ${x} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
 		signatureDeadline: (date) => `此签名在 ${date}（UTC）前可被使用`,
 		fcAddKey: (key, fid) => `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
-		fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`
+		fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`,
+		fiat24SendToAccount: (amount, account) => `发送 ${amount} 到 Fiat24 账户 #${account}（收款人是交易执行时该账户的持有者）`,
+		fiat24Spender: {
+			card: "（Fiat24 卡）",
+			deposit: "（Fiat24 充值与兑换）"
+		},
+		fiat24Function: "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
+		fiat24ReceiveAtRate: (symbol) => `按交易执行时 Fiat24 设定的汇率收到 ${symbol}——没有最低到手额`,
+		fiat24ExactOut: (amount, pay) => `收到 ${amount}；按 Fiat24 设定的汇率支付 ${pay}`,
+		fiat24Payout: (amount) => `以银行转账出金 ${amount} 给 Fiat24 收款人`,
+		fiat24PayoutPayee: (payee) => `Fiat24 收款人 ${payee}`,
+		fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
+		fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
+		fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
+		fiat24Grant: "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
+		fiat24SessionTitle: "授权访问 Fiat24 账户",
+		fiat24SessionAccount: (tokenId) => `Fiat24 账户 #${tokenId}`,
+		fiat24SessionExpires: (date) => `${date}（UTC）过期`,
+		fiat24SessionPower: "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
+		fiat24SessionSigns: (message) => `签名消息：${message}`
 	};
 	var en = {
 		titles: {
@@ -38375,7 +38941,8 @@ zoo`.split("\n"));
 			authorization: "Confirm account authorization",
 			batch: "Confirm batch",
 			stake: "Confirm staking",
-			bridge: "Confirm bridge"
+			bridge: "Confirm bridge",
+			payout: "Confirm payout"
 		},
 		blindTitle: "Confirm blind signing",
 		blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
@@ -38463,7 +39030,16 @@ zoo`.split("\n"));
 			"permit2-witness": () => "This permit carries further terms (a witness)",
 			"delegation-replaced": (message) => message,
 			"token-2022-transfer-fee": (message) => message,
-			"token-2022-extension": (message) => message
+			"token-2022-extension": (message) => message,
+			"fiat24-internal-account": (message) => `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+			"fiat24-card-pull": () => "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
+			"fiat24-unlimited-approval": (role) => `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up and exchange"} contract take your entire balance of this token`,
+			"fiat24-issuer-rate": () => "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
+			"fiat24-exact-out-unbounded": () => "What you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
+			"fiat24-payee-offchain": () => "Fiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
+			"fiat24-swap-quote": () => "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
+			"fiat24-account-link": () => "Opening the account permanently links this address to the identity you verify with Fiat24",
+			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
@@ -38569,7 +39145,26 @@ zoo`.split("\n"));
 		snapshotAlias: (x) => `Let ${x} vote, create proposals and act on Snapshot as you`,
 		signatureDeadline: (date) => `This signature can be used until ${date} (UTC)`,
 		fcAddKey: (key, fid) => `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
-		fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`
+		fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`,
+		fiat24SendToAccount: (amount, account) => `Send ${amount} to Fiat24 account #${account} (whoever holds it when the transaction runs)`,
+		fiat24Spender: {
+			card: " (Fiat24 card)",
+			deposit: " (Fiat24 top-up and exchange)"
+		},
+		fiat24Function: "The wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network",
+		fiat24ReceiveAtRate: (symbol) => `Receive ${symbol} at the rate Fiat24 sets when the transaction runs — no minimum`,
+		fiat24ExactOut: (amount, pay) => `Receive ${amount}; pay ${pay} at the rate Fiat24 sets`,
+		fiat24Payout: (amount) => `Pay out ${amount} by bank transfer to a Fiat24 payee`,
+		fiat24PayoutPayee: (payee) => `Fiat24 payee ${payee}`,
+		fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
+		fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
+		fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
+		fiat24Grant: "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
+		fiat24SessionTitle: "Allow Fiat24 account access",
+		fiat24SessionAccount: (tokenId) => `Fiat24 account #${tokenId}`,
+		fiat24SessionExpires: (date) => `Expires ${date} (UTC)`,
+		fiat24SessionPower: "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
+		fiat24SessionSigns: (message) => `Signs: ${message}`
 	};
 	var CATALOGS$1 = {
 		"zh-Hans": zh,
@@ -38623,7 +39218,8 @@ zoo`.split("\n"));
 		else line = catalog.allow(change.spender, formatAmount(catalog, change.amount));
 		const via = change.via === "permit2" ? catalog.viaPermit2 : change.via === "allowance-holder" ? catalog.viaAllowanceHolder : "";
 		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
-		return `${line}${via}${until}`;
+		const fiat24 = change.fiat24Spender === void 0 ? "" : catalog.fiat24Spender[change.fiat24Spender];
+		return `${line}${via}${until}${fiat24}`;
 	}
 	/**
 	* Every line of requester-supplied text carries this prefix — a kernel-generated line never does,
@@ -38686,6 +39282,7 @@ zoo`.split("\n"));
 				var _contract$symbol;
 				lines.push(catalog.tokenFunction((_contract$symbol = contract.symbol) !== null && _contract$symbol !== void 0 ? _contract$symbol : contract.address, contract.address));
 			}
+			if (blind === "fiat24-function") lines.push(catalog.fiat24Function);
 			if (blind === "account-code") lines.push(catalog.accountCode);
 			lines.push(contract.selector === void 0 ? catalog.deployContract(contract.address) : catalog.callContract(contract.address, contract.selector));
 		}
@@ -38703,7 +39300,7 @@ zoo`.split("\n"));
 		});
 	};
 	function effectLines(catalog, intent) {
-		var _intent$minimumReceiv, _intent$minimumReceiv2, _intent$minimumReceiv3, _intent$minimumReceiv4, _intent$staking;
+		var _intent$minimumReceiv, _intent$minimumReceiv2, _intent$minimumReceiv3, _intent$minimumReceiv4, _intent$calls2, _intent$staking;
 		const sol = (lamports) => {
 			var _networkMeta$symbol, _networkMeta, _intent$network;
 			return `${formatUnits(lamports, 9)} ${(_networkMeta$symbol = (_networkMeta = networkMeta((_intent$network = intent.network) !== null && _intent$network !== void 0 ? _intent$network : "")) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol) !== null && _networkMeta$symbol !== void 0 ? _networkMeta$symbol : "SOL"}`;
@@ -38713,7 +39310,8 @@ zoo`.split("\n"));
 		return [
 			...delegation,
 			...contractLines(catalog, intent),
-			...intent.outflows.map((flow) => flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)),
+			...intent.outflows.map((flow) => flow.fiat24 === void 0 ? flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to) : "account" in flow.fiat24 ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account) : catalog.fiat24Payout(formatAmount(catalog, flow.amount))),
+			...((_intent$calls2 = intent.calls) !== null && _intent$calls2 !== void 0 ? _intent$calls2 : [intent]).flatMap((call) => call.fiat24 === void 0 ? [] : fiat24Lines(catalog, call.fiat24)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).flatMap((action) => catalog.stakeLines(action, sol)),
 			...received,
 			...intent.hyperliquidDeposit === void 0 ? [] : [catalog.hyperliquidDeposit(intent.outflows[0] === void 0 ? "?" : formatAmount(catalog, intent.outflows[0].amount), intent.hyperliquidDeposit.dex, intent.hyperliquidDeposit.recipient), catalog.hyperliquidFee(formatAmount(catalog, intent.hyperliquidDeposit.maxFee))],
@@ -38749,6 +39347,18 @@ zoo`.split("\n"));
 			])
 		};
 	}
+	/** The lines a recognized Fiat24 action adds to a call's effects. */
+	var fiat24Lines = (catalog, action) => {
+		if (action.kind === "exchange") return action.side === "exact-in" ? [catalog.fiat24ReceiveAtRate(action.receive.symbol)] : [catalog.fiat24ExactOut(formatAmount(catalog, action.receive), action.pay.symbol)];
+		if (action.kind === "payout") return [
+			quoted(catalog.fiat24PayoutPayee(field(action.contactId))),
+			...action.purposeId === void 0 ? [] : [quoted(catalog.fiat24PayoutPurpose(field(action.purposeId)))],
+			...action.ref === void 0 ? [] : [quoted(catalog.fiat24PayoutReference(field(action.ref)))]
+		];
+		if (action.kind === "top-up") return [catalog.fiat24ReceiveAtRate(action.receive.symbol)];
+		if (action.kind === "open-account") return [catalog.fiat24OpenAccount(action.account)];
+		return [];
+	};
 	/** Every decoder warning line, in the order the decoder raised them. */
 	var warningLines = (catalog, warnings) => (warnings !== null && warnings !== void 0 ? warnings : []).map((w) => catalog.warnings[w.kind](w.message));
 	function signInLines(catalog, signIn) {
@@ -38809,7 +39419,11 @@ zoo`.split("\n"));
 		return [
 			catalog.safeTransaction(safe.safe, safe.nonce),
 			...safe.operation === "delegatecall" ? [catalog.safeDelegatecall(safe.to)] : [],
-			...safe.calls.flatMap((call) => [...call.verifiability === "opaque" ? [catalog.unverifiedEffects] : [], ...effectLines(catalog, call)]),
+			...safe.calls.flatMap((call) => [
+				...call.verifiability === "opaque" ? [catalog.unverifiedEffects] : [],
+				...effectLines(catalog, call),
+				...warningLines(catalog, call.warnings)
+			]),
 			...safe.refund === void 0 ? [] : [catalog.safeRefund(safe.refund.receiver, formatAmount(catalog, safe.refund.amount), formatAmount(catalog, safe.refund.gasPrice))]
 		];
 	}
@@ -38965,7 +39579,7 @@ zoo`.split("\n"));
 		];
 	}
 	function messagePrompt(catalog, intent, message) {
-		var _message$signIn;
+		var _intent$fiat, _message$signIn;
 		if (message.kind === "bytes") {
 			const bytes = (message.hex.length - 2) / 2;
 			return {
@@ -38980,6 +39594,20 @@ zoo`.split("\n"));
 				description: joinLines(typedDataLines(catalog, intent, message))
 			};
 		}
+		if (message.kind === "text" && ((_intent$fiat = intent.fiat24) === null || _intent$fiat === void 0 ? void 0 : _intent$fiat.kind) === "session-grant") {
+			var _intent$network2;
+			const grant = intent.fiat24;
+			return {
+				title: catalog.fiat24SessionTitle,
+				description: joinLines([
+					catalog.networkLine(networkLabel(catalog, (_intent$network2 = intent.network) !== null && _intent$network2 !== void 0 ? _intent$network2 : "")),
+					catalog.fiat24SessionAccount(grant.account),
+					catalog.fiat24SessionExpires(utcDateTime(grant.deadline)),
+					catalog.fiat24SessionPower,
+					catalog.fiat24SessionSigns(message.text)
+				])
+			};
+		}
 		if (intent.blind === void 0 && ((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
 			title: catalog.signInTitle,
 			description: joinLines(signInLines(catalog, message.signIn))
@@ -38989,7 +39617,7 @@ zoo`.split("\n"));
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
 			description: joinLines([
-				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : intent.blind === "fiat24-session-grant" ? [catalog.fiat24Grant, ...hazard === void 0 ? [] : [catalog.textHazard[hazard]]] : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
 				...digest === void 0 ? [] : [catalog.bytesData(digest)],
 				...digest !== void 0 && !isPlainText(message.text) ? [] : textLines(catalog, message.text)
 			])
@@ -39261,8 +39889,16 @@ zoo`.split("\n"));
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
 	init_secp256k1();
+	init_utils$2();
 	init_bip32();
-	var executeEvm = (request, source, intentOnly) => {
+	var FIAT24_SESSION_WINDOW = 1200;
+	var assertFiat24Deadline = (request, now) => {
+		if (request.kind !== "evm.fiat24-session") return;
+		const left = request.deadline - Math.floor(now / 1e3);
+		if (!(left > 0 && left <= FIAT24_SESSION_WINDOW)) throw new KernelError("invalid-input", "fiat24 session deadline out of range");
+	};
+	var executeEvm = (request, source, intentOnly, now) => {
+		assertFiat24Deadline(request, now);
 		if (source.kind === "imported") {
 			const priv = source.secret;
 			return evmBody(request, priv, evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)), intentOnly);
@@ -39307,6 +39943,10 @@ zoo`.split("\n"));
 		if (request.kind === "evm.personal-message") return {
 			kind: "evm.personal-message",
 			signature: signEvmPersonalMessage(request.message, priv)
+		};
+		if (request.kind === "evm.fiat24-session") return {
+			kind: "evm.fiat24-session",
+			signature: signEvmPersonalMessage(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)), priv)
 		};
 		return {
 			kind: "evm.typed-data",
@@ -39582,7 +40222,7 @@ zoo`.split("\n"));
 				account,
 				seed
 			};
-			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly);
+			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly, ctx.platform.now());
 			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
 			return executeSolana(request, source, intentOnly);
 		};
@@ -39591,7 +40231,7 @@ zoo`.split("\n"));
 	var importedPass = (ctx, request, dek) => {
 		const { account } = request;
 		if (account.kind !== "imported") throw new KernelError("integrity", "unreachable: imported path with an hd account");
-		const isEvm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data";
+		const isEvm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data";
 		const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
 		const isTron = request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data";
 		if (!isEvm && !isSolana && !isTron) throw new KernelError("unsupported", "imported accounts are not supported on bitcoin");
@@ -39605,7 +40245,7 @@ zoo`.split("\n"));
 				kind: "imported",
 				secret
 			};
-			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly);
+			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly, ctx.platform.now());
 			if (request.kind === "solana.transaction" || request.kind === "solana.message") return executeSolana(request, source, intentOnly);
 			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
 			throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
