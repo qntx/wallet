@@ -20,6 +20,7 @@ import { address as solanaAddress } from "@solana/kit";
 import { isAddress } from "viem";
 import type { PublicClient } from "viem";
 
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { solanaTokenTable } from "@qntx/wallet-chains/solana";
 import { tronTokenTable, isTronAddress } from "@qntx/wallet-chains/tron";
@@ -142,6 +143,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
   /** Mint facts per `network:mint` for this unlock — each mint is inspected at most once. */
   private readonly mints = new Map<string, MintFacts | "missing">();
   private readonly tronMeta = new Map<string, TronTokenMeta | "missing">();
+
+  /** Bitcoin templates verified unused within the discovery window — skipped on warm refreshes. */
+  private readonly btcDiscovery = new Map<
+    string,
+    { readonly unused: ReadonlySet<BitcoinAccountTemplate>; readonly checkedAt: number }
+  >();
   /** State key → the held list tokens found on the last discovery scan, and when it ran. */
   private readonly discovered = new Map<
     string,
@@ -213,6 +220,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.meta.clear();
     this.mints.clear();
     this.tronMeta.clear();
+    this.btcDiscovery.clear();
     this.discovered.clear();
     this.tracked.clear();
     this.lists.clear();
@@ -1088,8 +1096,17 @@ export class AssetsController extends Controller<AssetsControllerState> {
       throw new TypeError(`${network} is not a bitcoin network`);
     }
     const es = this.options.networks.esplora(network);
+    const cacheKey = `${group.walletId}:${group.groupIndex}:${network}`;
+    const cached = this.btcDiscovery.get(cacheKey);
+    // Templates verified unused within the window are skipped — they can hold no unindexed
+    // deposit — except btc.bip84, the default receive template, always re-scanned for deposits.
+    const prior: ReadonlySet<BitcoinAccountTemplate> =
+      cached !== undefined && this.options.now() - cached.checkedAt < DISCOVERY_MS
+        ? cached.unused
+        : new Set();
+    const templates = BITCOIN_TEMPLATES.filter((t) => t === "btc.bip84" || !prior.has(t));
     const sources = await Promise.all(
-      BITCOIN_TEMPLATES.map(async (template): Promise<BitcoinSource> => {
+      templates.map(async (template): Promise<BitcoinSource> => {
         const account = await this.options.chains.account({ ...group, template, network });
         if (!("xpub" in account)) {
           throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
@@ -1098,9 +1115,23 @@ export class AssetsController extends Controller<AssetsControllerState> {
       }),
     );
     const read = await readBitcoin(es, network, sources, this.options.ownBitcoinTxids());
+    const unused = new Set(prior);
+    for (const template of templates) {
+      if (read.usedSources.has(template)) {
+        unused.delete(template);
+      } else {
+        unused.add(template);
+      }
+    }
+    this.btcDiscovery.set(cacheKey, { unused, checkedAt: this.options.now() });
+    // Skipped templates contribute verified-zero totals — they were checked within the window.
+    const bySource = { ...read.bySource };
+    for (const t of BITCOIN_TEMPLATES) {
+      bySource[t] ??= { native: "0", unconfirmed: "0", protected: "0" };
+    }
     return this.record(
       `${network}:${group.walletId}:${group.groupIndex}`,
-      bitcoinBalances(read),
+      bitcoinBalances({ ...read, bySource }),
       async () => this.refreshBitcoinGroup(group, network),
       generation,
     );
