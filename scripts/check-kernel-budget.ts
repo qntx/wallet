@@ -36,28 +36,32 @@ const UNITS: ReadonlyArray<Unit> = [
   {
     name: "hyperliquid decoder",
     match: /^packages\/wallet-chains\/src\/evm\/hyperliquid\.ts$/,
-    budget: 15_360,
+    // measured 11159 B; budget from measurement with ≥ 5 % headroom (owner decision 2026-11-22)
+    budget: 11_776,
     note: "Hyperliquid typed-data action decoder for intent display",
   },
   {
     name: "hyperliquid-l1-agent scheme",
     match:
       /^packages\/(wallet-kernel\/src\/modules\/sessions\/schemes\/hyperliquid-l1-agent\/|wallet-chains\/src\/evm\/(hyperliquid-l1|msgpack)\.ts$)/,
-    // measured 15940 B; study budget 8192 B exceeded — needs a recorded decision
+    // budget 16 384 B by owner decision of 2026-11-22 (measured 15 794 B at introduction,
+    // 15 940 B with the L1 encoder in @qntx/wallet-chains/evm; the study's 8 192 B is exceeded)
     budget: 16_384,
     note: "the one session scheme: L1 action validators, msgpack, phantom-agent document",
   },
   {
     name: "polymarket decoder",
     match: /^packages\/wallet-chains\/src\/evm\/polymarket\.ts$/,
-    budget: 15_360,
+    // measured 11688 B; budget from measurement with ≥ 5 % headroom (owner decision 2026-11-22)
+    budget: 12_288,
     note: "Polymarket CLOB typed-data decoder for intent display",
   },
   {
     name: "fiat24 decoder",
     match: /^packages\/wallet-chains\/src\/evm\/fiat24\.ts$/,
-    // measured 14710 B
-    budget: 15_360,
+    // measured 14710 B; budget from measurement with ≥ 5 % headroom (owner decision 2026-11-22),
+    // above the study's 15 kB per decoder
+    budget: 15_872,
     note: "Fiat24 calldata decoder, grant prefixes and session-message builder",
   },
   {
