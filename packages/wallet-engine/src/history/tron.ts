@@ -471,29 +471,30 @@ const verifyEntry = async (
   const trc20s = legs.filter((leg): leg is Extract<Leg, { kind: "trc20" }> => {
     return leg.kind === "trc20";
   });
-  /* The sha256 pin + the phase-1 decoder make the contract check byte-for-byte, not field-shaped.
-     Decoded once when the pinned body is available — needed for claimed legs and for the
-     completeness check on a wallet-signed TriggerSmartContract's attached movements. */
+  /* An entry verifies only on the pinned, decoded body — the sha256 pin + the phase-1 decoder
+     make the contract check byte-for-byte, not field-shaped, and the completeness check below
+     needs the contract. A missing body or undecodable bytes leave the entry
+     claimed-but-unverified; a body whose sha256 is not the txid is provably wrong, legs or not. */
   let contract: TronContract | undefined;
   const raw = body?.raw_data_hex === undefined ? undefined : hexBytesOf(body.raw_data_hex);
-  if (transfers.length > 0 && raw === undefined) {
+  if (raw === undefined) {
     checkable = false;
-  } else if (raw !== undefined) {
-    if (bytesToHex(sha256(raw)) === group.txid) {
-      try {
-        const slot = decodeTronRawData(raw).contract;
-        contract = decodeTronContract(slot.typeId, slot.value)?.contract;
-      } catch {
-        checkable = transfers.length === 0; // unmodelable bytes: uncheckable only if legs needed it
-      }
-      // One raw contract binds at most one claim: a second distinct leg mismatches on `.every`.
-      const decoded = contract;
-      if (decoded !== undefined && !transfers.every((leg) => transferMatches(leg, decoded))) {
-        mismatch = true;
-      }
-    } else if (transfers.length > 0) {
-      mismatch = true; // the body is provably not this txid's
+  } else if (bytesToHex(sha256(raw)) === group.txid) {
+    try {
+      const slot = decodeTronRawData(raw).contract;
+      contract = decodeTronContract(slot.typeId, slot.value)?.contract;
+    } catch {
+      contract = undefined;
     }
+    const decoded = contract;
+    if (decoded === undefined) {
+      checkable = false;
+      // One raw contract binds at most one claim: a second distinct leg mismatches on `.every`.
+    } else if (!transfers.every((leg) => transferMatches(leg, decoded))) {
+      mismatch = true;
+    }
+  } else {
+    mismatch = true; // the body is provably not this txid's
   }
   /* The reverse direction: the wallet's own TriggerSmartContract moved `call_value` TRX or a
      `call_token_value` TRC-10 amount — an indexer that never reported the movement hides an

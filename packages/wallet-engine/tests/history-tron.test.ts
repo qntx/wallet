@@ -464,8 +464,9 @@ describe("tronHistoryStream", () => {
   });
 
   it("flags a zero-value TRC-20 leg and still verifies it on the node", async () => {
-    const txid = "a2".repeat(32);
-    const row = trc20Row(txid, { ts: 3000, from: SENDER, to: OWNER, value: "0" });
+    /* Verification needs the pinned body — a real trigger contract whose sha256 is the txid. */
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000003, ts: 3000 });
+    const row = trc20Row(made.txid, { ts: 3000, from: SENDER, to: OWNER, value: "0" });
     const info = trc20Info({
       block: 87000003,
       ts: 3000,
@@ -473,7 +474,7 @@ describe("tronHistoryStream", () => {
     });
     const { stream: s } = stream({
       trc20: [page([row])],
-      api: nodeApi({ [txid]: { info } }),
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
     });
     const [entry] = await drain(s);
     expect(entry?.flags).toContain("zero-value-transfer");
@@ -505,7 +506,8 @@ describe("tronHistoryStream", () => {
   });
 
   it("merges a txid whose trc20 rows split across a page boundary", async () => {
-    const txid = "a4".repeat(32);
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000005, ts: 5000 });
+    const { txid } = made;
     const leg1 = trc20Row(txid, { ts: 5000, from: SENDER, to: OWNER, value: "10" });
     const leg2 = trc20Row(txid, {
       ts: 5000,
@@ -534,7 +536,7 @@ describe("tronHistoryStream", () => {
     });
     const { stream: s } = stream({
       trc20: [page([leg1], "fp1"), page([leg2, older])],
-      api: nodeApi({ [txid]: { info }, ["a5".repeat(32)]: { info: otherInfo } }),
+      api: nodeApi({ [txid]: { tx: made.body, info }, ["a5".repeat(32)]: { info: otherInfo } }),
     });
     const entries = await drain(s);
     const merged = entries.find((e) => e.id === `${NETWORK}:${txid}`);
@@ -953,8 +955,8 @@ describe("TRON claims bind one-to-one to the node contract", () => {
   });
 
   it("two identical TRC-20 rows bind two identical logs — two changes, verified", async () => {
-    const txid = "c5".repeat(32);
-    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const leg = trc20Row(made.txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
     const info = trc20Info({
       block: 87000004,
       ts: 4000,
@@ -965,11 +967,70 @@ describe("TRON claims bind one-to-one to the node contract", () => {
     });
     const { stream: s } = stream({
       trc20: [page([leg, leg])],
-      api: nodeApi({ [txid]: { info } }),
+      api: nodeApi({ [made.txid]: { tx: made.body, info } }),
     });
     const [entry] = await drain(s);
     expect(entry?.changes).toHaveLength(2);
     expect(entry?.verified).toBe(true);
+  });
+
+  it("a TRC-20-only entry without a body is claimed, not verified", async () => {
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const leg = trc20Row(made.txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({ [made.txid]: { info } }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.verified).toBe(false);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a body the decoder cannot read is claimed, not verified — never a mismatch", async () => {
+    /* Bytes whose sha256 is the txid but that fail the phase-1 decode. */
+    const raw = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    const txid = bytesToHex(sha256(raw));
+    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({
+        [txid]: {
+          tx: { txID: txid, block_timestamp: 4000, raw_data_hex: bytesToHex(raw) },
+          info,
+        },
+      }),
+    });
+    const [entry] = await drain(s);
+    expect(entry?.verified).toBe(false);
+    expect(flagsOf(entry)).not.toContain("chain-mismatch");
+  });
+
+  it("a body whose sha256 is not the txid mismatches even without transfer claims", async () => {
+    const made = triggerBody({ owner: SENDER, contract: DDYS, block: 87000004, ts: 4000 });
+    const txid = "c6".repeat(32);
+    const leg = trc20Row(txid, { ts: 4000, from: SENDER, to: OWNER, value: "44766592" });
+    const info = trc20Info({
+      block: 87000004,
+      ts: 4000,
+      logs: [transferLog({ from: SENDER_HEX20, to: OWNER_HEX20, amount: 44766592n })],
+    });
+    const { stream: s } = stream({
+      trc20: [page([leg])],
+      api: nodeApi({ [txid]: { tx: { ...made.body, txID: txid }, info } }),
+    });
+    const [entry] = await drain(s);
+    expect(flagsOf(entry)).toContain("chain-mismatch");
+    expect(entry?.verified).toBe(false);
   });
 });
 
