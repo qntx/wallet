@@ -23,10 +23,16 @@ import type { Limiters, RateLimiter } from "../../../../apps/gateway/src/types.t
 import { createWalletEngine } from "../../src/engine.ts";
 import type { WalletEngine } from "../../src/engine.ts";
 import { gatewayScope } from "../../src/gateway/client.ts";
-import { CLIENT_ID_HEADER } from "../../src/gateway/contract/index.ts";
+import { CLIENT_ID_HEADER, PROVIDER_PIN_HEADER } from "../../src/gateway/contract/index.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../../src/store/memory.ts";
-import type { Stub, WalletModel } from "./upstream.ts";
-import { stubUpstream, tokenListFetch } from "./upstream.ts";
+import type { HostUpstream, Stub, WalletModel } from "./upstream.ts";
+import {
+  HOST_SOLANA_URL,
+  HOST_TRON_URL,
+  hostUpstream,
+  stubUpstream,
+  tokenListFetch,
+} from "./upstream.ts";
 
 export const CLIENT_IP = "203.0.113.10";
 const GATEWAY_URL = "https://gateway.test";
@@ -223,6 +229,10 @@ export type Readings = {
   readonly upstream: Map<string, { calls: number; units: number }>;
   readonly budget: Map<string, number>;
   readonly share: Map<string, number>;
+  /** Route → gateway requests carrying `x-gateway-provider` (the pinned path ran). */
+  readonly pinned: Map<string, number>;
+  /** `host-solana`/`host-tron` → host-endpoint call count — cross-check reads, never upstream. */
+  readonly host: Map<string, number>;
   readonly prices: PricesRead[];
   /** Every accepted limiter take's post-take windowed count — per-limiter maxima come from this. */
   readonly limiterTakes: ReadonlyArray<{ limiter: string; key: string; count: number }>;
@@ -240,6 +250,8 @@ export const emptyReadings = (): Readings => ({
   upstream: new Map(),
   budget: new Map(),
   share: new Map(),
+  pinned: new Map(),
+  host: new Map(),
   prices: [],
   limiterTakes: [],
   takes: [],
@@ -250,9 +262,13 @@ export type World = {
   readonly engine: WalletEngine;
   readonly walletId: string;
   readonly stub: Stub;
+  /** The host-endpoint stub answering `rpc:` Solana/TRON origins — the independent cross-check. */
+  readonly host: HostUpstream;
   readonly readings: Readings;
   /** In-flight gateway requests — cold-start waits for 500 ms of quiet. */
   readonly inflight: () => number;
+  /** Advances the virtual limiter clock `ms` into fresh windows; irrelevant when unconstrained. */
+  readonly advance: (ms: number) => void;
   readonly snapshot: () => Readings;
   /** `x-client-id` → gateway scope, seen on requests — decodes `clientId:prefix` limiter keys. */
   readonly clientScopes: Map<string, string>;
@@ -268,6 +284,8 @@ export const snapshotOf = (r: Readings): Readings => ({
   upstream: new Map([...r.upstream].map(([k, v]) => [k, { ...v }])),
   budget: deepCopy(r.budget),
   share: deepCopy(r.share),
+  pinned: deepCopy(r.pinned),
+  host: deepCopy(r.host),
   prices: [...r.prices],
   limiterTakes: [...r.limiterTakes],
   takes: [...r.takes],
@@ -296,6 +314,8 @@ export const diffReadings = (after: Readings, before: Readings): Readings => ({
   ),
   budget: new Map([...after.budget].map(([k, v]) => [k, v - (before.budget.get(k) ?? 0)] as const)),
   share: new Map([...after.share].map(([k, v]) => [k, v - (before.share.get(k) ?? 0)] as const)),
+  pinned: new Map([...after.pinned].map(([k, v]) => [k, v - (before.pinned.get(k) ?? 0)] as const)),
+  host: new Map([...after.host].map(([k, v]) => [k, v - (before.host.get(k) ?? 0)] as const)),
   prices: after.prices.slice(before.prices.length),
   limiterTakes: after.limiterTakes.slice(before.limiterTakes.length),
   takes: after.takes.slice(before.takes.length),
@@ -363,6 +383,8 @@ export const createWorld = async (opts: {
   const now = unconstrained ? () => Date.now() : () => nowMs;
   const limits = productionLimits();
   const stub = stubUpstream(opts.model, providerPrefixes(networks), opts.tronAddress ?? "");
+  // The engine's own endpoints for the chain-binding cross-checks: same model, recorded apart.
+  const host = hostUpstream(opts.model, opts.tronAddress ?? "", stub.unstubbed);
 
   const limiterTakes: Array<{ limiter: string; key: string; count: number }> = [];
   const reportCount =
@@ -489,6 +511,9 @@ export const createWorld = async (opts: {
   const engineFetch: typeof globalThis.fetch = async (input, init) => {
     const target = input instanceof Request ? input.url : String(input);
     const url = new URL(target);
+    if (url.origin === HOST_SOLANA_URL || url.origin === HOST_TRON_URL) {
+      return host.fetch(input, init);
+    }
     if (url.origin !== GATEWAY_URL) {
       return stub.fetch(input, init);
     }
@@ -501,6 +526,14 @@ export const createWorld = async (opts: {
     const path = url.pathname;
     const route = routeClass(path);
     readings.routes.set(route, (readings.routes.get(route) ?? 0) + 1);
+    const pin =
+      (init?.headers === undefined
+        ? undefined
+        : new Headers(init.headers).get(PROVIDER_PIN_HEADER)) ??
+      (input instanceof Request ? input.headers.get(PROVIDER_PIN_HEADER) : undefined);
+    if (pin !== null && pin !== undefined) {
+      readings.pinned.set(route, (readings.pinned.get(route) ?? 0) + 1);
+    }
     inflight += 1;
     try {
       const headers = new Headers(init?.headers);
@@ -595,7 +628,10 @@ export const createWorld = async (opts: {
     showCallsStatus: () => undefined,
     // oxlint-disable-next-line typescript/require-await -- the store seam's signature is a promise
     openStore: async () => createMemoryEngineStore(),
-    rpc: {},
+    rpc: {
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": [HOST_SOLANA_URL],
+      "tron:728126428": [HOST_TRON_URL],
+    },
     gateway: { url: GATEWAY_URL },
   });
   for (let i = 0; i < 300; i += 1) {
@@ -621,17 +657,22 @@ export const createWorld = async (opts: {
     // oxlint-disable-next-line no-non-null-assertion -- the harness wallet always has one wallet
     walletId: opts.wallet.getSnapshot().wallets[0]!.walletId,
     stub,
+    host,
     readings: {
       ...readings,
       share: shareSums(),
       upstream: upstreamUnits,
       budget: new Map(),
+      host: new Map(),
       prices: [],
       limiterTakes,
       takes: budgetTakes,
       clientScopes,
     },
     inflight: () => inflight,
+    advance: (ms: number) => {
+      nowMs += ms;
+    },
     clientScopes,
     snapshot: () => {
       // Recompute attribution so far: budget takes by account, upstream calls by account, share
@@ -645,6 +686,10 @@ export const createWorld = async (opts: {
         const e = upstream.get(account) ?? { calls: 0, units: 0 };
         upstream.set(account, { calls: e.calls, units: e.units + units });
       }
+      const hostCalls = new Map<string, number>();
+      for (const { account } of host.calls) {
+        hostCalls.set(account, (hostCalls.get(account) ?? 0) + 1);
+      }
       return {
         routes: deepCopy(readings.routes),
         statuses: deepCopy(readings.statuses),
@@ -652,6 +697,8 @@ export const createWorld = async (opts: {
         routePaths: deepCopy(readings.routePaths),
         prices: [...readings.prices],
         upstream,
+        pinned: deepCopy(readings.pinned),
+        host: hostCalls,
         budget: (() => {
           const m = new Map<string, number>();
           for (const t of budgetTakes) {

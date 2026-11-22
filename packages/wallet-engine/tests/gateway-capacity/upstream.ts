@@ -452,7 +452,14 @@ const solanaCall = (model: WalletModel, method: string, params: unknown): unknow
   const p: ReadonlyArray<unknown> = Array.isArray(params) ? params : [];
   switch (method) {
     case "getGenesisHash":
-      return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpJNTMcw4JMDr9VjpEFc8FGqtCpBc3fZDFLXTaq9xBQFahEm5KBGxdb1YBh4e6TrXmgqP8ETFkTB9oXGBNVu2k";
+      return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+    case "isBlockhashValid":
+      return { context: { slot: 300_000_000 }, value: true };
+    case "getSignatureStatuses":
+      return {
+        context: { slot: 300_000_000 },
+        value: [{ slot: 300_000_000, confirmationStatus: "confirmed", err: null }],
+      };
     case "getBalance":
       return { context: { slot: 300_000_000 }, value: model.solana.lamports };
     case "getLatestBlockhash":
@@ -507,6 +514,38 @@ const tronAccount = (model: WalletModel, address: string): unknown => {
   return body;
 };
 
+/** TRON mainnet genesis block id — `tron:728126428.genesisHash` in @qntx/wallet-chains networks. */
+const TRON_MAINNET_GENESIS = "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc";
+
+/** The solidified head the `getnowblock` fixture claims, read once so every `getblockbynum` agrees. */
+const SOLID_HEAD = (() => {
+  const block = obj(fixture("tron/mainnet-trongrid/nowblock-solidity.json"));
+  const raw = obj(obj(block?.["block_header"])?.["raw_data"]);
+  return {
+    number: typeof raw?.["number"] === "number" ? raw["number"] : 0,
+    id: typeof block?.["blockID"] === "string" ? block["blockID"] : "",
+    timestamp: typeof raw?.["timestamp"] === "number" ? raw["timestamp"] : 0,
+  };
+})();
+
+/**
+ * `getblockbynum` by height: block 0 is the chain's genesis, the solid head's own id — the two
+ * heights the endpoint chain-binding cross-checks ask. Anything else reads as past the head.
+ */
+const tronBlockByNum = (body: Tx): unknown => {
+  const num = typeof body["num"] === "number" ? body["num"] : -1;
+  const known = new Map<number, { id: string; timestamp: number }>([
+    [0, { id: TRON_MAINNET_GENESIS, timestamp: 0 }],
+    [SOLID_HEAD.number, { id: SOLID_HEAD.id, timestamp: SOLID_HEAD.timestamp }],
+  ]).get(num);
+  return known === undefined
+    ? {}
+    : {
+        blockID: known.id,
+        block_header: { raw_data: { number: num, timestamp: known.timestamp } },
+      };
+};
+
 const tronNode = (model: WalletModel, path: string, body: Tx, address: string): unknown => {
   switch (path) {
     case "/wallet/getaccount": {
@@ -524,9 +563,9 @@ const tronNode = (model: WalletModel, path: string, body: Tx, address: string): 
     case "/walletsolidity/getnowblock":
       return fixture("tron/mainnet-trongrid/nowblock-solidity.json");
     case "/wallet/getblockbynum":
-      return fixture("tron/mainnet-trongrid/blockbynum-full.json");
+      return tronBlockByNum(body);
     case "/walletsolidity/getblockbynum":
-      return fixture("tron/mainnet-trongrid/blockbynum-solidity.json");
+      return tronBlockByNum(body);
     case "/walletsolidity/gettransactioninfobyid":
       return fixture("tron/mainnet-trongrid/transactioninfobyid-solidity.json");
     case "/wallet/triggerconstantcontract":
@@ -716,17 +755,18 @@ const prices = (url: URL): unknown => {
 };
 
 /**
- * The upstream fetch. `accounts` maps URL prefix → billing account; gateway forwarder URLs carry
- * the provider's base `url`, so longest-prefix matching attributes the call.
+ * The upstream fetch factory. `accounts` maps URL prefix → billing account; gateway forwarder URLs
+ * carry the provider's base `url`, so longest-prefix matching attributes the call. `calls`,
+ * `unstubbed` and `internal` are caller-owned lists the responder records into.
  */
-export const stubUpstream = (
+const upstreamResponder = (
   model: WalletModel,
   prefixes: ReadonlyMap<string, string>,
   tronAddress: string,
-): Stub => {
-  const calls: UpstreamCall[] = [];
-  const unstubbed: string[] = [];
-  const internal: string[] = [];
+  calls: UpstreamCall[],
+  unstubbed: string[],
+  internal: string[],
+): typeof globalThis.fetch => {
   const accountOf = (target: string): string => {
     let best: string | undefined;
     let len = 0;
@@ -793,7 +833,7 @@ export const stubUpstream = (
     // JSON-RPC upstreams (EVM, Solana) — everything POSTs a JSON-RPC body.
     if (
       method === "POST" &&
-      /\.(g\.alchemy\.com|drpc\.live|ankr\.com|publicnode|1rpc|zan\.top|nodies|hyperliquid)/.test(
+      /\.(g\.alchemy\.com|drpc\.live|ankr\.com|publicnode|1rpc|zan\.top|nodies|hyperliquid)|^host-solana\.test$/.test(
         url.hostname,
       )
     ) {
@@ -805,7 +845,7 @@ export const stubUpstream = (
       return rpcReply(batch, (m, p) => (solana ? solanaCall(model, m, p) : evmCall(model, m, p)));
     }
     // TRON node + indexer.
-    if (/trongrid\.io|tatum\.io|nileex/.test(url.hostname)) {
+    if (/trongrid\.io|tatum\.io|nileex|host-tron\.test/.test(url.hostname)) {
       const sub = url.pathname.startsWith("/v1/accounts/")
         ? url.pathname.replace(/^\/v1\/accounts\/[^/]+/, "")
         : url.pathname;
@@ -857,7 +897,63 @@ export const stubUpstream = (
     unstubbed.push(target);
     return json({ error: "unstubbed", url: target }, 404);
   };
-  return { fetch: respond, calls, unstubbed, internal };
+  return respond;
+};
+
+/**
+ * The upstream fetch. `accounts` maps URL prefix → billing account; gateway forwarder URLs carry
+ * the provider's base `url`, so longest-prefix matching attributes the call.
+ */
+export const stubUpstream = (
+  model: WalletModel,
+  prefixes: ReadonlyMap<string, string>,
+  tronAddress: string,
+): Stub => {
+  const calls: UpstreamCall[] = [];
+  const unstubbed: string[] = [];
+  const internal: string[] = [];
+  return {
+    fetch: upstreamResponder(model, prefixes, tronAddress, calls, unstubbed, internal),
+    calls,
+    unstubbed,
+    internal,
+  };
+};
+
+export const HOST_SOLANA_URL = "https://host-solana.test";
+export const HOST_TRON_URL = "https://host-tron.test";
+
+export type HostUpstream = {
+  readonly fetch: typeof globalThis.fetch;
+  /** Host-endpoint calls under `host-solana`/`host-tron` pseudo-accounts — never `stub.calls`. */
+  readonly calls: UpstreamCall[];
+};
+
+/**
+ * The host-endpoint stub: the same wallet model and answers as the gateway upstreams — the chain
+ * identity checks demand one — recorded under its own pseudo-accounts so gateway upstream readings
+ * stay gateway-only. `unstubbed` is shared with the gateway stub.
+ */
+export const hostUpstream = (
+  model: WalletModel,
+  tronAddress: string,
+  unstubbed: string[],
+): HostUpstream => {
+  const calls: UpstreamCall[] = [];
+  return {
+    fetch: upstreamResponder(
+      model,
+      new Map<string, string>([
+        [HOST_SOLANA_URL, "host-solana"],
+        [HOST_TRON_URL, "host-tron"],
+      ]),
+      tronAddress,
+      calls,
+      unstubbed,
+      [],
+    ),
+    calls,
+  };
 };
 
 /**

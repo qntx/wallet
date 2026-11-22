@@ -116,8 +116,8 @@ type Row = { readonly name: string } & Readings;
 const table = (rows: ReadonlyArray<Row>): string => {
   const accounts = [...new Set(rows.flatMap((r) => [...r.upstream.keys()]))].toSorted();
   const routes = [...new Set(rows.flatMap((r) => [...r.routes.keys()]))].toSorted();
-  const head = `| scenario | ${routes.join(" | ")} | statuses | ${accounts.map((a) => `${a} calls/units`).join(" | ")} | max share |`;
-  const sep = `|${"---|".repeat(3 + routes.length + accounts.length)}`;
+  const head = `| scenario | ${routes.join(" | ")} | statuses | ${accounts.map((a) => `${a} calls/units`).join(" | ")} | host | pinned | max share |`;
+  const sep = `|${"---|".repeat(5 + routes.length + accounts.length)}`;
   const lines = rows.map((r) => {
     const cells = [
       r.name,
@@ -127,6 +127,8 @@ const table = (rows: ReadonlyArray<Row>): string => {
         const u = r.upstream.get(a);
         return u === undefined ? "0/0" : `${String(u.calls)}/${String(u.units)}`;
       }),
+      [...r.host].map(([a, n]) => `${a}:${String(n)}`).join(","),
+      String([...r.pinned.values()].reduce((a, b) => a + b, 0)),
       String(Math.max(0, ...r.share.values())),
     ];
     return `| ${cells.join(" | ")} |`;
@@ -172,6 +174,8 @@ const toJson = (rows: ReadonlyArray<Row>): string =>
       upstream: Object.fromEntries(r.upstream),
       budgetUnits: Object.fromEntries(r.budget),
       shareDeltaByKey: Object.fromEntries(r.share),
+      pinnedByRoute: Object.fromEntries(r.pinned),
+      hostCalls: Object.fromEntries(r.host),
       prices: r.prices,
       maxShareDeltaSum: Math.max(0, ...r.share.values()),
       limiterMax: Object.fromEntries(limiterMaxima(r)),
@@ -545,5 +549,122 @@ describe("engine gateway capacity", () => {
       ).toBe(true);
     }
     console.log(`flood-limiter headroom:\n  ${floodLines.join("\n  ")}`);
+  }, 600_000);
+
+  it("a fresh TRON and Bitcoin account's refresh fits a third of every client share; a TRON send's pinned reads fit one", async () => {
+    const { wallet, walletId } = await createHarnessWallet();
+    const addresses = await walletAddresses(wallet, walletId, PRODUCTION_NETWORKS);
+    const btcAddrs = bitcoinAddresses(addresses.xpubs, [
+      { chain: 0, max: 3 },
+      { chain: 1, max: 1 },
+    ]);
+    const group = { walletId, groupIndex: 0 };
+    const expectClean = (r: Readings, label: string, allowed: ReadonlyArray<string>): void => {
+      for (const [key, count] of r.routeStatuses) {
+        if (count === 0 || key.endsWith("|200")) {
+          continue;
+        }
+        expect(allowed, `${label}: ${key}`).toContain(key);
+      }
+    };
+
+    // World A — fresh TRON + Bitcoin cold start, then one measured foreground refresh a minute in.
+    const networksA = [...byId(TRON), ...byId(BITCOIN)];
+    const worldA = await createWorld({
+      wallet,
+      model: freshModel(),
+      networks: networksA,
+      tronAddress: addresses.tron,
+    });
+    await coldStart(worldA, networksA, walletId, addresses);
+    worldA.advance(60_000);
+    const beforeA = worldA.snapshot();
+    await worldA.engine.assets.refresh(addresses.tron, TRON);
+    await worldA.engine.assets.refreshBitcoinGroup(group, BITCOIN);
+    await withRetry(async () => worldA.engine.prices.refresh(), "prices.refresh fg");
+    const refreshA = diffReadings(worldA.snapshot(), beforeA);
+
+    // World B — used TRON cold start, then one measured TRON send (the first test's spec).
+    const worldB = await createWorld({
+      wallet,
+      model: usedModel({
+        evmAddress: addresses.evm,
+        bitcoin: bitcoinUsed(NETWORK, btcAddrs),
+        trc20Contract: TRC20,
+      }),
+      networks: byId(TRON),
+      tronAddress: addresses.tron,
+    });
+    await coldStart(worldB, byId(TRON), walletId, addresses);
+    worldB.advance(60_000);
+    const beforeB = worldB.snapshot();
+    let pending: { id: string; risk?: unknown; checks?: unknown } | undefined;
+    await withRetry(async () => {
+      pending = (await worldB.engine.requests.prepare({
+        method: "send",
+        account: {
+          kind: "hd" as const,
+          walletId,
+          groupIndex: 0,
+          template: "tron.bip44" as const,
+        } as never,
+        network: TRON,
+        to: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
+        amount: 1_000_000n,
+        fee: "normal",
+      } as never)) as never;
+    }, "send tron prepare");
+    if (pending === undefined) {
+      throw new Error("send tron: prepare never succeeded");
+    }
+    const tx = await worldB.engine.requests.approve(
+      pending.id,
+      "send",
+      approval(pending as never, VERIFY),
+    );
+    expect(tx.hash).toBeDefined();
+    const sendB = diffReadings(worldB.snapshot(), beforeB);
+
+    const pinned = [...sendB.pinned.values()].reduce((a, b) => a + b, 0);
+    const statusLine = (r: Readings): string =>
+      [...r.routeStatuses]
+        .filter(([k]) => !k.endsWith("|200"))
+        .map(([k, n]) => `${k}×${String(n)}`)
+        .join(",") || "none";
+    const shareLine = (key: string, sum: number, factor: number): string =>
+      `${key}: ${String(sum)}/${String(SHARE_LIMIT)} used, ${String(factor)}×=${String(factor * sum)} (headroom ${(SHARE_LIMIT / Math.max(1, sum)).toFixed(2)}×)`;
+    // Three wallets could each refresh inside one share window; one send fits it alone.
+    const refreshLines = [...refreshA.share].map(([key, sum]) => shareLine(key, sum, 3));
+    const sendLines = [...sendB.share].map(([key, sum]) => shareLine(key, sum, 1));
+    console.log(
+      `share headroom (refresh):\n  ${refreshLines.join("\n  ")}\nshare headroom (send):\n  ${sendLines.join("\n  ")}\n  pinned gateway requests on the send: ${String(pinned)}\n  host-endpoint calls on the send: ${[...sendB.host].map(([a, n]) => `${a}:${String(n)}`).join(",")}\n  non-200 statuses: refresh ${statusLine(refreshA)}; send ${statusLine(sendB)}`,
+    );
+
+    expect(
+      worldA.stub.unstubbed,
+      `A unstubbed upstreams ${worldA.stub.unstubbed.join(", ")}`,
+    ).toStrictEqual([]);
+    expect(
+      worldB.stub.unstubbed,
+      `B unstubbed upstreams ${worldB.stub.unstubbed.join(", ")}`,
+    ).toStrictEqual([]);
+    expectClean(refreshA, "refresh", ["history|404", "tokens|404"]);
+    expectClean(sendB, "send", []);
+    expect(
+      pinned,
+      "the send made no pinned (x-gateway-provider) gateway request",
+    ).toBeGreaterThanOrEqual(1);
+    for (const [key, sum] of refreshA.share) {
+      expect(
+        3 * sum,
+        `refresh share key ${key}: 3 × ${String(sum)} > ${String(SHARE_LIMIT)}`,
+      ).toBeLessThanOrEqual(SHARE_LIMIT);
+    }
+    for (const [key, sum] of sendB.share) {
+      expect(
+        sum,
+        `send share key ${key}: ${String(sum)} > ${String(SHARE_LIMIT)}`,
+      ).toBeLessThanOrEqual(SHARE_LIMIT);
+    }
   }, 600_000);
 });
