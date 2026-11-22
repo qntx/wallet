@@ -124,6 +124,21 @@ const drive = async <T>(timers: Timers, promise: Promise<T>): Promise<T> => {
   return outcome;
 };
 
+/** Step the manual timers like `drive` until `reached` holds — mid-call, before it settles. */
+const stepUntil = async (timers: Timers, reached: () => boolean): Promise<void> => {
+  for (let i = 0; i < 10_000; i += 1) {
+    if (reached()) {
+      return;
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between steps.
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    timers.step();
+  }
+  throw new Error("the awaited point was never reached");
+};
+
 type InfoAnswers = (body: Record<string, unknown>) => unknown;
 
 const serve = (
@@ -620,6 +635,36 @@ describe("hyperliquid trade — late reconciliation", () => {
     expect(posted.filter(isOrderStatusPost)).toHaveLength(calls);
     expect(timers.step()).toBe(false);
     await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+  });
+
+  it("a lock and unlock during the in-call reconcile leave its cloid out of the new session", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    let orderExists = false;
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: async () => new Promise<never>(() => {}),
+      info: orderStatusAfter(() => orderExists, orderFound("filled", { sz: "0" })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    // The POST is lost; step until the in-call orderStatus polling has begun.
+    const placing = provider.trade.place(group, ORDER);
+    await stepUntil(timers, () => posted.some(isOrderStatusPost));
+
+    // The session that placed the order ends while its reconcile is still polling.
+    await wallet.vault.lock();
+    await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+
+    const result = await drive(timers, placing);
+    expect(result.outcomes).toStrictEqual([UNKNOWN]);
+
+    // The order committed after all — but it belongs to the locked session: no late poll, no
+    // correction in the new one.
+    orderExists = true;
+    await pump(timers, 3);
+    expect(corrections).toStrictEqual([]);
   });
 
   it("the pending set is capped — the oldest unknown cloid is evicted", async () => {

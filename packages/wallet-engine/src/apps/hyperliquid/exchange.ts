@@ -415,6 +415,23 @@ export function createHyperliquidExchange(options: {
   const pending = new Map<string, Pending>();
   let pollCancel: (() => void) | undefined;
   let lockWatch: (() => void) | undefined;
+  /* Bumped by every lock — a cloid signed in one unlocked session is never registered in a later
+     one, even when its in-call reconcile outlives a lock and an unlock. */
+  let session = 0;
+
+  /* The vault is the boundary: a lock drops every pending cloid and stops the poll — the
+     corrections a new session earns are its own. Subscribed lazily, on the first signed action, so
+     a reads-only provider never needs the wallet's subscription channel. */
+  const watchLock = (): void => {
+    lockWatch ??= options.wallet.subscribe(() => {
+      if (options.wallet.getSnapshot().vault !== "unlocked") {
+        session += 1;
+        pending.clear();
+        pollCancel?.();
+        pollCancel = undefined;
+      }
+    });
+  };
 
   /** One orderStatus read for a pending cloid — a definite answer corrects and drops it. */
   const probe = async (entry: Pending): Promise<void> => {
@@ -452,20 +469,15 @@ export function createHyperliquidExchange(options: {
     }
   };
 
-  const registerPending = (group: HyperliquidGroup, master: string, cloid: string): void => {
-    if (options.wallet.getSnapshot().vault !== "unlocked") {
+  const registerPending = (
+    group: HyperliquidGroup,
+    master: string,
+    cloid: string,
+    signedIn: number,
+  ): void => {
+    if (signedIn !== session || options.wallet.getSnapshot().vault !== "unlocked") {
       return; // a locked session drops its pending cloids — nothing account-bound survives it
     }
-    /* The vault is the boundary: a lock drops every pending cloid and stops the poll — the
-       corrections a new session earns are its own. Subscribed lazily so a reads-only provider
-       never needs the wallet's subscription channel. */
-    lockWatch ??= options.wallet.subscribe(() => {
-      if (options.wallet.getSnapshot().vault !== "unlocked") {
-        pending.clear();
-        pollCancel?.();
-        pollCancel = undefined;
-      }
-    });
     const key = pendingKey(master, cloid);
     if (!pending.has(key) && pending.size >= MAX_UNRESOLVED) {
       const [oldest] = pending.keys();
@@ -520,6 +532,7 @@ export function createHyperliquidExchange(options: {
     master: string,
     cloid: string | undefined,
     expiresAfter: number,
+    signedIn: number,
   ): Promise<HyperliquidOrderOutcome> => {
     if (cloid === undefined) {
       return { kind: "unknown" };
@@ -544,7 +557,7 @@ export function createHyperliquidExchange(options: {
     /* Every answer was unknownOid or a failed read — "not placed" cannot be proven: no
        documented consistency between an info read and L1 state, nor which server answered the
        polls. The cloid stays pending for late reconciliation instead. */
-    registerPending(group, master, cloid);
+    registerPending(group, master, cloid, signedIn);
     return { kind: "unknown", cloid };
   };
 
@@ -600,13 +613,15 @@ export function createHyperliquidExchange(options: {
   const execute = async <T>(
     group: HyperliquidGroup,
     action: HyperliquidL1Action,
-    onOk: (body: unknown, master: string, expiresAfter: number) => T | Promise<T>,
-    onLost: (master: string, expiresAfter: number) => T | Promise<T>,
+    onOk: (body: unknown, master: string, expiresAfter: number, signedIn: number) => T | Promise<T>,
+    onLost: (master: string, expiresAfter: number, signedIn: number) => T | Promise<T>,
   ): Promise<T> => {
     const agent = options.registry.require(group);
     await assertClock();
     const nonce = options.clock.nextNonce(agent.address);
     const expiresAfter = options.now() + EXPIRES_AFTER_MS;
+    watchLock();
+    const signedIn = session;
     const signature = await sign(agent, action, nonce, expiresAfter);
     const body = { action, nonce, signature, expiresAfter };
     let response: unknown;
@@ -616,7 +631,7 @@ export function createHyperliquidExchange(options: {
       // The transport throws only network/timeout/unavailable HyperliquidErrors — each means
       // the POST may have landed.
       if (error instanceof HyperliquidError) {
-        return onLost(agent.owner, expiresAfter);
+        return onLost(agent.owner, expiresAfter, signedIn);
       }
       throw error;
     }
@@ -628,7 +643,7 @@ export function createHyperliquidExchange(options: {
       }
       throw new HyperliquidError("rejected", message);
     }
-    return onOk(response, agent.owner, expiresAfter);
+    return onOk(response, agent.owner, expiresAfter, signedIn);
   };
 
   return {
@@ -636,7 +651,7 @@ export function createHyperliquidExchange(options: {
       execute(
         group,
         action,
-        async (body, master, expiresAfter) => {
+        async (body, master, expiresAfter, signedIn) => {
           const count =
             action.type === "order"
               ? action.orders.length
@@ -650,23 +665,23 @@ export function createHyperliquidExchange(options: {
              cloids it could not account for instead of fabricating rejections. */
           if (entries === undefined || entries.length !== count) {
             return Promise.all(
-              known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter)),
+              known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter, signedIn)),
             );
           }
           return Promise.all(
             entries.map(async (entry, index) => {
               const outcome = orderStatusOutcome(entry, known[index]);
-              return outcome ?? reconcile(group, master, known[index], expiresAfter);
+              return outcome ?? reconcile(group, master, known[index], expiresAfter, signedIn);
             }),
           );
         },
-        async (master, expiresAfter) => {
+        async (master, expiresAfter, signedIn) => {
           const known = cloids(action);
           if (known.length === 0) {
             return [{ kind: "unknown" }];
           }
           return Promise.all(
-            known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter)),
+            known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter, signedIn)),
           );
         },
       ),
