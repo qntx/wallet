@@ -16,6 +16,9 @@
         "../../packages/wallet-engine/src/walletconnect/index.ts"
       ],
       "@qntx/wallet-engine/apps": ["../../packages/wallet-engine/src/apps/index.ts"],
+      "@qntx/wallet-engine/gateway/contract": [
+        "../../packages/wallet-engine/src/gateway/contract/index.ts"
+      ],
       "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"]
     }
   },
