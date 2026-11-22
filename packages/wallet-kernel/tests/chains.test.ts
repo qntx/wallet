@@ -598,17 +598,16 @@ describe("wallet.accounts", () => {
       "bip122:00000008819873e925422c1ff0f99f7c", // signet
       "bip122:0f9188f13cb7b2c71f2a335e3a4fc328", // regtest
     ];
-    for (const template of ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"]) {
-      const purpose = BTC_PURPOSE_T[template] ?? 84;
-      const main = ok(
-        await h.call(
-          "wallet.accounts",
-          { walletId, groupIndex: 0, template, network: BTC_NETWORK },
-          session,
-        ),
-      );
-      const tests = await Promise.all(
-        TEST_NETS.map(async (network) =>
+    const NETWORKS = [BTC_NETWORK, ...TEST_NETS];
+    const TEMPLATES: ReadonlyArray<readonly [string, number]> = [
+      ["btc.bip44", 44],
+      ["btc.bip49", 49],
+      ["btc.bip84", 84],
+      ["btc.bip86", 86],
+    ];
+    const results = await Promise.all(
+      TEMPLATES.flatMap(([template]) =>
+        NETWORKS.map(async (network) =>
           ok(
             await h.call(
               "wallet.accounts",
@@ -617,13 +616,18 @@ describe("wallet.accounts", () => {
             ),
           ),
         ),
-      );
+      ),
+    );
+    for (const [t, [, purpose]] of TEMPLATES.entries()) {
+      const at = (n: number) => results[t * NETWORKS.length + n]!;
+      const main = at(0);
       expect(field(main, "path")).toBe(`m/${purpose}'/0'/0'`);
-      for (const t of tests) {
-        expect(field(t, "path")).toBe(`m/${purpose}'/1'/0'`);
-        expect(field(t, "xpub")).not.toBe(field(main, "xpub"));
+      for (const n of [1, 2, 3]) {
+        const test = at(n);
+        expect(field(test, "path")).toBe(`m/${purpose}'/1'/0'`);
+        expect(field(test, "xpub")).not.toBe(field(main, "xpub"));
         /* No value lives on the test networks, so they share the coin-1' account. */
-        expect(field(t, "xpub")).toBe(field(tests[0]!, "xpub"));
+        expect(field(test, "xpub")).toBe(field(at(1), "xpub"));
       }
     }
   });
@@ -1402,16 +1406,32 @@ describe("chain.sign", () => {
     const rng = () => new Uint8Array(32);
     const account = { kind: "hd" as const, walletId: "w", groupIndex: 0 };
 
+    const signedPsbtOf = (res: ReturnType<typeof executeBitcoin>): Uint8Array => {
+      if (!("signedPsbt" in res)) {
+        throw new Error("expected a signed psbt");
+      }
+      return res.signedPsbt;
+    };
+    const partialSigner = (psbt: Uint8Array): Uint8Array => {
+      const signer = Transaction.fromPSBT(psbt).getInput(0).partialSig?.[0]?.[0];
+      if (signer === undefined) {
+        throw new Error("expected a partial signature");
+      }
+      return signer;
+    };
+    const asHex = (b: Uint8Array): string =>
+      Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+
     it("refuses a coin-0' derivation claim under a test network before normalize", () => {
       /* The kernel's childAt guard — not normalize's coin-type check — is what refuses the
          claim, so assert its exact message on a raw (un-normalized) request. */
       const request = {
-        kind: "bitcoin.psbt" as const,
+        kind: "bitcoin.psbt",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84" }),
-        sign: [entry(0, "btc.bip84")],
-      };
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
       expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
         "derivation path is not this account's",
       );
@@ -1419,12 +1439,12 @@ describe("chain.sign", () => {
 
     it("refuses a coin-1' derivation claim under mainnet the same way", () => {
       const request = {
-        kind: "bitcoin.psbt" as const,
+        kind: "bitcoin.psbt",
         network: BTC_NETWORK,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
-        sign: [entry(0, "btc.bip84")],
-      };
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
       expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
         "derivation path is not this account's",
       );
@@ -1433,13 +1453,13 @@ describe("chain.sign", () => {
     it("refuses a prevout script of the other coin's key at the claimed path", () => {
       /* The coin-1' path and pubkey are consistent, only the spent script is the mainnet
          key's — the prevout binding, not the path guard, is what refuses. */
-      const request = normalizeBitcoin({
+      const request = {
         kind: "bitcoin.psbt",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1, crossScript: true }),
-        sign: [entry(0, "btc.bip84")],
-      });
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
       expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
         "prevout script is not this key's",
       );
@@ -1448,41 +1468,33 @@ describe("chain.sign", () => {
     it("refuses a message for a mainnet address under a test network", () => {
       const account84 = { ...account, template: "btc.bip84" as const };
       const request = {
-        kind: "bitcoin.message" as const,
+        kind: "bitcoin.message",
         network: TESTNET,
         account: account84,
         address: btcVector("btc.bip84").receive[0]!,
         message: "hi",
-        format: "bip322-simple" as const,
+        format: "bip322-simple",
         change: 0,
         index: 0,
-      };
+      } as const;
       expect(() => executeBitcoin(rng, request, account84, seed, false)).toThrow(
         "address is not ours",
       );
     });
 
     it("signs a testnet PSBT with the coin-1' key — not the mainnet key at the same path", () => {
-      const request = normalizeBitcoin({
+      /* One sorted sign entry — already in normalized form for `deepEqual(normalized, request)`. */
+      const request = {
         kind: "bitcoin.psbt",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
-        sign: [entry(0, "btc.bip84")],
-      });
+        sign: [{ index: 0, template: "btc.bip84" }],
+      } as const;
       const res = executeBitcoin(rng, request, account, seed, false);
-      if (res.kind !== "bitcoin.psbt") {
-        throw new Error("expected a signed psbt");
-      }
-      const signed = Transaction.fromPSBT(res.signedPsbt);
-      const partial = signed.getInput(0).partialSig;
-      expect(partial).toHaveLength(1);
-      const signer = partial[0]?.[0];
-      const asHex = (b: Uint8Array) =>
-        Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-      expect(signer).toBeDefined();
-      expect(asHex(signer!)).toBe(asHex(btcChildAt("btc.bip84", 1, 0, 0).publicKey!));
-      expect(asHex(signer!)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));
+      const signer = partialSigner(signedPsbtOf(res));
+      expect(asHex(signer)).toBe(asHex(btcChildAt("btc.bip84", 1, 0, 0).publicKey!));
+      expect(asHex(signer)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));
     });
   });
 });
