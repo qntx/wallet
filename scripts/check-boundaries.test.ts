@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { exportTarget, ENCLAVE_CONDITIONS } from "./check-boundaries.ts";
+import { exportTarget, ENCLAVE_CONDITIONS, RULES } from "./check-boundaries.ts";
+import type { Edge, Violation } from "./check-boundaries.ts";
 
 describe("exportTarget", () => {
   it("returns a plain string export", () => {
@@ -60,5 +61,57 @@ describe("exportTarget", () => {
   it("returns undefined when no condition matches", () => {
     const exports = { ".": { node: "./n.mjs" } };
     expect(exportTarget(exports, ".")).toBeUndefined();
+  });
+});
+
+const PROTOCOL = "packages/wallet-kernel/src/modules/card/protocol";
+
+const violationsOf = (from: string, target: Edge["target"]): string[] =>
+  RULES.flatMap((rule): Violation[] => {
+    const message = rule.check({ from, specifier: "x", typeOnly: false, line: 1, target });
+    return message === undefined
+      ? []
+      : [
+          {
+            edge: { from, specifier: "x", typeOnly: false, line: 1, target },
+            rule: rule.id,
+            message,
+          },
+        ];
+  }).map((violation) => violation.rule);
+
+const fileTarget = (path: string): Edge["target"] => ({ kind: "file", path });
+const packageTarget = (name: string): Edge["target"] => ({ kind: "package", name, subpath: "." });
+
+describe("card-protocol", () => {
+  it.each([
+    ["a protocol sibling", fileTarget(`${PROTOCOL}/bytes.ts`)],
+    ["@noble/curves", packageTarget("@noble/curves")],
+    ["@noble/hashes", packageTarget("@noble/hashes")],
+    ["@noble/ciphers", packageTarget("@noble/ciphers")],
+    ["@scure/bip32", packageTarget("@scure/bip32")],
+  ] as const)("accepts %s", (_name, target) => {
+    expect(violationsOf(`${PROTOCOL}/session.ts`, target)).not.toContain("card-protocol");
+  });
+
+  it.each([
+    ["a kernel file outside the protocol", fileTarget("packages/wallet-kernel/src/platform.ts")],
+    [
+      "another module inside the kernel",
+      fileTarget("packages/wallet-kernel/src/modules/nostr/keys.ts"),
+    ],
+    ["a foreign crypto package", packageTarget("@scure/bip39")],
+    ["a Node builtin", { kind: "builtin", name: "crypto" } as const],
+  ] as const)("rejects %s", (_name, target) => {
+    expect(violationsOf(`${PROTOCOL}/session.ts`, target)).toContain("card-protocol");
+  });
+
+  it("does not constrain files outside the protocol directory", () => {
+    expect(
+      violationsOf(
+        "packages/wallet-kernel/src/modules/nostr/keys.ts",
+        packageTarget("@scure/bip39"),
+      ),
+    ).not.toContain("card-protocol");
   });
 });

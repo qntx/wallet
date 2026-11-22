@@ -101,6 +101,15 @@ const fileTarget = (edge: Edge): string | undefined =>
   edge.target.kind === "file" ? edge.target.path : undefined;
 const packageTarget = (edge: Edge): { name: string; subpath: string } | undefined =>
   edge.target.kind === "package" ? edge.target : undefined;
+
+/** The card client is a sealed protocol library: its files and these crypto packages only. */
+const CARD_PROTOCOL = `${KERNEL}/modules/card/protocol`;
+const CARD_PROTOCOL_PACKAGES: ReadonlySet<string> = new Set([
+  "@noble/curves",
+  "@noble/hashes",
+  "@noble/ciphers",
+  "@scure/bip32",
+]);
 /** The engine's composition root: src/*.ts. Everything else in engine src is a subdirectory. */
 const isEngineRoot = (path: string): boolean => /^packages\/wallet-engine\/src\/[^/]+$/.test(path);
 
@@ -110,7 +119,7 @@ type Rule = {
   readonly check: (edge: Edge) => string | undefined;
 };
 
-const RULES: ReadonlyArray<Rule> = [
+export const RULES: ReadonlyArray<Rule> = [
   {
     id: "package-imports",
     check: (edge) =>
@@ -207,6 +216,24 @@ const RULES: ReadonlyArray<Rule> = [
       }
       return toLayer in KERNEL_LAYERS && toLayer !== fromLayer && !allowed.includes(toLayer)
         ? `${fromLayer} may only import ${allowed.length > 0 ? allowed.join(", ") : "itself (the leaf layer)"} (AGENTS.md layering)`
+        : undefined;
+    },
+  },
+  {
+    id: "card-protocol",
+    check: (edge) => {
+      if (!within(edge.from, CARD_PROTOCOL)) {
+        return undefined;
+      }
+      const target = fileTarget(edge);
+      if (target !== undefined) {
+        return within(target, CARD_PROTOCOL)
+          ? undefined
+          : "the card protocol is self-contained — it imports nothing outside modules/card/protocol";
+      }
+      const pkg = packageTarget(edge);
+      return pkg === undefined || !CARD_PROTOCOL_PACKAGES.has(pkg.name)
+        ? "the card protocol imports only protocol files, @noble/* and @scure/bip32"
         : undefined;
     },
   },
