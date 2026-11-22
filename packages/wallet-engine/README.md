@@ -88,6 +88,12 @@ the package root.
   `AcknowledgementRequiredError`. If a re-simulation changes the outcome at approval it throws
   `SimulationChangedError` and the request stays approvable. A blind request throws
   `BlindSigningDisabledError` — enable `wallet.vault.setBlindSigning` and approve it again.
+  Every recipient a decoded intent names — outflows, the settlement terms
+  (`minimumReceived`, bridge refunds, Hyperliquid deposits, staking withdrawals and
+  delegations), typed-data order/consideration/Safe/Hyperliquid destinations and any
+  nested calls — is assessed against the contacts and paid history, except the signer
+  itself: an unseen recipient warns `first-recipient`, a lookalike of a known address
+  raises `address-poisoning`.
 - `engine.history` — one newest-first activity list per account group
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
   entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider

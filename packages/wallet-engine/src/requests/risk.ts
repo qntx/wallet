@@ -2,6 +2,7 @@ import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siw
 import type {
   AssetFlow,
   DisplayIntent,
+  MessageContent,
   SafeTransaction,
   SeaportOrder,
   SignInParse,
@@ -390,6 +391,109 @@ export function assessRecipients(
     }
   }
   return byDanger([...found.values()]);
+}
+
+/**
+ * Every party a decoded intent names as receiving value: the outflow recipients (a burned output's
+ * script is nobody — a destroyed amount has no recipient), the recipients swap and bridge terms
+ * enforce, the inner calls a batch names, and the destinations a recognized typed-data document
+ * signs. Approvals carry no recipient — they have their own assessment.
+ */
+export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> => {
+  const recipients: string[] = [];
+  const push = (inner: DisplayIntent): void => {
+    recipients.push(
+      ...inner.outflows.filter((flow) => flow.burn !== true).map(recipientOf),
+      ...(inner.minimumReceived?.map((minimum) => minimum.to) ?? []),
+    );
+    if (inner.bridge !== undefined) {
+      recipients.push(inner.bridge.refundTo);
+    }
+    if (inner.hyperliquidDeposit !== undefined) {
+      recipients.push(inner.hyperliquidDeposit.recipient);
+    }
+    for (const action of inner.staking ?? []) {
+      /* A withdraw's destination, the claim NFT's owner and a delegate's receiver take value off
+         the signer; a split's `to` is the stake account the same call creates, and an
+         undelegate's receiver only gets delegated resources back. */
+      if (action.kind === "withdraw") {
+        recipients.push(action.to);
+      } else if (action.kind === "lido-request") {
+        recipients.push(action.owner);
+      } else if (action.kind === "tron-delegate") {
+        recipients.push(action.receiver);
+      }
+    }
+    const { message } = inner;
+    if (message?.kind === "typed-data") {
+      recipients.push(...messageRecipients(message));
+    }
+    for (const call of inner.calls ?? []) {
+      push(call);
+    }
+  };
+  push(intent);
+  return recipients;
+};
+
+/** The destinations a recognized typed-data document pays, wherever its own shape names them. */
+const messageRecipients = (
+  message: Extract<MessageContent, { kind: "typed-data" }>,
+): ReadonlyArray<string> => {
+  const recipients: string[] = [
+    ...(message.order?.receive.map((entry) => entry.recipient) ?? []),
+    ...(message.seaport?.consideration.map((item) => item.recipient) ?? []),
+  ];
+  const { safe } = message;
+  if (safe !== undefined) {
+    /* `to` receives value only when the call pays; a zero-value call can still move tokens, which
+       its decoded inner calls already name. */
+    if (safe.value !== "0") {
+      recipients.push(safe.to);
+    }
+    for (const call of safe.calls) {
+      recipients.push(...intentRecipients(call));
+    }
+    if (safe.refund?.receiver !== undefined) {
+      recipients.push(safe.refund.receiver);
+    }
+  }
+  const action = message.hyperliquid;
+  /* Only the user-signed actions that pay a destination — usd-send, withdraw, spot-send and
+     send-asset are exactly the shapes carrying `destination`. */
+  if (action !== undefined && "destination" in action) {
+    recipients.push(action.destination);
+  }
+  const { polymarket } = message;
+  if (polymarket?.kind === "batch") {
+    for (const call of polymarket.calls) {
+      recipients.push(...intentRecipients(call));
+    }
+  }
+  const { authorization } = message;
+  if (authorization !== undefined && authorization.kind !== "cancel") {
+    recipients.push(authorization.to);
+  }
+  return recipients;
+};
+
+/**
+ * Recipient findings for one decoded intent: {@link assessRecipients} over {@link intentRecipients},
+ * except the signer itself — swaps, wraps and refunds routinely pay the account back.
+ */
+export function assessIntentRecipients(
+  intent: DisplayIntent,
+  self: string | undefined,
+  known: ReadonlyArray<string>,
+): ReadonlyArray<RiskFinding> {
+  const own = self === undefined ? undefined : comparable(intent.family, self);
+  return assessRecipients(
+    intent.family,
+    intentRecipients(intent).filter(
+      (recipient) => own === undefined || comparable(intent.family, recipient) !== own,
+    ),
+    known,
+  );
 }
 
 type DecodedIntent = Pick<DisplayIntent, "outflows" | "verifiability">;

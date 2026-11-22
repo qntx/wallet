@@ -48,7 +48,9 @@ function rig(
       calls.push(message);
       return simulate(message);
     },
-    transactions: {} as unknown as TransactionController,
+    transactions: {
+      getState: () => ({ txs: {} }),
+    } as unknown as TransactionController,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),
     bitcoinPrepare: async () => Promise.reject(new Error("unused")),

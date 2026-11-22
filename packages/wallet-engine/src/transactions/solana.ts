@@ -428,6 +428,7 @@ const finishPrepared = async (
     account,
     network,
     intent,
+    signer: from,
     checks: collectChecks(flags),
     simulation,
     resimulate: async () => solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer),
