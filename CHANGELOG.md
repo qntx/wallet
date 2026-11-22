@@ -500,6 +500,51 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/gateway`: the TRON node route serves a request carrying `x-gateway-provider` from that
   provider only (unknown id → `400 invalid-request`), charged to the client share and the account
   budget exactly like the unpinned route; CORS allows the header.
+- `@qntx/wallet-chains`: Fiat24 (SR Saphirstein AG) on Arbitrum One. USD24, EUR24, CHF24 and CNH24
+  (2 decimals) are in the built-in token table, and the EVM decoder now reads Fiat24 calls
+  straight from the calldata, without reading the chain:
+  - `transferByAccountId` is a transfer to "Fiat24 account #id". The recipient is whoever holds
+    that account when the transaction runs. Ids 9100–9299 are the issuer's internal accounts and
+    raise `fiat24-internal-account`.
+  - `clientPayout` / `clientPayoutRef` use the new `payout` summary. The amount and currency are
+    shown, and so are the payee id, purpose and reference, each as requester text. The bank account
+    that receives the money is chosen by Fiat24 off-chain, and `fiat24-payee-offchain` says so.
+  - `moneyExchangeExactIn` / `moneyExchangeExactOut` are swaps with no minimum received. The issuer
+    sets the rate (`fiat24-issuer-rate`). An exact-out swap can cost up to the whole allowance
+    (`fiat24-exact-out-unbounded`).
+  - `depositTokenViaUsdc`, `depositETH` and `depositTokenViaEth` are top-up swaps at the issuer's
+    rate. When the input is swapped to USDC inside the transaction, `fiat24-swap-quote` is raised.
+  - `mintByClient` / `mintByClientWithETH` open an account (`fiat24-account-link`). Moving the
+    account NFT with `transferFrom` or `safeTransferFrom` raises the danger-level
+    `fiat24-account-move`.
+  - Approvals whose spender is the card or the deposit contract carry
+    `ApprovalChange.fiat24Spender`. A card allowance raises `fiat24-card-pull`, and an unlimited
+    allowance to either contract raises the danger-level `fiat24-unlimited-approval`.
+  - Any other call to one of the seven pinned Fiat24 contracts is blind with `BlindReason`
+    `"fiat24-function"`. The same applies to a Fiat24 function sent to another address or chain,
+    trailing calldata, ETH sent to a non-payable function, and an FX or top-up whose output is not
+    one of the four cash tokens.
+- `@qntx/wallet-chains`: new types `Fiat24Action` and `Fiat24Token`, plus new optional fields
+  `DisplayIntent.fiat24`, `AssetFlow.fiat24` (`{ account } | { payee }`), `IntentWarning.level`
+  (`"danger"`) and `ApprovalChange.fiat24Spender`. `IntentSummary` gains `"payout"`.
+  `IntentWarningKind` gains nine `fiat24-*` kinds. `./evm` exports `FIAT24_CHAIN` and
+  `fiat24SessionMessage`.
+- Fiat24 API session grants. A new sign request,
+  `{ kind: "evm.fiat24-session", network: "eip155:42161", account, tokenId, deadline }`, works
+  like this:
+  - The kernel builds the `personal_sign` text itself:
+    `"I agree to access my profile. " + keccak256(label ‖ deadline)`, where
+    `label = fiat24-session-v1:<chainId>:<tokenId>:<deadline>`.
+  - It refuses with `invalid-input` unless `0 < deadline − now ≤ 1200` s. It checks this when
+    preparing and again when signing.
+  - The prompt shows the account, the expiry and everything the grant allows.
+  - The result is `{ kind: "evm.fiat24-session", signature }`, and `@qntx/wallet` checks the
+    signer.
+  - `@qntx/wallet/protocol` mirrors the new request and result kinds.
+- Vectors: `vectors/chains/fiat24.json` (ABIs from Sourcify, calldata from viem cross-checked with
+  `cast calldata`, session grants from `cast keccak` / `cast hash-message` / `cast wallet sign`,
+  expected prompts written by hand) and `vectors/chains/fiat24-mainnet.json` (25 real Arbitrum One
+  transactions).
 
 ### Changed
 
@@ -892,6 +937,19 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - **gateway:** client shares, POLICY budgets and flood limiters (IP 3,000 / RPC 1,500 / default 400 per 60 s) are sized from measured engine usage so a fresh all-family cold start uses at most a third of one client prefix's allowance; the README states the concurrency target and its arithmetic.
 - **ci:** the gateway deploy workflow checks required secrets before deploying, rolls back only when the previous version shares the Durable Object migrations (Cloudflare refuses rollbacks across a migration) and alerts otherwise; a new `gateway-workerd` job boots the real worker with Durable Object and rate-limit bindings and runs the smoke plan and budget scenarios against stub upstreams, plus `wrangler deploy --dry-run` for both environments.
 - `@qntx/wallet-chains`: Velora/Paraswap Delta orders deliberately stay blind: the verifying contract is an owner-upgradable module adapter, so the order bounds are not fixed by the signed bytes. 1inch Fusion orders stay blind: their extension's amount getter decides the taking amount and is only hash-committed in `salt`.
+- `@qntx/wallet-chains/evm`: exports `hyperliquidL1Document` and the `HyperliquidL1Action`,
+  `HyperliquidL1Order`, `HyperliquidL1Params`, `HyperliquidNetwork` types (the encoder moved out
+  of the kernel scheme so `@qntx/wallet` can verify session signatures); `@qntx/wallet/protocol`
+  and `@qntx/wallet/sessions` re-export the same names. `PROGRAM_IDS` gains `ed25519`,
+  `secp256k1` and `secp256r1`.
+- `@qntx/wallet-chains`: a raw `personal_sign` whose text begins with `I agree to access my
+  profile.` or `I agree to access my Fiat24 profile.` is now blind with `"fiat24-session-grant"`,
+  whatever its origin. The wallet signs Fiat24 grants only when it builds them itself.
+- `@qntx/wallet-chains`: an ERC-7821 batch's `DisplayIntent.warnings` now includes the warnings of
+  its inner calls. The kernel prompt now also shows the warnings of each Safe inner call.
+- **build:** the size budgets `apps-hyperliquid` 19 → 20 KiB (measured 19 372 B) and chains `tron`
+  80 → 84 KiB (measured 81 364 B) moved once; `scripts/check-kernel-budget.ts` gains a
+  `fiat24 decoder` unit.
 
 ### Removed
 
@@ -1124,6 +1182,28 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - **engine:** TRON built-in token balances are read only for contracts the indexer lists as held (the node stays the source of truth for their amounts); a failed indexer still reads every built-in.
 - **scripts:** the bundle boundary check builds kernel entries exactly like the kernel build (same resolve conditions, nothing external) and judges workspace code reached through third-party packages; `new URL(literal, import.meta.url)` and `import.meta.resolve(literal)` are judged as module references.
 - **ci:** the `tron-e2e` service image is pinned by digest.
+- `@qntx/wallet-chains`: the Solana max fee now counts the signatures that ed25519, secp256k1 and
+  secp256r1 precompile instructions verify (`data[0]` per instruction, legacy, v0 and v1), as
+  Agave charges them; the displayed bound was up to 65 000 lamports below the fee charged on
+  pinned mainnet transactions. A Solana instruction with empty data now parses (it is valid on
+  chain) and is classified like any other undecoded instruction.
+- `@qntx/wallet-chains`: EIP-712 and TIP-712 documents whose `string` values (domain or message,
+  nested structs, arrays) contain hidden or reordering characters are blind `message-bytes`,
+  exactly like text messages; the kernel prompt leads with the hidden-characters warning. RGI
+  emoji sequences stay described.
+- `@qntx/wallet`: `sessions(wallet).sign` verifies the kernel's answer — it rebuilds the scheme's
+  document from `params` and the record's scope, recovers the signer and rejects `integrity`
+  unless it is the session key.
+- `@qntx/wallet-engine`: a host configured with only the gateway can send TRON and Solana on a
+  mainnet again. A gateway-only testnet send is still refused, now with an error naming the
+  missing `EngineOptions.rpc` entry: a mainnet reference block / blockhash would make a testnet
+  signature valid on the mainnet, while a wrong-network binding on a mainnet send only makes
+  that signature invalid on the mainnet. Gateway-only mainnet prepares carry
+  `reads-unverified`; the genesis pin stays (and now also runs for gateway-only Solana).
+- `@qntx/wallet-engine`: pinned TRON reads answered 429/503 wait the server's `Retry-After` and
+  retry on the same upstream while the transaction's validity window allows it (minus a safety
+  margin); broadcasts are never retried. When the window does not allow the wait the prepare
+  rejects with the new `TronThrottledError` (`retryAfterMs`), which a host can retry.
 
 ### Security
 
