@@ -665,6 +665,9 @@ describe("hyperliquid trade — late reconciliation", () => {
     orderExists = true;
     await pump(timers, 3);
     expect(corrections).toStrictEqual([]);
+    /* One kernel round trip: the shared wallet's post-unlock work has drained before the next test
+       drives a signature through the bounded setImmediate pump. */
+    await sessions(wallet).list();
   });
 
   it("the pending set is capped — the oldest unknown cloid is evicted", async () => {
