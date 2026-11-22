@@ -1,11 +1,11 @@
 /**
- * `hyperliquid(wallet)` and the `hl-agent` vault record are gone: session keys are generic — one
- * `session-key` record kind, `sessions.*` kernel commands and the `sessions(wallet)` facade.
- * `create`/`sign` name the scheme; `list` reports records this build does not know as `supported:
- * false` (inert, still deletable). Signing a `hyperliquid-l1-agent` action now requires
- * `expiresAfter` at most 60 s after the kernel signs. Request origins gained `{ kind: "app", id }`
- * and `/v1/eligibility` answers a record keyed by app id — an absent app is unknown, not available.
- * Compiled only.
+ * The Hyperliquid-specific agent facade and its dedicated vault record kind are gone: session keys
+ * are generic — one `session-key` record kind, `sessions.*` kernel commands and the
+ * `sessions(wallet)` facade. `create`/`sign` name the scheme; `list` reports records this build
+ * does not know as `supported: false` (inert, still deletable). Signing a `hyperliquid-l1-agent`
+ * action now requires `expiresAfter` at most 60 s after the kernel signs. Request origins gained `{
+ * kind: "app", id }` and `/v1/eligibility` answers a record keyed by app id — an absent app is
+ * unknown, not available. Compiled only.
  */
 import type { Wallet } from "@qntx/wallet";
 import type { PendingRequest } from "@qntx/wallet-engine";
@@ -20,7 +20,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
     scheme: "hyperliquid-l1-agent",
     owner: { walletId, groupIndex: 0 },
     scope: "Mainnet",
-    name: "hl-agent",
+    name: "bot-1",
     validUntil: Date.now() + 180 * 86_400_000,
   });
   const listed = await api.list();
