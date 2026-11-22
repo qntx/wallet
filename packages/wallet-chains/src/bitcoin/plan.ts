@@ -21,7 +21,6 @@ export type BitcoinPsbtPlan = {
     /** The 33-byte compressed signing key (the internal key for taproot). */
     readonly publicKey: Uint8Array;
     readonly sighash: number;
-    readonly taproot: boolean;
   }>;
   readonly tasks: ReadonlyArray<EcdsaTask | Bip340Task>;
 };
@@ -31,7 +30,6 @@ export type BitcoinMessagePlan = {
   readonly format: "bip322-simple" | "legacy";
   /** The 33-byte compressed signing key. */
   readonly publicKey: Uint8Array;
-  readonly taproot: boolean;
   readonly tasks: readonly [EcdsaTask | Bip340Task];
 };
 
@@ -46,22 +44,18 @@ const cannotSign = (index: number): ChainError =>
  * signer makes, used here so no sighash code of ours exists. The dependency version is pinned
  * exactly and the signing vectors guard against drift.
  */
+type LegacyPreimage = {
+  preimageLegacy(idx: number, script: Uint8Array, sighash: number): Uint8Array;
+};
+
 const preimageLegacy = (
   tx: Transaction,
   idx: number,
   scriptCode: Uint8Array,
   sighash: number,
-): Uint8Array => {
-  const f: unknown = Reflect.get(tx, "preimageLegacy");
-  if (typeof f !== "function") {
-    throw new ChainError("invalid-request", "btc-signer does not expose preimageLegacy");
-  }
-  const out: unknown = Reflect.apply(f, tx, [idx, scriptCode, sighash]);
-  if (!(out instanceof Uint8Array)) {
-    throw new ChainError("invalid-request", "btc-signer preimageLegacy did not return bytes");
-  }
-  return out;
-};
+): Uint8Array =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above: pinned, vector-guarded
+  (tx as unknown as LegacyPreimage).preimageLegacy(idx, scriptCode, sighash);
 
 const prevoutsOf = (tx: Transaction, index: number) => {
   try {
@@ -169,7 +163,6 @@ export const planBitcoinPsbt = (
     index: number;
     publicKey: Uint8Array;
     sighash: number;
-    taproot: boolean;
   }> = [];
   const tasks: Array<EcdsaTask | Bip340Task> = [];
   for (const { index, key } of inputs) {
@@ -200,12 +193,7 @@ export const planBitcoinPsbt = (
         ? taprootTask(tx, index, input, type, key)
         : ecdsaTask(tx, index, input, type, key),
     );
-    planInputs.push({
-      index,
-      publicKey: key.publicKey,
-      sighash,
-      taproot: type.txType === "taproot",
-    });
+    planInputs.push({ index, publicKey: key.publicKey, sighash });
   }
   return { kind: "bitcoin.psbt", psbt, inputs: planInputs, tasks };
 };
@@ -248,7 +236,6 @@ export const planBitcoinMessage = (
       kind: "bitcoin.message",
       format: "legacy",
       publicKey: key.publicKey,
-      taproot: false,
       tasks: [
         {
           scheme: "ecdsa-secp256k1",
@@ -266,7 +253,6 @@ export const planBitcoinMessage = (
       kind: "bitcoin.message",
       format: "bip322-simple",
       publicKey: key.publicKey,
-      taproot: false,
       tasks: [
         {
           scheme: "ecdsa-secp256k1",
@@ -291,7 +277,6 @@ export const planBitcoinMessage = (
         kind: "bitcoin.message",
         format: "bip322-simple",
         publicKey: key.publicKey,
-        taproot: true,
         tasks: [
           {
             scheme: "bip340",

@@ -68,9 +68,6 @@ export const assembleBitcoinMessage = (
 ): Assembled<string, BitcoinMessagePlan> => {
   signaturesOf(plan.tasks, signatures);
   const [task] = plan.tasks;
-  if (task === undefined) {
-    throw new ChainError("invalid-signature", "plan has no task");
-  }
   const signature = signatures[0] ?? new Uint8Array();
   if (task.scheme === "bip340") {
     return { kind: "signed", artefact: encodeBip322Simple([acceptBip340(task, signature)]) };

@@ -6,6 +6,7 @@
  * `normalizeBitcoin` first. No key caching.
  */
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
+import { bytesToNumberBE } from "@noble/curves/utils.js";
 
 import { ChainError } from "../index.ts";
 import type { SignTask, TaskKey } from "../index.ts";
@@ -21,9 +22,6 @@ const checkKey = (privateKey: Uint8Array): void => {
   }
 };
 
-const uint256 = (bytes: Uint8Array): bigint =>
-  bytes.reduce((acc, byte) => acc * 256n + BigInt(byte), 0n);
-
 /** Signs one task with a raw secp256k1 key; `auxRand` feeds only the BIP-340 nonce. */
 export const signBitcoinTask = (
   task: SignTask,
@@ -37,7 +35,7 @@ export const signBitcoinTask = (
   if (task.scheme === "bip340") {
     const d0 = Fn.fromBytes(privateKey);
     const internal = secp256k1.Point.BASE.multiply(d0).toAffine().y % 2n === 0n ? d0 : Fn.neg(d0);
-    const tweak = uint256(task.tweak);
+    const tweak = bytesToNumberBE(task.tweak);
     if (tweak >= Fn.ORDER) {
       throw new ChainError("invalid-request", "tweak is not a valid scalar");
     }
@@ -71,13 +69,12 @@ export const signBitcoinPsbt = (
   );
   return signLocally(
     plan,
-    (task, i) => {
-      const entry = entries[i];
-      if (entry === undefined) {
-        throw new ChainError("invalid-request", "task has no input");
-      }
-      return signBitcoinTask(task, entry.privateKey, auxRand(entry.index));
-    },
+    (task, i) =>
+      signBitcoinTask(
+        task,
+        entries[i]?.privateKey ?? new Uint8Array(),
+        auxRand(entries[i]?.index ?? 0),
+      ),
     assembleBitcoinPsbt,
   );
 };
