@@ -91,15 +91,24 @@ struct Mailbox {
     }
     cv.notify_all();
   }
-  size_t waitPosts(size_t n, std::chrono::milliseconds timeout) {
+  // Waits for at least `n` posts. More can land before the caller wakes —
+  // compare against expectations with posts.size(), not this return.
+  bool waitPosts(size_t n, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(m);
-    cv.wait_for(lock, timeout, [&] { return posts.size() >= n; });
-    return posts.size();
+    return cv.wait_for(lock, timeout, [&] { return posts.size() >= n; });
   }
   bool waitErrors(size_t n, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(m);
     cv.wait_for(lock, timeout, [&] { return errors.size() >= n; });
     return errors.size() >= n;
+  }
+  void dump() const {
+    for (const auto& post : posts) {
+      std::fprintf(stderr, "  post: %s\n", post.c_str());
+    }
+    for (const auto& error : errors) {
+      std::fprintf(stderr, "  error: %s\n", error.c_str());
+    }
   }
 };
 
@@ -221,7 +230,7 @@ int destroyBusyloop(const char* hbcPath) {
   auto rt = KernelRuntime::start(
       bytecode ? bytecodeScript(readFile(hbcPath)) : sourceScript(js),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "busyloop: ready post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "busyloop: ready post missing");
   const auto t0 = Clock::now();
   rt->destroy();
   const auto destroyMs =
@@ -306,7 +315,7 @@ int destroyConcurrent() {
   Mailbox box;
   auto rt = KernelRuntime::start(
       sourceScript(std::string(kSendHelper) + "__send(\"ready\");"), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "concurrent: ready post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "concurrent: ready post missing");
   std::thread a([&] {
     for (int i = 0; i < 10; i++) {
       rt->destroy();
@@ -333,7 +342,7 @@ int destroyKdfInflight() {
           " function () { __send(\"kdf-done\"); });"
           "__send(\"submitted\");"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "kdf-inflight: submit post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "kdf-inflight: submit post missing");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "kdf-inflight: runtime still running");
@@ -355,7 +364,7 @@ int timersCancel() {
           "}"
           "__send(\"done\");"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-cancel: never finished");
+  CHECK(box.waitPosts(1, std::chrono::seconds(120)), "timers-cancel: never finished");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
@@ -378,7 +387,7 @@ int timersFired() {
           "}"
           "__qntx.setTimer(0, next);"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-fired: never finished");
+  CHECK(box.waitPosts(1, std::chrono::seconds(120)), "timers-fired: never finished");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
@@ -422,7 +431,7 @@ __send("pbkdf2-redefined:" + tryCall(function () {
 }));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(5, std::chrono::seconds(30)) == 5, "forged: missing posts");
+  CHECK(box.waitPosts(5, std::chrono::seconds(30)), "forged: missing posts");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() >= 4 && box.posts[0] == "pbkdf2-forged:threw",
       "forged: pbkdf2 accepted forged view");
@@ -469,7 +478,7 @@ for (var i = 0; i < bad.length; i++) {
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "numeric: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "numeric: no report");
   std::string report;
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -520,7 +529,7 @@ out.push("distinct:" + (same ? "no" : "yes"));
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "random: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "random: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("r0:0") != std::string::npos &&
@@ -557,7 +566,7 @@ t("plain", function () { crypto.getRandomValues({ length: 4 }); });
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "grv: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "grv: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("subarray:yes") != std::string::npos &&
@@ -596,7 +605,7 @@ try { Function("return 1")(); out.push("fn:ran"); } catch (e) { out.push("fn:thr
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "", profile);
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "eval: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "eval: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("eval:threw") != std::string::npos &&
@@ -637,7 +646,7 @@ __send(JSON.stringify({
 }));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "descriptors: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "descriptors: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("\"qntx\":true") != std::string::npos &&
@@ -756,7 +765,7 @@ int kernelBytecode() {
   const auto script = bytecodeScript(
       {qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE + qntx::KERNEL_BYTECODE_SIZE});
   auto rt = KernelRuntime::start(script, hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(180)) == 1,
+  CHECK(box.waitPosts(1, std::chrono::seconds(180)),
       "kernel-bytecode: expected the kernel's first frame");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -791,7 +800,7 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "qntx-globals: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "qntx-globals: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -888,7 +897,7 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-binding: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "keystore-binding: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -929,7 +938,7 @@ __send("held");
 )JS";
   qntxTestKeystore::holdNext();
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-teardown: no post");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "keystore-teardown: no post");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "keystore-teardown: runtime still running");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -984,7 +993,7 @@ step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
 });
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "passkey-binding: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "passkey-binding: no report");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "passkey-binding: runtime still running");
@@ -1091,7 +1100,7 @@ step(function (cb) { cr.open("读卡中", cb); }).then(function (o) {
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-binding: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-binding: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1161,9 +1170,9 @@ function openOnce() {
 openOnce();
 )JS";
   auto rt1 = KernelRuntime::start(sourceScript(js1), hooksFor(box1), "");
-  CHECK(box1.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-busy: owner never opened");
+  CHECK(box1.waitPosts(1, std::chrono::seconds(30)), "card-reader-busy: owner never opened");
   auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), "");
-  CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-busy: contender never answered");
+  CHECK(box2.waitPosts(1, std::chrono::seconds(30)), "card-reader-busy: contender never answered");
   {
     std::lock_guard<std::mutex> lock(box1.m);
     CHECK(box1.posts.size() == 1 && box1.posts[0] == "r1:undefined",
@@ -1182,7 +1191,7 @@ openOnce();
     CHECK(closes.size() == 1 && !closes[0].success && closes[0].text.empty(),
         "card-reader-busy: teardown did not close the owner's session silently");
   }
-  CHECK(box2.waitPosts(2, std::chrono::seconds(30)) == 2,
+  CHECK(box2.waitPosts(2, std::chrono::seconds(30)),
       "card-reader-busy: contender never opened after release");
   rt2->destroy();
   CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "card-reader-busy: contender still running");
@@ -1209,7 +1218,7 @@ __qntx.cardReader.open("hold", function (code) {
 __send("held");
 )JS";
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-teardown: open not parked");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-teardown: open not parked");
     CHECK(qntxTestCardReader::opens() == 1, "card-reader-teardown: open never reached the platform");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-teardown: runtime still running");
@@ -1234,7 +1243,7 @@ __qntx.cardReader.open("s", function (code) {
 });
 )JS";
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-teardown: transmit not parked");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-teardown: transmit not parked");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-teardown: runtime still running");
     const auto closes = qntxTestCardReader::closes();
@@ -1262,7 +1271,7 @@ __qntx.cardReader.open("s", function (code) {
 });
 )JS";
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(2, std::chrono::seconds(30)) == 2, "card-reader-teardown: session not closed");
+    CHECK(box.waitPosts(2, std::chrono::seconds(30)), "card-reader-teardown: session not closed");
     CHECK(qntxTestCardReader::closes().size() == 1,
         "card-reader-teardown: the kernel's close never reached the platform");
     CHECK(qntxTestCardReader::fireHeld(), "card-reader-teardown: the held transmit was not held");
@@ -1308,7 +1317,11 @@ cr.open("hold", function (o) {
 )JS";
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
     // The kernel's own close settles the held first open cancelled.
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-stale: close never settled");
+    const bool firstPosts = box.waitPosts(1, std::chrono::seconds(30));
+    if (!firstPosts) {
+      box.dump();
+    }
+    CHECK(firstPosts, "card-reader-stale: close never settled");
     {
       std::lock_guard<std::mutex> lock(box.m);
       CHECK(box.posts[0] == "stale:cancelled", "card-reader-stale: the held open settled wrong");
@@ -1323,7 +1336,11 @@ cr.open("hold", function (o) {
     CHECK(
         qntxTestCardReader::fireHeldAs(qntx::CardReaderResult{qntx::CardReaderStatus::ok, {}, {}}),
         "card-reader-stale: the second open was not held");
-    CHECK(box.waitPosts(3, std::chrono::seconds(30)) == 3, "card-reader-stale: session two broke");
+    const bool sessionPosts = box.waitPosts(3, std::chrono::seconds(30));
+    if (!sessionPosts) {
+      box.dump();
+    }
+    CHECK(sessionPosts, "card-reader-stale: session two broke");
     {
       const auto closes = qntxTestCardReader::closes();
       // Exactly the kernel's own silent failure close and its closing
@@ -1362,7 +1379,11 @@ step(function (cb) { cr.open("s", cb); }).then(function () {
 });
 )JS";
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "card-reader-stale: close never settled");
+    const bool staleTxPosts = box.waitPosts(1, std::chrono::seconds(30));
+    if (!staleTxPosts) {
+      box.dump();
+    }
+    CHECK(staleTxPosts, "card-reader-stale: close never settled");
     {
       std::lock_guard<std::mutex> lock(box.m);
       CHECK(box.posts[0] == "stale-tx:cancelled", "card-reader-stale: the held transmit settled wrong");
@@ -1371,7 +1392,11 @@ step(function (cb) { cr.open("s", cb); }).then(function () {
         qntxTestCardReader::fireHeldAs(
             qntx::CardReaderResult{qntx::CardReaderStatus::tagLost, {}, "old"}),
         "card-reader-stale: the transmit was not held");
-    CHECK(box.waitPosts(3, std::chrono::seconds(30)) == 3, "card-reader-stale: session two broke");
+    const bool newSessionPosts = box.waitPosts(3, std::chrono::seconds(30));
+    if (!newSessionPosts) {
+      box.dump();
+    }
+    CHECK(newSessionPosts, "card-reader-stale: session two broke");
     {
       const auto closes = qntxTestCardReader::closes();
       CHECK(
@@ -1455,10 +1480,10 @@ __qntx.secureInput.request("access-code", "r2", function (v, c) {
     return hub.submit(view, qntx::SecretBytes(std::move(bytes)));
   };
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "secure-input-binding: never armed");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "secure-input-binding: never armed");
   {
     auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), "");
-    CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1,
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)),
         "secure-input-binding: contender never answered");
     rt2->destroy();
     CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "secure-input-binding: contender still running");
@@ -1469,14 +1494,14 @@ __qntx.secureInput.request("access-code", "r2", function (v, c) {
         "secure-input-binding: another runtime's request did not complete unavailable");
   }
   CHECK(submit({'S', '3', 'c', 'r', '3', 't'}), "secure-input-binding: access-code submit refused");
-  CHECK(box.waitPosts(2, std::chrono::seconds(30)) == 2, "secure-input-binding: cancel path stalled");
+  CHECK(box.waitPosts(2, std::chrono::seconds(30)), "secure-input-binding: cancel path stalled");
   CHECK(submit({'a', 'b', 'c', '1', '2', '3'}), "secure-input-binding: second submit refused");
-  CHECK(box.waitPosts(3, std::chrono::seconds(30)) == 3, "secure-input-binding: short-id path stalled");
+  CHECK(box.waitPosts(3, std::chrono::seconds(30)), "secure-input-binding: short-id path stalled");
   CHECK(submit({'A', '1', 'B', '2', 'C', '3', 'D', '4'}), "secure-input-binding: short-id submit refused");
-  CHECK(box.waitPosts(4, std::chrono::seconds(30)) == 4, "secure-input-binding: bad-submit path stalled");
+  CHECK(box.waitPosts(4, std::chrono::seconds(30)), "secure-input-binding: bad-submit path stalled");
   CHECK(!submit({0x0A}), "secure-input-binding: an invalid byte was accepted");
   CHECK(submit({'x', 'y', 'z', '7', '8', '9'}), "secure-input-binding: recovery submit refused");
-  CHECK(box.waitPosts(5, std::chrono::seconds(30)) == 5, "secure-input-binding: no report");
+  CHECK(box.waitPosts(5, std::chrono::seconds(30)), "secure-input-binding: no report");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "secure-input-binding: runtime still running");
   hub.detach(view);
@@ -1514,7 +1539,7 @@ __qntx.secureInput.request("access-code", "码", function () { __send("late"); }
 __send("armed");
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "secure-input-teardown: never armed");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "secure-input-teardown: never armed");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "secure-input-teardown: runtime still running");
   CHECK(!hub.submit(view, qntx::SecretBytes(std::vector<uint8_t>{'a'})),
@@ -1685,7 +1710,7 @@ __send(r.join(" "));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-spark: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "backends-spark: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1759,7 +1784,7 @@ __send(r.join(" "));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-nostr: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "backends-nostr: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1915,7 +1940,7 @@ __send("ready");
 )JS";
     auto rt2 = qntx::KernelRuntime::start(sourceScript(js2), hooks2, "");
     CHECK(
-        box2.waitPosts(1, std::chrono::seconds(30)) == 1,
+        box2.waitPosts(1, std::chrono::seconds(30)),
         "kernel-slot: successor never evaluated");
     {
       std::lock_guard<std::mutex> lock(box2.m);
@@ -1973,7 +1998,7 @@ int predecessorChainReleased() {
     auto rt = KernelRuntime::start(script, hooks, "");
     runtimes.push_back(rt);
     CHECK(
-        box.waitPosts(runtimes.size(), std::chrono::seconds(30)) == runtimes.size(),
+        box.waitPosts(runtimes.size(), std::chrono::seconds(30)),
         "predecessor-chain: a runtime never evaluated");
     rt->destroy();
     CHECK(
@@ -2040,7 +2065,7 @@ __send(out.join("|"));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), dir);
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "file-contract: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -2068,7 +2093,7 @@ __send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
 )JS";
   {
     auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), dir);
-    CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: reload no report");
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)), "file-contract: reload no report");
     rt2->destroy();
     CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -2096,7 +2121,7 @@ int queueCap() {
           // up in the queue instead of draining instantly.
           "__send(\"ready\"); var t = Date.now(); while (Date.now() - t < 5000) {}"),
       std::move(hooks), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
   for (int i = 0; i < 70; i++) {
     rt->post(qntx::SecretBytes(frame.data(), frame.size()));
@@ -2120,7 +2145,7 @@ int globalInventory(KernelProfile profile) {
       hooksFor(box),
       "",
       profile);
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "inventory: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "inventory: no report");
   std::set<std::string> kernelNames;
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -2227,7 +2252,7 @@ out.push("empty:" + (new TextDecoder().decode() === ""));
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "decoder: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "decoder: no report");
   std::lock_guard<std::mutex> lock(box.m);
   if (!box.posts.empty()) {
     const std::string& r = box.posts[0];
@@ -2294,7 +2319,7 @@ __qntx.pbkdf2("sha512", new Uint8Array([
   new Uint8Array([0x73, 0x61, 0x6c, 0x74, 0x2d, 0xe2, 0x9c, 0x93]), 777, 48, done);
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(60)) == 1, "pbkdf2: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(60)), "pbkdf2: no report");
   {
     std::lock_guard<std::mutex> lock(box.m);
     if (!box.posts.empty() && expect1 && expect2 && expect3) {
@@ -2358,7 +2383,7 @@ __qntx.argon2id(ascii("backup vector password"), ascii("0123456789abcdef"), 6553
 __qntx.argon2id(ascii("password"), ascii("somesalt"), 64, 2, 1, 24, done(1));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(2, std::chrono::seconds(180)) == 2, "argon2id: no report");
+  CHECK(box.waitPosts(2, std::chrono::seconds(180)), "argon2id: no report");
   {
     std::lock_guard<std::mutex> lock(box.m);
     if (box.posts.size() == 2 && expectBackup && expectSmall) {
@@ -2401,7 +2426,7 @@ __qntx.pbkdf2("sha256", new Uint8Array(4), new Uint8Array(4), 1, 32, cb);
   // Both the ninth and the tenth submit can be rejected when the worker has
   // not picked up the first job yet; every rejection must carry the error.
   CHECK(
-      box.waitPosts(1, std::chrono::seconds(30)) >= 1,
+      box.waitPosts(1, std::chrono::seconds(30)),
       "kdf-queue: full-queue error never arrived");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -2432,7 +2457,7 @@ for (var i = 0; i < 1000; i++) {
 __send("monotonic:" + monotonic + ",fractional:" + fractional + ",subMs:" + subMs);
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "elapsed: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "elapsed: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("monotonic:true") != std::string::npos &&
@@ -2449,7 +2474,7 @@ int kernelProbe(bool bytecode, KernelProfile profile) {
   auto rt = KernelRuntime::start(
       probeScript(qntx::harness::probes::kKernel, bytecode), hooksFor(box), "", profile);
   CHECK(
-      box.waitPosts(2, std::chrono::seconds(180)) == 2,
+      box.waitPosts(2, std::chrono::seconds(180)),
       "kernel-probe: expected kernel-ready and done posts");
   {
     std::lock_guard<std::mutex> lock(box.m);
