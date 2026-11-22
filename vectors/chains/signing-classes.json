@@ -769,6 +769,64 @@
       }
     },
     {
+      "name": "EIP-712 string leaf with hidden characters",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              }
+            ],
+            "Root": [
+              {
+                "name": "subject",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Root",
+          "domain": {
+            "name": "App",
+            "version": "1",
+            "chainId": 1
+          },
+          "message": {
+            "subject": "pay ‮bob"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed\nApp: App\nNetwork: Ethereum\nType: Root\nThe wallet cannot verify what this signature authorises\n· subject = pay �bob"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同\n应用：App\n网络：Ethereum\n类型：Root\n钱包无法核实此签名授权的内容\n· subject = pay �bob"
+        }
+      }
+    },
+    {
       "name": "personal_sign 32-byte hash",
       "request": {
         "kind": "evm.personal-message",

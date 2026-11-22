@@ -328,6 +328,9 @@ const typedVariant =
 const typedVariantZh = "钱包认识这类签名，但不认识这种形式；它可能授权转移资产";
 const typedOversize = "This typed data is too large to show in full";
 const typedOversizeZh = "此类型数据过大，无法完整显示";
+const hiddenChars =
+  "This text contains hidden or reordering characters (shown as �); what you read may differ from what is signed";
+const hiddenCharsZh = "文本含有隐藏或改变显示顺序的字符（显示为 �）；你看到的可能与签署的内容不同";
 const HL_DEST = getAddress("0x5e9ee1089755c3435139848e47e6635505d5a13a");
 const HL_AGENT = getAddress("0x1234567890abcdef1234567890abcdef12345678");
 const HL_APP_EN = "App: HyperliquidSignTransaction";
@@ -706,6 +709,30 @@ const cases: VectorCase[] = [
       "确认盲签",
       `${net}\nVerifying contract ${TO}\nType: Big\n${typedOversize}`,
       `${netZh}\n验证合约 ${TO}\n类型：Big\n${typedOversizeZh}`,
+    ),
+  },
+  {
+    name: "EIP-712 string leaf with hidden characters",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Root: [{ name: "subject", type: "string" }],
+      },
+      primaryType: "Root",
+      domain: { name: "App", version: "1", chainId: 1 },
+      message: { subject: "pay ‮bob" },
+    }),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${hiddenChars}\nApp: App\n${net}\nType: Root\n${typedCaveat}\n· subject = pay �bob`,
+      `${hiddenCharsZh}\n应用：App\n${netZh}\n类型：Root\n${typedCaveatZh}\n· subject = pay �bob`,
     ),
   },
   {

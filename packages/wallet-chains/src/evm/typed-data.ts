@@ -1,6 +1,6 @@
 import * as TypedData from "ox/TypedData";
 
-import { displayExcerpt, isEncodedBytes } from "../display.ts";
+import { displayExcerpt, hasHiddenCharacters, isEncodedBytes } from "../display.ts";
 import { ChainError } from "../index.ts";
 import type { TypedDataLeaf } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
@@ -294,6 +294,38 @@ export const typedDataFields = (
     return display !== undefined && push(path, display, isCommitmentLeaf(type, value));
   };
   return walk(json.primaryType, json.message, "") ? { fields: leaves, hasCommitment } : undefined;
+};
+
+/**
+ * Whether any `string` leaf of the document carries characters the text rule hides — domain fields
+ * under `types.EIP712Domain` (or the fields ox derives when it is not declared) and message fields
+ * under `primaryType`, walked through structs and arrays. A key the type does not declare is not
+ * signed and is ignored. Never throws: a branch it cannot walk counts as no hidden text — malformed
+ * documents are refused by the validator.
+ */
+export const typedDataHasHiddenText = (json: TypedDataInput): boolean => {
+  const hidden = (type: string, value: unknown, depth: number): boolean => {
+    if (depth >= MAX_TYPED_DATA_DEPTH) {
+      return false;
+    }
+    const array = /^(.+)\[\d*\]$/.exec(type);
+    if (array !== null) {
+      return Array.isArray(value) && value.some((item) => hidden(array[1] ?? "", item, depth + 1));
+    }
+    const struct = json.types[type];
+    if (struct !== undefined) {
+      return (
+        isRecord(value) && struct.some((field) => hidden(field.type, value[field.name], depth + 1))
+      );
+    }
+    return type === "string" && typeof value === "string" && hasHiddenCharacters(value);
+  };
+  const domainFields =
+    json.types["EIP712Domain"] ?? TypedData.extractEip712DomainTypes(json.domain);
+  return (
+    domainFields.some((field) => hidden(field.type, json.domain[field.name], 0)) ||
+    hidden(json.primaryType, json.message, 0)
+  );
 };
 
 /**

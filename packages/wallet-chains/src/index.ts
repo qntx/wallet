@@ -162,7 +162,8 @@ export type Verifiability = "full" | "partial" | "opaque";
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
   // message content that is not readable text: non-UTF-8 bytes, or text with a hazard —
-  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering
+  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering; also a
+  // typed-data document with a hidden character in a string value
   | "message-bytes"
   // unclaimed typed data carrying a hash or raw-bytes leaf the signature does not name
   | "typed-data-commitment"
