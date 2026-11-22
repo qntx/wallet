@@ -138,6 +138,15 @@ export type ChainSignRequest =
       readonly message: Uint8Array;
     }
   | {
+      readonly kind: "evm.fiat24-session";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** The Fiat24 account token's decimal id. */
+      readonly tokenId: string;
+      /** Session expiry, Unix seconds. */
+      readonly deadline: number;
+    }
+  | {
       readonly kind: "evm.typed-data";
       readonly network: string;
       readonly account: AccountRef;
@@ -207,7 +216,10 @@ export type ChainSignRequest =
 
 export type ChainSignResult =
   | { readonly kind: "evm.transaction"; readonly signedTransaction: Uint8Array }
-  | { readonly kind: "evm.personal-message" | "evm.typed-data"; readonly signature: Uint8Array }
+  | {
+      readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data";
+      readonly signature: Uint8Array;
+    }
   | { readonly kind: "solana.transaction" | "solana.message"; readonly signature: Uint8Array }
   | { readonly kind: "bitcoin.psbt"; readonly signedPsbt: Uint8Array }
   | { readonly kind: "bitcoin.message"; readonly signature: string }
@@ -275,6 +287,13 @@ const signRequest: Validator<ChainSignRequest> = union(
     message: bytes(0, 65536),
   }),
   obj({
+    kind: literal("evm.fiat24-session"),
+    network: caip2,
+    account: accountRef,
+    tokenId: str(78, /^[1-9][0-9]{0,77}$/),
+    deadline: int(1, 9007199254740991),
+  }),
+  obj({
     kind: literal("evm.typed-data"),
     network: caip2,
     account: accountRef,
@@ -335,7 +354,11 @@ const signRequest: Validator<ChainSignRequest> = union(
 const signResult: Validator<ChainSignResult> = union(
   obj({ kind: literal("evm.transaction"), signedTransaction: bytes(1, 65536) }),
   obj({
-    kind: union(literal("evm.personal-message"), literal("evm.typed-data")),
+    kind: union(
+      literal("evm.personal-message"),
+      literal("evm.fiat24-session"),
+      literal("evm.typed-data"),
+    ),
     signature: bytes(65, 65),
   }),
   obj({

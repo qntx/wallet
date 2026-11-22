@@ -6,6 +6,7 @@ import { RECOGNISED_FAMILIES } from "../families.ts";
 import type { BlindReason } from "../index.ts";
 import { PERMIT2_ADDRESS } from "./approval.ts";
 import { isMorphoBlue } from "./authority.ts";
+import { hasFiat24Selector, isFiat24Contract } from "./fiat24.ts";
 import { SEAPORT_CONTRACTS } from "./seaport.ts";
 import { lookupEvmToken } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
@@ -13,19 +14,34 @@ import { typedDataAddress } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 
 /**
- * The claim an undecoded call into `to` makes on `chainId`: a listed token's selector table did not
- * decode it, so it is an unrecognised function of a token the owner holds.
+ * The claim an undecoded call into `to` makes on `chainId`: the Fiat24 row's callee is a pinned
+ * contract or a Fiat24-specific selector in `data`; a listed token's claim is the token table.
  */
 export const callNearMiss = (
   to: string,
   chainId: number,
   table: EvmTokenTable,
+  data: string,
 ): BlindReason | undefined =>
+  RECOGNISED_FAMILIES.find((row) => {
+    if (row.claim.surface !== "evm.call") {
+      return false;
+    }
+    return row.claim.callee === "fiat24"
+      ? isFiat24Contract(chainId, to) || hasFiat24Selector(data)
+      : lookupEvmToken(table, chainId, to) !== undefined;
+  })?.nearMiss;
+
+/**
+ * The claim a personal message's text makes: an exact, case-sensitive leading sentence of a
+ * family's grant message. A grant-shaped text claims the family even though the wallet builds
+ * grants only through its own structured request.
+ */
+export const personalMessageNearMiss = (text: string): BlindReason | undefined =>
   RECOGNISED_FAMILIES.find(
     (row) =>
-      row.claim.surface === "evm.call" &&
-      row.claim.callee === "token-table" &&
-      lookupEvmToken(table, chainId, to) !== undefined,
+      row.claim.surface === "evm.personal-message" &&
+      row.claim.prefixes.some((prefix) => text.startsWith(prefix)),
   )?.nearMiss;
 
 /**

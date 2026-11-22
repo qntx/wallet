@@ -54,6 +54,13 @@ const UNITS: ReadonlyArray<Unit> = [
     note: "Polymarket CLOB typed-data decoder for intent display",
   },
   {
+    name: "fiat24 decoder",
+    match: /^packages\/wallet-chains\/src\/evm\/fiat24\.ts$/,
+    // measured 14710 B
+    budget: 15_360,
+    note: "Fiat24 calldata decoder, grant prefixes and session-message builder",
+  },
+  {
     name: "app recognition",
     match: /^packages\/wallet-chains\/src\/evm\/apps\.ts$/,
     budget: undefined,
@@ -64,6 +71,8 @@ const UNITS: ReadonlyArray<Unit> = [
 /** Application entry points and the runtime exports their importers actually use. */
 const STUBS: Readonly<Record<string, string>> = {
   "packages/wallet-chains/src/evm/apps.ts": "export const recognizeApp = () => undefined;",
+  "packages/wallet-chains/src/evm/fiat24.ts":
+    "export const FIAT24_CHAIN = 42161; export const isFiat24Contract = () => false; export const hasFiat24Selector = () => false; export const fiat24Spender = () => undefined; export const fiat24SessionMessage = () => ''; export const decodeFiat24 = () => undefined;",
   "packages/wallet-kernel/src/modules/sessions/schemes/index.ts":
     "export const SESSION_SCHEMES = {}; export const isSchemeId = () => false; export const schemeOf = () => undefined;",
 };

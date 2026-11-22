@@ -27,7 +27,7 @@ export type HdAccount = Extract<
 export type BitcoinGroup = Extract<SignRequest, { kind: "bitcoin.psbt" }>["account"];
 export type EvmRequest = Extract<
   SignRequest,
-  { kind: "evm.transaction" | "evm.personal-message" | "evm.typed-data" }
+  { kind: "evm.transaction" | "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" }
 >;
 export type BitcoinRequest = Extract<SignRequest, { kind: "bitcoin.psbt" | "bitcoin.message" }>;
 export type SolanaRequest = Extract<SignRequest, { kind: "solana.transaction" | "solana.message" }>;

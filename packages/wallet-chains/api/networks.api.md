@@ -36,6 +36,7 @@ type ApprovalChange = {
     readonly unlimited: boolean;
     readonly expiration?: number;
     readonly via?: "permit2" | "allowance-holder";
+    readonly fiat24Spender?: "card" | "deposit";
     readonly verified: boolean;
 } | {
     readonly kind: "operator";
@@ -67,11 +68,16 @@ type AssetFlow = {
     readonly verified: boolean;
     readonly burn?: true;
     readonly tokenAccount?: string;
+    readonly fiat24?: {
+        readonly account: string;
+    } | {
+        readonly payee: string;
+    };
     readonly name?: string;
 };
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
 
 // @public (undocumented)
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta>;
@@ -106,6 +112,7 @@ type DisplayIntent = {
         readonly dex: "perps" | "spot";
         readonly maxFee: AssetAmount;
     };
+    readonly fiat24?: Fiat24Action;
     readonly warnings: ReadonlyArray<IntentWarning>;
     readonly message?: MessageContent;
     readonly verifiability: Verifiability;
@@ -152,6 +159,40 @@ type FarcasterKey = {
     readonly key: string;
     readonly requestFid: string;
     readonly deadline?: number;
+};
+
+// @public
+type Fiat24Action = {
+    readonly kind: "exchange";
+    readonly side: "exact-in";
+    readonly receive: Fiat24Token;
+} | {
+    readonly kind: "exchange";
+    readonly side: "exact-out";
+    readonly pay: Fiat24Token;
+    readonly receive: AssetAmount;
+} | {
+    readonly kind: "payout";
+    readonly contactId: string;
+    readonly purposeId?: string;
+    readonly ref?: string;
+} | {
+    readonly kind: "top-up";
+    readonly receive: Fiat24Token;
+} | {
+    readonly kind: "open-account";
+    readonly account: string;
+} | {
+    readonly kind: "session-grant";
+    readonly account: string;
+    readonly deadline: number;
+};
+
+// @public
+type Fiat24Token = {
+    readonly asset: string;
+    readonly symbol: string;
+    readonly decimals: 2;
 };
 
 // @public
@@ -207,16 +248,17 @@ type HyperliquidAction = {
 type HyperliquidChain = "Mainnet" | "Testnet";
 
 // @public (undocumented)
-type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";
+type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge" | "payout";
 
 // @public (undocumented)
 type IntentWarning = {
     readonly kind: IntentWarningKind;
     readonly message: string;
+    readonly level?: "danger";
 };
 
 // @public
-type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension";
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move";
 
 // @public
 type MessageContent = {

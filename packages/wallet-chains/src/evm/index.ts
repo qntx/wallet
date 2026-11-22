@@ -1,6 +1,8 @@
 import { requestBase } from "../account-ref.ts";
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
+import { MAX_UINT256 } from "./approval.ts";
+import { FIAT24_CHAIN } from "./fiat24.ts";
 import { isRecord, networkChainId, normalizeEvmTransaction } from "./transaction.ts";
 import { domainChainId, parseTypedData } from "./typed-data.ts";
 
@@ -42,6 +44,7 @@ export type {
   HyperliquidNetwork,
 } from "./hyperliquid-l1.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
+export { FIAT24_CHAIN, fiat24SessionMessage } from "./fiat24.ts";
 export type { EvmToken, EvmTokenTable } from "./tokens.ts";
 
 /**
@@ -70,6 +73,25 @@ export const normalizeEvm = (request: unknown): SignRequest => {
       throw new ChainError("invalid-request", "personal-message payload must be bytes");
     }
     return { kind: "evm.personal-message", network, account, message };
+  }
+  if (request["kind"] === "evm.fiat24-session") {
+    /* Fiat24 grants live on Arbitrum One only; the session is bound to that network's account
+       NFT. Exact key set: kind, network, account, tokenId, deadline. */
+    if (chainId !== FIAT24_CHAIN) {
+      throw new ChainError("unsupported", `fiat24 sessions exist only on eip155:${FIAT24_CHAIN}`);
+    }
+    const { tokenId, deadline } = request;
+    if (
+      typeof tokenId !== "string" ||
+      !/^[1-9][0-9]*$/.test(tokenId) ||
+      BigInt(tokenId) > MAX_UINT256
+    ) {
+      throw new ChainError("invalid-request", "fiat24-session tokenId is not a canonical id");
+    }
+    if (typeof deadline !== "number" || !Number.isSafeInteger(deadline) || deadline < 1) {
+      throw new ChainError("invalid-request", "fiat24-session deadline must be a positive integer");
+    }
+    return { kind: "evm.fiat24-session", network, account, tokenId, deadline };
   }
   if (request["kind"] === "evm.typed-data") {
     const { typedData } = request;

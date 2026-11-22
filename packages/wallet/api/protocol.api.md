@@ -182,6 +182,12 @@ type ChainSignRequest = {
     readonly account: AccountRef;
     readonly message: Uint8Array;
 } | {
+    readonly kind: "evm.fiat24-session";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly tokenId: string;
+    readonly deadline: number;
+} | {
     readonly kind: "evm.typed-data";
     readonly network: string;
     readonly account: AccountRef;
@@ -245,7 +251,7 @@ export type ChainSignResult = {
     readonly kind: "evm.transaction";
     readonly signedTransaction: Uint8Array;
 } | {
-    readonly kind: "evm.personal-message" | "evm.typed-data";
+    readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data";
     readonly signature: Uint8Array;
 } | {
     readonly kind: "solana.transaction" | "solana.message";

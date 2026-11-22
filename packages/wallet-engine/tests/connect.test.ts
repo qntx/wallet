@@ -29,6 +29,7 @@ import { SOLANA_CHAIN_IDS, SolanaWalletHandler } from "../src/connect/solana.ts"
 import { NetworkController } from "../src/networks/controller.ts";
 import type { PhishingStatus } from "../src/phishing/status.ts";
 import { BlindSigningDisabledError, RequestController } from "../src/requests/controller.ts";
+import { walletConnectKey } from "../src/requests/types.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -1357,6 +1358,142 @@ describe("lightning connections", () => {
     expect(session?.scopes["lightning"]?.methods).toContain("sendPayment");
     expect(r.connections.lightningPolicy(SITE)).toStrictEqual(policy);
     expect(r.connections.authorize(SITE, "lightning", "sendPayment")).toBe(session);
+    await r.destroy();
+  });
+});
+
+describe("Fiat24 session grant text", () => {
+  const GRANT =
+    "I agree to access my profile. " +
+    "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82";
+  const GRANT_HEX = `0x${Buffer.from(GRANT).toString("hex")}` as const;
+
+  const grantRequest = (r: Awaited<ReturnType<typeof rig>>) => ({
+    method: "evm-sign" as const,
+    account: {
+      kind: "hd" as const,
+      walletId: r.walletId,
+      groupIndex: 0,
+      template: "evm.bip44" as const,
+    },
+    network: MAINNET,
+    request: {
+      kind: "evm.personal-message" as const,
+      network: MAINNET,
+      account: {
+        kind: "hd" as const,
+        walletId: r.walletId,
+        groupIndex: 0,
+        template: "evm.bip44" as const,
+      },
+      message: new TextEncoder().encode(GRANT),
+    },
+  });
+
+  const pendingFor = async (
+    r: Awaited<ReturnType<typeof rig>>,
+    input: Parameters<RequestController["prepare"]>[0],
+    app?: Parameters<RequestController["prepare"]>[1],
+  ) => {
+    const pending = await r.requests.prepare(input, app);
+    const request = r.requests.getState().requests[pending.id];
+    expect(request?.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(
+      r.requests.approve(pending.id, "evm-sign", approval(request, VERIFY)),
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+    return request;
+  };
+
+  it("a raw grant from a browser origin is blind and gated on the setting", async () => {
+    const r = await rig();
+    await r.connect();
+    const address = await r.addressAt(0);
+    const signing = r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: [GRANT_HEX, address],
+    });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(r.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
+      ).toBe(true);
+    });
+    const [pending] = Object.values(r.requests.getState().requests);
+    expect(pending?.display).toMatchObject({ blind: "fiat24-session-grant" });
+    expect(pending?.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find
+    const id = pending?.id ?? "";
+    await expect(
+      r.requests.approve(id, "evm-sign", approval(pending, VERIFY)),
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+    r.requests.reject(id);
+    await expect(signing).rejects.toBeDefined();
+    await r.destroy();
+  });
+
+  it("a raw grant from a walletconnect origin carries the blind-signing risk", async () => {
+    const r = await rig();
+    const request = await pendingFor(r, {
+      ...grantRequest(r),
+      origin: {
+        kind: "walletconnect",
+        origin: walletConnectKey("fiat24-topic"),
+        topic: "fiat24-topic",
+        url: "https://fiat24.example",
+        name: "Fiat24",
+        verify: { validation: "VALID", isScam: false },
+      },
+    });
+    expect(request?.origin).toMatchObject({ kind: "walletconnect" });
+    await r.destroy();
+  });
+
+  const APP_GRANTS = [
+    GRANT,
+    "I agree to access my Fiat24 profile. " +
+      "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+  ];
+
+  /* Apps may only sign typed data, like the internal origin — the raw grant text is refused
+     before it can ride that rule to approval. */
+  it.each(APP_GRANTS)("a raw grant from an app origin is refused: %s", async (text) => {
+    const r = await rig();
+    const input = grantRequest(r);
+    await expect(
+      r.requests.prepare(
+        {
+          ...input,
+          request: { ...input.request, message: new TextEncoder().encode(text) },
+        },
+        { kind: "app", id: "fiat24-test" },
+      ),
+    ).rejects.toThrow("an internal request can only sign typed data");
+    await r.destroy();
+  });
+
+  it("the internal origin cannot submit a raw grant", async () => {
+    const r = await rig();
+    await expect(r.requests.prepare(grantRequest(r))).rejects.toThrow(
+      "an internal request can only sign typed data",
+    );
+    await r.destroy();
+  });
+
+  it("a structured evm.fiat24-session request is refused on the dApp path", async () => {
+    const r = await rig();
+    const input = {
+      ...grantRequest(r),
+      origin: { kind: "browser" as const, origin: SITE },
+      request: {
+        kind: "evm.fiat24-session" as const,
+        network: "eip155:42161",
+        account: grantRequest(r).account,
+        tokenId: "123456",
+        deadline: 1795278000,
+      },
+    };
+    await expect(r.requests.prepare(input)).rejects.toThrow(
+      "unsupported dApp request evm.fiat24-session",
+    );
     await r.destroy();
   });
 });
