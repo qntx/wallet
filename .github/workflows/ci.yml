@@ -101,7 +101,9 @@ jobs:
     services:
       # TronBox Runtime Environment — the java-tron devnet; produces one block per transaction.
       tre:
-        image: tronbox/tre:2.0.0
+        # tag 2.0.0, digest from https://hub.docker.com/v2/repositories/tronbox/tre/tags/2.0.0
+        # (checked 2026-11-22), rotate by re-reading that URL's `digest`.
+        image: tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
         ports:
           - 9090:9090
     steps:
