@@ -448,6 +448,52 @@ describe("corrections — the late reconcile of unknown outcomes", () => {
     expect(corrections[0]?.outcome).toStrictEqual({ kind: "resting", orderId: placed.orderId });
   });
 
+  it("an unrecognised late status stays pending — the next poll re-asks", async () => {
+    const corrections: PolymarketOutcomeCorrection[] = [];
+    const e = env({
+      post: { status: 503, body: {} },
+      orderLookup: [
+        "absent",
+        "absent",
+        "absent",
+        /* First late read: a row exists but its status is one reconcileStatus cannot name —
+           that proves nothing, so it must not become a correction. */
+        { status: 200, body: orderRow("SETTLING") },
+        { status: 200, body: orderRow("LIVE") },
+      ],
+      cancel: { status: 200, body: { canceled: [], not_canceled: {} } },
+    });
+    e.provider.trade.corrections.subscribe((c) => {
+      corrections.push(c);
+    });
+    const placed = await e.provider.trade.place(group, LIMIT_BUY);
+    await e.approve(placed.requestId);
+    await settled(e, placed.outcome);
+    /* First late poll answers the unrecognised status — no correction, the entry stays pending. */
+    const reads = () => e.requests.filter(isOrderRead).length;
+    const before = reads();
+    for (let i = 0; i < 10 && reads() === before; i += 1) {
+      e.timers.pump();
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the probe settles over microtasks
+      await realDelay();
+    }
+    expect(reads()).toBe(before + 1);
+    expect(corrections).toHaveLength(0);
+    /* Second poll answers LIVE — only now does the provable correction land. */
+    for (let i = 0; i < 10 && corrections.length === 0; i += 1) {
+      e.timers.pump();
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential late polls
+      await realDelay();
+    }
+    expect(corrections).toStrictEqual([
+      {
+        group,
+        orderId: placed.orderId,
+        outcome: { kind: "resting", orderId: placed.orderId },
+      },
+    ]);
+  });
+
   it("past the reconcile window the entry drops silently — no correction, polling stops", async () => {
     const corrections: PolymarketOutcomeCorrection[] = [];
     const rig = unitRig({});

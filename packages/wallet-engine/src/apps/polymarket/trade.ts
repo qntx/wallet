@@ -369,6 +369,9 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
     } catch {
       return; // a failed late read stays pending — the timer re-asks
     }
+    if (outcome.kind === "unknown") {
+      return; // an unrecognised status proves nothing — a correction must be provable; re-ask
+    }
     const key = pendingKey(entry.group, entry.orderId);
     if (pending.get(key) === entry) {
       pending.delete(key);
