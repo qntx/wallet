@@ -215,6 +215,27 @@ describe("sessions.sign hyperliquid-l1-agent signing window", () => {
     ).toHaveLength(65);
   });
 
+  it("the window is measured on the platform clock — a device 23 h ahead signs its own now", async () => {
+    const { h, session, address } = await setup();
+    /* The documented contract: `sessions.sign` bounds `nonce` and `expiresAfter` against
+       platform.now() — there is no other clock. A caller on a device running 23 h ahead of true
+       time asks for the window it sees, and the kernel signs it. */
+    h.advanceWall(23 * 3_600_000);
+    const deviceNow = h.wallNow();
+    const nonce = deviceNow;
+    const expiresAfter = deviceNow + 60_000;
+    const response = await sign(h, session, address, {
+      action: ACTION,
+      nonce,
+      expiresAfter,
+    });
+    expect(bytesField(ok(response), "signature")).toHaveLength(65);
+    expect(expiresAfter).toBe(deviceNow + 60_000);
+    /* What that window spans in true time is the engine's problem (its clock cross-check), not
+       this layer's — the kernel has no second source to compare against. */
+    expect(expiresAfter - T0).toBe(23 * 3_600_000 + 60_000);
+  });
+
   it("a signature keeps covering its action after the record is deleted", async () => {
     const { h, session, address } = await setup();
     const nonce = T0;
