@@ -57,6 +57,20 @@ class SecureInputField(context: Context) : LinearLayout(context) {
     disarm()
   }
 
+  override fun requestLayout() {
+    super.requestLayout()
+    // React Native owns this host view's frame and swallows child layout
+    // requests, so a label going GONE→VISIBLE would never be measured.
+    // Measure and lay out ourselves on the next main-loop pass.
+    post {
+      measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      layout(left, top, right, bottom)
+    }
+  }
+
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     if (hubId == 0L) {

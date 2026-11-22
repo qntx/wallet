@@ -75,8 +75,12 @@
       __weak QntxSecureInputField* weakSelf = self;
       _hubView = qntx::SecureInputHub::shared().attach(
           [weakSelf](const std::optional<qntx::SecureInputPrompt>& prompt) {
+            // Blocks capture a C++ reference parameter as a reference: hop
+            // with a materialized copy or the main queue reads the caller's
+            // dead stack frame.
+            const std::optional<qntx::SecureInputPrompt> copy = prompt;
             dispatch_async(dispatch_get_main_queue(), ^{
-              [weakSelf applyPrompt:prompt];
+              [weakSelf applyPrompt:copy];
             });
           });
     }
