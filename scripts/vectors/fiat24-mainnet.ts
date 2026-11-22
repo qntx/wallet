@@ -7,8 +7,8 @@ import { writeFileSync } from "node:fs";
  * Regenerates vectors/chains/fiat24-mainnet.json: real Arbitrum One transactions that call the
  * pinned Fiat24 proxies — the mainnet corpus the decoder tests replay.
  *
- * Event windows are seeded from ~/Desktop/qntx/fiat24-audit/spec/evidence/onchain/event-samples.txt
- * (read-only; the recorded blocks where each event last fired) and searched with eth_getLogs in
+ * Event windows are seeded at the recorded last-seen block of each event family and searched
+ * with eth_getLogs in
  * windows of at most 10000 blocks — Arbitrum endpoints return wrong results on wide windows.
  * Requests are sequential and throttled; the Tenderly archive endpoint is tried first and the
  * BlastAPI archive is the fallback. tx
@@ -54,8 +54,8 @@ const T = {
   DepositedTokenViaEth: topic0("DepositedTokenViaEth(address,address,address,uint256,uint256)"),
 };
 
-/* [contract, topics, seed block] — seeds are the recorded last-seen blocks in
-   event-samples.txt; each search covers seed..seed+9999 to catch the three most recent calls. */
+/* [contract, topics, seed block] — seeds are recorded last-seen blocks of each event family;
+   each search covers seed..seed+9999 to catch the three most recent calls. */
 const SEARCHES: ReadonlyArray<readonly [string, ReadonlyArray<string | undefined>, number]> = [
   [EUR24, [T.ClientPayout], 526291731],
   [EUR24, [T.ClientPayoutRef], 526312074],
@@ -209,7 +209,7 @@ const main = async () => {
       kind: "reference",
       name: "arbitrum-archive-rpc",
       evidence:
-        "eth_getLogs in ≤10000-block windows seeded from spec/evidence/onchain/event-samples.txt (read-only @qntx/fiat24-audit), eth_getTransactionByHash per match; Tenderly archive endpoint, BlastAPI fallback; direct calls only, ≤3 per (contract, selector)",
+        "eth_getLogs in ≤10000-block windows seeded at recorded last-seen event blocks, eth_getTransactionByHash per match; Tenderly archive endpoint, BlastAPI fallback; direct calls only, ≤3 per (contract, selector)",
       generator: "scripts/vectors/fiat24-mainnet.ts",
       rpc: RPCS,
     },

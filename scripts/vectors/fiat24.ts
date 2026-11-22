@@ -1,5 +1,5 @@
 /* oxlint-disable typescript/no-unsafe-type-assertion -- RPC and JSON oracle payloads are untyped */
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 /// <reference types="node" />
@@ -19,7 +19,8 @@ import { createRequire } from "node:module";
  * - The session grant cases re-derive label, digest and signature with `cast keccak`, `cast
  *   hash-message` and `cast wallet sign`, and are asserted equal to the independent
  *
- * @qntx/fiat24 vectors in ~/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json.
+ * @qntx/fiat24 vectors/api/session.json — embedded below so the generator needs no private
+ * checkout; the NUL-padded clientPayoutRef calldata is fetched from the chain itself.
  *
  * Every expected prompt is written by hand here — nothing is captured from the decoder.
  *
@@ -51,8 +52,54 @@ const { encodeFunctionData } = require("viem") as {
 };
 
 const OUT = "vectors/chains/fiat24.json";
-const SESSION_VECTORS = `${process.env["HOME"] ?? ""}/Desktop/qntx/fiat24-wt/chain/vectors/api/session.json`;
-const CALLDATA_VECTORS = `${process.env["HOME"] ?? ""}/Desktop/qntx/fiat24-wt/chain/vectors/calls/calldata.json`;
+/* Archive endpoints for the on-chain oracle — the same ones the mainnet corpus generator uses. */
+const RPCS = ["https://arbitrum.gateway.tenderly.co", "https://arbitrum-one.public.blastapi.io"];
+/* The real clientPayoutRef whose reference is NUL-padded — input fetched verbatim from the chain. */
+const NUL_REF_TX = "0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3";
+const CLIENT_PAYOUT_REF_SELECTOR = "0xeb6d2d71";
+
+/* The independent @qntx/fiat24 session oracle rows, embedded verbatim so generation does not
+   depend on a developer checkout — @qntx/fiat24 vectors/api/session.json, generated with
+   cast 1.10.0 (SDK repo qntx/fiat24, commit b7c2f0f). */
+const SESSION_ROWS: ReadonlyArray<{
+  args: { chainId: string; tokenId: string; deadline: string };
+  label: string;
+  preimage: string;
+  digest: string;
+  message: string;
+  eip191Hash: string;
+  signature?: string;
+}> = [
+  {
+    args: { chainId: "42161", tokenId: "123456", deadline: "1795278000" },
+    label: "fiat24-session-v1:42161:123456:1795278000",
+    preimage: "fiat24-session-v1:42161:123456:17952780001795278000",
+    digest: "0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
+    message:
+      "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
+    eip191Hash: "0x42e71571afdd4e74672f74c8bddc84e45a6f637fae50032640edb54588efcdfa",
+    signature:
+      "0x09410c3f5d15d8022f6baa8e556eeeee446164f864e33c9e6ff30fc63d7c45996719e723721bef79e3daebade7979538306b14039290d25338f19b74fe8cb0031c",
+  },
+  {
+    args: { chainId: "42161", tokenId: "1", deadline: "1795305600" },
+    label: "fiat24-session-v1:42161:1:1795305600",
+    preimage: "fiat24-session-v1:42161:1:17953056001795305600",
+    digest: "0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+    message:
+      "I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+    eip191Hash: "0x385c99758dfbd01204bcd980b990c73dd91e5bd25ff07cad5c6a8e5d43eaab64",
+  },
+  {
+    args: { chainId: "42161", tokenId: "9007199254740993", deadline: "4102444800" },
+    label: "fiat24-session-v1:42161:9007199254740993:4102444800",
+    preimage: "fiat24-session-v1:42161:9007199254740993:41024448004102444800",
+    digest: "0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
+    message:
+      "I agree to access my profile. 0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
+    eip191Hash: "0xe66787ac443bd91d65cc73499568ad74cba295b0790b11315333c8a75b26bc2e",
+  },
+];
 
 /* Pinned deployment (Sourcify v2, exact match; see evidence SOURCIFY rows). */
 const USD24 = "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62";
@@ -102,6 +149,31 @@ const run = async (args: ReadonlyArray<string>): Promise<string> => {
 const castCalldata = async (signature: string, args: ReadonlyArray<string>): Promise<string> => {
   const out = await run(["cast", "calldata", signature, ...args]);
   return out.toLowerCase();
+};
+
+const rpc = async (method: string, params: ReadonlyArray<unknown>): Promise<unknown> => {
+  let last: Error | undefined;
+  for (const url of RPCS) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        });
+        const body = (await res.json()) as { result?: unknown; error?: { message: string } };
+        if (body.error === undefined) {
+          await sleep(300);
+          return body.result;
+        }
+        last = new Error(`${url} ${method}: ${body.error.message}`);
+      } catch (error) {
+        last = error instanceof Error ? error : new Error(String(error));
+      }
+      await sleep(800);
+    }
+  }
+  throw last ?? new Error(`${method}: all endpoints failed`);
 };
 
 /** Downloads a Sourcify v2 ABI and returns it plus the provenance the file records. */
@@ -335,23 +407,19 @@ const main = async () => {
   const ACCOUNT_ABI = need("Fiat24Account");
   const DEPOSIT_ABI = need("Fiat24CryptoDeposit");
 
-  /* The real clientPayoutRef with a NUL-padded reference, recorded from tx
-     0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3 in the @qntx/fiat24
-     calls vectors — an oracle independent of either encoder here. */
-  const callVectors = JSON.parse(readFileSync(CALLDATA_VECTORS, "utf8")) as {
-    cases: ReadonlyArray<{
-      op: string;
-      args: Record<string, string>;
-      output?: { data: string };
-    }>;
+  /* The real clientPayoutRef with a NUL-padded reference — tx 0xbe87…dea3 on Arbitrum One, its
+     calldata fetched from the chain itself and asserted to be a payout-ref call to EUR24. */
+  const payoutTx = (await rpc("eth_getTransactionByHash", [NUL_REF_TX])) as {
+    to?: string;
+    input?: string;
   };
-  const nulRef = callVectors.cases.find(
-    (c) => c.op === "payoutRefCall" && (c.args["ref"] ?? "").includes("\u0000"),
-  );
-  if (nulRef?.output === undefined) {
-    throw new Error("calldata.json: NUL-padded payoutRef case not found");
+  if ((payoutTx.to ?? "").toLowerCase() !== EUR24.toLowerCase()) {
+    throw new Error(`NUL-ref tx targets ${payoutTx.to ?? "?"}; expected the EUR24 proxy`);
   }
-  const NUL_REF_DATA = nulRef.output.data.toLowerCase();
+  const NUL_REF_DATA = (payoutTx.input ?? "").toLowerCase();
+  if (!NUL_REF_DATA.startsWith(CLIENT_PAYOUT_REF_SELECTOR)) {
+    throw new Error(`NUL-ref tx input selector ${NUL_REF_DATA.slice(0, 10)} != clientPayoutRef`);
+  }
 
   const cases: VectorCase[] = [];
   const add = (c: VectorCase) => {
@@ -1038,49 +1106,35 @@ const main = async () => {
 
   /* Wallet-built session grants — every field re-derived with cast and asserted equal to the
      independent @qntx/fiat24 session vectors. */
-  const sessionVectors = JSON.parse(readFileSync(SESSION_VECTORS, "utf8")) as {
-    cases: ReadonlyArray<Record<string, unknown>>;
-  };
-  for (const row of sessionVectors.cases) {
-    const args = row["args"] as Record<string, string> | undefined;
-    const { label } = row;
-    if (args === undefined || typeof label !== "string") {
-      continue;
-    }
-    const digestOut = await run(["cast", "keccak", row["preimage"] as string]);
+  for (const row of SESSION_ROWS) {
+    const { args, label } = row;
+    const digestOut = await run(["cast", "keccak", row.preimage]);
     const digest = digestOut.toLowerCase();
-    const eip191Out = await run(["cast", "hash-message", row["message"] as string]);
+    const eip191Out = await run(["cast", "hash-message", row.message]);
     const eip191 = eip191Out.toLowerCase();
-    if (digest !== (row["digest"] as string).toLowerCase()) {
-      throw new Error(`session ${label}: cast keccak ${digest} != vector ${String(row["digest"])}`);
+    if (digest !== row.digest.toLowerCase()) {
+      throw new Error(`session ${label}: cast keccak ${digest} != vector ${row.digest}`);
     }
-    if (eip191 !== (row["eip191Hash"] as string).toLowerCase()) {
+    if (eip191 !== row.eip191Hash.toLowerCase()) {
       throw new Error(`session ${label}: cast hash-message ${eip191} != vector`);
     }
     let signature = "";
-    if (row["signature"] !== undefined) {
-      const sigOut = await run([
-        "cast",
-        "wallet",
-        "sign",
-        "--private-key",
-        ANVIL_KEY,
-        row["message"] as string,
-      ]);
+    if (row.signature !== undefined) {
+      const sigOut = await run(["cast", "wallet", "sign", "--private-key", ANVIL_KEY, row.message]);
       signature = sigOut.toLowerCase();
-      if (signature !== (row["signature"] as string).toLowerCase()) {
+      if (signature !== row.signature.toLowerCase()) {
         throw new Error(`session ${label}: cast signature ${signature} != vector`);
       }
     }
     add({
-      name: `fiat24-session-${args["tokenId"] ?? ""}`,
+      name: `fiat24-session-${args.tokenId}`,
       signer: SIGNER,
       request: {
         kind: "evm.fiat24-session",
         network: "eip155:42161",
         account,
-        tokenId: args["tokenId"],
-        deadline: Number(args["deadline"]),
+        tokenId: args.tokenId,
+        deadline: Number(args.deadline),
       },
       session: {
         label,
@@ -1092,11 +1146,7 @@ const main = async () => {
         summary: "message",
         verifiability: "partial",
         warnings: [],
-        prompt: sessionPrompt(
-          args["tokenId"] ?? "",
-          args["deadline"] ?? "",
-          row["message"] as string,
-        ),
+        prompt: sessionPrompt(args.tokenId, args.deadline, row.message),
       },
     });
     await sleep(50);
@@ -1110,7 +1160,7 @@ const main = async () => {
       name: "sourcify+cast+viem",
       version: "1.0.0",
       evidence:
-        "ABIs via Sourcify v2 for the seven pinned Fiat24 implementations (per-contract url and keccak256 of the canonical ABI JSON below); calldata via viem encodeFunctionData cross-checked byte-for-byte against `cast calldata`; session grants via `cast keccak`/`cast hash-message`/`cast wallet sign` asserted equal to vectors/api/session.json of the independent @qntx/fiat24 SDK; the NUL-padded clientPayoutRef taken verbatim from vectors/calls/calldata.json (tx 0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3); expected prompts written by hand in the generator",
+        "ABIs via Sourcify v2 for the seven pinned Fiat24 implementations (per-contract url and keccak256 of the canonical ABI JSON below); calldata via viem encodeFunctionData cross-checked byte-for-byte against `cast calldata`; session grants via `cast keccak`/`cast hash-message`/`cast wallet sign` asserted equal to the embedded @qntx/fiat24 vectors/api/session.json rows (cast 1.10.0); the NUL-padded clientPayoutRef fetched verbatim from tx 0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3 via eth_getTransactionByHash on the archive RPC; expected prompts written by hand in the generator",
       generator: "scripts/vectors/fiat24.ts",
       sourcify,
     },

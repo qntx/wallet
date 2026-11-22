@@ -5,7 +5,7 @@
     "kind": "reference",
     "name": "sourcify+cast+viem",
     "version": "1.0.0",
-    "evidence": "ABIs via Sourcify v2 for the seven pinned Fiat24 implementations (per-contract url and keccak256 of the canonical ABI JSON below); calldata via viem encodeFunctionData cross-checked byte-for-byte against `cast calldata`; session grants via `cast keccak`/`cast hash-message`/`cast wallet sign` asserted equal to vectors/api/session.json of the independent @qntx/fiat24 SDK; the NUL-padded clientPayoutRef taken verbatim from vectors/calls/calldata.json (tx 0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3); expected prompts written by hand in the generator",
+    "evidence": "ABIs via Sourcify v2 for the seven pinned Fiat24 implementations (per-contract url and keccak256 of the canonical ABI JSON below); calldata via viem encodeFunctionData cross-checked byte-for-byte against `cast calldata`; session grants via `cast keccak`/`cast hash-message`/`cast wallet sign` asserted equal to the embedded @qntx/fiat24 vectors/api/session.json rows (cast 1.10.0); the NUL-padded clientPayoutRef fetched verbatim from tx 0xbe87afca37b50fc68a3dd9ea5b18c6377b50f7491085f3989c6f04131439dea3 via eth_getTransactionByHash on the archive RPC; expected prompts written by hand in the generator",
     "generator": "scripts/vectors/fiat24.ts",
     "sourcify": {
       "Fiat24Account": {
