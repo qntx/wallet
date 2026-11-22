@@ -24,7 +24,9 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
-  { name: "bitcoin", budget: 60 * 1024 },
+  /* Measured 62152 B: the signing refactor split sign() into plan + assemble + task signer, all
+     force-bundled by the /sign entry so both halves of the pipeline ship together. */
+  { name: "bitcoin", budget: 62 * 1024 },
   /* Measured 81364 B: hidden-text traversal in TIP-712 typed data grew the tron decoder,
      which shares the evm permit/token-call/typed-data recognisers. */
   { name: "tron", budget: 84 * 1024 },

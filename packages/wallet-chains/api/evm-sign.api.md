@@ -5,6 +5,31 @@
 ```ts
 
 // @public (undocumented)
+type Bip340Task = {
+    readonly scheme: "bip340";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
+    readonly tweak: Uint8Array;
+};
+
+// @public (undocumented)
+type EcdsaTask = {
+    readonly scheme: "ecdsa-secp256k1";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly digest: Uint8Array;
+};
+
+// @public (undocumented)
+type Ed25519Task = {
+    readonly scheme: "ed25519";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
+};
+
+// @public (undocumented)
 type EvmAccessListEntry = {
     readonly address: string;
     readonly storageKeys: ReadonlyArray<string>;
@@ -45,13 +70,22 @@ type EvmTransactionBase = {
 };
 
 // @public
+type KeyPath = ReadonlyArray<number>;
+
+// @public
 export const signEvmPersonalMessage: (message: Uint8Array, privateKey: Uint8Array) => Uint8Array;
+
+// @public
+export const signEvmTask: (task: SignTask, privateKey: Uint8Array) => Uint8Array;
 
 // @public
 export const signEvmTransaction: (tx: EvmTransaction, privateKey: Uint8Array) => Uint8Array;
 
 // @public
 export const signEvmTypedData: (typedData: string, privateKey: Uint8Array) => Uint8Array;
+
+// @public (undocumented)
+type SignTask = EcdsaTask | Bip340Task | Ed25519Task;
 
 // (No @packageDocumentation comment for this package)
 

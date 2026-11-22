@@ -67,6 +67,18 @@ type ApprovalChange = {
     readonly verified: false;
 };
 
+// @public
+type Assembled<A, P> = {
+    readonly kind: "signed";
+    readonly artefact: A;
+} | {
+    readonly kind: "next";
+    readonly plan: P;
+};
+
+// @public (undocumented)
+export const assembleSolana: (plan: SolanaSignPlan, signatures: ReadonlyArray<Uint8Array>) => Assembled<Uint8Array, SolanaSignPlan>;
+
 // @public (undocumented)
 type AssetAmount = {
     readonly asset: string;
@@ -200,6 +212,14 @@ type DisplayIntent = {
         };
     };
     readonly blind?: BlindReason;
+};
+
+// @public (undocumented)
+type Ed25519Task = {
+    readonly scheme: "ed25519";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
 };
 
 // @public (undocumented)
@@ -372,6 +392,9 @@ export const isWritableIndex: (parsed: ParsedSolanaMessage, index: number) => bo
 export const JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
 
 // @public
+type KeyPath = ReadonlyArray<number>;
+
+// @public
 export type LookupReference = {
     readonly address: string;
     readonly writableIndexes: ReadonlyArray<number>;
@@ -470,6 +493,11 @@ type ParsedSolanaMessageBase = {
 
 // @public
 export const parseMintExtensions: (data: Uint8Array, epoch: bigint) => MintExtensionSummary;
+
+// @public
+export const planSolana: (request: Extract<SignRequest, {
+    kind: "solana.transaction" | "solana.message";
+}>, key: TaskKey) => SolanaSignPlan;
 
 // @public
 type PolymarketContent = {
@@ -678,6 +706,12 @@ export const SOLANA_NETWORKS: ReadonlyArray<string>;
 // @public
 export function solanaAddressFromPublicKey(pubkey: Uint8Array): string;
 
+// @public (undocumented)
+export type SolanaSignPlan = {
+    readonly kind: "solana.transaction" | "solana.message";
+    readonly tasks: readonly [Ed25519Task];
+};
+
 // @public
 type SolanaToken = {
     readonly symbol: string;
@@ -784,6 +818,12 @@ type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public (undocumented)
+type TaskKey = {
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
 };
 
 // @public

@@ -17,6 +17,47 @@ export type { SignInClaim, SignInParse } from "./sign-in.ts";
 
 export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 
+/** BIP-32/SLIP-10 indices, >= 2^31 hardened; `[]` = the key itself. */
+export type KeyPath = ReadonlyArray<number>;
+
+export type TaskKey = { readonly path: KeyPath; readonly publicKey: Uint8Array };
+
+export type EcdsaTask = {
+  readonly scheme: "ecdsa-secp256k1";
+  readonly path: KeyPath;
+  /** 33-byte compressed public key the signature must verify under. */
+  readonly publicKey: Uint8Array;
+  /** 32-byte digest. */
+  readonly digest: Uint8Array;
+};
+
+export type Bip340Task = {
+  readonly scheme: "bip340";
+  readonly path: KeyPath;
+  /** 32-byte x-only output key Q the signature verifies under. */
+  readonly publicKey: Uint8Array;
+  /** 32-byte message. */
+  readonly message: Uint8Array;
+  /** 32-byte scalar tweak the signer adds to its key: Q = P + t·G. */
+  readonly tweak: Uint8Array;
+};
+
+export type Ed25519Task = {
+  readonly scheme: "ed25519";
+  readonly path: KeyPath;
+  /** 32-byte public key. */
+  readonly publicKey: Uint8Array;
+  readonly message: Uint8Array;
+};
+
+export type SignTask = EcdsaTask | Bip340Task | Ed25519Task;
+export type SignScheme = SignTask["scheme"];
+
+/** An assemble result: the final artefact, or the next plan a dependent signature requires. */
+export type Assembled<A, P> =
+  | { readonly kind: "signed"; readonly artefact: A }
+  | { readonly kind: "next"; readonly plan: P };
+
 export type AccountRef =
   | {
       readonly kind: "hd";
@@ -912,6 +953,7 @@ export type ChainErrorCode =
   | "invalid-address"
   | "invalid-typed-data"
   | "invalid-request"
+  | "invalid-signature"
   | "unsupported";
 
 export class ChainError extends Error {

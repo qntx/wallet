@@ -1,32 +1,18 @@
-/** EVM signing for `chain.sign` — derive, normalize, decode, then sign or return the intent. */
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { HDKey } from "@scure/bip32";
-
-import type { DisplayIntent } from "@qntx/wallet-chains";
-import {
-  decodeEvm,
-  evmAddressFromPublicKey,
-  fiat24SessionMessage,
-  networkChainId,
-  normalizeEvm,
-} from "@qntx/wallet-chains/evm";
-import {
-  signEvmPersonalMessage,
-  signEvmTransaction,
-  signEvmTypedData,
-} from "@qntx/wallet-chains/evm/sign";
+/** EVM request preparation for `chain.sign` — normalize, decode, and plan; never signs. */
+import type { DisplayIntent, KeyPath } from "@qntx/wallet-chains";
+import { decodeEvm, evmAddressFromPublicKey, normalizeEvm, planEvm } from "@qntx/wallet-chains/evm";
 
 import { KernelError } from "../../errors.ts";
-import type { EvmKeySource, EvmRequest, ExecuteResult } from "./shared.ts";
+import type { PublicMaterial } from "./keys.ts";
+import type { EvmRequest, Prepared } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 
 /* A Fiat24 session grant signs only inside the API's documented twenty-minute maximum, and never
-   past an already-past deadline. `now` is the kernel wall clock in milliseconds; the check runs on
-   every pass so a prompt that outlives the window is refused on the sign pass too. */
+   past an already-past deadline. `now` is the kernel wall clock in milliseconds; `chainSign`
+   checks again before the sign pass so a prompt that outlives the window is refused. */
 const FIAT24_SESSION_WINDOW = 1200;
 
-const assertFiat24Deadline = (request: EvmRequest, now: number): void => {
+export const assertFiat24Deadline = (request: EvmRequest, now: number): void => {
   if (request.kind !== "evm.fiat24-session") {
     return;
   }
@@ -36,44 +22,19 @@ const assertFiat24Deadline = (request: EvmRequest, now: number): void => {
   }
 };
 
-export const executeEvm = (
+/**
+ * Validates and decodes the request and returns its signing plan. `path` is the account's BIP-32
+ * path (`[]` for an imported key); the public key comes only through `material`.
+ */
+export const prepareEvm = async (
   request: EvmRequest,
-  source: EvmKeySource,
-  intentOnly: boolean,
+  path: KeyPath,
+  material: PublicMaterial,
   now: number,
-): ExecuteResult => {
+): Promise<Prepared> => {
   assertFiat24Deadline(request, now);
-  if (source.kind === "imported") {
-    /* The record's plaintext is the private key; `chainSign` wipes the opened copy. */
-    const priv = source.secret;
-    const signer = evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
-    return evmBody(request, priv, signer, intentOnly);
-  }
-  const master = HDKey.fromMasterSeed(source.seed);
-  try {
-    const child = master.derive(`m/44'/60'/0'/0/${source.account.groupIndex}`);
-    try {
-      const priv = child.privateKey;
-      const pub = child.publicKey;
-      if (priv === null || pub === null) {
-        throw new KernelError("integrity", "no private key at account path");
-      }
-      const signer = evmAddressFromPublicKey(pub);
-      return evmBody(request, priv, signer, intentOnly);
-    } finally {
-      child.wipePrivateData();
-    }
-  } finally {
-    master.wipePrivateData();
-  }
-};
-
-const evmBody = (
-  request: EvmRequest,
-  priv: Uint8Array,
-  signer: string,
-  intentOnly: boolean,
-): ExecuteResult => {
+  const pub = await material.secp256k1(path);
+  const signer = evmAddressFromPublicKey(pub);
   let normalized;
   try {
     normalized = normalizeEvm(request);
@@ -89,34 +50,11 @@ const evmBody = (
   } catch (error) {
     mapChainError(error);
   }
-  if (intentOnly) {
-    return { prompt: intent, signer };
+  let plan;
+  try {
+    plan = planEvm(request, { path, publicKey: pub });
+  } catch (error) {
+    mapChainError(error);
   }
-  if (request.kind === "evm.transaction") {
-    return {
-      kind: "evm.transaction",
-      signedTransaction: signEvmTransaction(request.tx, priv),
-    };
-  }
-  if (request.kind === "evm.personal-message") {
-    return {
-      kind: "evm.personal-message",
-      signature: signEvmPersonalMessage(request.message, priv),
-    };
-  }
-  if (request.kind === "evm.fiat24-session") {
-    return {
-      kind: "evm.fiat24-session",
-      signature: signEvmPersonalMessage(
-        utf8ToBytes(
-          fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline),
-        ),
-        priv,
-      ),
-    };
-  }
-  return {
-    kind: "evm.typed-data",
-    signature: signEvmTypedData(request.typedData, priv),
-  };
+  return { prompt: intent, signer, plan };
 };
