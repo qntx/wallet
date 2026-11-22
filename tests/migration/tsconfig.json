@@ -25,7 +25,11 @@
       "@qntx/wallet-engine/gateway/contract": [
         "../../packages/wallet-engine/src/gateway/contract/index.ts"
       ],
-      "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"]
+      "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"],
+      "@qntx/wallet-native/secure-input": ["../../packages/wallet-native/src/secure-input.ts"],
+      "react-native-nitro-modules": [
+        "../../packages/wallet-native/node_modules/react-native-nitro-modules/lib/typescript/index.d.ts"
+      ]
     }
   },
   "include": ["."]
