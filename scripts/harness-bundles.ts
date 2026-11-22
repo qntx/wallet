@@ -8,8 +8,8 @@
  * there, so the bytecode always matches the app's Hermes runtime (hermesc 260318099.0.4 for RN
  * 0.88). The script fails early if `bun install` has not run inside apps/harness.
  *
- * Helpers without a top-level effect (share.ts) and type-only files (*.d.ts) are inputs, not
- * probes: probe files are every other *.ts under probes/.
+ * Helpers without a top-level effect (share.ts, card-surfaces-fixture.ts) and type-only files
+ * (*.d.ts) are inputs, not probes: probe files are every other *.ts under probes/.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -108,8 +108,11 @@ const provenance = (() => {
   };
 })();
 
+// Helpers shared by probes or host scripts but never run standalone.
+const probeHelpers = new Set(["share.ts", "card-surfaces-fixture.ts"]);
+
 const probeFiles = readdirSync(probesDir)
-  .filter((name) => name.endsWith(".ts") && name !== "share.ts" && !name.endsWith(".d.ts"))
+  .filter((name) => name.endsWith(".ts") && !probeHelpers.has(name) && !name.endsWith(".d.ts"))
   .toSorted();
 
 if (probeFiles.length === 0) {

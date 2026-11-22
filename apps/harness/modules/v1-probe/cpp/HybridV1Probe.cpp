@@ -2,6 +2,7 @@
 
 #include <NitroModules/InstallNitro.hpp>
 
+#include "FakeCardReader.hpp"
 #include "runtime/KernelRuntime.hpp"
 
 #if __has_include("generated/probes.hpp")
@@ -360,6 +361,10 @@ qntx::harness::probes::Script scriptFor(const std::string& name) {
   }
   if (name == "chains") {
     return kChains;
+  }
+  // The "-device" suffix runs the same script against the platform reader.
+  if (name == "card-surfaces" || name == "card-surfaces-device") {
+    return kCardSurfaces;
   }
   throw std::invalid_argument("unknown probe script: " + name);
 }
@@ -818,6 +823,10 @@ std::shared_ptr<Promise<void>> HybridV1Probe::openKernel(
             : std::make_shared<const std::vector<uint8_t>>(
                   script.source, script.source + script.sourceSize)};
     qntx::KernelRuntime::Hooks hooks;
+    if (probe == "card-surfaces") {
+      // Scripted card behind the leak check; "-device" keeps the platform one.
+      hooks.cardReader = qntx::harness::fakeCardReader();
+    }
     hooks.onPost = [session](qntx::SecretBytes bytes) {
       session->onPost(std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size()));
     };

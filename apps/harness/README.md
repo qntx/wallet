@@ -105,3 +105,32 @@ process. Requires `pod install` in `ios/` first.
 Simulator/emulator runs are smoke verification. The required gate measurement
 is a release run on the iPhone Air (physical device); the pass budgets are
 defined for that device.
+
+## Card surfaces
+
+`EXPO_PUBLIC_CARD_SURFACES=1` swaps the probe suite for the trusted-card page:
+a plain decoy `TextInput` next to the native `SecureInput`, driven by the
+`card-surfaces` kernel probe. The kernel owns every access-code/short-ID
+request, the sheet prompt and all APDUs; the page only sees
+`idle | empty | filled | submitted`.
+
+Run the scripted flow and check for leaks:
+
+```bash
+bun scripts/card-surfaces-run.ts android   # Metro + emulator, adb-driven
+```
+
+The driver waits on `CARD_STEP` markers, types through the OS, and captures
+only the app process log. `src/leak-recorder.ts` (installed in `index.ts`
+before any Nitro object exists) tees every `console.*` call, every hybrid
+method argument/result, `onStateChange` payloads and React state into
+`CARD_LEAK_RECORD` lines; `scripts/card-leak-check.ts` then fails if the
+access code or short ID appears anywhere in the capture — plain, hex,
+base64/base64url, UTF-16LE hex or decimal byte lists — while requiring the
+decoy (positive control), `match:true` results, the cancel path, both fake-reader
+taps, the device-reader result, and the kernel prompt on the native
+`CARD_SHEET_OPEN` channel but never in `CARD_LEAK_RECORD`.
+
+On iOS use the booted simulator (`idb ui text`/`idb ui key` types into the
+trusted field) and capture with `xcrun simctl spawn booted log stream
+--predicate 'process == "V1Harness"'`, then run the same checker.
