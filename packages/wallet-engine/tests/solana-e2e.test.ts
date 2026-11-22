@@ -812,15 +812,17 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
         "--quiet",
         "--bind-address",
         "127.0.0.1",
+        // Ports of its own: the stake validator above uses 8897/9907 and may not have released
+        // them when this one starts (CI: "Faucet failed to start: Address already in use").
         "--rpc-port",
-        "8897",
+        "8894",
         "--faucet-port",
-        "9907",
+        "9904",
       ],
       { stdio: "ignore" },
     );
     try {
-      const url = "http://127.0.0.1:8897";
+      const url = "http://127.0.0.1:8894";
       const r = rpc(url);
       await waitHealthy(r, ledger, Date.now() + 120_000);
       const recipient = await generateKeyPairSigner();
