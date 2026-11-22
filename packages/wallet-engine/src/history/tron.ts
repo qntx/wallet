@@ -84,12 +84,12 @@ type Group = {
   legs: Leg[];
 };
 
-/** A parsed feed row; `leg === undefined` means filtered — a contract type history ignores. */
+/** A parsed feed row; `legs` empty means filtered — a contract type history ignores. */
 type ParsedRow = {
   readonly txid: string;
   readonly timestamp: number;
   readonly block: number | undefined;
-  readonly leg: Leg | undefined;
+  readonly legs: Leg[];
 };
 
 /**
@@ -159,43 +159,75 @@ const parseTxRow = (raw: unknown): ParsedRow | "malformed" => {
   if (row === undefined) {
     return "malformed";
   }
-  const leg = txRowLeg(row);
-  if (leg === "malformed") {
+  const legs = txRowLegs(row);
+  if (legs === "malformed") {
     return "malformed";
   }
-  return { txid: row.txID, timestamp: row.block_timestamp, block: row.blockNumber, leg };
+  return { txid: row.txID, timestamp: row.block_timestamp, block: row.blockNumber, legs };
 };
 
-/** The transfer leg of one `/v1/accounts/transactions` row, `undefined` for unmodeled types. */
-const txRowLeg = (row: TronIndexerTransactionRow): Leg | "malformed" | undefined => {
+/** The transfer legs of one `/v1/accounts/transactions` row, `[]` for unmodeled types. */
+const txRowLegs = (row: TronIndexerTransactionRow): Leg[] | "malformed" => {
   const contracts = row.raw_data.contract;
   if (contracts.length !== 1) {
-    return undefined;
+    return [];
   }
   const [contract] = contracts;
   if (contract === undefined) {
-    return undefined;
+    return [];
   }
   const { type, parameter } = contract;
-  if (type !== "TransferContract" && type !== "TransferAssetContract") {
-    return undefined;
-  }
   const { value } = parameter;
-  const from = base58FromHex(value.owner_address);
-  const to = base58FromHex(value.to_address);
-  if (from === undefined || to === undefined || value.amount === undefined) {
-    return "malformed";
+  if (type === "TransferContract" || type === "TransferAssetContract") {
+    const from = base58FromHex(value.owner_address);
+    const to = base58FromHex(value.to_address);
+    if (from === undefined || to === undefined || value.amount === undefined) {
+      return "malformed";
+    }
+    // The node reports JSON int64 imprecisely beyond 2^53 — the documented `amountField` limit.
+    const amount = BigInt(value.amount);
+    if (type === "TransferContract") {
+      return [{ kind: "trx", from, to, amount }];
+    }
+    const assetId = assetIdOf(value.asset_name);
+    if (assetId === undefined) {
+      return "malformed";
+    }
+    return [{ kind: "trc10", from, to, assetId, amount }];
   }
-  // The node reports JSON int64 imprecisely beyond 2^53 — the documented `amountField` limit.
-  const amount = BigInt(value.amount);
-  if (type === "TransferContract") {
-    return { kind: "trx", from, to, amount };
+  if (type === "TriggerSmartContract") {
+    /* The row's value movements are the attached assets: `call_value` TRX and a
+       `call_token_value` TRC-10 amount into the contract. */
+    const { call_value: callValue, call_token_value: callTokenValue, token_id: tokenId } = value;
+    const movesTrx = callValue !== undefined && BigInt(callValue) > 0n;
+    const movesToken = callTokenValue !== undefined && BigInt(callTokenValue) > 0n;
+    if (!movesTrx && !movesToken) {
+      return [];
+    }
+    const from = base58FromHex(value.owner_address);
+    const to = base58FromHex(value.contract_address);
+    if (from === undefined || to === undefined) {
+      return "malformed";
+    }
+    const legs: Leg[] = [];
+    if (movesTrx) {
+      legs.push({ kind: "trx", from, to, amount: BigInt(callValue) });
+    }
+    if (movesToken) {
+      if (tokenId === undefined) {
+        return "malformed"; // a token amount without its id can never bind the raw contract
+      }
+      legs.push({
+        kind: "trc10",
+        from,
+        to,
+        assetId: String(tokenId),
+        amount: BigInt(callTokenValue),
+      });
+    }
+    return legs;
   }
-  const assetId = assetIdOf(value.asset_name);
-  if (assetId === undefined) {
-    return "malformed";
-  }
-  return { kind: "trc10", from, to, assetId, amount };
+  return [];
 };
 
 /** A `/v1/accounts/transactions/trc20` row → a `ParsedRow`; non-Transfer rows are filtered. */
@@ -227,7 +259,38 @@ const parseTrc20Row = (raw: unknown): ParsedRow | "malformed" => {
   if (leg === "malformed") {
     return "malformed";
   }
-  return { txid: row.transaction_id, timestamp: row.block_timestamp, block: undefined, leg };
+  return {
+    txid: row.transaction_id,
+    timestamp: row.block_timestamp,
+    block: undefined,
+    legs: leg === undefined ? [] : [leg],
+  };
+};
+
+/**
+ * A TRON transaction carries exactly one contract, so the same TRX/TRC-10 row repeated across a
+ * page boundary is one claim, not two. TRC-20 legs stay uncollapsed on purpose: each claim binds
+ * one Transfer log, and a duplicated row with only one log is a `chain-mismatch`, not a dup.
+ */
+const collapseLegs = (legs: ReadonlyArray<Leg>): Leg[] => {
+  const seen = new Set<string>();
+  const out: Leg[] = [];
+  for (const leg of legs) {
+    if (leg.kind === "trc20") {
+      out.push(leg);
+      continue;
+    }
+    const key =
+      leg.kind === "trc10"
+        ? `trc10:${leg.from}:${leg.to}:${leg.assetId}:${leg.amount.toString()}`
+        : `trx:${leg.from}:${leg.to}:${leg.amount.toString()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(leg);
+  }
+  return out;
 };
 
 const ready = (feed: Feed, timestamp: number): boolean =>
@@ -249,7 +312,7 @@ const tronHistoryEntry = (network: string, address: string, group: Group): Histo
   const counterparties: string[] = [];
   const flags: HistoryFlag[] = [];
   let zero = false;
-  for (const leg of group.legs) {
+  for (const leg of collapseLegs(group.legs)) {
     const ownIn = leg.to === address;
     const ownOut = leg.from === address;
     if (ownIn === ownOut) {
@@ -361,6 +424,23 @@ const transferMatches = (leg: Leg, contract: TronContract): boolean => {
       contract.amount === leg.amount
     );
   }
+  if (contract.type === "TriggerSmartContract") {
+    if (leg.kind === "trx") {
+      return (
+        contract.owner === leg.from &&
+        contract.contract === leg.to &&
+        contract.callValue === leg.amount
+      );
+    }
+    if (leg.kind === "trc10") {
+      return (
+        contract.owner === leg.from &&
+        contract.contract === leg.to &&
+        contract.tokenId === BigInt(leg.assetId) &&
+        contract.callTokenValue === leg.amount
+      );
+    }
+  }
   return false;
 };
 
@@ -386,27 +466,51 @@ const verifyEntry = async (
   let mismatch = false;
   const signer = base58FromHex(body?.raw_data?.contract[0]?.parameter.value.owner_address);
 
-  const transfers = group.legs.filter((leg) => leg.kind !== "trc20");
-  const trc20s = group.legs.filter((leg): leg is Extract<Leg, { kind: "trc20" }> => {
+  const legs = collapseLegs(group.legs);
+  const transfers = legs.filter((leg) => leg.kind !== "trc20");
+  const trc20s = legs.filter((leg): leg is Extract<Leg, { kind: "trc20" }> => {
     return leg.kind === "trc20";
   });
-  if (transfers.length > 0) {
-    // The sha256 pin + the phase-1 decoder make the contract check byte-for-byte, not field-shaped.
-    const raw = body?.raw_data_hex === undefined ? undefined : hexBytesOf(body.raw_data_hex);
-    if (raw === undefined) {
-      checkable = false;
-    } else if (bytesToHex(sha256(raw)) === group.txid) {
-      let contract: TronContract | undefined;
+  /* The sha256 pin + the phase-1 decoder make the contract check byte-for-byte, not field-shaped.
+     Decoded once when the pinned body is available — needed for claimed legs and for the
+     completeness check on a wallet-signed TriggerSmartContract's attached movements. */
+  let contract: TronContract | undefined;
+  const raw = body?.raw_data_hex === undefined ? undefined : hexBytesOf(body.raw_data_hex);
+  if (transfers.length > 0 && raw === undefined) {
+    checkable = false;
+  } else if (raw !== undefined) {
+    if (bytesToHex(sha256(raw)) === group.txid) {
       try {
         const slot = decodeTronRawData(raw).contract;
         contract = decodeTronContract(slot.typeId, slot.value)?.contract;
       } catch {
-        checkable = false; // bytes the local decoder cannot model — uncheckable, not wrong
+        checkable = transfers.length === 0; // unmodelable bytes: uncheckable only if legs needed it
       }
-      if (contract !== undefined && !transfers.every((leg) => transferMatches(leg, contract))) {
+      // One raw contract binds at most one claim: a second distinct leg mismatches on `.every`.
+      const decoded = contract;
+      if (decoded !== undefined && !transfers.every((leg) => transferMatches(leg, decoded))) {
         mismatch = true;
       }
-    } else {
+    } else if (transfers.length > 0) {
+      mismatch = true; // the body is provably not this txid's
+    }
+  }
+  /* The reverse direction: the wallet's own TriggerSmartContract moved `call_value` TRX or a
+     `call_token_value` TRC-10 amount — an indexer that never reported the movement hides an
+     outflow. A failed transaction moves nothing, so the check skips it. */
+  if (
+    contract !== undefined &&
+    contract.type === "TriggerSmartContract" &&
+    contract.owner === address &&
+    !info.failed
+  ) {
+    const trxBound =
+      contract.callValue === 0n ||
+      transfers.some((leg) => leg.kind === "trx" && transferMatches(leg, contract));
+    const trc10Bound =
+      contract.callTokenValue === 0n ||
+      transfers.some((leg) => leg.kind === "trc10" && transferMatches(leg, contract));
+    if (!trxBound || !trc10Bound) {
       mismatch = true;
     }
   }
@@ -520,7 +624,7 @@ export const tronHistoryStream = (
         continue;
       }
       feed.oldest = Math.min(feed.oldest, parsed.timestamp);
-      if (parsed.leg === undefined) {
+      if (parsed.legs.length === 0) {
         continue;
       }
       const group = groups.get(parsed.txid) ?? {
@@ -529,7 +633,7 @@ export const tronHistoryStream = (
         block: parsed.block,
         legs: [],
       };
-      group.legs.push(parsed.leg);
+      group.legs.push(...parsed.legs);
       group.block = group.block ?? parsed.block;
       groups.set(parsed.txid, group);
     }

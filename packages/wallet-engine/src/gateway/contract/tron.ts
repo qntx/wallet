@@ -214,13 +214,19 @@ export type TronBroadcast = z.output<typeof tronBroadcastResponse>;
 
 /**
  * A transfer contract's `parameter.value` as the node renders it (`owner_address`/`to_address` are
- * 41-prefixed hex, `asset_name` the TRC-10 id). History cross-checks it against the indexer.
+ * 41-prefixed hex, `asset_name` the TRC-10 id); a `TriggerSmartContract` adds `contract_address`
+ * plus the attached `call_value`/`call_token_value`/`token_id` movements. History cross-checks it
+ * against the indexer.
  */
 const tronContractValue = z.looseObject({
   owner_address: z.optional(z.string()),
   to_address: z.optional(z.string()),
   amount: z.optional(amountField),
   asset_name: z.optional(z.string()),
+  contract_address: z.optional(z.string()),
+  call_value: z.optional(amountField),
+  call_token_value: z.optional(amountField),
+  token_id: z.optional(intField),
 });
 
 /** `gettransactionbyid`: an unknown id answers `{}`. `raw_data_hex` lets history pin the body. */
