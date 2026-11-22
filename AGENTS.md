@@ -89,8 +89,8 @@ change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, k
 dependencies) needs `bun run native:kernel` and the regenerated files in the same PR; CI's
 native-host-test fails on a stale bundle.
 
-`bun run smoke:hermes` runs the kernel and chains bundles in a bare Hermes CLI and needs `HERMES`
-pointing at that binary (it exits 1 without it). CI builds the CLI from the facebook/hermes
+`bun run smoke:hermes` runs the kernel, chains and card protocol bundles in a bare Hermes CLI and
+needs `HERMES` pointing at that binary (it exits 1 without it). CI builds the CLI from the facebook/hermes
 commit pinned as `hermes-commit` in `.github/workflows/hermes.yml`; build the same one locally
 (needs cmake, ninja and ICU):
 
