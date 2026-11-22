@@ -143,6 +143,7 @@ class SecureInputField(context: Context) : LinearLayout(context) {
     disarming = false
     field.isEnabled = false
     field.clearFocus()
+    hideKeyboard()
     if (secureSet) {
       secureSet = false
       activityWindow()?.let { window ->
@@ -155,7 +156,6 @@ class SecureInputField(context: Context) : LinearLayout(context) {
     }
     label.text = null
     label.visibility = GONE
-    hideKeyboard()
     if (submitted) {
       emit(SecureInputState.SUBMITTED)
     }
@@ -226,20 +226,24 @@ class SecureInputField(context: Context) : LinearLayout(context) {
   private external fun nativeSubmit(id: Long, bytes: ByteArray): Boolean
 
   // The characters the transformation shows — dots only, one per char, so
-  // the secret's glyphs never exist as a displayable String either.
-  private class Masked(private val size: Int) : CharSequence {
+  // the secret's glyphs never exist as a displayable String either. Like
+  // PasswordCharSequence, it must delegate length to the live source: a
+  // frozen snapshot leaves the Layout measuring offsets against a stale
+  // length and the cursor-anchor notifier crashes ("Invalid Context
+  // Range").
+  private class Masked(private val source: CharSequence) : CharSequence {
     override val length: Int
-      get() = size
+      get() = source.length
 
     override fun get(index: Int): Char = '•'
 
     override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
-      Masked(endIndex - startIndex)
+      Masked(source.subSequence(startIndex, endIndex))
   }
 
   private object MaskTransformation : TransformationMethod {
     override fun getTransformation(source: CharSequence, view: View): CharSequence =
-      Masked(source.length)
+      Masked(source)
 
     override fun onFocusChanged(
       view: View,
