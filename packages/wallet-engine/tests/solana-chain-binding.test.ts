@@ -158,12 +158,19 @@ const withHost = (w: World & { hostApi: SolanaRpc }): void => {
   w.independent = { kind: "available", client: w.hostApi };
 };
 
-const ctx = (w: World & { api: SolanaRpc }): RouteContext => ({
+const DEVNET = { id: NET, genesisHash: GENESIS, testnet: true } as const;
+
+const ctx = (
+  w: World & { api: SolanaRpc },
+  net:
+    | typeof DEVNET
+    | { readonly id: string; readonly genesisHash: string; readonly testnet: boolean } = DEVNET,
+): RouteContext => ({
   options: {
     networks: {
       solanaRpc: () => w.api,
       independentSolanaRpc: () => w.independent,
-      info: () => ({ genesisHash: GENESIS }),
+      info: () => net,
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
@@ -207,7 +214,7 @@ describe("the recent blockhash must be confirmed by a host endpoint", () => {
   it("refuses a gateway-only send before anything is signed", async () => {
     const w = world({ independent: { kind: "unavailable" } });
     await expect(prepareSolana(ctx(w), params())).rejects.toThrow(
-      /only the gateway vouches for the recent blockhash on solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1/,
+      'only the gateway vouches for the recent blockhash on solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1; on a testnet a signature over another network\'s recent blockhash could be valid there — configure a host endpoint in EngineOptions.rpc["solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"]',
     );
     expect(w.signCalls).toBe(0);
   });
@@ -294,5 +301,36 @@ describe("the answering node must report the configured cluster", () => {
     expect(genesisReads(w)).toBe(0);
     const tx = await prepared.submit(VERIFY, () => undefined);
     expect(tx.state).toBe("submitted");
+  });
+});
+
+describe("a gateway-only mainnet build goes ahead flagged reads-unverified", () => {
+  const MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc";
+  const mainNet = { id: MAINNET, genesisHash: MAINNET_GENESIS, testnet: false } as const;
+
+  it("prepares and submits a send on mainnet", async () => {
+    const w = world({ genesis: MAINNET_GENESIS, independent: { kind: "unavailable" } });
+    const prepared = await prepareSolana(ctx(w, mainNet), params({ network: MAINNET }));
+    expect(prepared.checks).toContain("reads-unverified");
+    expect(genesisReads(w)).toBe(1); // the answering node's genesis was pinned
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).toBe("submitted");
+  });
+
+  it("flags a mainnet stake prepare the same way", async () => {
+    const w = world({ genesis: MAINNET_GENESIS, independent: { kind: "unavailable" } });
+    const prepared = await prepareSolanaStake(ctx(w, mainNet), {
+      ...deactivate(),
+      network: MAINNET,
+    });
+    expect(prepared.checks).toContain("reads-unverified");
+  });
+
+  it("still refuses a mainnet send whose answering node serves devnet's genesis", async () => {
+    const w = world({ genesis: GENESIS, independent: { kind: "unavailable" } });
+    await expect(prepareSolana(ctx(w, mainNet), params({ network: MAINNET }))).rejects.toThrow(
+      /serves another chain than solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc/,
+    );
+    expect(w.signCalls).toBe(0);
   });
 });

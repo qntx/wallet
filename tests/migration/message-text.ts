@@ -47,6 +47,24 @@ export function describeWarning(warning: IntentWarning): string {
       return "the token charges a transfer fee";
     case "token-2022-extension":
       return "the token carries a Token-2022 extension";
+    case "fiat24-internal-account":
+      return "the target is a Fiat24 internal account, not a client";
+    case "fiat24-card-pull":
+      return "the Fiat24 card contract can pull up to the allowance";
+    case "fiat24-unlimited-approval":
+      return "an unlimited Fiat24 allowance";
+    case "fiat24-issuer-rate":
+      return "the issuer sets the rate at execution";
+    case "fiat24-exact-out-unbounded":
+      return "the payment is bounded only by the allowance";
+    case "fiat24-swap-quote":
+      return "the swap is priced inside the transaction";
+    case "fiat24-payee-offchain":
+      return "the payee resolves off-chain";
+    case "fiat24-account-link":
+      return "the address is permanently linked to a verified identity";
+    case "fiat24-account-move":
+      return "the account NFT hands over control";
     // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
     default: {
       const exhaustive: never = kind;

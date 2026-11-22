@@ -27,8 +27,9 @@ import { decodeCctp, isCctpMessenger } from "./cctp.ts";
 import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { recognizeEip3009 } from "./eip3009.ts";
-import { callNearMiss, typedDataNearMiss } from "./families.ts";
+import { callNearMiss, personalMessageNearMiss, typedDataNearMiss } from "./families.ts";
 import { recognizeFarcaster } from "./farcaster.ts";
+import { decodeFiat24, fiat24SessionMessage, fiat24Spender } from "./fiat24.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizeOneinch } from "./oneinch.ts";
@@ -42,7 +43,12 @@ import { decodeTokenCall } from "./token-call.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
-import { domainChainId, parseTypedData, typedDataFields } from "./typed-data.ts";
+import {
+  domainChainId,
+  parseTypedData,
+  typedDataFields,
+  typedDataHasHiddenText,
+} from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 import { decodeWrappedNative } from "./wrapped-native.ts";
 import { decodeZeroX } from "./zerox.ts";
@@ -166,6 +172,36 @@ const protocolIntent = (
 ): DisplayIntent | undefined => {
   const chainId = networkChainId(network);
   const base = { family: "evm" as const, network, approvals: [], warnings: [] };
+
+  /* A call a Fiat24 contract claims must never reach the standard table: the account
+     proxy's ERC-721 approve/setApprovalForAll and the cash tokens' non-ERC-20 functions
+     would be misdescribed there, so the family claims them blind instead. */
+  const fiat24 = decodeFiat24(chainId, call, table);
+  if (fiat24 !== undefined) {
+    if (fiat24 === "claimed") {
+      /* The blind reason is the Fiat24 family row's own near-miss — "claimed" is only
+         reachable on a pinned contract, which the row's claim also matches. */
+      const reason = callNearMiss(call.to ?? "", chainId, table, call.data);
+      return {
+        ...base,
+        summary: "contract-call",
+        outflows: call.value > 0n ? nativeOutflow(call.value, call.to ?? "") : [],
+        fee,
+        verifiability: "opaque",
+        ...(reason === undefined ? {} : { blind: reason }),
+      };
+    }
+    const { decoded } = fiat24;
+    return {
+      ...base,
+      summary: decoded.summary,
+      outflows: decoded.outflows,
+      warnings: decoded.warnings,
+      ...(decoded.fiat24 === undefined ? {} : { fiat24: decoded.fiat24 }),
+      fee,
+      verifiability: "partial",
+    };
+  }
 
   const zeroX = decodeZeroX(chainId, call, table);
   if (zeroX !== undefined) {
@@ -321,6 +357,36 @@ const standardIntent = (call: EvmCall, { network, fee, table }: CallContext): Di
 };
 
 /**
+ * Labels allowance approvals whose spender is a Fiat24 contract and raises the card-pull and
+ * unlimited warnings. Runs on every decoded call, so batch and Safe inner calls get labelled the
+ * same way.
+ */
+const labelFiat24Spenders = (intent: DisplayIntent, chainId: number): DisplayIntent => {
+  const extra: IntentWarning[] = [];
+  let labelled = false;
+  const approvals = intent.approvals.map((change) => {
+    if (change.kind !== "allowance") {
+      return change;
+    }
+    const role = fiat24Spender(chainId, change.spender);
+    if (role === undefined) {
+      return change;
+    }
+    /* An allowance to the card contract can be pulled at any time the issuer authorises a
+       card payment; a decrease is not a pull risk. */
+    if (role === "card" && change.change !== "decrease" && BigInt(change.amount.amount) > 0n) {
+      extra.push({ kind: "fiat24-card-pull", message: "card" });
+    }
+    if (change.unlimited) {
+      extra.push({ kind: "fiat24-unlimited-approval", level: "danger", message: role });
+    }
+    labelled = true;
+    return { ...change, fiat24Spender: role };
+  });
+  return labelled ? { ...intent, approvals, warnings: [...intent.warnings, ...extra] } : intent;
+};
+
+/**
  * The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
  * produces the intent; `fee` is `undefined` for a call that is not itself a transaction. Native
  * value sent along with calldata is always an outflow to the contract that receives it.
@@ -372,22 +438,25 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
   }
   const protocol = protocolIntent(call, context);
   if (protocol !== undefined) {
-    return { ...protocol, ...contract };
+    return labelFiat24Spenders({ ...protocol, ...contract }, networkChainId(context.network));
   }
   const standard = standardIntent(call, context);
   const nearMiss =
     standard.verifiability === "opaque" && call.to !== undefined
-      ? callNearMiss(call.to, networkChainId(context.network), context.table)
+      ? callNearMiss(call.to, networkChainId(context.network), context.table, call.data)
       : undefined;
-  return {
-    ...standard,
-    ...contract,
-    ...(nearMiss === undefined ? {} : { blind: nearMiss }),
-    outflows:
-      call.value > 0n && address !== undefined
-        ? [...nativeOutflow(call.value, address), ...standard.outflows]
-        : standard.outflows,
-  };
+  return labelFiat24Spenders(
+    {
+      ...standard,
+      ...contract,
+      ...(nearMiss === undefined ? {} : { blind: nearMiss }),
+      outflows:
+        call.value > 0n && address !== undefined
+          ? [...nativeOutflow(call.value, address), ...standard.outflows]
+          : standard.outflows,
+    },
+    networkChainId(context.network),
+  );
 };
 
 /** The delegation field a request carries, present iff the transaction is eip7702. */
@@ -454,7 +523,7 @@ const decodeTransaction = (
     return {
       family: "evm",
       network: request.network,
-      warnings: [],
+      warnings: decoded.flatMap((d) => d.warnings),
       fee,
       summary: "batch",
       calls: decoded,
@@ -546,7 +615,9 @@ export const decodeEvm = (
   }
   if (request.kind === "evm.personal-message") {
     const content = messageContent(request.message, "evm");
-    const blind = messageBlindReason(content);
+    const blind =
+      (content.kind === "text" ? personalMessageNearMiss(content.text) : undefined) ??
+      messageBlindReason(content);
     return {
       family: "evm",
       network: request.network,
@@ -558,6 +629,30 @@ export const decodeEvm = (
       message: content,
       verifiability: "opaque",
       ...(blind === undefined ? {} : { blind }),
+    };
+  }
+  if (request.kind === "evm.fiat24-session") {
+    /* The wallet built the message itself: the Fiat24 session family's described intent.
+       The deadline is shown, not trusted — the kernel re-checks it on every sign pass. */
+    const chainId = networkChainId(request.network);
+    return {
+      family: "evm",
+      network: request.network,
+      summary: "message",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      warnings: [],
+      message: {
+        kind: "text",
+        text: fiat24SessionMessage(chainId, request.tokenId, request.deadline),
+      },
+      fiat24: {
+        kind: "session-grant",
+        account: request.tokenId,
+        deadline: request.deadline,
+      },
+      verifiability: "partial",
     };
   }
   if (request.kind !== "evm.typed-data") {
@@ -643,7 +738,10 @@ export const decodeEvm = (
           ? "typed-data-commitment"
           : undefined
       : undefined);
-  const blind = permit?.blind ?? typedDataBlind(safe, seaport, app, unclaimedBlind);
+  const blind =
+    permit?.blind ??
+    typedDataBlind(safe, seaport, app, unclaimedBlind) ??
+    (typedDataHasHiddenText(json) ? "message-bytes" : undefined);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,

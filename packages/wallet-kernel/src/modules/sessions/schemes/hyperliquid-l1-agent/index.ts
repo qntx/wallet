@@ -2,10 +2,11 @@
  * The hyperliquid-l1-agent session scheme: Hyperliquid L1 trading, scoped to a network, signed as
  * the phantom-agent `Agent(string source,bytes32 connectionId)` typed data the kernel builds.
  */
+import { hyperliquidL1Document } from "@qntx/wallet-chains/evm";
+
 import { KernelError } from "../../../../errors.ts";
 import type { SessionScheme } from "../../scheme.ts";
 import { defineSessionScheme } from "../../scheme.ts";
-import { l1ConnectionId, phantomAgentTypedData } from "./l1.ts";
 import { hyperliquidL1Params, hyperliquidNetwork } from "./params.ts";
 
 /**
@@ -53,14 +54,6 @@ export const hyperliquidL1Agent: SessionScheme = defineSessionScheme({
     ) {
       throw new KernelError("invalid-input", "schedule time outside the session");
     }
-    return phantomAgentTypedData(
-      l1ConnectionId({
-        action: params.action,
-        nonce: params.nonce,
-        ...(params.vaultAddress === undefined ? {} : { vaultAddress: params.vaultAddress }),
-        expiresAfter: params.expiresAfter,
-      }),
-      scope,
-    );
+    return hyperliquidL1Document(params, scope);
   },
 });

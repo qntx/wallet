@@ -13,7 +13,12 @@ import { recognizePermit } from "../evm/permit.ts";
 import { decodeTokenCall } from "../evm/token-call.ts";
 import type { TokenCall } from "../evm/token-call.ts";
 import type { EvmTokenTable } from "../evm/tokens.ts";
-import { domainChainId, isTypedDataMessage, typedDataFields } from "../evm/typed-data.ts";
+import {
+  domainChainId,
+  isTypedDataMessage,
+  typedDataFields,
+  typedDataHasHiddenText,
+} from "../evm/typed-data.ts";
 import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
@@ -454,7 +459,8 @@ const tronTypedDataIntent = (
           : shown.hasCommitment
             ? "typed-data-commitment"
             : undefined))
-      : undefined);
+      : undefined) ??
+    (typedDataHasHiddenText(json) ? "message-bytes" : undefined);
   return {
     family: "tron",
     network,

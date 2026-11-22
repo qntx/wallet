@@ -76,6 +76,7 @@ type ApprovalChange = {
     readonly unlimited: boolean;
     readonly expiration?: number;
     readonly via?: "permit2" | "allowance-holder";
+    readonly fiat24Spender?: "card" | "deposit";
     readonly verified: boolean;
 } | {
     readonly kind: "operator";
@@ -110,6 +111,11 @@ type AssetFlow = {
     readonly verified: boolean;
     readonly burn?: true;
     readonly tokenAccount?: string;
+    readonly fiat24?: {
+        readonly account: string;
+    } | {
+        readonly payee: string;
+    };
     readonly name?: string;
 };
 
@@ -117,7 +123,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
 
 // @public (undocumented)
 export const canonicalHex: (value: bigint) => string;
@@ -189,6 +195,7 @@ type DisplayIntent = {
         readonly dex: "perps" | "spot";
         readonly maxFee: AssetAmount;
     };
+    readonly fiat24?: Fiat24Action;
     readonly warnings: ReadonlyArray<IntentWarning>;
     readonly message?: MessageContent;
     readonly verifiability: Verifiability;
@@ -324,6 +331,46 @@ type FarcasterKey = {
     readonly deadline?: number;
 };
 
+// @public
+export const FIAT24_CHAIN = 42161;
+
+// @public
+type Fiat24Action = {
+    readonly kind: "exchange";
+    readonly side: "exact-in";
+    readonly receive: Fiat24Token;
+} | {
+    readonly kind: "exchange";
+    readonly side: "exact-out";
+    readonly pay: Fiat24Token;
+    readonly receive: AssetAmount;
+} | {
+    readonly kind: "payout";
+    readonly contactId: string;
+    readonly purposeId?: string;
+    readonly ref?: string;
+} | {
+    readonly kind: "top-up";
+    readonly receive: Fiat24Token;
+} | {
+    readonly kind: "open-account";
+    readonly account: string;
+} | {
+    readonly kind: "session-grant";
+    readonly account: string;
+    readonly deadline: number;
+};
+
+// @public
+export const fiat24SessionMessage: (chainId: number, tokenId: string, deadline: number) => string;
+
+// @public
+type Fiat24Token = {
+    readonly asset: string;
+    readonly symbol: string;
+    readonly decimals: 2;
+};
+
 // @public (undocumented)
 export const HYPERLIQUID_DOMAIN = 19;
 
@@ -379,17 +426,117 @@ type HyperliquidAction = {
 // @public
 type HyperliquidChain = "Mainnet" | "Testnet";
 
+// @public
+export type HyperliquidL1Action = {
+    readonly type: "order";
+    readonly orders: ReadonlyArray<HyperliquidL1Order>;
+    readonly grouping: "na" | "normalTpsl" | "positionTpsl";
+    readonly builder?: {
+        readonly b: string;
+        readonly f: number;
+    };
+} | {
+    readonly type: "cancel";
+    readonly cancels: ReadonlyArray<{
+        readonly a: number;
+        readonly o: number;
+    }>;
+    readonly f?: true;
+} | {
+    readonly type: "cancelByCloid";
+    readonly cancels: ReadonlyArray<{
+        readonly asset: number;
+        readonly cloid: string;
+    }>;
+    readonly f?: true;
+} | {
+    readonly type: "modify";
+    readonly oid: number | string;
+    readonly order: HyperliquidL1Order;
+    readonly a?: true;
+} | {
+    readonly type: "batchModify";
+    readonly modifies: ReadonlyArray<{
+        readonly oid: number | string;
+        readonly order: HyperliquidL1Order;
+    }>;
+    readonly a?: true;
+} | {
+    readonly type: "scheduleCancel";
+    readonly time?: number;
+} | {
+    readonly type: "updateLeverage";
+    readonly asset: number;
+    readonly isCross: boolean;
+    readonly leverage: number;
+} | {
+    readonly type: "updateIsolatedMargin";
+    readonly asset: number;
+    readonly isBuy: boolean;
+    readonly ntli: number;
+} | {
+    readonly type: "twapOrder";
+    readonly twap: {
+        readonly a: number;
+        readonly b: boolean;
+        readonly s: string;
+        readonly r: boolean;
+        readonly m: number;
+        readonly t: boolean;
+    };
+} | {
+    readonly type: "twapCancel";
+    readonly a: number;
+    readonly t: number;
+};
+
+// @public
+export function hyperliquidL1Document(params: HyperliquidL1Params, network: HyperliquidNetwork): string;
+
 // @public (undocumented)
-type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";
+export type HyperliquidL1Order = {
+    readonly a: number;
+    readonly b: boolean;
+    readonly p: string;
+    readonly s: string;
+    readonly r: boolean;
+    readonly t: {
+        readonly limit: {
+            readonly tif: "Gtc" | "Ioc" | "Alo" | "FrontendMarket";
+        };
+    } | {
+        readonly trigger: {
+            readonly isMarket: boolean;
+            readonly triggerPx: string;
+            readonly tpsl: "tp" | "sl";
+        };
+    };
+    readonly c?: string;
+};
+
+// @public (undocumented)
+export type HyperliquidL1Params = {
+    readonly action: HyperliquidL1Action;
+    readonly nonce: number;
+    readonly vaultAddress?: string;
+    readonly expiresAfter: number;
+};
+
+// @public (undocumented)
+export type HyperliquidNetwork = "Mainnet" | "Testnet";
+
+// @public (undocumented)
+type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge" | "payout";
 
 // @public (undocumented)
 type IntentWarning = {
     readonly kind: IntentWarningKind;
     readonly message: string;
+    readonly level?: "danger";
 };
 
 // @public
-type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension";
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move";
 
 // @public (undocumented)
 export const isCanonicalHex: (value: string) => boolean;
@@ -645,6 +792,12 @@ type SignRequest = {
     readonly network: string;
     readonly account: AccountRef;
     readonly message: Uint8Array;
+} | {
+    readonly kind: "evm.fiat24-session";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly tokenId: string;
+    readonly deadline: number;
 } | {
     readonly kind: "evm.typed-data";
     readonly network: string;

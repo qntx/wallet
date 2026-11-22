@@ -232,9 +232,10 @@ const hdPass = (
     if (
       request.kind === "evm.transaction" ||
       request.kind === "evm.personal-message" ||
+      request.kind === "evm.fiat24-session" ||
       request.kind === "evm.typed-data"
     ) {
-      return executeEvm(request, source, intentOnly);
+      return executeEvm(request, source, intentOnly, ctx.platform.now());
     }
     if (
       request.kind === "tron.transaction" ||
@@ -264,6 +265,7 @@ const importedPass = (
   const isEvm =
     request.kind === "evm.transaction" ||
     request.kind === "evm.personal-message" ||
+    request.kind === "evm.fiat24-session" ||
     request.kind === "evm.typed-data";
   const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
   const isTron =
@@ -289,9 +291,10 @@ const importedPass = (
     if (
       request.kind === "evm.transaction" ||
       request.kind === "evm.personal-message" ||
+      request.kind === "evm.fiat24-session" ||
       request.kind === "evm.typed-data"
     ) {
-      return executeEvm(request, source, intentOnly);
+      return executeEvm(request, source, intentOnly, ctx.platform.now());
     }
     if (request.kind === "solana.transaction" || request.kind === "solana.message") {
       return executeSolana(request, source, intentOnly);

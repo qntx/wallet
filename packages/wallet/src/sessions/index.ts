@@ -4,6 +4,9 @@
  * is memoized per wallet so repeated calls return the same object (stable React identity); a
  * foreign object is rejected because only a Wallet from this package holds a registered channel.
  */
+import { hyperliquidL1Document, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+
+import { integrity } from "../channel.ts";
 import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
 import type { SessionInfo, SessionSchemeId, SessionSchemes } from "../protocol/index.ts";
@@ -40,13 +43,27 @@ export type SessionsApi = {
    * Signs the scheme's document with the session key at `address` and returns the 65-byte r‖s‖v
    * signature. The kernel builds the exact document from `params` — the host never supplies one —
    * and refuses once `validUntil` has passed, when the scheme is not the record's, or the vault is
-   * locked.
+   * locked. The host then verifies what came back: it rebuilds the document the record's scope
+   * implies, recovers the signer, and answers `integrity` unless the signature is the session key's
+   * over exactly that document.
    */
   readonly sign: <K extends SessionSchemeId>(params: {
     readonly scheme: K;
     readonly address: string;
     readonly params: SessionSchemes[K]["params"];
   }) => Promise<Uint8Array>;
+};
+
+/* The document each scheme signs for `params` under `scope` — `undefined` when the scope is not
+   one the scheme admits, so a record whose scope no longer fits cannot smuggle a signature. */
+const SCHEME_DOCUMENTS: {
+  readonly [K in SessionSchemeId]: (
+    params: SessionSchemes[K]["params"],
+    scope: string,
+  ) => string | undefined;
+} = {
+  "hyperliquid-l1-agent": (params, scope) =>
+    scope === "Mainnet" || scope === "Testnet" ? hyperliquidL1Document(params, scope) : undefined,
 };
 
 function createSessionsApi(internals: WalletInternals): SessionsApi {
@@ -61,6 +78,40 @@ function createSessionsApi(internals: WalletInternals): SessionsApi {
     },
     sign: async (params) => {
       const { signature } = await internals.call("sessions.sign", params);
+      const records = await internals.call("sessions.list", null);
+      const record = records.find((r) => r.address.toLowerCase() === params.address.toLowerCase());
+      if (record === undefined) {
+        throw integrity("sessions.sign answered for an address with no session");
+      }
+      if (record.scheme !== params.scheme) {
+        throw integrity("sessions.sign answered under a different scheme");
+      }
+      const document = SCHEME_DOCUMENTS[params.scheme](params.params, record.scope);
+      if (document === undefined) {
+        throw integrity("sessions.sign answered for a scope the scheme rejects");
+      }
+      let signer: string;
+      try {
+        signer = recoverEvmSigner(
+          {
+            kind: "evm.typed-data",
+            network: "eip155:1337",
+            account: {
+              kind: "hd",
+              walletId: record.walletId,
+              groupIndex: record.groupIndex,
+              template: "evm.bip44",
+            },
+            typedData: document,
+          },
+          { signature },
+        );
+      } catch {
+        throw integrity("sessions.sign signature does not verify");
+      }
+      if (signer.toLowerCase() !== params.address.toLowerCase()) {
+        throw integrity("sessions.sign signature is not the session key's");
+      }
       return signature;
     },
   };

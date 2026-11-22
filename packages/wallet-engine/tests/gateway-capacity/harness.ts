@@ -269,6 +269,13 @@ export type World = {
   readonly inflight: () => number;
   /** Advances the virtual limiter clock `ms` into fresh windows; irrelevant when unconstrained. */
   readonly advance: (ms: number) => void;
+  /** The virtual limiter clock's reading — refusals and `advance` move it. */
+  readonly clock: () => number;
+  /**
+   * `n` trongrid node-API calls under a foreign client IP: they spend the shared global budget (12
+   * calls / 5 s) without touching this world's client share — other tenants' load.
+   */
+  readonly pressureTron: (n: number) => Promise<void>;
   readonly snapshot: () => Readings;
   /** `x-client-id` → gateway scope, seen on requests — decodes `clientId:prefix` limiter keys. */
   readonly clientScopes: Map<string, string>;
@@ -369,8 +376,16 @@ export const createWorld = async (opts: {
   readonly model: WalletModel;
   readonly networks?: ReadonlyArray<(typeof PRODUCTION_NETWORKS)[number]>;
   readonly tronAddress?: string;
+  /** `EngineOptions.rpc` — host endpoints for the cross-checks; `{}` is a gateway-only host. */
+  readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /** "off": every limiter/budget accepts and only records — raw demand, no refusals or retries. */
   readonly unconstrained?: boolean;
+  /**
+   * Let 429/503 refusals on TRON node-API routes reach the engine instead of absorbing them: the
+   * virtual clock still advances by the announced wait, but the refusal goes back so the engine's
+   * own pinned-read retry (item E) is what waits and retries.
+   */
+  readonly passthroughTron?: boolean;
 }): Promise<World> => {
   const networks = opts.networks ?? PRODUCTION_NETWORKS;
   // The limiter/budget clock is fake: a refusal advances it by the announced wait instead of
@@ -579,6 +594,11 @@ export const createWorld = async (opts: {
       for (let retry = 0; retry < 60 && (res.status === 429 || res.status === 503); retry += 1) {
         const announced = Number(res.headers.get("retry-after") ?? "60");
         nowMs += Math.max(1, announced) * 1000;
+        /* The announced wait still moves the limiter clock when the refusal is the engine's to
+           retry — the refusal goes back so pinnedTronCaller's own retry handles it. */
+        if (opts.passthroughTron === true && route === "tron") {
+          return res;
+        }
         // oxlint-disable-next-line no-await-in-loop -- bounded sequential retry
         res = await app.request(`${path}${url.search}`, reqInit);
         recordStatus(res.status);
@@ -628,7 +648,7 @@ export const createWorld = async (opts: {
     showCallsStatus: () => undefined,
     // oxlint-disable-next-line typescript/require-await -- the store seam's signature is a promise
     openStore: async () => createMemoryEngineStore(),
-    rpc: {
+    rpc: opts.rpc ?? {
       "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": [HOST_SOLANA_URL],
       "tron:728126428": [HOST_TRON_URL],
     },
@@ -672,6 +692,25 @@ export const createWorld = async (opts: {
     inflight: () => inflight,
     advance: (ms: number) => {
       nowMs += ms;
+    },
+    clock: () => nowMs,
+    pressureTron: async (n: number): Promise<void> => {
+      const headers = new Headers({
+        "content-type": "application/json",
+        "cf-connecting-ip": "198.51.100.7",
+        [CLIENT_ID_HEADER]: "00000000000000000000000000000001",
+      });
+      for (let i = 0; i < n; i += 1) {
+        // oxlint-disable-next-line no-await-in-loop -- sequential pressure, each take recorded
+        const res = await app.request("/v1/tron/tron:728126428/wallet/getnowblock", {
+          method: "POST",
+          headers,
+          body: "{}",
+        });
+        if (res.status !== 200) {
+          return; // already refused — the shared budget is where the pressure needs it
+        }
+      }
     },
     clientScopes,
     snapshot: () => {

@@ -25,7 +25,9 @@ const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
   { name: "bitcoin", budget: 60 * 1024 },
-  { name: "tron", budget: 80 * 1024 },
+  /* Measured 81364 B: hidden-text traversal in TIP-712 typed data grew the tron decoder,
+     which shares the evm permit/token-call/typed-data recognisers. */
+  { name: "tron", budget: 84 * 1024 },
 ] as const;
 
 type FamilyResult = {

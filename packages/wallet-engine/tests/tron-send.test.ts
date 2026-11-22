@@ -228,7 +228,7 @@ const ctx = (
           pinnedTronApi: () => w.api,
           independentTronApi: () => w.independent,
           independentPinnedTronApi: () => w.independent,
-          info: () => ({ genesisHash: GENESIS }),
+          info: () => ({ id: NET, genesisHash: GENESIS, testnet: true }),
         } as never,
         wallet,
         openStore: async () => Promise.resolve({} as never),

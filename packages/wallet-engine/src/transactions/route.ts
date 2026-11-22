@@ -15,6 +15,7 @@ import type { TronFeeQuote } from "../chains/tron.ts";
 import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import type { NetworkInfo } from "../networks/registry.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
@@ -496,6 +497,24 @@ export const accountAddress = (account: Readonly<Record<string, unknown>>): stri
 };
 
 export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
+
+/**
+ * The chain binding of signed bytes (a TRON reference block, a Solana recent blockhash) is the only
+ * thing keeping a transaction off the wrong chain. On a mainnet the binding needs no second source:
+ * a binding from another chain makes the signature invalid on the mainnet, so nothing of more value
+ * than the user chose can move — the build goes ahead flagged `reads-unverified`. On a testnet the
+ * same attack inverts: a binding taken from the mainnet produces a signature valid on the mainnet
+ * and moves real value, so a gateway-only testnet build is refused and a host endpoint must be
+ * configured.
+ */
+export const assertGatewayOnlyBinding = (info: NetworkInfo, binding: string): void => {
+  if (info.testnet) {
+    throw new ChainError(
+      "invalid-request",
+      `only the gateway vouches for the ${binding} on ${info.id}; on a testnet a signature over another network's ${binding} could be valid there — configure a host endpoint in EngineOptions.rpc["${info.id}"]`,
+    );
+  }
+};
 
 const TEMPLATE_FAMILY = {
   "evm.bip44": "evm",

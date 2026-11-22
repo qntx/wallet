@@ -45,7 +45,8 @@
   stays out of the vault. A session scheme ships with the worst case of a stolen key argued from
   the protocol's source (it may trade or cancel, never withdraw), a strict params validator that
   is the allow-list, time-window and TTL caps, byte-exact signing vectors from the protocol's
-  official SDK, and mutation tests that kill every guard.
+  official SDK, and mutation tests that kill every guard. The kernel budget for the
+  `hyperliquid-l1-agent` scheme is 16 384 B by owner decision of 2026-11-22.
 - The application share of the native kernel bundle stays within the budgets enforced by
   `scripts/check-kernel-budget.ts` (run by `bun run lint`); raising one needs a recorded decision.
 - An application signs only through the request pipeline — requests attributed to it with origin

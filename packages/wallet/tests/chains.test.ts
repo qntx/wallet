@@ -744,6 +744,19 @@ describe("chains(wallet)", () => {
       expect(result.kind).toBe("tron.transaction");
     });
 
+    /* A tron.transaction request must refuse a tron.message result even when the signature it
+       carries would verify as a transaction signature — the kind check fires before the
+       signature is recovered. */
+    it("refuses a tron.message result whose signature verifies as a transaction signature", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.message",
+        signature: signTronTransaction(RAW, TRON_PRIV),
+      });
+      await expect(chains(wallet).sign(tronParams("tron.transaction"))).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
     it("accepts a message signature that verifies for the imported key", async () => {
       const wallet = await tronConnect({
         kind: "tron.message",

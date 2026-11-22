@@ -1661,7 +1661,8 @@ signature took longer than one L1 slot and the fee rose): prepare the same reque
 
 When the gateway serves a TRON or Solana network, sends are refused unless the host passes its own
 endpoint for that network in `rpc` (the reference block / blockhash must be confirmed by it). Hosts
-that relied on the gateway alone must configure one, on testnets too.
+that relied on the gateway alone must configure one, on testnets too. (§33 relaxes this on
+mainnets: the refusal now applies to testnets only.)
 
 ### Hyperliquid
 
@@ -1698,3 +1699,100 @@ their `sources` entry reports zero totals. No host code change is required.
 - The first production deploy is a manual operator step (`wrangler deploy --secrets-file`); follow
   `apps/gateway/README.md` "Operator runbook — first production deploy". The deploy workflow
   refuses an automatic rollback across a Durable Object migration and alerts instead.
+
+## 33. Gateway-only TRON/Solana sends, TRON throttling, typed-data hidden text and session verification
+
+No `tests/migration/` snippet: nothing a host compiles changes shape.
+
+- **Gateway-only TRON/Solana sends on a mainnet build again** (this relaxes §31 on mainnets).
+  Hosts that added `EngineOptions.rpc` entries only to get past that refusal may keep them (they
+  still corroborate the binding and the fee reads) or drop them; without them mainnet prepares
+  carry `reads-unverified`. Testnet (Nile, Shasta, Solana devnet) sends through the gateway alone
+  are still refused; the error message now names `EngineOptions.rpc["<network>"]`.
+- **New error `TronThrottledError`** (exported from `@qntx/wallet-engine`, field `retryAfterMs`):
+  a TRON prepare whose pinned reads stay throttled beyond the transaction's validity window
+  rejects with it instead of a generic `Error("…: HTTP 503 from …")`. Treat it as retryable
+  (`instanceof TronThrottledError`, wait `retryAfterMs`).
+- **Typed data with hidden characters in a string value is blind** (`message-bytes`). With blind
+  signing off such requests are refused, as hidden-character text messages already are.
+- **`sessions(wallet).sign` may reject `integrity`** when the returned signature is not the
+  session key's over the document its params and the record's scope define. It makes one extra
+  `sessions.list` call per signature.
+- **Types**: `HyperliquidL1Action`, `HyperliquidL1Order`, `HyperliquidL1Params`,
+  `HyperliquidNetwork` are now declared in `@qntx/wallet-chains/evm`; the `@qntx/wallet/protocol`
+  and `@qntx/wallet/sessions` exports are re-exports with identical shapes, so imports keep
+  working.
+
+## 34. Fiat24 decoding and session grants
+
+Compiled snippet: `tests/migration/fiat24.ts`. Changes affect `@qntx/wallet-chains` and
+`@qntx/wallet` hosts. Nothing changes in the vault, the engine API or the engine's request policy.
+
+### Closed unions gained members
+
+An exhaustive `switch` in host code needs a case for each of these:
+
+| Union                                                                               | New members                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }`                                                                                                                                      |
+| `ChainSignResult`                                                                   | `kind: "evm.fiat24-session"` (65-byte `signature`)                                                                                                                                                                         |
+| `IntentSummary`                                                                     | `"payout"`                                                                                                                                                                                                                 |
+| `BlindReason`                                                                       | `"fiat24-function"`, `"fiat24-session-grant"`                                                                                                                                                                              |
+| `IntentWarningKind`                                                                 | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move` |
+
+A host that renders `DisplayIntent` itself should also render the new optional fields:
+
+- `DisplayIntent.fiat24` (`Fiat24Action`: exchange, payout, top-up, open-account, session-grant).
+- `AssetFlow.fiat24`. When it is set, `to` is the cash-token contract, not the recipient. Show
+  "Fiat24 account #id" or "Fiat24 payee <id>" instead.
+- `ApprovalChange.fiat24Spender`.
+- `IntentWarning.level === "danger"`. Treat it as a danger finding.
+
+### Classification changes a host may observe
+
+On Arbitrum One:
+
+- USD24, EUR24, CHF24 and CNH24 are listed tokens with 2 decimals. Their `transfer` is now `full`
+  and appears in token discovery.
+- Fiat24 calls that used to be generic opaque contract calls are now described (`partial`) with
+  Fiat24 warnings.
+- Any other call to the seven pinned Fiat24 contracts is blind (`fiat24-function`). This includes
+  account `close`, `setNickname`, `mintByWallet`, `depositByWallet`, every card-contract call, and
+  account NFT `approve` / `setApprovalForAll`. So are Fiat24 functions sent to any other address
+  or chain. With blind signing off, these now fail with `blind-signing-disabled`.
+
+On every chain:
+
+- A `personal_sign` text that begins with `I agree to access my profile.` or
+  `I agree to access my Fiat24 profile.` is blind (`fiat24-session-grant`). The official Fiat24
+  dApp's sign-in through a dApp browser therefore needs blind signing.
+- An ERC-7821 batch now carries its inner calls' warnings.
+
+### Granting a Fiat24 API session
+
+Build the grant as a structured request. Do not sign the text yourself:
+
+```ts
+import { chains } from "@qntx/wallet/chains";
+
+await chains(wallet).sign({
+  request: {
+    kind: "evm.fiat24-session",
+    network: "eip155:42161",
+    account,
+    tokenId: "123456",
+    deadline,
+  },
+  verify,
+});
+```
+
+- `deadline` is in Unix seconds. The kernel refuses with `invalid-input` unless
+  `0 < deadline − now ≤ 1200`. A prompt left open past the deadline is refused when it would sign.
+- The signed text is `"I agree to access my profile. " + keccak256(label + deadline)`, where
+  `label = "fiat24-session-v1:" + chainId + ":" + tokenId + ":" + deadline`. Send that `label` as
+  the `hash` header. `fiat24SessionMessage` from `@qntx/wallet-chains/evm` rebuilds the text.
+- Only Arbitrum One is accepted: `normalizeEvm` throws `ChainError` `unsupported` on another
+  network, and `chain.sign` reports the refusal as `invalid-input`.
+- The engine does not submit this kind yet: its dApp path refuses it. Apps keep the existing rule
+  that they sign typed data only.

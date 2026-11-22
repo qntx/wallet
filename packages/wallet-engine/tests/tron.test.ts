@@ -6,12 +6,14 @@ import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import {
   TronBroadcastError,
+  TronThrottledError,
   account,
   blockId,
   broadcastHex,
   chainParams,
   constantCall,
   headNumber,
+  pinnedTronCaller,
   resources,
   solidHead,
   transactionInfo,
@@ -786,5 +788,127 @@ describe("tronLogAddress", () => {
         expect(logAddressValid(s)).toBe(true);
       }),
     );
+  });
+});
+
+describe("pinnedTronCaller retries throttled reads", () => {
+  const throttled = (status: number, retryAfter?: string): Response =>
+    new Response("slow down", {
+      status,
+      headers: retryAfter === undefined ? {} : { "retry-after": retryAfter },
+    });
+  const rig = (
+    responses: ReadonlyArray<Response>,
+    clockV = 0,
+    until = 60_000,
+  ): {
+    calls: Array<{ url: string; headers: Record<string, string> }>;
+    sleeps: number[];
+    api: ReturnType<typeof pinnedTronCaller>;
+  } => {
+    const now = { v: clockV };
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    const sleeps: number[] = [];
+    const queue = [...responses];
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      await Promise.resolve();
+      calls.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string> });
+      const next = queue.shift();
+      if (next === undefined) {
+        throw new TypeError("no answer queued");
+      }
+      return next;
+    };
+    const api = pinnedTronCaller(["https://a.test", "https://b.test"], fetchFn, {
+      until: () => until,
+      now: () => now.v,
+      sleep: async (ms) => {
+        await Promise.resolve();
+        sleeps.push(ms);
+        now.v += ms;
+      },
+    });
+    return { calls, sleeps, api };
+  };
+
+  it("waits Retry-After on a pinned 429 then answers from the same pin", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(429, "2"), Response.json({ ok: 2 })]);
+    await expect(r.api.post("/wallet/getnowblock", {})).resolves.toStrictEqual({ ok: 1 });
+    await expect(r.api.post("/wallet/getnowblock", {})).resolves.toStrictEqual({ ok: 2 });
+    expect(r.sleeps).toStrictEqual([2000]);
+    expect(r.calls.map((c) => c.url)).toStrictEqual([
+      "https://a.test/wallet/getnowblock",
+      "https://a.test/wallet/getnowblock",
+      "https://a.test/wallet/getnowblock",
+    ]);
+    expect(r.calls.map((c) => c.headers["x-gateway-provider"])).toStrictEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("retries a pinned 503 the same way and defaults missing Retry-After to 1 s", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(503), Response.json({ ok: 2 })]);
+    await r.api.post("/wallet/getnowblock", {});
+    await expect(r.api.post("/wallet/getnowblock", {})).resolves.toStrictEqual({ ok: 2 });
+    expect(r.sleeps).toStrictEqual([1000]);
+  });
+
+  it("clamps Retry-After: 0 to the 250 ms floor", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(429, "0"), Response.json({ ok: 2 })]);
+    await r.api.post("/wallet/getnowblock", {});
+    await r.api.post("/wallet/getnowblock", {});
+    expect(r.sleeps).toStrictEqual([250]);
+  });
+
+  it("throws TronThrottledError with the backoff when the deadline leaves no room", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(429, "2")], 0, 1000);
+    await r.api.post("/wallet/getnowblock", {});
+    const attempt = r.api.post("/wallet/getnowblock", {});
+    await expect(attempt).rejects.toThrow(TronThrottledError);
+    const err = await attempt.catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(TronThrottledError);
+    expect((err as TronThrottledError).retryAfterMs).toBe(2000);
+    expect(r.sleeps).toStrictEqual([]);
+  });
+
+  it("never retries a broadcast: one call, the original error", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(429, "1")]);
+    await r.api.post("/wallet/getnowblock", {});
+    await expect(r.api.post("/wallet/broadcasthex", {})).rejects.toThrow(
+      "/wallet/broadcasthex: HTTP 429",
+    );
+    expect(r.sleeps).toStrictEqual([]);
+    expect(r.calls).toHaveLength(2);
+  });
+
+  it("does not retry a 500", async () => {
+    const r = rig([Response.json({ ok: 1 }), throttled(500)]);
+    await r.api.post("/wallet/getnowblock", {});
+    await expect(r.api.post("/wallet/getnowblock", {})).rejects.toThrow("HTTP 500");
+    expect(r.sleeps).toStrictEqual([]);
+  });
+
+  it("propagates the original error when no retry option is given", async () => {
+    const calls: string[] = [];
+    const api = pinnedTronCaller(["https://a.test"], async (input) => {
+      await Promise.resolve();
+      calls.push(String(input));
+      return throttled(429, "1");
+    });
+    await expect(api.post("/wallet/getnowblock", {})).rejects.toThrow("HTTP 429");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("re-runs the failover round when the unpinned attempt's last error is a 429", async () => {
+    const r = rig([throttled(429, "1"), throttled(429, "1"), Response.json({ ok: 9 })]);
+    await expect(r.api.post("/wallet/getnowblock", {})).resolves.toStrictEqual({ ok: 9 });
+    expect(r.sleeps).toStrictEqual([1000]);
+    expect(r.calls.map((c) => c.url)).toStrictEqual([
+      "https://a.test/wallet/getnowblock",
+      "https://b.test/wallet/getnowblock",
+      "https://a.test/wallet/getnowblock",
+    ]);
   });
 });

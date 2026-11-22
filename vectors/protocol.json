@@ -1160,6 +1160,38 @@
       }
     },
     {
+      "name": "request-chain.sign-fiat24-session",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.fiat24-session",
+            "network": "eip155:42161",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "tokenId": "123456",
+            "deadline": 1795278000
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "request-spark.claimStaticDeposit",
       "check": "request",
       "message": {
@@ -1187,6 +1219,20 @@
                 "$bytes": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef0101010101010101010101010101010101010101010101010101010101010101"
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "name": "response-ok-chain.sign-fiat24-session",
+      "check": "response:chain.sign",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "ok": {
+          "kind": "evm.fiat24-session",
+          "signature": {
+            "$bytes": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef1b"
           }
         }
       }
@@ -2787,6 +2833,134 @@
         "v": 3,
         "event": "ceremony",
         "active": "yes"
+      }
+    },
+    {
+      "name": "params-fiat24-session-tokenid-zero",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.fiat24-session",
+            "network": "eip155:42161",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "tokenId": "0",
+            "deadline": 1795278000
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "params-fiat24-session-tokenid-leading-zero",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.fiat24-session",
+            "network": "eip155:42161",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "tokenId": "01",
+            "deadline": 1795278000
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "params-fiat24-session-tokenid-79-digits",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.fiat24-session",
+            "network": "eip155:42161",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "tokenId": "1000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "deadline": 1795278000
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "params-fiat24-session-deadline-fraction",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 55,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.fiat24-session",
+            "network": "eip155:42161",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "tokenId": "123456",
+            "deadline": 1795278000.5
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
       }
     }
   ]

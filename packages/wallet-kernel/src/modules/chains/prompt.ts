@@ -22,6 +22,7 @@ import type {
   TokenAuthorization,
   ChainFamily,
   DisplayIntent,
+  Fiat24Action,
   HyperliquidAction,
   IntentSummary,
   IntentWarningKind,
@@ -57,6 +58,7 @@ export type PromptIntent = Pick<
   | "minimumReceived"
   | "bridge"
   | "hyperliquidDeposit"
+  | "fiat24"
   | "contract"
   | "calls"
   | "blind"
@@ -258,6 +260,22 @@ type Catalog = {
   readonly signatureDeadline: (date: string) => string;
   readonly fcAddKey: (key: string, fid: string) => string;
   readonly fcKeyRequest: (fid: string, key: string) => string;
+  readonly fiat24SendToAccount: (amount: string, account: string) => string;
+  readonly fiat24Spender: Readonly<Record<"card" | "deposit", string>>;
+  readonly fiat24Function: string;
+  readonly fiat24ReceiveAtRate: (symbol: string) => string;
+  readonly fiat24ExactOut: (amount: string, pay: string) => string;
+  readonly fiat24Payout: (amount: string) => string;
+  readonly fiat24PayoutPayee: (payee: string) => string;
+  readonly fiat24PayoutPurpose: (purposeId: string) => string;
+  readonly fiat24PayoutReference: (ref: string) => string;
+  readonly fiat24OpenAccount: (account: string) => string;
+  readonly fiat24Grant: string;
+  readonly fiat24SessionTitle: string;
+  readonly fiat24SessionAccount: (tokenId: string) => string;
+  readonly fiat24SessionExpires: (date: string) => string;
+  readonly fiat24SessionPower: string;
+  readonly fiat24SessionSigns: (message: string) => string;
 };
 
 const zh: Catalog = {
@@ -271,6 +289,7 @@ const zh: Catalog = {
     batch: "确认批量交易",
     stake: "确认质押",
     bridge: "确认跨链",
+    payout: "确认出金",
   },
   blindTitle: "确认盲签",
   blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
@@ -369,6 +388,19 @@ const zh: Catalog = {
     "delegation-replaced": (message) => message,
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
+    "fiat24-internal-account": (message) =>
+      `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+    "fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
+    "fiat24-unlimited-approval": (role) =>
+      `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
+    "fiat24-issuer-rate": () => "交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度",
+    "fiat24-exact-out-unbounded": () => "你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限",
+    "fiat24-payee-offchain": () =>
+      "Fiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金",
+    "fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
+    "fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
+    "fiat24-account-move": (message) =>
+      `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -530,6 +562,26 @@ const zh: Catalog = {
   fcAddKey: (key, fid) =>
     `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
   fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`,
+  fiat24SendToAccount: (amount, account) =>
+    `发送 ${amount} 到 Fiat24 账户 #${account}（收款人是交易执行时该账户的持有者）`,
+  fiat24Spender: { card: "（Fiat24 卡）", deposit: "（Fiat24 充值与兑换）" },
+  fiat24Function:
+    "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
+  fiat24ReceiveAtRate: (symbol) => `按交易执行时 Fiat24 设定的汇率收到 ${symbol}——没有最低到手额`,
+  fiat24ExactOut: (amount, pay) => `收到 ${amount}；按 Fiat24 设定的汇率支付 ${pay}`,
+  fiat24Payout: (amount) => `以银行转账出金 ${amount} 给 Fiat24 收款人`,
+  fiat24PayoutPayee: (payee) => `Fiat24 收款人 ${payee}`,
+  fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
+  fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
+  fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
+  fiat24Grant:
+    "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
+  fiat24SessionTitle: "授权访问 Fiat24 账户",
+  fiat24SessionAccount: (tokenId) => `Fiat24 账户 #${tokenId}`,
+  fiat24SessionExpires: (date) => `${date}（UTC）过期`,
+  fiat24SessionPower:
+    "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
+  fiat24SessionSigns: (message) => `签名消息：${message}`,
 };
 
 const en: Catalog = {
@@ -543,6 +595,7 @@ const en: Catalog = {
     batch: "Confirm batch",
     stake: "Confirm staking",
     bridge: "Confirm bridge",
+    payout: "Confirm payout",
   },
   blindTitle: "Confirm blind signing",
   blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
@@ -648,6 +701,24 @@ const en: Catalog = {
     "delegation-replaced": (message) => message,
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
+    "fiat24-internal-account": (message) =>
+      `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+    "fiat24-card-pull": () =>
+      "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
+    "fiat24-unlimited-approval": (role) =>
+      `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up and exchange"} contract take your entire balance of this token`,
+    "fiat24-issuer-rate": () =>
+      "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
+    "fiat24-exact-out-unbounded": () =>
+      "What you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
+    "fiat24-payee-offchain": () =>
+      "Fiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
+    "fiat24-swap-quote": () =>
+      "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
+    "fiat24-account-link": () =>
+      "Opening the account permanently links this address to the identity you verify with Fiat24",
+    "fiat24-account-move": (message) =>
+      `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -822,6 +893,27 @@ const en: Catalog = {
   fcAddKey: (key, fid) =>
     `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
   fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`,
+  fiat24SendToAccount: (amount, account) =>
+    `Send ${amount} to Fiat24 account #${account} (whoever holds it when the transaction runs)`,
+  fiat24Spender: { card: " (Fiat24 card)", deposit: " (Fiat24 top-up and exchange)" },
+  fiat24Function:
+    "The wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network",
+  fiat24ReceiveAtRate: (symbol) =>
+    `Receive ${symbol} at the rate Fiat24 sets when the transaction runs — no minimum`,
+  fiat24ExactOut: (amount, pay) => `Receive ${amount}; pay ${pay} at the rate Fiat24 sets`,
+  fiat24Payout: (amount) => `Pay out ${amount} by bank transfer to a Fiat24 payee`,
+  fiat24PayoutPayee: (payee) => `Fiat24 payee ${payee}`,
+  fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
+  fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
+  fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
+  fiat24Grant:
+    "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
+  fiat24SessionTitle: "Allow Fiat24 account access",
+  fiat24SessionAccount: (tokenId) => `Fiat24 account #${tokenId}`,
+  fiat24SessionExpires: (date) => `Expires ${date} (UTC)`,
+  fiat24SessionPower:
+    "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
+  fiat24SessionSigns: (message) => `Signs: ${message}`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -907,7 +999,9 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
     change.expiration === undefined || change.expiration === 0
       ? ""
       : catalog.until(utcDate(change.expiration));
-  return `${line}${via}${until}`;
+  const fiat24 =
+    change.fiat24Spender === undefined ? "" : catalog.fiat24Spender[change.fiat24Spender];
+  return `${line}${via}${until}${fiat24}`;
 }
 
 /**
@@ -987,6 +1081,9 @@ function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<st
     if (blind === "token-function") {
       lines.push(catalog.tokenFunction(contract.symbol ?? contract.address, contract.address));
     }
+    if (blind === "fiat24-function") {
+      lines.push(catalog.fiat24Function);
+    }
     if (blind === "account-code") {
       lines.push(catalog.accountCode);
     }
@@ -1050,13 +1147,22 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
     ...delegation,
     ...contractLines(catalog, intent),
     ...intent.outflows.map((flow) =>
-      flow.tokenAccount === undefined
-        ? flow.burn === true && intent.family === "solana"
-          ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
-          : flow.burn === true
-            ? catalog.burn(formatAmount(catalog, flow.amount))
-            : catalog.send(formatAmount(catalog, flow.amount), flow.to)
-        : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to),
+      flow.fiat24 === undefined
+        ? flow.tokenAccount === undefined
+          ? flow.burn === true && intent.family === "solana"
+            ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to)
+            : flow.burn === true
+              ? catalog.burn(formatAmount(catalog, flow.amount))
+              : catalog.send(formatAmount(catalog, flow.amount), flow.to)
+          : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)
+        : "account" in flow.fiat24
+          ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account)
+          : catalog.fiat24Payout(formatAmount(catalog, flow.amount)),
+    ),
+    /* Batch inner calls carry their own Fiat24 action — render each one's lines, not only the
+       batch intent's. */
+    ...(intent.calls ?? [intent]).flatMap((call) =>
+      call.fiat24 === undefined ? [] : fiat24Lines(catalog, call.fiat24),
     ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
@@ -1154,6 +1260,37 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
     ]),
   };
 }
+
+/** The lines a recognized Fiat24 action adds to a call's effects. */
+const fiat24Lines = (catalog: Catalog, action: Fiat24Action): ReadonlyArray<string> => {
+  if (action.kind === "exchange") {
+    return action.side === "exact-in"
+      ? [catalog.fiat24ReceiveAtRate(action.receive.symbol)]
+      : [catalog.fiat24ExactOut(formatAmount(catalog, action.receive), action.pay.symbol)];
+  }
+  /* The payout's requester-supplied strings only display through field(), requester-marked —
+     the payee id and the bank-transfer reference are text, never a person. */
+  if (action.kind === "payout") {
+    return [
+      quoted(catalog.fiat24PayoutPayee(field(action.contactId))),
+      ...(action.purposeId === undefined
+        ? []
+        : [quoted(catalog.fiat24PayoutPurpose(field(action.purposeId)))]),
+      ...(action.ref === undefined
+        ? []
+        : [quoted(catalog.fiat24PayoutReference(field(action.ref)))]),
+    ];
+  }
+  /* A top-up receives the cash token at the issuer's rate — the same fact an exact-in swap
+     states; opening an account links the address to the verified identity. */
+  if (action.kind === "top-up") {
+    return [catalog.fiat24ReceiveAtRate(action.receive.symbol)];
+  }
+  if (action.kind === "open-account") {
+    return [catalog.fiat24OpenAccount(action.account)];
+  }
+  return [];
+};
 
 /** Every decoder warning line, in the order the decoder raised them. */
 const warningLines = (
@@ -1257,6 +1394,7 @@ function safeLines(catalog: Catalog, safe: SafeTransaction): ReadonlyArray<strin
     ...safe.calls.flatMap((call) => [
       ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
       ...effectLines(catalog, call),
+      ...warningLines(catalog, call.warnings),
     ]),
     ...(safe.refund === undefined
       ? []
@@ -1547,10 +1685,14 @@ function typedDataLines(
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
   const { name, chainId, verifyingContract } = message.domain;
+  /* A document blind because a string leaf carries hidden characters gets the same hazard line
+     a hazardous text message does — ahead of every family branch. */
+  const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
   if (message.hyperliquid !== undefined) {
     /* The domain's chain id is only the wallet's signing chain; the environment the action
        targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
     return [
+      ...hazard,
       catalog.hlChain[message.hyperliquid.chain],
       ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
     ];
@@ -1558,7 +1700,7 @@ function typedDataLines(
   /* A Polymarket document is its own description — before the generic branches, because a
      deposit-wallet batch also carries approvals and outflows. */
   if (message.polymarket !== undefined) {
-    return polymarketLines(catalog, intent, message.polymarket);
+    return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
   }
   /* For TRON the domain chainId is the network's CAIP-2 reference — already checked against
      `intent.network` at normalize — so the network line is the network itself, not eip155. */
@@ -1569,6 +1711,7 @@ function typedDataLines(
         ? intent.network
         : `eip155:${chainId}`;
   return [
+    ...hazard,
     ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
     ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),
     ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
@@ -1607,6 +1750,21 @@ function messagePrompt(
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }
+  if (message.kind === "text" && intent.fiat24?.kind === "session-grant") {
+    /* The wallet built this grant from structured fields, so the prompt describes the session
+       it opens — network, account, expiry and the powers it hands to the signature's holder. */
+    const grant = intent.fiat24;
+    return {
+      title: catalog.fiat24SessionTitle,
+      description: joinLines([
+        catalog.networkLine(networkLabel(catalog, intent.network ?? "")),
+        catalog.fiat24SessionAccount(grant.account),
+        catalog.fiat24SessionExpires(utcDateTime(grant.deadline)),
+        catalog.fiat24SessionPower,
+        catalog.fiat24SessionSigns(message.text),
+      ]),
+    };
+  }
   if (intent.blind === undefined && message.signIn?.status === "valid") {
     return {
       title: catalog.signInTitle,
@@ -1628,9 +1786,11 @@ function messagePrompt(
         ? message.signIn === undefined
           ? []
           : signInLines(catalog, message.signIn)
-        : hazard === undefined
-          ? []
-          : [catalog.textHazard[hazard]]),
+        : intent.blind === "fiat24-session-grant"
+          ? [catalog.fiat24Grant, ...(hazard === undefined ? [] : [catalog.textHazard[hazard]])]
+          : hazard === undefined
+            ? []
+            : [catalog.textHazard[hazard]]),
       ...(digest === undefined ? [] : [catalog.bytesData(digest)]),
       ...(digest !== undefined && !isPlainText(message.text)
         ? []

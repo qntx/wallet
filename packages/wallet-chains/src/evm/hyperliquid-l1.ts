@@ -14,13 +14,93 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import type {
-  HyperliquidL1Action,
-  HyperliquidL1Order,
-  HyperliquidNetwork,
-} from "@qntx/wallet/protocol";
-
 import { concat, packArray, packBool, packInt, packMap, packStr } from "./msgpack.ts";
+
+export type HyperliquidNetwork = "Mainnet" | "Testnet";
+
+export type HyperliquidL1Order = {
+  readonly a: number;
+  readonly b: boolean;
+  readonly p: string;
+  readonly s: string;
+  readonly r: boolean;
+  readonly t:
+    | { readonly limit: { readonly tif: "Gtc" | "Ioc" | "Alo" | "FrontendMarket" } }
+    | {
+        readonly trigger: {
+          readonly isMarket: boolean;
+          readonly triggerPx: string;
+          readonly tpsl: "tp" | "sl";
+        };
+      };
+  readonly c?: string;
+};
+
+/** The ten allow-listed L1 actions (research H2-T), in the table's order. */
+export type HyperliquidL1Action =
+  | {
+      readonly type: "order";
+      readonly orders: ReadonlyArray<HyperliquidL1Order>;
+      readonly grouping: "na" | "normalTpsl" | "positionTpsl";
+      readonly builder?: { readonly b: string; readonly f: number };
+    }
+  | {
+      readonly type: "cancel";
+      readonly cancels: ReadonlyArray<{ readonly a: number; readonly o: number }>;
+      readonly f?: true;
+    }
+  | {
+      readonly type: "cancelByCloid";
+      readonly cancels: ReadonlyArray<{ readonly asset: number; readonly cloid: string }>;
+      readonly f?: true;
+    }
+  | {
+      readonly type: "modify";
+      readonly oid: number | string;
+      readonly order: HyperliquidL1Order;
+      readonly a?: true;
+    }
+  | {
+      readonly type: "batchModify";
+      readonly modifies: ReadonlyArray<{
+        readonly oid: number | string;
+        readonly order: HyperliquidL1Order;
+      }>;
+      readonly a?: true;
+    }
+  | { readonly type: "scheduleCancel"; readonly time?: number }
+  | {
+      readonly type: "updateLeverage";
+      readonly asset: number;
+      readonly isCross: boolean;
+      readonly leverage: number;
+    }
+  | {
+      readonly type: "updateIsolatedMargin";
+      readonly asset: number;
+      readonly isBuy: boolean;
+      readonly ntli: number;
+    }
+  | {
+      readonly type: "twapOrder";
+      readonly twap: {
+        readonly a: number;
+        readonly b: boolean;
+        readonly s: string;
+        readonly r: boolean;
+        readonly m: number;
+        readonly t: boolean;
+      };
+    }
+  | { readonly type: "twapCancel"; readonly a: number; readonly t: number };
+
+export type HyperliquidL1Params = {
+  readonly action: HyperliquidL1Action;
+  readonly nonce: number;
+  readonly vaultAddress?: string;
+  /** Wall-clock ms after which Hyperliquid rejects the action — at most 60 s after signing. */
+  readonly expiresAfter: number;
+};
 
 type Entry = readonly [string, Uint8Array];
 
@@ -257,4 +337,20 @@ export function phantomAgentTypedData(
       connectionId: `0x${bytesToHex(connectionId)}`,
     },
   });
+}
+
+/** The phantom-agent typed-data JSON an L1 `params` signs, shared by the kernel and the host. */
+export function hyperliquidL1Document(
+  params: HyperliquidL1Params,
+  network: HyperliquidNetwork,
+): string {
+  return phantomAgentTypedData(
+    l1ConnectionId({
+      action: params.action,
+      nonce: params.nonce,
+      ...(params.vaultAddress === undefined ? {} : { vaultAddress: params.vaultAddress }),
+      expiresAfter: params.expiresAfter,
+    }),
+    network,
+  );
 }

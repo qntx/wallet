@@ -4,11 +4,11 @@
  * prompt, the verification prompt gates the sign pass, the session is re-required after it, and a
  * plain message signs while blind signing stays off.
  */
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AccountRef } from "@qntx/wallet-chains";
-import { normalizeEvm } from "@qntx/wallet-chains/evm";
+import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import type { RecordStore } from "../src/vault/store.ts";
@@ -297,4 +297,189 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
       description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x00000000000000000000000000000000DeaDBeef, function 0xdeadbeef\nSend 0.000000000000000001 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.0000315 ETH`,
     });
   });
+});
+
+const bytesField = (value: ProtocolValue, key: string): Uint8Array => {
+  const v = field(value, key);
+  if (!(v instanceof Uint8Array)) {
+    throw new TypeError(`${key} is not bytes`);
+  }
+  return v;
+};
+
+/* The Fiat24 session grant — vectors/api/session.json in @qntx/fiat24 (cast-generated, anvil
+   key 0): tokenId 123456, deadline 1795278000, the label/digest/message scheme of SPEC §9.2. */
+const FIAT24_ANVIL_KEY = hexToBytes(
+  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+);
+const FIAT24_ANVIL_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const FIAT24_DEADLINE = 1795278000;
+const FIAT24_MESSAGE =
+  "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+const FIAT24_SIGNATURE =
+  "09410c3f5d15d8022f6baa8e556eeeee446164f864e33c9e6ff30fc63d7c45996719e723721bef79e3daebade7979538306b14039290d25338f19b74fe8cb0031c";
+
+const fiat24Request = (account: AccountRef) =>
+  normalizeEvm({
+    kind: "evm.fiat24-session",
+    network: "eip155:42161",
+    account,
+    tokenId: "123456",
+    deadline: FIAT24_DEADLINE,
+  });
+
+/** A vault with the anvil key imported as an EVM key; `left` seconds remain at the wall clock. */
+const fiat24Setup = async (h: Harness): Promise<{ session: string; account: AccountRef }> => {
+  const { session } = await setup(h);
+  const res = ok(
+    await h.call(
+      "keys.import",
+      { family: "evm", secret: Uint8Array.from(FIAT24_ANVIL_KEY) },
+      session,
+    ),
+  );
+  return {
+    session,
+    account: { kind: "imported", keyId: str(res, "keyId"), family: "evm" },
+  };
+};
+
+describe("chain.sign evm.fiat24-session", () => {
+  it("signs the grant message and shows the session prompt", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({
+      keystore: fake.keystore,
+      start: (FIAT24_DEADLINE - 600) * 1000,
+    });
+    const { session, account } = await fiat24Setup(h);
+    const request = fiat24Request(account);
+    const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+    expect(errCode(response)).toBeUndefined();
+    const res = ok(response);
+    expect(str(res, "kind")).toBe("evm.fiat24-session");
+    const signature = bytesField(res, "signature");
+    expect(Buffer.from(signature).toString("hex")).toBe(FIAT24_SIGNATURE);
+    expect(recoverEvmSigner(request, { signature })).toBe(FIAT24_ANVIL_ADDRESS.toLowerCase());
+    expect(opens(fake.calls).at(-1)).toStrictEqual({
+      title: "Allow Fiat24 account access",
+      description:
+        `Network: Arbitrum One\n` +
+        `Fiat24 account #123456\n` +
+        `Expires 2026-11-21 16:20 (UTC)\n` +
+        "Until then, anyone holding this signature can read your Fiat24 profile and contact data, " +
+        "view your card details, create and change cards and payees, and change your email — " +
+        "the channel for card one-time passwords\n" +
+        `Signs: ${FIAT24_MESSAGE}`,
+    });
+  });
+
+  it.each([
+    { left: 1, code: undefined },
+    { left: 1200, code: undefined },
+    { left: 0, code: "invalid-input" },
+    { left: 1201, code: "invalid-input" },
+    { left: -5, code: "invalid-input" },
+  ])("deadline window edge left=$left -> $code", async ({ left, code }) => {
+    const h = createHarness({
+      keystore: fakeKeystore().keystore,
+      start: (FIAT24_DEADLINE - left) * 1000,
+    });
+    const { session, account } = await fiat24Setup(h);
+    const response = await h.call(
+      "chain.sign",
+      { request: fiat24Request(account), verify: HARDWARE },
+      session,
+    );
+    expect(errCode(response)).toBe(code);
+  });
+
+  it("refuses on the sign pass when the prompt outlived the window", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({
+      keystore: fake.keystore,
+      start: (FIAT24_DEADLINE - 600) * 1000,
+    });
+    const { session, account } = await fiat24Setup(h);
+    const release = fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      fake.watchOpen(resolve);
+    });
+    const pending = h.call(
+      "chain.sign",
+      { request: fiat24Request(account), verify: HARDWARE },
+      session,
+    );
+    await prompted;
+    h.advanceWall(600_001);
+    release();
+    const response = await pending;
+    expect(errCode(response)).toBe("invalid-input");
+    expect("ok" in response).toBe(false);
+  });
+
+  const RAW_GRANTS = [
+    "I agree to access my profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+    "I agree to access my Fiat24 profile. 0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82",
+  ];
+
+  it.each(RAW_GRANTS)(
+    "a raw grant text is refused until blind signing is enabled: %s",
+    async (text) => {
+      const fake = fakeKeystore();
+      const h = createHarness({ keystore: fake.keystore });
+      const { session, account } = await fiat24Setup(h);
+      const request = normalizeEvm({
+        kind: "evm.personal-message",
+        network: "eip155:42161",
+        account,
+        message: utf8ToBytes(text),
+      });
+      const refused = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(refused)).toBe("blind-signing-disabled");
+      ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
+      const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(response)).toBeUndefined();
+      const prompt = opens(fake.calls).at(-1);
+      expect(prompt?.title).toBe("Confirm blind signing");
+      expect(prompt?.description).toContain(
+        "This is a Fiat24 account access grant: until it expires, anyone holding the signature " +
+          "can read your profile and card details and change cards, payees and your email. " +
+          "The wallet signs Fiat24 grants only when it builds them itself.",
+      );
+      expect(prompt?.description).toContain(text);
+    },
+  );
+
+  it.each([
+    ["a trailing CRLF", `${RAW_GRANTS[0]}\r\n`, [RAW_GRANTS[0]]],
+    [
+      "a trailing bidi override",
+      `${RAW_GRANTS[0]}\u202E`,
+      ["This text contains hidden or reordering characters", `${RAW_GRANTS[0]}�`],
+    ],
+  ] as const)(
+    "a raw grant with %s is refused until blind signing is enabled",
+    async (_name, text, shown) => {
+      const fake = fakeKeystore();
+      const h = createHarness({ keystore: fake.keystore });
+      const { session, account } = await fiat24Setup(h);
+      const request = normalizeEvm({
+        kind: "evm.personal-message",
+        network: "eip155:42161",
+        account,
+        message: utf8ToBytes(text),
+      });
+      const refused = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(refused)).toBe("blind-signing-disabled");
+      ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
+      const response = await h.call("chain.sign", { request, verify: HARDWARE }, session);
+      expect(errCode(response)).toBeUndefined();
+      const prompt = opens(fake.calls).at(-1);
+      expect(prompt?.title).toBe("Confirm blind signing");
+      expect(prompt?.description).toContain("This is a Fiat24 account access grant:");
+      for (const line of shown) {
+        expect(prompt?.description).toContain(line);
+      }
+    },
+  );
 });

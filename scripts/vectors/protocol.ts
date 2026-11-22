@@ -720,6 +720,25 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "chain.sign-fiat24-session",
+    message: {
+      v: 3,
+      id: 55,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.fiat24-session",
+          network: "eip155:42161",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          tokenId: "123456",
+          deadline: 1795278000,
+        },
+        verify: passkeyFactor,
+      },
+    },
+  },
+  {
     name: "spark.claimStaticDeposit",
     message: {
       v: 3,
@@ -750,6 +769,15 @@ const accept = [
     check: "request",
     message,
   })),
+  {
+    name: "response-ok-chain.sign-fiat24-session",
+    check: "response:chain.sign",
+    message: {
+      v: 3,
+      id: 55,
+      ok: { kind: "evm.fiat24-session", signature: $b(`${SIG}1b`) },
+    },
+  },
   {
     name: "response-ok-status",
     check: "response:status",
@@ -1354,6 +1382,86 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "event-ceremony-active-not-boolean",
     check: "event",
     message: { v: 3, event: "ceremony", active: "yes" },
+  },
+  {
+    name: "params-fiat24-session-tokenid-zero",
+    check: "request",
+    message: {
+      v: 3,
+      id: 55,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.fiat24-session",
+          network: "eip155:42161",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          tokenId: "0",
+          deadline: 1795278000,
+        },
+        verify: passkeyFactor,
+      },
+    },
+  },
+  {
+    name: "params-fiat24-session-tokenid-leading-zero",
+    check: "request",
+    message: {
+      v: 3,
+      id: 55,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.fiat24-session",
+          network: "eip155:42161",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          tokenId: "01",
+          deadline: 1795278000,
+        },
+        verify: passkeyFactor,
+      },
+    },
+  },
+  {
+    name: "params-fiat24-session-tokenid-79-digits",
+    check: "request",
+    message: {
+      v: 3,
+      id: 55,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.fiat24-session",
+          network: "eip155:42161",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          tokenId: `1${"0".repeat(78)}`,
+          deadline: 1795278000,
+        },
+        verify: passkeyFactor,
+      },
+    },
+  },
+  {
+    name: "params-fiat24-session-deadline-fraction",
+    check: "request",
+    message: {
+      v: 3,
+      id: 55,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.fiat24-session",
+          network: "eip155:42161",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          tokenId: "123456",
+          deadline: 1795278000.5,
+        },
+        verify: passkeyFactor,
+      },
+    },
   },
 ];
 

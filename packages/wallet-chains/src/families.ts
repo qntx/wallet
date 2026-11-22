@@ -15,7 +15,7 @@ import type { BlindReason } from "./index.ts";
 import type { PROGRAM_IDS } from "./solana/ids.ts";
 
 export type FamilyClaim =
-  | { readonly surface: "evm.call"; readonly callee: "token-table" }
+  | { readonly surface: "evm.call"; readonly callee: "token-table" | "fiat24" }
   | { readonly surface: "tron.call"; readonly callee: "token-table" }
   | { readonly surface: "evm.typed-data"; readonly primaryType: RegExp }
   | {
@@ -38,6 +38,8 @@ export type FamilyClaim =
       readonly surface: "tron.typed-data";
       readonly verifyingContract: "token-table" | "permit2";
     }
+  /* A personal message whose text opens with one of the protocol's exact grant sentences. */
+  | { readonly surface: "evm.personal-message"; readonly prefixes: ReadonlyArray<string> }
   | { readonly surface: "solana.instruction"; readonly program: keyof typeof PROGRAM_IDS };
 
 export type RecognisedFamily = {
@@ -80,6 +82,27 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     family: "Polymarket deposit wallet",
     claim: { surface: "evm.typed-data", domainName: "DepositWallet" },
     nearMiss: "typed-data-variant",
+  },
+  /* An undecoded call into a pinned Fiat24 contract, or a Fiat24-specific selector sent
+     anywhere else — the claim covers wrong chains, implementations and lookalikes (the ten
+     selectors are collision-free in the 4byte signature database). */
+  {
+    family: "Fiat24",
+    claim: { surface: "evm.call", callee: "fiat24" },
+    nearMiss: "fiat24-function",
+  },
+  /* A Fiat24 account access grant signed verbatim — the wallet grants sessions only through its
+     own structured request, so a raw grant text is the family's blind, not a message someone
+     happened to send. The wording is the API's "I agree to access my profile." followed by the
+     digest (integration guide part-2-api-reference, Secured APIs); the official dApp also sends
+     an "I agree to access my Fiat24 profile." variant. */
+  {
+    family: "Fiat24 session grant",
+    claim: {
+      surface: "evm.personal-message",
+      prefixes: ["I agree to access my profile.", "I agree to access my Fiat24 profile."],
+    },
+    nearMiss: "fiat24-session-grant",
   },
   /* ERC-20/721/1155 transfer, approve and setApprovalForAll selectors to a listed token. */
   {

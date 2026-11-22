@@ -78,6 +78,7 @@ const ctx: RouteContext = {
       pinnedTronApi: () => api,
       independentTronApi: () => ({ kind: "not-needed" }),
       independentPinnedTronApi: () => ({ kind: "not-needed" }),
+      info: () => ({ id: NET, genesisHash: "ab".repeat(32), testnet: true }),
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),

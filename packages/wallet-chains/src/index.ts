@@ -85,6 +85,15 @@ export type SignRequest =
       readonly account: AccountRef;
       readonly message: Uint8Array;
     }
+  /* A Fiat24 session grant the wallet builds itself — the signed text is derived from these
+     fields, never supplied. `tokenId` decimal; `deadline` Unix seconds. */
+  | {
+      readonly kind: "evm.fiat24-session";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly tokenId: string;
+      readonly deadline: number;
+    }
   | {
       readonly kind: "evm.typed-data";
       readonly network: string;
@@ -162,7 +171,8 @@ export type Verifiability = "full" | "partial" | "opaque";
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
   // message content that is not readable text: non-UTF-8 bytes, or text with a hazard —
-  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering
+  // digest-length (32 bytes), hidden characters, or an encoded-bytes rendering; also a
+  // typed-data document with a hidden character in a string value
   | "message-bytes"
   // unclaimed typed data carrying a hash or raw-bytes leaf the signature does not name
   | "typed-data-commitment"
@@ -190,7 +200,13 @@ export type BlindReason =
   | "tron-permission-update"
   // a call to a chain's CCTP TokenMessengerV2 that is not a fully described Hyperliquid
   // deposit — an unrecognised burn or hook could send the minted USDC anywhere
-  | "cctp-destination";
+  | "cctp-destination"
+  // an undecoded call of a Fiat24 contract, or a Fiat24-specific selector sent to any
+  // other contract or network
+  | "fiat24-function"
+  // a Fiat24 account access grant presented as a raw personal message — the wallet signs
+  // grants only from the structured request it builds itself
+  | "fiat24-session-grant";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -204,7 +220,8 @@ export type IntentSummary =
   | "authorization"
   | "batch"
   | "stake"
-  | "bridge";
+  | "bridge"
+  | "payout";
 
 export type AssetAmount = {
   readonly asset: string;
@@ -229,6 +246,12 @@ export type AssetFlow = {
    * SPL account holds, `amount.asset` is that account and the amount is in its base units.
    */
   readonly tokenAccount?: string;
+  /**
+   * The Fiat24 ledger destination the call names when `to` is a cash-token contract: `account` —
+   * the ERC-721 id whose holder when the transaction runs receives the funds; `payee` — the payee
+   * id whose bank account Fiat24 picks off-chain.
+   */
+  readonly fiat24?: { readonly account: string } | { readonly payee: string };
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -251,6 +274,8 @@ export type ApprovalChange =
       /** Unix seconds after which the allowance lapses (Permit2), when it has one. */
       readonly expiration?: number;
       readonly via?: "permit2" | "allowance-holder";
+      /** The spender is a Fiat24 contract: its card authorisation or top-up/exchange deposit. */
+      readonly fiat24Spender?: "card" | "deposit";
       /** The token is in the built-in table. */
       readonly verified: boolean;
     }
@@ -359,12 +384,45 @@ export type IntentWarningKind =
   | "permit2-witness"
   | "delegation-replaced"
   | "token-2022-transfer-fee"
-  | "token-2022-extension";
+  | "token-2022-extension"
+  | "fiat24-internal-account"
+  | "fiat24-card-pull"
+  | "fiat24-unlimited-approval"
+  | "fiat24-issuer-rate"
+  | "fiat24-exact-out-unbounded"
+  | "fiat24-payee-offchain"
+  | "fiat24-swap-quote"
+  | "fiat24-account-link"
+  | "fiat24-account-move";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
   readonly message: string;
+  /** "danger" marks a warning for a risk the prompt words itself must carry (callers may escalate). */
+  readonly level?: "danger";
 };
+
+/** A Fiat24 cash token — the four issuers' ERC-20s all carry two decimals. */
+export type Fiat24Token = { readonly asset: string; readonly symbol: string; readonly decimals: 2 };
+
+/** What a recognized call into a Fiat24 contract does, beyond its flows. */
+export type Fiat24Action =
+  | { readonly kind: "exchange"; readonly side: "exact-in"; readonly receive: Fiat24Token }
+  | {
+      readonly kind: "exchange";
+      readonly side: "exact-out";
+      readonly pay: Fiat24Token;
+      readonly receive: AssetAmount;
+    }
+  | {
+      readonly kind: "payout";
+      readonly contactId: string;
+      readonly purposeId?: string;
+      readonly ref?: string;
+    }
+  | { readonly kind: "top-up"; readonly receive: Fiat24Token }
+  | { readonly kind: "open-account"; readonly account: string }
+  | { readonly kind: "session-grant"; readonly account: string; readonly deadline: number };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
 export type SeaportItem = {
@@ -729,6 +787,8 @@ export type DisplayIntent = {
     readonly dex: "perps" | "spot";
     readonly maxFee: AssetAmount;
   };
+  /** A recognized Fiat24 action the generic lines cannot describe (exchange, payout, …). */
+  readonly fiat24?: Fiat24Action;
   readonly warnings: ReadonlyArray<IntentWarning>;
   /** What a message request signs; absent for transactions. */
   readonly message?: MessageContent;

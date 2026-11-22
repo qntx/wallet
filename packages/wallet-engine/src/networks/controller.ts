@@ -66,6 +66,7 @@ type Options = {
   readonly gateway?: GatewayConfig | undefined;
   readonly setTimer: SetTimer;
   readonly random: (length: number) => Uint8Array;
+  readonly now: () => number;
 };
 
 /**
@@ -473,14 +474,28 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh one-upstream TRON client: failover on the first call, then pinned — for a sequence of
-   * reads that must agree with each other.
+   * reads that must agree with each other. `until` bounds throttled-read retries to the
+   * transaction's validity window; absent, a 429/503 propagates like every other failure.
    */
-  pinnedTronApi(network: string): TronApi {
+  pinnedTronApi(network: string, until?: () => number): TronApi {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
     }
-    return pinnedTronCaller(urls, this.gatewayFetch);
+    return pinnedTronCaller(
+      urls,
+      this.gatewayFetch,
+      until === undefined
+        ? undefined
+        : {
+            until,
+            now: this.options.now,
+            sleep: async (ms) =>
+              new Promise<void>((resolve) => {
+                this.options.setTimer(ms, resolve);
+              }),
+          },
+    );
   }
 
   /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */

@@ -93,9 +93,10 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-hyperliquid",
     source: "src/apps/hyperliquid/index.ts",
-    /* Measured 18798 B: the Hyperliquid SDK client + zod/mini + the provider (incl. the CCTP
-       deposit reads through the injected networks client). */
-    budget: 19 * 1024,
+    /* Measured 19372 B (base drift from the earlier 18798 — the provider's own modules, led by
+       enable/exchange/actions, plus valibot): the Hyperliquid SDK client + zod/mini + the
+       provider (incl. the CCTP deposit reads through the injected networks client). */
+    budget: 20 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["polymarket.com"],
   },
