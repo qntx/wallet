@@ -23,6 +23,11 @@ export function describeOutcome(outcome: PolymarketOrderOutcome): string {
       return `refused: ${outcome.message}`;
     case "unknown":
       return `order ${outcome.orderId} may exist — do not place it again (${cancelNote(outcome.cancel)})`;
+    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
+    default: {
+      const exhaustive: never = outcome;
+      return exhaustive;
+    }
   }
 }
 
@@ -38,6 +43,11 @@ export function cancelNote(cancel: PolymarketCancelAttempt | undefined): string 
       return `cancel refused: ${cancel.reason}`;
     case "failed":
       return `cancel failed: ${cancel.message}`;
+    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
+    default: {
+      const exhaustive: never = cancel;
+      return exhaustive;
+    }
   }
 }
 
