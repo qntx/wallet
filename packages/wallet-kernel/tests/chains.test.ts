@@ -1478,8 +1478,9 @@ describe("chain.sign", () => {
       const partial = signed.getInput(0).partialSig;
       expect(partial).toHaveLength(1);
       const signer = partial[0]?.[0];
-      const asHex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-      expect(signer).not.toBeUndefined();
+      const asHex = (b: Uint8Array) =>
+        Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+      expect(signer).toBeDefined();
       expect(asHex(signer!)).toBe(asHex(btcChildAt("btc.bip84", 1, 0, 0).publicKey!));
       expect(asHex(signer!)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));
     });
