@@ -1786,6 +1786,7 @@ await chains(wallet).sign({
 - The signed text is `"I agree to access my profile. " + keccak256(label + deadline)`, where
   `label = "fiat24-session-v1:" + chainId + ":" + tokenId + ":" + deadline`. Send that `label` as
   the `hash` header. `fiat24SessionMessage` from `@qntx/wallet-chains/evm` rebuilds the text.
-- Only Arbitrum One is accepted. Other networks fail with `invalid-input`.
+- Only Arbitrum One is accepted: `normalizeEvm` throws `ChainError` `unsupported` on another
+  network, and `chain.sign` reports the refusal as `invalid-input`.
 - The engine does not submit this kind yet: its dApp path refuses it. Apps keep the existing rule
   that they sign typed data only.

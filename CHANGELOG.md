@@ -948,8 +948,10 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-chains`: an ERC-7821 batch's `DisplayIntent.warnings` now includes the warnings of
   its inner calls. The kernel prompt now also shows the warnings of each Safe inner call.
 - **build:** the size budgets `apps-hyperliquid` 19 → 20 KiB (measured 19 372 B) and chains `tron`
-  80 → 84 KiB (measured 81 364 B) moved once; `scripts/check-kernel-budget.ts` gains a
-  `fiat24 decoder` unit.
+  80 → 84 KiB (measured 81 364 B) moved once. `scripts/check-kernel-budget.ts` records the owner
+  decision of 2026-11-22 keeping the `hyperliquid-l1-agent` scheme at 16 384 B (15 940 B measured
+  with the L1 encoder in `@qntx/wallet-chains/evm`), and sets the decoder lines from measurement
+  with ≥ 5 % headroom: hyperliquid 11 776 B, polymarket 12 288 B, fiat24 15 872 B.
 
 ### Removed
 
