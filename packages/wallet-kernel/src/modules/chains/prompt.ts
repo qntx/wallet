@@ -265,7 +265,8 @@ type Catalog = {
   readonly fiat24Function: string;
   readonly fiat24ReceiveAtRate: (symbol: string) => string;
   readonly fiat24ExactOut: (amount: string, pay: string) => string;
-  readonly fiat24Payout: (amount: string, payee: string) => string;
+  readonly fiat24Payout: (amount: string) => string;
+  readonly fiat24PayoutPayee: (payee: string) => string;
   readonly fiat24PayoutPurpose: (purposeId: string) => string;
   readonly fiat24PayoutReference: (ref: string) => string;
   readonly fiat24OpenAccount: (account: string) => string;
@@ -562,7 +563,8 @@ const zh: Catalog = {
     "钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数",
   fiat24ReceiveAtRate: (symbol) => `按交易执行时 Fiat24 设定的汇率收到 ${symbol}——没有最低到手额`,
   fiat24ExactOut: (amount, pay) => `收到 ${amount}；按 Fiat24 设定的汇率支付 ${pay}`,
-  fiat24Payout: (amount, payee) => `以银行转账出金 ${amount} 给 Fiat24 收款人 ${payee}`,
+  fiat24Payout: (amount) => `以银行转账出金 ${amount} 给 Fiat24 收款人`,
+  fiat24PayoutPayee: (payee) => `Fiat24 收款人 ${payee}`,
   fiat24PayoutPurpose: (purposeId) => `用途 ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 参考 ${ref}`,
   fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
@@ -690,7 +692,7 @@ const en: Catalog = {
     "fiat24-card-pull": () =>
       "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
     "fiat24-unlimited-approval": (role) =>
-      `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up"} contract take your entire balance of this token`,
+      `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up and exchange"} contract take your entire balance of this token`,
     "fiat24-issuer-rate": () =>
       "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
     "fiat24-exact-out-unbounded": () =>
@@ -885,7 +887,8 @@ const en: Catalog = {
   fiat24ReceiveAtRate: (symbol) =>
     `Receive ${symbol} at the rate Fiat24 sets when the transaction runs — no minimum`,
   fiat24ExactOut: (amount, pay) => `Receive ${amount}; pay ${pay} at the rate Fiat24 sets`,
-  fiat24Payout: (amount, payee) => `Pay out ${amount} by bank transfer to Fiat24 payee ${payee}`,
+  fiat24Payout: (amount) => `Pay out ${amount} by bank transfer to a Fiat24 payee`,
+  fiat24PayoutPayee: (payee) => `Fiat24 payee ${payee}`,
   fiat24PayoutPurpose: (purposeId) => `Purpose ${purposeId}`,
   fiat24PayoutReference: (ref) => `Fiat24 reference ${ref}`,
   fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
@@ -1132,9 +1135,13 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
           : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to)
         : "account" in flow.fiat24
           ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account)
-          : catalog.fiat24Payout(formatAmount(catalog, flow.amount), field(flow.fiat24.payee)),
+          : catalog.fiat24Payout(formatAmount(catalog, flow.amount)),
     ),
-    ...(intent.fiat24 === undefined ? [] : fiat24Lines(catalog, intent.fiat24)),
+    /* Batch inner calls carry their own Fiat24 action — render each one's lines, not only the
+       batch intent's. */
+    ...(intent.calls ?? [intent]).flatMap((call) =>
+      call.fiat24 === undefined ? [] : fiat24Lines(catalog, call.fiat24),
+    ),
     ...(intent.staking ?? []).flatMap((action) => catalog.stakeLines(action, sol)),
     ...received,
     ...(intent.hyperliquidDeposit === undefined
@@ -1240,9 +1247,10 @@ const fiat24Lines = (catalog: Catalog, action: Fiat24Action): ReadonlyArray<stri
       : [catalog.fiat24ExactOut(formatAmount(catalog, action.receive), action.pay.symbol)];
   }
   /* The payout's requester-supplied strings only display through field(), requester-marked —
-     the reference is a bank-transfer memo, never a person. */
+     the payee id and the bank-transfer reference are text, never a person. */
   if (action.kind === "payout") {
     return [
+      quoted(catalog.fiat24PayoutPayee(field(action.contactId))),
       ...(action.purposeId === undefined
         ? []
         : [quoted(catalog.fiat24PayoutPurpose(field(action.purposeId)))]),

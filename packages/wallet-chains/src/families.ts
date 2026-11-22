@@ -83,7 +83,7 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
   },
   /* An undecoded call into a pinned Fiat24 contract, or a Fiat24-specific selector sent
      anywhere else — the claim covers wrong chains, implementations and lookalikes (the ten
-     selectors are collision-free per research §2). */
+     selectors are collision-free in the 4byte signature database). */
   {
     family: "Fiat24",
     claim: { surface: "evm.call", callee: "fiat24" },

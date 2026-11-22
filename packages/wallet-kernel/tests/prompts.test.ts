@@ -3750,7 +3750,8 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24Function: [],
     fiat24ReceiveAtRate: ["SYM"],
     fiat24ExactOut: ["1", "SYM"],
-    fiat24Payout: ["1", "payee"],
+    fiat24Payout: ["1"],
+    fiat24PayoutPayee: ["payee"],
     fiat24PayoutPurpose: ["42"],
     fiat24PayoutReference: ["ref"],
     fiat24OpenAccount: ["10365"],
@@ -3899,7 +3900,7 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nAllow ${DEPOSIT} to spend unlimited USD24 (Fiat24 top-up and exchange)\nMax fee 0.000021 ETH\nDanger: an unlimited allowance lets the Fiat24 top-up contract take your entire balance of this token`,
+      `Network: Arbitrum One\nThere may be other outflows\nAllow ${DEPOSIT} to spend unlimited USD24 (Fiat24 top-up and exchange)\nMax fee 0.000021 ETH\nDanger: an unlimited allowance lets the Fiat24 top-up and exchange contract take your entire balance of this token`,
     );
   });
 
@@ -3955,11 +3956,11 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm payout",
-      description: `Network: Arbitrum One\nThere may be other outflows\nPay out 200 USD24 by bank transfer to Fiat24 payee peggy\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+      description: `Network: Arbitrum One\nThere may be other outflows\nPay out 200 USD24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
     });
     expect(chainPrompt("zh-Hans", intent)).toMatchObject({
       title: "确认出金",
-      description: `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 200 USD24 给 Fiat24 收款人 peggy\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+      description: `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 200 USD24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
     });
   });
 
@@ -3971,10 +3972,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(EUR24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
     );
   });
 
@@ -3987,6 +3988,54 @@ describe("Fiat24 prompts", () => {
     const { description } = chainPrompt("en", arbTx(EUR24, data));
     expect(description).toContain("· Fiat24 reference rent…");
     expect(description).not.toContain("\nSend 1 ETH");
+  });
+
+  it("a batch renders each inner call's Fiat24 facts and warnings", () => {
+    const data = encodeBatchExecute([
+      {
+        to: EUR24,
+        value: 0n,
+        data: encodeFunctionData({ abi: TOKEN_ABI, functionName: "approve", args: [CARD, 5000n] }),
+      },
+      {
+        to: DEPOSIT,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: DEPOSIT_ABI,
+          functionName: "moneyExchangeExactOut",
+          args: [USD24, EUR24, 1000n],
+        }),
+      },
+    ]);
+    const intent = arbTx(TO, data);
+    expect(chainPrompt("en", intent)).toMatchObject({
+      title: "Confirm batch",
+      description: `Network: Arbitrum One\nThere may be other outflows\nReceive 10 EUR24; pay USD24 at the rate Fiat24 sets\nAllow ${CARD} to spend 50 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract`,
+    });
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n收到 10 EUR24；按 Fiat24 设定的汇率支付 USD24\n授权 ${CARD} 使用 50 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限`,
+    );
+  });
+
+  it("a batch's inner payout shows its requester-marked fields", () => {
+    const data = encodeBatchExecute([
+      {
+        to: EUR24,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: TOKEN_ABI,
+          functionName: "clientPayoutRef",
+          args: [30000n, "peggy", 42n, "rent march"],
+        }),
+      },
+    ]);
+    const intent = arbTx(TO, data);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+    );
   });
 
   it("a USDC top-up warns only about the issuer rate", () => {

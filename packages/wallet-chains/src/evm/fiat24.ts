@@ -26,7 +26,10 @@ export const FIAT24_DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
 /** The card-authorisation contract (Fiat24CardAuthorizationMarqeta). */
 export const FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
 
-/** The deposit contract's `usdc()` — every Fiat24 top-up routes through it (research §1). */
+/**
+ * The deposit contract's `usdc()` — every Fiat24 top-up routes through it
+ * (Fiat24CryptoDeposit.sol:66; Arbitrum One USDC).
+ */
 export const FIAT24_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
 /**
@@ -97,8 +100,10 @@ const ACCOUNT_SAFE_TRANSFER_DATA = AbiFunction.from(
   "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)",
 );
 
-/* The functions only Fiat24 contracts carry — selectors derived from the verified ABIs
-   (research §2; each is collision-free in the 4byte directory). A selector's presence in
+/* The functions only Fiat24 contracts carry — selectors derived from the Sourcify-verified
+   ABIs (https://sourcify.dev/server/v2/contract/42161/<impl> for each implementation); each is
+   collision-free in the 4byte signature database
+   (https://api.4byte.sourcify.dev/signature-database/v1/lookup). A selector's presence in
    calldata claims the Fiat24 family whatever the callee or chain. */
 const FIAT24_FUNCTIONS: ReadonlyArray<AbiFunction.AbiFunction> = [
   TRANSFER_BY_ACCOUNT_ID,
