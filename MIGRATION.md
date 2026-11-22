@@ -1855,8 +1855,8 @@ signatures are byte-identical.
 
 ### Closed unions gained members
 
-| Union | New member |
-| --- | --- |
+| Union                                    | New member                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `ChainErrorCode` (`@qntx/wallet-chains`) | `"invalid-signature"` — an assembler refused signature material that does not verify under the task key |
 
 ### New exports
