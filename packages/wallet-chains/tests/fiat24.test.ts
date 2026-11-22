@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -635,4 +636,174 @@ describe("Fiat24 top-ups", () => {
     const intent = decodeEvm(tx(DEPOSIT, data), SIGNER);
     expect(intent.warnings).toStrictEqual([{ kind: "fiat24-issuer-rate", message: "" }]);
   });
+});
+
+describe("Fiat24 claims beyond the pinned proxies", () => {
+  const exchangeIn = (input: string, output: string, amount: bigint) =>
+    fn(DEPOSIT_ABI, "moneyExchangeExactIn", [input, output, amount]);
+  /* Implementation addresses re-read from the proxies' EIP-1967 slots at block 526439604
+     (cast storage <proxy> 0x3608…bbc3). */
+  const USD24_IMPL = "0x98BEC5F54FF3967593860cEBc38F2134F4FF74E1";
+  const DEPOSIT_IMPL = "0xEBd98769dE0946e0C803c2e121D55dB6248C616B";
+  const ACCOUNT_IMPL = "0x78726B1ea6422fFB3744eACe66b13e22Df0cB54d";
+
+  /* The calls the decoder describes — a Fiat24 selector claims blind wherever it lands. */
+  const DESCRIBED: ReadonlyArray<readonly [string, string, string, string]> = [
+    ["transferByAccountId", USD24, sendByAccount(10365n), "0x0"],
+    ["clientPayout", USD24, fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]), "0x0"],
+    [
+      "moneyExchangeExactIn",
+      DEPOSIT,
+      exchangeIn(USD24, EUR24, 20000n),
+      "0x0",
+    ],
+    ["depositETH", DEPOSIT, fn(DEPOSIT_ABI, "depositETH", [EUR24]), "0x1"],
+    ["mintByClient", ACCOUNT, fn(ACCOUNT_ABI, "mintByClient", [1n]), "0x0"],
+  ];
+
+  it.each([
+    [USD24_IMPL, sendByAccount(10365n), "0x0"],
+    [USD24_IMPL, fn(TOKEN_ABI, "clientPayout", [20000n, "peggy"]), "0x0"],
+    [DEPOSIT_IMPL, exchangeIn(USD24, EUR24, 20000n), "0x0"],
+    [DEPOSIT_IMPL, fn(DEPOSIT_ABI, "depositETH", [EUR24]), "0x1"],
+    [ACCOUNT_IMPL, fn(ACCOUNT_ABI, "mintByClient", [1n]), "0x0"],
+  ])("the same call to the implementation %s is claimed blind", (to, data, value) => {
+    expect(decodeEvm(tx(to, data, value), SIGNER).blind).toBe("fiat24-function");
+  });
+
+  it.each(DESCRIBED.map(([name, to, data, value]) => [name, to, data, value] as const))(
+    "the same call to a lookalike of %s's proxy is claimed blind",
+    (_name, to, data, value) => {
+      const lookalike = to.slice(0, -1) + (to.endsWith("0") ? "1" : "0");
+      expect(decodeEvm(tx(lookalike, data, value), SIGNER).blind).toBe("fiat24-function");
+    },
+  );
+
+  it.each(DESCRIBED.map(([name, to, data, value]) => [name, to, data, value] as const))(
+    "the pinned proxy carrying %s on another chain is claimed blind",
+    (_name, to, data, value) => {
+      for (const chainId of [1, 5000, 421614]) {
+        expect(decodeEvm(tx(to, data, value, chainId), SIGNER).blind).toBe("fiat24-function");
+      }
+    },
+  );
+
+  it.each([
+    ["depositETH trailing", `${fn(DEPOSIT_ABI, "depositETH", [EUR24])}0011`, "0x1"],
+    ["depositETH truncated", fn(DEPOSIT_ABI, "depositETH", [EUR24]).slice(0, -8), "0x1"],
+    [
+      "depositTokenViaEth trailing",
+      `${fn(DEPOSIT_ABI, "depositTokenViaEth", [USDC_ARB, EUR24, 5n])}0011`,
+      "0x0",
+    ],
+    ["mintByClient trailing", `${fn(ACCOUNT_ABI, "mintByClient", [1n])}0011`, "0x0"],
+    ["mintByClient truncated", fn(ACCOUNT_ABI, "mintByClient", [1n]).slice(0, -8), "0x0"],
+    [
+      "mintByClientWithETH trailing",
+      `${fn(ACCOUNT_ABI, "mintByClientWithETH", [1n])}0011`,
+      "0x1",
+    ],
+    [
+      "mintByClientWithETH truncated",
+      fn(ACCOUNT_ABI, "mintByClientWithETH", [1n]).slice(0, -8),
+      "0x1",
+    ],
+    [
+      "account safeTransferFrom trailing",
+      `${fn(ACCOUNT_ABI, "safeTransferFrom", [SIGNER, OTHER, 1n])}0011`,
+      "0x0",
+    ],
+    [
+      "account safeTransferFrom truncated",
+      fn(ACCOUNT_ABI, "safeTransferFrom", [SIGNER, OTHER, 1n]).slice(0, -8),
+      "0x0",
+    ],
+    [
+      "clientPayoutRef trailing",
+      `${fn(TOKEN_ABI, "clientPayoutRef", [5n, "p", 1n, "r"])}0011`,
+      "0x0",
+    ],
+    [
+      "clientPayoutRef truncated",
+      fn(TOKEN_ABI, "clientPayoutRef", [5n, "p", 1n, "r"]).slice(0, -10),
+      "0x0",
+    ],
+  ])("a near miss is claimed blind: %s", (_name, data, value) => {
+    const target = _name.startsWith("mintByClient") || _name.startsWith("account") ? ACCOUNT : _name.startsWith("deposit") ? DEPOSIT : USD24;
+    expect(decodeEvm(tx(target, data, value), SIGNER).blind).toBe("fiat24-function");
+  });
+
+  it("ordinary USDC and WETH transfers on Arbitrum are unaffected", () => {
+    const WETH_ARB = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
+    for (const token of [USDC_ARB, WETH_ARB]) {
+      const data = fn(TOKEN_ABI, "transfer", [OTHER, 1000n]);
+      const intent = decodeEvm(tx(token, data), SIGNER);
+      expect(intent.summary).toBe("transfer");
+      expect(intent.verifiability).toBe("full");
+      expect(intent.blind).toBeUndefined();
+    }
+  });
+});
+
+describe("Fiat24 decode properties", () => {
+  const SELECTORS = [
+    sendByAccount(1n),
+    fn(TOKEN_ABI, "clientPayout", [1n, "p"]),
+    fn(TOKEN_ABI, "clientPayoutRef", [1n, "p", 1n, "r"]),
+    fn(DEPOSIT_ABI, "moneyExchangeExactIn", [USD24, EUR24, 1n]),
+    fn(DEPOSIT_ABI, "moneyExchangeExactOut", [USD24, EUR24, 1n]),
+    fn(DEPOSIT_ABI, "depositETH", [EUR24]),
+    fn(DEPOSIT_ABI, "depositTokenViaUsdc", [USDC_ARB, EUR24, 1n]),
+    fn(DEPOSIT_ABI, "depositTokenViaEth", [USDC_ARB, EUR24, 1n]),
+    fn(ACCOUNT_ABI, "mintByClient", [1n]),
+    fn(ACCOUNT_ABI, "mintByClientWithETH", [1n]),
+  ].map((data) => data.slice(0, 10));
+
+  const hexBytes = (bytes: Uint8Array) =>
+    `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  const anyData = fc.oneof(
+    fc.uint8Array({ maxLength: 160 }).map(hexBytes),
+    fc
+      .tuple(fc.constantFrom(...SELECTORS), fc.uint8Array({ maxLength: 160 }))
+      .map(([sel, tail]) => sel + hexBytes(tail).slice(2)),
+  );
+  const anyValue = fc
+    .uint8Array({ maxLength: 8 })
+    .map((b) => `0x${BigInt(b.length === 0 ? "0x0" : hexBytes(b)).toString(16)}`);
+
+  it("arbitrary calldata to a pinned proxy classifies without throwing", () => {
+    for (const proxy of PROXIES) {
+      fc.assert(
+        fc.property(anyData, anyValue, (data, value) => {
+          const intent = decodeEvm(tx(proxy, data, value), SIGNER);
+          /* Only the Fiat24 blind reason can come out of a pinned contract. */
+          expect(
+            intent.blind === undefined || intent.blind === "fiat24-function",
+          ).toBe(true);
+        }),
+        { numRuns: 300 },
+      );
+    }
+  }, 30000);
+
+  it("a Fiat24 selector plus any tail on a foreign callee and chain is blind", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...SELECTORS),
+        fc.uint8Array({ maxLength: 200 }),
+        fc.uint8Array({ minLength: 20, maxLength: 20 }),
+        fc.constantFrom(1, 10, 137, 5000, 8453, 42161, 421614),
+        (sel, tail, to, chainId) => {
+          const address = hexBytes(to);
+          if (PROXIES.some((p) => p.toLowerCase() === address.toLowerCase())) {
+            return;
+          }
+          const data = sel + hexBytes(tail).slice(2);
+          const intent = decodeEvm(tx(address, data, "0x0", chainId), SIGNER);
+          expect(intent.blind).toBe("fiat24-function");
+        },
+      ),
+      { numRuns: 300 },
+    );
+  }, 30000);
 });
