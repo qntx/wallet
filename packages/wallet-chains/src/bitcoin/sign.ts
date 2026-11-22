@@ -65,7 +65,10 @@ export const signBitcoinPsbt = (
       key: { path: [], publicKey: secp256k1.getPublicKey(privateKey, true) } satisfies TaskKey,
     };
   });
-  const plan = planBitcoinPsbt(psbt, entries);
+  const plan = planBitcoinPsbt(
+    psbt,
+    entries.map(({ index, key }) => ({ index, key })),
+  );
   return signLocally(
     plan,
     (task, i) => {
