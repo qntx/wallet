@@ -48,8 +48,10 @@ import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wall
 import { buildTronRawData, verifyTronTransactionSignature } from "@qntx/wallet-chains/tron";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import { executeBitcoin } from "../src/modules/chains/bitcoin.ts";
+import { prepareBitcoin } from "../src/modules/chains/bitcoin.ts";
+import { seedKeys } from "../src/modules/chains/keys.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
+import { signPlan, taskSignerFor } from "../src/modules/chains/run.ts";
 import type { Pbkdf2 } from "../src/platform.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
@@ -1406,11 +1408,23 @@ describe("chain.sign", () => {
     const rng = () => new Uint8Array(32);
     const account = { kind: "hd" as const, walletId: "w", groupIndex: 0 };
 
-    const signedPsbtOf = (res: ReturnType<typeof executeBitcoin>): Uint8Array => {
+    const signedPsbtOf = (res: Awaited<ReturnType<typeof signPlan>>): Uint8Array => {
       if (!("signedPsbt" in res)) {
         throw new Error("expected a signed psbt");
       }
       return res.signedPsbt;
+    };
+    const runBitcoin = async (
+      request: Parameters<typeof prepareBitcoin>[0],
+      hd: Parameters<typeof prepareBitcoin>[1],
+    ) => {
+      const keys = seedKeys(seed, rng);
+      try {
+        const prepared = await prepareBitcoin(request, hd, keys.material);
+        return await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
+      } finally {
+        keys.wipe();
+      }
     };
     const partialSigner = (psbt: Uint8Array): Uint8Array => {
       const signer = Transaction.fromPSBT(psbt).getInput(0).partialSig?.[0]?.[0];
@@ -1422,7 +1436,7 @@ describe("chain.sign", () => {
     const asHex = (b: Uint8Array): string =>
       Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
-    it("refuses a coin-0' derivation claim under a test network before normalize", () => {
+    it("refuses a coin-0' derivation claim under a test network before normalize", async () => {
       /* The kernel's childAt guard — not normalize's coin-type check — is what refuses the
          claim, so assert its exact message on a raw (un-normalized) request. */
       const request = {
@@ -1432,12 +1446,12 @@ describe("chain.sign", () => {
         psbt: btcPsbt({ template: "btc.bip84" }),
         sign: [{ index: 0, template: "btc.bip84" }],
       } as const;
-      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+      await expect(runBitcoin(request, account)).rejects.toThrow(
         "derivation path is not this account's",
       );
     });
 
-    it("refuses a coin-1' derivation claim under mainnet the same way", () => {
+    it("refuses a coin-1' derivation claim under mainnet the same way", async () => {
       const request = {
         kind: "bitcoin.psbt",
         network: BTC_NETWORK,
@@ -1445,12 +1459,12 @@ describe("chain.sign", () => {
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
         sign: [{ index: 0, template: "btc.bip84" }],
       } as const;
-      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+      await expect(runBitcoin(request, account)).rejects.toThrow(
         "derivation path is not this account's",
       );
     });
 
-    it("refuses a prevout script of the other coin's key at the claimed path", () => {
+    it("refuses a prevout script of the other coin's key at the claimed path", async () => {
       /* The coin-1' path and pubkey are consistent, only the spent script is the mainnet
          key's — the prevout binding, not the path guard, is what refuses. */
       const request = {
@@ -1460,12 +1474,12 @@ describe("chain.sign", () => {
         psbt: btcPsbt({ template: "btc.bip84", coin: 1, crossScript: true }),
         sign: [{ index: 0, template: "btc.bip84" }],
       } as const;
-      expect(() => executeBitcoin(rng, request, account, seed, false)).toThrow(
+      await expect(runBitcoin(request, account)).rejects.toThrow(
         "prevout script is not this key's",
       );
     });
 
-    it("refuses a message for a mainnet address under a test network", () => {
+    it("refuses a message for a mainnet address under a test network", async () => {
       const account84 = { ...account, template: "btc.bip84" as const };
       const request = {
         kind: "bitcoin.message",
@@ -1477,12 +1491,10 @@ describe("chain.sign", () => {
         change: 0,
         index: 0,
       } as const;
-      expect(() => executeBitcoin(rng, request, account84, seed, false)).toThrow(
-        "address is not ours",
-      );
+      await expect(runBitcoin(request, account84)).rejects.toThrow("address is not ours");
     });
 
-    it("signs a testnet PSBT with the coin-1' key — not the mainnet key at the same path", () => {
+    it("signs a testnet PSBT with the coin-1' key — not the mainnet key at the same path", async () => {
       /* One sorted sign entry — already in normalized form for `deepEqual(normalized, request)`. */
       const request = {
         kind: "bitcoin.psbt",
@@ -1491,7 +1503,7 @@ describe("chain.sign", () => {
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
         sign: [{ index: 0, template: "btc.bip84" }],
       } as const;
-      const res = executeBitcoin(rng, request, account, seed, false);
+      const res = await runBitcoin(request, account);
       const signer = partialSigner(signedPsbtOf(res));
       expect(asHex(signer)).toBe(asHex(btcChildAt("btc.bip84", 1, 0, 0).publicKey!));
       expect(asHex(signer)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));

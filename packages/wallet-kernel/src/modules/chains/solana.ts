@@ -1,50 +1,31 @@
-/** Solana signing for `chain.sign` — the slip10 path, normalize, decode, sign or intent. */
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
-
+/** Solana request preparation for `chain.sign` — normalize, decode, and plan; never signs. */
+import type { KeyPath } from "@qntx/wallet-chains";
 import { messageContent } from "@qntx/wallet-chains";
 import {
   decodeSolana,
   normalizeSolana,
+  planSolana,
   solanaAddressFromPublicKey,
 } from "@qntx/wallet-chains/solana";
-import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 
 import { KernelError } from "../../errors.ts";
-import { wipe } from "../../secret/secret.ts";
+import type { PublicMaterial } from "./keys.ts";
 import { messagePromptIntent } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
-import type { ExecuteResult, SolanaKeySource, SolanaRequest } from "./shared.ts";
+import type { Prepared, SolanaRequest } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 
-export const executeSolana = (
+/**
+ * Validates and decodes the request and returns its signing plan. `path` is the account's SLIP-10
+ * path (`[]` for an imported key); the public key comes only through `material`.
+ */
+export const prepareSolana = async (
   request: SolanaRequest,
-  source: SolanaKeySource,
-  intentOnly: boolean,
-): ExecuteResult => {
-  if (source.kind === "imported") {
-    const priv = source.secret;
-    const signer = solanaAddressFromPublicKey(ed25519.getPublicKey(priv));
-    return solanaBody(request, priv, signer, intentOnly);
-  }
-  const root = Slip10.fromMasterSeed(source.seed);
-  const child = root.derive(`m/44'/501'/${source.account.groupIndex}'/0'`);
-  try {
-    const priv = child.privateKey;
-    const signer = solanaAddressFromPublicKey(ed25519.getPublicKey(priv));
-    return solanaBody(request, priv, signer, intentOnly);
-  } finally {
-    wipe(child.privateKey);
-    wipe(root.privateKey);
-  }
-};
-
-const solanaBody = (
-  request: SolanaRequest,
-  priv: Uint8Array,
-  signer: string,
-  intentOnly: boolean,
-): ExecuteResult => {
+  path: KeyPath,
+  material: PublicMaterial,
+): Promise<Prepared> => {
+  const pub = await material.ed25519(path);
+  const signer = solanaAddressFromPublicKey(pub);
   let normalized;
   try {
     normalized = normalizeSolana(request, signer);
@@ -65,11 +46,11 @@ const solanaBody = (
       mapChainError(error);
     }
   }
-  if (intentOnly) {
-    return { prompt: intent };
+  let plan;
+  try {
+    plan = planSolana(request, { path, publicKey: pub });
+  } catch (error) {
+    mapChainError(error);
   }
-  return {
-    kind: request.kind,
-    signature: signSolanaMessage(request.message, priv),
-  };
+  return { prompt: intent, plan };
 };

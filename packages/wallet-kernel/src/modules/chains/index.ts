@@ -2,14 +2,15 @@
  * The chains module: `wallet.accounts` — the public account for a template at the wallet's group
  * index, derived from the wallet's entropy record once per session and then served from a cache of
  * public data only. No records: seed and every node are wiped in `finally` on every path.
- * `chain.sign` prepares, verifies and signs through the per-family executors in `./evm.ts`,
- * `./bitcoin.ts`, `./solana.ts` and `./tron.ts`.
+ * `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
+ * ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
+ * (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
+ * source — the plan itself is reused, never recomputed.
  */
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { HDKey } from "@scure/bip32";
-import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
+import { hash160 } from "@scure/btc-signer/utils.js";
 
 import { isBlindIntent } from "@qntx/wallet-chains";
+import type { KeyPath } from "@qntx/wallet-chains";
 import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
@@ -33,19 +34,39 @@ import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
-import { executeBitcoin } from "./bitcoin.ts";
-import { executeEvm } from "./evm.ts";
+import { prepareBitcoin } from "./bitcoin.ts";
+import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
+import { importedKeys, pathString, seedKeys } from "./keys.ts";
+import type { KeySource } from "./keys.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
-import type { ExecuteResult, SignRequest } from "./shared.ts";
+import { signPlan, taskSignerFor } from "./run.ts";
+import type { Prepared, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
-import { executeSolana } from "./solana.ts";
-import { executeTron } from "./tron.ts";
+import { prepareSolana } from "./solana.ts";
+import { prepareTron } from "./tron.ts";
 
 export type ChainsModule = {
   readonly vault: VaultHooks;
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
+
+const HARDENED = 0x80000000;
+
+/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
+const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
+  if (family === "solana") {
+    return [44 + HARDENED, 501 + HARDENED, groupIndex + HARDENED, HARDENED];
+  }
+  const coin = family === "tron" ? 195 : 60;
+  return [44 + HARDENED, coin + HARDENED, HARDENED, 0, groupIndex];
+};
+
+/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
+const requestPath = (
+  family: "evm" | "tron" | "solana",
+  account: SignRequest["account"],
+): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
 const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
@@ -62,68 +83,41 @@ const checkNetwork = (template: string, network: string): void => {
   }
 };
 
-const accountFor = (
-  master: HDKey,
-  seed: Uint8Array,
+const accountFor = async (
+  material: KeySource["material"],
   template: ChainTemplate,
   network: string,
   groupIndex: number,
-): ChainAccount => {
+): Promise<ChainAccount> => {
   if (template === "evm.bip44") {
-    const child = master.derive(`m/44'/60'/0'/0/${groupIndex}`);
-    try {
-      const pub = child.publicKey;
-      if (pub === null) {
-        throw new KernelError("integrity", "no public key at account path");
-      }
-      return { template, network, address: evmAddressFromPublicKey(pub) };
-    } finally {
-      child.wipePrivateData();
-    }
+    const pub = await material.secp256k1(leafPath("evm", groupIndex));
+    return { template, network, address: evmAddressFromPublicKey(pub) };
   }
   if (template === "solana.bip44-change") {
-    const root = Slip10.fromMasterSeed(seed);
-    const child = root.derive(`m/44'/501'/${groupIndex}'/0'`);
-    try {
-      return {
-        template,
-        network,
-        address: solanaAddressFromPublicKey(ed25519.getPublicKey(child.privateKey)),
-      };
-    } finally {
-      wipe(child.privateKey);
-      wipe(root.privateKey);
-    }
+    const pub = await material.ed25519(leafPath("solana", groupIndex));
+    return { template, network, address: solanaAddressFromPublicKey(pub) };
   }
   if (template === "tron.bip44") {
-    const child = master.derive(`m/44'/195'/0'/0/${groupIndex}`);
-    try {
-      const pub = child.publicKey;
-      if (pub === null) {
-        throw new KernelError("integrity", "no public key at account path");
-      }
-      return { template, network, address: tronAddressFromPublicKey(pub) };
-    } finally {
-      child.wipePrivateData();
-    }
+    const pub = await material.secp256k1(leafPath("tron", groupIndex));
+    return { template, network, address: tronAddressFromPublicKey(pub) };
   }
   const purpose = BTC_PURPOSE[template];
   if (purpose === undefined) {
     throw new KernelError("invalid-input", `unknown template ${template}`);
   }
-  const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
-  const account = master.derive(path);
-  try {
-    return {
-      template,
-      network,
-      xpub: account.publicExtendedKey,
-      fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
-      path,
-    };
-  } finally {
-    account.wipePrivateData();
-  }
+  const net = bitcoinNetwork(network);
+  const path = [purpose + HARDENED, net.coinType + HARDENED, groupIndex + HARDENED];
+  const pub = await material.secp256k1([]);
+  return {
+    template,
+    network,
+    // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
+    xpub: await material.extendedPublicKey(path, net.bip32),
+    fingerprint: hash160(pub)
+      .subarray(0, 4)
+      .reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
+    path: pathString(path),
+  };
 };
 
 /**
@@ -152,16 +146,12 @@ const walletAccounts = async (
   if (known !== undefined) {
     return known;
   }
-  const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
-    // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
-    const master = HDKey.fromMasterSeed(
-      seed,
-      params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : undefined,
-    );
+  const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+    const keys = seedKeys(seed, ctx.platform.random);
     try {
-      return accountFor(master, seed, params.template, params.network, params.groupIndex);
+      return await accountFor(keys.material, params.template, params.network, params.groupIndex);
     } finally {
-      master.wipePrivateData();
+      keys.wipe();
     }
   });
   const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
@@ -181,8 +171,12 @@ const assertSignable = (
   }
 };
 
-/** One pass over the request with its signing secret, which exists only for the call. */
-type SignPass = (intentOnly: boolean) => ExecuteResult | Promise<ExecuteResult>;
+/**
+ * Opens this request's key source for one use — the HD seed or the imported secret exists only
+ * inside `use`, and the source is wiped on every exit path. chainSign opens it twice: once to
+ * prepare, once to sign after verification.
+ */
+type OpenKeys = <T>(use: (keys: KeySource) => T | Promise<T>) => Promise<T>;
 
 const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
   evm: ["evm.bip44"],
@@ -191,12 +185,12 @@ const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
   bitcoin: ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"],
 };
 
-/** The HD pass: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-const hdPass = (
+/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+const hdSource = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   request: SignRequest,
   dek: Secret,
-): SignPass => {
+): OpenKeys => {
   const { account } = request;
   if (account.kind === "imported") {
     throw new KernelError("integrity", "unreachable: hd path with an imported account");
@@ -218,46 +212,25 @@ const hdPass = (
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
   }
-  const execute = (seed: Uint8Array, intentOnly: boolean): ExecuteResult => {
-    if (request.kind === "bitcoin.psbt") {
-      return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
-    }
-    if (request.kind === "bitcoin.message") {
-      return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
-    }
-    if (!("template" in account)) {
-      throw new KernelError("invalid-input", "account template does not match the request family");
-    }
-    const source = { kind: "hd" as const, account, seed };
-    if (
-      request.kind === "evm.transaction" ||
-      request.kind === "evm.personal-message" ||
-      request.kind === "evm.fiat24-session" ||
-      request.kind === "evm.typed-data"
-    ) {
-      return executeEvm(request, source, intentOnly, ctx.platform.now());
-    }
-    if (
-      request.kind === "tron.transaction" ||
-      request.kind === "tron.message" ||
-      request.kind === "tron.typed-data"
-    ) {
-      return executeTron(request, source, intentOnly);
-    }
-    return executeSolana(request, source, intentOnly);
-  };
-  return async (intentOnly) =>
-    withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => execute(seed, intentOnly));
+  return async (use) =>
+    withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+      const keys = seedKeys(seed, ctx.platform.random);
+      try {
+        return await use(keys);
+      } finally {
+        keys.wipe();
+      }
+    });
 };
 
-/* The imported pass: the same two-pass shape, but the secret comes straight from the `key`
+/* The imported source: the same two-open shape, but the secret comes straight from the `key`
    record instead of an entropy derivation. Bitcoin requests have no imported path: WIF is out
    of scope. */
-const importedPass = (
+const importedSource = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   request: SignRequest,
   dek: Secret,
-): SignPass => {
+): OpenKeys => {
   const { account } = request;
   if (account.kind !== "imported") {
     throw new KernelError("integrity", "unreachable: imported path with an hd account");
@@ -286,36 +259,51 @@ const importedPass = (
   if (header.family !== expectedFamily) {
     throw new KernelError("invalid-input", "the key's family does not match the request");
   }
-  const execute = (secret: Uint8Array, intentOnly: boolean): ExecuteResult => {
-    const source = { kind: "imported" as const, secret };
-    if (
-      request.kind === "evm.transaction" ||
-      request.kind === "evm.personal-message" ||
-      request.kind === "evm.fiat24-session" ||
-      request.kind === "evm.typed-data"
-    ) {
-      return executeEvm(request, source, intentOnly, ctx.platform.now());
-    }
-    if (request.kind === "solana.transaction" || request.kind === "solana.message") {
-      return executeSolana(request, source, intentOnly);
-    }
-    if (
-      request.kind === "tron.transaction" ||
-      request.kind === "tron.message" ||
-      request.kind === "tron.typed-data"
-    ) {
-      return executeTron(request, source, intentOnly);
-    }
-    throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
-  };
-  return (intentOnly) => {
+  const curve = isSolana ? "ed25519" : "secp256k1";
+  return async (use) => {
     const secret = openRecord(dek, record);
+    const keys = importedKeys(secret, curve, ctx.platform.random);
     try {
-      return execute(secret, intentOnly);
+      return await use(keys);
     } finally {
+      keys.wipe();
       wipe(secret);
     }
   };
+};
+
+/**
+ * The family's prepare on this request — `path` applies to evm/tron/solana; bitcoin derives
+ * internally.
+ */
+const prepareFor = async (
+  request: SignRequest,
+  material: KeySource["material"],
+  now: number,
+): Promise<Prepared> => {
+  const { account } = request;
+  if (
+    request.kind === "evm.transaction" ||
+    request.kind === "evm.personal-message" ||
+    request.kind === "evm.fiat24-session" ||
+    request.kind === "evm.typed-data"
+  ) {
+    return prepareEvm(request, requestPath("evm", account), material, now);
+  }
+  if (
+    request.kind === "tron.transaction" ||
+    request.kind === "tron.message" ||
+    request.kind === "tron.typed-data"
+  ) {
+    return prepareTron(request, requestPath("tron", account), material);
+  }
+  if (request.kind === "solana.transaction" || request.kind === "solana.message") {
+    return prepareSolana(request, requestPath("solana", account), material);
+  }
+  if (account.kind === "imported") {
+    throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
+  }
+  return prepareBitcoin(request, account, material);
 };
 
 /**
@@ -355,30 +343,30 @@ const bindAgent = (
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const { dek } = ctx.session.require(session);
   const { request, verify } = params;
-  const pass =
+  const openKeys =
     request.account.kind === "imported"
-      ? importedPass(ctx, request, dek)
-      : hdPass(ctx, request, dek);
-  // Two passes over the signing secret: `prepare` checks ownership, normalizes and decodes,
-  // returning only the intent; the secret and every key are wiped before the (possibly long)
-  // system verification prompt. `sign` re-opens the secret and signs only after verification
-  // passed.
-  const prepared = await pass(true);
-  if (!("prompt" in prepared)) {
-    throw new KernelError("integrity", "unreachable: prepare pass signed");
-  }
+      ? importedSource(ctx, request, dek)
+      : hdSource(ctx, request, dek);
+  // The key source opens twice: `prepare` checks ownership, normalizes, decodes and plans — the
+  // secret and every node are wiped before the (possibly long) system verification prompt; the
+  // sign pass re-opens it and executes the prepared plan unchanged.
+  const prepared = await openKeys(async (keys) =>
+    prepareFor(request, keys.material, ctx.platform.now()),
+  );
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
   assertSignable(ctx, dek, prompt);
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prompt),
   );
-  // The session may have ended while the prompt was up.
+  // The session may have ended while the prompt was up; the fiat24 window re-checks too, as the
+  // old sign pass did.
   ctx.session.require(session);
-  const signed = await pass(false);
-  if ("prompt" in signed) {
-    throw new KernelError("integrity", "unreachable: sign pass did not sign");
+  if (request.kind === "evm.fiat24-session") {
+    assertFiat24Deadline(request, ctx.platform.now());
   }
-  return signed;
+  return openKeys(async (keys) =>
+    signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))),
+  );
 };
 
 export function createChainsModule(): ChainsModule {
