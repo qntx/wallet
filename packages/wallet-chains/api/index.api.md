@@ -64,6 +64,15 @@ export type ApprovalChange = {
     readonly verified: false;
 };
 
+// @public
+export type Assembled<A, P> = {
+    readonly kind: "signed";
+    readonly artefact: A;
+} | {
+    readonly kind: "next";
+    readonly plan: P;
+};
+
 // @public (undocumented)
 export type AssetAmount = {
     readonly asset: string;
@@ -88,6 +97,15 @@ export type AssetFlow = {
     readonly name?: string;
 };
 
+// @public (undocumented)
+export type Bip340Task = {
+    readonly scheme: "bip340";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
+    readonly tweak: Uint8Array;
+};
+
 // @public
 export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
@@ -102,7 +120,7 @@ export class ChainError extends Error {
 }
 
 // @public (undocumented)
-export type ChainErrorCode = "unknown-field" | "chain-id-mismatch" | "invalid-quantity" | "invalid-address" | "invalid-typed-data" | "invalid-request" | "unsupported";
+export type ChainErrorCode = "unknown-field" | "chain-id-mismatch" | "invalid-quantity" | "invalid-address" | "invalid-typed-data" | "invalid-request" | "invalid-signature" | "unsupported";
 
 // @public (undocumented)
 export type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -182,6 +200,22 @@ export type DisplayIntent = {
         };
     };
     readonly blind?: BlindReason;
+};
+
+// @public (undocumented)
+export type EcdsaTask = {
+    readonly scheme: "ecdsa-secp256k1";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly digest: Uint8Array;
+};
+
+// @public (undocumented)
+export type Ed25519Task = {
+    readonly scheme: "ed25519";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
 };
 
 // @public (undocumented)
@@ -339,6 +373,9 @@ export const isBlindIntent: (intent: Pick<DisplayIntent, "blind">) => boolean;
 
 // @public
 export const isEncodedBytes: (text: string) => boolean;
+
+// @public
+export type KeyPath = ReadonlyArray<number>;
 
 // @public
 export const messageBlindReason: (message: MessageContent) => BlindReason | undefined;
@@ -576,6 +613,12 @@ export type SignRequest = {
     readonly typedData: string;
 };
 
+// @public (undocumented)
+export type SignScheme = SignTask["scheme"];
+
+// @public (undocumented)
+export type SignTask = EcdsaTask | Bip340Task | Ed25519Task;
+
 // @public
 export type StakeAction = {
     readonly kind: "create";
@@ -655,6 +698,12 @@ export type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public (undocumented)
+export type TaskKey = {
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
 };
 
 // @public

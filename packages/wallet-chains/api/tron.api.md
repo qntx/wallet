@@ -64,6 +64,18 @@ type ApprovalChange = {
     readonly verified: false;
 };
 
+// @public
+type Assembled<A, P> = {
+    readonly kind: "signed";
+    readonly artefact: A;
+} | {
+    readonly kind: "next";
+    readonly plan: P;
+};
+
+// @public (undocumented)
+export const assembleTron: (plan: TronSignPlan, signatures: ReadonlyArray<Uint8Array>) => Assembled<Uint8Array, TronSignPlan>;
+
 // @public (undocumented)
 type AssetAmount = {
     readonly asset: string;
@@ -181,6 +193,14 @@ type DisplayIntent = {
         };
     };
     readonly blind?: BlindReason;
+};
+
+// @public (undocumented)
+type EcdsaTask = {
+    readonly scheme: "ecdsa-secp256k1";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly digest: Uint8Array;
 };
 
 // @public
@@ -342,6 +362,9 @@ type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyon
 // @public
 export const isTronAddress: (value: string) => boolean;
 
+// @public
+type KeyPath = ReadonlyArray<number>;
+
 // @public (undocumented)
 export const lookupTronToken: (table: TronTokenTable, network: string, address: string) => TronToken | undefined;
 
@@ -397,6 +420,11 @@ type ParsedTypedData = {
 
 // @public
 export const parseTronTypedData: (typedData: string) => ParsedTypedData;
+
+// @public
+export const planTron: (request: Extract<SignRequest, {
+    kind: "tron.transaction" | "tron.message" | "tron.typed-data";
+}>, key: TaskKey) => TronSignPlan;
 
 // @public
 type PolymarketContent = {
@@ -682,6 +710,12 @@ type StakeAction = {
     }>;
 };
 
+// @public (undocumented)
+type TaskKey = {
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+};
+
 // @public
 type TokenAuthorization = {
     readonly kind: "transfer" | "receive";
@@ -889,6 +923,12 @@ export const tronRawDataFromJson: (rawData: unknown, visible: boolean) => Uint8A
 
 // @public
 type TronResource = "bandwidth" | "energy" | "tron-power";
+
+// @public (undocumented)
+export type TronSignPlan = {
+    readonly kind: "tron.transaction" | "tron.message" | "tron.typed-data";
+    readonly tasks: readonly [EcdsaTask];
+};
 
 // @public
 export type TronToken = {

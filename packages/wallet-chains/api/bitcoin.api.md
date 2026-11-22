@@ -65,6 +65,21 @@ type ApprovalChange = {
     readonly verified: false;
 };
 
+// @public
+export const assembleBitcoinMessage: (plan: BitcoinMessagePlan, signatures: ReadonlyArray<Uint8Array>) => Assembled<string, BitcoinMessagePlan>;
+
+// @public
+export const assembleBitcoinPsbt: (plan: BitcoinPsbtPlan, signatures: ReadonlyArray<Uint8Array>) => Assembled<Uint8Array, BitcoinPsbtPlan>;
+
+// @public
+type Assembled<A, P> = {
+    readonly kind: "signed";
+    readonly artefact: A;
+} | {
+    readonly kind: "next";
+    readonly plan: P;
+};
+
 // @public (undocumented)
 type AssetAmount = {
     readonly asset: string;
@@ -90,6 +105,15 @@ type AssetFlow = {
 };
 
 // @public (undocumented)
+type Bip340Task = {
+    readonly scheme: "bip340";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly message: Uint8Array;
+    readonly tweak: Uint8Array;
+};
+
+// @public (undocumented)
 export const BITCOIN_NETWORKS: Readonly<Record<string, BitcoinNetwork>>;
 
 // @public (undocumented)
@@ -97,6 +121,14 @@ export type BitcoinAccountTemplate = BitcoinTemplate;
 
 // @public
 export function bitcoinAddressFromXpub(xpub: string, template: BitcoinAccountTemplate, network: string, change: 0 | 1, index: number): string;
+
+// @public (undocumented)
+export type BitcoinMessagePlan = {
+    readonly kind: "bitcoin.message";
+    readonly format: "bip322-simple" | "legacy";
+    readonly publicKey: Uint8Array;
+    readonly tasks: readonly [EcdsaTask | Bip340Task];
+};
 
 // @public (undocumented)
 type BitcoinNetwork = {
@@ -112,6 +144,18 @@ type BitcoinNetwork = {
 
 // @public (undocumented)
 export const bitcoinNetwork: (caip2: string) => BitcoinNetwork;
+
+// @public (undocumented)
+export type BitcoinPsbtPlan = {
+    readonly kind: "bitcoin.psbt";
+    readonly psbt: Uint8Array;
+    readonly inputs: ReadonlyArray<{
+        readonly index: number;
+        readonly publicKey: Uint8Array;
+        readonly sighash: number;
+    }>;
+    readonly tasks: ReadonlyArray<EcdsaTask | Bip340Task>;
+};
 
 // @public
 export function bitcoinPubkeyFromXpub(xpub: string, template: BitcoinAccountTemplate, network: string, change: 0 | 1, index: number): Uint8Array;
@@ -201,6 +245,14 @@ type DisplayIntent = {
         };
     };
     readonly blind?: BlindReason;
+};
+
+// @public (undocumented)
+type EcdsaTask = {
+    readonly scheme: "ecdsa-secp256k1";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly digest: Uint8Array;
 };
 
 // @public (undocumented)
@@ -351,6 +403,9 @@ type IntentWarning = {
 type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move";
 
 // @public
+type KeyPath = ReadonlyArray<number>;
+
+// @public
 type MessageContent = {
     readonly kind: "text";
     readonly text: string;
@@ -399,6 +454,20 @@ type OffchainOrder = {
     readonly allowedSender?: string;
     readonly exclusiveFiller?: string;
 };
+
+// @public
+export const planBitcoinMessage: (request: {
+    readonly network: string;
+    readonly address: string;
+    readonly message: string;
+    readonly format: "bip322-simple" | "legacy";
+}, key: TaskKey) => BitcoinMessagePlan;
+
+// @public
+export const planBitcoinPsbt: (psbt: Uint8Array, inputs: ReadonlyArray<{
+    readonly index: number;
+    readonly key: TaskKey;
+}>) => BitcoinPsbtPlan;
 
 // @public
 type PolymarketContent = {
@@ -664,6 +733,12 @@ type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public (undocumented)
+type TaskKey = {
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
 };
 
 // @public
