@@ -122,10 +122,6 @@ jobs:
           ENGINE_E2E_TRON=1 bunx vitest run tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
-          curl -sf -X POST http://127.0.0.1:9090/wallet/getnowblock -o /dev/null
-          ENGINE_E2E_TRON=1 bunx vitest run tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
-          jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
-        working-directory: packages/wallet-engine
 
   # The real gateway in real workerd: Durable Object leasing, rate-limit bindings and the deploy
   # bundle itself — `wrangler deploy --dry-run` compiles what Cloudflare would run.
