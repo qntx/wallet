@@ -142,6 +142,25 @@ export type RouteClass =
   | "risk"
   | "other";
 
+const parsePricesBody = (
+  body: string | ArrayBuffer | undefined,
+): { assets: ReadonlyArray<string>; currency: string } => {
+  try {
+    const text =
+      typeof body === "string" ? body : body === undefined ? "" : new TextDecoder().decode(body);
+    const parsed: unknown = JSON.parse(text);
+    const assets =
+      isObj(parsed) && Array.isArray(parsed["assets"])
+        ? parsed["assets"].flatMap((a) => (typeof a === "string" ? [a] : []))
+        : [];
+    const currency =
+      isObj(parsed) && typeof parsed["currency"] === "string" ? parsed["currency"] : "";
+    return { assets, currency };
+  } catch {
+    return { assets: [], currency: "" };
+  }
+};
+
 export const routeClass = (pathname: string): RouteClass => {
   if (pathname.startsWith("/v1/rpc/")) {
     return "rpc";
@@ -176,20 +195,40 @@ export const routeClass = (pathname: string): RouteClass => {
   return "other";
 };
 
+/** One `POST /v1/prices` request as measured — its assets, what the gateway cache answered. */
+export type PricesRead = {
+  readonly assets: ReadonlyArray<string>;
+  readonly currency: string;
+  readonly status: number;
+  readonly providers: ReadonlyArray<string>;
+  /** Distinct asked assets a live cache entry answered — the rest went upstream or missed. */
+  readonly cached: number;
+  /** `prices:*` stub calls by account, attributed to this request's window. */
+  readonly upstream: Readonly<Record<string, number>>;
+};
+
 export type Readings = {
   readonly routes: Map<string, number>;
   readonly statuses: Map<number, number>;
+  /** `${route}|${status}` → attempts — refused attempts counted like `statuses`. */
+  readonly routeStatuses: Map<string, number>;
+  /** `${route}|${method} ${normalized path}` → requests — scripthashes collapsed to `:h`. */
+  readonly routePaths: Map<string, number>;
   readonly upstream: Map<string, { calls: number; units: number }>;
   readonly budget: Map<string, number>;
   readonly share: Map<string, number>;
+  readonly prices: PricesRead[];
 };
 
 export const emptyReadings = (): Readings => ({
   routes: new Map(),
   statuses: new Map(),
+  routeStatuses: new Map(),
+  routePaths: new Map(),
   upstream: new Map(),
   budget: new Map(),
   share: new Map(),
+  prices: [],
 });
 
 export type World = {
@@ -207,15 +246,24 @@ const deepCopy = <K, T>(m: ReadonlyMap<K, T>): Map<K, T> => new Map(m);
 export const snapshotOf = (r: Readings): Readings => ({
   routes: deepCopy(r.routes),
   statuses: deepCopy(r.statuses),
+  routeStatuses: deepCopy(r.routeStatuses),
+  routePaths: deepCopy(r.routePaths),
   upstream: new Map([...r.upstream].map(([k, v]) => [k, { ...v }])),
   budget: deepCopy(r.budget),
   share: deepCopy(r.share),
+  prices: [...r.prices],
 });
 
 export const diffReadings = (after: Readings, before: Readings): Readings => ({
   routes: new Map([...after.routes].map(([k, v]) => [k, v - (before.routes.get(k) ?? 0)] as const)),
   statuses: new Map(
     [...after.statuses].map(([k, v]) => [k, v - (before.statuses.get(k) ?? 0)] as const),
+  ),
+  routeStatuses: new Map(
+    [...after.routeStatuses].map(([k, v]) => [k, v - (before.routeStatuses.get(k) ?? 0)] as const),
+  ),
+  routePaths: new Map(
+    [...after.routePaths].map(([k, v]) => [k, v - (before.routePaths.get(k) ?? 0)] as const),
   ),
   upstream: new Map(
     [...after.upstream].map(([k, v]) => [
@@ -228,6 +276,7 @@ export const diffReadings = (after: Readings, before: Readings): Readings => ({
   ),
   budget: new Map([...after.budget].map(([k, v]) => [k, v - (before.budget.get(k) ?? 0)] as const)),
   share: new Map([...after.share].map(([k, v]) => [k, v - (before.share.get(k) ?? 0)] as const)),
+  prices: after.prices.slice(before.prices.length),
 });
 
 const memoryStore = (): TokenListStore => {
@@ -329,6 +378,22 @@ export const createWorld = async (opts: {
     // oxlint-disable-next-line typescript/require-await -- the store seam's signature is a promise
     put: async () => undefined,
   };
+  // The price cache is a real memory store — entries carry their `expiresAt` and the gateway's
+  // own `now` judges them — instrumented so a prices request can count its cache hits.
+  const priceCacheData = new Map<string, string>();
+  const priceCacheLog: Array<{ key: string; hit: boolean }> = [];
+  const priceCache = {
+    // oxlint-disable-next-line typescript/require-await -- the cache seam's signature is a promise
+    get: async (key: string) => {
+      const value = priceCacheData.get(key);
+      priceCacheLog.push({ key, hit: value !== undefined });
+      return value;
+    },
+    // oxlint-disable-next-line typescript/require-await -- the cache seam's signature is a promise
+    put: async (key: string, value: string, _ttl: number) => {
+      priceCacheData.set(key, value);
+    },
+  };
   const app = createGateway({
     fetch: stub.fetch,
     networks,
@@ -339,7 +404,7 @@ export const createWorld = async (opts: {
     corsOrigins: [],
     risk,
     tokens,
-    prices: { cache: risk, coingecko: { apiKey: "stub" } },
+    prices: { cache: priceCache, coingecko: { apiKey: "stub" } },
     budget,
     auth: {
       // oxlint-disable-next-line typescript/require-await -- the auth seam's signature is a promise
@@ -369,7 +434,8 @@ export const createWorld = async (opts: {
       return stub.fetch(input, init);
     }
     const path = url.pathname;
-    readings.routes.set(routeClass(path), (readings.routes.get(routeClass(path)) ?? 0) + 1);
+    const route = routeClass(path);
+    readings.routes.set(route, (readings.routes.get(route) ?? 0) + 1);
     inflight += 1;
     try {
       const headers = new Headers(init?.headers);
@@ -378,6 +444,9 @@ export const createWorld = async (opts: {
         method: init?.method ?? (input instanceof Request ? input.method : "GET"),
         headers,
       };
+      const normPath = path.replaceAll(/[0-9a-f]{64}/g, ":h");
+      const routePathKey = `${route}|${reqInit.method} ${normPath}`;
+      readings.routePaths.set(routePathKey, (readings.routePaths.get(routePathKey) ?? 0) + 1);
       const rawBody =
         init?.body ?? (input instanceof Request ? await input.clone().arrayBuffer() : undefined);
       if (typeof rawBody === "string") {
@@ -388,8 +457,23 @@ export const createWorld = async (opts: {
       // Transient limiter refusals become virtual latency, not rejections: retry inside the
       // wrapper so no engine caller (foreground or background) ever fails on a window. Every
       // attempt — including the refusals — is recorded in statuses.
+      const recordStatus = (status: number): void => {
+        readings.statuses.set(status, (readings.statuses.get(status) ?? 0) + 1);
+        const k = `${route}|${String(status)}`;
+        readings.routeStatuses.set(k, (readings.routeStatuses.get(k) ?? 0) + 1);
+      };
+      // A prices request measures its own cache use: stub calls and cache gets made inside its
+      // window are attributed to it (overlapping requests may add their calls to the window too).
+      const pricesProbe =
+        route === "prices"
+          ? {
+              start: stub.calls.length,
+              cacheStart: priceCacheLog.length,
+              request: parsePricesBody(reqInit.body),
+            }
+          : undefined;
       let res = await app.request(`${path}${url.search}`, reqInit);
-      readings.statuses.set(res.status, (readings.statuses.get(res.status) ?? 0) + 1);
+      recordStatus(res.status);
       // 429 (share/limiter refusal) and 503 (budget-window exhaustion on a single-provider
       // network) are both window waits: advance the limiter clock by the announced wait (or one
       // share window) and ask again. A deterministic refusal (413 too-costly, 4xx) is returned
@@ -399,7 +483,32 @@ export const createWorld = async (opts: {
         nowMs += Math.max(1, announced) * 1000;
         // oxlint-disable-next-line no-await-in-loop -- bounded sequential retry
         res = await app.request(`${path}${url.search}`, reqInit);
-        readings.statuses.set(res.status, (readings.statuses.get(res.status) ?? 0) + 1);
+        recordStatus(res.status);
+      }
+      if (pricesProbe !== undefined) {
+        const upstream: Record<string, number> = {};
+        for (const c of stub.calls.slice(pricesProbe.start)) {
+          if (c.method.startsWith("prices:")) {
+            upstream[c.account] = (upstream[c.account] ?? 0) + 1;
+          }
+        }
+        const asked = new Set(pricesProbe.request.assets);
+        const cached = new Set(
+          priceCacheLog
+            .slice(pricesProbe.cacheStart)
+            .filter((l) => l.hit && asked.has(l.key.slice(l.key.indexOf("/") + 1)))
+            .map((l) => l.key.slice(l.key.indexOf("/") + 1)),
+        );
+        readings.prices.push({
+          assets: pricesProbe.request.assets,
+          currency: pricesProbe.request.currency,
+          status: res.status,
+          providers: (res.headers.get("x-gateway-providers") ?? "")
+            .split(",")
+            .filter((p) => p !== ""),
+          cached: cached.size,
+          upstream,
+        });
       }
       return res;
     } finally {
@@ -452,6 +561,7 @@ export const createWorld = async (opts: {
       share: shareSums(),
       upstream: upstreamUnits,
       budget: new Map(),
+      prices: [],
     },
     inflight: () => inflight,
     snapshot: () => {
@@ -469,6 +579,9 @@ export const createWorld = async (opts: {
       return {
         routes: deepCopy(readings.routes),
         statuses: deepCopy(readings.statuses),
+        routeStatuses: deepCopy(readings.routeStatuses),
+        routePaths: deepCopy(readings.routePaths),
+        prices: [...readings.prices],
         upstream,
         budget: (() => {
           const m = new Map<string, number>();

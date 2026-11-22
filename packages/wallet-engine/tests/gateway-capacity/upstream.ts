@@ -872,7 +872,9 @@ export const tokenListFetch: typeof globalThis.fetch = async (input) => {
   if (file === undefined) {
     return json({ error: "unstubbed" }, 404);
   }
-  return new Response(readFileSync(new URL(file, FIXTURES)), {
-    headers: { "content-type": "application/json" },
-  });
+  const doc: unknown = JSON.parse(readFileSync(new URL(file, FIXTURES), "utf8"));
+  // The recorded fixtures carry a `{source, tokens}` envelope; jupiter's source expects the bare
+  // array (as tokens.test.ts serves it), uniswap/coingecko read the envelope themselves.
+  const body = file === "tokens-jupiter.json" && isObject(doc) ? doc["tokens"] : doc;
+  return Response.json(body);
 };
