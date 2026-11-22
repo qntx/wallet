@@ -313,15 +313,39 @@ const DEFAULT_INSTRUCTION_CU = 200_000n;
 const BUILTIN_INSTRUCTION_CU = 3000n;
 const MAX_COMPUTE_UNIT_LIMIT = 1_400_000n;
 
+/* Agave signature_details.rs: an instruction to a signature-verification precompile adds
+   data[0] (0 for empty data) to the signatures the transaction fee pays for. Program ids are
+   always static accounts, so index resolution never needs an ALT. */
+const PRECOMPILE_PROGRAMS: ReadonlySet<string> = new Set([
+  PROGRAM_IDS.ed25519,
+  PROGRAM_IDS.secp256k1,
+  PROGRAM_IDS.secp256r1,
+]);
+
+const signatureCount = (
+  parsed: ParsedSolanaMessage,
+  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+): number => {
+  let count = parsed.numRequiredSignatures;
+  for (const ix of parsed.instructions) {
+    const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+    if (program !== undefined && PRECOMPILE_PROGRAMS.has(program)) {
+      count += ix.data[0] ?? 0;
+    }
+  }
+  return count;
+};
+
 const feeLamports = (
   parsed: ParsedSolanaMessage,
   lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
   calls: ReadonlyArray<IxCall>,
 ): bigint => {
+  const signatures = BigInt(signatureCount(parsed, lookups));
   // SIMD-0385: a v1 transaction ignores ComputeBudget instructions; its config carries the
   // priority fee as a total in lamports, not a per-compute-unit price.
   if (parsed.version === 1) {
-    return 5000n * BigInt(parsed.numRequiredSignatures) + (parsed.config.priorityFeeLamports ?? 0n);
+    return 5000n * signatures + (parsed.config.priorityFeeLamports ?? 0n);
   }
   const price = calls.find((c) => c.kind === "cu-price")?.microLamports ?? 0n;
   // Agave compute_budget_instruction_details.rs: the default limit is 3,000 CU per
@@ -342,7 +366,6 @@ const feeLamports = (
   const requested = calls.find((c) => c.kind === "cu-limit")?.units;
   const limit = requested === undefined ? defaultLimit : BigInt(requested);
   const capped = limit < MAX_COMPUTE_UNIT_LIMIT ? limit : MAX_COMPUTE_UNIT_LIMIT;
-  const signatures = BigInt(parsed.numRequiredSignatures);
   return 5000n * signatures + (price * capped + 999_999n) / 1_000_000n;
 };
 

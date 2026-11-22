@@ -163,16 +163,21 @@ const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
 const isNumberArray = (value: unknown): value is ReadonlyArray<number> =>
   Array.isArray(value) && value.every((v) => typeof v === "number");
 
-const isArrayLike = (value: unknown): value is { readonly length: number } =>
-  isRecord(value) && typeof value["length"] === "number";
+/* kit's decoder omits empty vectors — an absent `data` or `accountIndices` is an empty one,
+   which the wire format and Agave both allow. */
+type DecodedIx = {
+  readonly programAddressIndex: number;
+  readonly accountIndices?: ReadonlyArray<number> | Uint8Array;
+  readonly data?: Uint8Array;
+};
 
-const isIx = (value: unknown): value is CompiledIx =>
+const isIx = (value: unknown): value is DecodedIx =>
   isRecord(value) &&
   typeof value["programAddressIndex"] === "number" &&
   (value["accountIndices"] === undefined ||
     isNumberArray(value["accountIndices"]) ||
-    isArrayLike(value["accountIndices"])) &&
-  value["data"] instanceof Uint8Array;
+    value["accountIndices"] instanceof Uint8Array) &&
+  (value["data"] === undefined || value["data"] instanceof Uint8Array);
 
 const isLookup = (
   value: unknown,
@@ -220,7 +225,7 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
     return {
       programAddressIndex: ix.programAddressIndex,
       accountIndices: indices === undefined ? [] : [...indices],
-      data: ix.data,
+      data: ix.data ?? new Uint8Array(0),
     };
   });
   const tables = (lookups ?? []).map((t) => {

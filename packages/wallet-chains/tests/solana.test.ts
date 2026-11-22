@@ -708,6 +708,57 @@ describe("verifiability + decode", () => {
   });
 });
 
+describe("precompile instruction signatures count toward the fee", () => {
+  /* Agave signature_details.rs: an instruction to a signature-verification precompile adds
+     data[0] (0 for empty data) to the signatures the transaction fee pays for. */
+  const PRECOMPILES = [
+    ["ed25519", PROGRAM_IDS.ed25519],
+    ["secp256k1", PROGRAM_IDS.secp256k1],
+    ["secp256r1", PROGRAM_IDS.secp256r1],
+  ] as const;
+
+  const ix = (program: string, data: ReadonlyArray<number>) => ({
+    programAddress: address(program),
+    accounts: [],
+    data: new Uint8Array(data),
+  });
+
+  const feeOf = (
+    ixs: ReadonlyArray<unknown>,
+    version: "legacy" | 0 | 1 = "legacy",
+    payer: string = FEE_PAYER,
+  ) =>
+    decodeSolana(req(compile(ixs, version, undefined, payer)) as never, FEE_PAYER).fee?.max.amount;
+
+  it.each(PRECOMPILES)("a %s instruction with empty data adds nothing", (_name, program) => {
+    for (const version of ["legacy", 0, 1] as const) {
+      expect(feeOf([ix(program, [])], version)).toBe("5000");
+    }
+  });
+
+  it.each(PRECOMPILES)("a %s instruction with data[0]=0 adds nothing", (_name, program) => {
+    for (const version of ["legacy", 0, 1] as const) {
+      expect(feeOf([ix(program, [0])], version)).toBe("5000");
+    }
+  });
+
+  it.each(PRECOMPILES)("a %s instruction with data[0]=2 adds two", (_name, program) => {
+    for (const version of ["legacy", 0, 1] as const) {
+      expect(feeOf([ix(program, [2])], version)).toBe("15000");
+    }
+  });
+
+  it.each(PRECOMPILES)("two %s instructions sum their counts", (_name, program) => {
+    for (const version of ["legacy", 0, 1] as const) {
+      expect(feeOf([ix(program, [2]), ix(program, [1])], version)).toBe("20000");
+    }
+  });
+
+  it("a sponsored signer pays nothing even with precompile signatures", () => {
+    expect(feeOf([ix(PROGRAM_IDS.ed25519, [2]), transferIx()], "legacy", DEST)).toBe("0");
+  });
+});
+
 const STAKE_PROG = "Stake11111111111111111111111111111111111111";
 const CLOCK = "SysvarC1ock11111111111111111111111111111111";
 const RENT = "SysvarRent111111111111111111111111111111111";
