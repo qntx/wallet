@@ -13,6 +13,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { createSessionsModule } from "../src/modules/sessions/index.ts";
 import { encodeSessionHeader, findSession, SESSION_KIND } from "../src/modules/sessions/record.ts";
+import type { SessionHeader } from "../src/modules/sessions/record.ts";
 import {
   l1ConnectionId,
   phantomAgentTypedData,
@@ -164,6 +165,61 @@ const flipByte = (bytes: Uint8Array): Uint8Array => {
  */
 const keyIdsAre16Hex = (image: { records: ReadonlyArray<{ kind: string; id: string }> }) =>
   image.records.every((r) => r.kind !== "key" || /^[0-9a-f]{16}$/.test(r.id));
+
+const FUTURE_SCOPE = `0x${"11".repeat(20)}`;
+const sealer = {
+  random: (n: number) => new Uint8Array(n).fill(3),
+  now: () => T0,
+} as never;
+
+/** The session DEK, unwrapped the way unlock does — from the test passkey factor's KEK. */
+const sessionDek = async (h: Harness): Promise<Secret> => {
+  const image = await h.store.load();
+  const factor = image.factors.find((f) => f.kind === "passkey");
+  if (factor === undefined) {
+    throw new Error("missing passkey factor");
+  }
+  const kek = passkeyKek(new Uint8Array(32).fill(1), utf8ToBytes("credential-1"));
+  try {
+    return unwrapDek(kek, factor);
+  } finally {
+    wipe(kek);
+  }
+};
+
+/**
+ * Reseal the session record at `address` under a different header — authentic through the AEAD
+ * binding a bare header rewrite lacks. The record's id and sealed key stay.
+ */
+const resealSession = async (h: Harness, address: string, header: SessionHeader): Promise<void> => {
+  const dek = await sessionDek(h);
+  try {
+    const image = await h.store.load();
+    const record = sessionRecord(image, address);
+    if (record === undefined) {
+      throw new Error("missing session record");
+    }
+    const plaintext = openRecord(dek, record);
+    let resealed;
+    try {
+      resealed = sealRecord(
+        sealer,
+        dek,
+        SESSION_KIND,
+        record.id,
+        encodeSessionHeader(header),
+        plaintext,
+      );
+    } finally {
+      wipe(plaintext);
+    }
+    await h.store.commit(
+      withManifest(sealer, image, [{ op: "put-record", record: resealed }], dek),
+    );
+  } finally {
+    dek.wipe();
+  }
+};
 
 /**
  * A Random that serves `key` for 32-byte draws made while armed and deterministic bytes otherwise —
@@ -603,6 +659,54 @@ describe("session-key lifecycle", () => {
     expect(list).toHaveLength(16);
   });
 
+  it("caps live sessions at 64 across all schemes", async () => {
+    const { h, session, walletId } = await setup(T0);
+    /* 49 real session-key records of an unknown scheme + 15 known = 64 live — the next create is
+       the 65th and the per-scheme cap (16) cannot be what refuses it. */
+    const dek = await sessionDek(h);
+    try {
+      const image = await h.store.load();
+      const ops = [];
+      for (let i = 0; i < 49; i++) {
+        const key = new Uint8Array(32);
+        key[31] = i + 1;
+        const id = evmAddressFromPublicKey(secp256k1.getPublicKey(key, true)).toLowerCase();
+        ops.push({
+          op: "put-record" as const,
+          record: sealRecord(
+            sealer,
+            dek,
+            SESSION_KIND,
+            id,
+            encodeSessionHeader({
+              scheme: "future-scheme",
+              walletId,
+              groupIndex: 0,
+              owner: EVM_ADDRESS,
+              scope: FUTURE_SCOPE,
+              name: `s-${i}`,
+              validUntil: T0 + DAY,
+              createdAt: T0,
+            }),
+            key,
+          ),
+        });
+      }
+      await h.store.commit(withManifest(sealer, image, ops, dek));
+    } finally {
+      dek.wipe();
+    }
+    for (let i = 0; i < 15; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
+      await createSession(h, session, walletId, { name: `bot-${i}` });
+    }
+    expect(
+      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-15" }), session)),
+    ).toBe("conflict");
+    const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
+    expect(list).toHaveLength(64);
+  });
+
   it("sessions.create needs a live session and a real wallet", async () => {
     const { h, session, walletId } = await setup(T0);
     expect(errCode(await h.call("sessions.create", createParams(walletId), "00".repeat(16)))).toBe(
@@ -1015,72 +1119,44 @@ describe("session key isolation", () => {
     await h.settle();
     expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
   });
+
+  it("a resealed known-scheme record whose scope the scheme rejects corrupts status", async () => {
+    const { h, session, walletId } = await setup(T0);
+    const address = await createSession(h, session, walletId);
+    /* Resealed under the DEK, so authentication passes — only the scheme's own parseScope can see
+       that "Devnet" is wrong for hyperliquid-l1-agent. */
+    await resealSession(h, address, {
+      scheme: SCHEME,
+      walletId,
+      groupIndex: 0,
+      owner: EVM_ADDRESS,
+      scope: "Devnet",
+      name: "bot-1",
+      validUntil: T0 + DAY,
+      createdAt: T0,
+    });
+    await h.settle();
+    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+  });
 });
 
 describe("unknown schemes stay inert", () => {
-  const FUTURE_SCOPE = `0x${"11".repeat(20)}`;
-  const sealer = {
-    random: (n: number) => new Uint8Array(n).fill(3),
-    now: () => T0,
-  } as never;
-
-  /** The session DEK, unwrapped the way unlock does — from the test passkey factor's KEK. */
-  const sessionDek = async (h: Harness): Promise<Secret> => {
-    const image = await h.store.load();
-    const factor = image.factors.find((f) => f.kind === "passkey");
-    if (factor === undefined) {
-      throw new Error("missing passkey factor");
-    }
-    const kek = passkeyKek(new Uint8Array(32).fill(1), utf8ToBytes("credential-1"));
-    try {
-      return unwrapDek(kek, factor);
-    } finally {
-      wipe(kek);
-    }
-  };
-
   /**
    * A stored session-key record under a scheme this build does not know: a real record's key is
    * resealed under the DEK with an unknown-scheme header — authentic through the AEAD binding.
    */
   async function injectUnknown(h: Harness, session: string, walletId: string): Promise<string> {
     const address = await createSession(h, session, walletId, { name: "future" });
-    const dek = await sessionDek(h);
-    try {
-      const image = await h.store.load();
-      const record = sessionRecord(image, address);
-      if (record === undefined) {
-        throw new Error("missing session record");
-      }
-      const plaintext = openRecord(dek, record);
-      let resealed;
-      try {
-        resealed = sealRecord(
-          sealer,
-          dek,
-          SESSION_KIND,
-          record.id,
-          encodeSessionHeader({
-            scheme: "future-scheme",
-            walletId,
-            groupIndex: 0,
-            owner: EVM_ADDRESS,
-            scope: FUTURE_SCOPE,
-            name: "future",
-            validUntil: T0 + DAY,
-            createdAt: T0,
-          }),
-          plaintext,
-        );
-      } finally {
-        wipe(plaintext);
-      }
-      await h.store.commit(
-        withManifest(sealer, image, [{ op: "put-record", record: resealed }], dek),
-      );
-    } finally {
-      dek.wipe();
-    }
+    await resealSession(h, address, {
+      scheme: "future-scheme",
+      walletId,
+      groupIndex: 0,
+      owner: EVM_ADDRESS,
+      scope: FUTURE_SCOPE,
+      name: "future",
+      validUntil: T0 + DAY,
+      createdAt: T0,
+    });
     return address;
   }
 
@@ -1321,6 +1397,48 @@ describe("ApproveAgent binding", () => {
           {
             request: approveRequest(walletId, agent, `bot-1 valid_until ${validUntil}`, "Testnet"),
             verify: HARDWARE,
+          },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+  });
+
+  it("a session record of another scheme at the agent address is refused", async () => {
+    const { h, session, walletId } = await setup(T0);
+    const validUntil = T0 + 180 * DAY;
+    const agent = await createSession(h, session, walletId, { validUntil });
+    /* Control: the same approval signs while the record's scheme is hyperliquid-l1-agent. */
+    ok(
+      await h.call(
+        "chain.sign",
+        {
+          request: approveRequest(walletId, agent, `bot-1 valid_until ${validUntil}`),
+          verify: PASSKEY(),
+        },
+        session,
+      ),
+    );
+    /* Reseal under a scheme this build does not know — address, owner, scope, name and expiry all
+       still match the approval, so only the scheme check can refuse it. */
+    await resealSession(h, agent, {
+      scheme: "future-scheme",
+      walletId,
+      groupIndex: 0,
+      owner: EVM_ADDRESS,
+      scope: "Mainnet",
+      name: "bot-1",
+      validUntil,
+      createdAt: T0,
+    });
+    await h.settle();
+    expect(
+      errCode(
+        await h.call(
+          "chain.sign",
+          {
+            request: approveRequest(walletId, agent, `bot-1 valid_until ${validUntil}`),
+            verify: PASSKEY(),
           },
           session,
         ),
