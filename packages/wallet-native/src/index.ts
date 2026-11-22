@@ -76,6 +76,8 @@ export async function createNativeWallet(options: NativeWalletOptions): Promise<
   return Object.assign(wallet, { setAutoLock });
 }
 
+export { SecureInput } from "./secure-input.ts";
+export type { SecureInputProps, SecureInputState } from "./specs/secure-input.nitro.ts";
 export { spawnFromHost, type KernelHostLike, type KernelExitReason } from "./host.ts";
 export {
   encodeFrame,

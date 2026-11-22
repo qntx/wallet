@@ -19,11 +19,12 @@ Pod::Spec.new do |s|
     "cpp/runtime/**/*.{h,hpp,c,cpp,mm}",
     "cpp/host/**/*.{h,hpp,c,cpp,mm}",
     "cpp/platform/**/*.{h,hpp,c,cpp,mm}",
+    "ios/**/*.swift",
     # The Argon2 reference implementation (cpp/vendor/argon2/README.md).
     "cpp/vendor/argon2/**/*.{h,c}",
   ]
   s.private_header_files = "cpp/vendor/**/*.h"
-  s.public_header_files = "cpp/**/*.hpp"
+  s.public_header_files = ["cpp/**/*.hpp", "cpp/platform/QntxSecureInputField.h"]
   s.header_mappings_dir = "cpp"
 
   s.pod_target_xcconfig = {
@@ -65,6 +66,9 @@ Pod::Spec.new do |s|
   # The kernel's backends.spark binds the qs_* C ABI; the prebuilt
   # QntxSpark.xcframework ships inside the SparkNative pod.
   s.frameworks = "LocalAuthentication", "Security", "AuthenticationServices", "UIKit"
+  # CoreNFC is absent on the simulator and pre-NFC devices; weak-linking keeps
+  # those builds loading — `readingAvailable` reports no hardware instead.
+  s.weak_frameworks = "CoreNFC"
 
   s.dependency 'NostrNative'
   s.dependency 'SparkNative'

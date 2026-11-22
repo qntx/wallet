@@ -34,8 +34,11 @@ target_sources(
   ../nitrogen/generated/android/WalletNativeOnLoad.cpp
   # Shared Nitrogen C++ sources
   ../nitrogen/generated/shared/c++/HybridKernelHostSpec.cpp
+  ../nitrogen/generated/shared/c++/HybridSecureInputViewSpec.cpp
+  ../nitrogen/generated/shared/c++/views/HybridSecureInputViewComponent.cpp
   # Android-specific Nitrogen C++ sources
-  
+  ../nitrogen/generated/android/c++/JHybridSecureInputViewSpec.cpp
+  ../nitrogen/generated/android/c++/views/JHybridSecureInputViewStateUpdater.cpp
 )
 
 # From node_modules/react-native/ReactAndroid/cmake-utils/folly-flags.cmake

@@ -3,7 +3,7 @@
  * `invalid-input` — the port's own answer, passed through by the channel — instead of an integrity
  * crash that ends the session. The request's secret wire is wiped and the kernel keeps serving.
  */
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { Channel } from "../../wallet/src/channel.ts";
 import type { SetTimer } from "../../wallet/src/channel.ts";
@@ -11,6 +11,11 @@ import { SecretWire } from "../../wallet/src/factors.ts";
 import { decodeFrame, encodeFrame } from "../src/cbor.ts";
 import type { KernelExitReason, KernelHostLike } from "../src/host.ts";
 import { spawnFromHost } from "../src/index.ts";
+
+vi.mock("react-native-nitro-modules", () => ({
+  NitroModules: { createHybridObject: vi.fn() },
+  getHostComponent: vi.fn(() => ({})),
+}));
 
 const realtime: SetTimer = (delayMs, fn) => {
   const timer = setTimeout(fn, delayMs);

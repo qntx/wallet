@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { MAX_IN_FLIGHT } from "@qntx/wallet/host";
 
@@ -15,6 +15,11 @@ import type { SetTimer } from "../../wallet/src/channel.ts";
 import { decodeFrame, encodeFrame } from "../src/cbor.ts";
 import type { KernelExitReason, KernelHostLike } from "../src/host.ts";
 import { spawnFromHost } from "../src/index.ts";
+
+vi.mock("react-native-nitro-modules", () => ({
+  NitroModules: { createHybridObject: vi.fn() },
+  getHostComponent: vi.fn(() => ({})),
+}));
 
 const realtime: SetTimer = (delayMs, fn) => {
   const timer = setTimeout(fn, delayMs);

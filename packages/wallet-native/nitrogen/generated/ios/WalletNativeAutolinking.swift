@@ -12,5 +12,15 @@ import NitroModules
 public final class WalletNativeAutolinking {
   public typealias bridge = margelo.nitro.qntxwallet.bridge.swift
 
+  public static func createSecureInputView() -> bridge.std__shared_ptr_HybridSecureInputViewSpec_ {
+    let hybridObject = HybridSecureInputView()
+    return { () -> bridge.std__shared_ptr_HybridSecureInputViewSpec_ in
+      let __cxxWrapped = hybridObject.getCxxWrapper()
+      return __cxxWrapped.getCxxPart()
+    }()
+  }
   
+  public static func isSecureInputViewRecyclable() -> Bool {
+    return HybridSecureInputView.self is any RecyclableView.Type
+  }
 }

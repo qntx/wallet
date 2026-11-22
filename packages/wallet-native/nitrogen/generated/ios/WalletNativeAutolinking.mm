@@ -7,10 +7,11 @@
 
 #import <Foundation/Foundation.h>
 #import <NitroModules/HybridObjectRegistry.hpp>
-
+#import "WalletNative-Swift-Cxx-Umbrella.hpp"
 #import <type_traits>
 
 #include "HybridKernelHost.hpp"
+#include "HybridSecureInputViewSpecSwift.hpp"
 
 @interface WalletNativeAutolinking : NSObject
 @end
@@ -28,6 +29,13 @@
                     "The HybridObject \"HybridKernelHost\" is not default-constructible! "
                     "Create a public constructor that takes zero arguments to be able to autolink this HybridObject.");
       return std::make_shared<HybridKernelHost>();
+    }
+  );
+  HybridObjectRegistry::registerHybridObjectConstructor(
+    "SecureInputView",
+    []() -> std::shared_ptr<HybridObject> {
+      std::shared_ptr<HybridSecureInputViewSpec> hybridObject = WalletNative::WalletNativeAutolinking::createSecureInputView();
+      return hybridObject;
     }
   );
 }
