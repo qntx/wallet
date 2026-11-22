@@ -6,8 +6,10 @@
  *   engine's own code — what a host that never touches apps pays. The bundle must also stay free of
  *   apps markers (the Hyperliquid base URL and the `@nktkas/hyperliquid` specifier survive
  *   minification), proving the apps entry never leaks into the main one.
- * - `apps`: the `@qntx/wallet-engine/apps` entry with `@qntx/*` workspace packages external (they are
- *   the host's peer deps) and the Hyperliquid SDK bundled — the apps entry's own incremental cost.
+ * - `apps`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core entry and the
+ *   two provider sub-entries, each with `@qntx/*` workspace packages external (they are the host's
+ *   peer deps). The core must stay free of both venues' markers — providers only reach a bundle
+ *   through their own sub-entry.
  * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
  *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
  *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
@@ -72,6 +74,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
     forbidden: [
       "@nktkas/hyperliquid",
       "api.hyperliquid",
+      "polymarket.com",
       "@walletconnect/",
       "@reown/",
       "relay.walletconnect",
@@ -80,10 +83,29 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps",
     source: "src/apps/index.ts",
-    /* Layer 5: the eligibility contract + zod/mini validator join the bundle (~6 kB). */
-    budget: 26 * 1024,
+    /* Measured 9036 B: the controller (incl. the app storage + prune) + shared socket core —
+       no provider ships in this entry. */
+    budget: 9 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
-    forbidden: [],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
+  },
+  {
+    name: "apps-hyperliquid",
+    source: "src/apps/hyperliquid/index.ts",
+    /* Measured 18754 B: the Hyperliquid SDK client + zod/mini + the provider (incl. the CCTP
+       deposit reads through the injected networks client). */
+    budget: 19 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    forbidden: ["polymarket.com"],
+  },
+  {
+    name: "apps-polymarket",
+    source: "src/apps/polymarket/index.ts",
+    /* Measured 39551 B: the full Polymarket client (markets, account, L2 signing + credential
+       store, orders, relayer, enable, live market + user channels, funding) incl. viem hashing. */
+    budget: 39 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
   },
   {
     name: "walletconnect",

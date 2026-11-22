@@ -1,0 +1,11 @@
+{
+  "request": { "method": "DELETE", "url": "https://clob.polymarket.com/order" },
+  "fetchedAt": 0,
+  "source": "evidence/specs/clob-openapi.yaml:213-224 (cancel examples; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "canceled": ["0xabcdef1234567890abcdef1234567890abcdef12"],
+    "not_canceled": {
+      "0x1234567890abcdef1234567890abcdef12345678": "Order not found or already canceled"
+    }
+  }
+}

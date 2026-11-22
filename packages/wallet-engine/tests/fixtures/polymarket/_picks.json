@@ -1,0 +1,18 @@
+{
+  "primary": {
+    "slug": "putin-out-before-2027-346",
+    "conditionId": "0x6bd56627aa21311850825edb27e53434a0e17a4f782be0086bc07f71eee00d0d",
+    "assetId": "350977769852917329387037893294763093471844346281449484439085576212613048126"
+  },
+  "negrisk": {
+    "slug": "will-rob-sand-win-the-2028-democratic-presidential-nomination",
+    "conditionId": "0xb4bc952b12bf4f6e8e1e32d0b70d56cb70ac6aac22b65ec2fe553eceb440fc0c",
+    "assetId": "111635662227571049699477896721168705336791547298738629583975917043983607244581"
+  },
+  "v2": null,
+  "closed": {
+    "slug": "will-joe-biden-get-coronavirus-before-the-election",
+    "conditionId": "0xe3b423dfad8c22ff75c9899c4e8176f628cf4ad4caa00481764d320e7415f7a9",
+    "assetId": "53135072462907880191400140706440867753044989936304433583131786753949599718775"
+  }
+}

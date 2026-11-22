@@ -221,18 +221,22 @@ Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
 
 ## Hyperliquid
 
-`@qntx/wallet-engine/apps` is a separate entry point: the app providers (Hyperliquid today) and
-their controller. A host that never touches it pays nothing — the SDK, the WebSocket transport
-and the eligibility client live only in this entry's bundle.
+`@qntx/wallet-engine/apps` is a separate entry point: the `AppsController` and the composition
+host apps build on. Each provider ships in its own sub-entry —
+`@qntx/wallet-engine/apps/hyperliquid`, `@qntx/wallet-engine/apps/polymarket` — so a host bundles
+only the apps it lists.
 
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
+import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
+import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
 const engine = createWalletEngine({/* … */});
 const apps = await createApps({
   wallet, // the same Wallet the engine was built on
   requests: engine.requests, // user-signed actions open approval requests here
+  networks: engine.networks, // chain reads (the Hyperliquid CCTP deposit's allowance/burn limit)
   fetch: globalThis.fetch.bind(globalThis),
   now: () => Date.now(),
   setTimer: (ms, fn) => {
@@ -246,19 +250,25 @@ const apps = await createApps({
   socket: (url) => new WebSocket(url), // browser, RN or Node ≥ 22 — one socket for all views
   gateway: { url: "https://api.example.com" },
   // the wallet gateway — /v1/eligibility is fetched here
-  hyperliquid: {
-    network: "Mainnet", // or "Testnet"
-    agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
-    builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
-  },
+  apps: [
+    hyperliquid({
+      network: "Mainnet", // or "Testnet"
+      agentName: "my-app", // ^[A-Za-z0-9._-]{1,16}$ — part of the kernel's agent binding
+      builder: { address: "0x…", feeRateTenthsBps: 10 }, // optional builder fee — see below
+    }),
+    polymarket({
+      builder: { code: "0x…", sign: myBuilderEndpoint }, // Remote Builder Signing — see below
+    }),
+  ],
 });
 await apps.destroy();
 ```
 
 `apps.controller` is a `HostController<AppsState>` (the usual `store` facade) with
-`acknowledgeTerms`, `enable`, `renew`, `disable`, `cancel` and `refreshEligibility`; the provider
-itself is `apps.hyperliquid`. The full composition — engine, apps, approvals, orders, live views —
-is in `tests/migration/hyperliquid.ts`.
+`acknowledgeTerms`, `enable`, `renew`, `approveBuilder`, `disable`, `cancel` and
+`refreshEligibility`; the providers are `apps.hyperliquid` and `apps.polymarket`. The full
+composition — engine, apps, approvals, orders, live views — is in `tests/migration/hyperliquid.ts`
+and `tests/migration/polymarket.ts`.
 
 ### Enabling
 
@@ -333,11 +343,13 @@ the `requestId` to render and an `outcome` promise (`ok`, or `unknown` — may h
 
 ### Builder fees
 
-An optional `hyperliquid.builder` attaches `{ b, f }` to signed order actions — but only after
-the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured) and
-this session confirmed `maxBuilderFee` still covers it. There is no default fee, the attached
-rate is never above the approved one, and `feeRateTenthsBps` is 1–100 (tenths of a basis point,
-0.1–10 bp).
+An optional `hyperliquid({ builder })` attaches `{ b, f }` to signed order actions — but only
+after the user approved it on Hyperliquid (`approveBuilderFee` runs inside enable when configured)
+and this session confirmed `maxBuilderFee` still covers it. Declining the approval still finishes
+`enabled` with `builder: "declined"` (orders carry no builder); the decline persists across
+unlock, renew and re-enable until `controller.approveBuilder(group, "hyperliquid")` obtains an
+approval. There is no default fee, the attached rate is never above the approved one, and
+`feeRateTenthsBps` is 1–100 (tenths of a basis point, 0.1–10 bp).
 
 ### Scope
 
@@ -353,6 +365,146 @@ signature allow-list covers only the owner account's actions.
 > rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
 > kernel does not sign those actions. The window is the unlocked period plus nonces pre-signed
 > up to 5 minutes before the lock.
+
+## Polymarket
+
+Polymarket support lives under `apps.polymarket` when `createApps` lists `polymarket(config)` from
+`@qntx/wallet-engine/apps/polymarket`. The provider trades from the account's **deposit wallet** —
+a Polymarket smart contract wallet the relayer deploys to a deterministic CREATE2 address derived
+from the group's `evm.bip44` signer. Everything else is discovered, not persisted: credentials
+live in the engine's encrypted apps store, deployment is read from the relayer, approvals from
+the Data API.
+
+```ts
+const apps = createApps({
+  wallet,
+  requests,
+  networks,
+  fetch,
+  now,
+  setTimer,
+  random,
+  logger,
+  openStore,
+  socket,
+  gateway: { url },
+  apps: [
+    polymarket({
+      // The host's Remote Builder Signing oracle — see "Builder signing" below.
+      builder: {
+        code: "0x…", // optional attribution written into orders; absent = zero code
+        sign: async ({ method, path, body }) => postToYourBuilderEndpoint({ method, path, body }),
+      },
+    }),
+  ],
+});
+```
+
+### Account model
+
+Enablement resolves exactly one wallet per group: the beacon or UUPS deposit-wallet candidate,
+preferring a deployed one. An account that only ever had the legacy Polymarket **Safe** reports
+`needs-migration` — it is displayed read-only and no trading path runs for it (the Safe cannot be
+upgraded by the relayer). Trading directly from the owner EOA is not offered: Polymarket allows
+EOA orders only for allow-listed accounts, and the deposit wallet covers everyone else.
+
+`account.locate(group)` returns `{ signer, wallet, kind, deployed, legacySafe? }`; a deposit wallet
+that coexists with a deployed Safe surfaces `legacySafe` for display.
+
+### What works without a builder
+
+| Capability                                                                           | Without a builder                                    | Why                                                                               |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Market data, search, book, history, positions/trades/value (Gamma/CLOB/Data, public) | works                                                | no authentication                                                                 |
+| Locating an existing deposit wallet (both derivations + relayer `/deployed`)         | works                                                | public read                                                                       |
+| Deploying the deposit wallet                                                         | `builder-required`                                   | relayer `WALLET-CREATE` only accepts builder credentials                          |
+| `ClobAuth` → L2 credentials                                                          | works                                                | the CLOB does not require a builder                                               |
+| The 8-call approvals batch, withdraw, future redeems                                 | `builder-required`                                   | all are relayer `WALLET` transactions                                             |
+| Placing/cancelling orders                                                            | works when the wallet is already deployed + approved | the CLOB needs only L2 + the order signature; `builder` field zero = unattributed |
+| Deposit (EOA → deposit-wallet pUSD)                                                  | works                                                | an ordinary Polygon transaction, user pays POL gas                                |
+
+### Builder signing
+
+Relayer submissions are HMAC'd by a builder API key **the app never holds**: `builder.sign`
+receives `{ method, path, body }` and must return the four `POLY_BUILDER_API_KEY /
+POLY_BUILDER_PASSPHRASE / POLY_BUILDER_SIGNATURE / POLY_BUILDER_TIMESTAMP` headers — the engine
+sends the exact `body` string it signed. The host endpoint must authenticate its caller and should
+restrict `path` to `/submit`. Builder secrets belong on the host's server — never in the app, and
+never proxied through the gateway.
+
+### Enablement
+
+`enable` runs five steps — `locate-wallet` → `deploy-wallet` (only when undeployed; builder
+required) → `credentials` (one `ClobAuth` typed-data signature serves `POST /auth/api-key` and, if
+needed, `GET /auth/derive-api-key`) → `approvals` (only the rows the Data API reports missing from
+a fixed 8-call table, signed as one `DepositWallet` `Batch` and submitted through the relayer) →
+`verify` — each writing `{ step, requestId, error }` so a lock or crash resumes without repeating
+finished work. Statuses: `disabled`, `enabling`, `enabled`, `needs-reauthorization`,
+`needs-migration`, `unavailable`. `renew` does not apply — CLOB credentials do not expire.
+`disable({ revoke: true })` asks the CLOB to `DELETE /auth/api-key` first and then drops the
+stored credential record; a local delete alone is **not** a revoke — the same wallet re-derives the same credentials,
+so always use `revoke: true` to cut the key off server-side.
+
+Eligibility: `enable` accepts `available` **and** `close-only` jurisdictions (close-only users need
+credentials to sell and withdraw); `blocked` and unknown/error answers fail closed with
+`PolymarketError("blocked")`.
+
+### Credential custody
+
+The `apiKey`/`secret`/`passphrase` the CLOB answers are written into the app's encrypted
+collection on the session store (`apps.polymarket`, key `<walletId>/<groupIndex>/eip155:137`,
+encrypted under the data key the host's `openStore` holds) — unavailable while locked, pruned when
+the wallet is deleted, cleared on `disable`, and never surfaced in controller state, snapshots,
+logs, or error strings. Every later authenticated request is HMAC'd by the engine itself
+(`l2Headers`) with a ±30 s timestamp window, after checking the stored `owner` still equals the
+group's `evm.bip44` signer. The authenticated `/ws/user` channel receives the same credentials in
+its subscription frame for live order/trade events. Residual risk: a compromised main runtime
+while the wallet is unlocked can read the CLOB credentials: it can cancel orders and read private
+CLOB data (orders, trades) until the user disables Polymarket with revoke (server-side
+`DELETE /auth/api-key`). It cannot place orders — every order needs a signature the kernel decodes
+and the user approves — and cannot move funds (no CLOB path withdraws or transfers).
+
+### Trading
+
+`trade.place` covers limit `GTC`/`GTD` (with `postOnly`) and market `FOK`/`FAK` orders. Rounding is
+directional — price to the tick in the user's favour, size down to the 2-decimal grid — so the
+signed order is never worse than the requested limit, and a market quote's shown worst-price bound
+is the signed bound. GTD `expiration` and the displayed fee fields are **unsigned** (the V2 struct
+has no such fields) and shown as such. `orderId` is the order's EIP-712 hash, known before
+approval.
+
+Outcomes: `resting`, `matched`, `delayed`, `unmatched`, `rejected` (classified reason), `canceled`,
+`not-found`, and `unknown`. An `unknown` — timeout, network error, 5xx, or an answer that cannot be
+tied to the hash — is reconciled by reads at 0/+2 s/+5 s and **never re-posted**: a V2 order has no
+expiry, so a lost-but-valid order could still be submitted by whoever holds it. Cancels
+(`cancel`, `cancelMany` ≤ 500, `cancelAll`, `cancelMarket`) are never eligibility-gated.
+
+### Close-only
+
+BUY orders — and BUY quotes — are refused (`close-only`) when the gateway reports the app
+`close-only`/`blocked`, when eligibility is unknown, or when the account's own `closed_only` flag
+is set (a failed check fails closed). SELLs, cancels and withdrawals are always allowed.
+
+### Funding
+
+`fund.deposit(group, { amount, fee })` prepares a pUSD `send` from the owner EOA to the located
+**deployed** deposit wallet — it is not eligibility-gated (a deposit opens nothing).
+`fund.withdraw(group, { amount })` submits a one-call relayer `Batch`, `pUSD.transfer(owner)`, so
+the destination is always the owner's own address; a lost submit resolves `unknown` and is never
+auto-resubmitted. Only pUSD moves through this lane this round: USDC/USDC.e wrapping and
+cross-chain bridging are not offered because Polymarket's collateral is pUSD on Polygon and
+wrapping paths belong to the swap/bridge lanes, not this app.
+
+### Live views
+
+`live.book(assetId)` streams the public market channel (`custom_feature_enabled` for
+best-bid/ask and resolution events): a `book` snapshot turns the view `live`, `price_change`
+deltas apply only on top of it (size `"0"` removes the level), and every disconnect marks the view
+`stale` while keeping the last data. `live.account(group)` streams the authenticated user channel
+(`/ws/user`): the group's credentials go out as the first frame, order events upsert/remove the
+open-orders list and trade events debounce into a REST re-read. A disconnect keeps the data as
+`stale` and falls back to a 10 s REST poll (`source: "poll"`) until the socket reconnects and the
+view returns to `live`/`stream`; a lock or a missing-credential stop closes the view for good.
 
 ## WalletConnect
 

@@ -1307,9 +1307,11 @@ option.
 
 Host checklist:
 
-- Pass `requests: engine.requests`, a separate `openStore` (its own EngineStore namespace), a
-  `socket: (url) => new WebSocket(url)` factory, the wallet `gateway` URL, and
-  `hyperliquid: { network, agentName, builder? }` (no defaults; `builder.feeRateTenthsBps` 1..100).
+- Pass `requests: engine.requests`, `networks: engine.networks`, a separate `openStore` (its own
+  EngineStore namespace), a `socket: (url) => new WebSocket(url)` factory, the wallet `gateway`
+  URL, and `apps: [hyperliquid({ network, agentName, builder? })]` (no defaults;
+  `builder.feeRateTenthsBps` 1..100; `hyperliquid` comes from `@qntx/wallet-engine/apps/hyperliquid`,
+  see §27).
 - Render `AppsController` state: `status` (`disabled | enabling | enabled | needs-reauthorization
   | unavailable`), `step` + `requestId` (show that request's approval screen), `renewalDue`,
   `error`, and `eligibility` (call `refreshEligibility()` on foreground — display only).
@@ -1449,3 +1451,80 @@ Each entry is `{ txId, signedPsbt }` (was `{ txId }`).
 `engine.connections` gains `establishWalletConnect`, `previewAccounts`, `authorize`, `touch`;
 `ConnectionState` gains `ready`. Handler requests take an optional `network` the in-app bridge
 never sets.
+
+## 27. Apps sub-entries and the Polymarket provider
+
+Typechecked host code: `tests/migration/hyperliquid.ts` and `tests/migration/polymarket.ts`.
+
+### `createApps` lists app definitions; providers moved to sub-entries
+
+`@qntx/wallet-engine/apps` keeps `createApps`, `AppsController` and the shared types. Each provider
+ships in its own sub-entry and is passed as a definition:
+
+```ts
+// before
+import { createApps, HyperliquidError } from "@qntx/wallet-engine/apps";
+const apps = createApps({ ...io, hyperliquid: { network: "Mainnet", agentName: "app" } });
+apps.hyperliquid.markets.perps();
+
+// after
+import { createApps } from "@qntx/wallet-engine/apps";
+import { hyperliquid, HyperliquidError } from "@qntx/wallet-engine/apps/hyperliquid";
+import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
+
+const apps = createApps({
+  ...io, // wallet, requests, networks, fetch, now, setTimer, random, logger, openStore, socket, gateway
+  apps: [
+    hyperliquid({ network: "Mainnet", agentName: "app" }),
+    polymarket({ builder: { code: BUILDER_CODE, sign: (request) => myServer.sign(request) } }),
+  ],
+});
+apps.hyperliquid.markets.perps();
+apps.polymarket.markets.events({ limit: 20 });
+await apps.destroy();
+```
+
+- The result has `controller`, `destroy` and one property per listed app id — an app you do not
+  list is absent (not `undefined`) and its code is not bundled.
+- Config validation (`agentName`, `builder.address`, `builder.feeRateTenthsBps`, Polymarket
+  `builder.code`) throws from the factory call, with the same messages `createApps` used.
+- Every Hyperliquid type/value (`HyperliquidError`, `HYPERLIQUID_DEPOSIT`, `HyperliquidProvider`,
+  `AppsHyperliquidConfig`, `AppsBuilderConfig`, …) is imported from
+  `@qntx/wallet-engine/apps/hyperliquid`; Polymarket ones from `@qntx/wallet-engine/apps/polymarket`.
+- `AppSocket` and the definition types (`AppDefinition`, `AppContext`, `AppStorage`, …) stay in
+  `@qntx/wallet-engine/apps`.
+
+### Polymarket
+
+- `builder` is optional. Without it, deposit-wallet deployment, the trading-approvals batch and
+  withdrawals are refused with `PolymarketError("builder-required")`; reads, credentials, orders on
+  an already deployed and approved wallet, and deposits work (engine README §Polymarket table).
+  The `sign` hook must call your own server, which holds the Polymarket Builder API secret,
+  authenticates the caller and only signs `POST /submit`. Never ship the builder secret in the app
+  or the gateway.
+- CLOB API credentials are stored in the store your `openStore` returns (collection
+  `apps.polymarket`, encrypted under the data key like every engine record). Use a store opened
+  with the wallet's data key, as for the engine's own store. Nothing to migrate: the provider is
+  new.
+- `live.account(group)` data is `{ wallet, openOrders, positions, trades, source }`; `source` is
+  `"stream"` while the user WebSocket is up and `"poll"` while the view falls back to REST (status
+  `stale`).
+- `controller.approveBuilder(group, "polymarket")` and `renew(group, "polymarket")` throw
+  `PolymarketError("invalid-input")`: there is no builder fee approval and CLOB credentials do not
+  expire.
+
+### App state
+
+- `AppGroupState.status` gains `"needs-migration"` (the account resolves to a legacy Polymarket
+  Safe: read-only).
+- `AppStep` gains `"locate-wallet" | "deploy-wallet" | "credentials" | "approvals"`.
+- `AppGroupState.account?: { wallet, kind: "deposit-wallet" | "safe", deployed, legacySafe? }`.
+- Exhaustive `switch`es over `status`/`step` need the new members.
+- Polymarket enable is allowed under `close-only` eligibility (so users can sell); opening
+  positions (BUY) is refused there. Controller errors for Polymarket are `PolymarketError`
+  (`busy`, `unlock-required`, `blocked`, `invalid-input`).
+
+### `@qntx/wallet` and the vault
+
+No change: Polymarket adds no `@qntx/wallet` subpath, protocol method or vault record. The kernel
+bundle is byte-identical.

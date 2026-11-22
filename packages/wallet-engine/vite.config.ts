@@ -10,6 +10,8 @@ const config: UserConfig = defineConfig({
         connect: "src/connect/index.ts",
         "gateway-contract": "src/gateway/contract/index.ts",
         apps: "src/apps/index.ts",
+        "apps-hyperliquid": "src/apps/hyperliquid/index.ts",
+        "apps-polymarket": "src/apps/polymarket/index.ts",
         walletconnect: "src/walletconnect/index.ts",
       },
       tsconfig: "tsconfig.src.json",

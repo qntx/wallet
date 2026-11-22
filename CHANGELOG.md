@@ -335,9 +335,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   methods (`createAgent`, `listAgents`, `deleteAgent`, `signL1`) the way `spark(wallet)` and
   `nostr(wallet)` expose theirs.
 - `@qntx/wallet-engine/apps`: a separate entry (hosts that do not import it bundle nothing new).
-  `createApps({ wallet, requests, fetch, socket, now, setTimer, random, logger, openStore, gateway,
-  hyperliquid: { network, agentName, builder? } })` returns an `AppsController` and a
-  `HyperliquidProvider`:
+  `createApps({ wallet, requests, networks, fetch, socket, now, setTimer, random, logger, openStore,
+  gateway, apps: [hyperliquid({ network, agentName, builder? })] })` returns an `AppsController` and
+  the `HyperliquidProvider` as `apps.hyperliquid`:
   - `AppsController`: per account group and app state (`disabled`, `enabling`, `enabled`,
     `needs-reauthorization`, `unavailable`), terms acknowledgement, gateway eligibility, and a
     resumable enable flow (kernel agent → `ApproveAgent` request → optional `ApproveBuilderFee`
@@ -410,6 +410,34 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `network` (CAIP-2); the in-app-browser bridge never sets it.
 - `@qntx/wallet-engine`: `parsePayment` returns `{ kind: "walletconnect", uri }` for a `wc:` v2
   pairing URI.
+- `@qntx/wallet-engine/apps/polymarket`: the Polymarket provider, `polymarket({ builder? })` —
+  market discovery and order books (Gamma/CLOB/Data API v2), deposit-wallet location (both
+  deposit-wallet generations and legacy Safes, from on-chain-verified derivations), account reads,
+  quotes with directional rounding that never worsens the user's limit, limit (GTC/GTD, post-only)
+  and market (FOK/FAK, shown worst-price bound) orders signed as kernel-described `TypedDataSign`
+  approvals, unknown POST outcomes reconciled by order hash (never re-posted), cancels, a resumable
+  enable flow (deploy → `ClobAuth` credentials → trading approvals batch → verify) and disable with
+  server-side key revocation, live order books over the market WebSocket, live account views over
+  the authenticated user WebSocket (order events applied in place, trade events re-read positions
+  and trades; a 10 s REST poll while the socket is down), pUSD deposit and withdrawal to the owner.
+  Relayer steps (deploy, approvals, withdraw) need the host's `builder.sign` hook; the builder
+  secret never enters the app or the gateway. Opening positions (BUY) is refused under
+  close-only/blocked/unknown eligibility and for accounts the CLOB marks `closed_only`.
+- Polymarket CLOB L2 API credentials live in the apps store (the host's `openStore`, encrypted
+  under the data key), one record per account group on Polygon; the engine computes the L2 HMAC
+  itself. Credentials are never in controller state, events, logs or errors (L2 errors are scrubbed
+  of them), are unavailable while the wallet is locked, are re-checked against the group's signer
+  on every request, and are deleted on disable and when their wallet is deleted. A compromised main
+  runtime can read them while the wallet is unlocked (cancel orders, read private CLOB data); it
+  cannot place orders or move funds. The kernel gains no record kind or command for them.
+- `@qntx/wallet-engine/apps/hyperliquid`: `hyperliquid({ network, agentName, builder? })` and every
+  Hyperliquid export (moved from `@qntx/wallet-engine/apps`).
+- `@qntx/wallet-engine/apps`: app definitions (`AppDefinition`, `AppInstance`, `AppContext`,
+  `AppStorage`, `AppApis`) — each app gets its own encrypted per-group storage namespace
+  (`apps.<id>`), pruned when a wallet is deleted.
+- Vectors: `vectors/chains/polymarket-l2.json` (L2 headers, oracle clob-client-v2
+  `createL2Headers`), `vectors/chains/polymarket-wallets.json` (deposit-wallet and Safe derivations
+  checked against on-chain owners).
 
 ### Changed
 
@@ -750,6 +778,16 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-engine`: `createBrowserBridge` requires a `tron` handler (`engine.tronWallet`); the facade's `connections` gains `setTronNetwork`.
 - `@qntx/wallet-chains/evm`: `typedDataFields` takes an optional leaf-value override.
 - `@qntx/wallet-engine`: `bitcoin:signAndSendTransaction` results carry `signedPsbt` next to `txId`.
+- **BREAKING:** `@qntx/wallet-engine/apps`: `createApps` takes `apps: [hyperliquid(…),
+  polymarket(…)]` instead of a `hyperliquid` config field and returns `controller`, `destroy` and
+  one api per listed app id. The entry now carries only the controller and shared core; providers
+  ship in the `/apps/hyperliquid` and `/apps/polymarket` sub-entries, so a host pays only for the
+  apps it imports (gzip: core 9.0 kB, Hyperliquid 18.8 kB, Polymarket 39.6 kB).
+  `AppGroupState.status` gains `"needs-migration"`, `AppStep` gains `"locate-wallet" |
+  "deploy-wallet" | "credentials" | "approvals"`, and groups carry an optional `account`. The
+  shared WebSocket core moved to `src/apps/socket.ts` (Hyperliquid behaviour unchanged).
+  `controller.approveBuilder(group, "polymarket")` is refused with `PolymarketError("invalid-input")`
+  (Polymarket has no builder fee approval). The main engine entry is byte-identical.
 
 ### Removed
 

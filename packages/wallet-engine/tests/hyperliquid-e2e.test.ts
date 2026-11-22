@@ -16,6 +16,7 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/index.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
 import type { AppSocket } from "../src/apps/hyperliquid/socket.ts";
 import { createHyperliquidSocket } from "../src/apps/hyperliquid/socket.ts";
@@ -202,7 +203,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
       },
       socket: (url) => new WebSocket(url) as AppSocket,
       gateway: { url: "https://gateway.test" },
-      hyperliquid: { network: "Testnet", agentName: "qntx-e2e" },
+      apps: [hyperliquidApp({ network: "Testnet", agentName: "qntx-e2e" })],
     });
     await networks.init();
     await transactions.init();

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://clob.polymarket.com/auth/ban-status/closed-only"
+  },
+  "fetchedAt": 0,
+  "source": "evidence/specs/clob-openapi.yaml:3038 (getClosedOnlyMode 200 example; L2 endpoints cannot be recorded without credentials)",
+  "response": {
+    "closed_only": false
+  }
+}
