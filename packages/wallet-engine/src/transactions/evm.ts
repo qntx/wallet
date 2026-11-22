@@ -2190,7 +2190,10 @@ export const createEvmRoute = (): EvmRoute => {
         return { kind: "ended", state: "dropped" };
       }
     }
-    if (watch.nextResubmit === undefined || now >= watch.nextResubmit) {
+    if (
+      tx.rebroadcast !== false &&
+      (watch.nextResubmit === undefined || now >= watch.nextResubmit)
+    ) {
       await evm.broadcast(client, raw).catch(() => "");
       watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;

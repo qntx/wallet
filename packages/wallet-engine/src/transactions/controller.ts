@@ -243,6 +243,7 @@ const decode = (
     replaces,
     parentId,
     raw: signedRaw,
+    rebroadcast,
     evm,
     btc,
     tron,
@@ -281,6 +282,7 @@ const decode = (
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
     ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),
+    ...(rebroadcast === false ? { rebroadcast } : {}),
     ...(isEvmRecord(evm)
       ? { evm }
       : (() => {
@@ -318,8 +320,14 @@ export class TransactionController extends Controller<TransactionControllerState
    */
   private generation = 0;
   private readonly batches = new Map<string, BatchRecord>();
-  /** Ids whose last bookkeeping write failed; each `pollOnce` retries them. */
-  private readonly unsaved = new Set<string>();
+  /**
+   * The latest row whose bookkeeping write has not reached the store — set by a locked vault or a
+   * failed write, replayed at `init` and by the flush loop. Locking keeps it: these rows describe
+   * bytes that may already be out, so losing one means losing a refusal.
+   */
+  private readonly unsaved = new Map<string, TrackedTransaction>();
+  /** The running flush loop while `unsaved` is non-empty and the vault is unlocked. */
+  private unsavedFlush: (() => void) | undefined;
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -333,23 +341,52 @@ export class TransactionController extends Controller<TransactionControllerState
     const collection = this.engineStore.collection("transactions");
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
+    const loadedRows: TrackedTransaction[] = [];
     for (const raw of rows) {
       const loaded =
         raw === undefined ? undefined : decode(raw, (msg) => this.options.logger.warn(msg));
-      if (loaded === undefined) {
-        continue;
+      if (loaded !== undefined) {
+        loadedRows.push(loaded);
       }
+    }
+    /* Rows a locked-window or failed transition parked outrank the copy on disk — they describe
+       bytes that already left — so they override the load and are retried now, before any
+       recovery decision reads the rows. */
+    for (const [id, held] of this.unsaved) {
+      const index = loadedRows.findIndex((t) => t.id === id);
+      if (index === -1) {
+        loadedRows.push(held);
+      } else {
+        loadedRows[index] = held;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one row at a time, in id order
+        await collection.put(id, encode(held));
+        if (this.unsaved.get(id) === held) {
+          this.unsaved.delete(id);
+        }
+      } catch (error) {
+        this.options.logger.warn(
+          `transaction ${id} (${held.state}) still not persisted; it is retried until it lands`,
+          error,
+        );
+      }
+    }
+    this.armUnsavedFlush();
+    for (const loaded of loadedRows) {
       this.update((s) => ({ ...s, txs: { ...s.txs, [loaded.id]: loaded } }));
       const { hash } = loaded;
       if ((!LIVE_STATES.has(loaded.state) && !awaitingFinality(loaded)) || hash === undefined) {
         continue;
       }
-      // Signed bytes persisted but the broadcast never settled (the app stopped mid-send): the
-      // outcome is unknown, so the transaction is tracked like any submitted one.
+      /* Signed bytes persisted but the broadcast never settled — the app stopped mid-send, or
+         a refused send's terminal write never landed. The outcome is unknown, so the
+         transaction stays tracked; `rebroadcast: false` records that the bytes may have been
+         refused: watched, never resent. */
       const tx =
         loaded.state === "signed"
           ? // oxlint-disable-next-line eslint/no-await-in-loop -- rows load in order
-            await this.transition(loaded, { state: "submitted" })
+            await this.transition(loaded, { state: "submitted", rebroadcast: false })
           : loaded;
       if (tx.family === "evm") {
         this.evmRoute.resume(tx);
@@ -418,7 +455,11 @@ export class TransactionController extends Controller<TransactionControllerState
       stop();
     }
     this.timers.clear();
-    this.unsaved.clear();
+    this.stopUnsavedFlush();
+    /* A locked vault holds no rows: what is persisted stays on disk and `unsaved` keeps what
+       still needs to land — both replay at `init`. */
+    this.update(() => ({ txs: {} }));
+    this.batches.clear();
     this.engineStore = undefined;
     this.evmRoute = createEvmRoute();
     this.bitcoinRoute.lock();
@@ -439,26 +480,82 @@ export class TransactionController extends Controller<TransactionControllerState
     next: Partial<TrackedTransaction>,
     durable = false,
   ): Promise<TrackedTransaction> {
-    if (durable && this.engineStore === undefined) {
-      throw new Error("transactions require an unlocked vault");
-    }
     const updated: TrackedTransaction = { ...tx, ...next };
+    if (this.engineStore === undefined) {
+      /* Lock cleared the in-memory rows, so a bookkeeping write in this window is only queued
+         for replay at the next unlock — it must not repopulate state — while a durable write
+         still throws: signed bytes must reach the store before they leave. */
+      if (durable) {
+        throw new Error("transactions require an unlocked vault");
+      }
+      this.unsaved.set(tx.id, updated);
+      await this.persist(updated);
+      return updated;
+    }
     this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: updated } }));
     try {
       await this.persist(updated);
+      if (this.unsaved.get(tx.id) === updated) {
+        this.unsaved.delete(tx.id);
+      }
     } catch (error) {
       /* A durable write must not fail silently — its caller has not broadcast yet. Anything
-         else is bookkeeping: keep the row in memory and let the next poll retry it. */
+         else is bookkeeping: keep the row and let the flush loop land it. */
       if (durable) {
         throw error;
       }
-      this.unsaved.add(tx.id);
+      this.unsaved.set(tx.id, updated);
+      this.armUnsavedFlush();
       this.options.logger.warn(
-        `transaction ${tx.id} (${updated.state}) not persisted; the next poll retries`,
+        `transaction ${tx.id} (${updated.state}) not persisted; the retry loop stores it`,
         error,
       );
     }
     return updated;
+  }
+
+  /** Arms the bookkeeping retry while the vault is unlocked and a row still needs the store. */
+  private armUnsavedFlush(): void {
+    if (this.locked || this.unsaved.size === 0 || this.unsavedFlush !== undefined) {
+      return;
+    }
+    this.unsavedFlush = repeat(
+      this.options.setTimer,
+      this.options.pollMs ?? 4000,
+      async () => this.flushUnsaved(),
+      (error) => {
+        this.options.logger.warn("transaction bookkeeping retry failed", error);
+      },
+    );
+  }
+
+  private stopUnsavedFlush(): void {
+    this.unsavedFlush?.();
+    this.unsavedFlush = undefined;
+  }
+
+  /** Writes every parked row; a row that lands leaves `unsaved`, an empty `unsaved` stops the loop. */
+  private async flushUnsaved(): Promise<void> {
+    for (const [id, row] of this.unsaved) {
+      if (this.locked) {
+        return;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one row at a time, in id order
+        await this.persist(row);
+        if (this.unsaved.get(id) === row) {
+          this.unsaved.delete(id);
+        }
+      } catch (error) {
+        this.options.logger.warn(
+          `transaction ${id} (${row.state}) still not persisted; it is retried until it lands`,
+          error,
+        );
+      }
+    }
+    if (this.unsaved.size === 0) {
+      this.stopUnsavedFlush();
+    }
   }
 
   private routeCtx(): RouteContext {
@@ -916,22 +1013,6 @@ export class TransactionController extends Controller<TransactionControllerState
     if (tx === undefined) {
       this.untrack(id);
       return;
-    }
-    /* Rows whose bookkeeping write failed are retried before the next answer applies; a row
-       already gone means its fate was settled elsewhere. */
-    for (const unsavedId of this.unsaved) {
-      const row = this.getState().txs[unsavedId];
-      if (row === undefined) {
-        this.unsaved.delete(unsavedId);
-        continue;
-      }
-      try {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- one row at a time, in id order
-        await this.persist(row);
-        this.unsaved.delete(unsavedId);
-      } catch {
-        // Still failing — the row stays in memory and a later poll retries.
-      }
     }
     const ctx = this.routeCtx();
     const answer =

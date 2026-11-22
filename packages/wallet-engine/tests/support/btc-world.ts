@@ -156,6 +156,10 @@ export type BtcWorld = {
   readonly failTip: (error: Error) => void;
   /** The next Esplora `get` waits on the promise — a slow endpoint. */
   readonly gateGet: (p: Promise<void>) => void;
+  /** The next Esplora `post` waits on the promise — a broadcast held in flight. */
+  readonly gatePost: (p: Promise<void>) => void;
+  /** Every POST /tx body the endpoint was asked for, gated ones included — attempts, not receipts. */
+  readonly postAttempts: string[];
   /** The block hash `/block-height/:height` serves; unset heights answer 404 like electrs. */
   readonly setBlockHash: (height: number, hash: string) => void;
   /** Scripts the `/tx/:prevTxid/outspends` answer — any value, or an Error to make the read fail. */
@@ -308,6 +312,9 @@ export const world = (
   const broadcasts: string[] = [];
   /** When set, the next Esplora `get` waits on it. */
   let getGate: Promise<void> | undefined;
+  /** When set, the next Esplora `post` waits on it. */
+  let postGate: Promise<void> | undefined;
+  const postAttempts: string[] = [];
   const posts: string[] = [];
   const requests: string[] = [];
   const signedCalls: SignParams[] = [];
@@ -422,6 +429,12 @@ export const world = (
     },
     post: async (_u: string, body: string) => {
       await Promise.resolve();
+      postAttempts.push(body);
+      const gate = postGate;
+      if (gate !== undefined) {
+        postGate = undefined;
+        await gate;
+      }
       posts.push(body);
       if (postMode.kind === "throw") {
         throw postMode.error;
@@ -570,6 +583,9 @@ export const world = (
     gateGet: (p: Promise<void>) => {
       getGate = p;
     },
+    gatePost: (p: Promise<void>) => {
+      postGate = p;
+    },
     setBlockHash: (height: number, hash: string) => {
       blockHashes.set(height, hash);
     },
@@ -598,6 +614,7 @@ export const world = (
     utxos,
     broadcasts,
     posts,
+    postAttempts,
     requests,
     signedCalls,
     warnings,

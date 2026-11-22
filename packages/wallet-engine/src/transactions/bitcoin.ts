@@ -525,7 +525,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         return { kind: "ended", state: "dropped" };
       }
     }
-    if (tx.raw !== undefined && now >= watch.next && conflict !== "unconfirmed") {
+    if (
+      tx.raw !== undefined &&
+      tx.rebroadcast !== false &&
+      now >= watch.next &&
+      conflict !== "unconfirmed"
+    ) {
       await es.post("/tx", tx.raw).catch(() => undefined);
       watch.next = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;

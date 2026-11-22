@@ -1484,7 +1484,13 @@ export const pollTron = async (
       return { kind: "ended", state: "dropped" };
     }
   }
-  if (tx.raw !== undefined) {
+  /* Never resent bytes are only watched; live ones leave only while the transaction could still
+     be included — past its expiration the node would refuse them anyway. */
+  if (
+    tx.raw !== undefined &&
+    tx.rebroadcast !== false &&
+    (expiration === undefined || head.timestamp <= expiration)
+  ) {
     await broadcastHex(api, tx.raw).catch(() => "");
   }
   return undefined;

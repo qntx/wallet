@@ -146,6 +146,12 @@ export type TrackedTransaction = {
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
   /**
+   * Absent: the tracker may rebroadcast the persisted bytes while the network does not know them.
+   * `false`: recovered from a broadcast whose outcome never settled — it may have been refused — so
+   * the bytes are watched but never resent; a speed-up or cancel is the remedy.
+   */
+  readonly rebroadcast?: false;
+  /**
    * The signed transaction exactly as broadcast — EVM and Bitcoin hex, Solana base64 wire —
    * persisted with `hash` before it leaves, so an unknown outcome is rebroadcast, even after a
    * restart. Cleared when the node refuses it.
@@ -444,12 +450,13 @@ export type Options = {
 export type RouteContext = {
   readonly options: Options;
   /**
-   * Applies `next` to `tx` and persists the row. A locked vault skips the write — unless `durable`,
-   * which throws instead: signed bytes must be on disk before they leave. Only a durable call may
-   * throw on a store failure: a failed non-durable write is retried by the next poll, since the
-   * bytes it describes may already be out. The context belongs to the session that created it:
-   * after a lock→unlock its calls are ignored (`durable` still throws), so a stale async result
-   * never writes into the new session.
+   * Applies `next` to `tx` and persists the row. A locked vault keeps the row out of state but
+   * retains it for replay at the next unlock — unless `durable`, which throws instead: signed bytes
+   * must be on disk before they leave. Only a durable call may throw on a store failure: a failed
+   * non-durable write is retained and landed by the controller's own retry loop, since the bytes it
+   * describes may already be out. The context belongs to the session that created it: after a
+   * lock→unlock its calls are ignored (`durable` still throws), so a stale async result never
+   * writes into the new session.
    */
   readonly transition: (
     tx: TrackedTransaction,

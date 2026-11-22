@@ -640,12 +640,11 @@ describe("a stale session's late answer cannot write", () => {
     await until(raised(w.pollGateAwaited), "the poll's receipt read");
 
     ctl.lock();
-    /* With no store row to reload, the in-memory row keeps its identity across init — the case
-       a failed bookkeeping write (`unsaved`) leaves behind. The row-identity check alone would
-       not drop the answer that lands next; the session generation does. */
+    /* Locking dropped the in-memory rows; deleting the store copy leaves the new session
+       empty — then only the stale-session check stands between the late answer and a write. */
     w.forgetTx(a.id);
     await ctl.init();
-    expect(ctl.getState().txs[a.id]).toBe(a);
+    expect(ctl.getState().txs[a.id]).toBeUndefined();
 
     node.receipts.set(hash, {
       status: "0x1",
@@ -656,7 +655,7 @@ describe("a stale session's late answer cannot write", () => {
     await fired;
 
     // The old session's `included` applies nowhere: state, store and timers are untouched.
-    expect(ctl.getState().txs[a.id]?.state).toBe("submitted");
+    expect(ctl.getState().txs[a.id]).toBeUndefined();
     await expect(w.persistedTx(a.id)).resolves.toBeUndefined();
     expect(timers.armed(POLL_MS)).toBe(0);
   });

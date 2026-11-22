@@ -307,7 +307,8 @@ describe("pollTron", () => {
     const ie = env({ solidTime: 1_060_000 }); // not yet past expiration
     const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
     expect(answer).toBeUndefined();
-    expect(e.broadcasts).toStrictEqual([RAW]);
+    // Past its expiration the bytes could never land — watched, but no longer resent.
+    expect(e.broadcasts).toHaveLength(0);
   });
 
   it("an independent node that knows the transaction keeps it submitted", async () => {
@@ -315,7 +316,7 @@ describe("pollTron", () => {
     const ie = env({ solidTime: 1_060_001, solidInfo: info() });
     const answer = await pollTron(ctx(e, { kind: "available", client: apiOf(ie) }), tx());
     expect(answer).toBeUndefined();
-    expect(e.broadcasts).toStrictEqual([RAW]);
+    expect(e.broadcasts).toHaveLength(0);
   });
 
   it("an independent read failure keeps the transaction submitted", async () => {
@@ -325,7 +326,7 @@ describe("pollTron", () => {
     };
     const answer = await pollTron(ctx(e, { kind: "available", client: broken }), tx());
     expect(answer).toBeUndefined();
-    expect(e.broadcasts).toStrictEqual([RAW]);
+    expect(e.broadcasts).toHaveLength(0);
   });
 
   it("an unavailable independent API preserves the primary-only proof", async () => {

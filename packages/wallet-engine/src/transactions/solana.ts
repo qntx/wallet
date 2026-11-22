@@ -884,7 +884,7 @@ export const pollSolana = async (
       return { kind: "ended", state: "dropped" };
     }
     const consumed = nonce !== undefined && nonce.value !== tx.durableNonce.value;
-    if (!consumed && tx.raw !== undefined) {
+    if (!consumed && tx.raw !== undefined && tx.rebroadcast !== false) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
@@ -931,12 +931,12 @@ export const pollSolana = async (
     ) {
       return { kind: "ended", state: "dropped" };
     }
-    if (validity.valid && tx.raw !== undefined) {
+    if (validity.valid && tx.raw !== undefined && tx.rebroadcast !== false) {
       await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
     }
     return undefined;
   }
-  if (tx.raw !== undefined) {
+  if (tx.raw !== undefined && tx.rebroadcast !== false) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
   }
   return undefined;
