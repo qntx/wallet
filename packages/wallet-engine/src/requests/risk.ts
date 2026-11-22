@@ -1,5 +1,6 @@
 import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siwx";
 import type {
+  AssetFlow,
   DisplayIntent,
   SafeTransaction,
   SeaportOrder,
@@ -345,14 +346,32 @@ export const POISONING_EDGE = 4;
 export const comparable = (family: string, address: string): string =>
   family === "evm" ? address.replace(/^0x/i, "").toLowerCase() : address;
 
+/**
+ * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
+ * the cash-token contract all of them share — so the account or payee is the recipient compared.
+ */
+export const recipientOf = (flow: Pick<AssetFlow, "to" | "fiat24">): string =>
+  flow.fiat24 === undefined
+    ? flow.to
+    : "account" in flow.fiat24
+      ? `fiat24:account:${flow.fiat24.account}`
+      : `fiat24:payee:${flow.fiat24.payee}`;
+
 const looksLike = (a: string, b: string): boolean =>
   a !== b &&
+  /* Only address-shaped values look alike: Fiat24 ids are small integers, so two of them sharing
+     four digits at both ends says nothing. */
+  !a.startsWith("fiat24:") &&
+  !b.startsWith("fiat24:") &&
   a.length >= POISONING_EDGE * 2 &&
   b.length >= POISONING_EDGE * 2 &&
   a.slice(0, POISONING_EDGE) === b.slice(0, POISONING_EDGE) &&
   a.slice(-POISONING_EDGE) === b.slice(-POISONING_EDGE);
 
-/** Findings for every recipient of one request, deduplicated, `danger` first. */
+/**
+ * Findings for every recipient of one request, deduplicated, `danger` first. Recipients come from
+ * {@link recipientOf}: a Fiat24 flow's recipient is the account or payee it names.
+ */
 export function assessRecipients(
   family: string,
   recipients: ReadonlyArray<string>,

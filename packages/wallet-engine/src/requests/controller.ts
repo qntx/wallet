@@ -69,6 +69,7 @@ import {
   impersonatesTronToken,
   mergeRisk,
   originRisk,
+  recipientOf,
   verifyRisk,
 } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
@@ -1146,7 +1147,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ? []
         : assessRecipients(
             prepared.intent.family,
-            prepared.intent.outflows.map((o) => o.to),
+            prepared.intent.outflows.map(recipientOf),
             this.knownAddresses(prepared.intent.family),
           );
       const built: Built = {
@@ -1196,7 +1197,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ? []
         : assessRecipients(
             prepared.intent.family,
-            prepared.intent.outflows.map((o) => o.to),
+            prepared.intent.outflows.map(recipientOf),
             this.knownAddresses(prepared.intent.family),
           );
       const built: Built = {
@@ -1885,7 +1886,7 @@ export class RequestController extends Controller<RequestControllerState> {
           tx.family === family &&
           (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
       )
-      .flatMap((tx) => tx.intent?.outflows.map((o) => o.to) ?? []);
+      .flatMap((tx) => tx.intent?.outflows.map(recipientOf) ?? []);
     return [...contacts, ...paid];
   }
 
@@ -1925,7 +1926,7 @@ export class RequestController extends Controller<RequestControllerState> {
       mergeRisk(
         assessRecipients(
           intent.family,
-          intent.outflows.map((o) => o.to),
+          intent.outflows.map(recipientOf),
           this.knownAddresses(intent.family),
         ),
         assessApprovals(intent),

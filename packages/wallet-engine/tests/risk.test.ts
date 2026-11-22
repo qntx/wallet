@@ -20,12 +20,14 @@ import {
   impersonatesBuiltIn,
   mergeRisk,
   originRisk,
+  recipientOf,
   verifyRisk,
 } from "../src/requests/risk.ts";
 
 const KNOWN = "0x52908400098527886E0F7030069857D2E4169EE7";
 const LOOKALIKE = "0x5290aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9EE7";
 const OTHER = "0x1111111111111111111111111111111111112222";
+const USD24 = "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62";
 
 describe("assessRecipients", () => {
   it("flags a recipient nobody has paid or saved", () => {
@@ -92,6 +94,31 @@ describe("assessRecipients", () => {
 
   it("has nothing to say about no recipients", () => {
     expect(assessRecipients("evm", [], [KNOWN])).toStrictEqual([]);
+  });
+
+  it("never compares Fiat24 recipients by their edges — the ids are small integers", () => {
+    expect(
+      assessRecipients("evm", ["fiat24:account:21234"], ["fiat24:account:11234"]).map(
+        (f) => f.code,
+      ),
+    ).toStrictEqual(["first-recipient"]);
+    expect(
+      assessRecipients("evm", ["fiat24:account:11234"], ["fiat24:account:11234"]),
+    ).toStrictEqual([]);
+    expect(
+      assessRecipients("evm", ["fiat24:payee:1234"], ["fiat24:account:21234"]).map((f) => f.code),
+    ).toStrictEqual(["first-recipient"]);
+  });
+});
+
+describe("recipientOf", () => {
+  it("returns the address of an ordinary flow", () => {
+    expect(recipientOf({ to: KNOWN })).toBe(KNOWN);
+  });
+
+  it("returns the Fiat24 account or payee a ledger flow names, not the shared token", () => {
+    expect(recipientOf({ to: USD24, fiat24: { account: "11234" } })).toBe("fiat24:account:11234");
+    expect(recipientOf({ to: USD24, fiat24: { payee: "42" } })).toBe("fiat24:payee:42");
   });
 });
 

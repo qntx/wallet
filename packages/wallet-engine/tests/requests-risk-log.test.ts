@@ -1,4 +1,5 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { encodeFunctionData, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import { encodeSparkAddress } from "@qntx/spark";
@@ -682,5 +683,114 @@ describe("typed-data recipient risk", () => {
     await w.addressBook.add({ name: "Alice", family: "evm", address: KNOWN });
     const request = await prepareAuthorization(w, KNOWN);
     expect(request.risk).toStrictEqual([]);
+  });
+});
+
+describe("fiat24 recipient risk", () => {
+  const ARBITRUM = "eip155:42161";
+  const USD24 = "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62";
+  const FIAT24_ABI = parseAbi([
+    "function transferByAccountId(uint256 recipientAccountId, uint256 amount)",
+    "function clientPayout(uint256 amount, string contactId)",
+  ]);
+
+  const fiat24Request = (data: string): SignRequest => ({
+    kind: "evm.transaction",
+    network: ARBITRUM,
+    account: ACCOUNT,
+    tx: {
+      type: "eip1559",
+      chainId: 42161,
+      nonce: 0,
+      gas: "0x30000",
+      to: USD24,
+      value: "0x0",
+      data,
+      accessList: [],
+      maxFeePerGas: "0x3b9aca00",
+      maxPriorityFeePerGas: "0x3b9aca00",
+    },
+  });
+
+  const payAccount = (accountId: bigint) =>
+    fiat24Request(
+      encodeFunctionData({
+        abi: FIAT24_ABI,
+        functionName: "transferByAccountId",
+        args: [accountId, 100n],
+      }),
+    );
+
+  const payPayee = (contactId: string) =>
+    fiat24Request(
+      encodeFunctionData({
+        abi: FIAT24_ABI,
+        functionName: "clientPayout",
+        args: [100n, contactId],
+      }),
+    );
+
+  const trackedFiat24 = (
+    fiat24: { readonly account: string } | { readonly payee: string },
+    id: string,
+  ): TrackedTransaction => ({
+    ...trackedTo(USD24, "confirmed", id),
+    network: ARBITRUM,
+    intent: {
+      ...intentTo(USD24),
+      outflows: [
+        {
+          to: USD24,
+          amount: { asset: USD24, amount: "100", decimals: 2 },
+          verified: true,
+          fiat24,
+        },
+      ],
+    },
+  });
+
+  const prepare = async (w: ReturnType<typeof world>, request: SignRequest) =>
+    w.requests.prepare({
+      method: "evm-sign",
+      origin: { kind: "browser", origin: "https://app.example" },
+      account: ACCOUNT,
+      network: ARBITRUM,
+      request,
+    });
+
+  it("keys the recipient on the Fiat24 account, not the shared token contract", async () => {
+    const w = world();
+    await w.start();
+    w.txs["a"] = trackedFiat24({ account: "11234" }, "a");
+    const first = await prepare(w, payAccount(21234n));
+    expect(first.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    w.requests.reject(first.id);
+    const again = await prepare(w, payAccount(11234n));
+    expect(again.risk).toStrictEqual([]);
+    w.requests.reject(again.id);
+  });
+
+  it("keys the recipient on the Fiat24 payee of a payout", async () => {
+    const w = world();
+    await w.start();
+    w.txs["a"] = trackedFiat24({ payee: "9" }, "a");
+    const first = await prepare(w, payPayee("10"));
+    expect(first.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    w.requests.reject(first.id);
+    const again = await prepare(w, payPayee("9"));
+    expect(again.risk).toStrictEqual([]);
+    w.requests.reject(again.id);
+  });
+
+  it("an account and a payee never collide, and neither lookalike-compares", async () => {
+    const w = world();
+    await w.start();
+    w.txs["a"] = trackedFiat24({ account: "11234" }, "a");
+    const payee = await prepare(w, payPayee("11234"));
+    expect(payee.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    w.requests.reject(payee.id);
+    const near = await prepare(w, payAccount(21234n));
+    expect(near.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    w.requests.reject(near.id);
   });
 });

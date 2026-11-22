@@ -1204,6 +1204,10 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   retry on the same upstream while the transaction's validity window allows it (minus a safety
   margin); broadcasts are never retried. When the window does not allow the wait the prepare
   rejects with the new `TronThrottledError` (`retryAfterMs`), which a host can retry.
+- `@qntx/wallet-engine`: recipient risk keys a Fiat24 `transferByAccountId` / `clientPayout(Ref)`
+  payment on the account or payee the calldata names instead of the cash-token contract every such
+  payment shares — a payment to a never-paid Fiat24 account or payee is `first-recipient` again,
+  and two Fiat24 ids are never compared as address lookalikes.
 
 ### Security
 
