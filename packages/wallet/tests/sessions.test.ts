@@ -121,12 +121,14 @@ describe("sessions(wallet).sign verification", () => {
   });
 
   /* A scope the scheme does not admit cannot yield a document — even a signature that would
-     verify under a neighbouring scope is refused. */
+     verify under a neighbouring scope is refused by the scope guard itself, before recovery. */
   it("rejects a record whose scope the scheme does not admit with integrity", async () => {
     const signature = signEvmTypedData(hyperliquidL1Document(PARAMS, "Testnet"), SESSION_KEY);
     const wallet = await connect(signature, [record("Devnet")]);
     await expect(sessions(wallet).sign(request)).rejects.toSatisfy(
-      (e) => walletError(e).code === "integrity",
+      (e) =>
+        walletError(e).code === "integrity" &&
+        walletError(e).message === "sessions.sign answered for a scope the scheme rejects",
     );
   });
 
