@@ -1252,6 +1252,64 @@ describe("undecodable instructions list their program ids", () => {
   });
 });
 
+describe("empty-data instructions decode conservatively", () => {
+  /* kit's decoder omits `data` and `accountIndices` when they are empty — the wire format and
+     Agave both allow empty instruction data, so the compiled-message parse accepts the absent
+     field as an empty one. */
+  const emptyIx = (program: string) => ({
+    programAddress: address(program),
+    accounts: [sgn(FEE_PAYER)],
+    data: new Uint8Array(0),
+  });
+
+  it.each([
+    ["system", PROGRAM_IDS.system, "legacy"],
+    ["system", PROGRAM_IDS.system, 0],
+    ["system", PROGRAM_IDS.system, 1],
+    ["token", PROGRAM_IDS.token, "legacy"],
+    ["token", PROGRAM_IDS.token, 0],
+    ["token", PROGRAM_IDS.token, 1],
+    ["token-2022", PROGRAM_IDS.token2022, "legacy"],
+    ["token-2022", PROGRAM_IDS.token2022, 0],
+    ["token-2022", PROGRAM_IDS.token2022, 1],
+    ["associated token", PROGRAM_IDS.associatedToken, "legacy"],
+    ["associated token", PROGRAM_IDS.associatedToken, 0],
+    ["associated token", PROGRAM_IDS.associatedToken, 1],
+    ["stake", PROGRAM_IDS.stake, "legacy"],
+    ["stake", PROGRAM_IDS.stake, 0],
+    ["stake", PROGRAM_IDS.stake, 1],
+  ] as const)(
+    "an empty %s instruction taking the signer is blind on %s",
+    (_name, program, version) => {
+      const wire = compile([emptyIx(program)], version);
+      expect(parseCompiledMessage(wire).instructions[0]?.data.length).toBe(0);
+      const intent = decodeSolana(req(wire) as never, FEE_PAYER);
+      /* No decoder claims a data-less instruction: the near-miss of the recognised core
+         programs is core-instruction — the signer-signed opaque instruction is blind. */
+      expect(intent.blind).toBe("core-instruction");
+      expect(intent.programs).toStrictEqual([program]);
+    },
+  );
+
+  it.each([
+    ["compute budget", PROGRAM_IDS.computeBudget, "legacy"],
+    ["compute budget", PROGRAM_IDS.computeBudget, 1],
+    ["unknown", "Vote111111111111111111111111111111111111111", "legacy"],
+    ["unknown", "Vote111111111111111111111111111111111111111", 1],
+  ] as const)(
+    "an empty %s instruction taking the signer is opaque and named on %s",
+    (_name, program, version) => {
+      /* An empty instruction is no nearer a claim than any other undecoded one: an
+         unrecognised program — the budget program or an unknown one — lists like any unknown
+         program and stays unblind under the program-authority rule. */
+      const intent = decodeSolana(req(compile([emptyIx(program)], version)) as never, FEE_PAYER);
+      expect(intent.verifiability).toBe("opaque");
+      expect(intent.programs).toStrictEqual([program]);
+      expect(intent.blind).toBeUndefined();
+    },
+  );
+});
+
 describe("everyday token and stake instructions decode", () => {
   const SRC = address("So11111111111111111111111111111111111111112");
 
