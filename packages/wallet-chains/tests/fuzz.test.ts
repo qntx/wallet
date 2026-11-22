@@ -214,12 +214,12 @@ const v1Mainnet = (
     ),
   ) as Array<{ wire: string }>
 ).map((f) => Uint8Array.from(Buffer.from(f.wire, "base64")));
-const V1_MESSAGES = [
-  ...v1Vectors.map((c) => Uint8Array.from(Buffer.from(c.message, "hex"))),
-  /* A v1 mainnet fixture's message is its wire minus the trailing signature block. */
-  ...v1Mainnet.map((wire) => wire.subarray(0, wire.length - 64 * (wire[1] ?? 0))),
-];
-// Additional v1 mainnet fixtures append their messages here.
+const V1_VECTOR_MESSAGES = v1Vectors.map((c) => Uint8Array.from(Buffer.from(c.message, "hex")));
+/* A v1 mainnet fixture's message is its wire minus the trailing signature block. */
+const V1_MAINNET_MESSAGES = v1Mainnet.map((wire) =>
+  wire.subarray(0, wire.length - 64 * (wire[1] ?? 0)),
+);
+const V1_MESSAGES = [...V1_VECTOR_MESSAGES, ...V1_MAINNET_MESSAGES];
 const V1_SIGNERS = v1Vectors.map((c) => c.signer);
 const v1Decoder = getCompiledTransactionMessageDecoder();
 const v1Encoder = getCompiledTransactionMessageEncoder();
@@ -265,6 +265,17 @@ const mutatedV1Outcome = (bytes: Uint8Array, signer: string): boolean => {
   return intentOrChainError(attempt(() => decodeSolana(request, signer)));
 };
 
+/* A (fixture, length) pair mapped to a strict prefix of that mainnet v1 message. */
+const truncatedMainnetV1 = fc
+  .tuple(
+    fc.integer({ min: 0, max: V1_MAINNET_MESSAGES.length - 1 }),
+    fc.integer({ min: 0, max: 4096 }),
+  )
+  .map(([vi, rawLength]) => {
+    const base = V1_MAINNET_MESSAGES[vi] ?? new Uint8Array(0);
+    return base.subarray(0, base.length === 0 ? 0 : rawLength % base.length);
+  });
+
 /** A strict prefix of a v1 message fails, and only with a ChainError. */
 const truncatedV1Outcome = (bytes: Uint8Array): boolean => {
   const r = attempt(() => parseCompiledMessage(bytes));
@@ -286,17 +297,26 @@ describe("Solana v1 fuzz", () => {
     600_000,
   );
 
-  it(
-    "every truncation of each v1 vector throws only a ChainError",
-    () => {
-      for (const base of V1_MESSAGES) {
-        for (let length = 0; length < base.length; length += 1) {
-          expect(truncatedV1Outcome(base.subarray(0, length))).toBe(true);
-        }
+  it("every truncation of each v1 vector throws only a ChainError", () => {
+    for (const base of V1_VECTOR_MESSAGES) {
+      for (let length = 0; length < base.length; length += 1) {
+        expect(truncatedV1Outcome(base.subarray(0, length))).toBe(true);
       }
+    }
+  });
+
+  it(
+    "a truncated mainnet v1 message throws only a ChainError",
+    () => {
+      fc.assert(
+        fc.property(truncatedMainnetV1, (bytes) => {
+          expect(truncatedV1Outcome(bytes)).toBe(true);
+        }),
+        { numRuns },
+      );
     },
-    // ~40k parses across the vectors and the 65 mainnet fixtures take ~20 s.
-    300_000,
+    // 20_000 runs (weekly job) of up-to-3.7 KiB parses take ~15 s — keep 4× headroom.
+    120_000,
   );
 });
 
