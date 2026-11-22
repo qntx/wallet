@@ -10,15 +10,15 @@
     "test:browser": "playwright test --config tests/playwright.config.ts"
   },
   "dependencies": {
-    "@qntx/nostr": "0.15.4",
+    "@qntx/nostr": "0.16.0",
     "@qntx/wallet": "workspace:*",
     "@qntx/wallet-engine": "workspace:*",
     "@qntx/wallet-worker": "workspace:*"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "1.65.1",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
-    "vite-plus": "1.4.0"
+    "vite-plus": "1.6.0"
   }
 }
