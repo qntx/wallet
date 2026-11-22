@@ -26,6 +26,7 @@ import {
 } from "../src/solana/amm.ts";
 import { associatedTokenAddress } from "../src/solana/ata.ts";
 import { decodeSolana } from "../src/solana/index.ts";
+import { parseCompiledMessage } from "../src/solana/message.ts";
 
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "solana" } as const;
 const MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -59,10 +60,10 @@ const ix = (program: string, accounts: ReadonlyArray<Meta>, data: Uint8Array) =>
   data,
 });
 
-const compile = (instructions: ReadonlyArray<unknown>): Uint8Array => {
+const compile = (instructions: ReadonlyArray<unknown>, version: 0 | 1 = 0): Uint8Array => {
   let message = setTransactionMessageLifetimeUsingBlockhash(
     { blockhash: address(BLOCKHASH), lastValidBlockHeight: 1000n } as never,
-    setTransactionMessageFeePayer(address(SIGNER), createTransactionMessage({ version: 0 })),
+    setTransactionMessageFeePayer(address(SIGNER), createTransactionMessage({ version })),
   );
   for (const i of instructions) {
     message = appendTransactionMessageInstruction(i as never, message as never);
@@ -87,13 +88,13 @@ const cat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
   return out;
 };
 
-const intentOf = (instructions: ReadonlyArray<unknown>) =>
+const intentOf = (instructions: ReadonlyArray<unknown>, version: 0 | 1 = 0) =>
   decodeSolana(
     {
       kind: "solana.transaction",
       network: MAINNET,
       account: ACCOUNT,
-      message: compile(instructions),
+      message: compile(instructions, version),
     },
     SIGNER,
   );
@@ -592,5 +593,39 @@ describe("Meteora DLMM", () => {
       tokenAccount: ACC(30),
       verified: false,
     });
+  });
+});
+
+/* A v1 message (SIMD-0385) carries the same compiled instructions, so every DLMM shape — the
+   described swaps and each near miss — must classify exactly as its v0 form; only the fee rule
+   differs (v1: 5000 lamports per signature plus the config priority fee). */
+describe("Meteora DLMM as a v1 message", () => {
+  const srcAta = associatedTokenAddress(SIGNER, WSOL, TOKEN);
+  const dstAta = associatedTokenAddress(SIGNER, USDC, TOKEN);
+  const swap2Rai = cat(new Uint8Array([1, 0, 0, 0]), new Uint8Array([3, 9, 1]));
+
+  it.each([
+    ["swap", dlmmMetas(srcAta, dstAta), dlmmData(DLMM_SWAP, 5000n, 100n)],
+    [
+      "swap2",
+      dlmmMetas(srcAta, dstAta, SIGNER, true),
+      cat(dlmmData(DLMM_SWAP2, 4000n, 50n), swap2Rai),
+    ],
+    ["swap from a non-ATA account", dlmmMetas(), dlmmData(DLMM_SWAP, 6000n, 100n)],
+    ["swap with a trailing byte", dlmmMetas(), cat(dlmmData(DLMM_SWAP, 5n, 1n), Uint8Array.of(0))],
+    ["swap with 14 accounts", dlmmMetas().slice(0, 14), dlmmData(DLMM_SWAP, 5n, 1n)],
+    [
+      "swap whose user is not the signer",
+      dlmmMetas(SIGNER, ACC(31), ACC(40)),
+      dlmmData(DLMM_SWAP, 5n, 1n),
+    ],
+    ["swap with one mint on both legs", dlmmMetas(srcAta, srcAta), dlmmData(DLMM_SWAP, 5n, 1n)],
+  ])("%s", (_name, metas, data) => {
+    const instructions = [ix(METEORA_DLMM_PROGRAM, metas, data)];
+    const v0 = intentOf(instructions);
+    const v1 = intentOf(instructions, 1);
+    expect({ ...v1, fee: undefined }).toStrictEqual({ ...v0, fee: undefined });
+    const signers = parseCompiledMessage(compile(instructions, 1)).numRequiredSignatures;
+    expect(v1.fee?.max.amount).toBe(String(5000 * signers));
   });
 });
