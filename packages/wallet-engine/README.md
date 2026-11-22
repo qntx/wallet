@@ -147,6 +147,12 @@ nonce or inputs, polled at the finality interval — and the host should offer `
 `rebroadcast: false`: watched, never resent. TRON and Solana keep proof-based expiry (chain
 expiration, blockhash / durable-nonce validity).
 
+Chain binding on the gateway path: when the gateway serves a TRON or Solana network, the value
+that binds the signed bytes to the chain — TRON's reference block, Solana's recent blockhash —
+must be confirmed by a host endpoint, and the answering node must report the configured
+network's genesis. A gateway-only TRON or Solana send is refused rather than signed on one
+party's word.
+
 The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of the collection and
 key, authenticates every value it reads back (a row that fails authentication reads as absent),
 and rebuilds a database keyed by another data key empty.

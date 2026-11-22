@@ -168,6 +168,10 @@ const rpcAnswer = (o: SwapWorld) => {
       }
       case "getLatestBlockhash":
         return { value: { blockhash: BLOCKHASH, lastValidBlockHeight: 100_000 } };
+      case "getGenesisHash":
+        return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+      case "isBlockhashValid":
+        return { context: { slot: 5000 }, value: true };
       case "simulateTransaction": {
         if (o.simulation === "error") {
           return new Error("simulation failed");
