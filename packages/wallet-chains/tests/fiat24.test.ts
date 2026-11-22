@@ -858,17 +858,17 @@ describe("Fiat24 session grant text", () => {
     ["a trailing newline", `${GRANT_TEXT}\n`],
     ["a trailing CRLF", `${GRANT_TEXT}\r\n`],
     ["a trailing tab", `${GRANT_TEXT}\t`],
-    ["a trailing NBSP", `${GRANT_TEXT}\u00a0`],
-    ["a trailing zero-width space", `${GRANT_TEXT}\u200b`],
-    ["a trailing bidi override", `${GRANT_TEXT}\u202e`],
+    ["a trailing NBSP", `${GRANT_TEXT}\u00A0`],
+    ["a trailing zero-width space", `${GRANT_TEXT}\u200B`],
+    ["a trailing bidi override", `${GRANT_TEXT}\u202E`],
     ["a trailing tag character", `${GRANT_TEXT}\u{E0041}`],
   ])("the grant still claims its blind reason with %s", (_name, text) => {
     expect(decodeEvm(personal(text), SIGNER).blind).toBe("fiat24-session-grant");
   });
 
   it.each([
-    ["a hidden character inside the prefix", GRANT_TEXT.replace("agree", "agr\u200bee")],
-    ["a leading BOM", `\ufeff${GRANT_TEXT}`],
+    ["a hidden character inside the prefix", GRANT_TEXT.replace("agree", "agr\u200Bee")],
+    ["a leading BOM", `\uFEFF${GRANT_TEXT}`],
   ])("a grant-shaped text broken by a hidden character is blind as bytes: %s", (_name, text) => {
     expect(decodeEvm(personal(text), SIGNER).blind).toBe("message-bytes");
   });

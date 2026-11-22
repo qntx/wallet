@@ -2788,7 +2788,7 @@ describe("blind text prompts", () => {
     const grant =
       "I agree to access my profile. " +
       "0xfa48d2c6c46ff6b326dbd0a56c06b06795d7b2e3e58fed6b9d367e2917065f82";
-    for (const text of [`${grant}\u202e`, `${grant}\u{E0041}`]) {
+    for (const text of [`${grant}\u202E`, `${grant}\u{E0041}`]) {
       const intent = personal(text);
       expect(intent.blind).toBe("fiat24-session-grant");
       expect(chainPrompt("en", intent)).toStrictEqual({
