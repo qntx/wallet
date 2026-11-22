@@ -81,7 +81,7 @@ export function createGateway(
     }),
   );
   app.use("/v1/*", requireClientId);
-  app.use("/v1/*", rateLimit(options.limiters, options.accounts));
+  app.use("/v1/*", rateLimit(options.limiters, options.accounts, options.clientAddress));
   app.route("/", healthRoutes);
   app.route("/", eligibilityRoutes);
   app.route("/", networksRoutes(served));

@@ -43,28 +43,109 @@ export function sharePerMinute(account: Account): number {
 export const shareDelta = (account: Account, units: number): number =>
   Math.max(1, Math.ceil((units * SHARE_LIMIT) / sharePerMinute(account)));
 
+/** One IPv4 octet written in decimal, no leading zeros, 0–255. */
+const IPV4_OCTET = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+/** One IPv6 group: one to four hexadecimal characters. */
+const IPV6_GROUP = /^[\da-fA-F]{1,4}$/;
+
+/** The octets of a strict dotted-quad IPv4 string, or undefined when it is not one. */
+const ipv4Octets = (ip: string): readonly [number, number, number, number] | undefined => {
+  const parts = ip.split(".");
+  if (parts.length !== 4) {
+    return undefined;
+  }
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!IPV4_OCTET.test(part)) {
+      return undefined;
+    }
+    octets.push(Number(part));
+  }
+  const [a = 0, b = 0, c = 0, d = 0] = octets;
+  return [a, b, c, d];
+};
+
+/** One half of an IPv6 literal either side of `::`; a dotted-quad tail ends the address. */
+const ipv6Half = (half: string, tail: boolean): number[] | undefined => {
+  if (half === "") {
+    return [];
+  }
+  const parts = half.split(":");
+  const out: number[] = [];
+  for (const [index, part] of parts.entries()) {
+    // A dotted-quad tail is legal only as the address's last two groups.
+    if (tail && index === parts.length - 1 && part.includes(".")) {
+      const octets = ipv4Octets(part);
+      if (octets === undefined) {
+        return undefined;
+      }
+      const [a, b, c, d] = octets;
+      out.push(a * 256 + b, c * 256 + d);
+      continue;
+    }
+    if (!IPV6_GROUP.test(part)) {
+      return undefined;
+    }
+    out.push(Number.parseInt(part, 16));
+  }
+  return out;
+};
+
+/** The eight 16-bit groups of a strictly written IPv6 address, or undefined when it is not one. */
+const ipv6Groups = (ip: string): ReadonlyArray<number> | undefined => {
+  const halves = ip.split("::");
+  if (halves.length > 2) {
+    return undefined;
+  }
+  const front = ipv6Half(halves[0] ?? "", halves.length === 1);
+  const back = ipv6Half(halves[1] ?? "", true);
+  if (front === undefined || back === undefined) {
+    return undefined;
+  }
+  // `::` must compress at least one group — eight written groups leave it nothing to stand for.
+  if (halves.length === 2 && front.length + back.length >= 8) {
+    return undefined;
+  }
+  const groups =
+    halves.length === 2
+      ? [...front, ...Array.from({ length: 8 - front.length - back.length }, () => 0), ...back]
+      : front;
+  return groups.length === 8 ? groups : undefined;
+};
+
 /**
- * The counter keys an address is charged against, most specific first: IPv4 → its /24, IPv6 → its
+ * The counter keys an address is charged against, most specific first: IPv4 → its /24 — an
+ * IPv4-mapped IPv6 bills the embedded address's /24 like a plain IPv4 client — IPv6 → its
  * normalized /64 and /48 (an attacker holding a /48 of subnets is still bounded by the coarse key,
- * and one /64 cannot hide among its neighbours). Unknown → ["unknown"]. The full address never
- * reaches a counter key or a log.
+ * and one /64 cannot hide among its neighbours). An absent, unparseable or unspecified address
+ * yields no keys; the caller decides whether that is a shared `unknown` bucket or a rejected
+ * request. The full address never reaches a counter key or a log.
  */
-export function ipKeys(ip: string | undefined): readonly [string, ...string[]] {
+export function clientKeys(ip: string | undefined): readonly [string, ...string[]] | undefined {
   if (ip === undefined || ip === "") {
-    return ["unknown"];
+    return undefined;
   }
   if (!ip.includes(":")) {
-    const octets = ip.split(".");
-    return octets.length === 4 ? [`${octets.slice(0, 3).join(".")}.0/24`] : ["unknown"];
+    const octets = ipv4Octets(ip);
+    if (octets === undefined || octets.every((octet) => octet === 0)) {
+      return undefined;
+    }
+    const [a, b, c] = octets;
+    return [`${a}.${b}.${c}.0/24`];
   }
-  const [head = "", tail] = ip.split("::");
-  const front = head === "" ? [] : head.split(":");
-  const back = tail === undefined || tail === "" ? [] : tail.split(":");
-  const groups =
-    tail === undefined
-      ? front
-      : [...front, ...Array.from({ length: 8 - front.length - back.length }, () => "0"), ...back];
-  const normalized = groups.map((g) => g.toLowerCase().padStart(4, "0"));
+  const groups = ipv6Groups(ip);
+  if (groups === undefined || groups.every((group) => group === 0)) {
+    return undefined;
+  }
+  // IPv4-mapped (`::ffff:a.b.c.d` or `::ffff:c633:6401`): the embedded IPv4's /24, same as plain.
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+    const [hi = 0, lo = 0] = groups.slice(6);
+    if (hi === 0 && lo === 0) {
+      return undefined;
+    }
+    return [`${Math.floor(hi / 256)}.${hi % 256}.${Math.floor(lo / 256)}.0/24`];
+  }
+  const normalized = groups.map((group) => group.toString(16).padStart(4, "0"));
   return [`${normalized.slice(0, 4).join(":")}::/64`, `${normalized.slice(0, 3).join(":")}::/48`];
 }
 
@@ -92,19 +173,27 @@ export type RateLimitVariables = {
  * only bound a script rotating them meets — then "client id + most specific key" in the group's
  * binding (transport routes use the RPC limiter, everything else the default). Either refusing
  * answers 429 with `Retry-After`. Routes charge extra units through the `charge` variable: a batch
- * costs the sum of its calls, not one request.
+ * costs the sum of its calls, not one request. A client address that parses to no keys is the
+ * shared `unknown` bucket under `optional`, or a 400 before any limiter call under `required`.
  */
 export const rateLimit =
   (
     limiters: Limiters,
     accounts: Readonly<Record<string, Account>>,
+    clientAddress: "required" | "optional",
   ): MiddlewareHandler<{ Variables: ClientIdVariables & RateLimitVariables }> =>
   async (c, next) => {
     if (c.req.path === health.path) {
       await next();
       return;
     }
-    const keys = ipKeys(c.req.header("cf-connecting-ip"));
+    const parsed = clientKeys(c.req.header("cf-connecting-ip"));
+    if (parsed === undefined && clientAddress === "required") {
+      // The deployment promises a client address on every request (Cloudflare sets the header);
+      // absent or unparseable means the request did not arrive the expected way.
+      throw new GatewayHttpError(400, "invalid-request");
+    }
+    const keys: readonly [string, ...string[]] = parsed ?? ["unknown"];
     const limiter: RateLimiter = TRANSPORT_PREFIXES.some((p) => c.req.path.startsWith(p))
       ? limiters.rpc
       : limiters.default;

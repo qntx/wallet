@@ -129,6 +129,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
           },
         },
         limiters,
+        clientAddress: "optional",
         corsOrigins: [],
         risk,
         tokens: risk,

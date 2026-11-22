@@ -21,6 +21,7 @@ import {
   TEST_ACCOUNTS,
 } from "./helpers.ts";
 
+const IP = "203.0.113.9";
 const limiters = { ip: allowAll, rpc: allowAll, default: allowAll, share: allowAll };
 const risk = memoryRiskStore();
 const prices = { cache: memoryPriceCache() };
@@ -85,6 +86,7 @@ describe("upstream auth", () => {
       fetch,
       networks: [NET, BTCNET],
       limiters,
+      clientAddress: "optional",
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
@@ -120,6 +122,7 @@ describe("upstream auth", () => {
       fetch,
       networks: [NET],
       limiters,
+      clientAddress: "optional",
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
@@ -168,6 +171,7 @@ describe("upstream auth", () => {
         },
       ],
       limiters,
+      clientAddress: "optional",
       corsOrigins: [],
       risk,
       tokens: memoryRiskStore(),
@@ -209,6 +213,7 @@ describe("upstream auth", () => {
         },
         networks: [NET, FLARE],
         limiters,
+        clientAddress: "optional",
         corsOrigins: [],
         risk,
         tokens: memoryRiskStore(),
@@ -226,7 +231,10 @@ describe("upstream auth", () => {
     });
     const app = createGateway({ ...gatewayFor(productionEnv()), fetch, networks: [FLARE] });
     const r = await app.fetch(
-      new Request("https://gw.test/v1/rpc/eip155:11155111", post(call("eth_chainId"))),
+      new Request("https://gw.test/v1/rpc/eip155:11155111", {
+        ...post(call("eth_chainId")),
+        headers: headers({ "content-type": "application/json", "cf-connecting-ip": IP }),
+      }),
     );
     expect(r.status).toBe(200);
     await expect(r.json()).resolves.toStrictEqual({ jsonrpc: "2.0", id: 1, result: "0xe" });

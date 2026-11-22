@@ -255,6 +255,7 @@ export function gateway(options: {
   readonly limiters?: Limiters;
   readonly accounts?: Readonly<Record<string, Account>>;
   readonly budget?: ProviderBudget;
+  readonly clientAddress?: "required" | "optional";
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
   readonly auth?: Parameters<typeof createGateway>[0]["auth"];
   readonly jupiter?: { apiKey: string };
@@ -273,6 +274,7 @@ export function gateway(options: {
     },
     accounts: options.accounts ?? TEST_ACCOUNTS,
     budget: options.budget ?? openBudget,
+    clientAddress: options.clientAddress ?? "optional",
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     tokens: options.tokens ?? memoryRiskStore(),
