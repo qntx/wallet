@@ -85,15 +85,10 @@ const taprootTask = (
   if (input.tapInternalKey === undefined || !equalBytes(input.tapInternalKey, x)) {
     throw cannotSign(index);
   }
+  // btc-signer's parse-time commitment validation binds the prevout to
+  // tapInternalKey/tapMerkleRoot, so it is already p2tr of the tweaked key.
   const [outputKey] = taprootTweakPubkey(x, new Uint8Array());
   const prevouts = prevoutsOf(tx, index);
-  const prevout = prevouts[index];
-  if (
-    prevout === undefined ||
-    !equalBytes(prevout.script, OutScript.encode({ type: "tr", pubkey: outputKey }))
-  ) {
-    throw cannotSign(index);
-  }
   return {
     scheme: "bip340",
     path: key.path,

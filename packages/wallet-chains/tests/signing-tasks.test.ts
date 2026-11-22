@@ -502,7 +502,7 @@ describe("planBitcoinPsbt refusals", () => {
     // A prevout that pays another output key cannot survive addInput's own
     // commitment validation, so forge it: patch the decoded script of an
     // honest PSBT. btc-signer catches the inconsistency at decode and the
-    // planner wraps it; its own p2tr(Q) check is unreachable defence-in-depth.
+    // planner wraps it.
     const honest = psbtWith([trInput()]);
     const [ownQ] = taprootTweakPubkey(ownX, new Uint8Array());
     const forged = new Uint8Array(honest);
