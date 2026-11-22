@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { METHODS, hyperliquidL1Action, validate } from "@qntx/wallet/protocol";
+import { METHODS, validate } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
-import { encodeL1Action } from "../src/modules/apps/l1.ts";
-import { encodeAgentHeader, parseAgentHeader } from "../src/modules/apps/record.ts";
+import { encodeSessionHeader, parseSessionHeader } from "../src/modules/sessions/record.ts";
+import { encodeL1Action } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/l1.ts";
+import { hyperliquidL1Action } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts";
 import { createHarness, mulberry32 } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 
@@ -44,7 +45,7 @@ function randomMalformed(next: () => number): unknown {
     "backup.update",
     "keys.list",
     "nostr.createNip46ClientKey",
-    "hyperliquid.listAgents",
+    "sessions.list",
   ]);
   const style = pick(8);
   if (nullParamMethods.has(method) && (style === 4 || style === 5 || style === 7)) {
@@ -112,7 +113,7 @@ function randomJson(next: () => number, depth = 0): unknown {
     case 5:
       return `0x${pick(16).toString(16).repeat(pick(45))}`;
     case 6:
-      return ["order", "na", "Mainnet", "vaultTransfer", "Gtc", "hl-agent"][pick(6)];
+      return ["order", "na", "Mainnet", "vaultTransfer", "Gtc", "session-key"][pick(6)];
     case 7:
       return Array.from({ length: pick(5) }, () => randomJson(next, depth + 1));
     default:
@@ -157,13 +158,14 @@ const actionSample = (next: () => number): unknown => {
 /** What happened to a random header string: "kernel-error" | "round-trip" | "other". */
 const headerOutcome = (raw: string): string => {
   try {
-    const parsed = parseAgentHeader(raw);
-    const again = parseAgentHeader(encodeAgentHeader(parsed));
+    const parsed = parseSessionHeader(raw);
+    const again = parseSessionHeader(encodeSessionHeader(parsed));
     const same =
+      parsed.scheme === again.scheme &&
       parsed.walletId === again.walletId &&
       parsed.groupIndex === again.groupIndex &&
       parsed.owner === again.owner &&
-      parsed.network === again.network &&
+      parsed.scope === again.scope &&
       parsed.name === again.name &&
       parsed.validUntil === again.validUntil &&
       parsed.createdAt === again.createdAt;
@@ -185,7 +187,7 @@ const okField = (res: KernelResponse, ...path: ReadonlyArray<string>): unknown =
   return value;
 };
 
-/** "err" | "sig65" | "bad" — a signL1 response's shape. */
+/** "err" | "sig65" | "bad" — a sessions.sign response's shape. */
 const signOutcome = (res: KernelResponse): string => {
   if ("err" in res) {
     return "err";
@@ -194,11 +196,21 @@ const signOutcome = (res: KernelResponse): string => {
   return signature instanceof Uint8Array && signature.length === 65 ? "sig65" : "bad";
 };
 
-/** Every third sample is a near-valid signL1 request — it reaches the handler's checks. */
-const signParams = (next: () => number, agent: string, i: number): unknown =>
-  i % 3 === 0 ? { agent, action: randomJson(next, 1), nonce: randomJson(next) } : randomJson(next);
+/** Every third sample is a near-valid sessions.sign request — it reaches the scheme's checks. */
+const signParams = (next: () => number, address: string, i: number, now: number): unknown =>
+  i % 3 === 0
+    ? {
+        scheme: "hyperliquid-l1-agent",
+        address,
+        params: {
+          action: randomJson(next, 1),
+          nonce: now,
+          expiresAfter: now + 15_000,
+        },
+      }
+    : randomJson(next);
 
-describe("hyperliquid parser fuzz", () => {
+describe("sessions parser fuzz", () => {
   it("a validated action always encodes and re-validates identically", { timeout: 60000 }, () => {
     const next = mulberry32(0xc0ffee);
     const parsed = Array.from({ length: RUNS }, () => actionSample(next))
@@ -221,7 +233,7 @@ describe("hyperliquid parser fuzz", () => {
   });
 
   it(
-    "random signL1 params through the real dispatch yield an error or a 65-byte signature",
+    "random sessions.sign params through the real dispatch yield an error or a 65-byte signature",
     { timeout: 60000 },
     async () => {
       const h = createHarness({ seed: 7 });
@@ -240,25 +252,26 @@ describe("hyperliquid parser fuzz", () => {
       expect(session).toMatch(/^[0-9a-f]{32}$/);
       const walletId = String(okField(imported, "wallet", "walletId"));
       const created = await h.call(
-        "hyperliquid.createAgent",
+        "sessions.create",
         {
+          scheme: "hyperliquid-l1-agent",
           owner: { walletId, groupIndex: 0 },
-          network: "Mainnet",
+          scope: "Mainnet",
           name: "fuzz",
           validUntil: h.wallNow() + 86_400_000,
         },
         session,
       );
-      const agent = String(okField(created, "address"));
-      expect(agent).toMatch(/^0x[0-9a-fA-F]{40}$/);
+      const address = String(okField(created, "address"));
+      expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
       const next = mulberry32(0xf00d);
       for (let i = 0; i < RUNS; i++) {
-        const params = signParams(next, agent, i);
+        const params = signParams(next, address, i, h.wallNow());
         // oxlint-disable-next-line eslint/no-await-in-loop -- requests are dispatched sequentially
         const response = await h.sendRaw({
           v: 3,
           id: i + 1,
-          method: "hyperliquid.signL1",
+          method: "sessions.sign",
           session,
           params,
         });

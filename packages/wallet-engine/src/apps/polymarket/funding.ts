@@ -15,9 +15,8 @@ import { toHex } from "viem";
 
 import type { EvmFeeTier } from "../../chains/evm.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
-import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
-import type { AppGroup } from "../types.ts";
+import type { AppGroup, AppRequests } from "../types.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import { PUSD } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
@@ -58,7 +57,7 @@ export type PolymarketFundingOptions = {
   readonly relayer: PolymarketRelayer;
   /** Whether the host configured a builder — presence gates `withdraw` before any request. */
   readonly hasBuilder: boolean;
-  readonly requests?: Pick<RequestController, "prepare" | "outcome">;
+  readonly requests?: Pick<AppRequests, "prepare" | "outcome">;
   readonly now: () => number;
   readonly setTimer: SetTimer;
 };
@@ -77,7 +76,7 @@ const requireAmount = (amount: bigint): void => {
 };
 
 export function createPolymarketFunding(options: PolymarketFundingOptions): PolymarketFunding {
-  const requirePipeline = (): Pick<RequestController, "prepare" | "outcome"> => {
+  const requirePipeline = (): Pick<AppRequests, "prepare" | "outcome"> => {
     if (options.requests === undefined) {
       throw new PolymarketError("not-enabled", "this provider has no request pipeline");
     }

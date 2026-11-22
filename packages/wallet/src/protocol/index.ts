@@ -8,7 +8,6 @@
  * validator composes the core sections with each module's status section.
  */
 import type { LockReason, StatusPayload, WalletErrorCode } from "../types.ts";
-import { APPS_METHODS } from "./apps.ts";
 import { backupInfo } from "./backup.ts";
 import { CHAINS_METHODS } from "./chains.ts";
 import {
@@ -24,9 +23,11 @@ import type { MethodSpec } from "./core.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
+import { SESSIONS_METHODS } from "./sessions.ts";
+// oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { SPARK_METHODS } from "./spark.ts";
 import { arr, bool, literal, nullValue, obj, opt, str, union } from "./validate.ts";
-import type { NullValue, Validator } from "./validate.ts";
+import type { NullValue, ProtocolValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
 
@@ -39,15 +40,7 @@ export const PROTOCOL_VERSION = 3;
 export const UNATTRIBUTED_ID = 0;
 
 export type { NullValue } from "./validate.ts";
-
-export type ProtocolValue =
-  | NullValue
-  | boolean
-  | number // safe integer
-  | string
-  | Uint8Array
-  | ReadonlyArray<ProtocolValue>
-  | { readonly [key: string]: ProtocolValue };
+export type { ProtocolValue } from "./validate.ts";
 
 export type Request = {
   readonly v: typeof PROTOCOL_VERSION;
@@ -218,7 +211,7 @@ export const METHODS: {
   typeof NOSTR_METHODS &
   typeof CHAINS_METHODS &
   typeof SPARK_METHODS &
-  typeof APPS_METHODS = {
+  typeof SESSIONS_METHODS = {
   status: {
     session: false,
     presence: false,
@@ -229,7 +222,7 @@ export const METHODS: {
   ...CHAINS_METHODS,
   ...NOSTR_METHODS,
   ...SPARK_METHODS,
-  ...APPS_METHODS,
+  ...SESSIONS_METHODS,
 };
 
 // A method name must live in exactly one table: an overlap violates the never constraint.
@@ -238,10 +231,10 @@ export type MethodTablesDisjoint = [
   AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>,
   AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>,
   AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>,
-  AssertNever<keyof typeof APPS_METHODS & keyof typeof CORE_METHODS>,
-  AssertNever<keyof typeof APPS_METHODS & keyof typeof NOSTR_METHODS>,
-  AssertNever<keyof typeof APPS_METHODS & keyof typeof CHAINS_METHODS>,
-  AssertNever<keyof typeof APPS_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>,
+  AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>,
+  AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>,
+  AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>,
 ];
 
 export type MethodName = keyof typeof METHODS;
@@ -278,14 +271,16 @@ export const responseError: Validator<{
   detail?: string | undefined;
 }> = errorPayload;
 
-export { NOSTR_METHODS, SPARK_METHODS };
-export { APPS_METHODS, hyperliquidL1Action } from "./apps.ts";
+export { NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS };
 export type {
-  HyperliquidAgentInfo,
   HyperliquidL1Action,
   HyperliquidL1Order,
+  HyperliquidL1Params,
   HyperliquidNetwork,
-} from "./apps.ts";
+  SessionInfo,
+  SessionSchemes,
+  SessionSchemeId,
+} from "./sessions.ts";
 export { CHAINS_METHODS } from "./chains.ts";
 export type {
   ChainAccount,

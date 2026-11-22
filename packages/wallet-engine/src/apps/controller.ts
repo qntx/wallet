@@ -538,9 +538,16 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
       },
     };
   };
-  const context = (definition: AppDefinition<AppId, unknown>): AppContext => ({
+  /* `id` is the definition's own — captured once at registration: a late `id` read (a getter, or
+     a `create` that mutated `this.id`) could otherwise stamp another app's origin. */
+  const context = (id: AppId): AppContext => ({
     wallet: options.wallet,
-    requests: options.requests,
+    /* Requests the app opens are attributed to it — a provider cannot choose its origin. */
+    requests: {
+      prepare: async (input) => options.requests.prepare(input, { kind: "app", id }),
+      outcome: async (id) => options.requests.outcome(id),
+      reject: (id) => options.requests.reject(id),
+    },
     networks: options.networks,
     fetch: options.fetch,
     now: options.now,
@@ -549,19 +556,22 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     logger: options.logger,
     socket: options.socket,
     state: () => controllerRef.current?.getState(),
-    storage: createAppStorage(definition.id, () => (unlocked() ? sessionStore : undefined)),
+    storage: createAppStorage(id, () => (unlocked() ? sessionStore : undefined)),
   });
   const providers = new Map<AppId, AppProvider>();
   const instances: Array<AppInstance<unknown>> = [];
   const apis: Record<string, unknown> = {};
+  const registered: AppId[] = [];
   for (const definition of options.apps) {
-    if (providers.has(definition.id)) {
-      throw new Error(`app ${definition.id} is defined twice`);
+    const { id } = definition;
+    if (providers.has(id)) {
+      throw new Error(`app ${id} is defined twice`);
     }
-    const instance = definition.create(context(definition));
-    providers.set(definition.id, instance.provider);
+    const instance = definition.create(context(id));
+    providers.set(id, instance.provider);
     instances.push(instance);
-    apis[definition.id] = instance.api;
+    apis[id] = instance.api;
+    registered.push(id);
   }
 
   /* Generic prune (design.md 不变量 12): on every unlock and every wallet snapshot change the
@@ -574,8 +584,8 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
       return;
     }
     const live = new Set(options.wallet.getSnapshot().wallets.map((entry) => entry.walletId));
-    for (const definition of options.apps) {
-      const collection = store.collection(`apps.${definition.id}`);
+    for (const id of registered) {
+      const collection = store.collection(`apps.${id}`);
       // oxlint-disable-next-line eslint/no-await-in-loop -- collections list and delete sequentially.
       for (const key of await collection.list()) {
         const slash = key.indexOf("/");

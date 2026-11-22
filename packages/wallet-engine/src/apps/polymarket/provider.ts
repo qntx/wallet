@@ -11,10 +11,9 @@ import { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../../events.ts";
 import type { AppAvailability } from "../../gateway/contract/eligibility.ts";
-import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
 import type { AppSocket } from "../socket.ts";
-import type { AppGroup } from "../types.ts";
+import type { AppGroup, AppRequests } from "../types.ts";
 import { createPolymarketAccount } from "./account.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import type { PolymarketCredentialStore } from "./credentials.ts";
@@ -57,7 +56,7 @@ export type PolymarketProviderOptions = {
   /** The group's stored CLOB credentials — built from `context.storage` by the app definition. */
   readonly credentials: PolymarketCredentialStore;
   /** The approval pipeline orders are signed through. */
-  readonly requests: Pick<RequestController, "prepare" | "outcome">;
+  readonly requests: Pick<AppRequests, "prepare" | "outcome">;
   /** Order salts come from this — 8 bytes → 53-bit. */
   readonly random: (length: number) => Uint8Array;
   /** The gateway availability for `polymarket` — `undefined` refuses BUY orders (fail closed). */

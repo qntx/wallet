@@ -597,6 +597,7 @@ export function createSparkModule(): SparkModule {
       disposeWallet(state, walletId);
       return [];
     },
+    parseHeader: () => undefined,
   };
 
   const handlers: { [M in keyof typeof SPARK_METHODS & MethodName]: Handler<M> } = {

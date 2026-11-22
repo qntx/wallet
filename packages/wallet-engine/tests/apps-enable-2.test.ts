@@ -1,8 +1,8 @@
 /**
  * The rest of the enablement matrix on the real Node kernel: independent EIP-712 recovery of every
  * user-signed action against the SDK's `…Types` constants, the builder approval flow, verify
- * timeout, createAgent failure, lock mid-flow, terms persistence across sessions, renew ordering,
- * the reconcile matrix, and posted transfer shapes.
+ * timeout, create failure, lock mid-flow, terms persistence across sessions, renew ordering, the
+ * reconcile matrix, and posted transfer shapes.
  */
 import { readFileSync } from "node:fs";
 
@@ -17,7 +17,7 @@ import {
 import { concat, hashDomain, hashStruct, keccak256, recoverAddress } from "viem";
 
 import { chains } from "@qntx/wallet/chains";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
 
 import type { HyperliquidProviderInternals } from "../src/apps/hyperliquid/provider.ts";
 import {
@@ -399,9 +399,10 @@ describe("builder approval flow", () => {
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     // Pre-create the kernel agent and mark it listed on HL with maxBuilderFee >= f.
     const owner = await ownerOf(w);
-    const address = await hyperliquid(w.wallet).createAgent({
+    const address = await sessions(w.wallet).create({
+      scheme: "hyperliquid-l1-agent",
       owner: w.group,
-      network: "Testnet",
+      scope: "Testnet",
       name: "qntx-test",
       validUntil: w.timers.time + 179 * DAY,
     });
@@ -538,16 +539,17 @@ describe("enable failure and lifecycle gaps", () => {
     await w.destroy();
   });
 
-  it("createAgent failure leaves enabling + error, nothing posted, and retry succeeds", async () => {
+  it("create failure leaves enabling + error, nothing posted, and retry succeeds", async () => {
     const w = await world(37);
-    // Exhaust the kernel's per-wallet agent cap first so createAgent fails.
-    const api = hyperliquid(w.wallet);
-    const existing = await api.listAgents();
+    // Exhaust the kernel's per-scheme session cap first so create fails.
+    const api = sessions(w.wallet);
+    const existing = await api.list();
     for (let i = existing.length; i < 16; i++) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls.
-      await api.createAgent({
+      await api.create({
+        scheme: "hyperliquid-l1-agent",
         owner: { walletId: w.walletId, groupIndex: 0 },
-        network: "Testnet",
+        scope: "Testnet",
         name: `cap-${i}`,
         validUntil: w.timers.time + DAY,
       });
@@ -560,10 +562,10 @@ describe("enable failure and lifecycle gaps", () => {
     expect(w.state()?.status).toBe("enabling");
     expect(w.posted.filter((p) => p.endpoint === "exchange")).toHaveLength(0);
     // Free the cap, retry — the same group now enables.
-    const victims = await api.listAgents();
+    const victims = await api.list();
     for (const a of victims) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- deletes are sequential.
-      await api.deleteAgent(a.address);
+      await api.delete(a.address);
     }
     const retry = w.apps.enable(w.group, "hyperliquid");
     await finishFlow(w, retry, "enabled");
@@ -645,9 +647,10 @@ describe("enable failure and lifecycle gaps", () => {
     const w2 = await world(41, { openStore });
     // A never-enabled group gets an agent valid against the kernel clock but expired on ours
     // once the manual clock advances past it.
-    const orphan = await hyperliquid(w2.wallet).createAgent({
+    const orphan = await sessions(w2.wallet).create({
+      scheme: "hyperliquid-l1-agent",
       owner: { walletId: w2.walletId, groupIndex: 42 },
-      network: "Testnet",
+      scope: "Testnet",
       name: "qntx-test",
       validUntil: w2.timers.time + DAY,
     });
@@ -662,24 +665,26 @@ describe("enable failure and lifecycle gaps", () => {
       const rec = w2.apps.getState().groups[`${w2.walletId}/42`]?.["hyperliquid"];
       return rec?.status === "disabled";
     }, 15000);
-    const remaining = await hyperliquid(w2.wallet).listAgents();
+    const remaining = await sessions(w2.wallet).list();
     expect(hasAgent(remaining, orphan, 42)).toBe(false);
     await w2.destroy();
   });
 
   it("reconcile: two kernel agents delete the older; >10min unlisted orphans are deleted", async () => {
     const w = await world(44);
-    const api = hyperliquid(w.wallet);
+    const api = sessions(w.wallet);
     const owner = { walletId: w.walletId, groupIndex: w.group.groupIndex };
-    const first = await api.createAgent({
+    const first = await api.create({
+      scheme: "hyperliquid-l1-agent",
       owner,
-      network: "Testnet",
+      scope: "Testnet",
       name: "qntx-test",
       validUntil: w.timers.time + 178 * DAY,
     });
-    const second = await api.createAgent({
+    const second = await api.create({
+      scheme: "hyperliquid-l1-agent",
       owner,
-      network: "Testnet",
+      scope: "Testnet",
       name: "qntx-test",
       validUntil: w.timers.time + 179 * DAY,
     });
@@ -691,14 +696,15 @@ describe("enable failure and lifecycle gaps", () => {
     });
     await w.apps.reconcile(w.group);
     await until(() => w.state()?.status === "enabled", 15000);
-    let agents = await api.listAgents();
+    let agents = await api.list();
     expect(hasAgent(agents, first, w.group.groupIndex)).toBe(false);
     expect(agents.some((a) => a.address === second)).toBe(true);
     // A fresh-unapproved agent past the 10-minute orphan window is deleted by reconcile.
     w.timers.time += 11 * 60 * 1000;
-    const stale = await api.createAgent({
+    const stale = await api.create({
+      scheme: "hyperliquid-l1-agent",
       owner: { walletId: w.walletId, groupIndex: 45 },
-      network: "Testnet",
+      scope: "Testnet",
       name: "qntx-test",
       validUntil: w.timers.time + 179 * DAY,
     });
@@ -707,7 +713,7 @@ describe("enable failure and lifecycle gaps", () => {
       const rec = w.apps.getState().groups[`${w.walletId}/45`]?.["hyperliquid"];
       return rec?.status === "disabled";
     }, 15000);
-    agents = await api.listAgents();
+    agents = await api.list();
     expect(hasAgent(agents, stale, 45)).toBe(false);
     await w.destroy();
   }, 20000);
@@ -894,5 +900,36 @@ describe("declined builder", () => {
       category: "invalid-input",
     });
     await plain.destroy();
+  }, 20000);
+});
+
+describe("app-sourced request origins", () => {
+  it("user-signed and deposit requests are attributed to the hyperliquid app", async () => {
+    const APP_ORIGIN = { kind: "app", id: "hyperliquid" };
+    const w = await world(47);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+
+    /* A user-signed action opens one evm-sign request stamped with the app origin. */
+    const pending = await userSigned(w).usdSend(w.group, { destination: ZERO, amount: "2" });
+    expect(w.requests.getState().requests[pending.requestId]?.origin).toStrictEqual(APP_ORIGIN);
+    await w.approve(pending.requestId);
+    await expect(pending.outcome).resolves.toStrictEqual({ kind: "ok" });
+    const signLog = await w.requests.signLog();
+    const logged = signLog.find((e) => e.id === pending.requestId);
+    expect(logged?.origin).toStrictEqual(APP_ORIGIN);
+
+    /* The deposit opens the approve first; the CCTP burn once the allowance is seen. */
+    const first = await w.provider.fund.deposit(w.group, { amount: 5_000_000n, fee: "normal" });
+    expect(first.kind).toBe("approval-required");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const approvalId = first.kind === "approval-required" ? first.approval.requestId : "";
+    expect(w.requests.getState().requests[approvalId]?.origin).toStrictEqual(APP_ORIGIN);
+    w.hl.arb = { allowance: 10_000_000n };
+    const result = await w.provider.fund.deposit(w.group, { amount: 5_000_000n, fee: "normal" });
+    expect(result.kind).toBe("deposit");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const depositId = result.kind === "deposit" ? result.deposit.requestId : "";
+    expect(w.requests.getState().requests[depositId]?.origin).toStrictEqual(APP_ORIGIN);
+    await w.destroy();
   }, 20000);
 });

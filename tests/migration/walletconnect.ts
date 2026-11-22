@@ -20,6 +20,9 @@ export function originLabel(origin: RequestOrigin | ConnectionOrigin): string {
   if (origin.kind === "browser") {
     return origin.origin;
   }
+  if (origin.kind === "app") {
+    return `app: ${origin.id}`;
+  }
   // kind === "walletconnect" — a future origin kind stops compiling here until it is rendered.
   return `${origin.name} <${origin.url}> — verify ${origin.verify.validation}${
     origin.verify.isScam ? ", reported scam" : ""

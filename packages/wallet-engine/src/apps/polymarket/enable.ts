@@ -14,9 +14,8 @@ import { toHex } from "viem";
 
 import type { EngineLogger } from "../../events.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
-import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppProvider } from "../types.ts";
+import type { AppFlow, AppGroup, AppGroupState, AppProvider, AppRequests } from "../types.ts";
 import type { PolymarketAccountReads } from "./account.ts";
 import {
   CONDITIONAL_TOKENS,
@@ -172,7 +171,7 @@ export type PolymarketEnableOptions = {
   /** The credential records — the flow's own fact for the credentials step and `groups()`. */
   readonly credentials: PolymarketCredentialStore;
   readonly account: PolymarketAccountReads;
-  readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  readonly requests: AppRequests;
   readonly fetch: typeof globalThis.fetch;
   readonly setTimer: SetTimer;
   readonly now: () => number;

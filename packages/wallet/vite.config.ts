@@ -7,7 +7,7 @@ const config: UserConfig = defineConfig({
       index: "src/index.ts",
       chains: "src/chains/index.ts",
       host: "src/host.ts",
-      hyperliquid: "src/hyperliquid/index.ts",
+      sessions: "src/sessions/index.ts",
       nostr: "src/nostr/index.ts",
       spark: "src/spark/index.ts",
       protocol: "src/protocol/index.ts",

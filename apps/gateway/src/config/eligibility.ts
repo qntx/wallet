@@ -18,12 +18,14 @@ import type { AppAvailability } from "@qntx/wallet-engine/gateway/contract";
 /** Iran, Syria, Cuba, North Korea, Crimea/Donetsk/Luhansk (UA-43/14/09) — sanctioned set. */
 const SANCTIONED = ["IR", "SY", "CU", "KP", "UA-43", "UA-14", "UA-09"] as const;
 
-export const ELIGIBILITY: Readonly<
-  Record<
-    "hyperliquid" | "polymarket",
-    { readonly blocked: ReadonlyArray<string>; readonly closeOnly: ReadonlyArray<string> }
-  >
-> = {
+/** One app's restricted-jurisdiction table — `blocked` always wins over `closeOnly`. */
+export type EligibilityRow = {
+  readonly blocked: ReadonlyArray<string>;
+  readonly closeOnly: ReadonlyArray<string>;
+};
+
+/** The configured apps, keyed by app id — a client treats an absent app as unknown. */
+export const ELIGIBILITY: Readonly<Record<string, EligibilityRow>> = {
   hyperliquid: {
     /* Terms §1.6(a): the United States — territories (PR/GU/VI/AS/MP/UM) are a conservative
        reading — and Ontario (CA-ON). §1.6(b): the sanctioned set. No close-only tier. */
@@ -88,11 +90,10 @@ export const ELIGIBILITY: Readonly<
  * the bare country — `blocked` always wins over `close-only`.
  */
 export function availabilityFor(
-  app: "hyperliquid" | "polymarket",
+  table: EligibilityRow,
   country: string,
   region?: string,
 ): AppAvailability {
-  const table = ELIGIBILITY[app];
   const codes = region === undefined ? [country] : [`${country}-${region}`, country];
   for (const code of codes) {
     if (table.blocked.includes(code)) {

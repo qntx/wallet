@@ -46,7 +46,10 @@ export type WalletConnectOrigin = {
 
 export type DappOrigin = BrowserOrigin | WalletConnectOrigin;
 
-export type RequestOrigin = { readonly kind: "internal" } | DappOrigin;
+/** A request an in-engine application (Hyperliquid, …) opened — core never enumerates app ids. */
+export type AppOrigin = { readonly kind: "app"; readonly id: string };
+
+export type RequestOrigin = { readonly kind: "internal" } | AppOrigin | DappOrigin;
 
 /** The URL a dApp origin's phishing and sign-in checks run against. */
 export const dappUrl = (origin: DappOrigin): string =>
@@ -80,9 +83,27 @@ export const isDappOrigin = (value: unknown): value is DappOrigin => {
   );
 };
 
+/** The dApp origin a request origin carries, if any — an app origin is never one. */
+export const dappOf = (origin: RequestOrigin): DappOrigin | undefined =>
+  origin.kind === "browser" || origin.kind === "walletconnect" ? origin : undefined;
+
+const APP_ID = /^[a-z][a-z0-9-]{1,31}$/;
+
+/** The exact persisted shape of an app origin; `prepare` also validates an `AppOrigin` with it. */
+export const isAppOrigin = (value: unknown): value is AppOrigin =>
+  isObject(value) &&
+  value["kind"] === "app" &&
+  typeof value["id"] === "string" &&
+  APP_ID.test(value["id"]) &&
+  Object.keys(value).length === 2;
+
 /** The persisted shape of a request origin. */
-export const isRequestOrigin = (value: unknown): value is RequestOrigin =>
-  isObject(value) && (value["kind"] === "internal" || isDappOrigin(value));
+export const isRequestOrigin = (value: unknown): value is RequestOrigin => {
+  if (!isObject(value)) {
+    return false;
+  }
+  return value["kind"] === "internal" || isAppOrigin(value) || isDappOrigin(value);
+};
 
 export type RequestMethod =
   | ChainRequestMethod

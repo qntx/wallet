@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 
 /**
- * The @qntx/wallet/hyperliquid subpath end to end on the real Node host: `hyperliquid(wallet)`
- * reaches the kernel's apps module over the channel — createAgent, listAgents, signL1 (verified by
- * recovering the agent address from the signature with the independent nktkas hash), deleteAgent.
+ * The @qntx/wallet/sessions subpath end to end on the real Node host: `sessions(wallet)` reaches
+ * the kernel's sessions module over the channel — create, list, sign (verified by recovering the
+ * session address from the signature with the independent nktkas hash), delete.
  */
 import { createL1ActionHash } from "@nktkas/hyperliquid/signing";
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -13,7 +13,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
 
 import { createNodeWallet, createSoftwarePasskey } from "../src/node/index.ts";
 
@@ -70,39 +70,42 @@ const AGENT_TYPES = {
   ],
 } as const;
 
-describe("hyperliquid subpath on the node host", () => {
+describe("sessions subpath on the node host", () => {
   it("memoizes the api per wallet and rejects a foreign object", async () => {
     const wallet = await nodeWallet();
-    expect(hyperliquid(wallet)).toBe(hyperliquid(wallet));
-    expect(() => hyperliquid({} as Wallet)).toThrow(WalletError);
+    expect(sessions(wallet)).toBe(sessions(wallet));
+    expect(() => sessions({} as Wallet)).toThrow(WalletError);
     await wallet.destroy();
   });
 
-  it("creates, lists, signs with and deletes an agent", async () => {
+  it("creates, lists, signs with and deletes a session key", async () => {
     const wallet = await nodeWallet();
     const created = await wallet.wallets.importMnemonic({
       mnemonic: ACCOUNTS.mnemonic,
       factor: { kind: "password", password: PASSWORD },
     });
-    const api = hyperliquid(wallet);
+    const api = sessions(wallet);
     const validUntil = Date.now() + DAY;
 
-    const address = await api.createAgent({
+    const address = await api.create({
+      scheme: "hyperliquid-l1-agent",
       owner: { walletId: created.walletId, groupIndex: 0 },
-      network: "Mainnet",
+      scope: "Mainnet",
       name: "bot-1",
       validUntil,
     });
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
 
-    const agents = await api.listAgents();
-    expect(agents).toHaveLength(1);
-    const [info] = agents;
+    const list = await api.list();
+    expect(list).toHaveLength(1);
+    const [info] = list;
     expect(info).toMatchObject({
       address,
+      scheme: "hyperliquid-l1-agent",
+      supported: true,
       walletId: created.walletId,
       groupIndex: 0,
-      network: "Mainnet",
+      scope: "Mainnet",
       name: "bot-1",
       validUntil,
     });
@@ -111,7 +114,12 @@ describe("hyperliquid subpath on the node host", () => {
     // The phantom-agent connectionId over the action + nonce is what the agent signs.
     const action = { type: "updateLeverage", asset: 1, isCross: true, leverage: 5 } as const;
     const nonce = Date.now();
-    const signature = await api.signL1({ agent: address, action, nonce });
+    const expiresAfter = nonce + 15_000;
+    const signature = await api.sign({
+      scheme: "hyperliquid-l1-agent",
+      address,
+      params: { action, nonce, expiresAfter },
+    });
     expect(signature).toHaveLength(65);
     const recovered = await recoverTypedDataAddress({
       domain: {
@@ -122,14 +130,17 @@ describe("hyperliquid subpath on the node host", () => {
       },
       types: AGENT_TYPES,
       primaryType: "Agent",
-      message: { source: "a", connectionId: createL1ActionHash({ action, nonce }) },
+      message: {
+        source: "a",
+        connectionId: createL1ActionHash({ action, nonce, expiresAfter }),
+      },
       signature: `0x${bytesToHex(signature)}`,
     });
     expect(recovered.toLowerCase()).toBe(address.toLowerCase());
 
-    await api.deleteAgent(address);
-    await expect(api.listAgents()).resolves.toHaveLength(0);
-    await expect(codeOf(api.deleteAgent(address))).resolves.toBe("not-found");
+    await api.delete(address);
+    await expect(api.list()).resolves.toHaveLength(0);
+    await expect(codeOf(api.delete(address))).resolves.toBe("not-found");
 
     await wallet.destroy();
   });

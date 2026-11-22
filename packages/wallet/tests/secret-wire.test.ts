@@ -833,6 +833,7 @@ describe("method classification", () => {
       | "message"
       | "ownerPublicKey"
       | "package"
+      | "params"
       | "partialTransaction"
       | "paymentHash"
       | "psbt"
@@ -858,9 +859,12 @@ describe("method classification", () => {
   });
 });
 
-/** True when any field reachable through T's objects, arrays or union members is named F. */
-type CarriesField<T, F extends PropertyKey> =
-  T extends ReadonlyArray<infer E>
+/* True when any field reachable through T's objects, arrays or union members is named F. The
+   `ProtocolValue extends T` stop keeps the walk out of the recursive wire type — a pass-through
+   `params` field is its method's own validation domain. */
+type CarriesField<T, F extends PropertyKey> = ProtocolValue extends T
+  ? false
+  : T extends ReadonlyArray<infer E>
     ? CarriesField<E, F>
     : T extends Readonly<Record<PropertyKey, unknown>>
       ? true extends {

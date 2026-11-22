@@ -11,8 +11,8 @@ import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
-import { hyperliquid } from "@qntx/wallet/hyperliquid";
-import type { HyperliquidAgentInfo } from "@qntx/wallet/hyperliquid";
+import { sessions } from "@qntx/wallet/sessions";
+import type { SessionInfo } from "@qntx/wallet/sessions";
 
 import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
 import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
@@ -672,9 +672,14 @@ export const isApprovePost = (p: Posted): boolean =>
 export const restoredStatus = (w: World): boolean =>
   w.state()?.status === "enabled" || w.state()?.status === "needs-reauthorization";
 
-export const kernelAgents = async (w: World): Promise<ReadonlyArray<HyperliquidAgentInfo>> => {
-  const agents = await hyperliquid(w.wallet).listAgents();
-  return agents.filter((a) => a.walletId === w.walletId && a.groupIndex === w.group.groupIndex);
+export const kernelAgents = async (w: World): Promise<ReadonlyArray<SessionInfo>> => {
+  const list = await sessions(w.wallet).list();
+  return list.filter(
+    (a) =>
+      a.scheme === "hyperliquid-l1-agent" &&
+      a.walletId === w.walletId &&
+      a.groupIndex === w.group.groupIndex,
+  );
 };
 
 /** Approve the pending request the flow published, then pump the verify poll to a status. */

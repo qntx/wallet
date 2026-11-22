@@ -80,18 +80,34 @@
       "text": "{\"family\":\"solana\",\"address\":\"HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk\",\"createdAt\":1767225600000}"
     },
     {
-      "name": "hl-agent",
-      "kind": "hl-agent",
+      "name": "session-key",
+      "kind": "session-key",
       "input": {
+        "scheme": "hyperliquid-l1-agent",
         "walletId": "0011223344556677",
         "groupIndex": 0,
         "owner": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
-        "network": "Mainnet",
+        "scope": "Mainnet",
         "name": "bot-1",
         "validUntil": 1782777600000,
         "createdAt": 1767225600000
       },
-      "text": "{\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"network\":\"Mainnet\",\"name\":\"bot-1\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
+      "text": "{\"scheme\":\"hyperliquid-l1-agent\",\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"scope\":\"Mainnet\",\"name\":\"bot-1\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
+    },
+    {
+      "name": "session-key-unknown",
+      "kind": "session-key",
+      "input": {
+        "scheme": "future-scheme",
+        "walletId": "0011223344556677",
+        "groupIndex": 0,
+        "owner": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        "scope": "0x1111111111111111111111111111111111111111",
+        "name": "bot-2",
+        "validUntil": 1782777600000,
+        "createdAt": 1767225600000
+      },
+      "text": "{\"scheme\":\"future-scheme\",\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"scope\":\"0x1111111111111111111111111111111111111111\",\"name\":\"bot-2\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
     },
     {
       "name": "nostr-derived",

@@ -57,7 +57,7 @@ const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
 const WALLETCONNECT_EXTERNAL = [
   ...Object.keys(pkg.peerDependencies),
   "@qntx/wallet/chains",
-  "@qntx/wallet/hyperliquid",
+  "@qntx/wallet/sessions",
   ...Object.keys(pkg.dependencies).filter(
     (name) => !name.startsWith("@reown/") && !name.startsWith("@walletconnect/"),
   ),
@@ -86,7 +86,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* Measured 9036 B: the controller (incl. the app storage + prune) + shared socket core —
        no provider ships in this entry. */
     budget: 9 * 1024,
-    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
@@ -95,7 +95,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* Measured 18754 B: the Hyperliquid SDK client + zod/mini + the provider (incl. the CCTP
        deposit reads through the injected networks client). */
     budget: 19 * 1024,
-    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["polymarket.com"],
   },
   {
@@ -104,7 +104,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
     /* Measured 39551 B: the full Polymarket client (markets, account, L2 signing + credential
        store, orders, relayer, enable, live market + user channels, funding) incl. viem hashing. */
     budget: 39 * 1024,
-    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
   },
   {
