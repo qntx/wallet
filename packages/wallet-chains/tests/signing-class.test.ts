@@ -1476,6 +1476,7 @@ describe("personal messages", () => {
 describe("typed-data near misses of decoded families are blind", () => {
   const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
   const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
+  const MORPHO_BLUE = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb";
 
   /** A doc with exactly the domain keys `domain` declares. */
   const simpleDoc = (
@@ -1587,7 +1588,7 @@ describe("typed-data near misses of decoded families are blind", () => {
   });
 
   it.each([["TransferWithAuthorization"], ["ReceiveWithAuthorization"]])(
-    "an EIP-3009 %s on a table token is blind",
+    "an exact EIP-3009 %s on a table token decodes bound to the signer",
     (primaryType) => {
       const intent = decodeEvm(
         simpleDoc(
@@ -1612,11 +1613,16 @@ describe("typed-data near misses of decoded families are blind", () => {
         ),
         SIGNER,
       );
-      expect(intent.blind).toBe("typed-data-variant");
+      expect(intent.blind).toBeUndefined();
+      expect(intent.verifiability).toBe("full");
+      expect(intent.message).toMatchObject({
+        kind: "typed-data",
+        authorization: expect.anything(),
+      });
     },
   );
 
-  it("the same authorization shape on a non-table token stays described", () => {
+  it("an EIP-3009 shape missing its tail fields is a claimed variant, blind", () => {
     const intent = decodeEvm(
       simpleDoc(
         "TransferWithAuthorization",
@@ -1630,8 +1636,7 @@ describe("typed-data near misses of decoded families are blind", () => {
       ),
       SIGNER,
     );
-    expect(intent.blind).toBeUndefined();
-    expect(fieldsOf(intent)?.length).toBeGreaterThan(0);
+    expect(intent.blind).toBe("typed-data-variant");
   });
 
   it("a canonical Permit on a non-table token is recognised, not variant-blind", () => {
@@ -1829,7 +1834,7 @@ describe("typed-data near misses of decoded families are blind", () => {
           : (
               {
                 "^Agent$": "Agent",
-                "^Vote$": "Vote",
+                "^(?:Vote|Alias)$": "Alias",
               } as Record<string, string | undefined>
             )[pattern.source];
       if (primaryType === undefined) {
@@ -1848,6 +1853,9 @@ describe("typed-data near misses of decoded families are blind", () => {
           "^Permit": "PermitXYZ",
           "^SafeTx$": "SafeTx",
           "^(?:OrderComponents|BulkOrder)$": "BulkOrder",
+          "^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$":
+            "ReceiveWithAuthorization",
+          "^DelegationWithSig$": "DelegationWithSig",
         } as Record<string, string | undefined>
       )[claim.primaryType.source];
       if (primaryType === undefined) {
@@ -1861,7 +1869,9 @@ describe("typed-data near misses of decoded families are blind", () => {
           ? PERMIT2
           : claim.verifyingContract === "seaport"
             ? SEAPORT_16
-            : USDC;
+            : claim.verifyingContract === "morpho-blue"
+              ? MORPHO_BLUE
+              : USDC;
       return simpleDoc(
         "Foo",
         [{ name: "x", type: "uint256" }],

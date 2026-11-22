@@ -5,6 +5,7 @@
 import { RECOGNISED_FAMILIES } from "../families.ts";
 import type { BlindReason } from "../index.ts";
 import { PERMIT2_ADDRESS } from "./approval.ts";
+import { isMorphoBlue } from "./authority.ts";
 import { SEAPORT_CONTRACTS } from "./seaport.ts";
 import { lookupEvmToken } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
@@ -68,6 +69,7 @@ export const typedDataNearMiss = (
     return (
       (claim.verifyingContract === "permit2" && contract === PERMIT2_ADDRESS.toLowerCase()) ||
       (claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract)) ||
+      (claim.verifyingContract === "morpho-blue" && isMorphoBlue(chainId, contract)) ||
       (claim.verifyingContract === "token-table" &&
         lookupEvmToken(table, chainId, verifying) !== undefined)
     );

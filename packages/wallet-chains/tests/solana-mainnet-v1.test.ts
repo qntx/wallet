@@ -63,14 +63,14 @@ const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   "4zzuLeMzkWcq": [undefined, 1], // Meteora DAMM v2
   "55gF1T1Hz7ju": [undefined, 1], // Meteora DAMM v2
   bPqejmqAVAq8: [undefined, 1], // Meteora DAMM v2
-  "2X2xZX1H312k": ["core-instruction", 2], // Meteora DLMM
-  "5wCdMtdgkyzK": ["core-instruction", 2], // Meteora DLMM
-  "51vNNCZ67Eju": ["program-authority", 1], // Meteora DLMM
+  "2X2xZX1H312k": ["core-instruction", 1], // Meteora DLMM
+  "5wCdMtdgkyzK": ["core-instruction", 1], // Meteora DLMM
+  "51vNNCZ67Eju": [undefined, 0], // Meteora DLMM
   "4Y3LKDtTgPt2": [undefined, 1], // Meteora DLMM
   "55y5mJhkmXUQ": [undefined, 1], // Meteora DLMM
-  "49j71Ahiy7Qv": [undefined, 2], // Meteora DLMM
+  "49j71Ahiy7Qv": [undefined, 1], // Meteora DLMM
   "5a9fTyMeBs6X": [undefined, 1], // Meteora DLMM
-  "2EEJLYSnx9CW": [undefined, 2], // Meteora DLMM
+  "2EEJLYSnx9CW": [undefined, 1], // Meteora DLMM
   "4HBYwnrLESMJ": [undefined, 2], // Orca Whirlpool
   "2KmXabZeZyak": ["program-authority", 1], // Orca Whirlpool
   ofUrFSwLWzie: [undefined, 1], // Orca Whirlpool

@@ -165,6 +165,7 @@ export const REACTORS: Readonly<Record<number, Partial<Record<WitnessType, strin
   196: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
   480: { V3DutchOrder: "0x00000000d714ea34028930b762e96bfbe50f42c2" },
   1868: { V3DutchOrder: "0x000000005af66799d1a6317714d66800f9ca1406" },
+  57073: { V3DutchOrder: "0x000000007a1c8e570011eedf86a2a35593013cba" },
   8453: {
     V3DutchOrder: "0x000000008a8330b5d1f43a62bf4c673a49f27ba0",
     PriorityOrder: "0x000000001ec5656dcdb24d90dfa42742738de729",
@@ -172,6 +173,7 @@ export const REACTORS: Readonly<Record<number, Partial<Record<WitnessType, strin
   42161: { V3DutchOrder: "0xb274d5f4b833b61b340b654d600a864fb604a87c" },
   42220: { V3DutchOrder: "0x00000000b8077fdf2281a80be96f6c282b5d943a" },
   43114: { V3DutchOrder: "0x00000000862ccf095823fc7576fa6c7e6b7385ef" },
+  7777777: { V3DutchOrder: "0x000000002c9a3812e15cf233190992e9a57edb56" },
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000";

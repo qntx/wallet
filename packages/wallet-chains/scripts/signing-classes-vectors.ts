@@ -27,9 +27,16 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/transaction-messages";
-import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  getContractAddress,
+  parseAbi,
+} from "viem";
 
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
+import { buildTronRawData } from "../src/tron/builders.ts";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
 const TRON_SIGNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
@@ -40,10 +47,22 @@ const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
 const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const CCTP_FORWARDER = "0xb21D281DEdb17AE5B501F6AA8256fe38C4e45757";
 const netArb = "Network: Arbitrum One";
 const netArbZh = "网络：Arbitrum One";
+const netBase = "Network: Base";
+const netBaseZh = "网络：Base";
+const netFlare = "Network: Flare";
+const netFlareZh = "网络：Flare";
+const netOp = "Network: OP Mainnet";
+const netOpZh = "网络：OP Mainnet";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
+const MORPHO = getAddress("0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb");
+const FARCASTER_KEY_GATEWAY = "0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B";
+const FARCASTER_VALIDATOR = "0x00000000FC700472606ED4fA22623Acf62c60553";
+const FARCASTER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+const AAVE_USDC_DEBT = getAddress("0x72E95b8931767C79bA4EeE721354d6E99a61D004");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
 const account = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" };
@@ -84,6 +103,12 @@ const arbTx = (over: { to?: string; data?: string; value?: string }) => ({
 const typedData = (doc: unknown) => ({
   kind: "evm.typed-data",
   network: "eip155:1",
+  account,
+  typedData: doc,
+});
+const opTypedData = (doc: unknown) => ({
+  kind: "evm.typed-data",
+  network: "eip155:10",
   account,
   typedData: doc,
 });
@@ -714,7 +739,21 @@ const cases: VectorCase[] = [
     ),
     verifiability: "opaque",
     blind: null,
-    prompt: p("Confirm signature", "确认签名", "Message:\nhello world", "消息：\nhello world"),
+    prompt: p("Confirm signature", "确认签名", "Message:\n· hello world", "消息：\n· hello world"),
+  },
+  {
+    name: "personal_sign kernel-line forgery",
+    request: personal(
+      `0x${[...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+    ),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+    ),
   },
   {
     name: "EIP-712 SafeMessage(bytes) (commitment)",
@@ -740,7 +779,7 @@ const cases: VectorCase[] = [
     ),
   },
   {
-    name: "USDC TransferWithAuthorization (EIP-3009 near miss)",
+    name: "USDC TransferWithAuthorization (EIP-3009 near miss, from not the signer)",
     request: typedData({
       types: {
         EIP712Domain: [
@@ -761,7 +800,7 @@ const cases: VectorCase[] = [
       primaryType: "TransferWithAuthorization",
       domain: { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC },
       message: {
-        from: SIGNER,
+        from: OTHER,
         to: OTHER,
         value: "1000000",
         validAfter: "0",
@@ -774,8 +813,557 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
-      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${SIGNER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\n· from = ${OTHER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${OTHER}\n· to = ${OTHER}\n· value = 1000000\n· validAfter = 0\n· validBefore = 2000000000\n· nonce = ${hash32}`,
+    ),
+  },
+  {
+    name: "USDC TransferWithAuthorization (x402, listed Base USDC)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        domain: {
+          name: "USD Coin",
+          version: "2",
+          chainId: 8453,
+          verifyingContract: BASE_USDC,
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "10000",
+          validAfter: "0",
+          validBefore: "1738886400",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: USD Coin\n${netBase}\nVerifying contract ${BASE_USDC}\nType: TransferWithAuthorization\nSend 0.01 USDC to ${OTHER}\nAnyone holding this signature can submit the transfer\nValid before 2025-02-07 00:00 (UTC)`,
+      `应用：USD Coin\n${netBaseZh}\n验证合约 ${BASE_USDC}\n类型：TransferWithAuthorization\n发送 0.01 USDC 到 ${OTHER}\n任何持有此签名的人都可以提交这笔转账\n2025-02-07 00:00 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "USDC ReceiveWithAuthorization (listed Arbitrum USDC)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          ReceiveWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "ReceiveWithAuthorization",
+        domain: {
+          name: "USD Coin",
+          version: "2",
+          chainId: 42161,
+          verifyingContract: ARB_USDC,
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "8080000",
+          validAfter: "1772641538",
+          validBefore: "1772645198",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:42161",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: USD Coin\n${netArb}\nVerifying contract ${ARB_USDC}\nType: ReceiveWithAuthorization\nSend 8.08 USDC to ${OTHER}\nOnly ${OTHER} can submit the transfer\nValid after 2026-03-04 16:25 and before 2026-03-04 17:26 (UTC)`,
+      `应用：USD Coin\n${netArbZh}\n验证合约 ${ARB_USDC}\n类型：ReceiveWithAuthorization\n发送 8.08 USDC 到 ${OTHER}\n只有 ${OTHER} 可以提交这笔转账\n2026-03-04 16:25 之后、2026-03-04 17:26 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "USDT0 CancelAuthorization (Flare, unlisted token)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          CancelAuthorization: [
+            { name: "authorizer", type: "address" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "CancelAuthorization",
+        domain: {
+          name: "USD₮0",
+          version: "1",
+          chainId: 14,
+          verifyingContract: "0xe7cd86e13AC4309349F30B3435a9d337750fC82D",
+        },
+        message: {
+          authorizer: SIGNER,
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:14",
+    },
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      `App: USD₮0\n${netFlare}\nVerifying contract 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\nType: CancelAuthorization\nCancel the unused transfer authorization ${hash32}; no funds move`,
+      `应用：USD₮0\n${netFlareZh}\n验证合约 0xe7cd86e13AC4309349F30B3435a9d337750fC82D\n类型：CancelAuthorization\n取消未使用的转账授权 ${hash32}；不转移资金`,
+    ),
+  },
+  {
+    name: "zkstables TransferWithAuthorization (unlisted token)",
+    request: {
+      ...typedData({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        domain: {
+          name: "ZK Stables USD",
+          version: "1",
+          chainId: 8453,
+          verifyingContract: "0x8ED36a645beF11075283524C01acA742CbAfC832",
+        },
+        message: {
+          from: SIGNER,
+          to: OTHER,
+          value: "21370000",
+          validAfter: "1767225600",
+          validBefore: "1767225600",
+          nonce: hash32,
+        },
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `App: ZK Stables USD\n${netBase}\nVerifying contract 0x8ED36a645beF11075283524C01acA742CbAfC832\nType: TransferWithAuthorization\nSend 21370000 base units of unverified token 0x8ED36a645beF11075283524C01acA742CbAfC832 to ${OTHER}\nAnyone holding this signature can submit the transfer\nValid after 2026-01-01 00:00 and before 2026-01-01 00:00 (UTC)`,
+      `应用：ZK Stables USD\n${netBaseZh}\n验证合约 0x8ED36a645beF11075283524C01acA742CbAfC832\n类型：TransferWithAuthorization\n发送 21370000 个最小单位（未验证代币 0x8ED36a645beF11075283524C01acA742CbAfC832） 到 ${OTHER}\n任何持有此签名的人都可以提交这笔转账\n2026-01-01 00:00 之后、2026-01-01 00:00 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "Morpho Authorization grant (verified)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: SIGNER,
+        authorized: OTHER,
+        isAuthorized: true,
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\nLet ${OTHER} manage your Morpho positions: it can withdraw your supplied assets and collateral and borrow against your collateral, sending the funds anywhere\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n允许 ${OTHER} 管理你在 Morpho 的仓位：它可以提走你存入的资产和抵押品，并以你的抵押品借款，资金可转到任何地址\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Morpho Authorization revoke (verified)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: SIGNER,
+        authorized: OTHER,
+        isAuthorized: false,
+        nonce: "1",
+        deadline: "281474976710656",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\nRevoke ${OTHER}'s authority over your Morpho positions`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n撤销 ${OTHER} 管理你 Morpho 仓位的权限`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig unlimited credit (verified USDC debt token)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Ethereum Variable Debt USDC",
+        version: "1",
+        chainId: 1,
+        verifyingContract: AAVE_USDC_DEBT,
+      },
+      message: {
+        delegatee: OTHER,
+        value: "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Aave Ethereum Variable Debt USDC\n${net}\nVerifying contract ${AAVE_USDC_DEBT}\nType: DelegationWithSig\nLet ${OTHER} borrow up to unlimited USDC on your Aave credit: you owe the debt and your collateral backs it\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Aave Ethereum Variable Debt USDC\n${netZh}\n验证合约 ${AAVE_USDC_DEBT}\n类型：DelegationWithSig\n允许 ${OTHER} 以你的 Aave 信用借入最多 全部 USDC：债务由你承担，以你的抵押品担保\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig bounded credit (unverified contract)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Whatever Variable Debt X",
+        version: "1",
+        chainId: 1,
+        verifyingContract: OTHER,
+      },
+      message: { delegatee: OTHER, value: "1000000", nonce: "0", deadline: "1900000000" },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Aave Whatever Variable Debt X\n${net}\nVerifying contract ${OTHER}\nType: DelegationWithSig\nLet ${OTHER} borrow up to 1000000 base units of unverified token ${OTHER} on your Aave credit: you owe the debt and your collateral backs it\nThe wallet does not know contract ${OTHER}; it may grant other powers\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Aave Whatever Variable Debt X\n${netZh}\n验证合约 ${OTHER}\n类型：DelegationWithSig\n允许 ${OTHER} 以你的 Aave 信用借入最多 1000000 个最小单位（未验证代币 ${OTHER}）：债务由你承担，以你的抵押品担保\n钱包不认识合约 ${OTHER}；它可能授予其他权限\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Snapshot Alias",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        Alias: [
+          { name: "from", type: "address" },
+          { name: "alias", type: "address" },
+          { name: "timestamp", type: "uint64" },
+        ],
+      },
+      primaryType: "Alias",
+      domain: { name: "snapshot", version: "0.1.4" },
+      message: { from: SIGNER, alias: OTHER, timestamp: 1700000000 },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: snapshot\n${net}\nType: Alias\nLet ${OTHER} vote, create proposals and act on Snapshot as you`,
+      `应用：snapshot\n${netZh}\n类型：Alias\n允许 ${OTHER} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
+    ),
+  },
+  {
+    name: "Morpho Authorization near miss (authorizer not the signer)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: OTHER,
+        authorized: SIGNER,
+        isAuthorized: true,
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\n${typedVariant}\n${typedCaveat}\n· authorizer = ${OTHER}\n· authorized = ${SIGNER}\n· isAuthorized = true\n· nonce = 0\n· deadline = 1900000000`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n${typedVariantZh}\n${typedCaveatZh}\n· authorizer = ${OTHER}\n· authorized = ${SIGNER}\n· isAuthorized = true\n· nonce = 0\n· deadline = 1900000000`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig near miss (domain version not 1)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Ethereum Variable Debt USDC",
+        version: "2",
+        chainId: 1,
+        verifyingContract: AAVE_USDC_DEBT,
+      },
+      message: { delegatee: OTHER, value: "1000000", nonce: "0", deadline: "1900000000" },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Aave Ethereum Variable Debt USDC\n${net}\nVerifying contract ${AAVE_USDC_DEBT}\nType: DelegationWithSig\n${typedVariant}\n${typedCaveat}\n· delegatee = ${OTHER}\n· value = 1000000\n· nonce = 0\n· deadline = 1900000000`,
+      `应用：Aave Ethereum Variable Debt USDC\n${netZh}\n验证合约 ${AAVE_USDC_DEBT}\n类型：DelegationWithSig\n${typedVariantZh}\n${typedCaveatZh}\n· delegatee = ${OTHER}\n· value = 1000000\n· nonce = 0\n· deadline = 1900000000`,
+    ),
+  },
+  {
+    name: "Snapshot Alias near miss (from not the signer)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        Alias: [
+          { name: "from", type: "address" },
+          { name: "alias", type: "address" },
+          { name: "timestamp", type: "uint64" },
+        ],
+      },
+      primaryType: "Alias",
+      domain: { name: "snapshot", version: "0.1.4" },
+      message: { from: OTHER, alias: OTHER, timestamp: 1700000000 },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: snapshot\n${net}\nType: Alias\n${typedVariant}\n${typedCaveat}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
+      `应用：snapshot\n${netZh}\n类型：Alias\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
+    ),
+  },
+  {
+    name: "Farcaster KeyGateway Add signer key",
+    request: opTypedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Add: [
+          { name: "owner", type: "address" },
+          { name: "keyType", type: "uint32" },
+          { name: "key", type: "bytes" },
+          { name: "metadataType", type: "uint8" },
+          { name: "metadata", type: "bytes" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Add",
+      domain: {
+        name: "Farcaster KeyGateway",
+        version: "1",
+        chainId: 10,
+        verifyingContract: FARCASTER_KEY_GATEWAY,
+      },
+      message: {
+        owner: SIGNER,
+        keyType: 1,
+        key: FARCASTER_KEY,
+        metadataType: 1,
+        metadata: encodeAbiParameters(
+          [
+            {
+              type: "tuple",
+              components: [
+                { name: "requestFid", type: "uint256" },
+                { name: "requestSigner", type: "address" },
+                { name: "signature", type: "bytes" },
+                { name: "deadline", type: "uint256" },
+              ],
+            },
+          ],
+          [
+            {
+              requestFid: 42n,
+              requestSigner: OTHER,
+              signature: `0x${"00".repeat(65)}`,
+              deadline: 1900000000n,
+            },
+          ],
+        ),
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Farcaster KeyGateway\n${netOp}\nVerifying contract ${FARCASTER_KEY_GATEWAY}\nType: Add\nAdd signer key ${FARCASTER_KEY} to your Farcaster account, requested by app fid 42; until you remove it, it can publish posts, reactions and follows as you\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Farcaster KeyGateway\n${netOpZh}\n验证合约 ${FARCASTER_KEY_GATEWAY}\n类型：Add\n向你的 Farcaster 账户添加签名密钥 ${FARCASTER_KEY}（应用 fid 42 请求）；在你移除前，它可以以你的身份发帖、点赞和关注\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Farcaster SignedKeyRequest",
+    request: opTypedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SignedKeyRequest: [
+          { name: "requestFid", type: "uint256" },
+          { name: "key", type: "bytes" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "SignedKeyRequest",
+      domain: {
+        name: "Farcaster SignedKeyRequestValidator",
+        version: "1",
+        chainId: 10,
+        verifyingContract: FARCASTER_VALIDATOR,
+      },
+      message: { requestFid: "42", key: FARCASTER_KEY, deadline: "1900000000" },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      `App: Farcaster SignedKeyRequestValidator\n${netOp}\nVerifying contract ${FARCASTER_VALIDATOR}\nType: SignedKeyRequest\nAs app fid 42, request signer key ${FARCASTER_KEY} for a Farcaster user\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Farcaster SignedKeyRequestValidator\n${netOpZh}\n验证合约 ${FARCASTER_VALIDATOR}\n类型：SignedKeyRequest\n以应用 fid 42 的身份为 Farcaster 用户请求签名密钥 ${FARCASTER_KEY}\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
     ),
   },
   {
@@ -851,8 +1439,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
-      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n· ${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n· ${TEXT32}`,
     ),
   },
   {
@@ -877,8 +1465,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n0xabababababababababababababababababababababababababababababababab",
-      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n0xabababababababababababababababababababababababababababababababab",
+      "This text encodes raw bytes; the wallet cannot see what they authorise\nMessage:\n· 0xabababababababababababababababababababababababababababababababab",
+      "文本是原始字节的编码；钱包无法看到它们授权的内容\n消息：\n· 0xabababababababababababababababababababababababababababababababab",
     ),
   },
   /* Hyperliquid: documents come from vectors/chains/hyperliquid.json (oracles: nktkas 0.33.3 and
@@ -1265,6 +1853,67 @@ const cases: VectorCase[] = [
     ),
   },
   {
+    /* The published 0x gasless-v2 API response document (0xProject/0x-examples@3b296df0
+       gasless-v2-headless-example/README.md, trade.eip712) — a real Base USDC→WETH MetaTxn
+       order through the feature-3 Settler. */
+    name: "0x gasless Settler MetaTxn Permit2 witness (EIP-712)",
+    request: {
+      ...typedData({
+        types: {
+          PermitWitnessTransferFrom: [
+            { name: "permitted", type: "TokenPermissions" },
+            { name: "spender", type: "address" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint256" },
+            { name: "slippageAndActions", type: "SlippageAndActions" },
+          ],
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TokenPermissions: [
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          SlippageAndActions: [
+            { name: "recipient", type: "address" },
+            { name: "buyToken", type: "address" },
+            { name: "minAmountOut", type: "uint256" },
+            { name: "actions", type: "bytes[]" },
+          ],
+        },
+        domain: {
+          name: "Permit2",
+          chainId: 8453,
+          verifyingContract: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        },
+        message: {
+          permitted: { token: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", amount: "100000" },
+          spender: "0x5ce929ddb01804bff35b2f5c77b735bdb094aac8",
+          nonce: "2241959297937691820908574931991581",
+          deadline: "1721085355",
+          slippageAndActions: {
+            recipient: "0x4d2a422db44144996e855ce15fb581a477dbb947",
+            buyToken: "0x4200000000000000000000000000000000000006",
+            minAmountOut: "25345560227526",
+            actions: ["0x0dfeb41900", "0x38c9c14700"],
+          },
+        },
+        primaryType: "PermitWitnessTransferFrom",
+      }),
+      network: "eip155:8453",
+    },
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm swap",
+      "确认兑换",
+      `App: Permit2\n${netBase}\nVerifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\nType: PermitWitnessTransferFrom\nAllow 0x5CE929DDB01804bfF35B2F5c77b735bdB094AAc8 to take 0.1 USDC once via Permit2 until 2024-07-15 (UTC)\n0x order by ${SIGNER}\nGive at most 0.1 USDC\n0x4D2A422dB44144996E855ce15FB581a477dbB947 receives at least 0.000025345560227526 WETH\nValid until 2024-07-15 23:15 (UTC)`,
+      `应用：Permit2\n${netBaseZh}\n验证合约 0x000000000022D473030F116dDEE9F6B43aC78BA3\n类型：PermitWitnessTransferFrom\n授权 0x5CE929DDB01804bfF35B2F5c77b735bdB094AAc8 一次性转走 0.1 USDC 经 Permit2 至 2024-07-15（UTC）\n0x 订单，挂单方 ${SIGNER}\n最多付出 0.1 USDC\n0x4D2A422dB44144996E855ce15FB581a477dbB947 至少收到 0.000025345560227526 WETH\n有效期至 2024-07-15 23:15（UTC）`,
+    ),
+  },
+  {
     name: "Snapshot Vote (EIP-712)",
     request: typedData({
       types: {
@@ -1449,8 +2098,24 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n${TEXT32}`,
-      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n${TEXT32}`,
+      `This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData ${TEXT32_HEX}\nMessage:\n· ${TEXT32}`,
+      `这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 ${TEXT32_HEX}\n消息：\n· ${TEXT32}`,
+    ),
+  },
+  {
+    name: "solana message kernel-line forgery",
+    request: solanaMessage(
+      [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")]
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(""),
+    ),
+    verifiability: "opaque",
+    blind: null,
+    prompt: p(
+      "Confirm signature",
+      "确认签名",
+      "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
     ),
   },
   {
@@ -1556,12 +2221,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm transfer",
         description:
-          "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\ntron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+          "Network: TRON\nSend 2 TRX to THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\nMemo:\n· tron fixed-vector memo\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
       },
       "zh-Hans": {
         title: "确认转账",
         description:
-          "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\ntron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+          "网络：TRON\n发送 2 TRX 到 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3\n备注：\n· tron fixed-vector memo\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
       },
     },
   },
@@ -1895,11 +2560,11 @@ const TRON_MSG_CASES = {
     prompt: {
       en: {
         title: "Confirm signature",
-        description: "Message:\nsign this for me",
+        description: "Message:\n· sign this for me",
       },
       "zh-Hans": {
         title: "确认签名",
-        description: "消息：\nsign this for me",
+        description: "消息：\n· sign this for me",
       },
     },
   },
@@ -1928,12 +2593,29 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm blind signing",
         description:
-          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\nSign this harmless text, please!",
+          "This 32-byte message could be a hash: signing it may authorise whatever the hash commits to\nData 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\nMessage:\n· Sign this harmless text, please!",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\nSign this harmless text, please!",
+          "这条 32 字节的消息可能是哈希：签署它可能授权该哈希所承诺的任何内容\n数据 0x5369676e2074686973206861726d6c65737320746578742c20706c6561736521\n消息：\n· Sign this harmless text, please!",
+      },
+    },
+  },
+  "tron message kernel-line forgery": {
+    verifiability: "opaque",
+    blind: null,
+    messageHex: [...utf8("Confirm this order\nNetwork: Ethereum\nMax fee 0.5 ETH")]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
+    prompt: {
+      en: {
+        title: "Confirm signature",
+        description: "Message:\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
+      },
+      "zh-Hans": {
+        title: "确认签名",
+        description: "消息：\n· Confirm this order\n· Network: Ethereum\n· Max fee 0.5 ETH",
       },
     },
   },
@@ -1946,12 +2628,12 @@ const TRON_MSG_CASES = {
       en: {
         title: "Confirm signature",
         description:
-          "This looks like a sign-in request but is not a valid one\nMessage:\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 31 more characters not shown",
+          "This looks like a sign-in request but is not a valid one\nMessage:\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 31 more characters not shown",
       },
       "zh-Hans": {
         title: "确认签名",
         description:
-          "内容像登录请求，但格式不合规\n消息：\nexample.com wants you to sign in with your Ethereum account:\nTUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\nURI: https://example.com\nVersion: 1\nChain ID: 1\nNonce: abc123\n… 还有 31 个字符未显示",
+          "内容像登录请求，但格式不合规\n消息：\n· example.com wants you to sign in with your Ethereum account:\n· TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH\n· URI: https://example.com\n· Version: 1\n· Chain ID: 1\n· Nonce: abc123\n… 还有 31 个字符未显示",
       },
     },
   },
@@ -1979,6 +2661,49 @@ for (const [name, row] of Object.entries(TRON_MSG_CASES)) {
     prompt: row.prompt,
   });
 }
+
+/* A TRON transfer whose memo is text that imitates the kernel's own prompt lines; every memo
+   line renders as marked requester text. */
+cases.push({
+  name: "tron transfer forged memo",
+  request: tronTx(
+    toHex(
+      buildTronRawData(
+        {
+          refBlock: {
+            number: 76050000,
+            id: "0000000004886e501a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f7890",
+          },
+          expiration: 1_767_225_660_000,
+          timestamp: 1_767_225_600_000,
+          memo: utf8(
+            "Order #8812\nNetwork: Nile (testnet, no value)\nExpires 2026-01-01 00:01 (UTC)\nFee limit 0.1 TRX",
+          ),
+        },
+        {
+          type: "TransferContract",
+          owner: TRON_SIGNER,
+          to: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC",
+          amount: 1_000_000n,
+        },
+      ),
+    ),
+  ),
+  verifiability: "full",
+  blind: null,
+  prompt: {
+    en: {
+      title: "Confirm transfer",
+      description:
+        "Network: TRON\nSend 1 TRX to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nMemo:\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+    },
+    "zh-Hans": {
+      title: "确认转账",
+      description:
+        "网络：TRON\n发送 1 TRX 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n备注：\n· Order #8812\n· Network: Nile (testnet, no value)\n· Expires 2026-01-01 00:01 (UTC)\n· Fee limit 0.1 TRX\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+    },
+  },
+});
 
 const TRON_TD_CASES = {
   "typed-data permit2": {

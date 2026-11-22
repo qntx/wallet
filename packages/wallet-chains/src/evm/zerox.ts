@@ -2,13 +2,30 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import * as AbiFunction from "ox/AbiFunction";
 
-import type { ApprovalChange, AssetAmount, AssetFlow, DisplayIntent } from "../index.ts";
+import type {
+  ApprovalChange,
+  AssetAmount,
+  AssetFlow,
+  DisplayIntent,
+  OffchainOrder,
+} from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT256, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { orderAmount } from "./order.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { lookupEvmToken } from "./tokens.ts";
 import { assertHex } from "./transaction.ts";
+import {
+  MAX_UINT48,
+  domainChainId,
+  isTypedDataMessage,
+  sameFields,
+  typedDataAddress,
+  typedDataBytes,
+  typedDataUint,
+} from "./typed-data.ts";
+import type { TypedDataInput } from "./typed-data.ts";
 
 /**
  * The 0x AllowanceHolder (`exec`) is deployed at the same address on every chain the taker Settler
@@ -55,22 +72,26 @@ const keccakHex = (parts: ReadonlyArray<Uint8Array>): string => {
 };
 
 const FEATURE_TAKER = 2n;
+const FEATURE_METATXN = 3n;
 
 /**
- * Whether `address` is a taker-feature (2) 0x Settler on `chainId`. Settlers deploy as a CREATE2
- * shim whose CREATE child is the contract: `salt = (feature << 128) | (chainId << 64) | nonce`,
- * `shim = CREATE2(deployer, salt, initHash)`, `settler = CREATE(shim, 1)`. Settler is redeployed
- * roughly monthly, so nonces 1..256 leave decades of headroom; the loop runs 512 keccaks and is
- * only reached for an AllowanceHolder `exec`. Feature 5 (bridge) is deliberately not matched.
+ * Whether `address` is a `feature` 0x Settler on `chainId` — 2 taker, 3 MetaTxn (Deployer.sol's
+ * `ownerOf(tokenId)`). Settlers deploy as a CREATE2 shim whose CREATE child is the contract: `salt
+ * = (feature << 128) | (chainId << 64) | nonce`, `shim = CREATE2(deployer, salt, initHash)`,
+ * `settler = CREATE(shim, 1)`. Settler is redeployed roughly monthly, so nonces 1..256 leave
+ * decades of headroom; the loop runs 512 keccaks and is only reached for an AllowanceHolder `exec`
+ * or a Permit2 `slippageAndActions` witness. Feature 5 (bridge) is deliberately not matched.
  */
-export const isZeroExSettler = (chainId: number, address: string): boolean => {
+export const isZeroExSettler = (
+  chainId: number,
+  address: string,
+  feature: bigint = FEATURE_TAKER,
+): boolean => {
   const want = address.toLowerCase();
   const deployer = addressBytes(ZEROX_DEPLOYER);
   const initHash = hexToBytes(SHIM_INIT_CODE_HASH.slice(2));
   for (let nonce = 1; nonce <= 256; nonce++) {
-    const salt = bigIntBytes32(
-      FEATURE_TAKER * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce),
-    );
+    const salt = bigIntBytes32(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
     const shim = addressBytes(
       last20(keccakHex([new Uint8Array([0xff]), deployer, salt, initHash])),
     );
@@ -289,5 +310,102 @@ export const decodeZeroX = (
     outflows,
     approvals,
     verifiability: "partial",
+  };
+};
+
+const METATXN_DOMAIN = ["string name", "uint256 chainId", "address verifyingContract"] as const;
+const METATXN_PERMIT = [
+  "TokenPermissions permitted",
+  "address spender",
+  "uint256 nonce",
+  "uint256 deadline",
+  "SlippageAndActions slippageAndActions",
+] as const;
+const METATXN_SLIPPAGE = [
+  "address recipient",
+  "address buyToken",
+  "uint256 minAmountOut",
+  "bytes[] actions",
+] as const;
+
+/**
+ * The gasless order a 0x Settler MetaTxn Permit2 witness signs (0xProject/0x-settler@ad7c844
+ * `src/SettlerMetaTxn.sol` + `src/core/Permit2Payment.sol`): the meta-transaction's first action
+ * must consume this witness's Permit2 transfer, and `_checkSlippageAndTransfer` requires the
+ * Settler to hold at least `minAmountOut` of `buyToken` and sends its whole balance to `recipient`
+ * — `minAmountOut` is the least the recipient gets (a 0 bound skips the check only together with a
+ * zero `buyToken`, and would bind nothing, so the decoder requires a positive bound). `spender`
+ * must be the MetaTxn-feature Settler of the request's chain — `permit.ts` is already gated to the
+ * Permit2 verifying contract.
+ */
+export const recognizeZeroXMetaTxn = (
+  json: TypedDataInput,
+  signer: string,
+  chainId: number,
+  table: EvmTokenTable,
+): OffchainOrder | undefined => {
+  const { types, primaryType, domain, message } = json;
+  if (
+    primaryType !== "PermitWitnessTransferFrom" ||
+    Object.keys(types).length !== 4 ||
+    !sameFields(types, "EIP712Domain", METATXN_DOMAIN) ||
+    !sameFields(types, "TokenPermissions", ["address token", "uint256 amount"]) ||
+    !sameFields(types, "SlippageAndActions", METATXN_SLIPPAGE) ||
+    !sameFields(types, "PermitWitnessTransferFrom", METATXN_PERMIT) ||
+    !ZEROX_CHAINS.has(chainId) ||
+    domainChainId(domain) !== chainId
+  ) {
+    return undefined;
+  }
+  const { permitted, slippageAndActions } = message;
+  const spender = typedDataAddress(message["spender"]);
+  const permittedToken = isTypedDataMessage(permitted)
+    ? typedDataAddress(permitted["token"])
+    : undefined;
+  const permittedAmount = isTypedDataMessage(permitted)
+    ? typedDataUint(permitted["amount"], MAX_UINT256)
+    : undefined;
+  const nonce = typedDataUint(message["nonce"], MAX_UINT256);
+  const deadline = typedDataUint(message["deadline"], MAX_UINT256);
+  const recipient = isTypedDataMessage(slippageAndActions)
+    ? typedDataAddress(slippageAndActions["recipient"])
+    : undefined;
+  const buyToken = isTypedDataMessage(slippageAndActions)
+    ? typedDataAddress(slippageAndActions["buyToken"])
+    : undefined;
+  const minAmountOut = isTypedDataMessage(slippageAndActions)
+    ? typedDataUint(slippageAndActions["minAmountOut"], MAX_UINT256)
+    : undefined;
+  const actions = isTypedDataMessage(slippageAndActions)
+    ? slippageAndActions["actions"]
+    : undefined;
+  if (
+    spender === undefined ||
+    !isZeroExSettler(chainId, spender, FEATURE_METATXN) ||
+    permittedToken === undefined ||
+    permittedAmount === undefined ||
+    nonce === undefined ||
+    deadline === undefined ||
+    recipient === undefined ||
+    buyToken === undefined ||
+    minAmountOut === undefined ||
+    minAmountOut === 0n ||
+    !Array.isArray(actions) ||
+    actions.some((action) => typedDataBytes(action) === undefined)
+  ) {
+    return undefined;
+  }
+  return {
+    protocol: "0x",
+    maker: checksumEvmAddress(signer),
+    give: orderAmount(permittedToken, permittedAmount, chainId, table),
+    receive: [
+      {
+        recipient,
+        amount: orderAmount(buyToken, minAmountOut, chainId, table, NATIVE_SENTINEL),
+      },
+    ],
+    ...(deadline <= MAX_UINT48 ? { expiry: Number(deadline) } : {}),
+    partialFill: false,
   };
 };

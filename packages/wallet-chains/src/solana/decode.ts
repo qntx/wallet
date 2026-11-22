@@ -19,6 +19,7 @@ import {
   RAYDIUM_CPMM_PROGRAM,
   WHIRLPOOL_PROGRAM,
   decodeAmmSwapIx,
+  METEORA_DLMM_PROGRAM,
 } from "./amm.ts";
 import type { AmmSwap } from "./amm.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
@@ -219,7 +220,8 @@ const classifyIx = (
     program === RAYDIUM_AMM_PROGRAM ||
     program === RAYDIUM_CLMM_PROGRAM ||
     program === RAYDIUM_CPMM_PROGRAM ||
-    program === WHIRLPOOL_PROGRAM
+    program === WHIRLPOOL_PROGRAM ||
+    program === METEORA_DLMM_PROGRAM
   ) {
     const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
     return amm !== undefined && amm.authority === signer

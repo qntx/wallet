@@ -87,12 +87,14 @@ export type LidoDecode = {
 /**
  * Lido staking on Ethereum mainnet: `submit` to stETH, the four withdrawal-request forms and
  * `claimWithdrawals` on the queue. The minted stETH shares and the checkpointed claim amounts
- * cannot be read exactly from calldata, so every recognised call is verifiability-partial.
+ * cannot be read exactly from calldata, so every recognised call is verifiability-partial. `caller`
+ * is the account the call runs as — msg.sender at the queue (the signer for a transaction, the Safe
+ * or deposit wallet for an inner call); a zero owner resolves to it.
  */
 export const decodeLido = (
   chainId: number,
   call: { readonly to: string | undefined; readonly value: bigint; readonly data: string },
-  signer: string,
+  caller: string,
   table: EvmTokenTable,
 ): LidoDecode | undefined => {
   if (chainId !== LIDO_CHAIN || call.to === undefined) {
@@ -136,7 +138,7 @@ export const decodeLido = (
     const total = argList(args, 0).reduce((sum, amount) => sum + amount, 0n);
     /* The queue treats a zero owner as the caller. */
     const raw = argAddress(args, 1);
-    const owner = raw === ZERO ? signer : raw;
+    const owner = raw === ZERO ? caller : raw;
     const action: StakeAction = {
       kind: "lido-request",
       token,
@@ -145,7 +147,7 @@ export const decodeLido = (
     };
     return {
       outflows:
-        owner.toLowerCase() === signer.toLowerCase() ? [] : [tokenFlow(token, owner, total, table)],
+        owner.toLowerCase() === caller.toLowerCase() ? [] : [tokenFlow(token, owner, total, table)],
       staking: [action],
     };
   }

@@ -389,7 +389,7 @@ export type SeaportOrder = {
 
 /** A recognised off-chain order: what it can take from the maker and the least each recipient gets. */
 export type OffchainOrder = {
-  readonly protocol: "1inch" | "uniswapx" | "cow";
+  readonly protocol: "1inch" | "uniswapx" | "cow" | "0x";
   /** Whose funds the order spends (EIP-55). */
   readonly maker: string;
   /** The most the order can take from the maker. */
@@ -560,6 +560,56 @@ export type PolymarketContent =
       readonly calls: ReadonlyArray<DisplayIntent>;
     };
 
+/**
+ * A recognised EIP-3009 authorization signed to the token contract itself by its
+ * `from`/`authorizer`.
+ */
+export type TokenAuthorization =
+  | {
+      readonly kind: "transfer" | "receive";
+      readonly to: string;
+      /** Asset = the token contract (domain.verifyingContract); symbol/decimals when listed. */
+      readonly amount: AssetAmount;
+      /** Unix seconds; valid only strictly after it (0 = at once). */
+      readonly validAfter: number;
+      /** Unix seconds; valid only strictly before it; absent when ≥ 2^48. */
+      readonly validBefore?: number;
+    }
+  | {
+      readonly kind: "cancel";
+      readonly token: string;
+      /** Bytes32, lowercase hex */ readonly nonce: string;
+    };
+
+/** Typed data that hands the signer's account authority to someone else. */
+export type AccountAuthority =
+  | {
+      readonly kind: "morpho";
+      readonly contract: string;
+      readonly verified: boolean;
+      readonly authorized: string;
+      readonly grant: boolean;
+      readonly deadline?: number;
+    }
+  | {
+      readonly kind: "aave-credit";
+      readonly contract: string;
+      readonly verified: boolean;
+      readonly delegatee: string;
+      readonly amount: AssetAmount;
+      readonly unlimited: boolean;
+      readonly deadline?: number;
+    }
+  | { readonly kind: "snapshot-alias"; readonly alias: string };
+
+/** A Farcaster signer-key document: adding a key to the signer's account, or an app's key request. */
+export type FarcasterKey = {
+  readonly kind: "add" | "request";
+  readonly key: string;
+  readonly requestFid: string;
+  readonly deadline?: number;
+};
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -589,6 +639,12 @@ export type MessageContent =
       readonly hyperliquid?: HyperliquidAction;
       /** A recognized Polymarket order, CLOB auth signature or deposit-wallet batch. */
       readonly polymarket?: PolymarketContent;
+      /** A recognized EIP-3009 authorization signed to the token contract itself. */
+      readonly authorization?: TokenAuthorization;
+      /** A recognized document handing the signer's account authority to someone else. */
+      readonly authority?: AccountAuthority;
+      /** A recognized Farcaster signer-key document. */
+      readonly farcaster?: FarcasterKey;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is

@@ -18,6 +18,8 @@ import {
 import type {
   ApprovalChange,
   AssetAmount,
+  AccountAuthority,
+  TokenAuthorization,
   ChainFamily,
   DisplayIntent,
   HyperliquidAction,
@@ -243,6 +245,19 @@ type Catalog = {
   readonly pmAuthNonce: (nonce: string) => string;
   readonly pmAuthScope: string;
   readonly pmBatchHeader: (wallet: string, nonce: string, deadline: string) => string;
+  readonly authAnyone: string;
+  readonly authOnlyRecipient: (to: string) => string;
+  readonly authWindow: (after?: string, before?: string) => string;
+  readonly authCancel: (nonce: string) => string;
+  readonly morphoGrant: (x: string) => string;
+  readonly morphoRevoke: (x: string) => string;
+  readonly aaveCredit: (x: string, amount: string) => string;
+  readonly aaveRevoke: (x: string, asset: string) => string;
+  readonly authorityUnverified: (c: string) => string;
+  readonly snapshotAlias: (x: string) => string;
+  readonly signatureDeadline: (date: string) => string;
+  readonly fcAddKey: (key: string, fid: string) => string;
+  readonly fcKeyRequest: (fid: string, key: string) => string;
 };
 
 const zh: Catalog = {
@@ -297,7 +312,7 @@ const zh: Catalog = {
   typedContract: (address) => `验证合约 ${address}`,
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
-  typedField: (path, value) => `· ${path} = ${value}`,
+  typedField: (path, value) => `${path} = ${value}`,
   typedCommitment: "它签署了哈希或原始字节；钱包无法看到它们所承诺的内容",
   typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
@@ -492,6 +507,29 @@ const zh: Catalog = {
   tronFeeLimit: (fee) => `能量费上限 ${fee}；另可能扣除带宽费`,
   tronBandwidthFee: "可能扣除带宽费或账户激活费",
   tronResource: { bandwidth: "带宽", energy: "能量", "tron-power": "TRON Power" },
+  authAnyone: "任何持有此签名的人都可以提交这笔转账",
+  authOnlyRecipient: (to) => `只有 ${to} 可以提交这笔转账`,
+  authWindow: (after, before) =>
+    after !== undefined && before !== undefined
+      ? `${after} 之后、${before} 之前有效（UTC）`
+      : before === undefined
+        ? after === undefined
+          ? "无到期时间"
+          : `${after} 之后有效（UTC），无到期时间`
+        : `${before} 之前有效（UTC）`,
+  authCancel: (nonce) => `取消未使用的转账授权 ${nonce}；不转移资金`,
+  morphoGrant: (x) =>
+    `允许 ${x} 管理你在 Morpho 的仓位：它可以提走你存入的资产和抵押品，并以你的抵押品借款，资金可转到任何地址`,
+  morphoRevoke: (x) => `撤销 ${x} 管理你 Morpho 仓位的权限`,
+  aaveCredit: (x, amount) =>
+    `允许 ${x} 以你的 Aave 信用借入最多 ${amount}：债务由你承担，以你的抵押品担保`,
+  aaveRevoke: (x, asset) => `撤销 ${x} 在 Aave 借入 ${asset} 的额度`,
+  authorityUnverified: (c) => `钱包不认识合约 ${c}；它可能授予其他权限`,
+  snapshotAlias: (x) => `允许 ${x} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
+  signatureDeadline: (date) => `此签名在 ${date}（UTC）前可被使用`,
+  fcAddKey: (key, fid) =>
+    `向你的 Farcaster 账户添加签名密钥 ${key}（应用 fid ${fid} 请求）；在你移除前，它可以以你的身份发帖、点赞和关注`,
+  fcKeyRequest: (fid, key) => `以应用 fid ${fid} 的身份为 Farcaster 用户请求签名密钥 ${key}`,
 };
 
 const en: Catalog = {
@@ -548,7 +586,7 @@ const en: Catalog = {
   typedContract: (address) => `Verifying contract ${address}`,
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
-  typedField: (path, value) => `· ${path} = ${value}`,
+  typedField: (path, value) => `${path} = ${value}`,
   typedCommitment: "It signs a hash or raw bytes; the wallet cannot see what they commit to",
   typedVariant:
     "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
@@ -761,6 +799,29 @@ const en: Catalog = {
   tronFeeLimit: (fee) => `Max fee ${fee} for energy; bandwidth fees may be charged in addition`,
   tronBandwidthFee: "Bandwidth or account-activation fees may be charged",
   tronResource: { bandwidth: "Bandwidth", energy: "Energy", "tron-power": "TRON Power" },
+  authAnyone: "Anyone holding this signature can submit the transfer",
+  authOnlyRecipient: (to) => `Only ${to} can submit the transfer`,
+  authWindow: (after, before) =>
+    after !== undefined && before !== undefined
+      ? `Valid after ${after} and before ${before} (UTC)`
+      : before === undefined
+        ? after === undefined
+          ? "No expiry"
+          : `Valid after ${after} (UTC); no expiry`
+        : `Valid before ${before} (UTC)`,
+  authCancel: (nonce) => `Cancel the unused transfer authorization ${nonce}; no funds move`,
+  morphoGrant: (x) =>
+    `Let ${x} manage your Morpho positions: it can withdraw your supplied assets and collateral and borrow against your collateral, sending the funds anywhere`,
+  morphoRevoke: (x) => `Revoke ${x}'s authority over your Morpho positions`,
+  aaveCredit: (x, amount) =>
+    `Let ${x} borrow up to ${amount} on your Aave credit: you owe the debt and your collateral backs it`,
+  aaveRevoke: (x, asset) => `Revoke ${x}'s Aave borrowing allowance for ${asset}`,
+  authorityUnverified: (c) => `The wallet does not know contract ${c}; it may grant other powers`,
+  snapshotAlias: (x) => `Let ${x} vote, create proposals and act on Snapshot as you`,
+  signatureDeadline: (date) => `This signature can be used until ${date} (UTC)`,
+  fcAddKey: (key, fid) =>
+    `Add signer key ${key} to your Farcaster account, requested by app fid ${fid}; until you remove it, it can publish posts, reactions and follows as you`,
+  fcKeyRequest: (fid, key) => `As app fid ${fid}, request signer key ${key} for a Farcaster user`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -849,13 +910,31 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
   return `${line}${via}${until}`;
 }
 
-/** One requester-chosen value on a single line. */
-const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
+/**
+ * Every line of requester-supplied text carries this prefix — a kernel-generated line never does,
+ * so a forged "Network:" or fee line inside a message or memo can never read as the prompt's own.
+ */
+const REQUESTER_LINE = "· ";
 
-/** The "… N more" trailing line when a text memo exceeds the excerpt budget, else none. */
-const displayOmitted = (catalog: Catalog, text: string): ReadonlyArray<string> => {
-  const { omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-  return omitted === 0 ? [] : [catalog.omitted(omitted)];
+/** A line of requester-supplied text marked as such. */
+const quoted = (line: string): string => `${REQUESTER_LINE}${line}`;
+
+/**
+ * The requester text of a message or memo: each displayed line quoted, plus the kernel's own "… N
+ * more" line (unquoted) when the excerpt does not fit.
+ */
+const requesterText = (catalog: Catalog, text: string): ReadonlyArray<string> => {
+  const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+  return [...lines.map(quoted), ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
+};
+
+/**
+ * One requester-chosen value on a single line; a dropped remainder is marked with an ellipsis so a
+ * second line or tail can never hide inside it.
+ */
+const field = (raw: string): string => {
+  const { lines, omitted } = displayExcerpt(raw, 1, FIELD_CODE_POINTS);
+  return `${lines[0] ?? ""}${omitted === 0 ? "" : "…"}`;
 };
 
 /** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
@@ -1044,11 +1123,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
     tron?.memo === undefined
       ? []
       : tron.memo.kind === "text"
-        ? [
-            catalog.tronMemoHeading,
-            ...displayExcerpt(tron.memo.text, MESSAGE_LINES, MESSAGE_CODE_POINTS).lines,
-            ...displayOmitted(catalog, tron.memo.text),
-          ]
+        ? [catalog.tronMemoHeading, ...requesterText(catalog, tron.memo.text)]
         : tron.memo.hex.length - "0x".length <= 128
           ? [catalog.tronMemoData(tron.memo.hex)]
           : [catalog.tronMemoLength((tron.memo.hex.length - "0x".length) / 2)];
@@ -1102,8 +1177,7 @@ function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<strin
 }
 
 function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
-  const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
-  return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
+  return [catalog.messageHeading, ...requesterText(catalog, text)];
 }
 
 const CONTROL_CHAR = /\p{Cc}/u;
@@ -1154,6 +1228,7 @@ const ORDER_PROTOCOL_NAME: Readonly<Record<OffchainOrder["protocol"], string>> =
   "1inch": "1inch",
   uniswapx: "UniswapX",
   cow: "CoW Protocol",
+  "0x": "0x",
 };
 
 /** The lines of a recognised off-chain order: header, the most it gives, the least each gets. */
@@ -1213,13 +1288,29 @@ function typedContentLines(
   if (message.safe !== undefined) {
     return safeLines(catalog, message.safe);
   }
+  if (message.authorization !== undefined) {
+    return authorizationLines(catalog, message.authorization);
+  }
+  if (message.authority !== undefined) {
+    return authorityLines(catalog, message.authority);
+  }
+  if (message.farcaster !== undefined) {
+    return [
+      ...(message.farcaster.kind === "add"
+        ? [catalog.fcAddKey(message.farcaster.key, message.farcaster.requestFid)]
+        : [catalog.fcKeyRequest(message.farcaster.requestFid, message.farcaster.key)]),
+      ...(message.farcaster.deadline === undefined
+        ? []
+        : [catalog.signatureDeadline(utcDateTime(message.farcaster.deadline))]),
+    ];
+  }
   if (intent.approvals.length > 0) {
     return [
       catalog.otherOutflows,
       ...effectLines(catalog, intent),
       ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       ...(intent.blind === "typed-data-oversize" ? [catalog.typedOversize] : []),
-      ...(message.fields ?? []).map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+      ...(message.fields ?? []).map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value))),
     ];
   }
   if (message.fields !== undefined) {
@@ -1227,7 +1318,7 @@ function typedContentLines(
       ...(intent.blind === "typed-data-variant" ? [catalog.typedVariant] : []),
       ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       catalog.typedUnverified,
-      ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+      ...message.fields.map((leaf) => quoted(catalog.typedField(leaf.path, leaf.value))),
     ];
   }
   if (intent.blind === "typed-data-variant") {
@@ -1240,6 +1331,57 @@ function typedContentLines(
     "integrity",
     "unreachable: typed data is neither recognised, shown nor blind",
   );
+}
+
+/** The lines of a recognised EIP-3009 authorization: who can submit it, and its validity. */
+function authorizationLines(
+  catalog: Catalog,
+  authorization: TokenAuthorization,
+): ReadonlyArray<string> {
+  if (authorization.kind === "cancel") {
+    return [catalog.authCancel(authorization.nonce)];
+  }
+  const window = catalog.authWindow(
+    authorization.validAfter === 0 ? undefined : utcDateTime(authorization.validAfter),
+    authorization.validBefore === undefined ? undefined : utcDateTime(authorization.validBefore),
+  );
+  return [
+    catalog.send(formatAmount(catalog, authorization.amount), authorization.to),
+    authorization.kind === "transfer"
+      ? catalog.authAnyone
+      : catalog.authOnlyRecipient(authorization.to),
+    window,
+  ];
+}
+
+/** The lines of a recognised account-authority document: the delegatee's power, then warnings. */
+function authorityLines(catalog: Catalog, authority: AccountAuthority): ReadonlyArray<string> {
+  if (authority.kind === "snapshot-alias") {
+    return [catalog.snapshotAlias(authority.alias)];
+  }
+  if (authority.kind === "morpho") {
+    return [
+      authority.grant
+        ? catalog.morphoGrant(authority.authorized)
+        : catalog.morphoRevoke(authority.authorized),
+      ...(authority.verified ? [] : [catalog.authorityUnverified(authority.contract)]),
+      ...(authority.deadline === undefined
+        ? []
+        : [catalog.signatureDeadline(utcDateTime(authority.deadline))]),
+    ];
+  }
+  const asset = authority.amount.symbol ?? authority.amount.asset;
+  return [
+    authority.unlimited
+      ? catalog.aaveCredit(authority.delegatee, catalog.unlimited(asset))
+      : authority.amount.amount === "0"
+        ? catalog.aaveRevoke(authority.delegatee, asset)
+        : catalog.aaveCredit(authority.delegatee, formatAmount(catalog, authority.amount)),
+    ...(authority.verified ? [] : [catalog.authorityUnverified(authority.contract)]),
+    ...(authority.deadline === undefined
+      ? []
+      : [catalog.signatureDeadline(utcDateTime(authority.deadline))]),
+  ];
 }
 
 /** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
