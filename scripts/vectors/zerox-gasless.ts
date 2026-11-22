@@ -306,6 +306,7 @@ const variants: Variant[] = [
   near(
     "a zero minAmountOut (the contract treats it as no bound)",
     mainnet((m) => {
+      m["spender"] = settler(1, 3n, 20);
       (m["slippageAndActions"] as Record<string, unknown>)["minAmountOut"] = "0";
     }),
   ),
@@ -321,10 +322,12 @@ const variants: Variant[] = [
       ],
     },
   }),
+  /* The request's chain is not the domain's; the spender stays a feature-3 Settler on the
+     request chain so the domain check is the only guard that rejects this document. */
   near(
     "a request chain that is not the document's",
     mainnet((m) => {
-      m["spender"] = settler(1, 3n, 20);
+      m["spender"] = baseSpender;
     }),
     "eip155:8453",
   ),

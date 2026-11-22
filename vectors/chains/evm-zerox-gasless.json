@@ -501,7 +501,7 @@
             "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
             "amount": "1000000"
           },
-          "spender": "0x5ce929ddb01804bff35b2f5c77b735bdb094aac8",
+          "spender": "0x9A6350D532ed83a970D452b736bE5847b2856768",
           "nonce": "2241959297937691820908574931991581",
           "deadline": "2000000000",
           "slippageAndActions": {
@@ -518,8 +518,8 @@
       },
       "network": "eip155:1",
       "expected": "variant",
-      "digest": "0xb96b9c98cdbaecc7dd2637afd49da496f9f95b06743eab0b4d09dfd953da9bdc",
-      "signature": "0xe6b5eb2ff9826eabf6a460be80b89b554325bcca9d32bc34a1d056bdc37a31f3107a46d9a72cd836698b6a09793857bf4644c7a9709ce7360ee7d068a220b5111c"
+      "digest": "0x97581388dbbbbc079dc06af8b31520b2ef3b09dd78ccbcaaad6c1a0a8cf9df7c",
+      "signature": "0x71e1cd898b93a52e566852c8086cee1de9e4dbf3b3a3f88afc2f8944091df93c2e905114c6c26d1eb2ad85d0c4a89b21a420700179cd0003a5fed4e611afd7091b"
     },
     {
       "description": "an extra type entry",
@@ -709,7 +709,7 @@
             "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
             "amount": "1000000"
           },
-          "spender": "0x9A6350D532ed83a970D452b736bE5847b2856768",
+          "spender": "0x5ce929ddb01804bff35b2f5c77b735bdb094aac8",
           "nonce": "2241959297937691820908574931991581",
           "deadline": "2000000000",
           "slippageAndActions": {
@@ -726,8 +726,8 @@
       },
       "network": "eip155:8453",
       "expected": "variant",
-      "digest": "0x8d28997bf40e5e7a08c39f5968c312be23160cf6af5adb10a13b6246ebfed1b2",
-      "signature": "0x5d71b5c056630c8912d0554bc636c98847033d582c695b4d98e7ef1179084a3817500acc8358b28c6d13333f7f61fa9350911030fafc7de3facfcf8071e9b7a21c"
+      "digest": "0x1eab66e43e9154e8b20f8091305dd091d5dac832fa5f82ae8aa38f9c05980913",
+      "signature": "0xf976af839c0383b8dbb76ddf5f1fe4655cbe3ec9a7f6f177655264dba1a1d81d1374b4bef14b7d96d4ebfa4a7e50689790635ee3be4d7ce21bfbda1cf006c8bc1c"
     },
     {
       "description": "a native buyToken (0xEeee… sentinel)",
