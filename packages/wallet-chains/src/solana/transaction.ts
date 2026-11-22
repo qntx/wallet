@@ -33,11 +33,9 @@ const transactionDecoder = getTransactionDecoder();
  * wire order — the slot byte offset follows from them.
  */
 const readTransaction = (wire: Uint8Array): ReadTransaction => {
-  if (wire.length > (wire[0] === 0x81 ? V1_TRANSACTION_MAX_BYTES : LEGACY_TRANSACTION_MAX_BYTES)) {
-    throw new ChainError(
-      "invalid-request",
-      `transaction exceeds the ${wire[0] === 0x81 ? "4096" : "1232"}-byte limit`,
-    );
+  const limit = wire[0] === 0x81 ? V1_TRANSACTION_MAX_BYTES : LEGACY_TRANSACTION_MAX_BYTES;
+  if (wire.length > limit) {
+    throw new ChainError("invalid-request", `transaction exceeds the ${limit}-byte limit`);
   }
   let tx: ReturnType<typeof transactionDecoder.decode>;
   try {

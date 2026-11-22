@@ -258,40 +258,33 @@ const V1_HEAP_MIN = 32 * 1024;
 const V1_HEAP_MAX = 256 * 1024;
 const V1_HEAP_MULTIPLE = 1024;
 
-type V1ConfigValue =
-  | { readonly kind: "u32"; readonly value: number }
-  | { readonly kind: "u64"; readonly value: bigint };
-
 type V1InstructionHeader = {
   readonly programAccountIndex: number;
   readonly numInstructionAccounts: number;
   readonly numInstructionDataBytes: number;
 };
 
+type V1InstructionPayload = {
+  readonly instructionAccountIndices: ReadonlyArray<number> | Uint8Array;
+  readonly instructionData: Uint8Array;
+};
+
 type CompiledV1Message = {
   readonly version: 1;
-  readonly configMask: number;
-  readonly configValues: ReadonlyArray<V1ConfigValue>;
   readonly header: {
     readonly numSignerAccounts: number;
     readonly numReadonlySignerAccounts: number;
     readonly numReadonlyNonSignerAccounts: number;
   };
-  readonly instructionHeaders: ReadonlyArray<V1InstructionHeader>;
-  readonly instructionPayloads: ReadonlyArray<{
-    readonly instructionAccountIndices: ReadonlyArray<number> | Uint8Array;
-    readonly instructionData: Uint8Array;
+  readonly instructions: ReadonlyArray<{
+    readonly programAccountIndex: number;
+    readonly accountIndices: ReadonlyArray<number> | Uint8Array;
+    readonly data: Uint8Array;
   }>;
   readonly lifetimeToken: string;
-  readonly numInstructions: number;
   readonly numStaticAccounts: number;
   readonly staticAccounts: ReadonlyArray<string>;
 };
-
-const isV1ConfigValue = (value: unknown): value is V1ConfigValue =>
-  isRecord(value) &&
-  ((value["kind"] === "u32" && typeof value["value"] === "number") ||
-    (value["kind"] === "u64" && typeof value["value"] === "bigint"));
 
 const isV1InstructionHeader = (value: unknown): value is V1InstructionHeader =>
   isRecord(value) &&
@@ -299,15 +292,13 @@ const isV1InstructionHeader = (value: unknown): value is V1InstructionHeader =>
   typeof value["numInstructionAccounts"] === "number" &&
   typeof value["numInstructionDataBytes"] === "number";
 
-const isV1InstructionPayload = (
-  value: unknown,
-): value is CompiledV1Message["instructionPayloads"][number] =>
+const isV1InstructionPayload = (value: unknown): value is V1InstructionPayload =>
   isRecord(value) &&
   (isNumberArray(value["instructionAccountIndices"]) ||
     value["instructionAccountIndices"] instanceof Uint8Array) &&
   value["instructionData"] instanceof Uint8Array;
 
-const asV1Message = (value: unknown, mask: number): CompiledV1Message => {
+const asV1Message = (value: unknown): CompiledV1Message => {
   if (!isRecord(value) || !isRecord(value["header"])) {
     throw new ChainError("invalid-request", "compiled message failed to decode");
   }
@@ -315,74 +306,59 @@ const asV1Message = (value: unknown, mask: number): CompiledV1Message => {
   const { staticAccounts } = value;
   const headers = value["instructionHeaders"];
   const payloads = value["instructionPayloads"];
-  const { configValues } = value;
   if (
     value["version"] !== 1 ||
-    value["configMask"] !== mask ||
     typeof header["numSignerAccounts"] !== "number" ||
     typeof header["numReadonlySignerAccounts"] !== "number" ||
     typeof header["numReadonlyNonSignerAccounts"] !== "number" ||
     typeof value["lifetimeToken"] !== "string" ||
-    typeof value["numInstructions"] !== "number" ||
     typeof value["numStaticAccounts"] !== "number" ||
     !isStringArray(staticAccounts) ||
     !Array.isArray(headers) ||
-    !headers.every(isV1InstructionHeader) ||
-    !Array.isArray(payloads) ||
-    !payloads.every(isV1InstructionPayload) ||
-    !Array.isArray(configValues) ||
-    !configValues.every(isV1ConfigValue) ||
-    value["numInstructions"] !== headers.length ||
-    payloads.length !== headers.length ||
-    value["numStaticAccounts"] !== staticAccounts.length
+    !Array.isArray(payloads)
   ) {
     throw new ChainError("invalid-request", "compiled message failed to decode");
   }
+  /* Zip the header with its payload in one pass: a missing or malformed payload fails the
+     same payload check, so no separate count comparison is needed (kit derives both arrays
+     from the same numInstructions count). */
+  const instructions = headers.map((h, i) => {
+    const payload: unknown = payloads[i];
+    if (!isV1InstructionHeader(h) || !isV1InstructionPayload(payload)) {
+      throw new ChainError("invalid-request", "compiled message failed to decode");
+    }
+    return {
+      programAccountIndex: h.programAccountIndex,
+      accountIndices: payload.instructionAccountIndices,
+      data: payload.instructionData,
+    };
+  });
   return {
     version: 1,
-    configMask: mask,
-    configValues,
     header: {
       numSignerAccounts: header["numSignerAccounts"],
       numReadonlySignerAccounts: header["numReadonlySignerAccounts"],
       numReadonlyNonSignerAccounts: header["numReadonlyNonSignerAccounts"],
     },
-    instructionHeaders: headers,
-    instructionPayloads: payloads,
+    instructions,
     lifetimeToken: value["lifetimeToken"],
-    numInstructions: value["numInstructions"],
     numStaticAccounts: value["numStaticAccounts"],
     staticAccounts,
   };
 };
 
-/** The config a valid mask declares, read in bit order (u64 priority fee, then u32s). */
-const v1Config = (mask: number, values: ReadonlyArray<V1ConfigValue>): SolanaTransactionConfig => {
-  const expected =
-    ((mask & V1_PRIORITY_FEE_BITS) === 0 ? 0 : 1) +
-    ((mask & 0b100) === 0 ? 0 : 1) +
-    ((mask & 0b1000) === 0 ? 0 : 1) +
-    ((mask & 0b10000) === 0 ? 0 : 1);
-  if (values.length !== expected) {
-    throw new ChainError("invalid-request", "compiled message failed to decode");
-  }
-  let i = 0;
-  const nextU64 = (): bigint => {
-    const value = values[i];
-    i += 1;
-    if (value === undefined || value.kind !== "u64") {
-      throw new ChainError("invalid-request", "compiled message failed to decode");
-    }
-    return value.value;
-  };
-  const nextU32 = (): number => {
-    const value = values[i];
-    i += 1;
-    if (value === undefined || value.kind !== "u32") {
-      throw new ChainError("invalid-request", "compiled message failed to decode");
-    }
-    return value.value;
-  };
+/* The config a valid mask declares: values sit after the static accounts (0x81 ‖ header ‖ mask ‖
+   lifetime ‖ counts ‖ accounts) in bit order — u64 LE priority fee if bits 0+1, then u32 LE per
+   remaining bit. The mask passed its checks and kit decoded the whole frame, so every byte the
+   mask declares is present — read it straight from the wire rather than trusting kit's
+   configValues array. */
+const v1Config = (
+  mask: number,
+  bytes: Uint8Array,
+  numStaticAccounts: number,
+): SolanaTransactionConfig => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset + 42 + 32 * numStaticAccounts);
+  let offset = 0;
   const config: {
     priorityFeeLamports?: bigint;
     computeUnitLimit?: number;
@@ -390,16 +366,19 @@ const v1Config = (mask: number, values: ReadonlyArray<V1ConfigValue>): SolanaTra
     heapSize?: number;
   } = {};
   if ((mask & V1_PRIORITY_FEE_BITS) !== 0) {
-    config.priorityFeeLamports = nextU64();
+    config.priorityFeeLamports = view.getBigUint64(offset, true);
+    offset += 8;
   }
   if ((mask & 0b100) !== 0) {
-    config.computeUnitLimit = nextU32();
+    config.computeUnitLimit = view.getUint32(offset, true);
+    offset += 4;
   }
   if ((mask & 0b1000) !== 0) {
-    config.loadedAccountsDataSizeLimit = nextU32();
+    config.loadedAccountsDataSizeLimit = view.getUint32(offset, true);
+    offset += 4;
   }
   if ((mask & 0b10000) !== 0) {
-    config.heapSize = nextU32();
+    config.heapSize = view.getUint32(offset, true);
   }
   return config;
 };
@@ -440,10 +419,10 @@ const sanitizeV1Message = (message: CompiledV1Message, config: SolanaTransaction
       `v1 message has ${accounts} accounts for ${signatures} signers and ${readonlyNonSigners} read-only non-signers`,
     );
   }
-  if (message.instructionHeaders.length > V1_MAX_INSTRUCTIONS) {
+  if (message.instructions.length > V1_MAX_INSTRUCTIONS) {
     throw new ChainError(
       "invalid-request",
-      `v1 message declares ${message.instructionHeaders.length} instructions (64 allowed)`,
+      `v1 message declares ${message.instructions.length} instructions (64 allowed)`,
     );
   }
   const seen = new Set<string>();
@@ -453,24 +432,20 @@ const sanitizeV1Message = (message: CompiledV1Message, config: SolanaTransaction
     }
     seen.add(account);
   }
-  for (const [i, header] of message.instructionHeaders.entries()) {
-    const payload = message.instructionPayloads[i];
-    if (payload === undefined) {
-      throw new ChainError("invalid-request", "compiled message failed to decode");
-    }
-    if (header.programAccountIndex === 0) {
+  for (const [i, instruction] of message.instructions.entries()) {
+    if (instruction.programAccountIndex === 0) {
       throw new ChainError(
         "invalid-request",
         `v1 instruction ${i} uses the fee payer as its program`,
       );
     }
-    if (header.programAccountIndex >= accounts) {
+    if (instruction.programAccountIndex >= accounts) {
       throw new ChainError(
         "invalid-request",
-        `v1 instruction ${i} uses program index ${header.programAccountIndex} of ${accounts} accounts`,
+        `v1 instruction ${i} uses program index ${instruction.programAccountIndex} of ${accounts} accounts`,
       );
     }
-    for (const index of payload.instructionAccountIndices) {
+    for (const index of instruction.accountIndices) {
       if (index >= accounts) {
         throw new ChainError(
           "invalid-request",
@@ -530,8 +505,8 @@ const parseV1Message = (bytes: Uint8Array): ParsedSolanaMessage => {
   if (end !== bytes.length) {
     throw new ChainError("invalid-request", "compiled message has trailing bytes");
   }
-  const message = asV1Message(decoded, mask);
-  const config = v1Config(mask, message.configValues);
+  const message = asV1Message(decoded);
+  const config = v1Config(mask, bytes, message.numStaticAccounts);
   sanitizeV1Message(message, config);
   return {
     version: 1,
@@ -540,17 +515,11 @@ const parseV1Message = (bytes: Uint8Array): ParsedSolanaMessage => {
     numReadonlyNonSignerAccounts: message.header.numReadonlyNonSignerAccounts,
     staticAccounts: [...message.staticAccounts],
     lifetimeToken: message.lifetimeToken,
-    instructions: message.instructionHeaders.map((header, i) => {
-      const payload = message.instructionPayloads[i];
-      if (payload === undefined) {
-        throw new ChainError("invalid-request", "compiled message failed to decode");
-      }
-      return {
-        programAddressIndex: header.programAccountIndex,
-        accountIndices: [...payload.instructionAccountIndices],
-        data: new Uint8Array(payload.instructionData),
-      };
-    }),
+    instructions: message.instructions.map((instruction) => ({
+      programAddressIndex: instruction.programAccountIndex,
+      accountIndices: [...instruction.accountIndices],
+      data: new Uint8Array(instruction.data),
+    })),
     lookups: [],
     config,
   };

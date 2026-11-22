@@ -165,6 +165,13 @@ describe("solana-v1 vectors", () => {
       expect(() => parseCompiledMessage(unhex(m?.message ?? ""))).toThrow(/priority-fee/);
     }
   });
+
+  it("zero signatures names the signature bound — not the read-only-signer rule it also trips", () => {
+    /* A zero-signer header always breaks `readonlySigners < signatures` too, so the code alone
+       cannot pin the 1–12 rule: the refusal must come from it. */
+    const m = vectors.malformed.find((x) => x.name === "v1-zero-signatures");
+    expect(() => parseCompiledMessage(unhex(m?.message ?? ""))).toThrow(/requires 0 signatures/);
+  });
 });
 
 /* Byte-built v1 frame (as in scripts/solana-v1-vectors.ts): 0x81 ‖ header ‖ mask(u32 LE) ‖

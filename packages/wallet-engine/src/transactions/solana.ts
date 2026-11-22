@@ -120,13 +120,10 @@ export const durableNonceOfMessage = (
 ): { readonly account: string | undefined; readonly value: string } | undefined => {
   /* `parseCompiledMessage` maps every supported version onto one model — kit's own decoder
      gives a v1 message instruction headers/payloads instead of `instructions`, which would
-     silently misclassify a v1 durable nonce. */
-  let compiled: ParsedSolanaMessage;
-  try {
-    compiled = parseCompiledMessage(messageBytes);
-  } catch {
-    return undefined;
-  }
+     silently misclassify a v1 durable nonce. A message that fails to parse is not
+     blockhash-lifetime: the error propagates so the poll cannot misclassify a durable
+     transaction and drop it while it can still land. */
+  const compiled: ParsedSolanaMessage = parseCompiledMessage(messageBytes);
   const [first] = compiled.instructions;
   const data = first?.data;
   const accountIndices = first?.accountIndices;

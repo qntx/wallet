@@ -522,12 +522,10 @@ const main = async (): Promise<void> => {
       rule: "Agave sanitize.rs sanitize_required_signatures (1–12)",
     },
     {
+      /* Built from scratch so the 13-signature header is the ONLY violation — a frame with fewer
+         accounts would be refused by the accounts-below-header rule either way. */
       name: "v1-thirteen-signatures",
-      message: hex(
-        surgery(case1, 1, (m) => {
-          m[0] = 13;
-        }),
-      ),
+      message: hex(frame({ header: [13, 0, 0], accounts: distinct(13) })),
       code: "invalid-request",
       rule: "transaction_limits.rs MAX_V1_SIGNATURES = 12",
     },

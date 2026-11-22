@@ -33,6 +33,7 @@ import type { Nonce } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
+import { ChainError } from "@qntx/wallet-chains";
 
 import type { SolanaRpc } from "../src/networks/controller.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -416,6 +417,10 @@ describe("durableNonceOfMessage", () => {
       account: undefined,
       value: NONCE_VALUE,
     });
+  });
+
+  it("propagates a parse failure — garbage is not blockhash-lifetime", () => {
+    expect(() => durableNonceOfMessage(new Uint8Array([0x81, 1, 2, 3]))).toThrow(ChainError);
   });
 
   it("a lookup-loaded nonce account is never read and never dropped — only landing settles it", async () => {
