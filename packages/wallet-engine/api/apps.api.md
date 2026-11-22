@@ -212,6 +212,12 @@ export type AppGroupState = {
 export type AppId = "hyperliquid" | "polymarket";
 
 // @public
+type AppOrigin = {
+    readonly kind: "app";
+    readonly id: string;
+};
+
+// @public
 type AppProvider = {
     readonly id: AppId;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
@@ -1468,7 +1474,7 @@ class RequestController extends Controller<RequestControllerState> {
     lock(): void;
     outcome(id: string): Promise<RequestResult>;
     // (undocumented)
-    prepare(input: RequestInput): Promise<PendingRequest>;
+    prepare(input: RequestInput, app?: AppOrigin): Promise<PendingRequest>;
     // (undocumented)
     reject(id: string): void;
     signLog(): Promise<ReadonlyArray<SignLogEntry>>;
@@ -1523,7 +1529,7 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sig
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | DappOrigin;
+} | AppOrigin | DappOrigin;
 
 // @public
 type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;

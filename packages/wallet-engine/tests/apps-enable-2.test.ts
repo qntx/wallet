@@ -902,3 +902,34 @@ describe("declined builder", () => {
     await plain.destroy();
   }, 20000);
 });
+
+describe("app-sourced request origins", () => {
+  it("user-signed and deposit requests are attributed to the hyperliquid app", async () => {
+    const APP_ORIGIN = { kind: "app", id: "hyperliquid" };
+    const w = await world(47);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+
+    /* A user-signed action opens one evm-sign request stamped with the app origin. */
+    const pending = await userSigned(w).usdSend(w.group, { destination: ZERO, amount: "2" });
+    expect(w.requests.getState().requests[pending.requestId]?.origin).toStrictEqual(APP_ORIGIN);
+    await w.approve(pending.requestId);
+    await expect(pending.outcome).resolves.toStrictEqual({ kind: "ok" });
+    const signLog = await w.requests.signLog();
+    const logged = signLog.find((e) => e.id === pending.requestId);
+    expect(logged?.origin).toStrictEqual(APP_ORIGIN);
+
+    /* The deposit opens the approve first; the CCTP burn once the allowance is seen. */
+    const first = await w.provider.fund.deposit(w.group, { amount: 5_000_000n, fee: "normal" });
+    expect(first.kind).toBe("approval-required");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const approvalId = first.kind === "approval-required" ? first.approval.requestId : "";
+    expect(w.requests.getState().requests[approvalId]?.origin).toStrictEqual(APP_ORIGIN);
+    w.hl.arb = { allowance: 10_000_000n };
+    const result = await w.provider.fund.deposit(w.group, { amount: 5_000_000n, fee: "normal" });
+    expect(result.kind).toBe("deposit");
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing
+    const depositId = result.kind === "deposit" ? result.deposit.requestId : "";
+    expect(w.requests.getState().requests[depositId]?.origin).toStrictEqual(APP_ORIGIN);
+    await w.destroy();
+  }, 20000);
+});

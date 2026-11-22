@@ -7,7 +7,7 @@ import { sessions } from "@qntx/wallet/sessions";
 import type { EvmFeeTier } from "../../chains/evm.ts";
 import type { EngineLogger } from "../../events.ts";
 import { RequestEndedError } from "../../requests/controller.ts";
-import type { RequestController } from "../../requests/controller.ts";
+import type { AppRequests } from "../types.ts";
 import { createHyperliquidAccount } from "./account.ts";
 import type { HyperliquidAccount } from "./account.ts";
 import { createHyperliquidActions } from "./actions.ts";
@@ -315,7 +315,7 @@ export type HyperliquidProviderOptions = Pick<
    * The request pipeline user-signed actions and the CCTP deposit go through — absent on a
    * reads-only provider, whose `transfer`/`fund`/`userSigned` throw `not-enabled`.
    */
-  readonly requests?: Pick<RequestController, "prepare" | "outcome" | "reject">;
+  readonly requests?: AppRequests;
   /**
    * The chain clients `deposit` reads allowance and the CCTP burn limit through — absent on a
    * reads-only provider.

@@ -11,9 +11,8 @@ import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
 import type { EngineLogger } from "../../events.ts";
-import type { RequestController } from "../../requests/controller.ts";
 import type { SetTimer } from "../../timer.ts";
-import type { AppFlow, AppGroup, AppProvider } from "../types.ts";
+import type { AppFlow, AppGroup, AppProvider, AppRequests } from "../types.ts";
 import { HyperliquidError } from "./errors.ts";
 import type { HyperliquidErrorCategory } from "./errors.ts";
 import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";
@@ -47,7 +46,7 @@ export type HyperliquidEnableOptions = {
   readonly wallet: Wallet;
   readonly provider: HyperliquidProvider & HyperliquidProviderInternals;
   readonly userSigned: HyperliquidUserSigned;
-  readonly requests: Pick<RequestController, "reject">;
+  readonly requests: Pick<AppRequests, "reject">;
   readonly network: HyperliquidNetwork;
   /** The agent name — `^[A-Za-z0-9._-]{1,16}$`, validated by `createApps`. */
   readonly agentName: string;

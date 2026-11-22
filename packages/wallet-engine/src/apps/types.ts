@@ -4,6 +4,17 @@
  * other. See design.md §公开类型 / §启用状态机.
  */
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
+import type { PendingRequest, RequestController, RequestInput } from "../requests/controller.ts";
+
+/**
+ * The request pipeline stamped to one app's origin: `prepare` opens a request attributed `{ kind:
+ * "app", id }` — a provider cannot choose its origin or carry a dApp one.
+ */
+export type AppRequests = {
+  readonly prepare: (input: RequestInput) => Promise<PendingRequest>;
+  readonly outcome: RequestController["outcome"];
+  readonly reject: RequestController["reject"];
+};
 
 /** The apps the controller knows; unimplemented ids are typed, never stubbed. */
 export type AppId = "hyperliquid" | "polymarket";

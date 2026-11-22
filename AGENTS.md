@@ -48,6 +48,9 @@
   official SDK, and mutation tests that kill every guard.
 - The application share of the native kernel bundle stays within the budgets enforced by
   `scripts/check-kernel-budget.ts` (run by `bun run lint`); raising one needs a recorded decision.
+- An application signs only through the request pipeline — requests attributed to it with origin
+  `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a kernel
+  session scheme; it never holds a private key.
 
 `design/` is local-only and never committed.
 

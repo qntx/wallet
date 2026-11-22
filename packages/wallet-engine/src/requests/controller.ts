@@ -83,9 +83,12 @@ import {
   OriginBusyError,
   RequestEndedError,
   SignInOriginError,
+  dappOf,
   dappUrl,
+  isAppOrigin,
 } from "./types.ts";
 import type {
+  AppOrigin,
   BitcoinAccount,
   BitcoinGroup,
   BitcoinPsbtInput,
@@ -104,6 +107,7 @@ export {
   SignInOriginError,
 } from "./types.ts";
 export type {
+  AppOrigin,
   BitcoinAccount,
   BitcoinGroup,
   BrowserOrigin,
@@ -856,8 +860,7 @@ export class RequestController extends Controller<RequestControllerState> {
     for (const [id, request] of Object.entries(this.getState().requests)) {
       if (
         nextStage(request.stage, "invalidate") !== undefined &&
-        request.origin.kind !== "internal" &&
-        request.origin.origin === origin
+        dappOf(request.origin)?.origin === origin
       ) {
         this.end(id, "invalidate");
       }
@@ -873,15 +876,21 @@ export class RequestController extends Controller<RequestControllerState> {
     await this.log.clear();
   }
 
-  async prepare(input: RequestInput): Promise<PendingRequest> {
+  async prepare(input: RequestInput, app?: AppOrigin): Promise<PendingRequest> {
     if (this.locked) {
       throw new Error("requests require an unlocked vault");
+    }
+    if (app !== undefined && !isAppOrigin(app)) {
+      throw new Error("an app request needs a well-formed app id");
     }
     const id = newRequestId(this.options.random);
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
     const target = "txId" in input ? input.txId : undefined;
     const origin = dappOriginOf(input);
+    if (app !== undefined && origin !== undefined) {
+      throw new Error("an app request cannot carry a dApp origin");
+    }
     const originStatus =
       origin === undefined ? "clear" : this.options.phishing.check(dappUrl(origin));
     if (originStatus === "blocked") {
@@ -927,7 +936,7 @@ export class RequestController extends Controller<RequestControllerState> {
         : originRisk(originStatus);
     const request: PendingRequest = {
       id,
-      origin: origin ?? { kind: "internal" },
+      origin: origin ?? app ?? { kind: "internal" },
       method: input.method,
       account: built.account,
       network: built.network,
@@ -1541,10 +1550,8 @@ export class RequestController extends Controller<RequestControllerState> {
       this.end(id, "expire");
       throw new Error(`request ${id} expired`);
     }
-    if (
-      request.origin.kind !== "internal" &&
-      this.options.phishing.check(dappUrl(request.origin)) === "blocked"
-    ) {
+    const dapp = dappOf(request.origin);
+    if (dapp !== undefined && this.options.phishing.check(dappUrl(dapp)) === "blocked") {
       this.end(id, "fail", PHISHING_BLOCKED_MESSAGE);
       throw new Error(PHISHING_BLOCKED_MESSAGE);
     }

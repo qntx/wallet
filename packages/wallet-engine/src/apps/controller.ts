@@ -27,7 +27,15 @@ import type { HyperliquidProvider } from "./hyperliquid/provider.ts";
 import { createHyperliquidSocket } from "./hyperliquid/socket.ts";
 import type { AppSocket } from "./hyperliquid/socket.ts";
 import { isAppId } from "./types.ts";
-import type { AppFlow, AppGroup, AppGroupState, AppId, AppProvider, AppsState } from "./types.ts";
+import type {
+  AppFlow,
+  AppGroup,
+  AppGroupState,
+  AppId,
+  AppProvider,
+  AppRequests,
+  AppsState,
+} from "./types.ts";
 
 const COLLECTION = "apps";
 
@@ -542,6 +550,12 @@ export function createApps(options: CreateAppsOptions): {
     setTimer: options.setTimer,
     random: options.random,
   });
+  /* Requests the app opens are attributed to it — a provider cannot choose its origin. */
+  const appRequests: AppRequests = {
+    prepare: async (input) => options.requests.prepare(input, { kind: "app", id: "hyperliquid" }),
+    outcome: async (id) => options.requests.outcome(id),
+    reject: (id) => options.requests.reject(id),
+  };
   const provider = createHyperliquidProvider({
     wallet: options.wallet,
     network,
@@ -550,7 +564,7 @@ export function createApps(options: CreateAppsOptions): {
     now: options.now,
     random: options.random,
     logger: options.logger,
-    requests: options.requests,
+    requests: appRequests,
     networks: options.networks,
     socket,
     builderFor: (group) => {
@@ -567,7 +581,7 @@ export function createApps(options: CreateAppsOptions): {
     wallet: options.wallet,
     provider,
     userSigned: provider.userSigned,
-    requests: options.requests,
+    requests: appRequests,
     network,
     agentName,
     ...(builder === undefined ? {} : { builder }),
