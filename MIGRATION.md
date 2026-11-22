@@ -1288,8 +1288,9 @@ own (`PendingRequest.origin` is `{ kind: "internal" }`), and only `request.kind 
 "evm.typed-data"` is accepted — a personal message or a transaction still needs a page origin
 (sign-in and phishing checks run on it). Existing callers that pass an origin are unaffected. The
 apps entry uses this for Hyperliquid user-signed actions; hosts showing approval screens must be
-ready for an `evm-sign` request with an internal origin (show it as the wallet's own request; the
-prompt content is the kernel's decode of the typed data, `display.message.hyperliquid`).
+ready for an `evm-sign` request without a page origin (the prompt content is the kernel's decode of
+the typed data, `display.message.hyperliquid`). Requests an app opens now carry
+`{ kind: "app", id }` instead of `{ kind: "internal" }` — superseded by §28.
 
 ### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/sessions`
 
