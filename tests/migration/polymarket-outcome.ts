@@ -1,69 +1,52 @@
 /**
- * Polymarket order outcomes: `not-found` is gone. A `place` whose POST may have committed —
- * timeout, network error, 5xx, a malformed or id-mismatched 2xx — no longer resolves "the order did
- * not land": it resolves `unknown`. Before resolving, the engine attempts one defensive `DELETE
- * /order` by the locally computed order id and records it on `outcome.cancel`; the order then keeps
- * reconciling for ten minutes and a definitive status arrives later through `trade.corrections`.
- *
- * Hosts must stop offering "try again" on `unknown`: a first order that lands late plus the retry
- * is a duplicate position — Polymarket orders sign no expiry. Surface the cancel result and the
- * eventual correction instead.
+ * Polymarket order outcomes without `not-found`: an order no reconcile read saw is `unknown`, its
+ * defensive `DELETE /order` result rides `cancel`, and the eventual status arrives through
+ * `trade.corrections`. `unknown` is never a reason to place the order again.
  */
 import type {
-  PolymarketOutcomeCorrection,
+  PolymarketCancelAttempt,
+  PolymarketOrderOutcome,
   PolymarketProvider,
 } from "@qntx/wallet-engine/apps/polymarket";
 
-/** Render a placed order's outcome — `unknown` is a pending state, not a refusal. */
-export function describeOutcome(outcome: {
-  readonly kind: string;
-  readonly orderId?: string;
-}): string {
+/** Before: `case "not-found": offerRetry()`. After: `not-found` is gone and `unknown` never retries. */
+export function describeOutcome(outcome: PolymarketOrderOutcome): string {
   switch (outcome.kind) {
     case "resting":
     case "matched":
     case "delayed":
-      return `order ${outcome.orderId ?? ""} is on the book`;
+      return `order ${outcome.orderId} is on the book`;
     case "unmatched":
     case "canceled":
-      return `order ${outcome.orderId ?? ""} did not rest`;
+      return `order ${outcome.orderId} did not rest`;
     case "rejected":
-      return "the order was refused — it never ran";
+      return `refused: ${outcome.message}`;
     case "unknown":
-      return "the order may or may not exist — do not place it again";
-    default:
-      /* `not-found` no longer exists — anything else is a newer outcome the host must handle
-         conservatively like `unknown`. */
-      return "the order's fate is not proven — do not place it again";
+      return `order ${outcome.orderId} may exist — do not place it again (${cancelNote(outcome.cancel)})`;
   }
 }
 
-/** Subscribe once per provider to fold late corrections into the host's order display. */
+/** `undefined` means a reconcile read saw the order; otherwise the defensive cancel's result. */
+export function cancelNote(cancel: PolymarketCancelAttempt | undefined): string {
+  if (cancel === undefined) {
+    return "seen by a reconcile read";
+  }
+  switch (cancel.kind) {
+    case "canceled":
+      return "canceled by id";
+    case "not-canceled":
+      return `cancel refused: ${cancel.reason}`;
+    case "failed":
+      return `cancel failed: ${cancel.message}`;
+  }
+}
+
+/** Fold late corrections into the order list — one per `unknown` that later proves a status. */
 export function watchCorrections(
   pm: PolymarketProvider,
-  onOutcome: (orderId: string, status: string) => void,
+  onOutcome: (orderId: string, line: string) => void,
 ): () => void {
-  return pm.trade.corrections.subscribe((correction: PolymarketOutcomeCorrection) => {
-    onOutcome(correction.orderId, correction.outcome.kind);
+  return pm.trade.corrections.subscribe((correction) => {
+    onOutcome(correction.orderId, describeOutcome(correction.outcome));
   });
-}
-
-/** The defensive cancel's result — show it; `not-canceled`/`failed` mean the order can still land. */
-export function cancelNote(
-  cancel:
-    | { readonly kind: "canceled" }
-    | { readonly kind: "not-canceled"; readonly reason: string }
-    | { readonly kind: "failed"; readonly message: string }
-    | undefined,
-): string {
-  if (cancel === undefined) {
-    return "the order was seen by a reconcile read — it exists";
-  }
-  if (cancel.kind === "canceled") {
-    return "the engine canceled the order id defensively";
-  }
-  if (cancel.kind === "not-canceled") {
-    return `the CLOB refused the cancel (${cancel.reason}) — the order may be live`;
-  }
-  return "the cancel attempt itself failed — the order may still land";
 }

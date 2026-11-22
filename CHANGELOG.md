@@ -545,6 +545,12 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `cast calldata`, session grants from `cast keccak` / `cast hash-message` / `cast wallet sign`,
   expected prompts written by hand) and `vectors/chains/fiat24-mainnet.json` (25 real Arbitrum One
   transactions).
+- `@qntx/wallet-engine/apps/polymarket`: `trade.corrections`. Every `unknown` order outcome is
+  re-asked every 10 s for 10 minutes (64 at most, dropped on lock), and the first provable status
+  is emitted once as a `PolymarketOutcomeCorrection`, like Hyperliquid's corrections.
+- gateway: the JSON-RPC route honours `x-gateway-provider` like the TRON route. A pinned request is
+  served, metered and budgeted by that provider alone; an unknown pin is a 400 before any upstream
+  call.
 
 ### Changed
 
@@ -952,6 +958,18 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   decision of 2026-11-22 keeping the `hyperliquid-l1-agent` scheme at 16 384 B (15 940 B measured
   with the L1 encoder in `@qntx/wallet-chains/evm`), and sets the decoder lines from measurement
   with ≥ 5 % headroom: hyperliquid 11 776 B, polymarket 12 288 B, fiat24 15 872 B.
+- **BREAKING:** `@qntx/wallet-engine`: `AppContext.networks` / `CreateAppsOptions.networks`
+  require `independentClient` next to `client` (`engine.networks` provides both);
+  `createPolymarketProvider` takes `networks`.
+- `@qntx/wallet-engine`: one recipient rule for every request. Outflows, swap and bridge settlement
+  recipients, staking withdrawals and delegations, nested calls, and the typed-data order
+  receivers, Seaport consideration recipients, Safe destinations and Hyperliquid user-signed
+  destinations are assessed for `first-recipient` / `address-poisoning`, except the signer itself
+  and burned outputs. `solana-sign` transactions and `bitcoin-sign` PSBTs are assessed too.
+  `PreparedRequest.signer` carries the resolved signing address.
+- `@qntx/wallet-chains/evm`: a typed-data `bytes` value must be even-length hex; no decoder accepts
+  an odd-length one (ox left-pads it when hashing, so the display would not match the signed
+  bytes).
 
 ### Removed
 
@@ -972,6 +990,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `gasToken` / `refundReceiver` (now inside `refund`).
 - `@qntx/wallet-engine/apps/hyperliquid`: the `not-placed` Hyperliquid order outcome — an unproven outcome is
   `unknown`.
+- **BREAKING:** `@qntx/wallet-engine/apps/polymarket`: the `not-found` order outcome. An order no
+  reconcile read saw is `unknown`, carries the result of a defensive `DELETE /order` by id in
+  `cancel`, and must not be placed again blindly.
 
 ### Fixed
 
@@ -1213,6 +1234,14 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - Kernel prompt: a raw Fiat24 access grant whose text carries hidden or reordering characters
   keeps the hidden-characters warning under the grant line — the blind grant description no longer
   drops it.
+- `@qntx/wallet-engine`: a Solana transaction is `dropped` only when every read of the poll comes
+  from one pinned upstream and a configured host endpoint proves the same drop, or, without one,
+  after three consecutive polls spanning more than one blockhash processing age (150 blocks ×
+  400 ms). One gateway upstream could previously end a landed transaction `dropped`.
+- `@qntx/wallet-engine/apps/polymarket`: the deposit target comes from `eth_getCode` on Polygon,
+  cross-checked with the host endpoint when one is configured. A deployed deposit wallet must carry
+  the template's exact runtime, the relayer's `/deployed` answers are only hints, and any
+  disagreement fails with the new `PolymarketErrorCategory` `deployment-mismatch`.
 
 ### Security
 
@@ -1228,6 +1257,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - **Text rule bypasses closed.** The untrusted-text rule now classifies code points from generated Unicode 18.0.0 tables (`packages/wallet-chains/src/unicode-tables.ts`, written by `scripts/unicode-tables.ts`) instead of the engine's ICU, so the kernel (Hermes) and the host classify every code point identically. Emoji tag sequences are accepted only as the three RGI flag sequences — any other tag run (including the "ASCII smuggling" form that hid a sentence behind a black flag) is a hidden character; a variation selector counts only directly after a base it is defined for (StandardizedVariants, emoji-variation-sequences, or a unified ideograph for VS17–VS256); ZWJ/ZWNJ display only in their RFC 5892 ContextJ or emoji-ZWJ positions and show as U+FFFD elsewhere; the combining grapheme joiner always shows as U+FFFD. Every RGI emoji sequence and the usual Persian/Indic/Japanese/Mongolian joiner and selector uses stay plain text (`vectors/chains/text-rule.json`).
 - **Requester text can no longer forge kernel prompt lines.** Every line of requester-supplied multi-line text in a signing prompt — message text, TRON memos, typed-data field lines — starts with `· `, which no kernel line does; a single-line requester value (domain name, token or agent name, TRON permission name) that had more lines or code points than shown ends with `…` instead of being cut silently.
 - **Wrap/unwrap and Lido inside a Safe or deposit wallet credit the calling account.** WETH-style `deposit`/`withdraw` and Lido withdrawal requests in Safe or Polymarket deposit-wallet inner calls now show the Safe/wallet (the `msg.sender`) as the recipient or owner, not the signing EOA.
+- `@qntx/wallet-kernel`: the `hyperliquid-l1-agent` 60 s signing window is measured on the device
+  clock (the kernel has no trusted time). `assertClock()` is the mitigation; against a compromised
+  main runtime the residual is the device's clock error plus 60 s (SECURITY.md).
 
 ## [0.13.0] - 2026-11-09
 
