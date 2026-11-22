@@ -2,6 +2,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58, base64 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
+import { decodeEvm } from "../src/evm/index.ts";
 import {
   displayExcerpt,
   hasHiddenCharacters,
@@ -100,18 +101,20 @@ describe("hasHiddenCharacters", () => {
 
 describe("code point classes against an independent definition", () => {
   /* The same rule re-derived independently: a code point is hidden iff it is a control other
-     than TAB/LF/CR, a line or paragraph separator, one of the bidi embedding/override/isolate
-     marks U+202A–202E or U+2066–2069, an interlinear annotation anchor U+FFF9–FFFB, a
-     default-ignorable outside the format set (joiners, direction marks, SHY, CGJ, variation
-     selectors), or a tag character — a lone tag char is never inside a valid emoji tag sequence. */
-  const DECEPTIVE = /[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069\uFFF9-\uFFFB]/u;
+     than TAB/LF/CR, a line or paragraph separator U+2028/2029, one of the bidi embedding/override
+     marks U+202A–202E, an interlinear annotation anchor U+FFF9–FFFB, a default-ignorable outside
+     the format set (joiners, direction marks, SHY, CGJ, variation selectors, tag characters), a
+     tag character — a lone one is never inside an RGI emoji tag sequence — or a variation
+     selector — a lone one has no base before it. */
+  const DECEPTIVE = /[\p{Cc}\u2028\u2029\u202A-\u202E\uFFF9-\uFFFB]/u;
   const IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
-  const FORMAT = /\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|\u034F|\p{Variation_Selector}/u;
+  const BASIC_FORMAT = /\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|\u034F/u;
+  const SELECTOR = /\p{Variation_Selector}/u;
   const expectHidden = (char: string, cp: number): boolean =>
-    cp >= 0xe0000 && cp <= 0xe007f
-      ? true
-      : (cp !== 0x09 && cp !== 0x0a && cp !== 0x0d && DECEPTIVE.test(char)) ||
-        (IGNORABLE.test(char) && !FORMAT.test(char));
+    (cp >= 0xe0020 && cp <= 0xe007f) ||
+    SELECTOR.test(char) ||
+    (cp !== 0x09 && cp !== 0x0a && cp !== 0x0d && DECEPTIVE.test(char)) ||
+    (IGNORABLE.test(char) && !BASIC_FORMAT.test(char));
 
   it("every code point 0..0x10FFFF agrees with the oracle", { timeout: 120_000 }, () => {
     const ranges: ReadonlyArray<readonly [number, number]> = [
@@ -327,4 +330,133 @@ describe("corpus message texts", () => {
       expect(messageBlindReason(content)).toBe(blind);
     },
   );
+});
+
+describe("text rules", () => {
+  const SIGNER = "0x2222222222222222222222222222222222222222";
+  const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" } as const;
+  const personal = (text: string) =>
+    ({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: ACCOUNT,
+      message: new TextEncoder().encode(text),
+    }) as const;
+  const TAG_FLAG = "\u{1F3F4}";
+  const TAG_END = "\u{E007F}";
+  const tags = (text: string): string => {
+    let out = "";
+    for (const c of text) {
+      out += String.fromCodePoint(0xe0000 + (c.codePointAt(0) ?? 0));
+    }
+    return out;
+  };
+
+  it("a flag tag sequence with a non-RGI body is hidden and blinds the message", () => {
+    const body = "transfer all funds to 0xabc";
+    const text = `Sign in to app.example\n${TAG_FLAG}${tags(body)}${TAG_END}`;
+    expect(messageTextHazard(text)).toBe("hidden-characters");
+    const intent = decodeEvm(personal(text), SIGNER);
+    expect(intent.blind).toBe("message-bytes");
+    const { lines } = displayExcerpt(text, 10, 400);
+    /* The flag base stays visible; every tag code point — body and terminator — shows U+FFFD. */
+    expect(lines[1]).toBe(`${TAG_FLAG}${"\uFFFD".repeat(body.length + 1)}`);
+  });
+
+  it("tag bodies with spaces, uppercase and punctuation, or over 32 code points, are hidden", () => {
+    for (const body of ["ORDER 66: SELL!", "x".repeat(40)]) {
+      const text = `gm\n${TAG_FLAG}${tags(body)}${TAG_END}`;
+      expect(messageTextHazard(text)).toBe("hidden-characters");
+      expect(decodeEvm(personal(text), SIGNER).blind).toBe("message-bytes");
+    }
+  });
+
+  it("a well-formed but non-RGI subdivision body is hidden", () => {
+    expect(messageTextHazard(`${TAG_FLAG}${tags("ustx")}${TAG_END}`)).toBe("hidden-characters");
+  });
+
+  it("a lone tag character is hidden", () => {
+    expect(messageTextHazard("Sign in \u{E0061} please")).toBe("hidden-characters");
+  });
+
+  it("a flag tag run without the U+E007F terminator is hidden", () => {
+    expect(messageTextHazard(`a${TAG_FLAG}${tags("x")}`)).toBe("hidden-characters");
+    expect(messageTextHazard(`a${TAG_FLAG}${tags("gbsct")}`)).toBe("hidden-characters");
+  });
+
+  it("stray tag characters after the cancel tag are hidden", () => {
+    expect(messageTextHazard(`a${TAG_FLAG}${tags("x")}${TAG_END}${tags("y")}`)).toBe(
+      "hidden-characters",
+    );
+  });
+
+  it("a variation selector without a base it is defined for is hidden", () => {
+    const selectors =
+      Array.from({ length: 10 }, (_, i) => String.fromCodePoint(0xfe00 + i)).join("") +
+      Array.from({ length: 10 }, (_, i) => String.fromCodePoint(0xe0100 + i)).join("");
+    expect(messageTextHazard(`Hello${selectors}`)).toBe("hidden-characters");
+    expect(decodeEvm(personal(`Hello${selectors}`), SIGNER).blind).toBe("message-bytes");
+    expect(messageTextHazard("a\uFE0F")).toBe("hidden-characters");
+    expect(messageTextHazard("❤\uFE0F\uFE0F")).toBe("hidden-characters");
+    expect(messageTextHazard("a\u{E0100}")).toBe("hidden-characters");
+  });
+
+  it("a variation selector after a base it is defined for is ordinary text", () => {
+    expect(messageTextHazard("❤\uFE0F")).toBeUndefined();
+    expect(messageTextHazard("\u349E\uFE00")).toBeUndefined();
+    expect(messageTextHazard("葛\u{E0100}")).toBeUndefined();
+    expect(messageTextHazard("ᠠ\u180B")).toBeUndefined();
+  });
+
+  it("joiners and CGJ outside a joining context display as U+FFFD but are not hidden", () => {
+    for (const [text, display] of [
+      ["Pay to 0xab\u200Dcd", "Pay to 0xab�cd"],
+      ["a\u200Cb", "a�b"],
+      ["a\u200D😀", "a�😀"],
+      ["😀\u200Da", "😀�a"],
+      ["a\u034Fb", "a�b"],
+    ] as const) {
+      expect(messageTextHazard(text)).toBeUndefined();
+      expect(decodeEvm(personal(text), SIGNER).blind).toBeUndefined();
+      expect(displayExcerpt(text, 1, 400).lines[0]).toBe(display);
+    }
+  });
+
+  const fieldAt = (intent: DisplayIntent, path: string): string | undefined =>
+    intent.message?.kind === "typed-data"
+      ? intent.message.fields?.find((f) => f.path === path)?.value
+      : undefined;
+
+  it("a typed-data string leaf with a smuggling tag run shows U+FFFD, unblind", () => {
+    const tagged = `hi${TAG_FLAG}${tags("hidden")}${TAG_END}`;
+    const doc = {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+        ],
+        Note: [
+          { name: "text", type: "string" },
+          { name: "to", type: "address" },
+        ],
+      },
+      primaryType: "Note",
+      domain: { name: "Notebook", chainId: 1 },
+      message: { text: tagged, to: SIGNER },
+    };
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: JSON.stringify(doc),
+      },
+      SIGNER,
+    );
+    /* The leaf goes through displayExcerpt like every shown value: deceptive code points render
+       as U+FFFD in the field line, so nothing the signature commits to is invisible; the request
+       itself stays unblind. */
+    expect(intent.blind).toBeUndefined();
+    expect(fieldAt(intent, "text")).toBe(`hi${TAG_FLAG}${"\uFFFD".repeat("hidden".length + 1)}`);
+  });
 });
