@@ -55,6 +55,12 @@ describe("solana precompile fixtures bound the real fee", () => {
     }
   });
 
+  /* v1 precompile transactions exist on mainnet (enable_tx_v1 activated at slot 447 120 000);
+     the corpus pins at least one so the v1 fee branch stays oracle-tested. */
+  it("covers the v1 message version", () => {
+    expect(fixtures.some((f) => f.version === 1)).toBe(true);
+  });
+
   it.each(fixtures)("$label $signature", (fixture) => {
     const message = Uint8Array.from(Buffer.from(fixture.message, "base64"));
     const parsed = parseCompiledMessage(message);

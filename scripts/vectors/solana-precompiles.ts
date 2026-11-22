@@ -90,9 +90,9 @@ const FIXTURES: ReadonlyArray<readonly [string, string, string]> = [
     "Eggy4ud4gsixkyY4GyYXBoSdVKeLLKtXzYz9ZmbMXJ5nz6NqSnSdV5hNUmaqNtX1Gy4KmRRpRtvcNpS2M7GCBMs",
   ],
   [
-    "secp256k1 v0",
+    "secp256k1 v1",
     "KeccakSecp256k11111111111111111111111111111",
-    "24b6pUp4r9P7GmnLJJfmeyn2e3hd6TCNRMNJQhf9xuMvtqQKAp4AftZ1gkzJ9eL22ZAWhSGNU2A7PxiZfm1NJLFz",
+    "KVy1juu9Xz1fqoYUhm8d3oun87Y6GqgcXrDRj3gja1i3tHahceCzvEUHut3Y2gh6swMBmSZu5o3amAsjQGPECNw",
   ],
   [
     "secp256k1 v0",
@@ -105,9 +105,9 @@ const FIXTURES: ReadonlyArray<readonly [string, string, string]> = [
     "56tFtoVqZ7eaXguz6ADigBZaw3WfhnLqYKGeZm8Yu24vhqNfFt2J2d9sUT8BLzWUtUVJiEy75mJhYL4aXg96j8eD",
   ],
   [
-    "secp256r1 v0",
+    "secp256r1 v1",
     "Secp256r1SigVerify1111111111111111111111111",
-    "czW68pC8BkRk9ZfQX1Pse9fz69y9Y1RGNCZg2337LTXFdsFWCnyuNxw4oH6s1TS7TR2LKb8YvNeinMvu2S23h1n",
+    "2AdArzUonf5V5ngDQHLcPVyKAfTeF8EqsgknfnLiRfUQVWQF8CrUNa5JSvSd6AYhxoAcY2gkqXme6AESY4dtnyhe",
   ],
   [
     "secp256r1 v0",
@@ -300,8 +300,13 @@ const buildEntry = async (label: string, precompile: string, signature: string):
     throw new Error("not found");
   }
   const raw = Buffer.from(tx.transaction[0], "base64");
+  /* Legacy/v0: signatures lead — shortvec count ‖ 64×n. v1: the 0x81 message leads and the
+     signatures trail — 64 × the header's numSignerAccounts (SIMD-0385). */
   const [n, len] = shortvec(raw, 0);
-  const message = raw.subarray(len + 64 * n);
+  const message =
+    raw[0] === 0x81 && raw[1] !== undefined && raw.length > 64 * raw[1]
+      ? raw.subarray(0, raw.length - 64 * raw[1])
+      : raw.subarray(len + 64 * n);
   const m = dec.decode(message);
   const accounts = [...m.staticAccounts];
   const ixs = instructionsOf(m);
