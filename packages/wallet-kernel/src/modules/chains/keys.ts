@@ -56,8 +56,16 @@ export type KeySource = {
 export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): KeySource => {
   const secpNodes = new Map<string, HDKey>();
   const edNodes = new Map<string, Slip10>();
+  let wiped = false;
+  // Cached nodes keep the public half after wipePrivateData; the flag closes the source anyway.
+  const alive = (): void => {
+    if (wiped) {
+      throw new KernelError("integrity", "key source is wiped");
+    }
+  };
 
   const secpNode = (path: KeyPath): HDKey => {
+    alive();
     const key = path.join("/");
     const hit = secpNodes.get(key);
     if (hit !== undefined) {
@@ -72,6 +80,7 @@ export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): K
   };
 
   const edNode = (path: KeyPath): Slip10 => {
+    alive();
     const key = path.join("/");
     const hit = edNodes.get(key);
     if (hit !== undefined) {
@@ -108,6 +117,7 @@ export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): K
       ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
       // A fresh tree under the network's version bytes: xpubs serialize with them.
       extendedPublicKey: async (path, versions) => {
+        alive();
         const master = HDKey.fromMasterSeed(seed, versions);
         try {
           const node = master.derive(pathString(path));
@@ -127,12 +137,15 @@ export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): K
         sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : new Uint8Array()),
     }),
     wipe: () => {
+      wiped = true;
       for (const node of secpNodes.values()) {
         node.wipePrivateData();
       }
       for (const node of edNodes.values()) {
         wipe(node.privateKey);
       }
+      secpNodes.clear();
+      edNodes.clear();
     },
   };
 };
@@ -142,35 +155,47 @@ export const importedKeys = (
   secret: Uint8Array,
   curve: "secp256k1" | "ed25519",
   random: (n: number) => Uint8Array,
-): KeySource => ({
-  material: {
-    secp256k1: async (path) => {
-      if (curve !== "secp256k1" || path.length > 0) {
-        throw new KernelError("integrity", "an imported key serves only its own curve at []");
-      }
-      return secp256k1.getPublicKey(secret, true);
+): KeySource => {
+  let wiped = false;
+  const alive = (): void => {
+    if (wiped) {
+      throw new KernelError("integrity", "key source is wiped");
+    }
+  };
+  return {
+    material: {
+      secp256k1: async (path) => {
+        alive();
+        if (curve !== "secp256k1" || path.length > 0) {
+          throw new KernelError("integrity", "an imported key serves only its own curve at []");
+        }
+        return secp256k1.getPublicKey(secret, true);
+      },
+      ed25519: async (path) => {
+        alive();
+        if (curve !== "ed25519" || path.length > 0) {
+          throw new KernelError("integrity", "an imported key serves only its own curve at []");
+        }
+        return ed25519.getPublicKey(secret);
+      },
+      extendedPublicKey: async () => {
+        throw new KernelError("integrity", "imported keys have no extended public key");
+      },
     },
-    ed25519: async (path) => {
-      if (curve !== "ed25519" || path.length > 0) {
-        throw new KernelError("integrity", "an imported key serves only its own curve at []");
-      }
-      return ed25519.getPublicKey(secret);
+    backend: (sign) => ({
+      sign: async (task) => {
+        alive();
+        const ownCurve =
+          curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
+        if (task.path.length > 0 || !ownCurve) {
+          throw new KernelError("integrity", "an imported key signs only its own tasks at []");
+        }
+        return sign(task, secret, task.scheme === "bip340" ? random(32) : new Uint8Array());
+      },
+    }),
+    wipe: () => {
+      wiped = true;
+      wipe(secret);
     },
-    extendedPublicKey: async () => {
-      throw new KernelError("integrity", "imported keys have no extended public key");
-    },
-  },
-  backend: (sign) => ({
-    sign: async (task) => {
-      const ownCurve =
-        curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
-      if (task.path.length > 0 || !ownCurve) {
-        throw new KernelError("integrity", "an imported key signs only its own tasks at []");
-      }
-      return sign(task, secret, task.scheme === "bip340" ? random(32) : new Uint8Array());
-    },
-  }),
-  wipe: () => {
-    wipe(secret);
-  },
-});
+  };
+};
