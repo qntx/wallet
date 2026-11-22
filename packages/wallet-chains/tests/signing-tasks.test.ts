@@ -215,6 +215,33 @@ describe("accept* properties", () => {
     );
   }, 60_000);
 
+  it("names the length defect, not a verification failure", () => {
+    const ecdsaTask: EcdsaTask = {
+      scheme: "ecdsa-secp256k1",
+      path: [],
+      publicKey: new Uint8Array(33),
+      digest: new Uint8Array(32),
+    };
+    const bip340Task: Bip340Task = {
+      scheme: "bip340",
+      path: [],
+      publicKey: new Uint8Array(32),
+      message: new Uint8Array(32),
+      tweak: new Uint8Array(32),
+    };
+    const ed25519Task: Ed25519Task = {
+      scheme: "ed25519",
+      path: [],
+      publicKey: new Uint8Array(32),
+      message: new Uint8Array(1),
+    };
+    for (const bad of [new Uint8Array(63), new Uint8Array(65)]) {
+      expect(() => acceptEcdsa(ecdsaTask, bad)).toThrow("signature must be 64 bytes");
+      expect(() => acceptBip340(bip340Task, bad)).toThrow("signature must be 64 bytes");
+      expect(() => acceptEd25519(ed25519Task, bad)).toThrow("signature must be 64 bytes");
+    }
+  });
+
   it("signaturesOf accepts exactly one signature per task", () => {
     const tasks = [
       { scheme: "ed25519", path: [], publicKey: new Uint8Array(32), message: new Uint8Array(1) },
