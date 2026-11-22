@@ -50,6 +50,8 @@ const netBaseZh = "网络：Base";
 const netFlare = "Network: Flare";
 const netFlareZh = "网络：Flare";
 const OTHER = getAddress("0x00000000000000000000000000000000000bad00");
+const MORPHO = getAddress("0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb");
+const AAVE_USDC_DEBT = getAddress("0x72E95b8931767C79bA4EeE721354d6E99a61D004");
 const DEPLOYED = getContractAddress({ from: SIGNER, nonce: 0n });
 
 const account = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" };
@@ -976,6 +978,275 @@ const cases: VectorCase[] = [
       "确认转账",
       `App: ZK Stables USD\n${netBase}\nVerifying contract 0x8ED36a645beF11075283524C01acA742CbAfC832\nType: TransferWithAuthorization\nSend 21370000 base units of unverified token 0x8ED36a645beF11075283524C01acA742CbAfC832 to ${OTHER}\nAnyone holding this signature can submit the transfer\nValid after 2026-01-01 00:00 and before 2026-01-01 00:00 (UTC)`,
       `应用：ZK Stables USD\n${netBaseZh}\n验证合约 0x8ED36a645beF11075283524C01acA742CbAfC832\n类型：TransferWithAuthorization\n发送 21370000 个最小单位（未验证代币 0x8ED36a645beF11075283524C01acA742CbAfC832） 到 ${OTHER}\n任何持有此签名的人都可以提交这笔转账\n2026-01-01 00:00 之后、2026-01-01 00:00 之前有效（UTC）`,
+    ),
+  },
+  {
+    name: "Morpho Authorization grant (verified)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: SIGNER,
+        authorized: OTHER,
+        isAuthorized: true,
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\nLet ${OTHER} manage your Morpho positions: it can withdraw your supplied assets and collateral and borrow against your collateral, sending the funds anywhere\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n允许 ${OTHER} 管理你在 Morpho 的仓位：它可以提走你存入的资产和抵押品，并以你的抵押品借款，资金可转到任何地址\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Morpho Authorization revoke (verified)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: SIGNER,
+        authorized: OTHER,
+        isAuthorized: false,
+        nonce: "1",
+        deadline: "281474976710656",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\nRevoke ${OTHER}'s authority over your Morpho positions`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n撤销 ${OTHER} 管理你 Morpho 仓位的权限`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig unlimited credit (verified USDC debt token)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Ethereum Variable Debt USDC",
+        version: "1",
+        chainId: 1,
+        verifyingContract: AAVE_USDC_DEBT,
+      },
+      message: {
+        delegatee: OTHER,
+        value: "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Aave Ethereum Variable Debt USDC\n${net}\nVerifying contract ${AAVE_USDC_DEBT}\nType: DelegationWithSig\nLet ${OTHER} borrow up to unlimited USDC on your Aave credit: you owe the debt and your collateral backs it\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Aave Ethereum Variable Debt USDC\n${netZh}\n验证合约 ${AAVE_USDC_DEBT}\n类型：DelegationWithSig\n允许 ${OTHER} 以你的 Aave 信用借入最多 全部 USDC：债务由你承担，以你的抵押品担保\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig bounded credit (unverified contract)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Whatever Variable Debt X",
+        version: "1",
+        chainId: 1,
+        verifyingContract: OTHER,
+      },
+      message: { delegatee: OTHER, value: "1000000", nonce: "0", deadline: "1900000000" },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: Aave Whatever Variable Debt X\n${net}\nVerifying contract ${OTHER}\nType: DelegationWithSig\nLet ${OTHER} borrow up to 1000000 base units of unverified token ${OTHER} on your Aave credit: you owe the debt and your collateral backs it\nThe wallet does not know contract ${OTHER}; it may grant other powers\nThis signature can be used until 2030-03-17 17:46 (UTC)`,
+      `应用：Aave Whatever Variable Debt X\n${netZh}\n验证合约 ${OTHER}\n类型：DelegationWithSig\n允许 ${OTHER} 以你的 Aave 信用借入最多 1000000 个最小单位（未验证代币 ${OTHER}）：债务由你承担，以你的抵押品担保\n钱包不认识合约 ${OTHER}；它可能授予其他权限\n此签名在 2030-03-17 17:46（UTC）前可被使用`,
+    ),
+  },
+  {
+    name: "Snapshot Alias",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        Alias: [
+          { name: "from", type: "address" },
+          { name: "alias", type: "address" },
+          { name: "timestamp", type: "uint64" },
+        ],
+      },
+      primaryType: "Alias",
+      domain: { name: "snapshot", version: "0.1.4" },
+      message: { from: SIGNER, alias: OTHER, timestamp: 1700000000 },
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm account authorization",
+      "确认账户授权",
+      `App: snapshot\n${net}\nType: Alias\nLet ${OTHER} vote, create proposals and act on Snapshot as you`,
+      `应用：snapshot\n${netZh}\n类型：Alias\n允许 ${OTHER} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
+    ),
+  },
+  {
+    name: "Morpho Authorization near miss (authorizer not the signer)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Authorization: [
+          { name: "authorizer", type: "address" },
+          { name: "authorized", type: "address" },
+          { name: "isAuthorized", type: "bool" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "Authorization",
+      domain: { chainId: 1, verifyingContract: MORPHO },
+      message: {
+        authorizer: OTHER,
+        authorized: SIGNER,
+        isAuthorized: true,
+        nonce: "0",
+        deadline: "1900000000",
+      },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${net}\nVerifying contract ${MORPHO}\nType: Authorization\n${typedVariant}\n${typedCaveat}\n· authorizer = ${OTHER}\n· authorized = ${SIGNER}\n· isAuthorized = true\n· nonce = 0\n· deadline = 1900000000`,
+      `${netZh}\n验证合约 ${MORPHO}\n类型：Authorization\n${typedVariantZh}\n${typedCaveatZh}\n· authorizer = ${OTHER}\n· authorized = ${SIGNER}\n· isAuthorized = true\n· nonce = 0\n· deadline = 1900000000`,
+    ),
+  },
+  {
+    name: "Aave DelegationWithSig near miss (domain version not 1)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        DelegationWithSig: [
+          { name: "delegatee", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "DelegationWithSig",
+      domain: {
+        name: "Aave Ethereum Variable Debt USDC",
+        version: "2",
+        chainId: 1,
+        verifyingContract: AAVE_USDC_DEBT,
+      },
+      message: { delegatee: OTHER, value: "1000000", nonce: "0", deadline: "1900000000" },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Aave Ethereum Variable Debt USDC\n${net}\nVerifying contract ${AAVE_USDC_DEBT}\nType: DelegationWithSig\n${typedVariant}\n${typedCaveat}\n· delegatee = ${OTHER}\n· value = 1000000\n· nonce = 0\n· deadline = 1900000000`,
+      `应用：Aave Ethereum Variable Debt USDC\n${netZh}\n验证合约 ${AAVE_USDC_DEBT}\n类型：DelegationWithSig\n${typedVariantZh}\n${typedCaveatZh}\n· delegatee = ${OTHER}\n· value = 1000000\n· nonce = 0\n· deadline = 1900000000`,
+    ),
+  },
+  {
+    name: "Snapshot Alias near miss (from not the signer)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        Alias: [
+          { name: "from", type: "address" },
+          { name: "alias", type: "address" },
+          { name: "timestamp", type: "uint64" },
+        ],
+      },
+      primaryType: "Alias",
+      domain: { name: "snapshot", version: "0.1.4" },
+      message: { from: OTHER, alias: OTHER, timestamp: 1700000000 },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: snapshot\n${net}\nType: Alias\n${typedVariant}\n${typedCaveat}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
+      `应用：snapshot\n${netZh}\n类型：Alias\n${typedVariantZh}\n${typedCaveatZh}\n· from = ${OTHER}\n· alias = ${OTHER}\n· timestamp = 1700000000`,
     ),
   },
   {

@@ -581,6 +581,26 @@ export type TokenAuthorization =
       /** Bytes32, lowercase hex */ readonly nonce: string;
     };
 
+/** Typed data that hands the signer's account authority to someone else. */
+export type AccountAuthority =
+  | {
+      readonly kind: "morpho";
+      readonly contract: string;
+      readonly verified: boolean;
+      readonly authorized: string;
+      readonly grant: boolean;
+      readonly deadline?: number;
+    }
+  | {
+      readonly kind: "aave-credit";
+      readonly contract: string;
+      readonly verified: boolean;
+      readonly delegatee: string;
+      readonly amount: AssetAmount;
+      readonly unlimited: boolean;
+      readonly deadline?: number;
+    }
+  | { readonly kind: "snapshot-alias"; readonly alias: string };
 
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
@@ -613,6 +633,8 @@ export type MessageContent =
       readonly polymarket?: PolymarketContent;
       /** A recognized EIP-3009 authorization signed to the token contract itself. */
       readonly authorization?: TokenAuthorization;
+      /** A recognized document handing the signer's account authority to someone else. */
+      readonly authority?: AccountAuthority;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is

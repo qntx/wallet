@@ -22,6 +22,7 @@ import { MAX_UINT160, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { recognizeApp } from "./apps.ts";
 import type { AppRecognition } from "./apps.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { recognizeAuthority } from "./authority.ts";
 import { decodeCctp, isCctpMessenger } from "./cctp.ts";
 import { recognizeCow } from "./cow.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
@@ -567,7 +568,11 @@ export const decodeEvm = (
   const permit = recognizePermit(json, chainId, table, signer);
   /* Any of the exact authorization/authority shapes short-circuits the other decoders: a
      document cannot be both, and a recognised one shows no generic fields. */
-  const claimed = permit === undefined ? recognizeEip3009(json, chainId, table, signer) : undefined;
+  const claimed =
+    permit === undefined
+      ? (recognizeEip3009(json, chainId, table, signer) ??
+        recognizeAuthority(json, chainId, table, signer))
+      : undefined;
   const seaport =
     permit === undefined && claimed === undefined
       ? recognizeSeaport(json, chainId, table)
@@ -608,8 +613,9 @@ export const decodeEvm = (
     seaport === undefined &&
     safe === undefined &&
     app === undefined &&
-    order === undefined &&
-    recognizeSnapshot(json);
+    order === undefined
+      ? recognizeSnapshot(json, signer)
+      : undefined;
   const unclaimed =
     permit === undefined &&
     claimed === undefined &&
@@ -617,15 +623,18 @@ export const decodeEvm = (
     safe === undefined &&
     app === undefined &&
     order === undefined &&
-    !snapshot;
+    snapshot === undefined;
+  /* A recognised authorization document — EIP-3009, Morpho, Aave or a Snapshot alias — shows no
+     generic fields. */
+  const recognized = claimed ?? (snapshot?.kind === "alias" ? snapshot : undefined);
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
   /* A recognised vote shows its leaves like an unclaimed document — the family names `proposal`,
      so an encoded-bytes string there is no commitment. */
-  const shown = unclaimed || snapshot ? typedDataFields(json) : undefined;
+  const shown = unclaimed || snapshot?.kind === "vote" ? typedDataFields(json) : undefined;
   const fields = shown?.fields;
   const unclaimedBlind =
     nearMiss ??
-    (unclaimed || snapshot
+    (unclaimed || snapshot?.kind === "vote"
       ? shown === undefined
         ? "typed-data-oversize"
         : unclaimed && shown.hasCommitment
@@ -642,12 +651,12 @@ export const decodeEvm = (
     ...(order === undefined ? {} : { order }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
     ...(app === undefined ? {} : app.content),
-    ...(claimed === undefined ? {} : claimed.content),
+    ...(recognized === undefined ? {} : recognized.content),
     ...(fields === undefined ? {} : { fields }),
     ...(permit?.fields === undefined ? {} : { fields: permit.fields }),
   };
   const summary =
-    claimed?.summary ??
+    recognized?.summary ??
     (order !== undefined || seaport !== undefined
       ? "swap"
       : safe === undefined
@@ -662,13 +671,13 @@ export const decodeEvm = (
       family: "evm",
       network: request.network,
       summary,
-      outflows: claimed?.outflows ?? app?.outflows ?? [],
+      outflows: recognized?.outflows ?? app?.outflows ?? [],
       approvals: permit?.approvals ?? app?.approvals ?? [],
       fee: undefined,
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
       verifiability:
-        claimed?.verifiability ??
+        recognized?.verifiability ??
         app?.verifiability ??
         (permit === undefined && order === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),

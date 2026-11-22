@@ -1476,6 +1476,7 @@ describe("personal messages", () => {
 describe("typed-data near misses of decoded families are blind", () => {
   const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
   const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
+  const MORPHO_BLUE = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb";
 
   /** A doc with exactly the domain keys `domain` declares. */
   const simpleDoc = (
@@ -1833,7 +1834,7 @@ describe("typed-data near misses of decoded families are blind", () => {
           : (
               {
                 "^Agent$": "Agent",
-                "^Vote$": "Vote",
+                "^(?:Vote|Alias)$": "Alias",
               } as Record<string, string | undefined>
             )[pattern.source];
       if (primaryType === undefined) {
@@ -1854,6 +1855,7 @@ describe("typed-data near misses of decoded families are blind", () => {
           "^(?:OrderComponents|BulkOrder)$": "BulkOrder",
           "^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$":
             "ReceiveWithAuthorization",
+          "^DelegationWithSig$": "DelegationWithSig",
         } as Record<string, string | undefined>
       )[claim.primaryType.source];
       if (primaryType === undefined) {
@@ -1867,7 +1869,9 @@ describe("typed-data near misses of decoded families are blind", () => {
           ? PERMIT2
           : claim.verifyingContract === "seaport"
             ? SEAPORT_16
-            : USDC;
+            : claim.verifyingContract === "morpho-blue"
+              ? MORPHO_BLUE
+              : USDC;
       return simpleDoc(
         "Foo",
         [{ name: "x", type: "uint256" }],

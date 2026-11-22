@@ -18,6 +18,7 @@ import {
 import type {
   ApprovalChange,
   AssetAmount,
+  AccountAuthority,
   TokenAuthorization,
   ChainFamily,
   DisplayIntent,
@@ -248,6 +249,13 @@ type Catalog = {
   readonly authOnlyRecipient: (to: string) => string;
   readonly authWindow: (after?: string, before?: string) => string;
   readonly authCancel: (nonce: string) => string;
+  readonly morphoGrant: (x: string) => string;
+  readonly morphoRevoke: (x: string) => string;
+  readonly aaveCredit: (x: string, amount: string) => string;
+  readonly aaveRevoke: (x: string, asset: string) => string;
+  readonly authorityUnverified: (c: string) => string;
+  readonly snapshotAlias: (x: string) => string;
+  readonly signatureDeadline: (date: string) => string;
 };
 
 const zh: Catalog = {
@@ -508,6 +516,15 @@ const zh: Catalog = {
           : `${after} 之后有效（UTC），无到期时间`
         : `${before} 之前有效（UTC）`,
   authCancel: (nonce) => `取消未使用的转账授权 ${nonce}；不转移资金`,
+  morphoGrant: (x) =>
+    `允许 ${x} 管理你在 Morpho 的仓位：它可以提走你存入的资产和抵押品，并以你的抵押品借款，资金可转到任何地址`,
+  morphoRevoke: (x) => `撤销 ${x} 管理你 Morpho 仓位的权限`,
+  aaveCredit: (x, amount) =>
+    `允许 ${x} 以你的 Aave 信用借入最多 ${amount}：债务由你承担，以你的抵押品担保`,
+  aaveRevoke: (x, asset) => `撤销 ${x} 在 Aave 借入 ${asset} 的额度`,
+  authorityUnverified: (c) => `钱包不认识合约 ${c}；它可能授予其他权限`,
+  snapshotAlias: (x) => `允许 ${x} 以你的身份在 Snapshot 投票、发起提案和执行其他操作`,
+  signatureDeadline: (date) => `此签名在 ${date}（UTC）前可被使用`,
 };
 
 const en: Catalog = {
@@ -788,6 +805,15 @@ const en: Catalog = {
           : `Valid after ${after} (UTC); no expiry`
         : `Valid before ${before} (UTC)`,
   authCancel: (nonce) => `Cancel the unused transfer authorization ${nonce}; no funds move`,
+  morphoGrant: (x) =>
+    `Let ${x} manage your Morpho positions: it can withdraw your supplied assets and collateral and borrow against your collateral, sending the funds anywhere`,
+  morphoRevoke: (x) => `Revoke ${x}'s authority over your Morpho positions`,
+  aaveCredit: (x, amount) =>
+    `Let ${x} borrow up to ${amount} on your Aave credit: you owe the debt and your collateral backs it`,
+  aaveRevoke: (x, asset) => `Revoke ${x}'s Aave borrowing allowance for ${asset}`,
+  authorityUnverified: (c) => `The wallet does not know contract ${c}; it may grant other powers`,
+  snapshotAlias: (x) => `Let ${x} vote, create proposals and act on Snapshot as you`,
+  signatureDeadline: (date) => `This signature can be used until ${date} (UTC)`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -1256,6 +1282,9 @@ function typedContentLines(
   if (message.authorization !== undefined) {
     return authorizationLines(catalog, message.authorization);
   }
+  if (message.authority !== undefined) {
+    return authorityLines(catalog, message.authority);
+  }
   if (intent.approvals.length > 0) {
     return [
       catalog.otherOutflows,
@@ -1306,6 +1335,35 @@ function authorizationLines(
   ];
 }
 
+/** The lines of a recognised account-authority document: the delegatee's power, then warnings. */
+function authorityLines(catalog: Catalog, authority: AccountAuthority): ReadonlyArray<string> {
+  if (authority.kind === "snapshot-alias") {
+    return [catalog.snapshotAlias(authority.alias)];
+  }
+  if (authority.kind === "morpho") {
+    return [
+      authority.grant
+        ? catalog.morphoGrant(authority.authorized)
+        : catalog.morphoRevoke(authority.authorized),
+      ...(authority.verified ? [] : [catalog.authorityUnverified(authority.contract)]),
+      ...(authority.deadline === undefined
+        ? []
+        : [catalog.signatureDeadline(utcDateTime(authority.deadline))]),
+    ];
+  }
+  const asset = authority.amount.symbol ?? authority.amount.asset;
+  return [
+    authority.unlimited
+      ? catalog.aaveCredit(authority.delegatee, catalog.unlimited(asset))
+      : authority.amount.amount === "0"
+        ? catalog.aaveRevoke(authority.delegatee, asset)
+        : catalog.aaveCredit(authority.delegatee, formatAmount(catalog, authority.amount)),
+    ...(authority.verified ? [] : [catalog.authorityUnverified(authority.contract)]),
+    ...(authority.deadline === undefined
+      ? []
+      : [catalog.signatureDeadline(utcDateTime(authority.deadline))]),
+  ];
+}
 
 /** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
 const hype = (wei: string): string => formatUnits(wei, 8);

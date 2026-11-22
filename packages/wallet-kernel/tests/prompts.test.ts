@@ -3735,6 +3735,13 @@ describe("requester text lines cannot imitate kernel lines", () => {
     authOnlyRecipient: ["to"],
     authWindow: ["after", "before"],
     authCancel: ["0x00"],
+    morphoGrant: ["x"],
+    morphoRevoke: ["x"],
+    aaveCredit: ["x", "1"],
+    aaveRevoke: ["x", "a"],
+    authorityUnverified: ["c"],
+    snapshotAlias: ["x"],
+    signatureDeadline: ["d"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {

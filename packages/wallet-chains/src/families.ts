@@ -25,7 +25,7 @@ export type FamilyClaim =
     }
   | {
       readonly surface: "evm.typed-data";
-      readonly verifyingContract: "token-table" | "permit2" | "seaport";
+      readonly verifyingContract: "token-table" | "permit2" | "seaport" | "morpho-blue";
     }
   /* An order protocol's domain name or any of its verifying contracts (either claims it). */
   | {
@@ -173,14 +173,14 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     },
     nearMiss: "typed-data-variant",
   },
-  /* Snapshot `Vote` documents under the snapshot 0.1.4 domain (snapshot.js
-     src/sign/{index,types}.ts). */
+  /* Snapshot `Vote` documents and `Alias` authorizations under the snapshot 0.1.4 domain
+     (snapshot.js src/sign/{index,types}.ts). */
   {
     family: "Snapshot",
     claim: {
       surface: "evm.typed-data",
       domainName: "snapshot",
-      primaryType: /^Vote$/,
+      primaryType: /^(?:Vote|Alias)$/,
     },
     nearMiss: "typed-data-variant",
   },
@@ -347,6 +347,20 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
       surface: "evm.typed-data",
       primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/,
     },
+    nearMiss: "typed-data-variant",
+  },
+  /* Morpho Blue Authorization documents carry no domain name — a document to a Morpho Blue
+     deployment (evm/authority.ts, probed in vectors/chains/account-authority.json) under any
+     primary type claims the family. */
+  {
+    family: "Morpho Blue",
+    claim: { surface: "evm.typed-data", verifyingContract: "morpho-blue" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Aave v3 credit delegation (DebtTokenBase.sol DELEGATION_WITH_SIG_TYPEHASH). */
+  {
+    family: "Aave credit delegation",
+    claim: { surface: "evm.typed-data", primaryType: /^DelegationWithSig$/ },
     nearMiss: "typed-data-variant",
   },
   /* The TIP-712 permits the TRON decoder recognises: EIP-2612 and DAI Permit on any contract, and
