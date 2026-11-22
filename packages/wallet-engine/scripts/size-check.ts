@@ -101,7 +101,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-polymarket",
     source: "src/apps/polymarket/index.ts",
-    /* Measured 39374 B: the full Polymarket client (markets, account, L2 signing + credential
+    /* Measured 39551 B: the full Polymarket client (markets, account, L2 signing + credential
        store, orders, relayer, enable, live market + user channels, funding) incl. viem hashing. */
     budget: 39 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/hyperliquid"],

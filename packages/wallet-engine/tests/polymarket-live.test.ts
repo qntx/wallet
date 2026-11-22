@@ -23,6 +23,7 @@ import type {
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import { createPolymarketLive } from "../src/apps/polymarket/live.ts";
 import type { AppSocket } from "../src/apps/socket.ts";
+import type { AppGroup } from "../src/apps/types.ts";
 import { manualTimers } from "./support/timers.ts";
 
 const ASSET = "350977769852917329387037893294763093471844346281449484439085576212613048126";
@@ -83,6 +84,7 @@ const makeSocket = (): Fake => {
 };
 
 let vaultState = "unlocked";
+let walletIds: string[] = ["w"];
 const notifyLock = (): void => {
   vaultState = "locked";
   walletListener?.();
@@ -90,7 +92,10 @@ const notifyLock = (): void => {
 let walletListener: (() => void) | undefined;
 const walletStub = (): Wallet =>
   ({
-    getSnapshot: () => ({ vault: vaultState }),
+    getSnapshot: () => ({
+      vault: vaultState,
+      wallets: walletIds.map((walletId) => ({ walletId })),
+    }),
     subscribe: (listener: () => void) => {
       walletListener = listener;
       return () => {
@@ -172,13 +177,23 @@ const accountStub = (): PolymarketAccountReads =>
   }) as unknown as PolymarketAccountReads;
 
 let credsGet: () => Promise<PolymarketCredentials | undefined>;
+const deleteListeners = new Set<(group: AppGroup) => void>();
 const credentialsStub = (): PolymarketCredentialStore => ({
   get: async () => credsGet(),
   put: async () => {
     await Promise.resolve();
   },
-  delete: async () => {
+  delete: async (group) => {
     await Promise.resolve();
+    for (const listener of deleteListeners) {
+      listener(group);
+    }
+  },
+  onDelete: (listener) => {
+    deleteListeners.add(listener);
+    return () => {
+      deleteListeners.delete(listener);
+    };
   },
   groups: async () => {
     await Promise.resolve();
@@ -205,14 +220,17 @@ const setup = () => {
   calls.trades = 0;
   accountBehavior = "ok";
   vaultState = "unlocked";
+  walletIds = ["w"];
+  deleteListeners.clear();
   credsGet = async () => {
     await Promise.resolve();
     return CREDS;
   };
   const timers = manualTimers();
+  const credentials = credentialsStub();
   const live = createPolymarketLive({
     account: accountStub(),
-    credentials: credentialsStub(),
+    credentials,
     socket: (url) => {
       lastUrl = url;
       return makeSocket();
@@ -223,7 +241,7 @@ const setup = () => {
     wallet: walletStub(),
     logger,
   });
-  return { live, timers };
+  return { live, timers, credentials };
 };
 
 const bookFrame = (assetId = ASSET) =>
@@ -662,6 +680,56 @@ describe("polymarket live account views", () => {
     /* The user-close path suppresses the reconnect — no second socket ever appears. */
     await timers.fire();
     expect(sockets).toHaveLength(1);
+  });
+
+  it("a credentials delete stops the view not-enabled — the auth frame never goes out again", async () => {
+    const { live, timers, credentials } = setup();
+    const view = live.account(group);
+    await flush();
+    sockets[0]!.opened();
+    await flush();
+    expect(JSON.parse(String(sockets[0]!.sent[0]))).toStrictEqual(authBody());
+    expect(view.getState().status).toBe("live");
+
+    await credentials.delete(group);
+    expect(view.getState().status).toBe("stale");
+    expect(view.getState().error).toBe("not-enabled");
+    expect(sockets[0]!.readyState).toBe(3);
+    /* Past the reconnect backoff: no second socket, no second auth frame. */
+    await timers.fire(60_000);
+    await flush();
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]!.sent).toHaveLength(1);
+  });
+
+  it("a credentials delete for a different group leaves the view live", async () => {
+    const { live, credentials } = setup();
+    const view = live.account(group);
+    await flush();
+    sockets[0]!.opened();
+    await flush();
+    expect(view.getState().status).toBe("live");
+
+    await credentials.delete({ walletId: group.walletId, groupIndex: group.groupIndex + 1 });
+    expect(view.getState().status).toBe("live");
+    expect(view.getState().error).toBeUndefined();
+    expect(sockets[0]!.readyState).toBe(1);
+  });
+
+  it("a removed wallet stops the view not-enabled and closes its socket", async () => {
+    const { live } = setup();
+    const view = live.account(group);
+    await flush();
+    sockets[0]!.opened();
+    await flush();
+    expect(view.getState().status).toBe("live");
+
+    /* The prune fires a snapshot event with the wallet gone — the vault stays unlocked. */
+    walletIds = ["other"];
+    walletListener?.();
+    expect(view.getState().status).toBe("stale");
+    expect(view.getState().error).toBe("not-enabled");
+    expect(sockets[0]!.readyState).toBe(3);
   });
 
   it("stops on a fatal category from the snapshot", async () => {

@@ -23,9 +23,10 @@
  * events upsert (or remove on `CANCELLATION`/non-`LIVE` status) and `trade` events schedule a
  * debounced REST re-read of trades + positions. A disconnect marks the view `stale` — data kept —
  * and falls back to a 10 s REST poll (`source: "poll"`); a reconnect re-sends the auth frame,
- * re-runs the snapshot and returns to `live`/`stream`. `unlock-required`/`not-enabled` and a wallet
- * lock stop the view and close its socket. Frames are parsed against bounded schemas and malformed
- * ones dropped with a content-free log — an echoed auth frame would carry the secret.
+ * re-runs the snapshot and returns to `live`/`stream`. `unlock-required`/`not-enabled`, a wallet
+ * lock, a credentials delete and the view's wallet being removed stop the view and close its
+ * socket. Frames are parsed against bounded schemas and malformed ones dropped with a content-free
+ * log — an echoed auth frame would carry the secret.
  */
 import type * as z from "zod/mini";
 
@@ -449,6 +450,7 @@ export function createPolymarketLive(options: {
   };
 
   type AccountView = {
+    readonly group: AppGroup;
     state: PolymarketLiveState<PolymarketAccountLiveData>;
     listeners: Set<(state: PolymarketLiveState<PolymarketAccountLiveData>) => void>;
     closed: boolean;
@@ -461,10 +463,21 @@ export function createPolymarketLive(options: {
   let unsubscribeWallet: (() => void) | undefined;
   const followLock = (): void => {
     unsubscribeWallet ??= options.wallet.subscribe(() => {
-      if (options.wallet.getSnapshot().vault !== "unlocked") {
+      const snapshot = options.wallet.getSnapshot();
+      if (snapshot.vault !== "unlocked") {
         // oxlint-disable-next-line unicorn/prefer-spread -- the loop removes views from the set; a snapshot is required.
         for (const view of Array.from(accountViews)) {
           view.stop("unlock-required");
+        }
+        return;
+      }
+      /* The wallet-deletion prune drops the record under the view — a deleted wallet stops its
+         groups' views while unlocked. */
+      const wallets = new Set(snapshot.wallets.map((w) => w.walletId));
+      // oxlint-disable-next-line unicorn/prefer-spread -- the loop removes views from the set; a snapshot is required.
+      for (const view of Array.from(accountViews)) {
+        if (!wallets.has(view.group.walletId)) {
+          view.stop("not-enabled");
         }
       }
     });
@@ -480,8 +493,10 @@ export function createPolymarketLive(options: {
     const queued: string[] = [];
     let pollCancel: (() => void) | undefined;
     let tradeCancel: (() => void) | undefined;
+    let unsubscribeDelete: (() => void) | undefined;
 
     const view: AccountView = {
+      group,
       listeners: new Set(),
       closed: false,
       state: { status: "connecting", error: undefined, updatedAt: undefined, data: undefined },
@@ -498,6 +513,8 @@ export function createPolymarketLive(options: {
         tradeCancel = undefined;
         core?.close();
         core = undefined;
+        unsubscribeDelete?.();
+        unsubscribeDelete = undefined;
         accountViews.delete(view);
         if (accountViews.size === 0) {
           unsubscribeWallet?.();
@@ -509,6 +526,13 @@ export function createPolymarketLive(options: {
         }
       },
     };
+    /* A deleted record must never be re-sent — `disable` deletes through the credential store,
+       the wallet prune is caught by the snapshot check in `followLock`. */
+    unsubscribeDelete = options.credentials.onDelete((deleted) => {
+      if (deleted.walletId === group.walletId && deleted.groupIndex === group.groupIndex) {
+        view.stop("not-enabled");
+      }
+    });
     const emit = (next: PolymarketLiveState<PolymarketAccountLiveData>): void => {
       view.state = next;
       for (const listener of view.listeners) {

@@ -6,7 +6,8 @@
  * keys and valid field formats reads as absent, with one content-free warning — the enable flow
  * then re-derives rather than trusting it. The record's `owner` is the `evm.bip44` signer that
  * imported it; `l2.ts` re-checks it against the group's live signer on every request, so another
- * account's record can never sign.
+ * account's record can never sign. `onDelete` notifies after a `delete` lands — a live account view
+ * stops on it rather than re-sending the deleted credentials on its next reconnect.
  */
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
@@ -45,6 +46,11 @@ export type PolymarketCredentialStore = {
   /** Validates and stores; a field out of bounds is `malformed`, never written. */
   readonly put: (group: AppGroup, value: PolymarketCredentials) => Promise<void>;
   readonly delete: (group: AppGroup) => Promise<void>;
+  /**
+   * Fires after a `delete` lands, once per registered listener; a throwing listener is logged and
+   * never fails the delete. Returns the unsubscribe.
+   */
+  readonly onDelete: (listener: (group: AppGroup) => void) => () => void;
   /** The groups with a credentials record. */
   readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
 };
@@ -129,6 +135,7 @@ export function createPolymarketCredentials(options: {
   readonly storage: AppStorage;
   readonly logger: EngineLogger;
 }): PolymarketCredentialStore {
+  const deleteListeners = new Set<(group: AppGroup) => void>();
   return {
     get: async (group) => {
       const raw = await read(async () => options.storage.get(group, NAME));
@@ -161,6 +168,19 @@ export function createPolymarketCredentials(options: {
     },
     delete: async (group) => {
       await read(async () => options.storage.delete(group, NAME));
+      for (const listener of deleteListeners) {
+        try {
+          listener(group);
+        } catch (error) {
+          options.logger.warn("polymarket credentials delete listener threw", error);
+        }
+      }
+    },
+    onDelete: (listener) => {
+      deleteListeners.add(listener);
+      return () => {
+        deleteListeners.delete(listener);
+      };
     },
     groups: async () => read(options.storage.groups),
   };
