@@ -8,7 +8,7 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 import type { EvmRpcMethod, SolanaRpcMethod } from "@qntx/wallet-engine/gateway/contract";
 
-import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
+import { ALCHEMY_COSTS, rpcCost } from "../src/budget/costs.ts";
 import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { localBudget } from "../src/budget/local.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
@@ -239,5 +239,23 @@ describe("one billed unit per upstream call", () => {
     expect(res.status).toBe(200);
     expect(share.keys.filter((key) => key.startsWith("a:"))).toHaveLength(1);
     expect(takes).toStrictEqual([{ account: "a", units: 1 }]);
+  });
+});
+
+describe("rpcCost", () => {
+  const request: CostModel = {
+    kind: "request",
+    request: { units: 2, source: "https://test.invalid" },
+  };
+
+  it("bills a request-priced batch once per call, not once per batch", () => {
+    expect(
+      rpcCost(request, [
+        { method: "eth_chainId" },
+        { method: "eth_blockNumber" },
+        { method: "eth_gasPrice" },
+      ]),
+    ).toBe(6);
+    expect(rpcCost(request, { method: "eth_chainId" })).toBe(2);
   });
 });

@@ -47,6 +47,15 @@ describe("bucket", () => {
     expect(grant(windows, state, 0, 50, 10)).toStrictEqual({ ok: false, retryAfterSeconds: 5 });
   });
 
+  it("never announces a wait below one second, however short the refill", () => {
+    // The second window is already above min — its own wait is non-positive; the announced wait
+    // is still the tightest window's, floored at one second.
+    const state: BucketState = { levels: [0, 20], at: 0 };
+    const result = grant(windows, state, 0, 50, 10);
+    expect(result.ok).toBe(false);
+    expect(result).toStrictEqual({ ok: false, retryAfterSeconds: 1 });
+  });
+
   it("never grants a min above capacity, but still answers a finite wait", () => {
     const state = fullBuckets(windows, 0);
     const result = grant(windows, state, 0, 500, 200);
@@ -163,6 +172,35 @@ describe("durableBudget", () => {
     await expect(budget.take("test", 1)).resolves.toStrictEqual({ ok: true });
     expect(calls).toHaveLength(3);
     expect(wants).toStrictEqual([3, 4, 3]);
+  });
+
+  it("clears a cached refusal when the object grants again", async () => {
+    const calls: number[] = [];
+    let grantNext = false;
+    const stub: BudgetStub = {
+      lease: async () => {
+        await Promise.resolve();
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- the stub flips on the second call
+        return grantNext ? { ok: true, granted: 10 } : { ok: false, retryAfterSeconds: 60 };
+      },
+    };
+    const budget = durableBudget(
+      namespace(stub, calls),
+      accounts,
+      () => 0,
+      () => undefined,
+    );
+    // The refused 10-unit take caches a refusal covering takes of 10 and up for a minute.
+    await expect(budget.take("test", 10)).resolves.toStrictEqual({
+      ok: false,
+      retryAfterSeconds: 60,
+    });
+    // A smaller take is not covered: it flies to the object, which now grants — and the grant
+    // must clear the stale refusal, not just fill the lease.
+    grantNext = true;
+    await expect(budget.take("test", 5)).resolves.toStrictEqual({ ok: true });
+    await expect(budget.take("test", 10)).resolves.toStrictEqual({ ok: true });
+    expect(calls).toHaveLength(3);
   });
 
   it("fails closed when the object call throws, once per flight", async () => {

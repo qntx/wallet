@@ -123,6 +123,33 @@ describe("share-limit failover", () => {
     expect(up.calls).toHaveLength(0);
   });
 
+  it("clamps an upstream 429's cool-down to thirty seconds however long it asks", async () => {
+    // An upstream asking for an hour parks its account for the COOLDOWN_MAX_SECONDS ceiling:
+    // after 31 s the provider is tried again (an unclamped park would still be skipping it).
+    let clock = 0;
+    const up = fakeFetch({
+      "https://a.test/evm": () =>
+        new Response("slow down", {
+          status: 429,
+          headers: { "retry-after": "3600" },
+        }),
+    });
+    const app = gateway({
+      fetch: up.fetch,
+      networks: [{ id: SEPOLIA, providers: [{ id: "a", url: "https://a.test/evm" }] }],
+      now: () => clock,
+    });
+    const first = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(first.status).toBe(503);
+    await expectContract(first, gatewayError);
+    expect(first.headers.get("retry-after")).toBe("30");
+    expect(up.calls).toHaveLength(1);
+    clock += 31_000;
+    const second = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(second.status).toBe(503);
+    expect(up.calls).toHaveLength(2);
+  });
+
   it("answers 503 when a share refusal is followed by a spent budget", async () => {
     const up = fakeFetch({ "https://b.test/evm": () => rpcOk("0x1") });
     const budget: ProviderBudget = {

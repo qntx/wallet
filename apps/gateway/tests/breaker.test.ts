@@ -357,6 +357,25 @@ describe.each(forwardedRoutes.filter(([key]) => PROBED.has(key)))(
         vi.useRealTimers();
       }
     });
+
+    it("asks the probe once for timeouts inside its verdict window", async () => {
+      vi.useFakeTimers();
+      try {
+        // Real calls hang; the probe answers — the timeout is the provider's own slowness.
+        const { app, up } = appWith(hangBut(() => new Response("{}")));
+        // Two concurrent walks time out on the same providers at the same fake instant: each
+        // provider's second classify hits the verdict cache, so every provider is probed once.
+        const first = app.request(...request);
+        const second = app.request(...request);
+        await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS * upstreams.length + 5000);
+        await first;
+        await second;
+        const probedUrls = new Set(up.calls.filter(isProbe).map((probe) => probe.url));
+        expect(up.calls.filter(isProbe)).toHaveLength(probedUrls.size);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   },
 );
 
