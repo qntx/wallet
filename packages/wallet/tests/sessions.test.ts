@@ -125,11 +125,9 @@ describe("sessions(wallet).sign verification", () => {
   it("rejects a record whose scope the scheme does not admit with integrity", async () => {
     const signature = signEvmTypedData(hyperliquidL1Document(PARAMS, "Testnet"), SESSION_KEY);
     const wallet = await connect(signature, [record("Devnet")]);
-    await expect(sessions(wallet).sign(request)).rejects.toSatisfy(
-      (e) =>
-        walletError(e).code === "integrity" &&
-        walletError(e).message === "sessions.sign answered for a scope the scheme rejects",
-    );
+    const failure = sessions(wallet).sign(request);
+    await expect(failure).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    await expect(failure).rejects.toThrow("sessions.sign answered for a scope the scheme rejects");
   });
 
   it("rejects a signature that fails recovery with integrity", async () => {
