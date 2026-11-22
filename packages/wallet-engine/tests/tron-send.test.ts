@@ -670,6 +670,20 @@ describe("prepareTron", () => {
     expect(prepared.tronFee?.bandwidth.source).toBe("activation-fee");
   });
 
+  it("treats the recipient as unactivated when only the primary says absent", async () => {
+    /* Either endpoint saying absent pays activation — the primary's answer alone decides here. */
+    const w = world({
+      accounts: new Map([[FROM, { address: FROM, balance: 100_000_000 }]]),
+      independent: {
+        kind: "available",
+        client: independentApi({ account: { address: TO } }),
+      },
+    });
+    const prepared = await prepareTron(ctx(w).ctx, params({ amount: 3_000_000n }));
+    expect(prepared.tronFee?.activation).toBeDefined();
+    expect(prepared.tronFee?.bandwidth.source).toBe("activation-fee");
+  });
+
   it("does not rebuild while more than 20 seconds remain", async () => {
     const w = world();
     const clock = { now: 1_000_000 };
