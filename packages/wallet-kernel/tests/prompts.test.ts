@@ -3594,170 +3594,178 @@ describe("requester text lines cannot imitate kernel lines", () => {
     expect(description.split("\n").filter((line) => line === "Network: Fake")).toHaveLength(0);
   });
 
+  type CatalogKey = keyof (typeof CATALOGS)["en"];
+  const addr = "0x2222222222222222222222222222222222222222";
+  const sampleArgs: Readonly<Record<CatalogKey, ReadonlyArray<unknown>>> = {
+    titles: [],
+    blindTitle: [],
+    blindBytes: [],
+    textHazard: [],
+    bytesData: ["0x12"],
+    bytesLength: [7],
+    otherOutflows: [],
+    unverifiedEffects: [],
+    externalInputs: [],
+    solanaPrograms: ["prog"],
+    solanaProgramsWarning: [],
+    programAuthority: ["prog", true],
+    programAuthorityAccounts: ["prog", ["acct"]],
+    programAuthorityYours: ["SYM", addr],
+    programAuthorityMaybeYours: [addr],
+    programAuthorityUnbounded: ["prog"],
+    tokenFunction: ["SYM", addr],
+    accountCode: [],
+    callContract: [addr, "0xdeadbeef"],
+    deployContract: [addr],
+    signInTitle: [],
+    signInTo: ["d"],
+    signInAccount: [addr],
+    signInUri: ["https://x"],
+    signInMalformed: [],
+    messageHeading: [],
+    omitted: [3],
+    typedApp: ["app"],
+    typedContract: [addr],
+    typedType: ["Order"],
+    typedUnverified: [],
+    typedField: ["path", "value"],
+    typedCommitment: [],
+    typedVariant: [],
+    typedOversize: [],
+    orderGive: ["1"],
+    orderReceive: ["r", "1"],
+    anyTokenOf: ["t"],
+    tokenInSet: ["t", "root"],
+    zoneRestriction: ["zone"],
+    moreItems: [2],
+    orderHeader: ["name", "maker"],
+    orderGiveAtMost: ["1"],
+    orderReceiveAtLeast: ["r", "1"],
+    orderExpiry: ["d"],
+    orderNoExpiry: [],
+    orderPartialFill: [],
+    orderAllowedSender: ["0x1234"],
+    orderExclusiveFiller: ["f"],
+    safeTransaction: ["safe", "0"],
+    safeDelegatecall: ["t"],
+    safeRefund: ["r", "1", "1"],
+    send: ["1", "to"],
+    sendTokenAccount: ["1", "ta", "to"],
+    burn: ["1"],
+    burnTokenAccount: ["1", "a"],
+    allow: ["s", "1"],
+    unlimited: ["asset"],
+    revoke: ["s", "asset"],
+    increase: ["s", "1"],
+    decrease: ["s", "1"],
+    takeOnce: ["s", "1"],
+    viaPermit2: [],
+    viaAllowanceHolder: [],
+    receiveMin: ["1", "to"],
+    receiveMinTokenAccount: ["1", "ta"],
+    hyperliquidDeposit: ["1", "dex", "r"],
+    hyperliquidFee: ["1"],
+    until: ["d"],
+    operatorAllow: ["s", "a"],
+    operatorRevoke: ["s", "a"],
+    maxFee: ["1"],
+    feeUnknown: [],
+    networkLine: ["net"],
+    unknownEvmChain: [97],
+    unverifiedToken: ["1", "asset"],
+    delegateTo: ["n", "v"],
+    revokeDelegation: [],
+    stakeLines: [{ kind: "deactivate", account: "acct" }, (line: string) => line],
+    tronTakeover: [["a", "b"]],
+    tronContract: ["c"],
+    tronField: [],
+    tronPermissionKind: [],
+    tronPermission: ["owner", "n", "1", [{ address: "a", weight: "1" }], ["op"]],
+    tronPermissionId: [7],
+    tronMemoHeading: [],
+    tronMemoData: ["0x00"],
+    tronMemoLength: [5],
+    tronExpires: ["d"],
+    tronFeeLimit: ["1"],
+    tronBandwidthFee: [],
+    tronResource: [],
+    warnings: [],
+    bridgeLine: ["net", "1", "to", "d", "r"],
+    stakeAuthority: ["a", "role", "auth"],
+    stakeRole: [],
+    hlChain: [],
+    hlUsdSend: ["1", "d"],
+    hlWithdraw: ["1", "d"],
+    hlWithdrawFee: [],
+    hlSpotSend: ["1", "t", "d"],
+    hlTokenId: [],
+    hlClassTransfer: ["1", true],
+    hlDex: ["dex"],
+    hlSendAsset: ["1", "t", "sd", "d", "dd"],
+    hlSubAccount: ["a"],
+    hlStakeDeposit: ["1"],
+    hlStakeWithdraw: ["1"],
+    hlDelegate: ["1", "v"],
+    hlUndelegate: ["1", "v"],
+    hlApproveAgent: ["agent", "name"],
+    hlAgentExpiry: ["d"],
+    hlAgentNoExpiry: [],
+    hlAgentHeld: [],
+    hlAgentNotHeld: [],
+    hlAgentPowers: [],
+    hlBuilderFee: ["b", "1"],
+    pmOrderTitle: [],
+    pmExchange: ["n", "a"],
+    pmProxyFunds: ["m"],
+    pmSafeFunds: ["m"],
+    pmDepositFunds: ["m"],
+    pmBuyShares: ["1", "t"],
+    pmPayMax: ["1", "0.5"],
+    pmSellShares: ["1", "t"],
+    pmReceiveMin: ["1", "0.5"],
+    pmFeeSetAtMatch: [],
+    pmBuilder: ["0x00"],
+    pmMetadata: ["0x00"],
+    pmAuthFor: ["a"],
+    pmAuthTime: ["d"],
+    pmAuthNonce: ["1"],
+    pmAuthScope: [],
+    pmBatchHeader: ["w", "1", "d"],
+  };
+  const rendered = (value: unknown): ReadonlyArray<string> => {
+    if (typeof value === "string") {
+      return [value];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap(rendered);
+    }
+    if (typeof value === "function") {
+      return rendered((value as (...a: unknown[]) => unknown)());
+    }
+    if (value !== null && typeof value === "object") {
+      return Object.values(value as Record<string, unknown>).flatMap(rendered);
+    }
+    return [];
+  };
+  const catalogLines = (locale: "en" | "zh-Hans", key: CatalogKey): ReadonlyArray<string> => {
+    const value = CATALOGS[locale][key];
+    const out: unknown =
+      typeof value === "function"
+        ? (value as (...a: unknown[]) => unknown)(...sampleArgs[key])
+        : value;
+    return rendered(out);
+  };
+  const allLines = (["en", "zh-Hans"] as const).flatMap((locale) =>
+    (Object.keys(CATALOGS[locale]) as CatalogKey[]).flatMap((key) =>
+      catalogLines(locale, key).map((line) => ({ locale, key, line })),
+    ),
+  );
+
   it("no catalog template emits a requester-marked line", () => {
-    type CatalogKey = keyof (typeof CATALOGS)["en"];
-    const addr = "0x2222222222222222222222222222222222222222";
-    const args: Readonly<Record<CatalogKey, ReadonlyArray<unknown>>> = {
-      titles: [],
-      blindTitle: [],
-      blindBytes: [],
-      textHazard: [],
-      bytesData: ["0x12"],
-      bytesLength: [7],
-      otherOutflows: [],
-      unverifiedEffects: [],
-      externalInputs: [],
-      solanaPrograms: ["prog"],
-      solanaProgramsWarning: [],
-      programAuthority: ["prog", true],
-      programAuthorityAccounts: ["prog", ["acct"]],
-      programAuthorityYours: ["SYM", addr],
-      programAuthorityMaybeYours: [addr],
-      programAuthorityUnbounded: ["prog"],
-      tokenFunction: ["SYM", addr],
-      accountCode: [],
-      callContract: [addr, "0xdeadbeef"],
-      deployContract: [addr],
-      signInTitle: [],
-      signInTo: ["d"],
-      signInAccount: [addr],
-      signInUri: ["https://x"],
-      signInMalformed: [],
-      messageHeading: [],
-      omitted: [3],
-      typedApp: ["app"],
-      typedContract: [addr],
-      typedType: ["Order"],
-      typedUnverified: [],
-      typedField: ["path", "value"],
-      typedCommitment: [],
-      typedVariant: [],
-      typedOversize: [],
-      orderGive: ["1"],
-      orderReceive: ["r", "1"],
-      anyTokenOf: ["t"],
-      tokenInSet: ["t", "root"],
-      zoneRestriction: ["zone"],
-      moreItems: [2],
-      orderHeader: ["name", "maker"],
-      orderGiveAtMost: ["1"],
-      orderReceiveAtLeast: ["r", "1"],
-      orderExpiry: ["d"],
-      orderNoExpiry: [],
-      orderPartialFill: [],
-      orderAllowedSender: ["0x1234"],
-      orderExclusiveFiller: ["f"],
-      safeTransaction: ["safe", "0"],
-      safeDelegatecall: ["t"],
-      safeRefund: ["r", "1", "1"],
-      send: ["1", "to"],
-      sendTokenAccount: ["1", "ta", "to"],
-      burn: ["1"],
-      burnTokenAccount: ["1", "a"],
-      allow: ["s", "1"],
-      unlimited: ["asset"],
-      revoke: ["s", "asset"],
-      increase: ["s", "1"],
-      decrease: ["s", "1"],
-      takeOnce: ["s", "1"],
-      viaPermit2: [],
-      viaAllowanceHolder: [],
-      receiveMin: ["1", "to"],
-      receiveMinTokenAccount: ["1", "ta"],
-      hyperliquidDeposit: ["1", "dex", "r"],
-      hyperliquidFee: ["1"],
-      until: ["d"],
-      operatorAllow: ["s", "a"],
-      operatorRevoke: ["s", "a"],
-      maxFee: ["1"],
-      feeUnknown: [],
-      networkLine: ["net"],
-      unknownEvmChain: [97],
-      unverifiedToken: ["1", "asset"],
-      delegateTo: ["n", "v"],
-      revokeDelegation: [],
-      stakeLines: [{ kind: "deactivate", account: "acct" }, (line: string) => line],
-      tronTakeover: [["a", "b"]],
-      tronContract: ["c"],
-      tronField: [],
-      tronPermissionKind: [],
-      tronPermission: ["owner", "n", "1", [{ address: "a", weight: "1" }], ["op"]],
-      tronPermissionId: [7],
-      tronMemoHeading: [],
-      tronMemoData: ["0x00"],
-      tronMemoLength: [5],
-      tronExpires: ["d"],
-      tronFeeLimit: ["1"],
-      tronBandwidthFee: [],
-      tronResource: [],
-      warnings: [],
-      bridgeLine: ["net", "1", "to", "d", "r"],
-      stakeAuthority: ["a", "role", "auth"],
-      stakeRole: [],
-      hlChain: [],
-      hlUsdSend: ["1", "d"],
-      hlWithdraw: ["1", "d"],
-      hlWithdrawFee: [],
-      hlSpotSend: ["1", "t", "d"],
-      hlTokenId: [],
-      hlClassTransfer: ["1", true],
-      hlDex: ["dex"],
-      hlSendAsset: ["1", "t", "sd", "d", "dd"],
-      hlSubAccount: ["a"],
-      hlStakeDeposit: ["1"],
-      hlStakeWithdraw: ["1"],
-      hlDelegate: ["1", "v"],
-      hlUndelegate: ["1", "v"],
-      hlApproveAgent: ["agent", "name"],
-      hlAgentExpiry: ["d"],
-      hlAgentNoExpiry: [],
-      hlAgentHeld: [],
-      hlAgentNotHeld: [],
-      hlAgentPowers: [],
-      hlBuilderFee: ["b", "1"],
-      pmOrderTitle: [],
-      pmExchange: ["n", "a"],
-      pmProxyFunds: ["m"],
-      pmSafeFunds: ["m"],
-      pmDepositFunds: ["m"],
-      pmBuyShares: ["1", "t"],
-      pmPayMax: ["1", "0.5"],
-      pmSellShares: ["1", "t"],
-      pmReceiveMin: ["1", "0.5"],
-      pmFeeSetAtMatch: [],
-      pmBuilder: ["0x00"],
-      pmMetadata: ["0x00"],
-      pmAuthFor: ["a"],
-      pmAuthTime: ["d"],
-      pmAuthNonce: ["1"],
-      pmAuthScope: [],
-      pmBatchHeader: ["w", "1", "d"],
-    };
-    const rendered = (value: unknown): ReadonlyArray<string> => {
-      if (typeof value === "string") return [value];
-      if (Array.isArray(value)) return value.flatMap(rendered);
-      if (typeof value === "function") {
-        return rendered((value as (...a: unknown[]) => unknown)(...[]));
-      }
-      if (value !== null && typeof value === "object") {
-        return Object.values(value as Record<string, unknown>).flatMap(rendered);
-      }
-      return [];
-    };
-    for (const locale of ["en", "zh-Hans"] as const) {
-      const catalog = CATALOGS[locale];
-      for (const key of Object.keys(catalog) as CatalogKey[]) {
-        const value = catalog[key];
-        const out: unknown =
-          typeof value === "function"
-            ? (value as (...a: unknown[]) => unknown)(...args[key])
-            : value;
-        for (const line of rendered(out)) {
-          expect(line.startsWith("· "), `${locale}.${key} produced ${JSON.stringify(line)}`).toBe(
-            false,
-          );
-        }
-      }
+    for (const { locale, key, line } of allLines) {
+      expect(line.startsWith("· "), `${locale}.${key} produced ${JSON.stringify(line)}`).toBe(
+        false,
+      );
     }
   });
 });
