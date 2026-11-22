@@ -474,6 +474,9 @@ export const PROGRAM_IDS: Readonly<{
     token: string;
     token2022: string;
     stake: string;
+    ed25519: string;
+    secp256k1: string;
+    secp256r1: string;
 }>;
 
 // @public
