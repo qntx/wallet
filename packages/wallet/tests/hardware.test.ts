@@ -6,8 +6,8 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 import { verifyEvent } from "@qntx/nostr";
+import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 
 import { hardware, qrParts, qrReader } from "../src/hardware/index.ts";
 import type { DeviceIo } from "../src/hardware/index.ts";
@@ -58,7 +58,7 @@ const exchangeStep = {
 const responding = (io: Partial<DeviceIo>): DeviceIo => ({
   exchange:
     io.exchange ??
-    (() =>
+    (async () =>
       Promise.resolve({
         kind: "qr",
         ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
@@ -84,7 +84,10 @@ describe("hardware(wallet)", () => {
       responding({
         exchange: async (request, context) => {
           contexts.push([request.kind, context]);
-          return { kind: "qr", ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) } };
+          return Promise.resolve({
+            kind: "qr",
+            ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+          });
         },
       }),
     );
@@ -109,7 +112,9 @@ describe("hardware(wallet)", () => {
   it("cancels the operation when the signal aborts mid-exchange", async () => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
-    kernel.handlers.set("hardware.step", () => ({ ok: doneStep({ kind: "pair", wallet: WALLET }) }));
+    kernel.handlers.set("hardware.step", () => ({
+      ok: doneStep({ kind: "pair", wallet: WALLET }),
+    }));
     kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
     const wallet = await connect(kernel);
     const controller = new AbortController();
@@ -117,7 +122,10 @@ describe("hardware(wallet)", () => {
       signal: controller.signal,
       exchange: async () => {
         controller.abort();
-        return { kind: "qr", ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) } };
+        return Promise.resolve({
+          kind: "qr",
+          ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+        });
       },
     });
     await expect(hardware(wallet).pair("keystone", io)).rejects.toSatisfy(
@@ -134,9 +142,7 @@ describe("hardware(wallet)", () => {
     const wallet = await connect(kernel);
     const failure = new Error("camera denied");
     const io = responding({
-      exchange: async () => {
-        throw failure;
-      },
+      exchange: async () => Promise.reject(failure),
     });
     await expect(hardware(wallet).pair("keystone", io)).rejects.toBe(failure);
     expect(kernel.received).toContain("hardware.cancel");
@@ -211,17 +217,17 @@ describe("qrParts / qrReader", () => {
     const foreign = qrParts({ type: "bytes", cbor: new Uint8Array(16) })();
     const frames = [
       ...emitted.slice(14, 24),
-      emitted[3] ?? "",
+      ...emitted.slice(3, 4),
       foreign,
       ...emitted.slice(0, 14),
     ];
     let previous = 0;
     for (const frame of frames) {
-      const result = reader.receive(frame);
-      expect(result.progress).toBeGreaterThanOrEqual(previous);
-      previous = result.progress;
-      progress = result.progress;
-      decoded = result.payload ?? decoded;
+      const { progress: ratio, payload } = reader.receive(frame);
+      expect(ratio).toBeGreaterThanOrEqual(previous);
+      previous = ratio;
+      progress = ratio;
+      decoded = payload;
     }
     expect(progress).toBe(1);
     expect(decoded?.type).toBe("crypto-psbt");

@@ -960,7 +960,10 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     );
   }
 
-  /** Only a vault wallet holds the seed spark/nostr derive from; anything else must never drive them. */
+  /**
+   * Only a vault wallet holds the seed spark/nostr derive from; anything else must never drive
+   * them.
+   */
   private isVault(walletId: string): boolean {
     return (
       this.options.wallet.getSnapshot().wallets.find((w) => w.walletId === walletId)?.custody ===

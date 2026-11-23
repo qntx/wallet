@@ -11,9 +11,9 @@ import { resolve } from "node:path";
 
 import { CryptoPSBT } from "@keystonehq/bc-ur-registry-btc";
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { base58 } from "@scure/base";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
@@ -856,50 +856,48 @@ describe("keystone accounts over qr-hardware-call", () => {
     template: string,
     network: string,
     groupIndex: number,
-  ) =>
-    h.call(
-      "wallet.accounts",
-      { walletId, groupIndex, template, network },
-      session,
-    );
+  ) => h.call("wallet.accounts", { walletId, groupIndex, template, network }, session);
 
   it("pins exactly the missing group keys, then wallet.accounts answers", async () => {
     const { h, session, hwId } = await boot();
     // Group 1 has not been derived yet: both families miss their hardened nodes.
-    expect(
-      errCode(await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1)),
-    ).toBe("device-required");
+    expect(errCode(await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1))).toBe(
+      "device-required",
+    );
     expect(
       errCode(await walletAccounts(h, session, hwId, "solana.bip44-change", SOLANA_NETWORK, 1)),
     ).toBe("device-required");
 
-    const done = await runAccounts(
-      h,
-      session,
-      { ...accountsOp(hwId, 1), templates: ["btc.bip84"], network: BTC_NETWORK },
-    );
+    const done = await runAccounts(h, session, {
+      ...accountsOp(hwId, 1),
+      templates: ["btc.bip84"],
+      network: BTC_NETWORK,
+    });
     expect(errCode(done)).toBeUndefined();
 
     const btc = await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1);
     const node = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/1'");
     const [account] = ok(done) as ProtocolValue[];
-    if (account === undefined) {
-      throw new Error("accounts op returned no row");
-    }
-    expect(strField(account, "xpub")).toBe(node.publicExtendedKey);
+    expect(account).toBeDefined();
+    expect(strField(account as ProtocolValue, "xpub")).toBe(node.publicExtendedKey);
     expect(strField(ok(btc), "xpub")).toBe(node.publicExtendedKey);
   });
 
   it("derives the solana group-1 leaf and refuses hostile answers", async () => {
     const { h, session, hwId } = await boot();
-    const solana = (mutant: DeviceMutant = {}) =>
-      runAccounts(h, session, {
-        kind: "accounts",
-        walletId: hwId,
-        groupIndex: 1,
-        templates: ["solana.bip44-change"],
-        network: SOLANA_NETWORK,
-      }, mutant);
+    const solana = async (mutant: DeviceMutant = {}) =>
+      runAccounts(
+        h,
+        session,
+        {
+          kind: "accounts",
+          walletId: hwId,
+          groupIndex: 1,
+          templates: ["solana.bip44-change"],
+          network: SOLANA_NETWORK,
+        },
+        mutant,
+      );
 
     // The honest answer pins m/44'/501'/1'/0' — the group-1 account leaf.
     const done = await solana();
@@ -931,9 +929,9 @@ describe("keystone accounts over qr-hardware-call", () => {
         mutant,
       );
     };
-    expect(errCode(await hostile({ accounts: { fingerprint: new Uint8Array([9, 9, 9, 9]) } }))).toBe(
-      "wrong-device",
-    );
+    expect(
+      errCode(await hostile({ accounts: { fingerprint: new Uint8Array([9, 9, 9, 9]) } })),
+    ).toBe("wrong-device");
     expect(errCode(await hostile({ accounts: { dropPath: "m/44'/501'/1'/0'" } }))).toBe(
       "integrity",
     );
@@ -968,7 +966,7 @@ describe("keystone accounts over qr-hardware-call", () => {
   it("refuses a path the firmware cannot derive before any exchange", async () => {
     let asked = false;
     const link = {
-      exchange: (): Promise<DeviceResponse> => {
+      exchange: async (): Promise<DeviceResponse> => {
         asked = true;
         return Promise.reject(new Error("unreachable"));
       },

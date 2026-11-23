@@ -439,8 +439,8 @@ const derivationSchema = (path: KeyPath, curve: 0 | 1, fingerprint: Uint8Array):
 
 /**
  * A `qr-hardware-call` key-derivation request: call-type 0, #1301 key-derivation-call wrapping the
- * schemas and the wallet origin string. Version stays absent — V0 is the default every client
- * sends (the vendor encoder drops a falsy version), which is what firmware 3.2.2 parses.
+ * schemas and the wallet origin string. Version stays absent — V0 is the default every client sends
+ * (the vendor encoder drops a falsy version), which is what firmware 3.2.2 parses.
  */
 export const hardwareCall = (fields: {
   readonly secp256k1: ReadonlyArray<KeyPath>;
@@ -462,9 +462,7 @@ export const hardwareCall = (fields: {
               {
                 kind: "array",
                 items: [
-                  ...fields.secp256k1.map((path) =>
-                    derivationSchema(path, 0, fields.fingerprint),
-                  ),
+                  ...fields.secp256k1.map((path) => derivationSchema(path, 0, fields.fingerprint)),
                   ...fields.ed25519.map((path) => derivationSchema(path, 1, fields.fingerprint)),
                 ],
               },

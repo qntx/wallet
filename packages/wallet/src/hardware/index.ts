@@ -7,17 +7,21 @@
  * transport failure cancels it best-effort before the promise settles.
  *
  * `qrParts`/`qrReader` are the pure UR plumbing for air-gapped (QR) transports: parts are the
- * uppercase fountain strings a device scans, the reader folds scanned strings back into the
- * payload and only accepts the UR types the operation advertised.
+ * uppercase fountain strings a device scans, the reader folds scanned strings back into the payload
+ * and only accepts the UR types the operation advertised.
  */
 import { isUrType, toQrString, UrDecoder, UrEncoder } from "@qntx/ur";
 
-import { integrity } from "../channel.ts";
 import { checkSignResult } from "../chains/check.ts";
+import { integrity } from "../channel.ts";
 import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
-import type { ChainTemplate } from "../protocol/chains.ts";
-import type { ChainAccount, ChainSignRequest, ChainSignResult } from "../protocol/chains.ts";
+import type {
+  ChainTemplate,
+  ChainAccount,
+  ChainSignRequest,
+  ChainSignResult,
+} from "../protocol/chains.ts";
 import type {
   DeviceDisplay,
   DeviceRequest,
@@ -89,7 +93,8 @@ export type HardwareApi = {
   ) => Promise<{ readonly address: string; readonly method: "device" | "compare" }>;
 };
 
-const cancelled = (): WalletError => new WalletError("cancelled", "the device operation was aborted");
+const cancelled = (): WalletError =>
+  new WalletError("cancelled", "the device operation was aborted");
 
 /** A live read of the abort flag — a plain property access would let TS narrow it to `false`. */
 const aborted = (io: DeviceIo): boolean => io.signal?.aborted === true;
@@ -116,8 +121,8 @@ const run = async (
         ? {}
         : { verify: await internals.resolveVerifyFactor(verify, wire) }),
     }));
-    opId = begin.opId;
-    let step = begin.step;
+    ({ opId } = begin);
+    let { step } = begin;
     while (step.kind === "exchange") {
       if (aborted(io)) {
         throw cancelled();
@@ -207,9 +212,9 @@ export function hardware(wallet: Wallet): HardwareApi {
 const DEFAULT_FRAGMENT_LENGTH = 200;
 
 /**
- * Endless, cyclic fountain parts for one QR payload: each call returns the next uppercase UR
- * string (`UR:<type>/…`), ready for an animated QR. For single-part payloads the same frame
- * repeats — the loop is safe to drive on a timer.
+ * Endless, cyclic fountain parts for one QR payload: each call returns the next uppercase UR string
+ * (`UR:<type>/…`), ready for an animated QR. For single-part payloads the same frame repeats — the
+ * loop is safe to drive on a timer.
  */
 export const qrParts = (
   payload: QrPayload,
@@ -254,7 +259,7 @@ export const qrReader = (scan: ReadonlyArray<string>): QrReader => {
       if (outcome.status === "fatal") {
         throw new WalletError("invalid-input", outcome.error.message);
       }
-      const state = decoder.state;
+      const { state } = decoder;
       if (state.phase === "complete") {
         return { progress: 1, payload: { type: state.value.type, cbor: state.value.message } };
       }

@@ -2,10 +2,10 @@
  * The Keystone `qr-hardware-call` key-derivation exchange: the wallet asks the device to derive
  * hardened nodes the sync could not pin (per-group account xpubs, solana change leaves). The
  * request paths are checked against the firmware's `check_hardware_call_path` allow-list before
- * anything is shown, and the `crypto-multi-accounts` answer must cover exactly the requested
- * paths — anything missing, extra or duplicated fails closed (`integrity`). The claimed master
- * fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch
- * to `wrong-device`.
+ * anything is shown, and the `crypto-multi-accounts` answer must cover exactly the requested paths
+ * — anything missing, extra or duplicated fails closed (`integrity`). The claimed master
+ * fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch to
+ * `wrong-device`.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -25,8 +25,8 @@ const ORIGIN = "qntx";
 const h = (...indices: number[]): KeyPath => indices.map((i) => i + HARDENED);
 
 /**
- * The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a
- * prefix matches the path itself or any extension of it.
+ * The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a prefix
+ * matches the path itself or any extension of it.
  */
 const DERIVABLE_PREFIXES: ReadonlyArray<KeyPath> = [
   h(44, 0),
@@ -73,10 +73,7 @@ export const derive = async (
 ): Promise<PairingResult> => {
   for (const path of [...need.secp256k1, ...need.ed25519]) {
     if (!DERIVABLE_PREFIXES.some((prefix) => under(prefix, path))) {
-      throw new KernelError(
-        "unsupported",
-        `keystone cannot derive ${pathToString(path)} over QR`,
-      );
+      throw new KernelError("unsupported", `keystone cannot derive ${pathToString(path)} over QR`);
     }
   }
   const response = await link.exchange({
@@ -137,7 +134,10 @@ export const derive = async (
     answered.push(path);
   }
   const wanted = [...need.secp256k1, ...need.ed25519];
-  if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath(a, w)))) {
+  if (
+    answered.length !== wanted.length ||
+    !wanted.every((w) => answered.some((a) => samePath(a, w)))
+  ) {
     integrity();
   }
   return {

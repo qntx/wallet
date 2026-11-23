@@ -345,7 +345,7 @@ export const keystoneDevice = (
     const call = QRHardwareCall.fromCBOR(cbor);
     const params = call.getParams();
     if (!(params instanceof KeyDerivation)) {
-      throw new Error("device: hardware call is not a key derivation");
+      throw new TypeError("device: hardware call is not a key derivation");
     }
     const schemas = params.getSchemas();
     const knobs = mutant.accounts ?? {};
@@ -353,8 +353,7 @@ export const keystoneDevice = (
 
     const keyFor = (rendered: string, edOnly: boolean): CryptoHDKey => {
       const components = pathNumbers(rendered).map(
-        (n) =>
-          new PathComponent({ index: n % HARDENED, hardened: n >= HARDENED }),
+        (n) => new PathComponent({ index: n % HARDENED, hardened: n >= HARDENED }),
       );
       const origin = new CryptoKeypath(components);
       if (edOnly) {
@@ -363,9 +362,7 @@ export const keystoneDevice = (
         const publicKey = slip.derive(rendered).publicKey.subarray(1);
         return new CryptoHDKey({
           isMaster: false,
-          key: Buffer.from(
-            knobs.badKeyPath === rendered ? publicKey.subarray(0, -1) : publicKey,
-          ),
+          key: Buffer.from(knobs.badKeyPath === rendered ? publicKey.subarray(0, -1) : publicKey),
           origin,
         });
       }
@@ -404,13 +401,7 @@ export const keystoneDevice = (
     }
     return answer(
       vendorBytes(
-        new CryptoMultiAccounts(
-          Buffer.from(mfp),
-          keys,
-          "Keystone 3 Pro",
-          undefined,
-          "3.2.2",
-        ),
+        new CryptoMultiAccounts(Buffer.from(mfp), keys, "Keystone 3 Pro", undefined, "3.2.2"),
       ),
       "crypto-multi-accounts",
     );

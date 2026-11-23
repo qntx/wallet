@@ -33,7 +33,7 @@ type Rig = {
   readonly custody: "vault" | "hardware";
   readonly failOn: Set<string>;
   readonly calls: string[];
-  readonly sparkAccounts: ReadonlyArray<readonly unknown[]>;
+  readonly sparkAccounts: ReadonlyArray<ReadonlyArray<unknown>>;
   evmGroup: number;
   solGroup: number;
   btcGroup: number;
@@ -49,8 +49,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
     btcUsed: over.btcUsed === undefined ? new Set() : new Set(over.btcUsed),
     tronUsed: over.tronUsed === undefined ? new Set() : new Set(over.tronUsed),
     sparkUsed: over.sparkUsed === undefined ? new Set() : new Set(over.sparkUsed),
-    deviceRequired:
-      over.deviceRequired === undefined ? new Set() : new Set(over.deviceRequired),
+    deviceRequired: over.deviceRequired === undefined ? new Set() : new Set(over.deviceRequired),
     custody: over.custody ?? "vault",
     failOn: over.failOn === undefined ? new Set() : new Set(over.failOn),
     calls: [],
@@ -69,7 +68,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
       r.calls.push("spark");
       return Promise.resolve({ balanceSats: 0, used: r.sparkUsed.has(ref.groupIndex) });
     },
-    setAccounts: (refs: readonly unknown[]) => {
+    setAccounts: (refs: ReadonlyArray<unknown>) => {
       (r.sparkAccounts as unknown[][]).push([...refs]);
     },
     setStore: () => {},
@@ -373,7 +372,7 @@ describe("a hardware wallet's account tree", () => {
     await init(r);
     await r.ctl.discoverGroups(W);
     const group0 = r.ctl.getState().groups[W]?.find((g) => g.index === 0);
-    expect(group0?.used["evm"]).toBe(false);
+    expect(group0?.used?.["evm"]).toBe(false);
     expect(group0?.errors?.["evm"]).toBeUndefined();
   });
 
