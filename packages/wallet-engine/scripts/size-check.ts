@@ -151,10 +151,38 @@ const ENTRIES: ReadonlyArray<Entry> = [
     forbidden: ["zod"],
   },
   {
+    name: "gateway-contract",
+    source: "src/gateway/contract/index.ts",
+    /* Measured 40573 B: the zod schemas and parsers of every contract endpoint — what the
+       gateway app and a validating host pay for the wire contract alone. */
+    budget: 42 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com", "@qntx/fiat24", "api.fiat24", "@walletconnect/", "@reown/"],
+  },
+  {
+    name: "idb",
+    source: "src/idb/indexeddb.ts",
+    /* Measured 9187 B: the IndexedDB public store and its record cipher — the browser host's
+       durable-store entry. */
+    budget: 10 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: ["@nktkas/hyperliquid", "polymarket.com", "@qntx/fiat24", "@walletconnect/", "@reown/"],
+  },
+  {
+    name: "connect",
+    source: "src/connect/index.ts",
+    /* Measured 135618 B: the injected provider script and the message bridge with its EVM,
+       Solana, Bitcoin, TRON and Nostr surfaces plus the codecs they pull. */
+    budget: 136 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com", "@qntx/fiat24", "api.fiat24", "@walletconnect/", "@reown/"],
+  },
+  {
     name: "walletconnect",
     source: "src/walletconnect/index.ts",
-    /* measured 420545 B gzipped — our glue plus WalletKit, the sign client and the core. */
-    budget: 414 * 1024,
+    /* Measured 18806 B: our session glue only — WalletKit, the sign client and the core are
+       optional peers the host installs and bundler-external here. */
+    budget: 20 * 1024,
     external: WALLETCONNECT_EXTERNAL,
     forbidden: [],
   },
