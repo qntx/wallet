@@ -23,4 +23,16 @@ public final class WalletNativeAutolinking {
   public static func isSecureInputViewRecyclable() -> Bool {
     return HybridSecureInputView.self is any RecyclableView.Type
   }
+  
+  public static func createCloudKitStore() -> bridge.std__shared_ptr_HybridCloudKitStoreSpec_ {
+    let hybridObject = HybridCloudKitStore()
+    return { () -> bridge.std__shared_ptr_HybridCloudKitStoreSpec_ in
+      let __cxxWrapped = hybridObject.getCxxWrapper()
+      return __cxxWrapped.getCxxPart()
+    }()
+  }
+  
+  public static func isCloudKitStoreRecyclable() -> Bool {
+    return HybridCloudKitStore.self is any RecyclableView.Type
+  }
 }

@@ -9,10 +9,11 @@
  * sub-entries, so a host bundles only the apps it uses.
  */
 export { createApps } from "./controller.ts";
-export type { AppsController, CreateAppsOptions } from "./controller.ts";
+export type { AppAuthorityRow, AppsController, CreateAppsOptions } from "./controller.ts";
 export type { AppSocket } from "./socket.ts";
 export type {
   AppApis,
+  AppAuthority,
   AppContext,
   AppDefinition,
   AppDetail,

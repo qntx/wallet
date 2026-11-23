@@ -1,20 +1,20 @@
 import type { PricesState, WalletEngine } from "@qntx/wallet-engine";
 
 /**
- * The gateway now answers `unsupported` — permanently — where it has no coverage at all, instead of
- * a retryable failure or a silent gap. Three surfaces carry it:
+ * The gateway answers `unsupported` — permanently — where it has no coverage at all, instead of a
+ * retryable failure or a silent gap. Three surfaces carry it:
  *
- * - `POST /v1/history/:caip2` on a served network with no history provider answers 404 `unsupported`
- *   (it used to be 503 `unavailable`); the engine ends that network's stream and lists its id in
- *   `GroupHistory.unsupported` — the entry list is complete for every other network, so show a "no
- *   history for X" notice rather than a load error.
+ * - `POST /v1/history/:caip2` on a served network with no history provider answers 404 `unsupported`;
+ *   the engine ends that network's stream and lists its id in `GroupHistory.unsupported` — the
+ *   entry list is complete for every other network, so show a "no history for X" notice rather than
+ *   a load error.
  * - `GET /v1/tokens/:caip2` on a served network no token source covers answers 404 `unsupported`; a
  *   covered network whose build has not landed yet still answers 503 `unavailable` with
  *   `Retry-After`. Either stores an empty list.
- * - `POST /v1/prices` reports assets no provider maps in a new `unsupported` list, distinct from
- *   `missing` (no price right now). `PricesState.errors` values them `"unsupported"` — a permanent
- *   state, so grey the price out instead of hinting a retry — and drops any stored quote for the
- *   asset.
+ * - `POST /v1/prices/:family` reports assets no provider maps in a new `unsupported` list, distinct
+ *   from `missing` (no price right now). `PricesState.errors` values them `"unsupported"` — a
+ *   permanent state, so grey the price out instead of hinting a retry — and drops any stored quote
+ *   for the asset.
  */
 export function describeCoverage(engine: WalletEngine): () => void {
   const stop = engine.history.store.subscribe((state) => {

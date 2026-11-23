@@ -12,7 +12,9 @@ import type {
   Pbkdf2,
   Port,
   Random,
+  VaultAnchor,
 } from "../src/platform.ts";
+import { createMemoryAnchor } from "../src/vault/anchor.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
 import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
@@ -60,6 +62,8 @@ export type Harness = {
   readonly events: KernelEvent[];
   /** The raw shared store — direct commits simulate an external writer. */
   readonly store: RecordStore;
+  /** The raw shared anchor — pass it to another harness sharing this store's host storage. */
+  readonly anchor: VaultAnchor;
   readonly draws: Uint8Array[];
   /** Advances the monotonic elapsed clock (session deadlines, timers). */
   readonly advance: (ms: number) => void;
@@ -139,6 +143,10 @@ export function createHarness(opts?: {
   store?: RecordStore;
   /** Wrap the kernel's store view (e.g. `nonEchoing` so own commits do not self-notify). */
   wrapStore?: ((store: RecordStore) => RecordStore) | undefined;
+  /** Share one anchor between harnesses — the host storage that outlives store rewrites. */
+  anchor?: VaultAnchor;
+  /** Wrap the anchor the kernel sees (e.g. to hold a CAS or count host calls). */
+  wrapAnchor?: ((anchor: VaultAnchor) => VaultAnchor) | undefined;
   /** Injected crypto backends (default: a spark loader that always fails). */
   backends?: KernelPlatform["backends"];
   /** Overrides the seeded stream entirely — vector tests replay recorded draws. */
@@ -163,6 +171,8 @@ export function createHarness(opts?: {
   const { draws } = seeded;
   const inner = opts?.store ?? createMemoryStore();
   const store = opts?.wrapStore === undefined ? inner : opts.wrapStore(inner);
+  const innerAnchor = opts?.anchor ?? createMemoryAnchor();
+  const anchor = opts?.wrapAnchor === undefined ? innerAnchor : opts.wrapAnchor(innerAnchor);
   const posted: ProtocolValue[] = [];
   const events: KernelEvent[] = [];
   const pending = new Map<number, (response: KernelResponse) => void>();
@@ -222,6 +232,7 @@ export function createHarness(opts?: {
     pbkdf2: opts?.pbkdf2 ?? subtlePbkdf2,
     argon2id: opts?.argon2id ?? quickArgon2id,
     store,
+    anchor,
     policy: {
       maxSessionMs: opts?.maxSessionMs ?? 12 * 3_600_000,
       maxScryptLogN: 20,
@@ -247,6 +258,7 @@ export function createHarness(opts?: {
     posted,
     events,
     store: inner,
+    anchor: innerAnchor,
     draws,
     call: async (method, params, session) =>
       new Promise<KernelResponse>((resolve) => {

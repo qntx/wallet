@@ -1,7 +1,1 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- The card reader needs NFC; apps without NFC hardware can still ship. -->
-  <uses-permission android:name="android.permission.NFC" />
-  <!-- Lets the trusted card sheet hide non-system overlays on API 31+ (A8). -->
-  <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
-  <uses-feature android:name="android.hardware.nfc" android:required="false" />
-</manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

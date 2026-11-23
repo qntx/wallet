@@ -16,10 +16,10 @@ import { createGateway } from "../../../../apps/gateway/src/app.ts";
 import { localBudget } from "../../../../apps/gateway/src/budget/local.ts";
 import { PRODUCTION_ACCOUNTS } from "../../../../apps/gateway/src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../../../../apps/gateway/src/config/networks.ts";
+import type { Limiters, RateLimiter } from "../../../../apps/gateway/src/limits.ts";
 import { buildTokenLists } from "../../../../apps/gateway/src/tokens/build.ts";
 import type { TokenListStore } from "../../../../apps/gateway/src/tokens/build.ts";
 import { tokenListSources } from "../../../../apps/gateway/src/tokens/sources.ts";
-import type { Limiters, RateLimiter } from "../../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../../src/engine.ts";
 import type { WalletEngine } from "../../src/engine.ts";
 import { gatewayScope } from "../../src/gateway/client.ts";
@@ -189,7 +189,7 @@ export const routeClass = (pathname: string): RouteClass => {
   if (pathname.startsWith("/v1/tokens/")) {
     return "tokens";
   }
-  if (pathname === "/v1/prices") {
+  if (pathname.startsWith("/v1/prices/")) {
     return "prices";
   }
   if (pathname.startsWith("/v1/quotes")) {
@@ -207,7 +207,7 @@ export const routeClass = (pathname: string): RouteClass => {
   return "other";
 };
 
-/** One `POST /v1/prices` request as measured — its assets, what the gateway cache answered. */
+/** One `POST /v1/prices/:family` request as measured — its assets, what the gateway cache answered. */
 export type PricesRead = {
   readonly assets: ReadonlyArray<string>;
   readonly currency: string;
@@ -499,6 +499,7 @@ export const createWorld = async (opts: {
     corsOrigins: [],
     risk,
     tokens,
+    nfts: { cache: priceCache },
     prices: { cache: priceCache, coingecko: { apiKey: "stub" } },
     budget,
     auth: {

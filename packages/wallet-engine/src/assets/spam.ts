@@ -19,6 +19,9 @@ export const suspiciousTokenSymbol = (symbol: string): boolean =>
 const LINK_IN_NAME =
   /(?:https?:\/\/|www\.|t\.me\/|\b[a-z0-9-]+\.(?:com|io|net|org|xyz|app|fi|finance|site|online|top|vip|cc|me|gg|link|pro|club|info|live|gift|claims?)\b)/i;
 
+/** Display text carries a URL or a bare domain — the phishing vehicle LINK_IN_NAME screens for. */
+export const hasLinkInText = (text: string): boolean => LINK_IN_NAME.test(text);
+
 /** The verified symbol owners of one network: lowercase symbol → canonical addresses holding it. */
 export const symbolOwners = (
   tokens: ReadonlyArray<readonly [string, { readonly symbol: string }]>,
@@ -60,8 +63,8 @@ export function spamReasons(input: {
     reasons.push("suspicious-symbol");
   }
   if (
-    (input.symbol !== undefined && LINK_IN_NAME.test(input.symbol)) ||
-    (input.name !== undefined && LINK_IN_NAME.test(input.name))
+    (input.symbol !== undefined && hasLinkInText(input.symbol)) ||
+    (input.name !== undefined && hasLinkInText(input.name))
   ) {
     reasons.push("link-in-name");
   }

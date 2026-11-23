@@ -1,4 +1,5 @@
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent, getPublicKey, KeysSigner } from "@qntx/nostr";
@@ -1209,6 +1210,62 @@ describe("passkey restore purpose", () => {
     const restored = await wallet.wallets.restoreWithPasskey();
     expect(restored.walletId).toBe("0123456789abcdef");
     expect(kernel.received).toContain("wallet.restoreWithPasskey");
+  });
+
+  it("asserts a backup-restore passkey against the envelope's credential ids", async () => {
+    // The destination vault's own credentials (none yet — the vault is uninitialized) are not the
+    // envelope's: the assertion must be scoped to the ids the envelope's factor entries name.
+    let asserted: { readonly credentialIds?: ReadonlyArray<Uint8Array> } | undefined;
+    const result: PrfResult = {
+      credentialId: utf8ToBytes("envelope-credential"),
+      first: new Uint8Array(32).fill(7),
+      synced: true,
+    };
+    const ceremony: PasskeyCeremony = {
+      // oxlint-disable-next-line typescript/require-await -- the ceremony contract is async
+      create: async () => result,
+      // oxlint-disable-next-line typescript/require-await -- the ceremony contract is async
+      assert: async (input) => {
+        asserted = input;
+        return result;
+      },
+    };
+    const { wallet, kernel } = await connectWithCeremony(ceremony);
+    kernel.handlers.set("backup.restore", () => ({
+      ok: { wallets: [], passphraseRequired: [], session: "ab".repeat(16) },
+    }));
+    const envelopeCredentialId = utf8ToBytes("envelope-credential");
+    const envelope = JSON.stringify({
+      version: 3,
+      createdAt: 1_700_000_000_000,
+      header: JSON.stringify({
+        wallets: [{ walletId: "95fea534ed0f2996", origin: "mnemonic", words: 24 }],
+      }),
+      factors: [
+        {
+          kind: "password",
+          kdf: "argon2id",
+          memoryKiB: 65_536,
+          passes: 3,
+          lanes: 4,
+          salt: "AAAA",
+          sealedBek: "BBBB",
+        },
+        {
+          kind: "passkey",
+          credentialId: base64urlnopad.encode(envelopeCredentialId),
+          sealedBek: "CCCC",
+        },
+      ],
+      payload: "cGF5bG9hZA",
+    });
+    await wallet.backup.restore({
+      envelope,
+      backupFactor: { kind: "passkey" },
+      factor: { kind: "password", password: "long enough password" },
+    });
+    expect(asserted?.credentialIds).toStrictEqual([envelopeCredentialId]);
+    expect(kernel.received).toContain("backup.restore");
   });
 });
 

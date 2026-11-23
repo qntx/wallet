@@ -1,0 +1,85 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §3 Get Transactions",
+  "body": {
+    "tokenid": 903,
+    "currency": "EUR",
+    "count": 6,
+    "totalDebit": 109.0,
+    "totalCredit": 109.0,
+    "transactions": [
+      {
+        "title": "PII-SENTINEL-40",
+        "subtitle": "PII-SENTINEL-41",
+        "amount": -1.89,
+        "timestamp": 1683221111000,
+        "image": "https://www.fiat24.com/img/mastercard.png",
+        "txId": "0x815da6bf2b2767c61e11f2378e31d2e92c397b860e18c80b0ed7fb05ed5897a2",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      },
+      {
+        "title": "PII-SENTINEL-42",
+        "subtitle": "PII-SENTINEL-43",
+        "amount": -1.02,
+        "timestamp": 1683117041000,
+        "image": "https://www.fiat24.com/img/mastercard.png",
+        "txId": "0x5a9b673377f17a38ecc404ce16d18ba33cae18b253037be5f0f7f9227d4ce8fa",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      },
+      {
+        "title": "PII-SENTINEL-44",
+        "subtitle": "PII-SENTINEL-45",
+        "amount": -1.88,
+        "timestamp": 1682695543000,
+        "image": "https://www.fiat24.com/img/mastercard.png",
+        "txId": "0x5ed3716d8b78c4d749e5addcf4e96f299d1509ba91a61d5f501ce6bac08130f1",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      },
+      {
+        "title": "PII-SENTINEL-46",
+        "subtitle": "PII-SENTINEL-47",
+        "amount": "29405.00",
+        "timestamp": 1682673347000,
+        "image": "https://www.fiat24.com/api/avatar/903",
+        "txId": "0xded890834ca450dbf64e8eaad51cbc99edb027425980695e0e928f794a41e9cb",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      },
+      {
+        "title": "PII-SENTINEL-48",
+        "subtitle": "PII-SENTINEL-49",
+        "amount": -1.93,
+        "timestamp": 1682666818000,
+        "image": "https://www.fiat24.com/img/mastercard.png",
+        "txId": "0x135f26c4276c4b08789e4151f19dc669c7568933d8b33587e351d7e376ad8edf",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      },
+      {
+        "title": "PII-SENTINEL-50",
+        "subtitle": "PII-SENTINEL-51",
+        "amount": -5.02,
+        "timestamp": 1682604232000,
+        "image": "https://www.fiat24.com/img/mastercard.png",
+        "txId": "0x1a5fcc4fb667793c70ff2fa563c98bf148484164b08fc58008f24ad096edf2d7",
+        "from": 9105,
+        "to": 903,
+        "blockHash": "0x6b7a54812f2d344390c29c001f9ee81cf74cb594d95551ef94f64f51b1f0d810",
+        "blockNumber": "238639288"
+      }
+    ]
+  }
+}

@@ -1,23 +1,35 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import * as contract from "@qntx/wallet-engine/gateway/contract";
 import {
   PROVIDERS_HEADER,
   PROVIDER_PIN_HEADER,
+  approvalsPath,
   bridgeQuote,
   health,
   historyPath,
+  nftCollection,
+  nftCollectionPath,
+  nftFloor,
+  nftFloorPath,
+  nftItem,
+  nftItemPath,
+  nftItems,
+  nftItemsPath,
   phishingListPath,
   prices,
+  pricesPath,
   rpcPath,
   servedNetworks,
   swapQuote,
   swapQuoteSolana,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import type { RateLimiter } from "../src/limits.ts";
 import { UPSTREAM_TIMEOUT_MS } from "../src/providers/forward.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
-import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
+import type { GatewayNetwork } from "../src/types.ts";
 import {
   SEPOLIA,
   SIGNET,
@@ -106,6 +118,26 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     request: [historyPath(ETH), post({ address: OWNER })],
     upstreams: [ALCHEMY],
   },
+  "POST /v1/approvals/:caip2": {
+    request: [approvalsPath(ETH), post({ address: OWNER })],
+    upstreams: [ALCHEMY],
+  },
+  [`POST ${nftItems.path}`]: {
+    request: [nftItemsPath(ETH), post({ owner: OWNER })],
+    upstreams: [`${ALCHEMY}/getNFTsForOwner`],
+  },
+  [`POST ${nftItem.path}`]: {
+    request: [nftItemPath(ETH), post({ contract: USDC, tokenId: "1" })],
+    upstreams: [`${ALCHEMY}/getNFTMetadata`],
+  },
+  [`POST ${nftCollection.path}`]: {
+    request: [nftCollectionPath(ETH), post({ collection: USDC })],
+    upstreams: [`${ALCHEMY}/getContractMetadata`],
+  },
+  [`POST ${nftFloor.path}`]: {
+    request: [nftFloorPath(ETH), post({ collection: USDC })],
+    upstreams: [`${ALCHEMY}/getFloorPrice`],
+  },
   "GET /v1/esplora/:caip2/*": {
     request: get(`/v1/esplora/${SIGNET}/fee-estimates`),
     upstreams: ["https://a.test/btc", "https://b.test/btc"],
@@ -135,8 +167,13 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     ),
     upstreams: ["https://app.across.to"],
   },
+  "GET /v1/push": null,
+  "PUT /v1/push/:family/subscription": null,
+  "DELETE /v1/push/:family/subscription": null,
+  "POST /v1/push/:family/transactions": null,
+  "POST /hooks/alchemy": null,
   [`POST ${prices.path}`]: {
-    request: [prices.path, post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
+    request: [pricesPath("evm"), post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
     upstreams: [COINGECKO_API, DEFILLAMA_API],
   },
   "POST /v1/tron/:caip2/*": {
@@ -165,6 +202,7 @@ const appWith = (answer: Upstream, now: () => number = Date.now) => {
       cache: noCache,
       coingecko: { apiKey: "k" },
     },
+    nfts: { cache: noCache },
   });
   return { app, up };
 };
@@ -234,6 +272,11 @@ const OUTAGES: ReadonlyArray<readonly [string, Upstream]> = [
 const PROBED = new Set([
   "POST /v1/rpc/:caip2",
   "POST /v1/history/:caip2",
+  "POST /v1/approvals/:caip2",
+  `POST ${nftItems.path}`,
+  `POST ${nftItem.path}`,
+  `POST ${nftCollection.path}`,
+  `POST ${nftFloor.path}`,
   "GET /v1/esplora/:caip2/*",
   "POST /v1/esplora/:caip2/*",
   "POST /v1/tron/:caip2/*",
@@ -244,6 +287,30 @@ const forwardedRoutes = Object.entries(ROUTES).filter(
   (entry): entry is [string, Forwarded] => entry[1] !== null,
 );
 
+/**
+ * The contract endpoints (`METHOD path`) no registered route serves. A `…/*` route serves every
+ * narrower contract path under it — esplora's `/tx`, tron's method paths — so coverage is an exact
+ * match or a wildcard prefix.
+ */
+const uncoveredContractRoutes = (routeKeys: ReadonlyArray<string>): string[] =>
+  Object.values(contract as Record<string, unknown>)
+    .filter(
+      (value): value is { readonly method: string; readonly path: string } =>
+        typeof value === "object" &&
+        value !== null &&
+        "method" in value &&
+        "path" in value &&
+        typeof value.method === "string" &&
+        typeof value.path === "string",
+    )
+    .map((route) => `${route.method} ${route.path}`)
+    .filter(
+      (key) =>
+        !routeKeys.some(
+          (route) => route === key || (route.endsWith("/*") && key.startsWith(route.slice(0, -1))),
+        ),
+    );
+
 describe("shared upstream breakers", () => {
   it("lists every registered route", () => {
     const { app } = appWith(() => new Response("{}"));
@@ -251,6 +318,12 @@ describe("shared upstream breakers", () => {
       app.routes.filter((route) => route.method !== "ALL").map((r) => `${r.method} ${r.path}`),
     );
     expect([...registered].toSorted()).toStrictEqual(Object.keys(ROUTES).toSorted());
+  });
+
+  it("the route table covers every contract endpoint", () => {
+    /* A contract endpoint the app never registered would pass "lists every registered route"
+       unnoticed — enumerate the contract module and hold the table to it. */
+    expect(uncoveredContractRoutes(Object.keys(ROUTES))).toStrictEqual([]);
   });
 
   it.each([
@@ -463,6 +536,7 @@ describe("upstream cost metering", () => {
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share },
       zeroEx: { apiKey: "k" },
       prices: { cache: noCache, coingecko: { apiKey: "k" } },
+      nfts: { cache: noCache },
     });
     await metered.request(...request);
     // One share charge per upstream call, keyed by that call's account and the client's prefix.

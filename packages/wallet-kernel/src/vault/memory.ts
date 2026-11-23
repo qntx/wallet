@@ -42,9 +42,9 @@ function requireMeta(meta: VaultMeta | undefined): VaultMeta {
 /**
  * In-memory RecordStore for the Node host and kernel tests. Loads and commits deep-copy every
  * Uint8Array, so callers can never mutate stored state. `commit` applies ops to a clone and swaps
- * atomically: a failing precondition (`init`, `expect-revision`, a counter op on an empty store)
- * leaves the store untouched. Content ops bump `meta.revision` once per commit; an `init` commit
- * writes its meta verbatim (revision stays as the initializer set it).
+ * atomically: a failing precondition (`init`, `expect-revision`) leaves the store untouched.
+ * Content ops bump `meta.revision` once per commit; an `init` commit writes its meta verbatim
+ * (revision stays as the initializer set it).
  */
 /**
  * Applies a commit's ops to a vault image and returns the next image — the single implementation of
@@ -75,18 +75,6 @@ export function applyStoreOps(image: VaultImage, ops: ReadonlyArray<StoreOp>): V
       case "set-key-id":
         meta = { ...requireMeta(meta), keyId: op.keyId };
         bump = true;
-        break;
-      case "record-failure": {
-        const current = requireMeta(meta);
-        meta = {
-          ...current,
-          failedAttempts: current.failedAttempts + 1,
-          lastFailureAt: op.at,
-        };
-        break;
-      }
-      case "reset-failures":
-        meta = { ...requireMeta(meta), failedAttempts: 0, lastFailureAt: 0 };
         break;
       case "put-record":
         records = [

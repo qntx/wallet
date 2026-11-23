@@ -391,6 +391,29 @@ describe("chain prompts", () => {
     expect(text("zh-Hans", revoke)).toBe(`撤销 ${SPENDER} 对 ${USDC} 全部代币的授权\n手续费未知`);
   });
 
+  it("approval clear and delegate revoke lines", () => {
+    const NFT = "0x06012c8cf97BEaD5deAe237070F9587f8E7A266d";
+    const cleared = {
+      kind: "approval-cleared",
+      asset: NFT,
+      value: "42",
+      verified: false,
+    } as const;
+    expect(text("en", cleared)).toBe(`Clear the approval on ${NFT} #42\nFee unknown`);
+    expect(text("zh-Hans", cleared)).toBe(`清除 ${NFT} #42 的单个授权\n手续费未知`);
+    const revoked = {
+      kind: "delegate-revoked",
+      account: "TokenAcct1111111111111111111111111111111",
+      verified: false,
+    } as const;
+    expect(text("en", revoked)).toBe(
+      "Revoke the delegate of token account TokenAcct1111111111111111111111111111111\nFee unknown",
+    );
+    expect(text("zh-Hans", revoked)).toBe(
+      "撤销代币账户 TokenAcct1111111111111111111111111111111 的代理授权\n手续费未知",
+    );
+  });
+
   it("partial leads with the other-outflows warning", () => {
     const intent: PromptIntent = {
       ...ethTransfer,
@@ -3901,6 +3924,8 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24PayoutPurpose: ["42"],
     fiat24PayoutReference: ["ref"],
     fiat24OpenAccount: ["10365"],
+    clearApproval: ["asset", "1"],
+    delegateRevoked: ["a"],
   };
   const rendered = (value: unknown): ReadonlyArray<string> => {
     if (typeof value === "string") {

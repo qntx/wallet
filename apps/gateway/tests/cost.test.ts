@@ -8,7 +8,13 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 import type { EvmRpcMethod, SolanaRpcMethod } from "@qntx/wallet-engine/gateway/contract";
 
-import { ALCHEMY_COSTS, rpcCost } from "../src/budget/costs.ts";
+import {
+  ALCHEMY_COSTS,
+  nftCost,
+  requestCost,
+  rpcCost,
+  transfersCost,
+} from "../src/budget/costs.ts";
 import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { localBudget } from "../src/budget/local.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
@@ -48,6 +54,22 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
     source: "https://test.invalid",
   },
 };
+
+describe("cost rows", () => {
+  const requestModel: CostModel = { kind: "request", request: { units: 1, source: "test" } };
+
+  it("refuses a lookup on a model that does not price it", () => {
+    expect(() => requestCost(ALCHEMY_COSTS)).toThrow(
+      "requestCost on an rpc-priced account — the provider is misconfigured",
+    );
+    expect(() => transfersCost(requestModel)).toThrow(
+      "transfersCost on an account without a transfers row",
+    );
+    expect(() => nftCost(requestModel, "getNFTMetadata")).toThrow(
+      "nftCost on an account without a getNFTMetadata row",
+    );
+  });
+});
 const PER_MINUTE = 40_000 * (60 / 5);
 /** The share limiter sells one IP at most 5 % of the account's per-minute budget. */
 const SHARE_CAP = PER_MINUTE / 20;

@@ -3,10 +3,16 @@ import type { UserConfig } from "vite-plus";
 
 const config: UserConfig = defineConfig({
   pack: {
-    entry: { index: "src/index.ts", "secure-input": "src/secure-input.ts" },
+    entry: { index: "src/index.ts", "secure-input": "src/secure-input.ts", cloud: "src/cloud.ts" },
     tsconfig: "tsconfig.src.json",
     deps: {
-      neverBundle: ["@qntx/wallet", "@qntx/wallet-kernel", "@qntx/nostr", "cborg"],
+      neverBundle: [
+        "@qntx/wallet",
+        "@qntx/wallet-engine",
+        "@qntx/wallet-kernel",
+        "@qntx/nostr",
+        "cborg",
+      ],
     },
     dts: {
       generator: "tsgo",
@@ -14,6 +20,11 @@ const config: UserConfig = defineConfig({
     sourcemap: true,
   },
   test: {
+    // Cross-package imports must see the engine source — the conformance suite asserts
+    // `instanceof` on its classes, so @qntx/wallet-engine resolves to src, not dist.
+    alias: {
+      "@qntx/wallet-engine": new URL("../wallet-engine/src/index.ts", import.meta.url).pathname,
+    },
     include: ["tests/**/*.{test,spec}.ts"],
     coverage: {
       provider: "v8",

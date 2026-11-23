@@ -67,7 +67,7 @@ type IxCall = {
   readonly amount?: bigint | undefined;
   readonly decimals?: number | undefined;
   readonly mint?: string | undefined;
-  /** An unchecked Transfer's source token account — the instruction names no mint. */
+  /** The token account the instruction names: an unchecked Transfer's source, a Revoke's target. */
   readonly tokenAccount?: string | undefined;
   readonly units?: number | undefined;
   readonly microLamports?: bigint | undefined;
@@ -205,8 +205,11 @@ const classifyIx = (
       return { kind: "token-initialize-account" };
     }
     if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) {
-      /* Revoke [account, owner] — drops a delegate; plumbing, nothing moves. */
-      return { kind: "token-revoke" };
+      /* Revoke [account, owner] — drops the token account's delegate; nothing moves. */
+      return {
+        kind: "token-revoke",
+        tokenAccount: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
+      };
     }
     return { kind: "other" };
   }
@@ -598,6 +601,13 @@ const decodeTransaction = (
         },
         verified: token !== undefined,
         burn: true,
+      });
+    }
+    if (call.kind === "token-revoke" && call.tokenAccount !== undefined) {
+      approvals.push({
+        kind: "delegate-revoked",
+        account: call.tokenAccount,
+        verified: false,
       });
     }
     if (call.kind === "token-approve") {

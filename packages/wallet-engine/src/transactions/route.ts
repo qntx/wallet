@@ -221,6 +221,13 @@ export type PrepareParams = Omit<SendParams, "verify">;
 
 export type { ChainRequestMethod } from "../requests/types.ts";
 
+/** One standing EVM approval to remove. */
+export type EvmRevokeTarget =
+  | { readonly kind: "erc20"; readonly token: string; readonly spender: string }
+  | { readonly kind: "permit2"; readonly token: string; readonly spender: string }
+  | { readonly kind: "operator"; readonly contract: string; readonly operator: string }
+  | { readonly kind: "nft"; readonly contract: string; readonly tokenId: bigint };
+
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
   | ({ readonly method: "send"; readonly origin?: DappOrigin } & PrepareParams)
@@ -256,6 +263,17 @@ export type ChainRequestInput =
       readonly fee: PrepareParams["fee"];
     }
   | {
+      readonly method: "evm-revoke";
+      readonly account: AccountRef;
+      readonly network: string;
+      /**
+       * 1..EVM_BATCH_LIMIT distinct targets; more than one needs the account delegated to the
+       * wallet's delegator.
+       */
+      readonly targets: ReadonlyArray<EvmRevokeTarget>;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
       /** The Hyperliquid CCTP deposit — `depositForBurnWithHook` on the route's messenger. */
       readonly method: "evm-cctp";
       readonly account: AccountRef;
@@ -286,17 +304,16 @@ export type ChainRequestInput =
       readonly network: string;
       /** The ERC-721 or ERC-1155 contract. */
       readonly contract: string;
-      readonly tokenId: bigint;
+      /** The ids sent — one for ERC-721, up to `EVM_BATCH_LIMIT` for ERC-1155. */
+      readonly items: ReadonlyArray<{ readonly tokenId: bigint; readonly amount?: bigint }>;
       readonly to: string;
-      /** ERC-1155 only — the units sent; ERC-721 ignores it. */
-      readonly amount?: bigint;
       readonly fee: PrepareParams["fee"];
     }
   | {
-      readonly method: "solana-core-send";
+      readonly method: "solana-nft-send";
       readonly account: AccountRef;
       readonly network: string;
-      /** The Core asset account. */
+      /** The SPL mint or Core asset account. */
       readonly asset: string;
       readonly to: string;
       readonly fee: PrepareParams["fee"];
@@ -316,6 +333,14 @@ export type ChainRequestInput =
         | { readonly kind: "stake"; readonly amount: bigint }
         | { readonly kind: "request"; readonly amount: bigint }
         | { readonly kind: "claim"; readonly requestIds: ReadonlyArray<bigint> };
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "solana-revoke";
+      readonly account: AccountRef;
+      readonly network: string;
+      /** 1..10 distinct token accounts the signer owns whose delegate is removed — one Revoke each. */
+      readonly tokenAccounts: ReadonlyArray<string>;
       readonly fee: PrepareParams["fee"];
     }
   | {
@@ -437,7 +462,12 @@ export type PreparedRequest = {
 };
 
 export type SignatureResult = {
-  readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+  readonly kind:
+    | "evm.personal-message"
+    | "evm.fiat24-session"
+    | "evm.typed-data"
+    | "tron.message"
+    | "tron.typed-data";
   readonly signature: Uint8Array;
 };
 

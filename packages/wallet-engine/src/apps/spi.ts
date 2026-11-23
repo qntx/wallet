@@ -7,6 +7,7 @@
  * carries.
  */
 export type {
+  AppAuthority,
   AppContext,
   AppDefinition,
   AppDetail,
@@ -30,7 +31,7 @@ export type { Decimal } from "../decimal.ts";
 export { EngineStoreError } from "../errors.ts";
 export type { EngineLogger } from "../events.ts";
 export type { AppAvailability } from "../gateway/contract/eligibility.ts";
-export { RequestEndedError } from "../requests/controller.ts";
+export { NonceConflictError, RequestEndedError } from "../requests/controller.ts";
 export { readJson } from "../store/json.ts";
 export type { SetTimer } from "../timer.ts";
 export { timeoutSignal } from "../timer.ts";

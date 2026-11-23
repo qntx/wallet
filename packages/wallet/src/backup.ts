@@ -3,16 +3,21 @@
 // validates structure (bounded lengths, unknown fields rejected via the shared validators), so
 // nothing garbage reaches the kernel.
 
-import type { BackupHeaderWire } from "./protocol/index.ts";
+import { base64urlnopad } from "@scure/base";
+
+import type { BackupHeaderKey, BackupHeaderWire } from "./protocol/index.ts";
 import { backupEnvelope, backupHeader, validate } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
 
 export type BackupHeaderWallet = BackupHeaderWire["wallets"][number];
+export type { BackupHeaderKey } from "./protocol/index.ts";
 
 export type BackupHeader = {
   readonly version: 1;
   readonly createdAt: number;
   readonly wallets: ReadonlyArray<BackupHeaderWallet>;
+  /** Imported keys carried by the payload; empty when there are none. */
+  readonly keys: ReadonlyArray<BackupHeaderKey>;
   /** The factor kinds the envelope can be unwrapped with. */
   readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
@@ -50,6 +55,28 @@ export function parseBackupHeader(envelope: string): BackupHeader {
     version: 1,
     createdAt: parsed.createdAt,
     wallets: header.wallets,
+    keys: header.keys ?? [],
     factorKinds,
   };
+}
+
+/**
+ * The passkey credential ids the envelope's factor entries name — the allow-list a restore's
+ * passkey assertion is scoped to (a restored vault's own credentials are a different set).
+ */
+export function backupPasskeyCredentialIds(envelope: string): ReadonlyArray<Uint8Array> {
+  const parsed = validate(backupEnvelope, json(envelope, "envelope"));
+  if (parsed === undefined) {
+    integrity("malformed envelope");
+  }
+  return parsed.factors.flatMap((factor) => {
+    if (factor.kind !== "passkey") {
+      return [];
+    }
+    try {
+      return [base64urlnopad.decode(factor.credentialId)];
+    } catch {
+      return integrity("invalid credential encoding");
+    }
+  });
 }

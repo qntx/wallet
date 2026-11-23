@@ -15,14 +15,17 @@ npm install @qntx/wallet-native @qntx/wallet @qntx/nostr-native @qntx/spark-nati
 ```
 
 Peer dependencies: `@qntx/wallet`, `@qntx/nostr-native`, `@qntx/spark-native`, `react-native`
-and `react-native-nitro-modules`. The exact ranges are this package's `peerDependencies` — the
-`@qntx/*` pins are exact because the host/kernel protocol and the bundled kernel artifacts are
-built against those releases.
+and `react-native-nitro-modules`; `@qntx/wallet-engine` is an optional peer needed only by the
+`/cloud` subpath. The exact ranges are this package's `peerDependencies` — the `@qntx/*` pins
+are exact because the host/kernel protocol and the bundled kernel artifacts are built against
+those releases.
 
-The package registers one Nitro hybrid object, `KernelHost`. Everything else the kernel needs —
-keystore, passkey ceremonies, lifecycle, pbkdf2, the vault directory — is injected as JSI host
-objects inside the kernel runtime and is never registered with Nitro. **No Nitro patch or
-`nitro::install` call is needed in the consuming app.**
+The package registers four Nitro hybrid objects: `KernelHost`, `SecureInputView` (the card's
+secure-input surface), `CloudKitStore` on iOS and `GoogleDriveAuth` on Android (the cloud-backup
+transports below). Everything else the kernel needs — keystore, passkey ceremonies, lifecycle,
+pbkdf2, the vault directory — is injected as JSI host objects inside the kernel runtime and is
+never registered with Nitro. **No Nitro patch or `nitro::install` call is needed in the
+consuming app.**
 
 ## Expo configuration
 
@@ -46,9 +49,26 @@ export default {
 - `android.minSdkVersion: 30` — required: per-use Keystore keys that accept a biometric _or_ the
   device credential need API 30 (`setUserAuthenticationParameters` semantics).
 
-## Card surfaces (NFC reader, secure input)
+## Card surfaces (experimental)
 
-To talk to a qntx card the host app needs, on iOS:
+Card wallets are not available in this release: the kernel's card protocol client is not wired to
+any command or API. `SecureInput` and the native NFC reader are groundwork whose API may change in
+any release without a major bump.
+
+The library's Android manifest declares nothing: the NFC and overlay entries stay in the host
+app until card wallets ship. To build a host that exercises the card surfaces, declare them
+yourself — with Expo (`android.permissions` plus a `uses-feature` manifest mod) or in
+`android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.NFC" />
+  <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
+  <uses-feature android:name="android.hardware.nfc" android:required="false" />
+</manifest>
+```
+
+Once card wallets ship, the host app will also need, on iOS:
 
 - The entitlement `com.apple.developer.nfc.readersession.formats` = `["TAG"]`.
 - `ios.infoPlist.NFCReaderUsageDescription` — the purpose string shown under the NFC system
@@ -87,7 +107,7 @@ const wallet = await createNativeWallet({
     backupSalt: "example/backup",
   },
   autoLock: { platform: "native", backgroundSeconds: 60 },
-  verifyEvent, // e.g. createEventVerifier(signing) from @qntx/nostr-native
+  verifyEvent, // e.g. createEventVerifier (@qntx/nostr/core) over signing from @qntx/nostr-native
 });
 ```
 
@@ -124,6 +144,47 @@ the wallet app in its association files.
   `https://<rpId>/.well-known/assetlinks.json` with
   `delegate_permission/common.get_login_creds` naming the app's package and SHA-256 signing
   certificate. Android passkeys are implemented via `androidx.credentials`.
+
+## Cloud backup transports
+
+The `@qntx/wallet-native/cloud` subpath adapts the platform cloud to the engine's `CloudStore`
+port. Both transports move **encrypted backup envelopes only** — every byte the kernel uploads
+is ciphertext produced inside the enclave; the backup key never leaves it. `GoogleDriveAuth`
+additionally returns a `drive.appdata` OAuth access token: that scope touches only the app's
+own hidden Drive folder and cannot move wallet value, so neither hybrid is a secret-holding
+capability and registering them with Nitro is allowed.
+
+```ts
+import { createICloudStore, createGoogleDriveStore } from "@qntx/wallet-native/cloud";
+
+const cloud =
+  Platform.OS === "ios"
+    ? createICloudStore({ container: "iCloud.org.qntx.wallet" })
+    : createGoogleDriveStore();
+
+const engine = createWalletEngine({ cloud });
+// iOS only: re-sync when the iCloud account changes under the app.
+cloud.onAccountChange?.(() => engine.backup.sync());
+```
+
+- Both `createICloudStore` and `createGoogleDriveStore` lazily create their Nitro object on
+  first use; importing the subpath alone registers nothing.
+- Failures reject with `CloudStoreError`; a `auth-required` on Android means call
+  `store.authorize()` from a user action to run the Google consent screen, then retry the
+  operation.
+- **iOS** — the app needs the iCloud capability with CloudKit enabled and the container
+  identifier listed under `com.apple.developer.icloud-container-identifiers` (the harness sets
+  both from `EXPO_PUBLIC_ICLOUD_CONTAINER` at prebuild). The `QntxWalletBackup` record zone and
+  the `Backup` record type are created by the store; the zone's schema still needs deploying to
+  production in the CloudKit console — see the cloud-store owner-setup notes (§1). **A missing
+  iCloud entitlement crashes `CKContainer` at first use** — that is the platform surfacing a
+  configuration error, not a store fault.
+- **Android** — silent token fetch works out of the box only once the project has an OAuth
+  client (Android type, matching package + signing SHA-1) in the Google Cloud project
+  (owner-setup §2). Without it `accessToken` reports `failed` (`not-configured`); before user
+  consent it reports `auth-required`.
+- Requires `@qntx/wallet-engine` as an optional peer — only this subpath imports it, so apps
+  that do not ship cloud backup do not pull the engine in for it.
 
 ## Vault storage and backup
 

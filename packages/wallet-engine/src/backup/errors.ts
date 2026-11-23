@@ -1,5 +1,11 @@
 /** BackupController error categories — never carry file contents, digests or secrets. */
-export type BackupErrorCategory = "cloud" | "conflict" | "unavailable" | "weak-password";
+export type BackupErrorCategory =
+  | "cloud"
+  | "conflict"
+  | "unavailable"
+  | "weak-password"
+  | "quota"
+  | "auth-required";
 
 export class BackupControllerError extends Error {
   readonly category: BackupErrorCategory;

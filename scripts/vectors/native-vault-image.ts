@@ -13,11 +13,9 @@ const image = (
 ): { meta: unknown; records: unknown[]; factors: unknown[] } => ({ meta, records, factors });
 
 const meta = (revision: number) => ({
-  format: 5,
+  format: 6,
   revision,
   keyId: "0123456789abcdef0123456789abcdef",
-  failedAttempts: 0,
-  lastFailureAt: 0,
 });
 
 const empty = image(null);

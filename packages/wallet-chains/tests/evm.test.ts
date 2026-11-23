@@ -695,6 +695,34 @@ describe("approval and transfer decode", () => {
     expect(down.verifiability).toBe("partial");
   });
 
+  it("approve with the zero spender clears the token approval — it grants nothing", () => {
+    const sig = "function approve(address spender, uint256 amount)";
+    const intent = decode(calldata(sig, [ZERO, 42n]));
+    expect(intent).toMatchObject({ summary: "approve", verifiability: "partial", outflows: [] });
+    expect(intent.approvals).toStrictEqual([
+      { kind: "approval-cleared", asset: TOKEN, value: "42", verified: false },
+    ]);
+    /* The zero amount reads the same: it clears the token's approval, not an allowance. */
+    expect(decode(calldata(sig, [ZERO, 0n])).approvals[0]).toMatchObject({
+      kind: "approval-cleared",
+      value: "0",
+    });
+  });
+
+  it("increaseAllowance and decreaseAllowance keep the allowance reading on a zero spender", () => {
+    for (const [sig, change] of [
+      ["function increaseAllowance(address spender, uint256 amount)", "increase"],
+      ["function decreaseAllowance(address spender, uint256 subtractedValue)", "decrease"],
+    ] as const) {
+      const intent = decode(calldata(sig, [ZERO, 5n]));
+      expect(intent.approvals[0]).toMatchObject({
+        kind: "allowance",
+        spender: ZERO,
+        change,
+      });
+    }
+  });
+
   it("decreaseAllowance with a wrong selector is opaque", () => {
     const data = calldata("function decreaseAllowance(address spender, uint256 subtractedValue)", [
       SPENDER,

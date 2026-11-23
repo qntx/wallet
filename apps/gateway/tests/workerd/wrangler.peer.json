@@ -15,6 +15,11 @@
         "name": "PROVIDER_BUDGET",
         "class_name": "ProviderBudgetObject",
         "script_name": "gateway-harness-a"
+      },
+      {
+        "name": "PUSH",
+        "class_name": "PushObject",
+        "script_name": "gateway-harness-a"
       }
     ]
   },
@@ -38,6 +43,11 @@
       "name": "SHARE_LIMITER",
       "namespace_id": "1004",
       "simple": { "limit": 1000, "period": 60 }
+    },
+    {
+      "name": "PUSH_LIMITER",
+      "namespace_id": "1005",
+      "simple": { "limit": 60, "period": 60 }
     }
   ]
 }

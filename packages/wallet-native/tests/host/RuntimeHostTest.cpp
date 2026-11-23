@@ -7,12 +7,14 @@
 #include "host/CardReader.hpp"
 #include "host/KernelFile.hpp"
 #include "host/KernelSlot.hpp"
+#include "host/VaultAnchor.hpp"
 #include "host/Lifecycle.hpp"
 #include "host/SecureInput.hpp"
 #include "HostCardReader.hpp"
 #include "HostKeystore.hpp"
 #include "HostPasskey.hpp"
 #include "HostNostrNative.hpp"
+#include "HostVaultAnchor.hpp"
 #include "HostQntxSpark.hpp"
 #include "kernel.hpp"
 
@@ -807,7 +809,7 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "argon2id,backends,cardReader,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,secureInput,setTimer"
+                "anchor,argon2id,backends,cardReader,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,secureInput,setTimer"
                 "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
                 "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
@@ -2105,6 +2107,128 @@ __send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
   return g_failures;
 }
 
+// The __qntx.anchor JS contract, exercised inside the real runtime: undefined
+// on an empty anchor, replace stores when expected is absent, a stale
+// expectation writes nothing, the returned bytes are a copy (mutating them
+// does not corrupt the stored record), non-byte inputs throw, a second
+// runtime reads the same record back, and a scripted platform failure
+// surfaces as a JS throw on either entry point.
+int anchorContract() {
+  qntxTestAnchor::reset();
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var out = [];
+out.push("read:" + (__qntx.anchor.read() === undefined ? "undefined" : "not-undefined"));
+var view = new Uint8Array([9, 1, 2, 3, 4, 8]).subarray(1, 5);
+out.push("create:" + __qntx.anchor.replace(view));
+var back = __qntx.anchor.read();
+out.push("back:" + (back === undefined ? "undefined" : Array.from(back).join(",")));
+back[0] = 77;
+var again = __qntx.anchor.read();
+out.push("copy:" + (again[0] === 1 ? "isolated" : "aliased"));
+out.push("swap:" + __qntx.anchor.replace(new Uint8Array([5, 6]), again));
+out.push("stale:" + __qntx.anchor.replace(new Uint8Array([7]), view));
+try {
+  __qntx.anchor.replace({ length: 4 });
+  out.push("object:no-throw");
+} catch (e) {
+  out.push("object:threw");
+}
+try {
+  __qntx.anchor.replace("bytes");
+  out.push("string:no-throw");
+} catch (e) {
+  out.push("string:threw");
+}
+try {
+  __qntx.anchor.replace(new Uint8Array(1), "nope");
+  out.push("expected:no-throw");
+} catch (e) {
+  out.push("expected:threw");
+}
+__send(out.join("|"));
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "anchor-contract: no report");
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
+  }
+  std::string report;
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    if (!box.posts.empty()) {
+      report = box.posts[0];
+    }
+  }
+  CHECK(report.find("read:undefined") != std::string::npos, "anchor-contract: empty anchor must read undefined");
+  CHECK(report.find("create:true") != std::string::npos, "anchor-contract: absent-expected create must win");
+  CHECK(report.find("back:1,2,3,4") != std::string::npos,
+      "anchor-contract: subarray bytes must persist exactly");
+  CHECK(report.find("copy:isolated") != std::string::npos,
+      "anchor-contract: read must return a copy, not stored bytes");
+  CHECK(report.find("swap:true") != std::string::npos, "anchor-contract: matching-expected swap must win");
+  CHECK(report.find("stale:false") != std::string::npos, "anchor-contract: stale expected must lose");
+  CHECK(qntxTestAnchor::stored() == std::optional<std::vector<uint8_t>>({5, 6}),
+      "anchor-contract: a lost CAS must leave the record untouched");
+  CHECK(report.find("object:threw") != std::string::npos, "anchor-contract: plain object must throw");
+  CHECK(report.find("string:threw") != std::string::npos, "anchor-contract: string must throw");
+  CHECK(report.find("expected:threw") != std::string::npos, "anchor-contract: non-byte expected must throw");
+
+  // A second runtime sees the same anchor — the record lives in the platform,
+  // not in the runtime.
+  Mailbox box2;
+  const std::string js2 = std::string(kSendHelper) + R"JS(
+var back = __qntx.anchor.read();
+__send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
+)JS";
+  {
+    auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), "");
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)), "anchor-contract: reload no report");
+    rt2->destroy();
+    CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
+  }
+  {
+    std::lock_guard<std::mutex> lock(box2.m);
+    CHECK(!box2.posts.empty() && box2.posts[0] == "r:5,6",
+        "anchor-contract: second runtime must read the same record");
+  }
+
+  // A platform failure surfaces as a JS throw on both entry points.
+  qntxTestAnchor::failAll();
+  Mailbox box3;
+  const std::string js3 = std::string(kSendHelper) + R"JS(
+var out = [];
+try {
+  __qntx.anchor.read();
+  out.push("read:no-throw");
+} catch (e) {
+  out.push("read:threw");
+}
+try {
+  __qntx.anchor.replace(new Uint8Array(1));
+  out.push("replace:no-throw");
+} catch (e) {
+  out.push("replace:threw");
+}
+__send(out.join("|"));
+)JS";
+  {
+    auto rt3 = KernelRuntime::start(sourceScript(js3), hooksFor(box3), "");
+    CHECK(box3.waitPosts(1, std::chrono::seconds(30)), "anchor-contract: failure case no report");
+    rt3->destroy();
+    CHECK(rt3->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
+  }
+  {
+    std::lock_guard<std::mutex> lock(box3.m);
+    CHECK(!box3.posts.empty() &&
+              box3.posts[0].find("read:threw") != std::string::npos &&
+              box3.posts[0].find("replace:threw") != std::string::npos,
+        "anchor-contract: a platform failure must surface as a JS throw");
+  }
+  return g_failures;
+}
+
 int queueCap() {
   Mailbox box;
   bool integrity = false;
@@ -2613,6 +2737,7 @@ int main(int argc, char** argv) {
       {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
+      {"anchor-contract", [](const char*) { return anchorContract(); }},
       {"kernel-slot", [](const char*) { return kernelSlot(); }},
       {"predecessor-chain", [](const char*) { return predecessorChainReleased(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},

@@ -94,6 +94,21 @@ const amountField = z.union([
 /** `assetV2` rows carry the account's TRC-10 balances: `{key: "<asset id>", value: <amount>}`. */
 const trc10Balance = z.looseObject({ key: z.string(), value: amountField });
 
+/** One permission key — `address` follows the request's `visible` flag (base58 when true). */
+const tronPermissionKey = z.looseObject({
+  address: z.optional(z.string()),
+  weight: z.optional(intField),
+});
+
+/** An account permission (owner / active / witness): who may sign, and how much weight counts. */
+const tronPermission = z.looseObject({
+  type: z.optional(z.union([z.string(), z.number()])),
+  id: z.optional(z.number()),
+  permission_name: z.optional(z.string()),
+  threshold: z.optional(intField),
+  keys: z.optional(z.array(tronPermissionKey)),
+});
+
 /** An account row: an absent account answers `{}`. `type === "Contract"` names a contract. */
 export const tronAccount = z.looseObject({
   /** Present on every existing account — proto3 omits `balance`/`type` when they are zero. */
@@ -134,6 +149,10 @@ export const tronAccount = z.looseObject({
   ),
   delegated_frozenV2_balance_for_bandwidth: z.optional(amountField),
   acquired_delegated_frozenV2_balance_for_bandwidth: z.optional(amountField),
+  /** Permissions: a key set with a threshold — any key that is not the owner is a grant. */
+  owner_permission: z.optional(tronPermission),
+  witness_permission: z.optional(tronPermission),
+  active_permission: z.optional(z.array(tronPermission)),
 });
 export const tronAccountResponse = z.union([tronAccount, tronEmpty]);
 export type TronAccount = z.output<typeof tronAccount>;

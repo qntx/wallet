@@ -306,6 +306,17 @@ describe("assessApprovals", () => {
     expect(assess(allowance("set", "1000", false))).toStrictEqual([]);
   });
 
+  it("an approval clear and a delegate revoke raise nothing", () => {
+    const cleared = {
+      kind: "approval-cleared",
+      asset: KNOWN,
+      value: "42",
+      verified: false,
+    } as const;
+    const revoked = { kind: "delegate-revoked", account: KNOWN, verified: false } as const;
+    expect(assess(cleared, revoked)).toStrictEqual([]);
+  });
+
   it("lists the danger first and deduplicates", () => {
     expect(
       assess(allowance("set", "1", true), allowance("set", "2", true), operator(true)),

@@ -32,6 +32,11 @@
   Hermes runtime.
 - Native capabilities that hold, produce or unwrap secrets (keystore, passkey, store) are
   injected into the kernel runtime as JSI host objects and are never registered with Nitro.
+- Cloud-backup transports (`@qntx/wallet-native/cloud`: `CloudKitStore`, `GoogleDriveAuth`) move
+  only backup ciphertext and a `drive.appdata` access token that cannot move value, so they are not
+  secret-holding capabilities and are registered with Nitro. Every `CloudStore` implementation passes
+  the shared conformance suite (`packages/wallet-engine/tests/cloud/conformance.ts`); the backup
+  controller never overwrites a version and deletes only versions it wrote or merged.
 - Protocol library versions are pinned exactly and recorded in the kernel manifest;
   backends' abiVersion is checked at kernel start.
 - Every vault, backup, template, protocol and chain signing format has fixed vectors in

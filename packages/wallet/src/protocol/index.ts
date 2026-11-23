@@ -41,6 +41,21 @@ export const PROTOCOL_VERSION = 3;
  */
 export const UNATTRIBUTED_ID = 0;
 
+/**
+ * Param field names whose bytes are secrets: the kernel consumes and wipes them, so each must own
+ * its memory.
+ */
+export const SECRET_FIELDS = [
+  "password",
+  "prf",
+  "prfWallet",
+  "prfBackup",
+  "mnemonic",
+  "passphrase",
+  "secret",
+  "answers",
+] as const;
+
 export type { NullValue } from "./validate.ts";
 export type { ProtocolValue } from "./validate.ts";
 
@@ -330,6 +345,7 @@ export { verifier } from "./core.ts";
 export type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
+  BackupHeaderKey,
   BackupHeaderWallet,
   BackupHeaderWire,
   BackupInfo,

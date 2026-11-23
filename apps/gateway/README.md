@@ -4,30 +4,35 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                                                                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                                                               |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                               |
-| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                           |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                                        |
-| `POST /v1/tron/:caip2/*`         | TRON node API: an allow-list of `/wallet/*` and `/walletsolidity/*` paths plus the TronGrid `/v1/accounts` indexer feeds (TronGrid providers only); request bodies are schema-checked, `broadcasthex` follows the broadcast rule below |
-| `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                            |
-| `GET /v1/eligibility`            | Per-app availability for the caller's edge-resolved jurisdiction (`{ country, region, apps: { hyperliquid, polymarket } }` — `available`/`close-only`/`blocked`); `private, no-store`                                                  |
-| `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it           |
-| `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                                 |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                                      |
-| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                                                               |
-| `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                                   |
-| `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                           |
-| `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                                                                     |
+| Route                             | Behavior                                                                                                                                                                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/health`                  | `{ "status": "ok" }`; needs no client id                                                                                                                                                                                                                                 |
+| `POST /v1/rpc/:caip2`             | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                                                                                                 |
+| ↳ `eth_getLogs`                   | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic                                                                             |
+| `GET\|POST /v1/esplora/:caip2/*`  | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                                                                                                          |
+| `POST /v1/tron/:caip2/*`          | TRON node API: an allow-list of `/wallet/*` and `/walletsolidity/*` paths plus the TronGrid `/v1/accounts` indexer feeds (TronGrid providers only); request bodies are schema-checked, `broadcasthex` follows the broadcast rule below                                   |
+| `GET /v1/networks`                | The served network ids, in configured order                                                                                                                                                                                                                              |
+| `GET /v1/eligibility`             | Per-app availability for the caller's edge-resolved jurisdiction (`{ country, region, apps: { hyperliquid, polymarket } }` — `available`/`close-only`/`blocked`); `private, no-store`                                                                                    |
+| `POST /v1/history/:caip2`         | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it                                             |
+| `POST /v1/approvals/:caip2`       | EVM approval candidates for `{address}` (body): token, spender and block keys from the owner's Approval/ApprovalForAll and Permit2 events — display-only, the engine confirms each on chain; Alchemy `eth_getLogs`; `404 unsupported` on chains with a bounded log range |
+| `POST /v1/nfts/items/:caip2`      | NFTs owned by `{owner}` (body), `cursor` pages forward; Alchemy NFT API on EVM, DAS `getAssetsByOwner` on Solana; display-only; `404 unsupported` on uncovered networks                                                                                                  |
+| `POST /v1/nfts/item/:caip2`       | One NFT's detail `{contract, tokenId?}` (tokenId on EVM only — a Solana asset is its own id); Alchemy `getNFTMetadata` / DAS `getAsset`; `404 not-found` when DAS reports the asset missing                                                                              |
+| `POST /v1/nfts/collection/:caip2` | Collection descriptor `{collection}`; Alchemy `getContractMetadata` on EVM, `getAsset` on Solana                                                                                                                                                                         |
+| `POST /v1/nfts/floor/:caip2`      | Marketplace floor quotes `{collection}`; Alchemy `getFloorPrice`, EVM only and on the chains it serves — every other network answers `404 unsupported`                                                                                                                   |
+| `GET /v1/tokens/:caip2`           | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                                                                   |
+| `GET /v1/risk/lists/phishing`     | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                                                                        |
+| `POST /v1/prices/:family`         | Spot price and 24 h change of up to 100 CAIP-19 assets of one chain family in one fiat currency; display-only (see "Prices")                                                                                                                                             |
+| `GET /v1/quotes/swap`             | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                                                                     |
+| `GET /v1/quotes/swap/solana`      | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                                                             |
+| `GET /v1/quotes/bridge`           | Across bridge quote between two networks (keyless)                                                                                                                                                                                                                       |
 
 Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
 `400 invalid-request`, `404 unknown-network`/`not-found`/`unsupported`, `429 rate-limited` and
 `503 unavailable` (both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
 `unsupported` is permanent — the gateway has no coverage for that resource on the network or
-asset named, so a client must not retry: a served EVM network no history provider covers,
-a network no configured token-list source builds for, and (in the prices body) assets no
+asset named, so a client must not retry: a served EVM network no history or approvals provider
+covers, a network no configured token-list source builds for, and (in the prices body) assets no
 price provider maps.
 
 Providers are tried in the order of `src/config/networks.ts`. Every route reaches its upstreams
@@ -56,6 +61,14 @@ an open breaker, a 401/403/429 refusal, or a rejected auth lookup. Any other fai
 transport error, 5xx, malformed body) is ambiguous: the provider may have relayed the transaction,
 so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
 double-broadcast it.
+
+`POST /v1/approvals/:caip2` reports approval _candidates_ — the keys of every approval-shaped
+event `{address}` emitted (`Approval` on ERC-20/721, `ApprovalForAll`, and Permit2's `Approval`
+and `Permit` on the canonical deployment), deduped to the latest block per key and capped at 500.
+It never reports an amount or a live flag: the engine confirms each candidate on chain. One
+request costs one `eth_blockNumber` plus four `eth_getLogs` at 60 CU each, served only on chains
+where Alchemy accepts an unbounded log range (`src/providers/approvals-alchemy.ts`); anywhere else
+the scan could silently truncate, so the route answers `404 unsupported` without an upstream call.
 
 ## Rate limiting
 
@@ -108,7 +121,8 @@ foreground-refreshing once per minute, plus 10 fresh all-family cold starts per 
 from `packages/wallet-engine/tests/gateway-capacity.test.ts`): Alchemy 20 × 1,570 + 10 × 7,150 =
 102,900 CU/min ≤ the 480,000 CU/min budget; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
 4,000/min budget. CoinGecko and DefiLlama cold starts cost upstream calls only on a cold per-colo
-price cache (≈ 81 calls per colo per cache lifetime, well under the 400/min and 450/min budgets).
+price cache (≈ 85 calls per colo per cache lifetime — the native-coins call now runs once per
+family request, at most four — well under the 400/min and 450/min budgets).
 TRON is the known exception: a fresh wallet costs 3 calls, but a used wallet's history fetches
 `getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh — which exceeds the free-tier
 TronGrid/Tatum POLICY budgets (144/min each); raising them waits on the operator's keyed-QPS
@@ -116,14 +130,24 @@ confirmation and an engine-side history cache (outside this change).
 
 ## Prices
 
-`POST /v1/prices` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their canonical
-spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
+`POST /v1/prices/:family` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their
+canonical spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:0x<lowercase address>`,
 `solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing, unsupported }`: every
 asset is either priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt`
 in Unix ms), `missing` (no provider had a price now — a later request may) or `unsupported` (no
-price provider maps the asset — permanent, never asked upstream, never cached). The asset set describes a portfolio, so it travels in the body and the answer is
-`no-store`. Each upstream call its cache misses fan out to (one per CoinGecko token platform and one
-for the native coins, two for DefiLlama) is billed to the request's share of the source's account.
+price provider maps the asset — permanent, never asked upstream, never cached).
+
+Price requests are partitioned by chain family (`evm`, `solana`, `bitcoin`, `tron`): the engine
+sends one request per family scope, the route rejects a body naming another family's assets, and
+each request travels under that family's own client id — the engine's per-scope ids are
+unlinkable, so a cross-family portfolio never appears in one request and the asset set links no
+scopes beyond what each scope's own traffic already shows. What stays linkable is what all
+gateway traffic shares: the client IP and the timing of the per-family requests; hiding those
+needs an OHTTP-style relay, which the route layout does not preclude.
+
+The asset set describes a portfolio, so it travels in the body and the answer is `no-store`. Each
+upstream call a request's cache misses fans out to (one per CoinGecko token platform and one for
+the native coins, two for DefiLlama) is billed to the request's share of the source's account.
 
 Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
 client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then
@@ -184,6 +208,49 @@ build hourly (`"0 * * * *"`). KV namespaces:
 The list is derived data: entries are normalized and truncated to 8-byte hashes, and the original
 lists are not redistributed. Attribution: phishing data from MetaMask eth-phishing-detect and
 polkadot-js/phishing.
+
+## Push notifications
+
+The gateway delivers transaction-state pushes (`received`, `sent`, `failed`, `reverted`) built so
+the push providers see nothing about the user: the APNs/FCM payload is only an opaque event id and
+an AES-256-GCM blob the wallet opens with a key the gateway never stores in clear. What the
+providers do see — a device token inside their own protocol envelope — is unavoidable; everything
+else (address, hash, network, amount, symbol) stays out of provider requests and log lines.
+
+Routes: `GET /v1/push` (capabilities), `PUT|DELETE /v1/push/:family/subscription` (Bearer is the
+32-byte push secret, base64url — the subscription id is its derived hash), and
+`POST /v1/push/:family/transactions` (register an outgoing hash to watch). The Alchemy watcher
+calls `POST /hooks/alchemy` — outside `/v1`, so no client id or client limiter; the
+`X-Alchemy-Signature` HMAC over the raw body authenticates it.
+
+Storage lives in a SQLite Durable Object per family (`PUSH`): sealed subscription targets (device
+token + payload key under `PUSH_SEAL_KEY`), watched (network, address) pairs, transaction records
+and an outbox. Subscriptions expire after `PUSH_TTL_MS` of no renewal, records after 24 h, outbox
+deliveries after 1 h; the alarm — re-derived from the store after every mutation — sweeps
+expirations, checks pending records against receipts in one JSON-RPC batch per network (billed to
+the provider account budget, never a client share), delivers due outbox rows, and reconciles the
+watcher's address set against the `synced` table. Only EVM is watched (Alchemy Address Activity
+webhooks); Solana, Bitcoin and TRON answer `404 unsupported`.
+
+Environment (all optional — an incomplete set disables push rather than failing the deploy):
+`PUSH_SEAL_KEY` (32 bytes base64); `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` (the
+`.p8` provider key, staging builds target `api.sandbox.push.apple.com`);
+`FCM_SERVICE_ACCOUNT` (the service-account JSON); `ALCHEMY_NOTIFY_TOKEN` and `ALCHEMY_WEBHOOKS`
+(`{"<caip2>": {"id": "<webhook id>", "signingKey": "<key>"}}`, one entry per watched EVM network —
+both vars must be set together).
+
+Operations:
+
+- Create one Alchemy Address Activity webhook per watched EVM network pointed at
+  `https://<host>/hooks/alchemy`, then set `ALCHEMY_WEBHOOKS` to each network's webhook id and
+  signing key and `ALCHEMY_NOTIFY_TOKEN` to the dashboard auth token. The object keeps the
+  webhook's address list in sync — it PATCHes `update-webhook-addresses` in ≤ 500-address batches
+  as subscriptions change.
+- APNs needs the deployed Worker's HTTP/2 egress: local `wrangler dev` cannot reach Apple
+  (cloudflare/workerd#4841), so end-to-end APNs verification happens post-deploy — e.g. subscribe
+  an all-zero device token and expect a `BadDeviceToken` in Workers Logs.
+- Adding the `PushObject` migration makes a deploy non-rollbackable — check `deploy-check` output
+  before shipping it.
 
 ## Observability
 

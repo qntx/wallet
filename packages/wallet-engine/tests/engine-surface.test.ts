@@ -70,6 +70,22 @@ describe("engine surface", () => {
     expectTypeOf<PayInput>().toHaveProperty("token");
   });
 
+  it("engine.nfts serves display data only — no transfer, no contract call", () => {
+    type Nfts = WalletEngine["nfts"];
+    expectTypeOf<Nfts>().toHaveProperty("load");
+    expectTypeOf<Nfts>().toHaveProperty("loadMore");
+    expectTypeOf<Nfts>().toHaveProperty("refresh");
+    expectTypeOf<Nfts>().toHaveProperty("detail");
+    expectTypeOf<Nfts>().toHaveProperty("collection");
+    expectTypeOf<Nfts>().toHaveProperty("floor");
+    expectTypeOf<Nfts>().toHaveProperty("setHidden");
+    expectTypeOf<Nfts>().toHaveProperty("setVisible");
+    expectTypeOf<Nfts>().toHaveProperty("inscriptions");
+    expectTypeOf<Nfts>().not.toHaveProperty("transfer");
+    expectTypeOf<Nfts>().not.toHaveProperty("send");
+    expectTypeOf<Nfts>().not.toHaveProperty("approve");
+  });
+
   it("engine.transactions builds and records nothing — sends and dApp signatures are requests", () => {
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareDapp");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSend");

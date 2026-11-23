@@ -98,6 +98,22 @@ the package root.
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
   entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
   left unpagable gaps.
+- `engine.approvals` — the standing-authority inventory (`load`, `unload`, `refresh`,
+  `setVisible`, `exposure`) and revocations (`revoke`, `revokeBatch`); see
+  [Approvals](#approvals).
+- `engine.nfts` — an owner's NFT inventory on one network from the gateway (`load`/`loadMore`
+  page it, `refresh` re-reads the loaded pages, `detail`/`collection`/`floor` answer one item,
+  collection or its marketplace floors). Inventory data is display-only — a send never builds
+  from it. Media are `NftMedia` descriptors with an `active` flag: render them as images or in a
+  sandbox that runs no script, never as documents. Flagged items (`spam` non-empty) are `hidden`
+  by default; `setHidden(network, id, "hidden" | "shown" | undefined)` persists the override.
+  `inscriptions(group, network)` lists the Bitcoin UTXOs the spend path already protects as
+  possible inscription carriers — read-only. NFT sends go through `requests`: `evm-nft-send`
+  takes `{ contract, items: [{ tokenId, amount? }], to }` — one entry for ERC-721, up to
+  `EVM_BATCH_LIMIT` distinct ids for one ERC-1155 batch — and `solana-nft-send` takes
+  `{ asset, to }` where `asset` is a Metaplex Core asset or an SPL NFT mint. Preparation
+  re-reads ownership from chain and a refusal throws `NftTransferError` with a `reason`
+  (`not-nft`, `not-owned`, `insufficient-balance`, `programmable`, `frozen`, `not-found`).
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).
@@ -269,6 +285,59 @@ unverified.
 
 Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
 
+## Approvals
+
+`engine.approvals.load(account, network)` returns a view key; `ApprovalsState.views[key]` is one
+`ApprovalsView` — every standing authority the account holds over that network, as rows:
+
+- EVM: ERC-20 allowances, Permit2 allowances (amount and expiration), ERC-721 and ERC-1155
+  operators, ERC-721 single-token approvals, and the account's own EIP-7702 delegation.
+- Solana: SPL delegates, foreign close authorities, mint freeze authorities and Token-2022
+  permanent delegates, and stake account authorities.
+- TRON: TRC-20 allowances and the account's permission keys.
+
+Kernel session keys that may sign for the owner are linked in `view.sessions`, not listed as
+rows — a session key is revoked through the app that owns it, not through `revoke`.
+
+**Trust.** A row is never shown on a discovery source's word. Sources — the gateway's
+`POST /v1/approvals/:caip2` (an EVM `eth_getLogs` scan; a TRON indexer where one exists) and the
+engine's own recorded transactions — yield candidate keys only. Every candidate is then read on
+chain at `view.at.height` on the primary endpoint and cross-checked on the independent one: a
+candidate the chain does not confirm is `dropped`, a disagreement between the endpoints hides the
+row and counts it in `disputed`, a candidate that could not be read is `unread`, and a row
+confirmed on only one upstream carries `verified: false`. `view.sources` lists each source's
+status and the height it answered at. `view.exhaustive` names the kinds the chain itself
+enumerates (the EVM delegation, Solana token-account delegates, close and mint authorities, TRON
+permissions); every other kind is a _known_ approval — indexers can miss a spender, so label those
+lists accordingly. Discovered candidate keys persist in the session store (collection
+`approvals`), so an approval outlives the source that found it; keys no longer confirmed on chain
+are pruned.
+
+**Risk and exposure.** Rows carry `risk` flags — `unlimited`, `eoa-spender`, `spender-no-code`,
+`address-poisoning`, `foreign-delegation` — and an `exposure` naming what the spender can take
+right now. `engine.approvals.exposure(key)` values the view's exposures at current quotes. Both
+are display-only; nothing about them changes what a request may do.
+
+**Freshness.** A loaded view re-reads every `APPROVALS_POLL_MS` while `setVisible(true)` — gate it
+on the approvals screen being shown — on `refresh(key)`, and after a transaction carrying an
+approval intent confirms on the network; that re-read answers at the confirming block or later,
+never from before it.
+
+**Revoking.** `engine.approvals.revoke(key, rowId, fee?)` prepares an ordinary request through the
+request pipeline — approve it like any other. The request's display intent describes a revocation
+(an allowance set to 0, a Permit2 lockdown, an operator cleared, a delegation removed), never a
+grant, and the builder re-reads the chain before building: when nothing is left to revoke the
+prepare is refused. `revokeBatch(key, rowIds, fee?)` puts several rows in one transaction — EVM
+rows (`erc20`, `permit2`, `operator`, `nft`; up to `EVM_BATCH_LIMIT`) only on an account already
+delegated to the wallet's delegator, the batch a single self-call with no authorization, or
+several `spl-delegate` rows (up to 10). Rows with `revoke: "none"` — a foreign close authority, a
+mint authority, a stake authority, a TRON permission key — cannot be removed from this wallet.
+Prepare one revocation request at a time: nonces are reserved at commit, so a second prepared
+request would go stale. A row is never removed optimistically; it disappears when the chain read
+after inclusion no longer shows it. Authorities an app's venue holds outside the approvals
+inventory — the Hyperliquid builder-fee approval on HyperCore — are listed by
+`AppsController.authorities` (see [Writing an app provider](#writing-an-app-provider)).
+
 ## Writing an app provider
 
 An app provider is an `AppDefinition<Id, Api, D>`: a small factory the host lists in
@@ -338,6 +407,12 @@ included. Every runtime value the SPI re-exports is also a public export of
 `createAppSocketCore` is the one exception and stays in-tree until the providers leave the
 package.
 
+A provider may also expose `authorities(group)`: the standing authorities its venue holds over
+the group's funds outside the kernel's session keys — the Hyperliquid builder-fee approval on
+HyperCore, Polymarket's trading approvals on the deposit wallet, Fiat24's owner-EOA allowances.
+`AppsController.authorities(group)` collects every app's rows — display-only, one
+`{ app, error }` row per failed read.
+
 ## Hyperliquid
 
 `@qntx/wallet-engine/apps` is a separate entry point: the `AppsController` and the composition
@@ -348,6 +423,7 @@ only the apps it lists.
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
+import type { AppSocket } from "@qntx/wallet-engine/apps";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
@@ -364,9 +440,9 @@ const apps = await createApps({
   },
   random,
   logger: { warn: (m, e) => console.warn(m, e) },
-  openStore: async () => openIndexedDbEngineStore({ name: "app-apps", dataKey /* … */ }),
+  openStore: async () => openIndexedDbEngineStore({ name: "app-apps", dataKey, random }),
   // a separate EngineStore from the engine's own
-  socket: (url) => new WebSocket(url), // browser, RN or Node ≥ 22 — one socket for all views
+  socket: (url) => new WebSocket(url) as AppSocket, // browser, RN or Node ≥ 22 — one socket for all views
   gateway: { url: "https://api.example.com" },
   // the wallet gateway — /v1/eligibility is fetched here
   apps: [
@@ -660,11 +736,104 @@ open-orders list and trade events debounce into a REST re-read. A disconnect kee
 `stale` and falls back to a 10 s REST poll (`source: "poll"`) until the socket reconnects and the
 view returns to `live`/`stream`; a lock or a missing-credential stop closes the view for good.
 
+## Fiat24
+
+Fiat24 support lives under `apps.fiat24` when `createApps` lists `fiat24(config)` from
+`@qntx/wallet-engine/apps/fiat24`. The provider is built on the `@qntx/fiat24` SDK (Arbitrum One
+only): the account read and the resumable flows run over a viem client built from
+`engine.networks` — with an independent endpoint configured every pinned read must agree on both
+sides, and the SDK's own deployment check stays on, so a drifted deployment reports the typed
+status `contract-changed` rather than signing against unexpected code. The REST API is optional:
+`fiat24({ fetch })` is for `api.fiat24.com` only.
+
+```ts
+import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
+
+const apps = createApps({
+  /* … the same options as above … */
+  apps: [fiat24({ fetch: fiat24Fetch })], // see "The REST api" — omit for a chain-only build
+});
+```
+
+- `account(group)` reads the group's account once: `no-account`, an `AccountStatus` (or `stale`
+  for a failed read), or `contract-changed`. `live(group)` is the same read as a store facade,
+  polled every 15 s (`FIAT24_POLL_MS`) while `setVisible(true)` and unlocked.
+- `flows` is `start` / `advance` / `list` / `discard` / `payoutSettlement` over the SDK's
+  resumable transfer, exchange, payout, top-up, onboarding and card flows. Advances are
+  serialised per group, `start` refuses `flow-unresolved` while another flow could still send,
+  and an entry that no longer decodes lists as `{ id, invalid: true }` — `discard` is the only
+  way out of it, so have the user check the account's activity first.
+- `session(group)` is the secured reads (`profile`, `cards`, `cardDisplayToken`,
+  `transactions`) through a lazy SDK session. `api` is the unauthenticated reads (`rates`,
+  `paymentPurposes`, `countries`, `countryCities`, `banks`, `bankByIban`, `kycUrl`).
+
+**Every SDK write is exactly one `{ kind: "app", id: "fiat24" }` request** on `engine.requests`:
+transactions are `evm-sign` `evm.transaction` requests at the SDK-chosen nonce (the engine pins
+it — `prepare` fails with `NonceConflictError` if the sender's next nonce moved on), and session
+grants are `evm.fiat24-session` requests. A `Fiat24Flow.refusal` on a returned entry says why a
+send did not happen. Reconcile — on unlock and every 15 s while visible — only ever advances
+records in `sending`/`submitted`/`unknown`, which the SDK resolves by polling receipts and
+nonces; it can never sign or broadcast.
+
+**Persistence.** Flow states persist as `encodeFlowState` text in the app's EngineStore
+collection — pseudonymous chain fields only, no PII. Payout drafts hold unverified payee data
+and stay in memory. Session grants are bearer credentials held only in memory; lock, disable and
+wallet removal end them (disable also rejects the group's still-open requests).
+
+**Jurisdiction.** `enable` needs an eligibility answer of `available` or `close-only` — a
+restricted jurisdiction still gets the read surface to wind positions down — and onboarding and
+top-up refuse when the chain reports the feature `unavailable`.
+
+### The REST api
+
+`api.fiat24.com` sends no CORS headers and the gateway does not proxy it, so the host owns the
+transport:
+
+- **React Native:** inject the platform `fetch`, uninstrumented — exclude `api.fiat24.com` from
+  logging/Sentry interceptors, disable its HTTP cache, and note RN's fetch follows redirects
+  whatever `redirect` says; inject one that does not if that matters.
+- **Web:** inject a `fetch` that sends the request to a host proxy for `https://api.fiat24.com`.
+  The proxy sees the session grant headers, which are a bearer credential for the account until
+  their deadline — treat them accordingly.
+
+Without `fetch` the chain flows still work — transfers, exchanges, top-ups, payouts to a saved
+contact, and onboarding up to KYC — while the secured and public REST reads, a bank or Swiss-QR
+payout draft's verify step, a card flow's API write, and the onboarding `tourist`/`kyc` steps
+throw `Fiat24AppError("api-unavailable")`.
+
+### Security
+
+Residual risks a host must state, from the SDK's README: exact-in FX and top-up have no on-chain
+minimum output (the issuer's rate can move between the flow's quote check and inclusion); a
+payout's payee is bound off-chain — the signed transaction carries only the contact id and
+reference, and Fiat24 resolves the recipient; and a single EOA owns the ProxyAdmin of every
+Fiat24 proxy (it can pause, re-wire and upgrade the deployment, which is why writes fail closed
+with `contract-changed`). See the [SDK README](https://github.com/qntx/fiat24#residual-risks) for
+the full list.
+
 ## WalletConnect
 
 `@qntx/wallet-engine/walletconnect` is a separate entry point: the wallet side of WalletConnect
-v2 (Reown WalletKit + the sign client). A host that never pairs pays nothing — the SDK and its
-relay transport live only in this entry's bundle. WalletConnect peers are ordinary dApp origins
+v2 (Reown WalletKit + the sign client). It needs four optional peer dependencies — install them
+yourself: `@reown/walletkit`, `@walletconnect/core`, `@walletconnect/types`,
+`@walletconnect/utils` (exact pins in `peerDependencies`). No other entry imports them, so a
+host that never pairs pays nothing — the SDK and its relay transport live only in this entry's
+bundle.
+
+All four packages are under the **WalletConnect Community License Agreement** (Reown, Inc.,
+release date 20 August 2025 — see `LICENSE.md` in each installed package). Reading the license:
+downloading, installing, integrating or using the packages makes you a Licensee bound by it.
+Use for education/non-commercial research and for developing your own apps and wallets is
+royalty-free, subject to the limited-commercial-use rule: above **500 monthly active users or
+2,500,000 monthly RPC calls** you must pay for a commercial licence. Modifications are allowed
+but every modification or derivative work is assigned to Reown (you keep a licence to use it
+only in conjunction with the packages while the licence is in effect, must mark changed files,
+and must hand Reown the source/binary on request); your own app stays yours. Distribution
+requires the notice "Portions © 2025 Reown, Inc. All Rights Reserved" and a copy of the
+licence, and as a material condition all use must connect to the proprietary Reown gateway
+infrastructure and the WalletConnect messaging protocol.
+
+WalletConnect peers are ordinary dApp origins
 keyed `walletconnect:<session topic>`: their sessions live in `engine.connections` alongside
 browser sessions, and every `session_request` runs through the same handlers and request pipeline
 the in-app browser uses, so the approval UI and risk checks are unchanged.

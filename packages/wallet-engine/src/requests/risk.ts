@@ -2,6 +2,7 @@ import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siw
 import type {
   AssetFlow,
   DisplayIntent,
+  IntentWarningKind,
   MessageContent,
   SafeTransaction,
   SeaportOrder,
@@ -59,7 +60,14 @@ export type RiskFinding = {
     | "token-recipient-empty"
     | "fee-limit-below-estimate"
     | "verify-mismatch"
-    | "verify-threat";
+    | "verify-threat"
+    | "fiat24-internal-account"
+    | "fiat24-card-pull"
+    | "fiat24-unlimited-approval"
+    | "fiat24-exact-out-unbounded"
+    | "fiat24-payee-offchain"
+    | "fiat24-account-move"
+    | "fiat24-account-burn";
   readonly level: "warning" | "danger";
 };
 
@@ -102,6 +110,70 @@ export function mergeRisk(
 }
 
 /**
+ * The finding a decoder's {@link IntentWarning} maps to — one entry for every `IntentWarningKind`,
+ * `undefined` where the prompt rows already carry the fact and no request-level risk exists:
+ *
+ * - `platform-fee` — the fee is a prompt row.
+ * - `stake-lockup` — the lockup window is a prompt row.
+ * - `sighash-single-anyonecanpay` — already `bitcoin-sighash-single` via assessBitcoinPsbts.
+ * - `permit2-witness` — the bound message is a prompt row.
+ * - `delegation-replaced` — the replaced delegation is a prompt row.
+ * - `token-2022-transfer-fee` — the withheld fee is a prompt row.
+ * - `token-2022-extension` — the extension note is a prompt row.
+ * - `fiat24-issuer-rate` — the issuer's applied rate is a prompt row.
+ * - `fiat24-swap-quote` — the quoted rate is a prompt row.
+ * - `fiat24-account-link` — the account link is a prompt row.
+ */
+export const WARNING_RISK: Readonly<
+  Record<
+    IntentWarningKind,
+    { readonly code: RiskFinding["code"]; readonly level: RiskFinding["level"] } | undefined
+  >
+> = {
+  "platform-fee": undefined,
+  "stake-lockup": undefined,
+  "sighash-single-anyonecanpay": undefined,
+  "permit2-witness": undefined,
+  "delegation-replaced": undefined,
+  "token-2022-transfer-fee": undefined,
+  "token-2022-extension": undefined,
+  "fiat24-internal-account": { code: "fiat24-internal-account", level: "warning" },
+  "fiat24-card-pull": { code: "fiat24-card-pull", level: "warning" },
+  "fiat24-unlimited-approval": { code: "fiat24-unlimited-approval", level: "danger" },
+  "fiat24-issuer-rate": undefined,
+  "fiat24-exact-out-unbounded": { code: "fiat24-exact-out-unbounded", level: "warning" },
+  "fiat24-payee-offchain": { code: "fiat24-payee-offchain", level: "warning" },
+  "fiat24-swap-quote": undefined,
+  "fiat24-account-link": undefined,
+  "fiat24-account-move": { code: "fiat24-account-move", level: "danger" },
+  "fiat24-account-burn": { code: "fiat24-account-burn", level: "warning" },
+};
+
+/**
+ * Findings for every warning the decoded intents carry, through {@link WARNING_RISK}, deduplicated,
+ * `danger` first. A warning stamped `level: "danger"` is a `danger` finding whatever the table says
+ * — the decoder knows the concrete shape better than the kind default.
+ */
+export function assessWarnings(
+  intents: ReadonlyArray<Pick<DisplayIntent, "warnings">>,
+): ReadonlyArray<RiskFinding> {
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  for (const intent of intents) {
+    for (const warning of intent.warnings) {
+      const entry = WARNING_RISK[warning.kind];
+      if (entry === undefined) {
+        continue;
+      }
+      const level = warning.level ?? entry.level;
+      if (found.get(entry.code)?.level !== "danger") {
+        found.set(entry.code, { code: entry.code, level });
+      }
+    }
+  }
+  return byDanger([...found.values()]);
+}
+
+/**
  * Findings for the approvals a transaction grants: an operator approved for a whole collection is a
  * `danger`; a granted unlimited allowance is a `warning`. Revocations and reductions raise
  * nothing.
@@ -118,7 +190,7 @@ export function assessApprovals(
     } else if (change.kind === "stake-authority") {
       /* The decoder only emits this for a role handed to a key other than the signer. */
       found.set("stake-authority", { code: "stake-authority", level: "danger" });
-    } else if (change.change !== "decrease" && change.unlimited) {
+    } else if (change.kind === "allowance" && change.change !== "decrease" && change.unlimited) {
       found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
     }
   }
@@ -351,6 +423,33 @@ export const comparable = (family: string, address: string): string =>
  * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
  * the cash-token contract all of them share — so the account or payee is the recipient compared.
  */
+/**
+ * Addresses the wallet already knows for a family: contacts, plus recipients of tracked chain sends
+ * (Spark payments are not tracked — for spark the contacts list is the whole answer).
+ */
+export const knownAddresses = (
+  entries: ReadonlyArray<{ readonly family: string; readonly address: string }>,
+  txs: ReadonlyArray<{
+    readonly family: string;
+    readonly state: string;
+    readonly intent?: DisplayIntent | undefined;
+  }>,
+  family: string,
+): ReadonlyArray<string> => {
+  const contacts = entries.filter((e) => e.family === family).map((e) => e.address);
+  if (family === "spark") {
+    return contacts;
+  }
+  const paid = txs
+    .filter(
+      (tx) =>
+        tx.family === family &&
+        (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
+    )
+    .flatMap((tx) => tx.intent?.outflows.map(recipientOf) ?? []);
+  return [...contacts, ...paid];
+};
+
 export const recipientOf = (flow: Pick<AssetFlow, "to" | "fiat24">): string =>
   flow.fiat24 === undefined
     ? flow.to
@@ -409,7 +508,8 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
     );
     for (const approval of inner.approvals ?? []) {
       /* A grantee takes authority over the signer's value — assessed like a recipient; a
-         revocation (a decrease, or an allowance set to zero) names nobody. */
+         revocation names nobody: a decrease, a zeroed allowance, a revoked operator or delegate,
+         a cleared approval. */
       if (approval.kind === "allowance") {
         if (
           approval.change !== "decrease" &&
@@ -421,7 +521,7 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
         if (approval.approved) {
           recipients.push(approval.spender);
         }
-      } else {
+      } else if (approval.kind === "stake-authority") {
         recipients.push(approval.authority);
       }
     }

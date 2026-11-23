@@ -1,0 +1,20 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §10 Bank Payout step 3",
+  "body": {
+    "name": "Zürcher Kantonalbank",
+    "bankCode": "00700",
+    "bankCodes": [
+      "00700",
+      "00730",
+      "00754",
+      "00755",
+      "30700"
+    ],
+    "bic": "ZKBKCHZZXXX",
+    "country": "CH",
+    "accountMask": "CH00\\0\\07\\0\\0************",
+    "accountPlaceholder": "CH0000700000000000000",
+    "accountNotice": ""
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "address": "0xe785E82358879F061BC3dcAC6f0444462D4b5330",
+  "name": "World Of Women",
+  "symbol": "WOW",
+  "totalSupply": "10000",
+  "tokenType": "ERC721",
+  "isSpam": false,
+  "openSeaMetadata": {
+    "collectionName": "World of Women",
+    "safelistRequestStatus": "verified",
+    "description": "World of Women is a collection of 10,000 NFTs that gives you full access to our network of artists, creators, entrepreneurs, and executives who are championing diversity and equal opportunity on the blockchain.\n\nCreated and illustrated by Yam Karkai (@ykarkai), World of Women has made prominent appearances at Christie's, The New Yorker and Billboard.\n\nThe Time is WoW.",
+    "imageUrl": "https://i2c.seadn.io/admin-uploads/20e55f17e6d30cc82f8fcd35347339/e320e55f17e6d30cc82f8fcd35347339.png"
+  }
+}

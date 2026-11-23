@@ -57,7 +57,7 @@ export async function handleScanned(
  * rejection must match 4001 instead.
  */
 export function isUserRejectionBefore(error: { readonly code?: number }): boolean {
-  // Dead code now: 0.15.x emitted -32603 for a rejected Solana/Bitcoin request.
+  // Dead code now: 0.13.0 emitted -32603 for a rejected Solana/Bitcoin request.
   return error.code === -32_603;
 }
 

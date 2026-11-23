@@ -33,6 +33,22 @@ describe("parseBackupHeader", () => {
     expect(parsed.wallets[0]?.walletId).toBe("95fea534ed0f2996");
     expect(parsed.wallets[0]?.origin).toBe("mnemonic");
     expect(parsed.factorKinds).toStrictEqual(["password", "passkey"]);
+    expect(parsed.keys).toStrictEqual([]);
+  });
+
+  it("reports the header's imported keys", () => {
+    const obj = JSON.parse(envelope) as { header: string };
+    const h = JSON.parse(obj.header) as Record<string, unknown>;
+    h["keys"] = [
+      { keyId: "0123456789abcdef", family: "evm" },
+      { keyId: "fedcba9876543210", family: "solana" },
+    ];
+    obj.header = JSON.stringify(h);
+    const parsed = parseBackupHeader(JSON.stringify(obj));
+    expect(parsed.keys).toStrictEqual([
+      { keyId: "0123456789abcdef", family: "evm" },
+      { keyId: "fedcba9876543210", family: "solana" },
+    ]);
   });
 
   it("rejects an oversized envelope", () => {

@@ -14,6 +14,10 @@ import type { AppAvailability } from "@qntx/wallet-engine/gateway/contract";
  *   them.
  * - Polymarket geo-block table — https://docs.polymarket.com/api-reference/geoblock (2026-11-22:
  *   lists identical to the code).
+ * - Fiat24 `/countries` `blacklistNationalities` — https://api.fiat24.com/countries (2026-11-23: GUM,
+ *   IRN, PRK, MNP, PRI, RUS, UMI, USA, ASM; alpha-3 converted to alpha-2, IR/KP already in the
+ *   sanctioned set). Fiat24 decides onboarding from the KYC domicile at run time — this IP table is
+ *   display gating only.
  */
 
 /** Iran, Syria, Cuba, North Korea, Crimea/Donetsk/Luhansk (UA-43/14/09) — sanctioned set. */
@@ -27,6 +31,12 @@ export type EligibilityRow = {
 
 /** The configured apps, keyed by app id — a client treats an absent app as unknown. */
 export const ELIGIBILITY: Readonly<Record<string, EligibilityRow>> = {
+  fiat24: {
+    blocked: [...SANCTIONED],
+    /* The source list bans nationalities, not locations: an ip in one of these only hints, so the
+       wallet shows close-only — onboarding decides from the KYC domicile at run time. */
+    closeOnly: ["US", "PR", "GU", "MP", "UM", "AS", "RU"],
+  },
   hyperliquid: {
     /* Terms §1.6(a): the United States — territories (PR/GU/VI/AS/MP/UM) are a conservative
        reading — and Ontario (CA-ON). §1.6(b): the sanctioned set. No close-only tier. */

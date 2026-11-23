@@ -370,6 +370,46 @@ const PROBES: Probe[] = [
     expect: "clean",
   },
 
+  // NFT gateway data is display-only like prices: only the composition root at src/ may reach
+  // nfts/, directly or through a root file.
+  ...[
+    "transactions",
+    "requests",
+    "connect",
+    "chains",
+    "swaps",
+    "payments",
+    "spark",
+    "lido",
+    "staking",
+    "assets",
+    "apps",
+  ].map((dir): Probe => ({
+    file: `packages/wallet-engine/src/${dir}/__lint_probe_i2__.ts`,
+    source: importing("../nfts/controller.ts", "../nfts/spam.ts"),
+    expect: fires(2),
+  })),
+  {
+    file: "packages/wallet-engine/src/connect/inject/__lint_probe_i2__.ts",
+    source: importing("../../nfts/controller.ts"),
+    expect: fires(),
+  },
+  {
+    file: "packages/wallet-engine/src/transactions/__lint_probe_i2_spelled__.ts",
+    source: importing(
+      "./../nfts/controller.ts",
+      "../index.ts",
+      "../engine.ts",
+      "@qntx/wallet-engine",
+    ),
+    expect: fires(4),
+  },
+  {
+    file: "packages/wallet-engine/src/__lint_probe_i2_control__.ts",
+    source: importing("./nfts/controller.ts"),
+    expect: "clean",
+  },
+
   // @qntx/nostr stays in the nostr modules, and they never take its transport parts.
   {
     file: "packages/wallet/src/__lint_probe_j__.ts",

@@ -76,7 +76,7 @@ export type BackupFactor = {
 export const backupHeader: Validator<BackupHeaderWire>;
 
 // @public (undocumented)
-type BackupHeaderKey = {
+export type BackupHeaderKey = {
     readonly keyId: string;
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
@@ -1014,6 +1014,9 @@ export type Rumor = {
     readonly tags: ReadonlyArray<ReadonlyArray<string>>;
     readonly content: string;
 };
+
+// @public
+export const SECRET_FIELDS: readonly ["password", "prf", "prfWallet", "prfBackup", "mnemonic", "passphrase", "secret", "answers"];
 
 // @public (undocumented)
 export type SessionInfo = {

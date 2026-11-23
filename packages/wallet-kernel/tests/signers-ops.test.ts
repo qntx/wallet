@@ -781,3 +781,21 @@ describe("record id binding", () => {
     expect(field(status, "vault")).toBe("corrupted");
   });
 });
+
+describe("vault lifecycle", () => {
+  it("a paired hardware wallet survives lock/unlock next to the seed wallet", async () => {
+    const { h, session, walletId } = await boot(undefined, { idleMs: 60_000 });
+    const hwId = await pairDevice(h, session);
+    h.advance(60_001);
+    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    const unlocked = ok(await h.call("vault.unlock", { factor: FACTOR() }));
+    const session2 = strField(unlocked, "session");
+    const status = ok(await h.call("status", undefined, session2));
+    const walletIds = arrField(status, "wallets").map((w) => strField(w, "walletId"));
+    expect(walletIds).toStrictEqual([walletId, hwId]);
+    const image = await h.store.load();
+    expect(image.records.map((r) => r.kind)).toStrictEqual(
+      expect.arrayContaining(["entropy", "hardware-wallet"]),
+    );
+  });
+});

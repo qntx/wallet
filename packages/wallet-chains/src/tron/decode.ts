@@ -91,7 +91,9 @@ const mapTokenCall = (call: TokenCall): TokenCall => ({
           spender: tronAddressFromEvm(a.spender),
           amount: { ...a.amount, asset: tronAddressFromEvm(a.amount.asset) },
         }
-      : { ...a, asset: tronAddressFromEvm(a.asset), spender: tronAddressFromEvm(a.spender) },
+      : a.kind === "approval-cleared"
+        ? { ...a, asset: tronAddressFromEvm(a.asset) }
+        : { ...a, asset: tronAddressFromEvm(a.asset), spender: tronAddressFromEvm(a.spender) },
   ),
 });
 

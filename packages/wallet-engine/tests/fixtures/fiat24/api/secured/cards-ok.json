@@ -1,0 +1,89 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §2 Get Cards",
+  "body": {
+    "statusCode": 200,
+    "body": [
+      {
+        "tokenId": 690333,
+        "cardHolder": "PII-SENTINEL-30",
+        "externalId": "123456",
+        "cardToken": "PII-SENTINEL-31",
+        "activeTokens": [
+          {
+            "id": "active_token_id",
+            "type": "Fiat24 Phone",
+            "createdAt": 1725523620885
+          }
+        ],
+        "inactiveTokens": [
+          {
+            "id": "inactive_token_id",
+            "type": "Fiat24 Phone",
+            "createdAt": 1725523620885
+          }
+        ],
+        "currency": "EUR24",
+        "currencies": [
+          "EUR",
+          "CHF",
+          "USD",
+          "CNH"
+        ],
+        "cardDesign": "MSTD",
+        "security": {
+          "contactlessEnabled": true,
+          "withdrawalEnabled": false,
+          "internetPurchaseEnabled": true,
+          "overallLimitsEnabled": false
+        },
+        "limits": {
+          "account": {
+            "restartDate": "16.09.2023 - 9:04",
+            "restartDateMs": 1725523620885,
+            "used": 27.88,
+            "available": 99972.12,
+            "max": 100000.0
+          },
+          "contactless": {
+            "used": 13.02,
+            "available": 9986.98,
+            "max": 10000,
+            "dailyUsed": 0,
+            "dailyAvailable": 1600,
+            "dailyMax": 1600
+          },
+          "withdrawal": {
+            "used": 0,
+            "available": 0,
+            "max": 0,
+            "dailyUsed": 0,
+            "dailyAvailable": 0,
+            "dailyMax": 0
+          },
+          "internetPurchase": {
+            "used": 0,
+            "available": 10000,
+            "max": 10000,
+            "dailyUsed": 0,
+            "dailyAvailable": 5000,
+            "dailyMax": 5000
+          },
+          "transaction": {
+            "purchase": 0,
+            "withdrawal": 0,
+            "internetPurchase": 5000,
+            "contactless": 1600
+          }
+        },
+        "status": "Active",
+        "masked": {
+          "cardNumber": "•••• 4455",
+          "cvv2": "•••",
+          "expiry": "••/••",
+          "card3DSecurePassword": "••••••"
+        }
+      }
+    ]
+  }
+}

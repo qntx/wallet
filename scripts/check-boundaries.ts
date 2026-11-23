@@ -55,6 +55,7 @@ const WALLET = "packages/wallet/src";
 const GATEWAY = "apps/gateway";
 const CONTRACT = `${ENGINE}/gateway/contract`;
 const PRICES = `${ENGINE}/prices`;
+const NFTS = `${ENGINE}/nfts`;
 const NODE_HOST = [
   "packages/wallet-worker/src/node",
   "packages/wallet-worker/src/worker/node.ts",
@@ -347,8 +348,17 @@ export const RULES: ReadonlyArray<Rule> = [
   },
 ];
 
-/** Engine subdirectory files may not read prices: not directly, nor through a root file. */
-const pricesViolations = (edges: ReadonlyArray<Edge>): Violation[] => {
+/**
+ * Engine subdirectory files may not read a display-only directory (`src/prices`, `src/nfts`): not
+ * directly, nor through a root file. Only the engine composition root (src/*.ts) may wire
+ * display-only data in.
+ */
+const displayOnlyViolations = (
+  edges: ReadonlyArray<Edge>,
+  dir: string,
+  rule: string,
+  message: string,
+): Violation[] => {
   const valueTargets = new Map<string, string[]>();
   for (const edge of edges) {
     const target = fileTarget(edge);
@@ -357,14 +367,14 @@ const pricesViolations = (edges: ReadonlyArray<Edge>): Violation[] => {
     }
   }
   const memo = new Map<string, boolean>();
-  const reachesPrices = (file: string): boolean => {
+  const reachesDir = (file: string): boolean => {
     const known = memo.get(file);
     if (known !== undefined) {
       return known;
     }
     memo.set(file, false);
     const reached =
-      within(file, PRICES) || (valueTargets.get(file) ?? []).some((next) => reachesPrices(next));
+      within(file, dir) || (valueTargets.get(file) ?? []).some((next) => reachesDir(next));
     memo.set(file, reached);
     return reached;
   };
@@ -374,22 +384,13 @@ const pricesViolations = (edges: ReadonlyArray<Edge>): Violation[] => {
       target === undefined ||
       !within(edge.from, ENGINE) ||
       isEngineRoot(edge.from) ||
-      within(edge.from, PRICES)
+      within(edge.from, dir)
     ) {
       return [];
     }
-    const direct = within(target, PRICES);
-    const viaRoot = !edge.typeOnly && isEngineRoot(target) && reachesPrices(target);
-    return direct || viaRoot
-      ? [
-          {
-            edge,
-            rule: "prices-display-only",
-            message:
-              "prices are display-only — only the engine composition root (src/*.ts) may reach src/prices",
-          },
-        ]
-      : [];
+    const direct = within(target, dir);
+    const viaRoot = !edge.typeOnly && isEngineRoot(target) && reachesDir(target);
+    return direct || viaRoot ? [{ edge, rule, message }] : [];
   });
 };
 
@@ -1067,7 +1068,18 @@ export async function boundaryViolations(root: string = ROOT): Promise<Violation
         return message === undefined ? [] : [{ edge, rule: rule.id, message }];
       }),
     ),
-    ...pricesViolations(edges),
+    ...displayOnlyViolations(
+      edges,
+      PRICES,
+      "prices-display-only",
+      "prices are display-only — only the engine composition root (src/*.ts) may reach src/prices",
+    ),
+    ...displayOnlyViolations(
+      edges,
+      NFTS,
+      "nfts-display-only",
+      "NFT gateway data is display-only — only the engine composition root (src/*.ts) may reach src/nfts",
+    ),
     ...enclaveClosureViolations(edges),
   ];
 }

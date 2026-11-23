@@ -1,12 +1,21 @@
 /**
  * PricesController against a contract-checked fake gateway: every request it sends is validated
- * (POST /v1/prices, a `prices.request` body, the session's service client id), and every violation
- * fails the test. Timers are hand-driven — no wall clock anywhere.
+ * (POST /v1/prices/:family, a `prices.request` body naming only that family's assets, that family
+ * scope's client id), and every violation fails the test. Timers are hand-driven — no wall clock
+ * anywhere.
  */
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { gatewaySession } from "../src/gateway/client.ts";
-import { CLIENT_ID_HEADER, parseWith, prices } from "../src/gateway/contract/index.ts";
+import type { GatewayScope } from "../src/gateway/client.ts";
+import {
+  CLIENT_ID_HEADER,
+  PRICE_FAMILIES,
+  parseWith,
+  priceAssetFamily,
+  prices,
+  pricesPath,
+} from "../src/gateway/contract/index.ts";
 import type { PriceQuote, PricesRequest } from "../src/gateway/contract/index.ts";
 import { PRICES_POLL_MS, PricesController } from "../src/prices/controller.ts";
 import type { PricesState } from "../src/prices/controller.ts";
@@ -87,6 +96,15 @@ const gatedFirst = (gate: Promise<unknown>): Responder => {
   };
 };
 
+/** The rig's session client id for `family` — every rig here mounts the gateway. */
+const clientIdFor = (r: ReturnType<typeof rig>, family: GatewayScope): string => {
+  const { session } = r;
+  if (session === undefined) {
+    throw new Error("rig without a gateway has no client ids");
+  }
+  return session.clientIds[family];
+};
+
 /** Let pending microtask chains (a fetch's response handling) settle. */
 const flush = async (): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve));
@@ -115,6 +133,11 @@ function rig(
 ) {
   const session = options.gateway === false ? undefined : gatewaySession(GATEWAY, random);
   const calls: PricesRequest[] = [];
+  const requests: Array<{
+    pathname: string;
+    clientId: string | null;
+    assets: ReadonlyArray<string>;
+  }> = [];
   const timers = manualTimers();
   const listeners = new Set<() => void>();
   const warnings: string[] = [];
@@ -126,10 +149,14 @@ function rig(
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
     );
-    if (url.origin !== GATEWAY || url.pathname !== prices.path || init?.method !== prices.method) {
-      violations.push(`${init?.method ?? "GET"} ${url.href}: not a POST ${prices.path}`);
+    const family = PRICE_FAMILIES.find((f) => url.pathname === pricesPath(f));
+    if (url.origin !== GATEWAY || family === undefined || init?.method !== prices.method) {
+      violations.push(`${init?.method ?? "GET"} ${url.href}: not a POST /v1/prices/:family`);
     }
-    if (new Headers(init?.headers).get(CLIENT_ID_HEADER) !== session?.clientIds.service) {
+    if (
+      family !== undefined &&
+      new Headers(init?.headers).get(CLIENT_ID_HEADER) !== session?.clientIds[family]
+    ) {
       violations.push(`${url.pathname}: wrong or missing ${CLIENT_ID_HEADER}`);
     }
     let request: PricesRequest | undefined;
@@ -142,7 +169,15 @@ function rig(
       violations.push(`${url.pathname}: body violates prices.request: ${String(init?.body)}`);
       return new Response("{}", { status: 400 });
     }
+    if (family !== undefined && request.assets.some((a) => priceAssetFamily(a) !== family)) {
+      violations.push(`${url.pathname}: body names assets outside ${family}`);
+    }
     calls.push(request);
+    requests.push({
+      pathname: url.pathname,
+      clientId: new Headers(init?.headers).get(CLIENT_ID_HEADER),
+      assets: request.assets,
+    });
     return responder.answer(request);
   };
 
@@ -170,6 +205,7 @@ function rig(
   return {
     controller,
     calls,
+    requests,
     timers,
     warnings,
     session,
@@ -437,6 +473,50 @@ describe("prices over the gateway", () => {
     await flush(); // init fetches the held set once
     expect(r.calls.map((c) => c.assets.length)).toStrictEqual([100, 50]);
     expect(r.controller.getState().failure).toBeNull();
+  });
+
+  it("partitions a mixed holding: one request per family under that family's client id", async () => {
+    const held = [
+      ETH,
+      USDC,
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501",
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/token:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      BTC,
+      "tron:728126428/slip44:195",
+      "tron:728126428/trc20:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+    ];
+    const r = rig({ held });
+    await r.controller.init();
+    await flush();
+    expect(r.requests.map((q) => q.pathname).toSorted()).toStrictEqual(
+      ["/v1/prices/bitcoin", "/v1/prices/evm", "/v1/prices/solana", "/v1/prices/tron"].toSorted(),
+    );
+    const namespace = { bitcoin: "bip122:", evm: "eip155:", solana: "solana:", tron: "tron:" };
+    for (const q of r.requests) {
+      const family = q.pathname.slice("/v1/prices/".length) as keyof typeof namespace;
+      // The request travels under the family scope's own client id, never the service id.
+      expect(q.clientId).toBe(clientIdFor(r, family));
+      expect(q.clientId).not.toBe(clientIdFor(r, "service"));
+      // …and names only that family's assets — no cross-family portfolio in one request.
+      for (const asset of q.assets) {
+        expect(asset.startsWith(namespace[family])).toBe(true);
+      }
+    }
+    // Merged state is the old single-request semantics: every held asset priced.
+    expect(r.controller.getState().failure).toBeNull();
+    expect(Object.keys(r.controller.getState().quotes).toSorted()).toStrictEqual(held.toSorted());
+    expect(r.controller.getState().errors).toStrictEqual({});
+  });
+
+  it("never sends an asset with no family — it reads unsupported, no request names it", async () => {
+    const noFamily = "cosmos:cosmoshub-4/slip44:118";
+    const r = rig({ held: [ETH, noFamily] });
+    await r.controller.init();
+    await flush();
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0]?.assets).toStrictEqual([ETH]);
+    expect(r.controller.getState().errors).toStrictEqual({ [noFamily]: "unsupported" });
+    expect(r.controller.getState().quotes[noFamily]).toBeUndefined();
   });
 
   it("refreshes on becoming visible, polls while visible and stops when hidden", async () => {

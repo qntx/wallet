@@ -1,9 +1,8 @@
 /**
- * The Hyperliquid-specific agent facade and its dedicated vault record kind are gone: session keys
- * are generic — one `session-key` record kind, `sessions.*` kernel commands and the
+ * Session keys are generic — one `session-key` record kind, `sessions.*` kernel commands and the
  * `sessions(wallet)` facade. `create`/`sign` name the scheme; `list` reports records this build
  * does not know as `supported: false` (inert, still deletable). Signing a `hyperliquid-l1-agent`
- * action now requires `expiresAfter` at most 60 s after the kernel signs. Request origins gained `{
+ * action requires `expiresAfter` at most 60 s after the kernel signs. Request origins gained `{
  * kind: "app", id }` and `/v1/eligibility` answers a record keyed by app id — an absent app is
  * unknown, not available. Compiled only.
  */

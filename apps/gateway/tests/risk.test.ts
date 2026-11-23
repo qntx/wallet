@@ -88,6 +88,13 @@ const snapshotOf = (store: ReturnType<typeof memoryRiskStore>) =>
   };
 
 describe("phishing list generation", () => {
+  it("a source parse refuses a non-object document and a non-array field", () => {
+    for (const src of PHISHING_SOURCES) {
+      expect(() => src.parse("not json")).toThrow(TypeError);
+      expect(() => src.parse({})).toThrow(TypeError);
+    }
+  });
+
   it("merges both sources, normalizes, hashes, sorts and dedupes", async () => {
     const { store, build } = setup();
     await build(

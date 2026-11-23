@@ -23,6 +23,7 @@ import { entropyFromPrf } from "../seed/passkey.ts";
 import { withSeed } from "../seed/seed.ts";
 import { wipePendingFactor } from "../session/session.ts";
 import type { PendingFactor } from "../session/session.ts";
+import { readAnchor, updateAnchor } from "../vault/anchor.ts";
 import { factorPublicKey, wrapDek } from "../vault/factors.ts";
 import { encodeHeader } from "../vault/headers.ts";
 import type { EntropyHeader } from "../vault/headers.ts";
@@ -212,7 +213,8 @@ export async function commitRecords(
  * Establishes the vault in one `init` commit and opens the session; wipes `dek` on failure. On a
  * keystore host the vault is uninitialized here and the kernel is the single writer, so every
  * hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
- * cleared before the new key is sealed — and again if the establish fails after sealing.
+ * cleared before the new key is sealed — and again if the commit that seals it fails. A later
+ * failure (the anchor floor write) leaves the keys: the vault exists and stays openable.
  */
 async function establishVault(
   ctx: KernelContext,
@@ -222,15 +224,34 @@ async function establishVault(
 ): Promise<string> {
   const { keystore } = ctx.platform;
   let keyId: string;
+  let revision: number;
   try {
     await keystore?.clear();
-    const established = establishOps(ctx.platform, await factorRowsFor(), records);
+    // iOS keeps keychain items across reinstall and a store writer can put an erased image back:
+    // establish at the anchor floor + 1 so an image sealed before an erase stays below it.
+    const anchorState = await readAnchor(ctx.platform.anchor);
+    revision = anchorState.revision + 1;
+    const established = establishOps(ctx.platform, await factorRowsFor(), records, revision);
     ({ keyId } = established);
     await ctx.commit(established.ops, { dek });
   } catch (error) {
     dek.wipe();
     // Best effort; the establish error is the one the caller needs.
     await keystore?.clear().catch(() => undefined);
+    throw error;
+  }
+  // The kernel itself sealed this image — raising the floor does not need an authenticated
+  // session, and the counters reset with the vault that owns them. This runs outside the catch
+  // above: the init already landed, so an anchor failure must not wipe hardware keys for a vault
+  // that now exists.
+  try {
+    await updateAnchor(ctx.platform.anchor, (state) => ({
+      revision: Math.max(state.revision, revision),
+      failedAttempts: 0,
+      lastFailureAt: 0,
+    }));
+  } catch (error) {
+    dek.wipe();
     throw error;
   }
   return openSession(ctx, dek, keyId);

@@ -134,3 +134,35 @@ taps, the device-reader result, and the kernel prompt on the native
 On iOS use the booted simulator (`idb ui text`/`idb ui key` types into the
 trusted field) and capture with `xcrun simctl spawn booted log stream
 --predicate 'process == "V1Harness"'`, then run the same checker.
+
+## Cloud store
+
+`EXPO_PUBLIC_CLOUD_STORE=1` swaps the probe suite for the encrypted-backup
+transport page — the real-device checklist runner from
+`n9/cloud-store/owner-setup.md`. It builds the platform store
+(`createICloudStore` on iOS, `createGoogleDriveStore` on Android from
+`@qntx/wallet-native/cloud`), probes with `list()`, then runs a
+conformance-lite pass (write→read, overwrite, list-once, delete,
+delete-missing, read-missing, invalid name) over unique
+`qntx-harness-<random>-<step>` names. Each step prints one
+`CLOUD_RESULT <step> ok|fail <detail>` line and the run ends with
+`CLOUD_DONE`. A failed probe prints `CLOUD_RESULT probe <code> <detail>`
+with the typed `CloudStoreError` code (`unavailable` on iOS without an
+iCloud account, `auth-required`/`failed` on Android without consent or an
+OAuth client) and skips the rest. iOS account changes print
+`CLOUD_RESULT account-change`; on Android an "Authorize" button calls
+`store.authorize()` for the interactive consent and reruns.
+
+The iOS CloudKit entitlements come from
+`EXPO_PUBLIC_ICLOUD_CONTAINER` at prebuild time — `app.config.ts` adds
+`com.apple.developer.icloud-services: [CloudKit]` and the container
+identifier only when it is set, so the default build is unchanged:
+
+```bash
+EXPO_PUBLIC_CLOUD_STORE=1 \
+EXPO_PUBLIC_ICLOUD_CONTAINER=iCloud.org.qntx.wallet.harness.ios \
+bunx expo prebuild --clean
+```
+
+Expected without accounts: iOS `unavailable`, Android `auth-required` or
+`failed` — record the exact SDK detail; a crash or untyped error is a bug.

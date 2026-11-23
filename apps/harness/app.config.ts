@@ -1,5 +1,9 @@
 import type { ExpoConfig } from "expo/config";
 
+// Set at prebuild to give the iOS app the iCloud container the cloud-store page
+// drives; unset keeps the default entitlements so CI prebuilds change nothing.
+const icloudContainer = process.env.EXPO_PUBLIC_ICLOUD_CONTAINER;
+
 const config = (): ExpoConfig => ({
   name: "V1 Harness",
   slug: "qntx-wallet-harness",
@@ -19,6 +23,12 @@ const config = (): ExpoConfig => ({
     entitlements: {
       // ISO 14443 tag sessions for the qntx card reader surface.
       "com.apple.developer.nfc.readersession.formats": ["TAG"],
+      ...(icloudContainer === undefined
+        ? {}
+        : {
+            "com.apple.developer.icloud-services": ["CloudKit"],
+            "com.apple.developer.icloud-container-identifiers": [icloudContainer],
+          }),
     },
     infoPlist: {
       NSFaceIDUsageDescription: "Face ID unlocks the wallet and approves each transaction.",
@@ -33,9 +43,15 @@ const config = (): ExpoConfig => ({
   },
   android: {
     package: "org.qntx.wallet.harness",
+    // The card reader surface needs NFC; the library manifest declares nothing
+    // so host apps opt in with the same entries.
+    permissions: [
+      "android.permission.NFC",
+      "android.permission.HIDE_OVERLAY_WINDOWS",
+    ],
   },
   // WD-024: the hardware vault factor needs API 30.
-  plugins: [["expo-build-properties", { android: { minSdkVersion: 30 } }]],
+  plugins: [["expo-build-properties", { android: { minSdkVersion: 30 } }], "./plugins/android-card.ts"],
 });
 
 export default config;

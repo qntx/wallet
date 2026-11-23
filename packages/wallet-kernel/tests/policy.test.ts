@@ -8,6 +8,7 @@ import { nobleBackend } from "@qntx/nostr";
 
 import type { KernelPlatform } from "../src/platform.ts";
 import { Secret } from "../src/secret/secret.ts";
+import { createMemoryAnchor } from "../src/vault/anchor.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import { BLIND_SIGNING, policyEnabled, sealPolicy } from "../src/vault/policy.ts";
 import type { StoredRecord, VaultImage } from "../src/vault/store.ts";
@@ -22,6 +23,7 @@ const platform: KernelPlatform = {
   pbkdf2: subtlePbkdf2,
   argon2id: quickArgon2id,
   store: createMemoryStore(),
+  anchor: createMemoryAnchor(),
   policy: { maxSessionMs: 0, maxScryptLogN: 20 },
   keystore: undefined,
   passkey: undefined,

@@ -29,6 +29,7 @@ import {
   isTronAddress,
   tronAddressFromHex,
   tronAddressFromPublicKey,
+  tronAddressToEvm,
   trc20TransferContract,
 } from "@qntx/wallet-chains/tron";
 import type { TronContract } from "@qntx/wallet-chains/tron";
@@ -36,10 +37,12 @@ import { signTronTransaction } from "@qntx/wallet-chains/tron/sign";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { ApprovalsController } from "../src/approvals/controller.ts";
+import type { ApprovalsView } from "../src/approvals/types.ts";
 import type { AccountBalances } from "../src/assets/controller.ts";
 import { AssetsController } from "../src/assets/controller.ts";
 import type { TronFeeQuote } from "../src/chains/tron.ts";
-import { tronFeeLimit } from "../src/chains/tron.ts";
+import { constantCall, tronFeeLimit } from "../src/chains/tron.ts";
 import { HistoryController } from "../src/history/controller.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { PendingRequest } from "../src/requests/controller.ts";
@@ -316,6 +319,30 @@ const realTimer = (ms: number, fn: () => unknown): (() => void) => {
   return () => {
     clearTimeout(id);
   };
+};
+
+const waitUntil = async (check: () => boolean, deadline = Date.now() + 60_000): Promise<void> => {
+  if (check()) {
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new Error("waitUntil timed out");
+  }
+  await sleep(1000);
+  return waitUntil(check, deadline);
+};
+
+const trc20Row =
+  (spender: string) =>
+  (r: ApprovalsView["rows"][number]): boolean =>
+    r.kind === "trc20" && r.spender.toLowerCase() === spender.toLowerCase();
+
+const mustFind = <T>(list: ReadonlyArray<T>, pred: (item: T) => boolean, name: string): T => {
+  const found = list.find(pred);
+  if (found === undefined) {
+    throw new Error(`expected ${name} missing`);
+  }
+  return found;
 };
 
 const liveChainParameters = async (): Promise<Map<string, number>> => {
@@ -614,6 +641,79 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       expect(energyTotal(tokenInfo) * 2n).toBeLessThanOrEqual(used * 3n);
       const refreshed = await assets.refresh(A, NILE);
       expect(refreshed.tokens.some((t) => t.address === token)).toBe(true);
+    },
+  );
+
+  it(
+    "approves through the pipeline, lists the trc20 row locally and revokes it",
+    { timeout: 600_000 },
+    async () => {
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- shared fixture presence guard
+      if (tokenAddress === undefined) {
+        throw new Error("the TRC-20 deploy test must run first");
+      }
+      const approvals = new ApprovalsController({
+        networks,
+        transactions,
+        gateway: undefined,
+        fetch: globalThis.fetch,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        setTimer: realTimer,
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+        addressOf: async (ref, network) => transactions.addressOf(ref, network),
+        known: () => [],
+        tokenMetadata: async () => Promise.resolve({ symbol: "TST", decimals: 18 }),
+        sessions: async () => Promise.resolve([]),
+        prepare: async (input) => requests.prepare(input),
+      });
+      await approvals.init();
+
+      const granted = await requests.prepare({
+        method: "tron-approve",
+        account,
+        network: NILE,
+        token: tokenAddress,
+        spender: tre1Addr,
+        amount: 123n,
+      });
+      const sent = await requests.approve(granted.id, "tron-approve", approval(granted, VERIFY));
+      const final = await waitFinal(transactions, sent.id, Date.now() + 240_000);
+      expect(final.state).toBe("confirmed");
+
+      const key = await approvals.load(account, NILE);
+      const view = (): ApprovalsView =>
+        mustFind(Object.values(approvals.getState().views), (v) => v.key === key, "view");
+      await waitUntil(() => view().status === "ready");
+      /* TRE serves no `/v1` indexer: the row comes from the wallet's own tracked transaction. */
+      expect(view().sources).toContainEqual(
+        expect.objectContaining({ source: "gateway", status: "unavailable" }),
+      );
+      const trc20 = mustFind(view().rows, trc20Row(tre1Addr), "trc20 row");
+      expect(trc20).toMatchObject({ kind: "trc20", amount: "123", unlimited: false });
+      expect(trc20.sources).toContain("local");
+
+      const revokePending = await approvals.revoke(key, trc20.id);
+      expect(revokePending.display).toMatchObject({
+        approvals: [{ kind: "allowance", amount: { amount: "0" } }],
+      });
+      const revoked = await requests.approve(
+        revokePending.id,
+        "tron-approve",
+        approval(revokePending, VERIFY),
+      );
+      await waitFinal(transactions, revoked.id, Date.now() + 240_000);
+      await waitUntil(() => !view().rows.some(trc20Row(tre1Addr)));
+      const outcome = await constantCall(networks.tronApi(NILE), {
+        owner: A,
+        contract: tokenAddress,
+        data: hexToBytes(
+          `dd62ed3e${tronAddressToEvm(A).slice(2).padStart(64, "0")}${tronAddressToEvm(tre1Addr).slice(2).padStart(64, "0")}`,
+        ),
+      });
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- union narrowing on ok
+      const outcomeResult = outcome.ok ? outcome.result : new Uint8Array([1]);
+      expect(bytesToHex(outcomeResult).replace(/^0+/, "")).toBe("");
     },
   );
 

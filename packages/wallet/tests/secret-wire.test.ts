@@ -23,6 +23,7 @@ import type {
 import { internalsOf } from "../src/internal.ts";
 import type { WalletInternals } from "../src/internal.ts";
 import { nostr } from "../src/nostr/index.ts";
+import { SECRET_FIELDS } from "../src/protocol/index.ts";
 import type { MethodName, ParamsOf, ProtocolValue } from "../src/protocol/index.ts";
 import { spark } from "../src/spark/index.ts";
 import { WalletError } from "../src/types.ts";
@@ -156,16 +157,7 @@ const expectSecretsPosted = async (
   }
 };
 
-const SECRET_FIELDS = new Set([
-  "password",
-  "prf",
-  "prfWallet",
-  "prfBackup",
-  "mnemonic",
-  "passphrase",
-  "secret",
-  "answers",
-]);
+const SECRET_SET = new Set<string>(SECRET_FIELDS);
 
 /** Every Uint8Array under `value`, however nested. */
 function collectBytes(value: unknown, out: Uint8Array[]): void {
@@ -200,7 +192,7 @@ function secretBytes(params: unknown): Uint8Array[] {
       return;
     }
     for (const [key, entry] of Object.entries(value)) {
-      if (SECRET_FIELDS.has(key)) {
+      if (SECRET_SET.has(key)) {
         collectBytes(entry, out);
       } else {
         walk(entry);

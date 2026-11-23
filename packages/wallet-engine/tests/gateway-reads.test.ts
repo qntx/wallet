@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { gatewayFetch, gatewayScope, gatewaySession } from "../src/gateway/client.ts";
+import * as contract from "../src/gateway/contract/index.ts";
 import {
   CLIENT_ID_HEADER,
   accepts,
+  approvalsPath,
   bridgeQuote,
   clientId,
   esploraBasePath,
@@ -13,7 +15,14 @@ import {
   historyPath,
   networkById,
   networksPath,
+  nftCollectionPath,
+  nftFloorPath,
+  nftItemPath,
+  nftItemsPath,
   phishingListPath,
+  pricesPath,
+  pushSubscribe,
+  pushPath,
   rpcPath,
   solanaRpcRequest,
   swapQuote,
@@ -416,6 +425,19 @@ describe("independent clients", () => {
   });
 });
 
+/** The contract module's scoped endpoints (`:caip2`/`:family` in the path), as `it.each` rows. */
+const SCOPED_CONTRACT_ROUTES = Object.values(contract as Record<string, unknown>)
+  .filter(
+    (value): value is { readonly method: string; readonly path: string } =>
+      typeof value === "object" &&
+      value !== null &&
+      "method" in value &&
+      "path" in value &&
+      typeof value.path === "string" &&
+      value.path.includes(":"),
+  )
+  .map((route) => [route.path, route] as const);
+
 describe("gatewayScope", () => {
   const scope = (path: string) => gatewayScope(new URL(`${GATEWAY}${path}`));
 
@@ -426,21 +448,52 @@ describe("gatewayScope", () => {
     ["/v1/rpc/nope:0", "service"],
     [historyPath(SEPOLIA), "evm"],
     ["/v1/history/nope:0", "service"],
+    [approvalsPath(SEPOLIA), "evm"],
+    ["/v1/approvals/nope:0", "service"],
     [tokenListPath(SEPOLIA), "evm"],
     [tokenListPath(DEVNET), "solana"],
     [tokenListPath(SIGNET), "bitcoin"],
     ["/v1/tokens/nope:0", "service"],
+    [pricesPath("evm"), "evm"],
+    [pricesPath("solana"), "solana"],
+    [pricesPath("bitcoin"), "bitcoin"],
+    [pricesPath("tron"), "tron"],
+    ["/v1/prices/nope", "service"],
+    [nftItemsPath(SEPOLIA), "evm"],
+    [nftItemsPath(DEVNET), "solana"],
+    [nftItemPath(SEPOLIA), "evm"],
+    [nftCollectionPath(DEVNET), "solana"],
+    [nftFloorPath(SEPOLIA), "evm"],
+    ["/v1/nfts/items/nope:0", "service"],
     [`${esploraBasePath(SIGNET)}/block-height/0`, "bitcoin"],
     [`${esploraBasePath(SIGNET)}/tx`, "bitcoin"],
     [swapQuoteSolana.path, "solana"],
     [swapQuote.path, "evm"],
     [bridgeQuote.path, "evm"],
+    [pushPath(pushSubscribe.path, "evm"), "evm"],
+    [pushPath(pushSubscribe.path, "solana"), "solana"],
+    [pushPath(pushSubscribe.path, "bitcoin"), "bitcoin"],
+    [pushPath(pushSubscribe.path, "tron"), "tron"],
+    ["/v1/push/evm/transactions", "evm"],
+    ["/v1/push", "service"],
+    ["/v1/push/", "service"],
+    ["/v1/push/nope/subscription", "service"],
+    ["/v1/pushd/evm/subscription", "service"],
     [networksPath, "service"],
     [phishingListPath, "service"],
     [health.path, "service"],
     ["/v1/unknown", "service"],
   ])("maps %s to %s", (path, expected) => {
     expect(scope(path)).toBe(expected);
+  });
+
+  /* Every contract route whose path selects a `:caip2` network or `:family` — the routes whose
+     request carries an address, owner, asset or subscription — must resolve to a family scope:
+     a miss would meter the call under the shared "service" client id. Enumerating the contract
+     module means a new scoped route joins this table without being listed. */
+  it.each(SCOPED_CONTRACT_ROUTES)("scoped route %s resolves to a family", (_name, route) => {
+    const path = route.path.replace(":caip2", "eip155:1").replace(":family", "evm");
+    expect(scope(path)).not.toBe("service");
   });
 
   it("scopes ids per family under a gateway mounted on a base path", async () => {
@@ -455,16 +508,18 @@ describe("gatewayScope", () => {
       `/base${rpcPath(SEPOLIA)}`,
       `/base${rpcPath(DEVNET)}`,
       `/base${esploraBasePath(SIGNET)}/block-height/0`,
+      `/base${pricesPath("tron")}`,
       `/base${networksPath}`,
     ];
     await Promise.all(paths.map(async (path) => wrapped(`${GATEWAY}${path}`)));
     const ids = [...seen.values()];
-    expect(new Set(ids).size).toBe(4);
+    expect(new Set(ids).size).toBe(5);
     expect(seen.get(`/base${rpcPath(SEPOLIA)}`)).toBe(gateway.clientIds.evm);
     expect(seen.get(`/base${rpcPath(DEVNET)}`)).toBe(gateway.clientIds.solana);
     expect(seen.get(`/base${esploraBasePath(SIGNET)}/block-height/0`)).toBe(
       gateway.clientIds.bitcoin,
     );
+    expect(seen.get(`/base${pricesPath("tron")}`)).toBe(gateway.clientIds.tron);
     expect(seen.get(`/base${networksPath}`)).toBe(gateway.clientIds.service);
   });
 });
