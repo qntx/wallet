@@ -1942,12 +1942,16 @@ export class RequestController extends Controller<RequestControllerState> {
     );
   }
 
-  /** Only sats and token transfers have a recipient to check; Lightning and exits are not assessed. */
+  /**
+   * Sats/token transfers name a Spark receiver and exits a bitcoin one — both assessed. Lightning
+   * names a payee public key, which no address book holds, so it is not assessed.
+   */
   private sparkRisk(display: SparkDisplay): ReadonlyArray<RiskFinding> {
-    if (display.kind !== "transfer" && display.kind !== "token") {
+    if (display.kind === "lightning") {
       return [];
     }
-    const receiver = normalizeAddress("spark", display.receiver) ?? display.receiver;
-    return assessRecipients("spark", [receiver], this.knownAddresses("spark"));
+    const family = display.kind === "exit" ? "bitcoin" : "spark";
+    const receiver = normalizeAddress(family, display.receiver) ?? display.receiver;
+    return assessRecipients(family, [receiver], this.knownAddresses(family));
   }
 }

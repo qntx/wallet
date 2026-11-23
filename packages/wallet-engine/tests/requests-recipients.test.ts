@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { OutScript } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import {
@@ -15,6 +16,7 @@ import {
 } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
+import { encodeSparkAddress } from "@qntx/spark";
 import type {
   AccountAuthority,
   AssetFlow,
@@ -29,8 +31,10 @@ import type {
   TokenAuthorization,
 } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
+import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { AddressBookController } from "../src/addresses/controller.ts";
+import type { SparkDisplay } from "../src/payments/action.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { RequestInput } from "../src/requests/controller.ts";
 import { assessIntentRecipients, intentRecipients } from "../src/requests/risk.ts";
@@ -45,6 +49,7 @@ import type {
   TrackedTransaction,
 } from "../src/transactions/route.ts";
 import { simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+import { encodeTestBolt11 } from "./support/bolt11.ts";
 
 const SEPOLIA = "eip155:11155111";
 const SOLANA_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -72,6 +77,24 @@ const BTC_ACCOUNT_REF: AccountRef = {
   groupIndex: 0,
   template: "btc.bip84",
 };
+const SPARK_ACCOUNT: SparkAccountRef = { walletId: "w", groupIndex: 0, network: "mainnet" };
+const SPARK_ACCOUNT_REGTEST: SparkAccountRef = {
+  walletId: "w",
+  groupIndex: 0,
+  network: "regtest",
+};
+const SPARK_ADDR = encodeSparkAddress({
+  network: "mainnet",
+  identityPublicKey: secp256k1.getPublicKey(new Uint8Array(32).fill(9), true),
+});
+const SPARK_ADDR_OTHER = encodeSparkAddress({
+  network: "mainnet",
+  identityPublicKey: secp256k1.getPublicKey(new Uint8Array(32).fill(11), true),
+});
+/* A saved mainnet contact and a real lookalike of it: both valid bech32, same first four and
+   last four characters — what an address poisoner needs the payer not to notice. */
+const BTC_CONTACT = "bc1quxxhnhxxnxzllhwrzsm4z234rd0kn2m62zqqyf";
+const BTC_LOOKALIKE = "bc1q6kwhveta83psflhk4z4g3ydj69a7ve9gxfqqyf";
 
 /** EVM lookalike of a saved contact: same first/last four characters, different address. */
 const EVM_SIGNER = "0x4D2A422dB44144996E855ce15FB581a477dbB947";
@@ -232,6 +255,7 @@ const rig = (over: {
     network: string;
     address: string;
   }>;
+  readonly spark?: SparkController;
   readonly prepareDapp?: (
     account: AccountRef,
     request: unknown,
@@ -273,7 +297,7 @@ const rig = (over: {
     tokens: tokensStub,
     simulateSolana: simulateSolanaStub,
     transactions,
-    spark: {} as unknown as SparkController,
+    spark: over.spark ?? ({} as unknown as SparkController),
     nostrSign: async () => Promise.reject(new Error("unused")),
     bitcoinPrepare: async (_a: unknown, _n: unknown, psbts: ReadonlyArray<{ psbt: Uint8Array }>) =>
       Promise.resolve(
@@ -963,6 +987,16 @@ type SlotFixture = {
   readonly poisoning?: boolean;
 };
 
+/* Spark displays assess the family their receiver belongs to: sats/token transfers a Spark
+   address, a cooperative exit its bitcoin address, Lightning a payee public key no address book
+   holds. A new SparkDisplay kind fails to compile until this table classifies it. */
+const SPARK_SLOTS = {
+  transfer: "spark",
+  token: "spark",
+  exit: "bitcoin",
+  lightning: "none",
+} satisfies Record<SparkDisplay["kind"], "spark" | "bitcoin" | "none">;
+
 const AMT = { asset: "0xasset", amount: "1" };
 
 const typedSlot = (slot: Record<string, unknown>): DisplayIntent => ({
@@ -1296,6 +1330,109 @@ describe("every recipient slot is assessed", () => {
       ],
     } as DisplayIntent;
     expect(intentRecipients(intent)).toStrictEqual([]);
+  });
+});
+
+describe("spark displays are assessed on their receiver's family", () => {
+  it("the kind table classifies every display kind", () => {
+    expect(SPARK_SLOTS).toStrictEqual({
+      transfer: "spark",
+      token: "spark",
+      exit: "bitcoin",
+      lightning: "none",
+    });
+  });
+
+  it("an exit paying a lookalike of a saved bitcoin contact is flagged", async () => {
+    const { requests, addressBook } = rig({
+      spark: {
+        quoteExit: async (_ref: unknown, params: { amountSats: number }) =>
+          Promise.resolve({ feeSats: 1, exitSats: params.amountSats + 1 }),
+      } as unknown as SparkController,
+    });
+    await requests.init();
+    await addressBook.init();
+    await addressBook.add({ name: "cold storage", family: "bitcoin", address: BTC_CONTACT });
+    const request = await requests.prepare({
+      method: "pay",
+      origin: ORIGIN,
+      account: SPARK_ACCOUNT,
+      option: { kind: "bitcoin", address: BTC_LOOKALIKE },
+      amountSats: 10_000,
+      maxFeeSats: 50,
+    });
+    expect(request.display).toMatchObject({ kind: "exit", receiver: BTC_LOOKALIKE });
+    expect(recipientFindings(request)).toStrictEqual(["address-poisoning", "first-recipient"]);
+  });
+
+  it("a sats transfer pays the saved spark contact without findings, a new one warns", async () => {
+    const { requests, addressBook } = rig({});
+    await requests.init();
+    await addressBook.init();
+    await addressBook.add({ name: "me", family: "spark", address: SPARK_ADDR });
+    const known = await requests.prepare({
+      method: "pay",
+      origin: ORIGIN,
+      account: SPARK_ACCOUNT,
+      option: { kind: "spark", address: SPARK_ADDR },
+      amountSats: 10_000,
+      maxFeeSats: 50,
+    });
+    expect(known.display).toMatchObject({ kind: "transfer", receiver: SPARK_ADDR });
+    expect(recipientFindings(known)).toStrictEqual([]);
+    const fresh = await requests.prepare({
+      method: "pay",
+      origin: { kind: "browser", origin: "https://other.example" },
+      account: SPARK_ACCOUNT,
+      option: { kind: "spark", address: SPARK_ADDR_OTHER },
+      amountSats: 10_000,
+      maxFeeSats: 50,
+    });
+    expect(recipientFindings(fresh)).toStrictEqual(["first-recipient"]);
+  });
+
+  it("a token transfer's spark receiver is assessed", async () => {
+    const { requests } = rig({});
+    await requests.init();
+    const request = await requests.prepare({
+      method: "pay",
+      origin: ORIGIN,
+      account: SPARK_ACCOUNT,
+      option: { kind: "spark", address: SPARK_ADDR },
+      token: { identifier: "btkn1token", amount: 123n },
+      maxFeeSats: 50,
+    });
+    expect(request.display).toMatchObject({ kind: "token", receiver: SPARK_ADDR });
+    expect(recipientFindings(request)).toStrictEqual(["first-recipient"]);
+  });
+
+  it("a lightning payee is a public key — no recipient findings", async () => {
+    const { requests, addressBook } = rig({});
+    await requests.init();
+    await addressBook.init();
+    await addressBook.add({ name: "cold storage", family: "bitcoin", address: BTC_CONTACT });
+    const invoice = encodeTestBolt11({
+      network: "regtest",
+      amountMsat: 21_000n,
+      paymentHash: new Uint8Array(32).fill(3),
+      secretKey: new Uint8Array(32).fill(7),
+      timestamp: 1_800_000_000,
+    });
+    const request = await requests.prepare({
+      method: "pay",
+      origin: ORIGIN,
+      account: SPARK_ACCOUNT_REGTEST,
+      option: {
+        kind: "lightning",
+        invoice,
+        amountSats: 21,
+        paymentHash: "03".repeat(32),
+        expiresAt: 1_800_000_000_000,
+      },
+      maxFeeSats: 50,
+    });
+    expect(request.display).toMatchObject({ kind: "lightning" });
+    expect(recipientFindings(request)).toStrictEqual([]);
   });
 });
 
