@@ -6,12 +6,13 @@
  * hashes). Encoders emit canonical JSON — fixed key order, sorted inner maps — so vectors are
  * byte-exact; parsers are strict and every failure is `integrity`.
  */
-import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 import type { CardWalletInfo } from "@qntx/wallet/types";
 
+import { parsePinnedEd25519, parsePinnedNodes, pathToString } from "../../derive/pinned.ts";
+import type { Pin, PinnedKeys } from "../../derive/pinned.ts";
 import { walletIdOf } from "../../derive/wallet-id.ts";
 import { KernelError } from "../../errors.ts";
 import {
@@ -29,9 +30,6 @@ export { CARD_WALLET_KIND } from "../../vault/store.ts";
 
 const CARD_ID = /^[0-9a-f]{32}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
-/** `m/…` — depth 1..10, each index < 2³¹ optionally hardened. */
-const NODE_PATH = /^m(\/\d+'?){1,10}$/;
-
 export type CardWalletCard = {
   readonly cardId: string; // ∈ members
   /** 97-byte certificate, pinned once this kernel has seen the card (194 hex). */
@@ -52,8 +50,12 @@ export type CardWalletHeader = {
   readonly cards: ReadonlyArray<CardWalletCard>;
 };
 
-/** A cached secp256k1 node: compressed public key + 32-byte chain code. */
-export type CardWalletNode = { readonly key: string; readonly chainCode: string };
+/** A cached secp256k1 node: compressed public key + 32-byte chain code (+ pinned parent fp). */
+export type CardWalletNode = {
+  readonly key: string;
+  readonly chainCode: string;
+  readonly parent?: string;
+};
 
 export type CardWalletBody = {
   /** Compressed master public key (66 hex); `walletIdOf(master)` must equal the record id. */
@@ -98,30 +100,9 @@ const asHex = (value: unknown, pattern: RegExp): string => {
   return value;
 };
 
-/** `m/…` depth 1..10, each segment a valid BIP-32 index (optional `'` hardened mark). */
-const asNodePath = (key: string): void => {
-  if (!NODE_PATH.test(key)) {
-    throw bodyFailure();
-  }
-  for (const segment of key.slice(2).split("/")) {
-    const index = Number(segment.replaceAll("'", ""));
-    if (!Number.isSafeInteger(index) || index >= 0x80000000) {
-      throw bodyFailure();
-    }
-  }
-};
-
 const asSecpPoint = (hex: string): void => {
   try {
     secp256k1.Point.fromBytes(hexToBytes(hex));
-  } catch {
-    throw bodyFailure();
-  }
-};
-
-const asEd25519Point = (hex: string): void => {
-  try {
-    ed25519.Point.fromBytes(hexToBytes(hex));
   } catch {
     throw bodyFailure();
   }
@@ -267,33 +248,17 @@ export function parseCardWalletBody(text: string, walletId: string): CardWalletB
   if (walletIdOf(hexToBytes(master)) !== walletId) {
     throw new KernelError("integrity", "card-wallet master does not derive its walletId");
   }
-  const nodesValue = object["nodes"];
-  if (typeof nodesValue !== "object" || nodesValue === null || Array.isArray(nodesValue)) {
-    throw bodyFailure();
-  }
-  const nodeEntries = Object.entries(nodesValue);
-  if (nodeEntries.length > 512) {
-    throw bodyFailure();
-  }
   const nodes: Record<string, CardWalletNode> = {};
-  for (const [path, node] of nodeEntries) {
-    asNodePath(path);
-    if (typeof node !== "object" || node === null || Array.isArray(node)) {
-      throw bodyFailure();
-    }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed to a non-array object
-    const entry = node as Record<string, unknown>;
-    expectBodyKeys(entry, ["key", "chainCode"]);
-    const key = asHex(entry["key"], /^[0-9a-f]{66}$/);
-    asSecpPoint(key);
-    nodes[path] = { key, chainCode: asHex(entry["chainCode"], HEX64) };
+  for (const node of parsePinnedNodes(object["nodes"])) {
+    nodes[pathToString(node.path)] = {
+      key: bytesToHex(node.publicKey),
+      chainCode: bytesToHex(node.chainCode),
+      ...(node.parent === undefined ? {} : { parent: bytesToHex(node.parent) }),
+    };
   }
-  const ed25519Entries = parseHexRecord(object["ed25519"], (path, pub) => {
-    asNodePath(path);
-    asEd25519Point(asHex(pub, HEX64));
-  });
-  if (Object.keys(ed25519Entries).length > 256) {
-    throw bodyFailure();
+  const ed25519Entries: Record<string, string> = {};
+  for (const key of parsePinnedEd25519(object["ed25519"])) {
+    ed25519Entries[pathToString(key.path)] = bytesToHex(key.publicKey);
   }
   const ephemeralsValue = object["ephemerals"];
   if (
@@ -334,7 +299,16 @@ const sortedEntries = <T>(record: Readonly<Record<string, T>>): Array<[string, T
 export function encodeCardWalletBody(body: CardWalletBody): string {
   return JSON.stringify({
     master: body.master,
-    nodes: Object.fromEntries(sortedEntries(body.nodes)),
+    nodes: Object.fromEntries(
+      sortedEntries(body.nodes).map(([path, node]) => [
+        path,
+        {
+          key: node.key,
+          chainCode: node.chainCode,
+          ...(node.parent === undefined ? {} : { parent: node.parent }),
+        },
+      ]),
+    ),
     ed25519: Object.fromEntries(sortedEntries(body.ed25519)),
     ephemerals: Object.fromEntries(sortedEntries(body.ephemerals)),
     ...(body.access === undefined
@@ -367,4 +341,15 @@ export function cardWalletInfo(header: CardWalletHeader): CardWalletInfo {
 /** Whether `walletId` names a `card-wallet` record — the caller picks the card path, not a seed. */
 export function isCardWallet(image: VaultImage, walletId: string): boolean {
   return image.records.some((r) => r.kind === CARD_WALLET_KIND && r.id === walletId);
+}
+
+/** The body's public material as a {@link Pin} — the master key plus every cached path. */
+export function cardPin(body: CardWalletBody): Pin {
+  return {
+    master: hexToBytes(body.master),
+    keys: {
+      nodes: parsePinnedNodes(body.nodes),
+      ed25519: parsePinnedEd25519(body.ed25519),
+    } satisfies PinnedKeys,
+  };
 }

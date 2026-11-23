@@ -16,6 +16,7 @@ import { KernelError } from "../../../errors.ts";
 import type { PromptLocale } from "../../../prompts.ts";
 import { wipe } from "../../../secret/secret.ts";
 import { CARD_WALLET_KIND } from "../../../vault/store.ts";
+import type { StoredRecord } from "../../../vault/store.ts";
 import { pathString } from "../../chains/keys.ts";
 import { BTC_PURPOSE } from "../../chains/shared.ts";
 import { PLAN_MS, priceOf } from "../budget.ts";
@@ -168,7 +169,7 @@ export async function* askNewCode(
 export const walletOf = (
   env: OpEnv,
   walletId: string,
-): { header: CardWalletHeader; body: CardWalletBody } => {
+): { header: CardWalletHeader; body: CardWalletBody; record: StoredRecord } => {
   const record = env.ctx.image.records.find(
     (r) => r.kind === CARD_WALLET_KIND && r.id === walletId,
   );
@@ -179,7 +180,7 @@ export const walletOf = (
   if (body === undefined) {
     throw new KernelError("integrity", "card wallet body is not loaded");
   }
-  return { header: parseCardWalletHeader(record.header), body };
+  return { header: parseCardWalletHeader(record.header), body, record };
 };
 
 /** The pinned-cert short ID of a card entry, when this kernel has seen the card. */

@@ -101,7 +101,7 @@ async function* createOne(env: OpEnv, op: CreateOp): CardOp {
               // A LOADED card that verifies but holds a different wallet is not the card this
               // import was started on — refuse rather than record it or drop the source.
               throw new KernelError(
-                "wrong-card",
+                "wrong-device",
                 "the card's wallet does not match the source wallet",
               );
             }
@@ -297,7 +297,7 @@ async function* createSet(env: OpEnv, op: CreateOp): CardOp {
     const stage = (tap: TapSession, verified: WalletInfo): void => {
       const wallet = walletIdOf(verified.masterPublicKey);
       if (sourceId !== undefined && wallet !== sourceId) {
-        throw new KernelError("wrong-card", "the card's wallet does not match the source wallet");
+        throw new KernelError("wrong-device", "the card's wallet does not match the source wallet");
       }
       // The member list must be exactly this operation's set, in order — a LOADED card that
       // verifies under the same hash but names other members is a wrong card, not this set.
@@ -306,13 +306,13 @@ async function* createSet(env: OpEnv, op: CreateOp): CardOp {
         verified.members.length !== expected.length ||
         !verified.members.every((m, i) => equalBytes(m, expected[i] ?? m))
       ) {
-        throw new KernelError("wrong-card", "the card's member list does not match this set");
+        throw new KernelError("wrong-device", "the card's member list does not match this set");
       }
       if (generate && verified.origin !== "generated") {
-        throw new KernelError("wrong-card", "the card's wallet was not generated");
+        throw new KernelError("wrong-device", "the card's wallet was not generated");
       }
       if (!generate && verified.origin !== "imported") {
-        throw new KernelError("wrong-card", "the card's wallet was not imported");
+        throw new KernelError("wrong-device", "the card's wallet was not imported");
       }
       walletId = wallet;
       const id = bytesToHex(tap.cardId);

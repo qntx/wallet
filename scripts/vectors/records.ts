@@ -236,6 +236,17 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     },
   },
   {
+    // A device kind this build does not know: the header still parses — status reports
+    // `supported: false` and every operation answers `unsupported`.
+    name: "hardware-wallet-unknown-device",
+    kind: "hardware-wallet",
+    input: {
+      device: "trezor",
+      fingerprint: "deadbeef",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
     name: "nostr-derived",
     kind: "nostr-derived",
     input: {

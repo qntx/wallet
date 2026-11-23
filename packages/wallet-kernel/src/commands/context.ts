@@ -59,8 +59,12 @@ export type KernelContext = {
   readonly platform: KernelPlatform;
   readonly session: Session;
   readonly modules: ReadonlyArray<VaultHooks>;
-  /** Live card-wallet public material by walletId — `undefined` while locked or not a card wallet. */
-  readonly cardMaterial: (walletId: string) => PublicMaterial | undefined;
+  /**
+   * Live public material for an external-custody record (card or hardware) — `integrity` when the
+   * owning module has not claimed it, `unsupported` when the record is inert (an unknown device
+   * kind). Every key the pin cannot serve answers `device-required` at call time.
+   */
+  readonly externalMaterial: (record: StoredRecord) => PublicMaterial;
   image: VaultImage;
   /**
    * The kernel's read on the store: "corrupted" (authentication or structure), "unsupported" (data

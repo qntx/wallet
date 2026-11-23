@@ -99,7 +99,7 @@ export type TapSession = {
   readonly memberOf: string | undefined;
   /** Wrap → transmit → unwrap → `result()`; a reader failure ends the tap (see step 9). */
   readonly send: (inner: Inner) => Promise<Uint8Array>;
-  /** The §7.3 gate: WAITs the counter demands, then VERIFY; `wrong-card` on a record mismatch. */
+  /** The §7.3 gate: WAITs the counter demands, then VERIFY; `wrong-device` on a record mismatch. */
   readonly verify: (accessHash: Uint8Array) => Promise<VerifyOutcome>;
   /**
    * T-INSTALL just ran (§9.14): the card holds the wallet with a fresh failure count — the tap's
@@ -459,7 +459,7 @@ export async function runTap(
           members.length !== info.members.length ||
           !members.every((m) => info.members.some((id) => bytesToHex(id) === m))
         ) {
-          throw new KernelError("wrong-card", "the card's wallet does not match the record");
+          throw new KernelError("wrong-device", "the card's wallet does not match the record");
         }
       }
       verifyInfo = info;

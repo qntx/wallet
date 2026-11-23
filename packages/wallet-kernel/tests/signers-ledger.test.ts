@@ -15,9 +15,10 @@ import { planSolana, solanaAddressFromPublicKey } from "@qntx/wallet-chains/sola
 import { planTron } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest, ChainTemplate } from "@qntx/wallet/protocol";
 
+import type { PinnedNode } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
 import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import type { HardwarePin, PinnedNode } from "../src/modules/signers/driver.ts";
+import type { HardwarePin } from "../src/modules/signers/driver.ts";
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { call, mapLedgerError } from "../src/modules/signers/ledger/errors.ts";
 import { edAt, nodeAt } from "./signers-fake.ts";

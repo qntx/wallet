@@ -1,5 +1,5 @@
 // The vault side of a card wallet: the `card-wallet` record contributes a CardWalletInfo to
-// status, every seed-seeking method answers `unsupported` (chain.sign: `card-required`),
+// status, every seed-seeking method answers `unsupported` (chain.sign: `device-required`),
 // `wallet.accounts` answers from the cached public material, delete removes only the record, a
 // backup never carries it, and a malformed sealed body latches the vault corrupted at reconcile.
 
@@ -328,7 +328,7 @@ describe("card-wallet record", () => {
     ).resolves.toBe("unsupported");
   });
 
-  it("chain.sign answers card-required", async () => {
+  it("chain.sign answers device-required", async () => {
     const { h, session } = await setup();
     const code = await errCode(
       h.call(
@@ -345,10 +345,10 @@ describe("card-wallet record", () => {
         session,
       ),
     );
-    expect(code).toBe("card-required");
+    expect(code).toBe("device-required");
   });
 
-  it("wallet.accounts answers from card material; misses answer card-required", async () => {
+  it("wallet.accounts answers from card material; misses answer device-required", async () => {
     const { h, session } = await setup();
     const accounts = async (groupIndex: number, template: string, network: string) =>
       h.call("wallet.accounts", { walletId, groupIndex, template, network }, session);
@@ -387,10 +387,10 @@ describe("card-wallet record", () => {
     // (the group index is the unhardened account index under m/44'/60'/0').
     await expect(
       errCode(accounts(3, "solana.bip44-change", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")),
-    ).resolves.toBe("card-required");
+    ).resolves.toBe("device-required");
     await expect(
       errCode(accounts(3, "btc.bip84", "bip122:000000000019d6689c085ae165831e93")),
-    ).resolves.toBe("card-required");
+    ).resolves.toBe("device-required");
   });
 
   it("importing the same seed as a mnemonic wallet is already-exists", async () => {

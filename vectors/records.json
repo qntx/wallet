@@ -132,6 +132,16 @@
       "text": "{\"device\":\"keystone\",\"fingerprint\":\"0123abcd\",\"createdAt\":1767225600000}"
     },
     {
+      "name": "hardware-wallet-unknown-device",
+      "kind": "hardware-wallet",
+      "input": {
+        "device": "trezor",
+        "fingerprint": "deadbeef",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"device\":\"trezor\",\"fingerprint\":\"deadbeef\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "nostr-derived",
       "kind": "nostr-derived",
       "input": {

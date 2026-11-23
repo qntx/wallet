@@ -11,6 +11,7 @@ import type { CARD_METHODS, CardOpResult, CardStep, MethodName } from "@qntx/wal
 
 import type { Handler, VaultHooks } from "../../commands/context.ts";
 import type { PublicMaterial } from "../../derive/material.ts";
+import { pinnedMaterial } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import type { KernelPlatform } from "../../platform.ts";
 import { cardPromptFor, promptLocale } from "../../prompts.ts";
@@ -18,7 +19,6 @@ import { wipe } from "../../secret/secret.ts";
 import { verifyFactor } from "../../vault/vault.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
 import { PLAN_MS } from "./budget.ts";
-import { cardMaterial } from "./material.ts";
 import type { OpEnv, SignPrepared } from "./ops/index.ts";
 import {
   checkOperation,
@@ -30,7 +30,7 @@ import {
   verifyGate,
 } from "./ops/index.ts";
 import type { CardWalletBody } from "./record.ts";
-import { CARD_WALLET_KIND, parseCardWalletBody, parseCardWalletHeader } from "./record.ts";
+import { CARD_WALLET_KIND, cardPin, parseCardWalletBody, parseCardWalletHeader } from "./record.ts";
 import { runTap } from "./tap.ts";
 import type { CardOp, PendingInput, PendingTap, StepOutcome } from "./tap.ts";
 
@@ -289,7 +289,7 @@ export function createCardModule(platform: KernelPlatform): CardModule {
     handlers,
     material: (walletId) => {
       const body = live.get(walletId);
-      return body === undefined ? undefined : cardMaterial(body);
+      return body === undefined ? undefined : pinnedMaterial(cardPin(body));
     },
     interrupt,
   };

@@ -13,9 +13,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 
+import { pinnedMaterial } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
 import type { HardwarePin } from "../src/modules/signers/driver.ts";
-import { pinnedMaterial } from "../src/modules/signers/material.ts";
 import { edAt, masterFingerprint, nodeAt, SOLANA_LEAF } from "./signers-fake.ts";
 
 const HARDENED = 0x80000000;
@@ -32,7 +32,7 @@ const pin: HardwarePin = {
   ed25519: [edAt(SEED, SOLANA_LEAF)],
 };
 
-const material = pinnedMaterial(pin);
+const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
 
 const MASTER = HDKey.fromMasterSeed(SEED).publicKey;
 if (MASTER === null) {
@@ -112,8 +112,7 @@ describe("pinnedMaterial", () => {
     void parent;
     const noParent = pinnedMaterial({
       fingerprint: pin.fingerprint,
-      nodes: [withoutParent],
-      ed25519: pin.ed25519,
+      keys: { nodes: [withoutParent], ed25519: pin.ed25519 },
     });
     await expect(
       code(async () => noParent.extendedPublicKey(BTC84_ACCOUNT, net.bip32)),
@@ -122,5 +121,58 @@ describe("pinnedMaterial", () => {
 
   it("reports the pinned master fingerprint", async () => {
     await expect(material.fingerprint()).resolves.toStrictEqual(hash160(MASTER).subarray(0, 4));
+  });
+
+  it("a card-shaped pin (master, no parent) serves the master and derives the xpub parent fp", async () => {
+    const keys = {
+      nodes: [nodeAt(SEED, BTC84_ACCOUNT), nodeAt(SEED, [84 + HARDENED, HARDENED])].map(
+        ({ parent: _parent, ...rest }) => rest,
+      ),
+      ed25519: [],
+    };
+    const cardPin = pinnedMaterial({ master: MASTER, keys });
+    await expect(cardPin.secp256k1([])).resolves.toStrictEqual(MASTER);
+    // No parent pinned: the xpub's parent fp is hash160 of the cached m/84'/0' public key.
+    const net = bitcoinNetwork("bip122:000000000019d6689c085ae165831e93");
+    const oracle = HDKey.fromMasterSeed(SEED, net.bip32).derive("m/84'/0'/0'");
+    await expect(cardPin.extendedPublicKey(BTC84_ACCOUNT, net.bip32)).resolves.toBe(
+      oracle.publicExtendedKey,
+    );
+    // And a derived node carries the same fingerprint report: hash160(master)[0..4].
+    await expect(cardPin.fingerprint()).resolves.toStrictEqual(hash160(MASTER).subarray(0, 4));
+  });
+
+  it("serializes the explicitly pinned parent fingerprint, never a derived one", async () => {
+    const alien = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    const pinned = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: {
+        nodes: [{ ...nodeAt(SEED, BTC84_ACCOUNT), parent: alien }],
+        ed25519: [],
+      },
+    });
+    const net = bitcoinNetwork("bip122:000000000019d6689c085ae165831e93");
+    const xpub = await pinned.extendedPublicKey(BTC84_ACCOUNT, net.bip32);
+    const decoded = HDKey.fromExtendedKey(xpub, net.bip32);
+    expect(decoded.parentFingerprint).toBe(new DataView(alien.buffer, 0, 4).getUint32(0));
+  });
+
+  it("a pin carrying neither master nor fingerprint is integrity, its keys device-required", async () => {
+    const empty = pinnedMaterial({ keys: { nodes: [], ed25519: [] } });
+    await expect(code(async () => empty.secp256k1([]))).resolves.toBe("device-required");
+    await expect(code(async () => empty.ed25519(SOLANA_LEAF))).resolves.toBe("device-required");
+    await expect(code(async () => empty.fingerprint())).resolves.toBe("integrity");
+  });
+
+  it("a fingerprint claim that contradicts the pinned master is integrity", async () => {
+    const bad = pinnedMaterial({
+      master: MASTER,
+      fingerprint: new Uint8Array([0, 0, 0, 0]),
+      keys: pin,
+    });
+    await expect(code(async () => bad.fingerprint())).resolves.toBe("integrity");
+    // A matching claim passes — the master still wins the answer.
+    const fine = pinnedMaterial({ master: MASTER, fingerprint: pin.fingerprint, keys: pin });
+    await expect(fine.fingerprint()).resolves.toStrictEqual(hash160(MASTER).subarray(0, 4));
   });
 });

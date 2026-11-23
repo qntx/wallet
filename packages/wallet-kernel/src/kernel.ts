@@ -28,6 +28,7 @@ import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSessionsModule } from "./modules/sessions/index.ts";
 import { DRIVERS } from "./modules/signers/drivers.ts";
 import { createSignersModule } from "./modules/signers/index.ts";
+import { HARDWARE_WALLET_KIND } from "./modules/signers/record.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
 import { serializeCeremonies } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
@@ -151,18 +152,7 @@ export function startKernel(
   const card = createCardModule(platform);
   const spark = createSparkModule();
   const signers = createSignersModule(drivers);
-  const chains = createChainsModule((image, record) => {
-    if (record.kind !== CARD_WALLET_KIND) {
-      return signers.material(image, record);
-    }
-    // The record exists but its body was never claimed — an unlock that opened records but
-    // skipped the card module should not be possible.
-    const material = card.material(record.id);
-    if (material === undefined) {
-      throw new KernelError("integrity", "card wallet material is not loaded");
-    }
-    return material;
-  });
+  const chains = createChainsModule();
   const sessions = createSessionsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
@@ -221,11 +211,21 @@ export function startKernel(
       for (const record of next.records.filter((r) => !isManifestRecord(r))) {
         const prior = before.get(`${record.kind}/${record.id}`);
         if (prior === undefined) {
-          opened.push({ kind: record.kind, id: record.id, plaintext: openChecked(dek, record) });
+          opened.push({
+            kind: record.kind,
+            id: record.id,
+            header: record.header,
+            plaintext: openChecked(dek, record),
+          });
         } else {
           before.delete(`${record.kind}/${record.id}`);
           if (prior.header !== record.header || !equalBytes(prior.sealed, record.sealed)) {
-            opened.push({ kind: record.kind, id: record.id, plaintext: openChecked(dek, record) });
+            opened.push({
+              kind: record.kind,
+              id: record.id,
+              header: record.header,
+              plaintext: openChecked(dek, record),
+            });
           }
         }
       }
@@ -377,7 +377,21 @@ export function startKernel(
     platform,
     session: new Session(platform, onLock),
     modules: [nostr.vault, spark.vault, chains.vault, sessions.vault, signers.vault, card.vault],
-    cardMaterial: card.material,
+    // One material seam for every external custody: card bodies are tap-cached, hardware pins
+    // are pairing-claimed — an unclaimed record is integrity, an inert one unsupported.
+    externalMaterial: (record) => {
+      if (record.kind === CARD_WALLET_KIND) {
+        const material = card.material(record.id);
+        if (material === undefined) {
+          throw new KernelError("integrity", "card wallet material is not loaded");
+        }
+        return material;
+      }
+      if (record.kind === HARDWARE_WALLET_KIND) {
+        return signers.material(record);
+      }
+      throw new KernelError("integrity", "record is not an external-custody wallet");
+    },
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {

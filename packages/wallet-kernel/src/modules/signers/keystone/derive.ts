@@ -12,9 +12,10 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 import type { KeyPath } from "@qntx/wallet-chains";
 
+import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
+import { pathToString } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
-import type { DeviceLink, PairingResult, PinnedEd25519, PinnedNode } from "../driver.ts";
-import { pathToString } from "../record.ts";
+import type { DeviceLink, PairingResult } from "../driver.ts";
 import { decodeCbor } from "./cbor.ts";
 import { hardwareCall, multiAccounts } from "./registry.ts";
 import { pathOf, samePath } from "./sync.ts";

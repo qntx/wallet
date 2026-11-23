@@ -42,7 +42,6 @@ const SIGNERS_FILES = [
   "index.ts",
   "driver.ts",
   "drivers.ts",
-  "material.ts",
   "operation.ts",
   "prompt.ts",
   "record.ts",

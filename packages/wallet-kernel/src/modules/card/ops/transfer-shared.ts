@@ -80,7 +80,7 @@ export const importOutcome = async (
       error.code === "invalid-data" &&
       tap.status.life === "loaded"
     ) {
-      throw new KernelError("wrong-card", "the loaded card does not accept this wallet's export");
+      throw new KernelError("wrong-device", "the loaded card does not accept this wallet's export");
     }
     throw error;
   }
@@ -94,7 +94,7 @@ export const importOutcome = async (
       error.code === "invalid-data" &&
       tap.status.life === "loaded"
     ) {
-      throw new KernelError("wrong-card", "the loaded card holds a different wallet");
+      throw new KernelError("wrong-device", "the loaded card holds a different wallet");
     }
     throw error;
   }
@@ -117,7 +117,7 @@ export const checkInfo = (
       return member !== undefined && equalBytes(hexToBytes(m), member);
     })
   ) {
-    throw new KernelError("wrong-card", "the card's wallet does not match the record");
+    throw new KernelError("wrong-device", "the card's wallet does not match the record");
   }
 };
 
@@ -128,7 +128,7 @@ export const checkInfo = (
  * - Retry finding the target LOADED: a `wrong-state` IMPORT P1=0 means the earlier install committed
  *   and consumed the offer — VERIFY the target's hash to prove it, which also records the card
  *   ready through the engine's bookkeeping. (`invalid-data` there means the card holds a foreign
- *   wallet — `wrong-card`, never a probing VERIFY.)
+ *   wallet — `wrong-device`, never a probing VERIFY.)
  * - Retry finding it still BLANK with the offer gone (`wrong-state`): OFFER again on the spot and ask
  *   the op for a re-export (`reexport`). Any other answer stays a real fault.
  */
@@ -154,7 +154,7 @@ export const installRun = async (opts: {
       if (!confirmed.ok) {
         // A card whose install committed verifies under the new hash — one that does not
         // holds a foreign wallet that merely burned its offer.
-        throw new KernelError("wrong-card", "the loaded card did not accept this wallet's code");
+        throw new KernelError("wrong-device", "the loaded card did not accept this wallet's code");
       }
       checkInfo(opts.entry.header, opts.entry.body, confirmed.info);
       return { status: "done" };

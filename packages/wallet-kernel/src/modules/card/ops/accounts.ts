@@ -2,7 +2,6 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 import type { CardOperation, CardOpResult } from "@qntx/wallet/protocol";
 
-import { KernelError } from "../../../errors.ts";
 import { wipe } from "../../../secret/secret.ts";
 import { accountFor } from "../../chains/index.ts";
 import type { CardOp } from "../tap.ts";
@@ -122,10 +121,7 @@ export async function* accountsOp(
         label: accessCodeLabel(env.locale, undefined, outcome.remaining),
       });
     }
-    const material = env.ctx.cardMaterial(walletId);
-    if (material === undefined) {
-      throw new KernelError("integrity", "card wallet material is not loaded");
-    }
+    const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
     const accounts = [];
     for (const template of op.templates) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential material lookups

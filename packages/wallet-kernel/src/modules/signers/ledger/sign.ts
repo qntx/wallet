@@ -28,6 +28,7 @@ import {
 } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest } from "@qntx/wallet/protocol";
 
+import { pinnedMaterial } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
 import type { Exchange } from "../../ledger/protocol/apdu.ts";
@@ -51,7 +52,6 @@ import {
   tronSignTypedDataHash,
 } from "../../ledger/protocol/tron.ts";
 import type { DeviceLink, SignContext } from "../driver.ts";
-import { pinnedMaterial } from "../material.ts";
 import { solanaClears, solanaOffchain, tronSettings } from "./display.ts";
 import { call } from "./errors.ts";
 import { apduExchange, requiredApp } from "./link.ts";
@@ -228,7 +228,10 @@ const bitcoinPsbt = async (
   }
   const account = firstTask.path.slice(0, 3);
   const net = bitcoinNetwork(request.network);
-  const xpub = await pinnedMaterial(context.pin).extendedPublicKey(account, net.bip32);
+  const xpub = await pinnedMaterial({
+    fingerprint: context.pin.fingerprint,
+    keys: context.pin,
+  }).extendedPublicKey(account, net.bip32);
   const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
   const yielded = await call(async () => btcSignPsbt(exchange, stage.psbt, policy));
   return stage.tasks.map((task, index) => {

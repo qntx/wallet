@@ -11,8 +11,9 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceResponse } from "@qntx/wallet/protocol";
 
+import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
-import type { PairingResult, PinnedEd25519, PinnedNode } from "../driver.ts";
+import type { PairingResult } from "../driver.ts";
 import { decodeCbor } from "./cbor.ts";
 import { multiAccounts } from "./registry.ts";
 import type { CryptoKeyPath } from "./registry.ts";

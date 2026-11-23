@@ -31,8 +31,7 @@ import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
-import type { StoredRecord, VaultImage } from "../../vault/store.ts";
-import { CARD_WALLET_KIND } from "../../vault/store.ts";
+import type { StoredRecord } from "../../vault/store.ts";
 import { findWalletRecord, openRecord, verifyFactor } from "../../vault/vault.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
@@ -127,18 +126,11 @@ export const accountFor = async (
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
 
-/**
- * The signers module's `pinnedMaterial`, injected so chains never imports its owner: returns the
- * public material pinned to an external-signer record or throws `device-required`.
- */
-export type ExternalMaterial = (image: VaultImage, record: StoredRecord) => PublicMaterial;
-
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
   params: Parameters<Handler<"wallet.accounts">>[1],
   session: string | undefined,
   cache: AccountCache,
-  external: ExternalMaterial,
 ): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
   const record = findWalletRecord(ctx.image, params.walletId);
@@ -167,7 +159,7 @@ const walletAccounts = async (
           }
         })
       : await accountFor(
-          external(ctx.image, record),
+          ctx.externalMaterial(record),
           params.template,
           params.network,
           params.groupIndex,
@@ -239,11 +231,11 @@ const hdSource = (
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
   }
-  if (record.kind === CARD_WALLET_KIND) {
-    // Card wallets sign through card.begin's sign operation, never through this pipeline.
-    throw new KernelError("card-required", "card wallets sign through card.begin");
-  }
   if (record.kind !== "entropy") {
+    /* External custody never opens a key source here: cards sign through card.begin's tap
+       pipeline, hardware through hardware.begin's host-step protocol. An inert record (a device
+       kind this build does not know) reports `unsupported` instead. */
+    ctx.externalMaterial(record);
     throw new KernelError("device-required", "this wallet signs on its device");
   }
   return async (use) =>
@@ -424,7 +416,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   );
 };
 
-export function createChainsModule(external: ExternalMaterial): ChainsModule {
+export function createChainsModule(): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,
@@ -439,7 +431,7 @@ export function createChainsModule(external: ExternalMaterial): ChainsModule {
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {
     "wallet.accounts": async (ctx, params, session) =>
-      walletAccounts(ctx, params, session, accounts, external),
+      walletAccounts(ctx, params, session, accounts),
     "chain.sign": chainSign,
   };
 

@@ -204,8 +204,8 @@ const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set
           ownScripts.add(hex(output.script));
         }
       } catch (error) {
-        // A cache miss on card material is a real answer, not "not ours" — the caller must tap.
-        if (error instanceof KernelError && error.code === "card-required") {
+        // A miss on external material is a real answer, not "not ours" — the signer must serve.
+        if (error instanceof KernelError && error.code === "device-required") {
           throw error;
         }
         continue;

@@ -140,7 +140,7 @@ const cardWallet = async (
  * Drives `card.begin` to `done` (or the first error). `choices` fills the driver's pick at every
  * unbound short-id ask (in ask order); `deck` is every card the op may name — a step carrying
  * `card` presents the deck card with that printed ID, and a retry re-presents it. `presents`
- * overrides the presented card outright (for the wrong-card stories). `shortIds` overrides the
+ * overrides the presented card outright (for the wrong-device stories). `shortIds` overrides the
  * typed strings literally.
  */
 const drive = async (
@@ -500,7 +500,7 @@ describe("multi-card operations (fake card)", () => {
     expect(target.received).toStrictEqual([]);
   });
 
-  it("a pending member that holds a foreign wallet → wrong-card, untouched", async () => {
+  it("a pending member that holds a foreign wallet → wrong-device, untouched", async () => {
     const r = await rig();
     const source = createFakeCard();
     const target = createFakeCard();
@@ -568,7 +568,7 @@ describe("multi-card operations (fake card)", () => {
       },
       verifyPasskey(),
     );
-    expect(out.error).toBe("wrong-card");
+    expect(out.error).toBe("wrong-device");
     expect(target.state.life).toBe("loaded"); // never touched
   });
 
@@ -605,7 +605,7 @@ describe("multi-card operations (fake card)", () => {
     expect(target.received.filter((i) => i === 0x42)).toStrictEqual([]); // IMPORT never sent
   });
 
-  it("IMPORT answering a WalletInfo with another master key → wrong-card", async () => {
+  it("IMPORT answering a WalletInfo with another master key → wrong-device", async () => {
     const r = await rig();
     const source = createFakeCard();
     const target = createFakeCard({ knobs: { walletInfoMaster: source.identity } });
@@ -619,7 +619,7 @@ describe("multi-card operations (fake card)", () => {
       },
       verifyPasskey(),
     );
-    expect(out.error).toBe("wrong-card");
+    expect(out.error).toBe("wrong-device");
     expect(target.state.life).toBe("loaded"); // the install did happen; the record stays pending
     const { cards } = await cardWallet(r);
     expect(cards?.[1]?.state).toBe("pending");
@@ -1375,7 +1375,7 @@ describe("multi-card mutation coverage (fake card)", () => {
     expect(code.every((b) => b === 0)).toBe(true);
   });
 
-  it("a torn create whose VERIFYed members come back reordered is wrong-card", async () => {
+  it("a torn create whose VERIFYed members come back reordered is wrong-device", async () => {
     // k=3: [source, t2, t1] survives the decoder (distinct, contains the card) but is not the
     // op's member order — `stage` must compare the list in order, not just its length. The
     // first source tap is lost so the retry admits the already-loaded liar under "any" life.
@@ -1424,7 +1424,7 @@ describe("multi-card mutation coverage (fake card)", () => {
         r.reader.present(typed === 1 ? t1 : t2);
       } else if (lost) {
         presented = true;
-        r.reader.present(source); // same master, reordered member list → wrong-card
+        r.reader.present(source); // same master, reordered member list → wrong-device
       } else {
         lost = true;
         r.reader.loseAfter(0); // the source tap dies before SELECT answers
@@ -1437,7 +1437,7 @@ describe("multi-card mutation coverage (fake card)", () => {
       }
       s = next.ok as Step;
     }
-    expect(err).toBe("wrong-card");
+    expect(err).toBe("wrong-device");
     expect(presented).toBe(true);
   });
 

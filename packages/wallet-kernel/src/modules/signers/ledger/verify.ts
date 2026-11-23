@@ -11,6 +11,7 @@ import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
 import type { ChainTemplate } from "@qntx/wallet/protocol";
 
+import { pinnedMaterial } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { Exchange } from "../../ledger/protocol/apdu.ts";
 import { btcWalletAddress } from "../../ledger/protocol/bitcoin/index.ts";
@@ -20,7 +21,6 @@ import { ethAddress } from "../../ledger/protocol/ethereum.ts";
 import { solanaAddress } from "../../ledger/protocol/solana.ts";
 import { tronAddress } from "../../ledger/protocol/tron.ts";
 import type { DeviceLink, HardwarePin, VerifyVerdict } from "../driver.ts";
-import { pinnedMaterial } from "../material.ts";
 import { mapLedgerError } from "./errors.ts";
 import { apduExchange, requiredApp } from "./link.ts";
 
@@ -62,7 +62,10 @@ const bitcoin = async (
   }
   const account = [purpose, coin, group];
   const net = bitcoinNetwork(target.network);
-  const xpub = await pinnedMaterial(pin).extendedPublicKey(account, net.bip32);
+  const xpub = await pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin }).extendedPublicKey(
+    account,
+    net.bip32,
+  );
   const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
   return shown(async () => btcWalletAddress(exchange, policy, change, index, true));
 };

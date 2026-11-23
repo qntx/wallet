@@ -6,34 +6,35 @@
  *
  * Header `{ device, fingerprint, model?, firmware?, createdAt }` is stored as fixed-order JSON and
  * enters the envelope AAD verbatim; the body is strict JSON `{ nodes, ed25519 }` keyed by `m/…`
- * paths. Parsing validates fully: a malformed row is `integrity`, never silently ignored.
+ * paths — the same pinned-material codec the card body uses (../../derive/pinned.ts). `device` is
+ * any well-formed device string: kinds this build does not know authenticate but stay inert —
+ * listed with `supported: false`, never parsed for a body, never driven. Parsing validates fully: a
+ * malformed row is `integrity`, never silently ignored.
  */
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import type { KeyPath } from "@qntx/wallet-chains";
-import type { HardwareDevice } from "@qntx/wallet/protocol";
 import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 import type { HardwareWalletInfo } from "@qntx/wallet/types";
 
+import { parsePinnedEd25519, parsePinnedNodes, pathToString } from "../../derive/pinned.ts";
+import type { PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import { asCreatedAt, expectKeys, headerFailure, headerObject } from "../../vault/header-codec.ts";
 import type { StoredRecord, VaultImage } from "../../vault/store.ts";
-import type { HardwarePin, PinnedEd25519, PinnedKeys, PinnedNode } from "./driver.ts";
+import type { HardwarePin } from "./driver.ts";
 
 export const HARDWARE_WALLET_KIND = "hardware-wallet";
 
 const HARDENED = 0x80000000;
 /** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
-const DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
-const HEX = /^[0-9a-f]+$/;
-const MAX_NODES = 512;
-const MAX_ED25519 = 256;
+const DEVICE_TEXT = /^[ -~]{1,64}$/;
+/** The device-kind shape: a lowercase slug — unknown kinds are authenticated but inert. */
+export const DEVICE_KIND = /^[a-z][a-z0-9-]{1,31}$/;
 
 export type HardwareHeader = {
-  readonly device: HardwareDevice;
+  /** The device kind — possibly one this build does not know. */
+  readonly device: string;
   /** The BIP-32 master fingerprint the device claimed at pairing, 4 bytes. */
   readonly fingerprint: Uint8Array;
   readonly model?: string;
@@ -41,12 +42,16 @@ export type HardwareHeader = {
   readonly createdAt: number;
 };
 
+/** Whether this build ships a driver for the header's device kind. */
+export const deviceSupported = (device: string): boolean =>
+  HARDWARE_DEVICES.some((known) => known === device);
+
 /**
  * Stable hardware-wallet identifier, domain-separated from the software wallet id:
  * SHA-256(UTF-8("qntx-wallet/hardware-wallet-id/v1") ‖ UTF-8(device) ‖ 0x00 ‖ fingerprint4)[0..8].
  * The same device re-paired maps to the same id — the pair handler answers `already-exists`.
  */
-export function hardwareWalletId(device: HardwareDevice, fingerprint: Uint8Array): string {
+export function hardwareWalletId(device: string, fingerprint: Uint8Array): string {
   return bytesToHex(
     sha256(
       concatBytes(
@@ -64,15 +69,11 @@ export function hardwareWallet(image: VaultImage, walletId: string): StoredRecor
   return image.records.find((r) => r.kind === HARDWARE_WALLET_KIND && r.id === walletId);
 }
 
-const asDevice = (value: unknown): HardwareDevice => {
-  if (typeof value !== "string") {
+const asDevice = (value: unknown): string => {
+  if (typeof value !== "string" || !DEVICE_KIND.test(value)) {
     throw headerFailure();
   }
-  const device = HARDWARE_DEVICES.find((d) => d === value);
-  if (device === undefined) {
-    throw headerFailure();
-  }
-  return device;
+  return value;
 };
 
 const asFingerprint = (value: unknown): Uint8Array => {
@@ -133,6 +134,7 @@ export function hardwareWalletInfo(header: HardwareHeader): HardwareWalletInfo {
     custody: "hardware",
     walletId: hardwareWalletId(header.device, header.fingerprint),
     device: header.device,
+    supported: deviceSupported(header.device),
     fingerprint: bytesToHex(header.fingerprint),
     createdAt: header.createdAt,
   };
@@ -148,71 +150,11 @@ export function hardwareWalletInfo(header: HardwareHeader): HardwareWalletInfo {
 const bodyFailure = (): KernelError =>
   new KernelError("integrity", "invalid hardware wallet record");
 
-/** `m/…` → `KeyPath`; depth 1–10, hardened segments carry `'`, indices stay under 2^31. */
-export function pathFromString(text: string): KeyPath {
-  if (!/^m(\/[0-9]+'?){1,10}$/.test(text)) {
-    throw bodyFailure();
-  }
-  return text
-    .slice(2)
-    .split("/")
-    .map((segment) => {
-      const hardened = segment.endsWith("'");
-      const digits = hardened ? segment.slice(0, -1) : segment;
-      // Canonical decimal only — a leading zero would re-encode differently.
-      if (digits.length > 1 && digits.startsWith("0")) {
-        throw bodyFailure();
-      }
-      const index = Number(digits);
-      if (!Number.isSafeInteger(index) || index > 0x7fffffff) {
-        throw bodyFailure();
-      }
-      return hardened ? index + HARDENED : index;
-    });
-}
-
-/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; empty paths are `m`. */
-export function pathToString(path: KeyPath): string {
-  return `m${path.map((i) => (i >= HARDENED ? `/${i - HARDENED}'` : `/${i}`)).join("")}`;
-}
-
-const asHexBytes = (value: unknown, length: number): Uint8Array => {
-  if (typeof value !== "string" || value.length !== length * 2 || !HEX.test(value)) {
-    throw bodyFailure();
-  }
-  return hexToBytes(value);
-};
-
-const parseNode = (
-  value: unknown,
-): { key: Uint8Array; chainCode: Uint8Array; parent?: Uint8Array } => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw bodyFailure();
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed to an object above
-  const node = value as Record<string, unknown>;
-  const hasParent = Object.hasOwn(node, "parent");
-  if (Object.keys(node).length !== (hasParent ? 3 : 2)) {
-    throw bodyFailure();
-  }
-  const publicKey = asHexBytes(node["key"], 33);
-  if (!secp256k1.utils.isValidPublicKey(publicKey)) {
-    throw bodyFailure();
-  }
-  const parsed: { key: Uint8Array; chainCode: Uint8Array; parent?: Uint8Array } = {
-    key: publicKey,
-    chainCode: asHexBytes(node["chainCode"], 32),
-  };
-  if (hasParent) {
-    parsed.parent = asHexBytes(node["parent"], 4);
-  }
-  return parsed;
-};
-
 /**
- * Parses the sealed body: every node is a real secp256k1 point, every ed25519 entry a real point,
- * every path well-formed, and the caps (512 nodes, 256 ed25519) hold. Anything less is
- * `integrity`.
+ * Parses the sealed body through the shared pinned-material codec: every node is a real secp256k1
+ * point, every ed25519 entry a real point, every path well-formed, and the caps (512 nodes, 256
+ * ed25519) hold. Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no
+ * public derivation, so a softer path could never be served. Anything less is `integrity`.
  */
 export function parseHardwareBody(plaintext: Uint8Array): PinnedKeys {
   let text: string;
@@ -235,51 +177,16 @@ export function parseHardwareBody(plaintext: Uint8Array): PinnedKeys {
   if (Object.keys(body).length !== 2) {
     throw bodyFailure();
   }
-  const { nodes } = body;
-  const ed = body["ed25519"];
-  if (
-    typeof nodes !== "object" ||
-    nodes === null ||
-    Array.isArray(nodes) ||
-    typeof ed !== "object" ||
-    ed === null ||
-    Array.isArray(ed)
-  ) {
-    throw bodyFailure();
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed to objects above
-  const nodeEntries = Object.entries(nodes as Record<string, unknown>);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed to objects above
-  const edEntries = Object.entries(ed as Record<string, unknown>);
-  if (nodeEntries.length > MAX_NODES || edEntries.length > MAX_ED25519) {
-    throw bodyFailure();
-  }
-  const pinnedNodes: PinnedNode[] = nodeEntries.map(([path, entry]) => {
-    const parsed = parseNode(entry);
-    const node: {
-      path: KeyPath;
-      publicKey: Uint8Array;
-      chainCode: Uint8Array;
-      parent?: Uint8Array;
-    } = { path: pathFromString(path), publicKey: parsed.key, chainCode: parsed.chainCode };
-    if (parsed.parent !== undefined) {
-      node.parent = parsed.parent;
-    }
-    return node;
-  });
-  const pinnedEd25519: PinnedEd25519[] = edEntries.map(([path, entry]) => {
-    const publicKey = asHexBytes(entry, 32);
-    if (!ed25519.utils.isValidPublicKey(publicKey)) {
+  const keys: PinnedKeys = {
+    nodes: parsePinnedNodes(body["nodes"]),
+    ed25519: parsePinnedEd25519(body["ed25519"]),
+  };
+  for (const key of keys.ed25519) {
+    if (key.path.some((i) => i < HARDENED)) {
       throw bodyFailure();
     }
-    const parsedPath = pathFromString(path);
-    // SLIP-10 has no public derivation: a pinned ed25519 key only serves its own all-hardened path.
-    if (parsedPath.some((i) => i < HARDENED)) {
-      throw bodyFailure();
-    }
-    return { path: parsedPath, publicKey };
-  });
-  return { nodes: pinnedNodes, ed25519: pinnedEd25519 };
+  }
+  return keys;
 }
 
 /** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */

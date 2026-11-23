@@ -97,7 +97,7 @@ export const signEd25519Task = async (
 
 /**
  * Sign one prepared task on the open card session. BIP-340 derives the internal key `P` at
- * `task.path` from card material (a miss → `card-required`), ed25519 insists the cached key is
+ * `task.path` from card material (a miss → `device-required`), ed25519 insists the cached key is
  * exactly `task.publicKey` (`integrity` otherwise — the prepare already bound it), ecdsa tracks `r`
  * across the op so a reused nonce is `card-fault`.
  */

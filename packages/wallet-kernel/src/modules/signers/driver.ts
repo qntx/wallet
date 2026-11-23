@@ -13,32 +13,12 @@ import type {
   DeviceResponse,
 } from "@qntx/wallet/protocol";
 
+import type { PinnedKeys } from "../../derive/pinned.ts";
 import type { ChainPlan } from "../chains/run.ts";
 
 /** The host transport: suspends until `hardware.step` answers with the device's response. */
 export type DeviceLink = {
   readonly exchange: (request: DeviceRequest) => Promise<DeviceResponse>;
-};
-
-/** A pinned BIP-32 node: `m/…` path with its compressed public key and chain code. */
-export type PinnedNode = {
-  readonly path: KeyPath;
-  readonly publicKey: Uint8Array;
-  readonly chainCode: Uint8Array;
-  /** The parent node's 4-byte fingerprint — needed to serialize this node's xpub. */
-  readonly parent?: Uint8Array;
-};
-
-/** A pinned SLIP-10 ed25519 public key at an all-hardened path. */
-export type PinnedEd25519 = {
-  readonly path: KeyPath;
-  readonly publicKey: Uint8Array;
-};
-
-/** The public key material a device published, keyed by derivation path. */
-export type PinnedKeys = {
-  readonly nodes: ReadonlyArray<PinnedNode>;
-  readonly ed25519: ReadonlyArray<PinnedEd25519>;
 };
 
 /** What a device claims to be; `fingerprint` is the BIP-32 master fingerprint. */

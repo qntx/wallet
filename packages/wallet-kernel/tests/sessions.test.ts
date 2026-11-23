@@ -833,7 +833,9 @@ describe("session defense-in-depth checks", () => {
     const { vault } = createSessionsModule();
     const key = new Uint8Array(32).fill(9); // a valid secret whose address is not 0x00…
     expect(() =>
-      vault.claimUnlocked([{ kind: SESSION_KIND, id: `0x${"00".repeat(20)}`, plaintext: key }]),
+      vault.claimUnlocked([
+        { kind: SESSION_KIND, id: `0x${"00".repeat(20)}`, header: "", plaintext: key },
+      ]),
     ).toThrow("session key does not match its record");
   });
 
@@ -841,8 +843,16 @@ describe("session defense-in-depth checks", () => {
     const { vault } = createSessionsModule();
     const key = new Uint8Array(EVM_SECRET);
     const id = evmAddressFromPublicKey(secp256k1.getPublicKey(key, true)).toLowerCase();
-    const other = { kind: "key", id: "0123456789abcdef", plaintext: new Uint8Array(32) };
-    const rest = vault.claimUnlocked([{ kind: SESSION_KIND, id, plaintext: key }, other]);
+    const other = {
+      kind: "key",
+      id: "0123456789abcdef",
+      header: "",
+      plaintext: new Uint8Array(32),
+    };
+    const rest = vault.claimUnlocked([
+      { kind: SESSION_KIND, id, header: "", plaintext: key },
+      other,
+    ]);
     expect(rest).toStrictEqual([other]);
   });
 

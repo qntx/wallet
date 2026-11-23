@@ -136,6 +136,26 @@
 		if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
 	}
 	/**
+	* Asserts output is a sufficiently-sized, 4-byte-aligned byte array.
+	* {@link aoutput} plus an {@link isAligned32} check, for `digestInto()` paths
+	* that write through zero-allocation `u32` word views.
+	* @param out - Output buffer to validate.
+	* @param instance - Hash-like instance providing `outputLen`.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong output buffer lengths. {@link RangeError}
+	* @throws On wrong output buffer alignment. {@link Error}
+	* @example
+	* Verifies that a caller-provided output buffer is large enough and aligned.
+	*
+	* ```ts
+	* aoutput32(new Uint8Array(16), { outputLen: 16 });
+	* ```
+	*/
+	function aoutput32(out, instance) {
+		aoutput$1(out, instance);
+		if (!isAligned32(out)) throw new Error("invalid output, must be aligned");
+	}
+	/**
 	* Casts a typed-array view to Uint32Array.
 	* @param arr - Typed-array view to reinterpret.
 	* @returns Uint32Array view over the same bytes. Callers are expected to provide a
@@ -147,7 +167,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$6(arr) {
+	function u32$7(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -293,7 +313,7 @@
 	* equalBytes(new Uint8Array([1]), new Uint8Array([1]));
 	* ```
 	*/
-	function equalBytes$6(a, b) {
+	function equalBytes$9(a, b) {
 		a = abytes$3(a);
 		b = abytes$3(b);
 		if (a.length !== b.length) return false;
@@ -499,8 +519,8 @@
 	}));
 	// packages/wallet/dist/types.mjs
 	/** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
-	var HARDWARE_DEVICES = ["keystone"];
-	// packages/wallet/dist/core-BVJx7-H0.mjs
+	var HARDWARE_DEVICES = ["keystone", "ledger"];
+	// packages/wallet/dist/core-DZyoTqpO.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -647,10 +667,12 @@
 	var walletId = str(16, /^[0-9a-f]{16}$/);
 	var keyId = str(16, /^[0-9a-f]{16}$/);
 	var keyFamily = union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron"));
-	var publicKey = str(64, /^[0-9a-f]{64}$/);
+	var publicKey$1 = str(64, /^[0-9a-f]{64}$/);
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
 	var safeTime$1 = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
+	/** A card's `ID(A)`: 16 bytes as 32 lowercase hex. */
+	var cardId$1 = str(32, /^[0-9a-f]{32}$/);
 	var keyInfo = obj({
 		keyId,
 		family: keyFamily,
@@ -751,18 +773,33 @@
 		passphrase: bool$1,
 		createdAt: safeTime$1
 	});
-	var walletInfo$1 = union(vaultWalletInfo, obj({
+	var walletInfo$2 = union(vaultWalletInfo, obj({
 		custody: literal("hardware"),
 		walletId,
-		device: hardwareDevice,
+		device: str(32, /^[a-z][a-z0-9-]{1,31}$/),
+		supported: bool$1,
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		model: opt(str(64, DEVICE_TEXT$2)),
 		firmware: opt(str(64, DEVICE_TEXT$2)),
 		createdAt: safeTime$1
+	}), obj({
+		custody: literal("card"),
+		walletId,
+		origin: union(literal("card-generated"), literal("card-imported")),
+		backup: literal("cards"),
+		createdAt: safeTime$1,
+		members: int(1, 3),
+		cards: arr(obj({
+			cardId: cardId$1,
+			shortId: opt(str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/)),
+			state: union(literal("ready"), literal("unknown"), literal("pending")),
+			tries: opt(int(0, 10)),
+			verifiedAt: opt(safeTime$1)
+		}), 3, 1)
 	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes$1(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("card-not-genuine"), literal("card-id-mismatch"), literal("card-erased"), literal("card-locked"), literal("card-tampered"), literal("card-fault"), literal("card-unsupported"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
 	var createdResult = obj({
 		wallet: vaultWalletInfo,
 		session: sessionId
@@ -1004,7 +1041,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-D1KgHYsD.mjs
+	// packages/wallet/dist/protocol-D2Veq8OJ.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1074,7 +1111,7 @@
 	var hexQuantity = str(66, /^0x[0-9a-fA-F]+$/);
 	var hexData = str(4e4, /^0x[0-9a-fA-F]*$/);
 	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
-	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+	var solanaAddress$1 = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 	var safeInt = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
@@ -1136,8 +1173,8 @@
 		account: accountRef,
 		message: bytes$1(1, 4096),
 		lookupTables: opt(arr(obj({
-			address: solanaAddress,
-			addresses: arr(solanaAddress, 256)
+			address: solanaAddress$1,
+			addresses: arr(solanaAddress$1, 256)
 		}), 64))
 	}), obj({
 		kind: literal("solana.message"),
@@ -1231,6 +1268,139 @@
 			result: signResult
 		}
 	};
+	/** `XXXX-XXXX` — the short id printed on a card and shown in prompts. */
+	var shortId$1 = str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/);
+	var opId$1 = str(32, /^[0-9a-f]{32}$/);
+	/** Rejects a list whose entries repeat — the protocol requires distinct templates. */
+	var distinct = (validator) => {
+		return (value) => {
+			const list = validator(value);
+			if (new Set(list).size !== list.length) throw new ValidationError();
+			return list;
+		};
+	};
+	var cardOperation = union(obj({ kind: literal("status") }), obj({
+		kind: literal("add"),
+		groups: opt(int(1, 20))
+	}), obj({
+		kind: literal("accounts"),
+		walletId,
+		groupIndex,
+		templates: distinct(arr(template, 7, 1)),
+		network: caip2
+	}), obj({
+		kind: literal("health"),
+		walletId
+	}), obj({
+		kind: literal("change-access"),
+		walletId,
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("erase"),
+		walletId,
+		card: cardId$1,
+		last: opt(literal(true))
+	}), obj({
+		kind: literal("create"),
+		cards: int(1, 3),
+		source: union(obj({ kind: literal("generate") }), obj({
+			kind: literal("wallet"),
+			walletId
+		})),
+		groups: opt(int(1, 20)),
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("transfer"),
+		walletId
+	}), obj({
+		kind: literal("reseal"),
+		walletId,
+		card: cardId$1,
+		member: opt(cardId$1)
+	}), obj({
+		kind: literal("sign"),
+		request: signRequest,
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("forget-access"),
+		walletId
+	}));
+	var cardOpResult = union(obj({
+		kind: literal("status"),
+		life: union(literal("blank"), literal("loaded")),
+		tries: int(0, 10),
+		walletId: opt(walletId)
+	}), obj({
+		kind: literal("sign"),
+		result: signResult
+	}), obj({
+		kind: literal("accounts"),
+		accounts: arr(chainAccount, 64)
+	}), obj({
+		kind: literal("add"),
+		walletId
+	}), obj({
+		kind: literal("health"),
+		walletId
+	}), obj({
+		kind: literal("change-access"),
+		walletId
+	}), obj({
+		kind: literal("erase"),
+		walletId
+	}), obj({
+		kind: literal("create"),
+		walletId
+	}), obj({
+		kind: literal("transfer"),
+		walletId
+	}), obj({
+		kind: literal("reseal"),
+		walletId
+	}), obj({
+		kind: literal("forget-access"),
+		walletId
+	}));
+	var cardStep = union(obj({
+		kind: literal("input"),
+		purpose: union(literal("access-code"), literal("new-access-code"), literal("confirm-access-code"), literal("short-id")),
+		card: opt(shortId$1),
+		remaining: opt(int(0, 10))
+	}), obj({
+		kind: literal("tap"),
+		reason: union(literal("any"), literal("source"), literal("target"), literal("member"), literal("retry")),
+		card: opt(shortId$1),
+		hold: opt(literal(true))
+	}), obj({
+		kind: literal("done"),
+		result: cardOpResult
+	}));
+	var CARD_METHODS = {
+		"card.begin": {
+			session: true,
+			presence: true,
+			params: obj({
+				op: cardOperation,
+				verify: opt(verifier)
+			}),
+			result: obj({
+				opId: opId$1,
+				step: cardStep
+			})
+		},
+		"card.step": {
+			session: true,
+			presence: true,
+			params: obj({ opId: opId$1 }),
+			result: cardStep
+		},
+		"card.cancel": {
+			session: true,
+			presence: false,
+			params: obj({ opId: opId$1 }),
+			result: literal(null)
+		}
+	};
 	var UR_TYPE = /^[a-z0-9-]{1,64}$/;
 	var DERIVATION_PATH = /^m(\/[0-9]+'?){1,10}$/;
 	var qrPayload = obj({
@@ -1282,7 +1452,7 @@
 	}));
 	var hardwareResult = union(obj({
 		kind: literal("pair"),
-		wallet: walletInfo$1
+		wallet: walletInfo$2
 	}), obj({
 		kind: literal("accounts"),
 		accounts: arr(chainAccount, 64)
@@ -1340,14 +1510,14 @@
 			walletId,
 			index: identityIndex
 		}),
-		publicKey,
+		publicKey: publicKey$1,
 		createdAt: safeTime$1
 	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
 	var derivedNostrKey = obj({
 		index: identityIndex,
-		publicKey
+		publicKey: publicKey$1
 	});
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
 	var signEventInput = obj({
@@ -1355,11 +1525,11 @@
 		created_at: safeTime$1,
 		tags,
 		content: str(MAX_TEXT),
-		pubkey: opt(publicKey)
+		pubkey: opt(publicKey$1)
 	});
 	var signedEvent = obj({
-		id: publicKey,
-		pubkey: publicKey,
+		id: publicKey$1,
+		pubkey: publicKey$1,
 		sig: hex128,
 		kind: int(0, 65535),
 		created_at: safeTime$1,
@@ -1367,8 +1537,8 @@
 		content: str(MAX_TEXT)
 	});
 	var rumor = obj({
-		id: publicKey,
-		pubkey: publicKey,
+		id: publicKey$1,
+		pubkey: publicKey$1,
 		kind: int(0, 65535),
 		created_at: safeTime$1,
 		tags,
@@ -1379,8 +1549,8 @@
 		password: bytes$1(1, 1024)
 	}));
 	var textParams = obj({
-		publicKey,
-		peer: publicKey,
+		publicKey: publicKey$1,
+		peer: publicKey$1,
 		text: str(MAX_TEXT)
 	});
 	var textResult = str(MAX_TEXT * 4);
@@ -1407,7 +1577,7 @@
 		"nostr.removeKey": {
 			session: true,
 			presence: true,
-			params: obj({ publicKey }),
+			params: obj({ publicKey: publicKey$1 }),
 			result: nullValue
 		},
 		"nostr.exportKey": {
@@ -1415,7 +1585,7 @@
 			presence: true,
 			params: obj({
 				verify: verifier,
-				publicKey,
+				publicKey: publicKey$1,
 				format: nostrExportFormat
 			}),
 			result: bytes$1(16, 4096)
@@ -1424,7 +1594,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				publicKey,
+				publicKey: publicKey$1,
 				event: signEventInput
 			}),
 			result: signedEvent
@@ -1457,7 +1627,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				publicKey,
+				publicKey: publicKey$1,
 				events: arr(signedEvent, 64)
 			}),
 			result: obj({ results: arr(union(obj({ ok: rumor }), obj({ err: walletErrorCode })), 64) })
@@ -1466,7 +1636,7 @@
 			session: true,
 			presence: false,
 			params: obj({ walletId }),
-			result: obj({ publicKey })
+			result: obj({ publicKey: publicKey$1 })
 		},
 		"nostr.syncSign": {
 			session: true,
@@ -2004,18 +2174,18 @@
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
 		appLock: bool$1,
 		verification: union(literal("available"), literal("unavailable")),
-		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
+		wallets: arr(walletInfo$2, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
 		backup: union(backupInfo, nullValue),
 		blindSigning: bool$1
 	});
-	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
+	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
 		session: false,
 		presence: false,
 		params: nullValue,
 		result: statusPayload$1
-	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS), HARDWARE_METHODS);
+	} }, CORE_METHODS), CARD_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS), HARDWARE_METHODS);
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
@@ -2178,7 +2348,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$5(arr) {
+	function u32$6(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -4041,23 +4211,60 @@
 	*/
 	function serializeCeremonies(platform, onCeremony) {
 		let tail = Promise.resolve();
-		const queue = async (work) => {
+		/** Takes the ceremony slot and returns its release — the base of `queue` and `reader.open`. */
+		const acquire = async () => {
 			const previous = tail;
 			let release;
 			tail = new Promise((resolve) => {
 				release = resolve;
 			});
-			try {
-				await previous;
-				onCeremony(true);
-				return await work();
-			} finally {
+			await previous;
+			onCeremony(true);
+			let done = false;
+			return () => {
+				if (done) return;
+				done = true;
 				release === null || release === void 0 || release();
 				onCeremony(false);
+			};
+		};
+		const queue = async (work) => {
+			const release = await acquire();
+			try {
+				return await work();
+			} finally {
+				release();
 			}
 		};
-		const { keystore, passkey } = platform;
+		const { keystore, passkey, card } = platform;
+		let releaseReader;
+		const reader = card === void 0 ? void 0 : {
+			open: async (prompt) => {
+				const release = await acquire();
+				const result = await card.reader.open(prompt);
+				if (!result.ok) {
+					release();
+					return result;
+				}
+				releaseReader = release;
+				return result;
+			},
+			transmit: async (apdu) => card.reader.transmit(apdu),
+			close: (outcome, text) => {
+				card.reader.close(outcome, text);
+				releaseReader === null || releaseReader === void 0 || releaseReader();
+				releaseReader = void 0;
+			}
+		};
 		return _objectSpread2(_objectSpread2({}, platform), {}, {
+			card: card === void 0 || reader === void 0 ? card : _objectSpread2({
+				anchors: card.anchors,
+				reader,
+				secureInput: {
+					request: async (kind, label) => queue(async () => card.secureInput.request(kind, label)),
+					cancel: () => card.secureInput.cancel()
+				}
+			}, card.planMs === void 0 ? {} : { planMs: card.planMs }),
 			keystore: keystore === void 0 ? void 0 : {
 				locale: keystore.locale,
 				seal: async (id, secret, use) => use.protection === "presence" ? queue(async () => keystore.seal(id, secret, use)) : keystore.seal(id, secret, use),
@@ -4213,6 +4420,68 @@
 	function corePrompt(locale, kind) {
 		return CORE[locale][kind];
 	}
+	var CARD = {
+		"zh-Hans": {
+			"card-change-access": (cards) => ({
+				title: "更改卡片访问码",
+				description: `验证身份以更改卡 ${cards} 的访问码`
+			}),
+			"card-erase": (cards) => ({
+				title: "擦除卡上的钱包",
+				description: `验证身份以擦除卡 ${cards} 上的钱包`
+			}),
+			"card-create": (cards) => ({
+				title: "创建卡钱包",
+				description: `验证身份以将钱包移入卡 ${cards}`
+			}),
+			"card-transfer": (cards) => ({
+				title: "写入成员卡",
+				description: `验证身份以把钱包写入卡 ${cards}`
+			}),
+			"card-reseal": (cards) => ({
+				title: "重写卡访问码",
+				description: `验证身份以给卡 ${cards} 设置新的访问码`
+			}),
+			"card-forget-access": (cards) => ({
+				title: "遗忘卡访问码",
+				description: `验证身份以删除卡 ${cards} 已保存的访问码`
+			})
+		},
+		en: {
+			"card-change-access": (cards) => ({
+				title: "Change card access code",
+				description: `Verify your identity to change the access code on ${cards}`
+			}),
+			"card-erase": (cards) => ({
+				title: "Erase the card's wallet",
+				description: `Verify your identity to erase the wallet on ${cards}`
+			}),
+			"card-create": (cards) => ({
+				title: "Create card wallet",
+				description: `Verify your identity to move the wallet onto ${cards}`
+			}),
+			"card-transfer": (cards) => ({
+				title: "Provision member card",
+				description: `Verify your identity to write the wallet onto ${cards}`
+			}),
+			"card-reseal": (cards) => ({
+				title: "Reseal card",
+				description: `Verify your identity to set a new access code on ${cards}`
+			}),
+			"card-forget-access": (cards) => ({
+				title: "Forget card access code",
+				description: `Verify your identity to delete the saved access code for ${cards}`
+			})
+		}
+	};
+	function cardPrompt(locale, kind, cards) {
+		return CARD[locale][kind](cards.join(", "));
+	}
+	/** A prompt thunk for a card operation — locale and the card list resolve only when it runs. */
+	var cardPromptFor = (keystore, kind, cards) => () => {
+		var _keystore$locale;
+		return cardPrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind, cards());
+	};
 	/**
 	* The display name of a backup protection credential, chosen by the kernel so password managers
 	* list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
@@ -4226,8 +4495,8 @@
 	};
 	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 	var corePromptFor = (keystore, kind) => () => {
-		var _keystore$locale;
-		return corePrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind);
+		var _keystore$locale2;
+		return corePrompt(promptLocale((_keystore$locale2 = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale2 !== void 0 ? _keystore$locale2 : "en"), kind);
 	};
 	/**
 	* An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
@@ -4268,7 +4537,7 @@
 	}
 	// packages/wallet-kernel/src/secret/secret.ts
 	/** Overwrites buffers with zeros. The only "zeroing" we can rely on. */
-	function wipe(...buffers) {
+	function wipe$1(...buffers) {
 		for (const buffer of buffers) buffer.fill(0);
 	}
 	/**
@@ -4282,7 +4551,7 @@
 		} catch (_unused) {
 			throw new KernelError("invalid-input", "input is not valid UTF-8");
 		} finally {
-			wipe(bytes);
+			wipe$1(bytes);
 		}
 	}
 	var _bytes$1 = /* @__PURE__ */ new WeakMap();
@@ -4369,8 +4638,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -4392,10 +4661,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$6(block);
+		const b32 = u32$7(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$6(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$6(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$7(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$7(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -4479,14 +4748,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$6(k);
+			let k32 = u32$7(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$6(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$7(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$6(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$7(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4500,7 +4769,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$6(nonce));
+			const n32 = swap32IfBE$1(u32$7(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -5056,7 +5325,7 @@
 				const data = ciphertext.subarray(0, -16);
 				const passedTag = ciphertext.subarray(-16);
 				const tag = computeTag(xorStream, key, nonce, data, AAD);
-				if (!equalBytes$6(passedTag, tag)) {
+				if (!equalBytes$9(passedTag, tag)) {
 					clean$1(tag);
 					throw new Error("invalid tag");
 				}
@@ -5390,7 +5659,7 @@
 	* equalBytes(Uint8Array.of(1), Uint8Array.of(1));
 	* ```
 	*/
-	function equalBytes$5(a, b) {
+	function equalBytes$8(a, b) {
 		a = abytes(a);
 		b = abytes(b);
 		if (a.length !== b.length) return false;
@@ -7667,10 +7936,10 @@
 		};
 	}
 	var ed25519_Point = /* @__PURE__ */ edwards(ed25519_CURVE, { uvRatio });
-	var Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
+	var Fp$1 = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 	function toMontgomery(point) {
 		const { y } = point;
-		return Fp.toBytes(Fp.div(_1n$6 + y, _1n$6 - y));
+		return Fp$1.toBytes(Fp$1.div(_1n$6 + y, _1n$6 - y));
 	}
 	function toMontgomerySecret(secretKey) {
 		const size = ed25519_Point.Fp.BYTES;
@@ -7743,7 +8012,7 @@
 	var INVSQRT_A_MINUS_D = /* @__PURE__ */ BigInt("54469307008909316920995813868745141605393597292927456921205312896311721017578");
 	var invertSqrt = (number) => uvRatio(_1n$6, number);
 	var MAX_255B = /* @__PURE__ */ BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-	var bytes255ToNumberLE = (bytes) => Fp.create(bytesToNumberLE(bytes) & MAX_255B);
+	var bytes255ToNumberLE = (bytes) => Fp$1.create(bytesToNumberLE(bytes) & MAX_255B);
 	/**
 	* Wrapper over Edwards Point for ristretto255.
 	*
@@ -7776,22 +8045,22 @@
 			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes$5(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
-			const s2 = Fp.sqr(s);
-			const u1 = Fp.add(_1n$6, Fp.mulN(a, s2));
-			const u2 = Fp.sub(_1n$6, Fp.mulN(a, s2));
-			const u1_2 = Fp.sqr(u1);
-			const u2_2 = Fp.sqr(u2);
-			const v = Fp.sub(Fp.mulN(Fp.mulN(a, d), u1_2), u2_2);
-			const { isValid, value: I } = invertSqrt(Fp.mul(v, u2_2));
-			const Dx = Fp.mul(I, u2);
-			const Dy = Fp.mul(Fp.mulN(I, Dx), v);
-			let x = Fp.mul(Fp.addN(s, s), Dx);
-			if (Fp.isOdd(x)) x = Fp.neg(x);
-			const y = Fp.mul(u1, Dy);
-			const t = Fp.mul(x, y);
-			if (!isValid || Fp.isOdd(t) || Fp.is0(y)) throw new Error("invalid ristretto255 encoding 2");
-			return new _RistrettoPoint(new ed25519_Point(x, y, Fp.ONE, t));
+			if (!equalBytes$8(Fp$1.toBytes(s), bytes) || Fp$1.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
+			const s2 = Fp$1.sqr(s);
+			const u1 = Fp$1.add(_1n$6, Fp$1.mulN(a, s2));
+			const u2 = Fp$1.sub(_1n$6, Fp$1.mulN(a, s2));
+			const u1_2 = Fp$1.sqr(u1);
+			const u2_2 = Fp$1.sqr(u2);
+			const v = Fp$1.sub(Fp$1.mulN(Fp$1.mulN(a, d), u1_2), u2_2);
+			const { isValid, value: I } = invertSqrt(Fp$1.mul(v, u2_2));
+			const Dx = Fp$1.mul(I, u2);
+			const Dy = Fp$1.mul(Fp$1.mulN(I, Dx), v);
+			let x = Fp$1.mul(Fp$1.addN(s, s), Dx);
+			if (Fp$1.isOdd(x)) x = Fp$1.neg(x);
+			const y = Fp$1.mul(u1, Dy);
+			const t = Fp$1.mul(x, y);
+			if (!isValid || Fp$1.isOdd(t) || Fp$1.is0(y)) throw new Error("invalid ristretto255 encoding 2");
+			return new _RistrettoPoint(new ed25519_Point(x, y, Fp$1.ONE, t));
 		}
 		/**
 		* Converts ristretto-encoded string to ristretto point.
@@ -7807,25 +8076,25 @@
 		*/
 		toBytes() {
 			let { X, Y, Z, T } = this.ep;
-			const u1 = Fp.mul(Fp.add(Z, Y), Fp.sub(Z, Y));
-			const u2 = Fp.mul(X, Y);
-			const u2sq = Fp.sqr(u2);
-			const { value: invsqrt } = invertSqrt(Fp.mul(u1, u2sq));
-			const D1 = Fp.mul(invsqrt, u1);
-			const D2 = Fp.mul(invsqrt, u2);
-			const zInv = Fp.mul(Fp.mulN(D1, D2), T);
+			const u1 = Fp$1.mul(Fp$1.add(Z, Y), Fp$1.sub(Z, Y));
+			const u2 = Fp$1.mul(X, Y);
+			const u2sq = Fp$1.sqr(u2);
+			const { value: invsqrt } = invertSqrt(Fp$1.mul(u1, u2sq));
+			const D1 = Fp$1.mul(invsqrt, u1);
+			const D2 = Fp$1.mul(invsqrt, u2);
+			const zInv = Fp$1.mul(Fp$1.mulN(D1, D2), T);
 			let D;
-			if (Fp.isOdd(Fp.mul(T, zInv))) {
-				let _x = Fp.mul(Y, SQRT_M1);
-				let _y = Fp.mul(X, SQRT_M1);
+			if (Fp$1.isOdd(Fp$1.mul(T, zInv))) {
+				let _x = Fp$1.mul(Y, SQRT_M1);
+				let _y = Fp$1.mul(X, SQRT_M1);
 				X = _x;
 				Y = _y;
-				D = Fp.mul(D1, INVSQRT_A_MINUS_D);
+				D = Fp$1.mul(D1, INVSQRT_A_MINUS_D);
 			} else D = D2;
-			if (Fp.isOdd(Fp.mul(X, zInv))) Y = Fp.neg(Y);
-			let s = Fp.mul(Fp.subN(Z, Y), D);
-			if (Fp.isOdd(s)) s = Fp.neg(s);
-			return Fp.toBytes(s);
+			if (Fp$1.isOdd(Fp$1.mul(X, zInv))) Y = Fp$1.neg(Y);
+			let s = Fp$1.mul(Fp$1.subN(Z, Y), D);
+			if (Fp$1.isOdd(s)) s = Fp$1.neg(s);
+			return Fp$1.toBytes(s);
 		}
 		/**
 		* Compares two Ristretto points.
@@ -7835,8 +8104,8 @@
 			this.assertSame(other);
 			const { X: X1, Y: Y1 } = this.ep;
 			const { X: X2, Y: Y2 } = other.ep;
-			const one = Fp.eql(Fp.mul(X1, Y2), Fp.mul(Y1, X2));
-			const two = Fp.eql(Fp.mul(Y1, Y2), Fp.mul(X1, X2));
+			const one = Fp$1.eql(Fp$1.mul(X1, Y2), Fp$1.mul(Y1, X2));
+			const two = Fp$1.eql(Fp$1.mul(Y1, Y2), Fp$1.mul(X1, X2));
 			return one || two;
 		}
 		is0() {
@@ -7851,7 +8120,7 @@
 		return new _RistrettoPoint2(ed25519_Point.ZERO);
 	})());
 	_defineProperty(_RistrettoPoint, "Fp", /* @__PURE__ */ (() => {
-		return Fp;
+		return Fp$1;
 	})());
 	_defineProperty(_RistrettoPoint, "Fn", /* @__PURE__ */ (() => {
 		return Fn$3;
@@ -8170,7 +8439,7 @@
 		try {
 			return await argon2id(normalizedBytes, salt, BACKUP_PASSWORD_COST, 32);
 		} finally {
-			wipe(normalizedBytes);
+			wipe$1(normalizedBytes);
 		}
 	}
 	/**
@@ -8182,7 +8451,7 @@
 		try {
 			return await pbkdf2("sha256", normalizedBytes, salt, PASSWORD_ITERATIONS, 32);
 		} finally {
-			wipe(normalizedBytes);
+			wipe$1(normalizedBytes);
 		}
 	}
 	/**
@@ -8194,7 +8463,7 @@
 			if (prf.length !== 32) throw new KernelError("invalid-input", "PRF output must be 32 bytes");
 			return hkdf(sha256$1, prf, credentialId, utf8ToBytes$1("qntx-wallet/kek/passkey/v1"), 32);
 		} finally {
-			wipe(prf);
+			wipe$1(prf);
 		}
 	}
 	/** The factor's public wrapping key: X25519(HKDF-SHA256(KEK)). Public — safe to store in headers. */
@@ -8203,7 +8472,7 @@
 		try {
 			return x25519.getPublicKey(factorSk);
 		} finally {
-			wipe(factorSk);
+			wipe$1(factorSk);
 		}
 	}
 	/** The `publicKey` a factor header declares, decoded; malformed headers throw `integrity`. */
@@ -8224,9 +8493,9 @@
 		if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) return false;
 		const expected = dek.use((bytes) => factorBinding(bytes, factorContext(stored.kind, stored.id), stored.header));
 		try {
-			return equalBytes$6(expected, sealed.subarray(33, 65));
+			return equalBytes$9(expected, sealed.subarray(33, 65));
 		} finally {
-			wipe(expected);
+			wipe$1(expected);
 		}
 	}
 	/**
@@ -8239,7 +8508,7 @@
 			const ephPk = x25519.getPublicKey(eph);
 			const shared = x25519.getSharedSecret(eph, factorPk);
 			try {
-				if (equalBytes$6(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
+				if (equalBytes$9(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					const envelope = dek.use((bytes) => seal(wrapKey, bytes, factorContext(factor.kind, factor.id), factor.header, random));
@@ -8247,16 +8516,16 @@
 					try {
 						return concatBytes$3(new Uint8Array([WRAP_VERSION]), ephPk, binding, envelope);
 					} finally {
-						wipe(binding);
+						wipe$1(binding);
 					}
 				} finally {
-					wipe(wrapKey);
+					wipe$1(wrapKey);
 				}
 			} finally {
-				wipe(shared);
+				wipe$1(shared);
 			}
 		} finally {
-			wipe(eph);
+			wipe$1(eph);
 		}
 	}
 	var corruptError = (message) => new KernelError("integrity", message, void 0, true);
@@ -8270,7 +8539,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$6(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
+			if (!equalBytes$9(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -8282,7 +8551,7 @@
 				throw corruptError("invalid factor ephemeral key");
 			}
 			try {
-				if (equalBytes$6(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
+				if (equalBytes$9(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					let dekBytes;
@@ -8292,21 +8561,21 @@
 						throw corruptError("factor wrapping failed authentication");
 					}
 					const expected = factorBinding(dekBytes, factorContext(stored.kind, stored.id), stored.header);
-					const bound = equalBytes$6(expected, binding);
-					wipe(expected);
+					const bound = equalBytes$9(expected, binding);
+					wipe$1(expected);
 					if (!bound) {
-						wipe(dekBytes);
+						wipe$1(dekBytes);
 						throw corruptError("factor binding mismatch");
 					}
 					return Secret.take(dekBytes);
 				} finally {
-					wipe(wrapKey);
+					wipe$1(wrapKey);
 				}
 			} finally {
-				wipe(shared);
+				wipe$1(shared);
 			}
 		} finally {
-			wipe(factorSk);
+			wipe$1(factorSk);
 		}
 	}
 	// packages/wallet-kernel/src/vault/anchor.ts
@@ -8525,7 +8794,7 @@
 	var DOMAIN = "qntx-wallet/vault/v1/manifest";
 	var isManifestRecord = (record) => record.kind === MANIFEST_KIND;
 	var byCodeUnits = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-	function u32$4(value) {
+	function u32$5(value) {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
 		return out;
@@ -8545,7 +8814,7 @@
 		const hash = sha256$1.create();
 		const lp = (value) => {
 			const bytes = typeof value === "string" ? utf8ToBytes$1(value) : value;
-			hash.update(u32$4(bytes.length));
+			hash.update(u32$5(bytes.length));
 			hash.update(bytes);
 		};
 		const row = (entry) => {
@@ -8555,14 +8824,14 @@
 			lp(entry.sealed);
 		};
 		lp(DOMAIN);
-		hash.update(u32$4(meta.format));
+		hash.update(u32$5(meta.format));
 		hash.update(u64(meta.revision));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
-		hash.update(u32$4(records.length));
+		hash.update(u32$5(records.length));
 		for (const record of records) row(record);
 		const factors = [...image.factors].sort((a, b) => byCodeUnits(a.id, b.id));
-		hash.update(u32$4(factors.length));
+		hash.update(u32$5(factors.length));
 		for (const factor of factors) row(factor);
 		return hash.digest();
 	}
@@ -8588,7 +8857,7 @@
 				record
 			}];
 		} finally {
-			wipe(digest);
+			wipe$1(digest);
 		}
 	}
 	/**
@@ -8607,9 +8876,9 @@
 			throw failure;
 		}
 		try {
-			if (!equalBytes$6(sealed, manifestDigest(image))) throw failure;
+			if (!equalBytes$9(sealed, manifestDigest(image))) throw failure;
 		} finally {
-			wipe(sealed);
+			wipe$1(sealed);
 		}
 	}
 	// packages/wallet-kernel/src/vault/store.ts
@@ -8623,6 +8892,8 @@
 	function isRecordKind(kind) {
 		return RECORD_KIND_PATTERN.test(kind);
 	}
+	/** The card module's wallet record kind — named here so the vault and commands layers know it. */
+	var CARD_WALLET_KIND = "card-wallet";
 	// packages/wallet-kernel/src/vault/vault.ts
 	init_utils$2();
 	init_base();
@@ -8695,7 +8966,7 @@
 				sealedKek
 			};
 		} catch (error) {
-			wipe(kek);
+			wipe$1(kek);
 			throw error;
 		}
 	}
@@ -8739,8 +9010,8 @@
 				sealed
 			};
 		} finally {
-			wipe(material.kek);
-			if (material.kind === "password") wipe(material.salt);
+			wipe$1(material.kek);
+			if (material.kind === "password") wipe$1(material.salt);
 		}
 	}
 	/** Builds a new factor record wrapping `dek`. The id comes first: it is the keystore key alias. */
@@ -8817,7 +9088,7 @@
 			try {
 				dek = unwrapDek(kek, stored);
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		} else if (factor.kind === "password") {
 			const passwords = image.factors.filter((stored) => stored.kind === "password");
@@ -8832,7 +9103,7 @@
 				} catch (error) {
 					if (!(error instanceof KernelError) || error.code !== "wrong-password") throw error;
 				} finally {
-					wipe(kek);
+					wipe$1(kek);
 				}
 			}
 			if (dek === void 0) {
@@ -8851,14 +9122,14 @@
 			const wanted = base64urlnopad.encode(factor.credentialId);
 			const stored = image.factors.find((f) => f.kind === "passkey" && credentialIdOf(f) === wanted);
 			if (stored === void 0) {
-				wipe(factor.prf);
+				wipe$1(factor.prf);
 				throw new KernelError("wrong-passkey", "no passkey factor matches the credential");
 			}
 			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 			try {
 				dek = unwrapDek(kek, stored);
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		}
 		return {
@@ -8918,7 +9189,7 @@
 				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
 				try {
-					verified = opened.use((a) => dek.use((b) => equalBytes$6(a, b)));
+					verified = opened.use((a) => dek.use((b) => equalBytes$9(a, b)));
 				} finally {
 					opened.wipe();
 				}
@@ -8926,7 +9197,7 @@
 			} catch (error) {
 				if (!(error instanceof KernelError) || error.code !== "wrong-password" && error.code !== "wrong-passkey") throw error;
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		}
 		if (verified) {
@@ -9020,7 +9291,7 @@
 						}
 					});
 				} finally {
-					wipe(plaintext);
+					wipe$1(plaintext);
 				}
 			}
 			return {
@@ -9070,7 +9341,7 @@
 		try {
 			return splitWalletSecret(header, plaintext);
 		} finally {
-			wipe(plaintext);
+			wipe$1(plaintext);
 		}
 	}
 	function findRecord(image, kind, id) {
@@ -9078,8 +9349,8 @@
 		if (record === void 0) throw new KernelError("not-found", "record not found");
 		return record;
 	}
-	/** Record kinds whose wallets sign outside the vault — they hold no seed. */
-	var EXTERNAL_CUSTODY_KINDS = /* @__PURE__ */ new Set(["hardware-wallet"]);
+	/** Record kinds whose wallets sign outside the vault (a device or qntx cards) — they hold no seed. */
+	var EXTERNAL_CUSTODY_KINDS = /* @__PURE__ */ new Set(["hardware-wallet", CARD_WALLET_KIND]);
 	/**
 	* The `entropy` record for `walletId`, or the reason there is none: `unsupported` when the id names
 	* an externally signed wallet (its record exists but seals no seed) and `not-found` otherwise.
@@ -9143,7 +9414,7 @@
 		};
 	}
 	/** The `VaultWalletInfo` an entropy record's public header reports. */
-	function walletInfo(header) {
+	function walletInfo$1(header) {
 		return {
 			custody: "vault",
 			walletId: header.walletId,
@@ -9892,7 +10163,7 @@
 	* const isValid = p256ecdsa.verify(sig, msg, publicKey);
 	* ```
 	*/
-	function ecdsa$2(Point, hash, ecdsaOpts = {}) {
+	function ecdsa$3(Point, hash, ecdsaOpts = {}) {
 		validatePointCons(Point);
 		const hash_ = hash;
 		ahash(hash_);
@@ -10335,7 +10606,7 @@
 			Fp: Fpk1,
 			endo: secp256k1_ENDO
 		});
-		secp256k1 = /* @__PURE__ */ ecdsa$2(Pointk1, sha256$1);
+		secp256k1 = /* @__PURE__ */ ecdsa$3(Pointk1, sha256$1);
 		TAGGED_HASH_PREFIXES = Object.create(null);
 		pointToBytes = (point) => point.toBytes(true).slice(1);
 		affineXToBytes = ({ x }) => Fpk1.toBytes(x);
@@ -10813,7 +11084,7 @@
 	}));
 	// node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
 	/** Checks if two Uint8Arrays are equal. Not constant-time. */
-	function equalBytes$4(a, b) {
+	function equalBytes$7(a, b) {
 		if (a.length !== b.length) return false;
 		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 		return true;
@@ -10843,7 +11114,7 @@
 	function equal(a, b) {
 		const aBytes = isBytes$1(a);
 		const bBytes = isBytes$1(b);
-		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$4(a, b);
+		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$7(a, b);
 		return a === b;
 	}
 	/** Checks if the given value is a Uint8Array. */
@@ -11429,7 +11700,7 @@
 						inner.encodeStream(w, elm);
 						if (terminator && terminator.length <= _w.pos - startPos) {
 							const data = _w.finish(false).subarray(startPos, _w.pos);
-							if (equalBytes$4(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
+							if (equalBytes$7(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
 						}
 						_w.exitField();
 					}
@@ -11449,7 +11720,7 @@
 						if (inner.size && r.leftBytes < inner.size) break;
 					}
 					else if (terminator) for (let i = 0;; i++) {
-						if (equalBytes$4(r.bytes(terminator.length, true), terminator)) {
+						if (equalBytes$7(r.bytes(terminator.length, true), terminator)) {
 							r.bytes(terminator.length);
 							break;
 						}
@@ -11506,7 +11777,7 @@
 		_255n = /* @__PURE__ */ BigInt(255);
 		hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 		utils = /* @__PURE__ */ Object.freeze({
-			equalBytes: equalBytes$4,
+			equalBytes: equalBytes$7,
 			isBytes: isBytes$1,
 			isCoder,
 			checkBounds,
@@ -12146,7 +12417,7 @@
 				decodeStream: (r) => {
 					let hasFlag = r.leftBytes >= marker.length;
 					if (hasFlag) {
-						hasFlag = equalBytes$4(r.bytes(marker.length, true), marker);
+						hasFlag = equalBytes$7(r.bytes(marker.length, true), marker);
 						if (hasFlag) r.bytes(marker.length);
 					}
 					return hasFlag !== xor;
@@ -13041,7 +13312,7 @@
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$5(this.state);
+			this.state32 = u32$6(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -13060,7 +13331,7 @@
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$5(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$6(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -13205,8 +13476,8 @@
 	//! 65 → `v ∉ {0,1,27,28}` → `r`/`s` equal to 0 or ≥ n → `s > n/2` (all
 	//! `InvalidSignature`) → recovery failure or address mismatch →
 	//! `VerificationFailed`.
-	var N = secp256k1.Point.Fn.ORDER;
-	var N_HALF = N / 2n;
+	var N$1 = secp256k1.Point.Fn.ORDER;
+	var N_HALF = N$1 / 2n;
 	/** `keccak256("\x19Ethereum Signed Message:\n" + len + message)`. */
 	function eip191Hash(message) {
 		const prefix = utf8Encode$2(`\u0019Ethereum Signed Message:\n${message.length}`);
@@ -13229,7 +13500,7 @@
 		});
 		const r = bytesToNumberBE(signature.subarray(0, 32));
 		const s = bytesToNumberBE(signature.subarray(32, 64));
-		if (r === 0n || r >= N || s === 0n || s >= N) throw new SiwxError({
+		if (r === 0n || r >= N$1 || s === 0n || s >= N$1) throw new SiwxError({
 			code: "InvalidSignature",
 			reason: "r/s out of range"
 		});
@@ -13245,7 +13516,7 @@
 			throw new SiwxError({ code: "VerificationFailed" });
 		}
 		const expected = parseEip55(message.address);
-		if (!equalBytes$5(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
+		if (!equalBytes$8(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
 	}
 	//! On-chain smart-account verification: the ERC-6492 universal validator via a
 	//! deployless `eth_call`. Covers deployed ERC-1271 accounts, counterfactual
@@ -13305,15 +13576,15 @@
 			reason: "RPC request failed"
 		});
 	}
-	var MAGIC = (() => {
+	var MAGIC$1 = (() => {
 		const m = /* @__PURE__ */ new Uint8Array(32);
 		for (let i = 0; i < m.length; i++) m[i] = i % 2 === 0 ? 100 : 146;
 		return m;
 	})();
 	/** True when `signature` ends with the ERC-6492 detection suffix. */
 	function has6492MagicSuffix(signature) {
-		if (signature.length < MAGIC.length) return false;
-		for (let i = 0; i < MAGIC.length; i++) if (signature[signature.length - MAGIC.length + i] !== MAGIC[i]) return false;
+		if (signature.length < MAGIC$1.length) return false;
+		for (let i = 0; i < MAGIC$1.length; i++) if (signature[signature.length - MAGIC$1.length + i] !== MAGIC$1[i]) return false;
 		return true;
 	}
 	/** `eth_chainId` as a decimal number; malformed → `Backend`. */
@@ -13369,7 +13640,7 @@
 	* and `eth_chainId` is bound to the message chain id (cached per provider on success only) before
 	* any `eth_call`.
 	*/
-	function evm$2(options) {
+	function evm$3(options) {
 		var _options$rpc;
 		const rpc = (_options$rpc = options === null || options === void 0 ? void 0 : options.rpc) !== null && _options$rpc !== void 0 ? _options$rpc : {};
 		const verifiedChains = /* @__PURE__ */ new Set();
@@ -13461,7 +13732,7 @@
 		}
 		if (point.equals(ed25519.Point.ZERO)) throw fieldError("address", "identity pubkey");
 		if (!point.isTorsionFree()) throw fieldError("address", "not in the prime-order subgroup");
-		if (!equalBytes$5(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
+		if (!equalBytes$8(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
 	}
 	/**
 	* Validate that `address` is a canonical, non-identity, prime-order-subgroup Ed25519 verifying key
@@ -13890,7 +14161,7 @@
 	};
 	var parseValid = (text, family) => {
 		if (family === "evm") {
-			const ns = evm$2();
+			const ns = evm$3();
 			const message = ns.parse(new TextEncoder().encode(text));
 			ns.account(message);
 			return plainFields(message);
@@ -14697,7 +14968,7 @@
 	* @param values - The {@link ox#Hex.Hex} values to concatenate.
 	* @returns The concatenated {@link ox#Hex.Hex} value.
 	*/
-	function concat$4(...values) {
+	function concat$6(...values) {
 		if (values.length === 0) return "0x";
 		if (values.length === 1) return values[0];
 		if (values.length === 2) return `0x${values[0].slice(2)}${values[1].slice(2)}`;
@@ -15404,7 +15675,7 @@
 	* @param options - Decoding options.
 	* @returns Decoded bigint.
 	*/
-	function toBigInt(bytes, options = {}) {
+	function toBigInt$1(bytes, options = {}) {
 		const { signed, size } = options;
 		if (typeof size !== "undefined") assertSize$1(bytes, size);
 		return bytesToBigInt(bytes, signed);
@@ -16826,7 +17097,7 @@
 	var maxUint256 = 2n ** 256n - 1n;
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
 	init_defineProperty();
-	function decode$2(parameters, data, options = {}) {
+	function decode$3(parameters, data, options = {}) {
 		const { as = "Array", checksumAddress = true } = options;
 		const bytes = typeof data === "string" ? fromHex$2(data) : data;
 		const cursor = create$1(bytes);
@@ -16932,7 +17203,7 @@
 			const value = values[i];
 			data.push(encodePacked.encode(type, value));
 		}
-		return concat$4(...data);
+		return concat$6(...data);
 	}
 	(function(encodePacked) {
 		function encode(type, value, isArray = false) {
@@ -16976,7 +17247,7 @@
 				const data = [];
 				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
 				if (data.length === 0) return "0x";
-				return concat$4(...data);
+				return concat$6(...data);
 			}
 			throw new InvalidTypeError$1(type);
 		}
@@ -17329,7 +17600,7 @@
 		const signed = param.type.startsWith("int");
 		const size = Number.parseInt(param.type.split("int")[1] || "256", 10);
 		const value = cursor.readBytes(32);
-		return [size > 48 ? toBigInt(value, { signed }) : toNumber(value, { signed }), 32];
+		return [size > 48 ? toBigInt$1(value, { signed }) : toNumber(value, { signed }), 32];
 	}
 	/** @internal */
 	function decodeTuple(cursor, param, options) {
@@ -18199,7 +18470,7 @@
 			size: Math.max(0, size$1(data) - 4)
 		});
 		if (size$1(data) <= 4) return void 0;
-		return decode$2(item.inputs, slice$2(data, 4), options);
+		return decode$3(item.inputs, slice$2(data, 4), options);
 	}
 	function encodeData$1(...parameters) {
 		const [abiFunction, args] = (() => {
@@ -18552,7 +18823,7 @@
 			types,
 			typeHashes
 		}));
-		return concat$4(...parts);
+		return concat$6(...parts);
 	}
 	/**
 	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
@@ -19002,7 +19273,7 @@
 		try {
 			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list(decode$3(EXECUTIONS, hex$2(executionData)));
 			const executions = [];
 			for (const e of list(inner)) {
 				if (!isExecution(e)) return;
@@ -19038,7 +19309,7 @@
 		if (CANONICAL_HEX.test(value)) return value;
 		return canonicalHex(quantityBigInt(value, field));
 	};
-	var hexBytes$1 = (value, field) => {
+	var hexBytes$2 = (value, field) => {
 		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 		return value.toLowerCase();
 	};
@@ -19081,7 +19352,7 @@
 		accessList: ["accessList"],
 		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
 	};
-	var ALLOWED = {
+	var ALLOWED$1 = {
 		base: [
 			"type",
 			"chainId",
@@ -19109,7 +19380,7 @@
 		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
 	};
 	var rejectUnknown = (input, type) => {
-		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
+		const allowed = /* @__PURE__ */ new Set([...ALLOWED$1.base, ...ALLOWED$1[type]]);
 		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
 		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
 	};
@@ -19127,7 +19398,7 @@
 		const nonce = safeInteger(tx["nonce"], "nonce");
 		const gas = quantity(tx["gas"], "gas");
 		const value = quantity(tx["value"], "value");
-		const data = hexBytes$1(tx["data"], "data");
+		const data = hexBytes$2(tx["data"], "data");
 		const toRaw = tx["to"];
 		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
 		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
@@ -20242,7 +20513,7 @@
 	* the root entry (declaring them here would cycle index ↔ tasks); the helpers stay
 	* package-internal.
 	*/
-	var equalBytes$3 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$6 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/**
 	* Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize —
 	* the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found by
@@ -20265,7 +20536,7 @@
 			} catch (_unused2) {
 				recovered = void 0;
 			}
-			if (recovered !== void 0 && equalBytes$3(recovered, task.publicKey)) return {
+			if (recovered !== void 0 && equalBytes$6(recovered, task.publicKey)) return {
 				r: sig.r,
 				s: sig.s,
 				yParity
@@ -20946,7 +21217,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$4(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$6(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -21131,7 +21402,7 @@
 	*/
 	function hash$4(authorization, options = {}) {
 		const { presign } = options;
-		return keccak256(concat$4("0x05", fromHex$1(toTuple(presign ? {
+		return keccak256(concat$6("0x05", fromHex$1(toTuple(presign ? {
 			address: authorization.address,
 			chainId: authorization.chainId,
 			nonce: authorization.nonce
@@ -21262,7 +21533,7 @@
 	*/
 	function encode(data) {
 		const message = from$6(data);
-		return concat$4(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+		return concat$6(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
 	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
@@ -21508,7 +21779,7 @@
 		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$4("0x01", fromHex$1([
+		return concat$6("0x01", fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -21705,7 +21976,7 @@
 		const accessTupleList = toTupleList(accessList);
 		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
-		return concat$4(serializedType$1, fromHex$1([
+		return concat$6(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22238,7 +22509,7 @@
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$4(serializedType, fromHex$1([
+		return concat$6(serializedType, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22779,13 +23050,13 @@
 	* /evm/plan — the serialisable signing plan of a normalized request: the digests each signing
 	* backend must sign, and the transaction an EIP-7702 signature later re-enters. No key material.
 	*/
-	var ecdsa$1 = (digest, key) => ({
+	var ecdsa$2 = (digest, key) => ({
 		scheme: "ecdsa-secp256k1",
 		path: key.path,
 		publicKey: key.publicKey,
 		digest
 	});
-	var personalDigest$1 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
+	var personalDigest$2 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
 	/**
 	* The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
 	* returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
@@ -22793,11 +23064,11 @@
 	var planEvmTransaction = (tx, key) => ({
 		kind: "evm.transaction",
 		tx,
-		tasks: [ecdsa$1(toBytes$1(tx.type === "eip7702" ? getSignPayload$5(evmAuthorization(tx)) : evmEnvelope(tx).payload), key)]
+		tasks: [ecdsa$2(toBytes$1(tx.type === "eip7702" ? getSignPayload$5(evmAuthorization(tx)) : evmEnvelope(tx).payload), key)]
 	});
 	var planEvmPersonalMessage = (message, key) => ({
 		kind: "evm.personal-message",
-		tasks: [ecdsa$1(personalDigest$1(message), key)]
+		tasks: [ecdsa$2(personalDigest$2(message), key)]
 	});
 	var planEvmTypedData = (typedData, key) => {
 		const { json } = parseTypedData(typedData);
@@ -22809,7 +23080,7 @@
 		}
 		return {
 			kind: "evm.typed-data",
-			tasks: [ecdsa$1(toBytes$1(payload), key)]
+			tasks: [ecdsa$2(toBytes$1(payload), key)]
 		};
 	};
 	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
@@ -22818,7 +23089,7 @@
 		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
 		if (request.kind === "evm.fiat24-session") return {
 			kind: "evm.fiat24-session",
-			tasks: [ecdsa$1(personalDigest$1(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+			tasks: [ecdsa$2(personalDigest$2(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
 		};
 		return planEvmTypedData(request.typedData, key);
 	};
@@ -22854,7 +23125,7 @@
 	};
 	// packages/wallet-chains/dist/networks.mjs
 	init_objectSpread2();
-	var evm$1 = (chainId, name, symbol, testnet) => ({
+	var evm$2 = (chainId, name, symbol, testnet) => ({
 		id: `eip155:${chainId}`,
 		family: "evm",
 		name,
@@ -22864,73 +23135,73 @@
 		chainId
 	});
 	var EVM_NETWORKS = [
-		evm$1(1, "Ethereum", "ETH", false),
-		evm$1(8453, "Base", "ETH", false),
-		evm$1(42161, "Arbitrum One", "ETH", false),
-		evm$1(10, "OP Mainnet", "ETH", false),
-		evm$1(137, "Polygon", "POL", false),
-		evm$1(56, "BNB Smart Chain", "BNB", false),
-		evm$1(999, "HyperEVM", "HYPE", false),
-		evm$1(43114, "Avalanche C-Chain", "AVAX", false),
-		evm$1(4663, "Robinhood Chain", "ETH", false),
-		evm$1(143, "Monad", "MON", false),
-		evm$1(5042, "Arc", "USDC", false),
-		evm$1(9745, "Plasma", "XPL", false),
-		evm$1(196, "X Layer", "OKB", false),
-		evm$1(1672, "Pharos", "PROS", false),
-		evm$1(5e3, "Mantle", "MNT", false),
-		evm$1(25, "Cronos", "CRO", false),
-		evm$1(100, "Gnosis", "xDAI", false),
-		evm$1(988, "Stable", "USDT0", false),
-		evm$1(747474, "Katana", "ETH", false),
-		evm$1(80094, "Berachain", "BERA", false),
-		evm$1(480, "World Chain", "ETH", false),
-		evm$1(130, "Unichain", "ETH", false),
-		evm$1(1329, "Sei", "SEI", false),
-		evm$1(59144, "Linea", "ETH", false),
-		evm$1(42220, "Celo", "CELO", false),
-		evm$1(146, "Sonic", "S", false),
-		evm$1(324, "ZKsync Era", "ETH", false),
-		evm$1(1868, "Soneium", "ETH", false),
-		evm$1(4326, "MegaETH", "ETH", false),
-		evm$1(8217, "Kaia", "KAIA", false),
-		evm$1(33139, "ApeChain", "APE", false),
-		evm$1(57073, "Ink", "ETH", false),
-		evm$1(252, "Fraxtal", "FRAX", false),
-		evm$1(2020, "Ronin", "RON", false),
-		evm$1(534352, "Scroll", "ETH", false),
-		evm$1(60808, "BOB", "ETH", false),
-		evm$1(204, "opBNB", "BNB", false),
-		evm$1(42170, "Arbitrum Nova", "ETH", false),
-		evm$1(167e3, "Taiko", "ETH", false),
-		evm$1(14, "Flare", "FLR", false),
-		evm$1(7777777, "Zora", "ETH", false),
-		evm$1(11155111, "Sepolia", "ETH", true),
-		evm$1(84532, "Base Sepolia", "ETH", true),
-		evm$1(421614, "Arbitrum Sepolia", "ETH", true),
-		evm$1(11155420, "OP Sepolia", "ETH", true),
-		evm$1(80002, "Polygon Amoy", "POL", true),
-		evm$1(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm$1(998, "HyperEVM Testnet", "HYPE", true),
-		evm$1(43113, "Avalanche Fuji", "AVAX", true),
-		evm$1(46630, "Robinhood Chain Testnet", "ETH", true),
-		evm$1(10143, "Monad Testnet", "MON", true),
-		evm$1(5042002, "Arc Testnet", "USDC", true),
-		evm$1(1952, "X Layer Testnet", "OKB", true),
-		evm$1(5003, "Mantle Sepolia", "MNT", true),
-		evm$1(10200, "Gnosis Chiado", "xDAI", true),
-		evm$1(1301, "Unichain Sepolia", "ETH", true),
-		evm$1(1328, "Sei Testnet", "SEI", true),
-		evm$1(59141, "Linea Sepolia", "ETH", true),
-		evm$1(11142220, "Celo Sepolia", "CELO", true),
-		evm$1(14601, "Sonic Testnet", "S", true),
-		evm$1(300, "ZKsync Sepolia", "ETH", true),
-		evm$1(1946, "Soneium Minato", "ETH", true),
-		evm$1(33111, "ApeChain Curtis", "APE", true),
-		evm$1(763373, "Ink Sepolia", "ETH", true),
-		evm$1(2523, "Fraxtal Hoodi", "FRAX", true),
-		evm$1(5611, "opBNB Testnet", "tBNB", true),
-		evm$1(999999999, "Zora Sepolia", "ETH", true)
+		evm$2(1, "Ethereum", "ETH", false),
+		evm$2(8453, "Base", "ETH", false),
+		evm$2(42161, "Arbitrum One", "ETH", false),
+		evm$2(10, "OP Mainnet", "ETH", false),
+		evm$2(137, "Polygon", "POL", false),
+		evm$2(56, "BNB Smart Chain", "BNB", false),
+		evm$2(999, "HyperEVM", "HYPE", false),
+		evm$2(43114, "Avalanche C-Chain", "AVAX", false),
+		evm$2(4663, "Robinhood Chain", "ETH", false),
+		evm$2(143, "Monad", "MON", false),
+		evm$2(5042, "Arc", "USDC", false),
+		evm$2(9745, "Plasma", "XPL", false),
+		evm$2(196, "X Layer", "OKB", false),
+		evm$2(1672, "Pharos", "PROS", false),
+		evm$2(5e3, "Mantle", "MNT", false),
+		evm$2(25, "Cronos", "CRO", false),
+		evm$2(100, "Gnosis", "xDAI", false),
+		evm$2(988, "Stable", "USDT0", false),
+		evm$2(747474, "Katana", "ETH", false),
+		evm$2(80094, "Berachain", "BERA", false),
+		evm$2(480, "World Chain", "ETH", false),
+		evm$2(130, "Unichain", "ETH", false),
+		evm$2(1329, "Sei", "SEI", false),
+		evm$2(59144, "Linea", "ETH", false),
+		evm$2(42220, "Celo", "CELO", false),
+		evm$2(146, "Sonic", "S", false),
+		evm$2(324, "ZKsync Era", "ETH", false),
+		evm$2(1868, "Soneium", "ETH", false),
+		evm$2(4326, "MegaETH", "ETH", false),
+		evm$2(8217, "Kaia", "KAIA", false),
+		evm$2(33139, "ApeChain", "APE", false),
+		evm$2(57073, "Ink", "ETH", false),
+		evm$2(252, "Fraxtal", "FRAX", false),
+		evm$2(2020, "Ronin", "RON", false),
+		evm$2(534352, "Scroll", "ETH", false),
+		evm$2(60808, "BOB", "ETH", false),
+		evm$2(204, "opBNB", "BNB", false),
+		evm$2(42170, "Arbitrum Nova", "ETH", false),
+		evm$2(167e3, "Taiko", "ETH", false),
+		evm$2(14, "Flare", "FLR", false),
+		evm$2(7777777, "Zora", "ETH", false),
+		evm$2(11155111, "Sepolia", "ETH", true),
+		evm$2(84532, "Base Sepolia", "ETH", true),
+		evm$2(421614, "Arbitrum Sepolia", "ETH", true),
+		evm$2(11155420, "OP Sepolia", "ETH", true),
+		evm$2(80002, "Polygon Amoy", "POL", true),
+		evm$2(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm$2(998, "HyperEVM Testnet", "HYPE", true),
+		evm$2(43113, "Avalanche Fuji", "AVAX", true),
+		evm$2(46630, "Robinhood Chain Testnet", "ETH", true),
+		evm$2(10143, "Monad Testnet", "MON", true),
+		evm$2(5042002, "Arc Testnet", "USDC", true),
+		evm$2(1952, "X Layer Testnet", "OKB", true),
+		evm$2(5003, "Mantle Sepolia", "MNT", true),
+		evm$2(10200, "Gnosis Chiado", "xDAI", true),
+		evm$2(1301, "Unichain Sepolia", "ETH", true),
+		evm$2(1328, "Sei Testnet", "SEI", true),
+		evm$2(59141, "Linea Sepolia", "ETH", true),
+		evm$2(11142220, "Celo Sepolia", "CELO", true),
+		evm$2(14601, "Sonic Testnet", "S", true),
+		evm$2(300, "ZKsync Sepolia", "ETH", true),
+		evm$2(1946, "Soneium Minato", "ETH", true),
+		evm$2(33111, "ApeChain Curtis", "APE", true),
+		evm$2(763373, "Ink Sepolia", "ETH", true),
+		evm$2(2523, "Fraxtal Hoodi", "FRAX", true),
+		evm$2(5611, "opBNB Testnet", "tBNB", true),
+		evm$2(999999999, "Zora Sepolia", "ETH", true)
 	];
 	var BUILT_IN_NETWORKS = Object.freeze([
 		...EVM_NETWORKS,
@@ -27143,7 +27414,7 @@ zoo`.split("\n"));
 	var isKeyMetadata = (value) => typeof value === "object" && value !== null && "requestFid" in value && typeof value.requestFid === "bigint" && "requestSigner" in value && typedDataAddress(value.requestSigner) !== void 0 && "signature" in value && typedDataBytes(value.signature) !== void 0 && "deadline" in value && typeof value.deadline === "bigint";
 	var decodeKeyMetadata = (bytes) => {
 		try {
-			const decoded = decode$2(KEY_METADATA, bytes);
+			const decoded = decode$3(KEY_METADATA, bytes);
 			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
 			return tuple;
@@ -27151,7 +27422,7 @@ zoo`.split("\n"));
 			return;
 		}
 	};
-	var result = (farcaster, summary) => ({
+	var result$2 = (farcaster, summary) => ({
 		content: { farcaster },
 		summary,
 		outflows: [],
@@ -27176,7 +27447,7 @@ zoo`.split("\n"));
 			if (owner === void 0 || owner.toLowerCase() !== signer.toLowerCase() || !isUint(message["keyType"], 2n ** 32n - 1n, 1n) || !isKey(key) || !isUint(message["metadataType"], 2n ** 8n - 1n, 1n) || metadata === void 0 || nonce === void 0 || deadline === void 0) return;
 			const app = decodeKeyMetadata(metadata);
 			if (app === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "add",
 				key,
 				requestFid: app.requestFid.toString()
@@ -27188,7 +27459,7 @@ zoo`.split("\n"));
 			const { key } = message;
 			const deadline = parseUint(message["deadline"]);
 			if (requestFid === void 0 || !isKey(key) || deadline === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "request",
 				key,
 				requestFid: requestFid.toString()
@@ -28137,7 +28408,7 @@ zoo`.split("\n"));
 	* order, exactly what must not happen.
 	*/
 	var utf8$6 = new TextEncoder();
-	function concat$3(...chunks) {
+	function concat$5(...chunks) {
 		let length = 0;
 		for (const chunk of chunks) length += chunk.length;
 		const out = new Uint8Array(length);
@@ -28174,29 +28445,29 @@ zoo`.split("\n"));
 		if (value >= 0) {
 			if (value <= 127) return new Uint8Array([value]);
 			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$3(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$3(new Uint8Array([206]), u32be(value));
-			return concat$3(new Uint8Array([207]), u64be$1(BigInt(value)));
+			if (value <= 65535) return concat$5(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$5(new Uint8Array([206]), u32be(value));
+			return concat$5(new Uint8Array([207]), u64be$1(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$3(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$3(new Uint8Array([210]), u32be(value + 4294967296));
-		return concat$3(new Uint8Array([211]), i64be(BigInt(value)));
+		if (value >= -32768) return concat$5(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$5(new Uint8Array([210]), u32be(value + 4294967296));
+		return concat$5(new Uint8Array([211]), i64be(BigInt(value)));
 	}
 	function packStr(value) {
 		const bytes = utf8$6.encode(value);
 		const { length } = bytes;
-		if (length < 32) return concat$3(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$3(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$3(new Uint8Array([218]), u16be(length), bytes);
-		return concat$3(new Uint8Array([219]), u32be(length), bytes);
+		if (length < 32) return concat$5(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$5(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$5(new Uint8Array([218]), u16be(length), bytes);
+		return concat$5(new Uint8Array([219]), u32be(length), bytes);
 	}
 	function packBool(value) {
 		return new Uint8Array([value ? 195 : 194]);
 	}
 	function packArray(items) {
-		return concat$3(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$3(new Uint8Array([220]), u16be(items.length)) : (() => {
+		return concat$5(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$5(new Uint8Array([220]), u16be(items.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
@@ -28205,7 +28476,7 @@ zoo`.split("\n"));
 	* literally; this writer never iterates an object.
 	*/
 	function packMap(entries) {
-		return concat$3(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$3(new Uint8Array([222]), u16be(entries.length)) : (() => {
+		return concat$5(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$5(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
@@ -28323,9 +28594,9 @@ zoo`.split("\n"));
 	*/
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$3(packed, u64be(args.nonce), vault, expiry));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$5(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$5(new Uint8Array([0]), u64be(args.expiresAfter));
+		return keccak_256(concat$5(packed, u64be(args.nonce), vault, expiry));
 	}
 	/**
 	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
@@ -29623,7 +29894,7 @@ zoo`.split("\n"));
 							var _config$description4;
 							throw new SolanaError(SOLANA_ERROR__CODECS__SENTINEL_MISSING_AT_END_OF_BYTES, {
 								codecDescription: (_config$description4 = config.description) !== null && _config$description4 !== void 0 ? _config$description4 : "array",
-								hexSentinel: hexBytes(sentinel),
+								hexSentinel: hexBytes$1(sentinel),
 								sentinel
 							});
 						}
@@ -29670,7 +29941,7 @@ zoo`.split("\n"));
 			sizeStrategy: size === "remainder" ? "remainder" : "sentinel"
 		});
 	}
-	function hexBytes(bytes) {
+	function hexBytes$1(bytes) {
 		return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
 	}
 	function getBytesDecoder() {
@@ -30684,11 +30955,11 @@ zoo`.split("\n"));
 		stakeConfig: "StakeConfig11111111111111111111111111111111"
 	});
 	var ZERO_ADDRESS$1 = "11111111111111111111111111111111";
-	var u32$1 = getU32Decoder();
+	var u32$1$1 = getU32Decoder();
 	var u64$2 = getU64Decoder();
 	var i64 = getI64Decoder();
 	var addr = getAddressEncoder();
-	var u32le$1 = (data, offset) => u32$1.decode(data, offset);
+	var u32le$1 = (data, offset) => u32$1$1.decode(data, offset);
 	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
 	var i64le = (data, offset) => i64.decode(data, offset);
 	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
@@ -30875,9 +31146,9 @@ zoo`.split("\n"));
 		var _table$network;
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[mint];
 	};
-	var u32 = getU32Decoder();
+	var u32$4 = getU32Decoder();
 	var u64$1 = getU64Decoder();
-	var u32le$2 = (data, offset) => u32.decode(data, offset);
+	var u32le$2 = (data, offset) => u32$4.decode(data, offset);
 	var u64le$2 = (data, offset) => u64$1.decode(data, offset);
 	/**
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
@@ -31482,7 +31753,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/plan-D_EI4CuP.mjs
+	// packages/wallet-chains/dist/plan-BkeI38lR.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -31601,7 +31872,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$2 = (parts) => {
+	var concat$4 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -31615,11 +31886,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$2([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$4([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$2([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$4([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$2([
+	var requiredBytesField = (field, data) => concat$4([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -31633,7 +31904,7 @@ zoo`.split("\n"));
 	var encodeMessage = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$2(present.map((f) => f.bytes));
+		return concat$4(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -31641,7 +31912,7 @@ zoo`.split("\n"));
 	* validated by `readFields`.
 	*/
 	var collectExtra = (fields, known) => fields.filter((f) => !known.includes(f.field));
-	var equalBytes$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$5 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	var TRON_CONTRACT_TYPES = [
 		{
 			id: 0,
@@ -31963,7 +32234,7 @@ zoo`.split("\n"));
 				18
 			])
 		});
-		if (!equalBytes$2(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
+		if (!equalBytes$5(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
 		return raw;
 	};
 	var encodeTronRawData = (raw) => {
@@ -32609,19 +32880,28 @@ zoo`.split("\n"));
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
 	};
 	/**
-	* The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
-	* hashStruct(primaryType, message))`. The domain is hashed under the fields its non-null keys
-	* derive; the message under `json.primaryType`, which must be the unique root of `types` minus
-	* `EIP712Domain`.
+	* The domain separator and message hash of a parsed document — `hashStruct(EIP712Domain, domain)`
+	* under the fields its non-null keys derive, `hashStruct(primaryType, message)` under the unique
+	* root type of `types` minus `EIP712Domain`. Returned separately for signers that send the two
+	* hashes to the device rather than one digest (Tron `INS_0C`).
 	*/
-	var tronTypedDataDigest = (json) => {
+	var tronTypedDataHashes = (json) => {
 		const domainFields = domainFieldsOf(json.domain);
 		const messageTypes = {};
 		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
 		const encoder = makeEncoder(messageTypes, false);
 		if (encoder.primary !== json.primaryType) fail$5(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
-		const domain = makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain);
-		const message = encoder.hashStruct(json.primaryType, json.message);
+		return {
+			domain: makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain),
+			message: encoder.hashStruct(json.primaryType, json.message)
+		};
+	};
+	/**
+	* The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
+	* hashStruct(primaryType, message))` — `keccak256(0x1901 ‖ hashes.domain ‖ hashes.message)`.
+	*/
+	var tronTypedDataDigest = (json) => {
+		const { domain, message } = tronTypedDataHashes(json);
 		return keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message));
 	};
 	/**
@@ -32672,7 +32952,7 @@ zoo`.split("\n"));
 	* /tron/plan — the serialisable signing plan of a normalized request: a transaction plans
 	* sha256(raw_data), a message the TIP-191 digest, typed data the TIP-712 digest. No key material.
 	*/
-	var ecdsa = (digest, key) => ({
+	var ecdsa$1 = (digest, key) => ({
 		scheme: "ecdsa-secp256k1",
 		path: key.path,
 		publicKey: key.publicKey,
@@ -32683,19 +32963,19 @@ zoo`.split("\n"));
 		decodeTronRawData(rawData);
 		return {
 			kind: "tron.transaction",
-			tasks: [ecdsa(sha256$1(rawData), key)]
+			tasks: [ecdsa$1(sha256$1(rawData), key)]
 		};
 	};
 	var planTronMessage = (message, key) => {
 		if (message.length === 0) throw new ChainError("invalid-request", "a TRON message is non-empty bytes");
 		return {
 			kind: "tron.message",
-			tasks: [ecdsa(tronMessageDigest(message), key)]
+			tasks: [ecdsa$1(tronMessageDigest(message), key)]
 		};
 	};
 	var planTronTypedData = (typedData, key) => ({
 		kind: "tron.typed-data",
-		tasks: [ecdsa(tronTypedDataDigest(parseTronTypedData(typedData).json), key)]
+		tasks: [ecdsa$1(tronTypedDataDigest(parseTronTypedData(typedData).json), key)]
 	});
 	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
 	var planTron = (request, key) => {
@@ -32755,7 +33035,7 @@ zoo`.split("\n"));
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
 	};
-	var utf8$2 = new TextDecoder("utf-8", {
+	var utf8$2$1 = new TextDecoder("utf-8", {
 		fatal: true,
 		ignoreBOM: true
 	});
@@ -32763,7 +33043,7 @@ zoo`.split("\n"));
 		if (f === void 0) return "";
 		const data = bytesOf$2(f);
 		try {
-			return utf8$2.decode(data);
+			return utf8$2$1.decode(data);
 		} catch (_unused) {
 			return malformed$1(`${what} is not UTF-8`);
 		}
@@ -32780,7 +33060,7 @@ zoo`.split("\n"));
 	* non-canonical.
 	*/
 	var canonical = (f, encoded) => {
-		if (f !== void 0 && !equalBytes$2(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
+		if (f !== void 0 && !equalBytes$5(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
 	};
 	var encAddress = (n, address) => requiredBytesField(n, tronAddressToBytes(address));
 	var encBytes = (n, data) => bytesField(n, data);
@@ -33775,7 +34055,7 @@ zoo`.split("\n"));
 			}
 			return out;
 		} finally {
-			wipe(checksum);
+			wipe$1(checksum);
 			indices.fill(0);
 		}
 	}
@@ -33801,7 +34081,7 @@ zoo`.split("\n"));
 		try {
 			return await pbkdf2("sha512", password, salt, 2048, 64);
 		} finally {
-			wipe(password, salt);
+			wipe$1(password, salt);
 		}
 	}
 	/**
@@ -33813,7 +34093,7 @@ zoo`.split("\n"));
 		try {
 			return await use(seed);
 		} finally {
-			wipe(seed);
+			wipe$1(seed);
 		}
 	}
 	// packages/wallet-kernel/src/vault/policy.ts
@@ -33826,7 +34106,7 @@ zoo`.split("\n"));
 	function policyEnabled(image, dek, id) {
 		const record = policyRecord(image, id);
 		if (record === void 0) return false;
-		wipe(openRecord(dek, record));
+		wipe$1(openRecord(dek, record));
 		return true;
 	}
 	// packages/wallet-kernel/src/commands/passphrase.ts
@@ -33863,8 +34143,8 @@ zoo`.split("\n"));
 		try {
 			return await withSeed(pbkdf2, entropy, passphraseText(passphrase), use);
 		} finally {
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	var EMPTY_IMAGE$1 = {
@@ -34103,14 +34383,14 @@ zoo`.split("\n"));
 		const seed = input.length === 64 ? input.slice(0, 32) : input;
 		if (seed.length !== 32) throw new KernelError("invalid-input", "a Solana key is a 32-byte seed or a 64-byte keypair");
 		const publicKey = ed25519.getPublicKey(seed);
-		if (input.length === 64 && !equalBytes$1(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
+		if (input.length === 64 && !equalBytes$4(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
 		return {
 			secret: seed,
 			publicKey,
 			address: solanaAddressFromPublicKey(publicKey)
 		};
 	}
-	var equalBytes$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$4 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/** The decoded secret, its public key and its chain address — input is wiped by the caller. */
 	function isKeyFamily(family) {
 		return family === "evm" || family === "solana" || family === "bitcoin" || family === "tron";
@@ -34131,12 +34411,57 @@ zoo`.split("\n"));
 		return _objectSpread2({ keyId: record.id }, header);
 	};
 	/**
-	* Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44,
-	* Solana bip44-change plus TRON bip44. A key matching one of them is a second handle on an account
-	* the wallet already owns, so import refuses it.
+	* Every address a wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44, Solana
+	* bip44-change plus TRON bip44. A key matching one of them is a second handle on an account the
+	* wallet already owns, so import refuses it. External-custody wallets (card and hardware) answer
+	* from their pinned public material; a path the record did not pin (`device-required`) is skipped —
+	* anything else throws.
 	*/
 	async function ownAddresses(ctx, dek) {
 		const addresses = /* @__PURE__ */ new Set();
+		const externalAddresses = async (record) => {
+			let material;
+			try {
+				material = ctx.externalMaterial(record);
+			} catch (error) {
+				if (error instanceof KernelError && error.code === "unsupported") return;
+				throw error;
+			}
+			{
+				const h = 2147483648;
+				const collect = (settled, toAddress) => {
+					for (const result of settled) if (result.status === "fulfilled") addresses.add(toAddress(result.value));
+					else if (!(result.reason instanceof KernelError && result.reason.code === "device-required")) throw result.reason instanceof Error ? result.reason : /* @__PURE__ */ new Error("derivation failed");
+				};
+				const groups = Array.from({ length: OWN_GROUP_BOUND }, (_, group) => group);
+				const [evm, tron, solana] = await Promise.all([
+					Promise.allSettled(groups.map(async (group) => material.secp256k1([
+						2147483692,
+						2147483708,
+						h,
+						0,
+						group
+					]))),
+					Promise.allSettled(groups.map(async (group) => material.secp256k1([
+						2147483692,
+						2147483843,
+						h,
+						0,
+						group
+					]))),
+					Promise.allSettled(groups.map(async (group) => material.ed25519([
+						2147483692,
+						2147484149,
+						group + h,
+						h
+					])))
+				]);
+				collect(evm, (key) => evmAddressFromPublicKey(key).toLowerCase());
+				collect(tron, tronAddressFromPublicKey);
+				collect(solana, solanaAddressFromPublicKey);
+			}
+		};
+		await Promise.all(ctx.image.records.filter((r) => EXTERNAL_CUSTODY_KINDS.has(r.kind)).map(async (record) => externalAddresses(record)));
 		const entropyRecords = ctx.image.records.filter((r) => r.kind === "entropy");
 		await Promise.all(entropyRecords.map(async (record) => withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
@@ -34155,12 +34480,12 @@ zoo`.split("\n"));
 					} finally {
 						evmChild.wipePrivateData();
 						tronChild.wipePrivateData();
-						wipe(solChild.privateKey);
+						wipe$1(solChild.privateKey);
 					}
 				}
 			} finally {
 				master.wipePrivateData();
-				wipe(solanaRoot.privateKey);
+				wipe$1(solanaRoot.privateKey);
 			}
 		})));
 		return addresses;
@@ -34189,10 +34514,10 @@ zoo`.split("\n"));
 					createdAt
 				};
 			} finally {
-				wipe(material.secret);
+				wipe$1(material.secret);
 			}
 		} finally {
-			wipe(params.secret);
+			wipe$1(params.secret);
 		}
 	}
 	function listKeys(ctx) {
@@ -34226,7 +34551,7 @@ zoo`.split("\n"));
 			if (header.family === "tron") return encodeHexAscii(secret, "");
 			throw new KernelError("invalid-input", `keys are not supported on ${header.family}`);
 		} finally {
-			wipe(secret);
+			wipe$1(secret);
 		}
 	}
 	// packages/wallet-kernel/src/derive/hd.ts
@@ -34243,9 +34568,8 @@ zoo`.split("\n"));
 	* SHA-256(UTF-8("qntx-wallet/wallet-id/v1") ‖ master compressed public key). Derived from public
 	* data only — safe to use as a record id.
 	*/
-	function walletIdOf(master) {
-		const { publicKey } = master;
-		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
+	function walletIdOf(publicKey) {
+		if (publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
 		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
 	// packages/wallet-kernel/src/seed/entropy.ts
@@ -34266,7 +34590,7 @@ zoo`.split("\n"));
 			if (prf.length !== 32) throw new KernelError("invalid-input", "PRF output must be 32 bytes");
 			return prf.slice(0, 16);
 		} finally {
-			wipe(prf);
+			wipe$1(prf);
 		}
 	}
 	// packages/wallet-kernel/src/session/session.ts
@@ -34276,12 +34600,12 @@ zoo`.split("\n"));
 	function wipePendingFactor(pending) {
 		if (pending.kind === "device") return;
 		pending.kek.wipe();
-		if (pending.kind === "password") wipe(pending.salt);
-		else wipe(pending.credentialId);
+		if (pending.kind === "password") wipe$1(pending.salt);
+		else wipe$1(pending.credentialId);
 	}
 	function wipeDraft(draft) {
 		draft.entropy.wipe();
-		for (const expected of draft.expected) wipe(expected);
+		for (const expected of draft.expected) wipe$1(expected);
 		if (draft.pendingFactor !== void 0) wipePendingFactor(draft.pendingFactor);
 	}
 	/**
@@ -34440,9 +34764,10 @@ zoo`.split("\n"));
 	async function deriveWalletMaterial(platform, entropy, passphrase) {
 		return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
 			const master = masterKey(seed);
+			if (master.publicKey === null) throw new KernelError("integrity", "master key has no compressed public key");
 			return {
 				master,
-				walletId: walletIdOf(master)
+				walletId: walletIdOf(master.publicKey)
 			};
 		});
 	}
@@ -34462,7 +34787,7 @@ zoo`.split("\n"));
 		}
 	}
 	function walletInfoOf(material, backup, createdAt) {
-		return walletInfo(_objectSpread2(_objectSpread2({
+		return walletInfo$1(_objectSpread2(_objectSpread2({
 			walletId: material.walletId,
 			origin: material.origin,
 			words: material.words,
@@ -34573,7 +34898,7 @@ zoo`.split("\n"));
 		return openSession(ctx, dek, keyId);
 	}
 	function ensureNewWallet(ctx, material) {
-		if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) throw new KernelError("already-exists", "wallet already exists");
+		if (findWalletRecord(ctx.image, material.walletId) !== void 0) throw new KernelError("already-exists", "wallet already exists");
 	}
 	/** Three distinct quiz positions via rejection sampling on whole bytes. */
 	function quizPositions(random, count) {
@@ -34672,15 +34997,15 @@ zoo`.split("\n"));
 		try {
 			return await confirmWithPassphrase(ctx, params, passphrase);
 		} finally {
-			if (passphrase !== void 0) wipe(passphrase);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	async function confirmWithPassphrase(ctx, params, passphrase) {
 		const allMatch = ctx.session.getDraft(params.draft).expected.every((expected, i) => {
 			const answer = params.answers[i];
-			return answer !== void 0 && answer.length === expected.length && equalBytes$6(answer, expected);
+			return answer !== void 0 && answer.length === expected.length && equalBytes$9(answer, expected);
 		});
-		for (const answer of params.answers) wipe(answer);
+		for (const answer of params.answers) wipe$1(answer);
 		if (!allMatch) throw new KernelError("invalid-input", "backup confirmation failed");
 		const taken = ctx.session.takeDraft(params.draft);
 		try {
@@ -34714,11 +35039,11 @@ zoo`.split("\n"));
 					session: session.id
 				};
 			} finally {
-				wipe(entropy);
+				wipe$1(entropy);
 			}
 		} finally {
 			taken.entropy.wipe();
-			for (const expected of taken.expected) wipe(expected);
+			for (const expected of taken.expected) wipe$1(expected);
 			if (taken.pendingFactor !== void 0) wipePendingFactor(taken.pendingFactor);
 		}
 	}
@@ -34749,8 +35074,8 @@ zoo`.split("\n"));
 					session
 				};
 			} finally {
-				if (entropy !== void 0) wipe(entropy);
-				if (passphrase !== void 0) wipe(passphrase);
+				if (entropy !== void 0) wipe$1(entropy);
+				if (passphrase !== void 0) wipe$1(passphrase);
 			}
 		});
 	}
@@ -34762,9 +35087,9 @@ zoo`.split("\n"));
 	*/
 	function walletPrfOf(result) {
 		var _result$first;
-		if (result.second !== void 0) wipe(result.second);
+		if (result.second !== void 0) wipe$1(result.second);
 		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
-			if (result.first !== void 0) wipe(result.first);
+			if (result.first !== void 0) wipe$1(result.first);
 			throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
 		}
 		return {
@@ -34804,7 +35129,7 @@ zoo`.split("\n"));
 			salts
 		});
 		if (((_asserted$userHandle = asserted.userHandle) === null || _asserted$userHandle === void 0 ? void 0 : _asserted$userHandle[0]) !== PURPOSE_WALLET) {
-			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe(output);
+			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe$1(output);
 			throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
 		}
 		return walletPrfOf(asserted);
@@ -34831,7 +35156,7 @@ zoo`.split("\n"));
 					session
 				};
 			} finally {
-				wipe(entropy);
+				wipe$1(entropy);
 			}
 		});
 	}
@@ -35350,7 +35675,7 @@ zoo`.split("\n"));
 									createdAt: now
 								}), material.secret));
 							} finally {
-								if (material.secret !== key.secret) wipe(material.secret);
+								if (material.secret !== key.secret) wipe$1(material.secret);
 							}
 						}
 						if (gated.uninitialized && adoptsBackupKey(material)) records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
@@ -35400,8 +35725,8 @@ zoo`.split("\n"));
 			}
 			return _objectSpread2({ mnemonic: exported }, passphrase === void 0 ? {} : { passphrase: new Uint8Array(passphrase) });
 		} finally {
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	/**
@@ -35687,7 +36012,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes$3, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -35703,7 +36028,7 @@ zoo`.split("\n"));
 		hasEven = (y) => y % _2n$1 === _0n$3;
 		isBytes = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
-		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
+		equalBytes$3 = /* @__PURE__ */ (() => utils.equalBytes)();
 		sha256 = /* @__PURE__ */ (() => sha256$1)();
 		hash160 = (msg) => ripemd160(sha256(msg));
 		sha256x2 = (...msgs) => sha256(sha256(concatBytes(...msgs)));
@@ -35731,6 +36056,490 @@ zoo`.split("\n"));
 			wif: 239
 		});
 	}));
+	// packages/wallet-kernel/src/derive/pinned.ts
+	/**
+	* Pinned public material — the one `PublicMaterial` every external-custody wallet serves without a
+	* secret. A card wallet pins the nodes a verified tap fetched (plus the master public key); a
+	* hardware wallet pins the nodes pairing published (plus the claimed master fingerprint). The
+	* resolution rules are one: `[]` answers the master when the pin carries it, otherwise
+	* `device-required`; any other secp256k1 path resolves to an exact pinned node or by public
+	* derivation under the deepest pinned prefix whose remaining indices are all non-hardened; ed25519
+	* resolves exactly only (SLIP-10 has no public derivation). Whatever the pin cannot answer is
+	* `device-required` — only the signer itself can produce it.
+	*
+	* Both record bodies carry the same `nodes` / `ed25519` sub-objects (`m/…` → `{key, chainCode,
+	* parent?}` and `m/…` → pubkey hex); {@link parsePinnedNodes} and {@link parsePinnedEd25519} are the
+	* shared strict codec — every failure is `integrity`.
+	*/
+	init_secp256k1();
+	init_utils$2();
+	init_bip32();
+	init_utils();
+	init_objectSpread2();
+	var HARDENED$10 = 2147483648;
+	var MAX_NODES = 512;
+	var MAX_ED25519 = 256;
+	var HEX$1 = /^[0-9a-f]+$/;
+	var failure$2 = () => new KernelError("integrity", "invalid pinned material");
+	var deviceRequired = () => new KernelError("device-required", "this key needs the external signer");
+	var asHexBytes = (value, length) => {
+		if (typeof value !== "string" || value.length !== length * 2 || !HEX$1.test(value)) throw failure$2();
+		return hexToBytes$3(value);
+	};
+	/** `m/…` → `KeyPath`; depth 1–10, hardened segments carry `'`, canonical decimal indices. */
+	function pathFromString(text) {
+		if (!/^m(\/[0-9]+'?){1,10}$/.test(text)) throw failure$2();
+		return text.slice(2).split("/").map((segment) => {
+			const hardened = segment.endsWith("'");
+			const digits = hardened ? segment.slice(0, -1) : segment;
+			if (digits.length > 1 && digits.startsWith("0")) throw failure$2();
+			const index = Number(digits);
+			if (!Number.isSafeInteger(index) || index > 2147483647) throw failure$2();
+			return hardened ? index + HARDENED$10 : index;
+		});
+	}
+	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; the empty path is `m`. */
+	function pathToString(path) {
+		return `m${path.map((i) => i >= HARDENED$10 ? `/${i - HARDENED$10}'` : `/${i}`).join("")}`;
+	}
+	var asSecpPoint$1 = (value) => {
+		const bytes = asHexBytes(value, 33);
+		try {
+			secp256k1.Point.fromBytes(bytes);
+		} catch (_unused) {
+			throw failure$2();
+		}
+		return bytes;
+	};
+	var asEd25519Point = (value) => {
+		const bytes = asHexBytes(value, 32);
+		try {
+			ed25519.Point.fromBytes(bytes);
+		} catch (_unused2) {
+			throw failure$2();
+		}
+		return bytes;
+	};
+	var parseNode = (value) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw failure$2();
+		const node = value;
+		const hasParent = Object.hasOwn(node, "parent");
+		if (Object.keys(node).length !== (hasParent ? 3 : 2)) throw failure$2();
+		return _objectSpread2({
+			publicKey: asSecpPoint$1(node["key"]),
+			chainCode: asHexBytes(node["chainCode"], 32)
+		}, hasParent ? { parent: asHexBytes(node["parent"], 4) } : {});
+	};
+	/**
+	* The `nodes` sub-object both custody bodies carry: `m/…` → `{key, chainCode, parent?}` with at
+	* most 512 entries — every key an on-curve secp256k1 point, every chain code 32 bytes.
+	*/
+	function parsePinnedNodes(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw failure$2();
+		const entries = Object.entries(value);
+		if (entries.length > MAX_NODES) throw failure$2();
+		const nodes = [];
+		for (const [path, entry] of entries) nodes.push(_objectSpread2({ path: pathFromString(path) }, parseNode(entry)));
+		return nodes;
+	}
+	/**
+	* The `ed25519` sub-object both custody bodies carry: `m/…` → RFC 8032 public key hex with at most
+	* 256 entries.
+	*/
+	function parsePinnedEd25519(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw failure$2();
+		const entries = Object.entries(value);
+		if (entries.length > MAX_ED25519) throw failure$2();
+		return entries.map(([path, pub]) => ({
+			path: pathFromString(path),
+			publicKey: asEd25519Point(pub)
+		}));
+	}
+	var samePath$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	/**
+	* The node at `path`: an exact pinned node or one publicly derived under the deepest pinned prefix
+	* whose remaining tail is fully non-hardened. `undefined` when only the signer can answer — the
+	* master and hardened gaps never derive publicly.
+	*/
+	var nodeAt$1 = (pin, path) => {
+		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath$2(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$10)).sort((a, b) => b.path.length - a.path.length);
+		if (ancestor === void 0) return;
+		let node = new HDKey$1({
+			publicKey: ancestor.publicKey,
+			chainCode: ancestor.chainCode
+		});
+		for (const index of path.slice(ancestor.path.length)) node = node.deriveChild(index);
+		return node;
+	};
+	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+	/** The pin's public material; misses are `device-required`, corrupt pins are `integrity`. */
+	var pinnedMaterial = (pin) => ({
+		secp256k1: async (path) => {
+			var _nodeAt;
+			if (path.length === 0) {
+				if (pin.master === void 0) throw deviceRequired();
+				return pin.master;
+			}
+			const key = (_nodeAt = nodeAt$1(pin, path)) === null || _nodeAt === void 0 ? void 0 : _nodeAt.publicKey;
+			if (key === void 0 || key === null) throw deviceRequired();
+			return key;
+		},
+		ed25519: async (path) => {
+			const key = pin.keys.ed25519.find((k) => samePath$2(k.path, path));
+			if (key === void 0) throw deviceRequired();
+			return key.publicKey;
+		},
+		extendedPublicKey: async (path, versions) => {
+			var _path$at;
+			const node = path.length === 0 ? void 0 : nodeAt$1(pin, path);
+			if (node === void 0 || node.publicKey === null || node.chainCode === null) throw deviceRequired();
+			const pinned = pin.keys.nodes.find((entry) => samePath$2(entry.path, path));
+			let parentFingerprint;
+			if ((pinned === null || pinned === void 0 ? void 0 : pinned.parent) === void 0) {
+				var _nodeAt$publicKey, _nodeAt2;
+				const parentPublic = path.length === 1 ? pin.master : (_nodeAt$publicKey = (_nodeAt2 = nodeAt$1(pin, path.slice(0, -1))) === null || _nodeAt2 === void 0 ? void 0 : _nodeAt2.publicKey) !== null && _nodeAt$publicKey !== void 0 ? _nodeAt$publicKey : void 0;
+				if (parentPublic === void 0 || parentPublic === null) throw deviceRequired();
+				parentFingerprint = fingerprintNumber$1(hash160(parentPublic));
+			} else parentFingerprint = fingerprintNumber$1(pinned.parent);
+			return new HDKey$1({
+				versions,
+				depth: path.length,
+				index: (_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0,
+				parentFingerprint,
+				chainCode: node.chainCode,
+				publicKey: node.publicKey
+			}).publicExtendedKey;
+		},
+		fingerprint: async () => {
+			if (pin.master !== void 0) {
+				const derived = hash160(pin.master).slice(0, 4);
+				if (pin.fingerprint !== void 0 && !equalBytes$9(derived, pin.fingerprint)) throw new KernelError("integrity", "pinned fingerprint does not match the master key");
+				return derived;
+			}
+			if (pin.fingerprint === void 0) throw new KernelError("integrity", "the pin carries neither master key nor fingerprint");
+			return pin.fingerprint;
+		}
+	});
+	// packages/wallet-kernel/src/modules/card/budget.ts
+	/** The plan one tap may spend, in milliseconds. */
+	var PLAN_MS = 18e3;
+	/** Conservative per-command milliseconds (§16.6, each including its 40 ms transit). */
+	var PRICE = {
+		status: 40,
+		create: 146,
+		verify: 164,
+		change: 164,
+		erase: 164,
+		wait: 1005,
+		"public-key": 340,
+		"sign-ecdsa": 451,
+		"sign-bip340": 764,
+		"ed25519-begin": 470,
+		"ed25519-update": 61,
+		"ed25519-finish": 526,
+		offer: 177,
+		"export-head": 464,
+		"export-payload": 40,
+		"import-head": 511,
+		"import-payload": 40
+	};
+	/** Estimated milliseconds one command costs the card-side budget. */
+	var priceOf = (command) => PRICE[command];
+	// packages/wallet-kernel/src/modules/card/protocol/bytes.ts
+	init_secp256k1();
+	init_utils$2();
+	var ascii$2 = utf8ToBytes$1;
+	function u16(value) {
+		const out = /* @__PURE__ */ new Uint8Array(2);
+		new DataView(out.buffer).setUint16(0, value);
+		return out;
+	}
+	function u32$1(value) {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	}
+	/** Big-endian u16 at the end of a two-or-more-byte buffer (the status word position). */
+	function readSw(bytes) {
+		return new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 2, 2).getUint16(0);
+	}
+	function wipe(...buffers) {
+		for (const buffer of buffers) buffer.fill(0);
+	}
+	/** A secp256k1 point decoded and curve-checked; `undefined` on any malformed input. */
+	function tryPoint(bytes) {
+		try {
+			return secp256k1.Point.fromBytes(bytes);
+		} catch (_unused) {
+			return;
+		}
+	}
+	/** Whether `bytes` is a valid secp256k1 point encoding (compressed or uncompressed). */
+	function validPoint(bytes) {
+		return tryPoint(bytes) !== void 0;
+	}
+	/** Whether `bytes` is a valid 65-byte uncompressed secp256k1 point (`0x04 ‖ x ‖ y`). */
+	function validUncompressedPoint(bytes) {
+		return bytes.length === 65 && bytes[0] === 4 && validPoint(bytes);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/errors.ts
+	init_defineProperty();
+	var CardError = class extends Error {
+		constructor(code, message, sw, remaining) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			_defineProperty(
+				this,
+				/** The outer or inner status word that triggered the error, when one did. */
+				"sw",
+				void 0
+			);
+			_defineProperty(
+				this,
+				/** Attempts left before erasure; only set on `wrong-access-code` (1–9, protocol.md §13.2). */
+				"remaining",
+				void 0
+			);
+			this.name = "CardError";
+			this.code = code;
+			this.sw = sw;
+			this.remaining = remaining;
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/protocol/identity.ts
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	var LABEL_CERT = ascii$2("qntx-card/v1/cert");
+	/** No production batch exists yet; test anchors live in tests only. */
+	var PRODUCTION_ANCHORS = [];
+	/** `ID(A) = SHA-256(A)[0..16)`: the card ID (protocol.md §1). */
+	function cardId(identity) {
+		if (identity.length !== 33) throw new CardError("invalid-input", "identity is not a compressed point");
+		return sha256$1(identity).subarray(0, 16);
+	}
+	/** `short(A)`: `ID(A)[0..4)` as 8 uppercase hex digits in two groups (`XXXX-XXXX`). */
+	function shortId(identity) {
+		const hex = bytesToHex$4(cardId(identity).subarray(0, 4)).toUpperCase();
+		return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+	}
+	/**
+	* Verifies `cert` against `anchors` (§5.2). Returns the identity key `A` (33 bytes) and the batch
+	* of the anchor that verified. `card-not-genuine` when the certificate chains to no anchor;
+	* `invalid-input` when an anchor key is not a valid uncompressed point.
+	*/
+	function verifyCertificate(cert, anchors) {
+		if (cert.length !== 97) throw new CardError("card-not-genuine", "certificate is not 97 bytes");
+		for (const anchor of anchors) if (!validUncompressedPoint(anchor.key)) throw new CardError("invalid-input", "anchor key is not a valid uncompressed point");
+		const identity = cert.subarray(0, 33);
+		if (!validPoint(identity)) throw new CardError("card-not-genuine", "certificate subject is not a compressed point");
+		const signature = cert.subarray(33, 97);
+		const digest = sha256$1(concatBytes$3(LABEL_CERT, identity));
+		for (const anchor of anchors) if (secp256k1.verify(signature, digest, anchor.key, {
+			prehash: false,
+			lowS: false
+		})) return {
+			identity: new Uint8Array(identity),
+			batch: anchor.batch
+		};
+		throw new CardError("card-not-genuine", "certificate chains to no trusted anchor");
+	}
+	// packages/wallet-kernel/src/modules/card/record.ts
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	var CARD_ID = /^[0-9a-f]{32}$/;
+	var HEX64 = /^[0-9a-f]{64}$/;
+	var bodyFailure$1 = () => new KernelError("integrity", "invalid card-wallet body");
+	var bodyObject = (text) => {
+		let value;
+		try {
+			value = JSON.parse(text);
+		} catch (_unused) {
+			throw bodyFailure$1();
+		}
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure$1();
+		return value;
+	};
+	var expectBodyKeys = (object, keys) => {
+		if (Object.keys(object).length !== keys.length || !keys.every((key) => Object.hasOwn(object, key))) throw bodyFailure$1();
+	};
+	var asHex = (value, pattern) => {
+		if (typeof value !== "string" || !pattern.test(value)) throw bodyFailure$1();
+		return value;
+	};
+	var asSecpPoint = (hex) => {
+		try {
+			secp256k1.Point.fromBytes(hexToBytes$3(hex));
+		} catch (_unused2) {
+			throw bodyFailure$1();
+		}
+	};
+	var asInt = (value, min, max) => {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) throw headerFailure();
+		return value;
+	};
+	var parseCard = (value, members) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw headerFailure();
+		const object = value;
+		expectKeys(object, [
+			"cardId",
+			"state",
+			...[
+				"cert",
+				"tries",
+				"verifiedAt"
+			].filter((key) => Object.hasOwn(object, key))
+		]);
+		const id = object["cardId"];
+		if (typeof id !== "string" || !CARD_ID.test(id) || !members.has(id)) throw headerFailure();
+		const { state } = object;
+		if (state !== "ready" && state !== "unknown" && state !== "pending") throw headerFailure();
+		let cert;
+		if (Object.hasOwn(object, "cert")) {
+			const raw = object["cert"];
+			if (typeof raw !== "string" || !/^[0-9a-f]{194}$/.test(raw)) throw headerFailure();
+			if (bytesToHex$4(cardId(hexToBytes$3(raw).subarray(0, 33))) !== id) throw headerFailure();
+			cert = raw;
+		}
+		return _objectSpread2(_objectSpread2(_objectSpread2({ cardId: id }, cert === void 0 ? {} : { cert }), {}, { state }, Object.hasOwn(object, "tries") ? { tries: asInt(object["tries"], 0, 10) } : {}), Object.hasOwn(object, "verifiedAt") ? { verifiedAt: asCreatedAt(object["verifiedAt"]) } : {});
+	};
+	function parseCardWalletHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"v",
+			"walletId",
+			"origin",
+			"createdAt",
+			"members",
+			"cards"
+		]);
+		if (object["v"] !== 1) throw headerFailure();
+		const { origin } = object;
+		if (origin !== "generated" && origin !== "imported") throw headerFailure();
+		const membersValue = object["members"];
+		if (!Array.isArray(membersValue) || membersValue.length === 0 || membersValue.length > 3) throw headerFailure();
+		const members = membersValue.map((member) => {
+			if (typeof member !== "string" || !CARD_ID.test(member)) throw headerFailure();
+			return member;
+		});
+		if (new Set(members).size !== members.length) throw headerFailure();
+		const memberSet = new Set(members);
+		const cardsValue = object["cards"];
+		if (!Array.isArray(cardsValue)) throw headerFailure();
+		const cards = cardsValue.map((card) => parseCard(card, memberSet));
+		if (new Set(cards.map((card) => card.cardId)).size !== cards.length) throw headerFailure();
+		return {
+			v: 1,
+			walletId: asWalletId(object["walletId"]),
+			origin,
+			createdAt: asCreatedAt(object["createdAt"]),
+			members,
+			cards
+		};
+	}
+	function encodeCardWalletHeader(header) {
+		return JSON.stringify({
+			v: header.v,
+			walletId: header.walletId,
+			origin: header.origin,
+			createdAt: header.createdAt,
+			members: header.members,
+			cards: header.cards.map((card) => _objectSpread2(_objectSpread2(_objectSpread2({ cardId: card.cardId }, card.cert === void 0 ? {} : { cert: card.cert }), {}, { state: card.state }, card.tries === void 0 ? {} : { tries: card.tries }), card.verifiedAt === void 0 ? {} : { verifiedAt: card.verifiedAt }))
+		});
+	}
+	var parseHexRecord = (value, entry) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure$1();
+		const out = {};
+		for (const [key, item] of Object.entries(value)) {
+			entry(key, item);
+			out[key] = item;
+		}
+		return out;
+	};
+	/**
+	* Parses and verifies a sealed body: the master key is a point deriving `walletId`, every node a
+	* point with a 32-byte chain code under a depth-1..10 path, every ed25519 entry a valid encoding,
+	* counts bounded. `walletId` is the record id the body was sealed under.
+	*/
+	function parseCardWalletBody(text, walletId) {
+		const object = bodyObject(text);
+		const flagged = Object.hasOwn(object, "access");
+		expectBodyKeys(object, flagged ? [
+			"master",
+			"nodes",
+			"ed25519",
+			"ephemerals",
+			"access"
+		] : [
+			"master",
+			"nodes",
+			"ed25519",
+			"ephemerals"
+		]);
+		const master = asHex(object["master"], /^[0-9a-f]{66}$/);
+		asSecpPoint(master);
+		if (walletIdOf(hexToBytes$3(master)) !== walletId) throw new KernelError("integrity", "card-wallet master does not derive its walletId");
+		const nodes = {};
+		for (const node of parsePinnedNodes(object["nodes"])) nodes[pathToString(node.path)] = _objectSpread2({
+			key: bytesToHex$4(node.publicKey),
+			chainCode: bytesToHex$4(node.chainCode)
+		}, node.parent === void 0 ? {} : { parent: bytesToHex$4(node.parent) });
+		const ed25519Entries = {};
+		for (const key of parsePinnedEd25519(object["ed25519"])) ed25519Entries[pathToString(key.path)] = bytesToHex$4(key.publicKey);
+		const ephemeralsValue = object["ephemerals"];
+		if (typeof ephemeralsValue !== "object" || ephemeralsValue === null || Array.isArray(ephemeralsValue)) throw bodyFailure$1();
+		const ephemerals = {};
+		for (const [id, tags] of Object.entries(ephemeralsValue)) {
+			if (!CARD_ID.test(id) || !Array.isArray(tags) || tags.length > 16) throw bodyFailure$1();
+			ephemerals[id] = tags.map((tag) => asHex(tag, /^[0-9a-f]{16}$/));
+		}
+		let access;
+		if (flagged) access = parseHexRecord(object["access"], (id, hash) => {
+			if (!CARD_ID.test(id)) throw bodyFailure$1();
+			asHex(hash, HEX64);
+		});
+		return _objectSpread2({
+			master,
+			nodes,
+			ed25519: ed25519Entries,
+			ephemerals
+		}, access === void 0 ? {} : { access });
+	}
+	var sortedEntries = (record) => Object.entries(record).sort(([a], [b]) => a.localeCompare(b));
+	function encodeCardWalletBody(body) {
+		return JSON.stringify(_objectSpread2({
+			master: body.master,
+			nodes: Object.fromEntries(sortedEntries(body.nodes).map(([path, node]) => [path, _objectSpread2({
+				key: node.key,
+				chainCode: node.chainCode
+			}, node.parent === void 0 ? {} : { parent: node.parent })])),
+			ed25519: Object.fromEntries(sortedEntries(body.ed25519)),
+			ephemerals: Object.fromEntries(sortedEntries(body.ephemerals))
+		}, body.access === void 0 ? {} : { access: Object.fromEntries(sortedEntries(body.access)) }));
+	}
+	/** The `CardWalletInfo` a `card-wallet` header contributes to `wallets` in status. */
+	function cardWalletInfo(header) {
+		return {
+			custody: "card",
+			walletId: header.walletId,
+			origin: header.origin === "generated" ? "card-generated" : "card-imported",
+			backup: "cards",
+			createdAt: header.createdAt,
+			members: header.members.length,
+			cards: header.cards.map((card) => _objectSpread2(_objectSpread2(_objectSpread2({ cardId: card.cardId }, card.cert === void 0 ? {} : { shortId: shortId(hexToBytes$3(card.cert).subarray(0, 33)) }), {}, { state: card.state }, card.tries === void 0 ? {} : { tries: card.tries }), card.verifiedAt === void 0 ? {} : { verifiedAt: card.verifiedAt }))
+		};
+	}
+	/** The body's public material as a {@link Pin} — the master key plus every cached path. */
+	function cardPin(body) {
+		return {
+			master: hexToBytes$3(body.master),
+			keys: {
+				nodes: parsePinnedNodes(body.nodes),
+				ed25519: parsePinnedEd25519(body.ed25519)
+			}
+		};
+	}
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
 	/**
 	* Coder for Bitcoin Script numbers.
@@ -36324,7 +37133,7 @@ zoo`.split("\n"));
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
 					if (typeof current === "string") current = vC.decode(hex$3.decode(current));
-					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
+					if (!equalBytes$3(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
@@ -36382,7 +37191,7 @@ zoo`.split("\n"));
 			let b = _other[key];
 			if (typeof a === "string") a = valueCoder.decode(hex$3.decode(a));
 			if (typeof b === "string") b = valueCoder.decode(hex$3.decode(b));
-			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
+			if (!equalBytes$3(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
 	}
@@ -36669,7 +37478,7 @@ zoo`.split("\n"));
 		}
 	}
 	function checkWSH(s, witnessScript) {
-		if (!equalBytes(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
+		if (!equalBytes$3(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
 		const w = OutScript.decode(witnessScript);
 		if (w.type === "tr" || w.type === "tr_ns" || w.type === "tr_ms") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2SH`);
 		if (w.type === "wpkh" || w.type === "wsh" || w.type === "sh") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2WSH`);
@@ -36699,7 +37508,7 @@ zoo`.split("\n"));
 			if (s.type === "tr_ns" || s.type === "tr_ms" || s.type === "ms" || s.type == "pk") throw new Error(`checkScript: non-wrapped ${s.type}`);
 			if (redeemScript) {
 				if (s.type !== "sh") throw new Error("checkScript: redeemScript without P2SH");
-				if (!equalBytes(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
+				if (!equalBytes$3(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
 				r = _WitnessOutScript.decode(redeemScript);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "tr" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ns" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ms") throw new Error(`checkScript: P2${r.type} cannot be wrapped in P2SH`);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "sh") throw new Error("checkScript: P2SH cannot be wrapped in P2SH");
@@ -36739,8 +37548,8 @@ zoo`.split("\n"));
 		if (!["tr_ns", "tr_ms"].includes(out.type)) throw new Error(`P2TR: invalid leaf script=${out.type}`);
 		const outms = out;
 		if (!allowUnknownOutputs && outms.pubkeys) for (const p of outms.pubkeys) {
-			if (equalBytes(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
-			if (equalBytes(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
+			if (equalBytes$3(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
+			if (equalBytes$3(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
 		}
 	}
 	/**
@@ -36805,7 +37614,7 @@ zoo`.split("\n"));
 			validateObject(tree, {}, {}, "tree");
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
-			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
+			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes$3(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
 			const script = typeof leafScript === "string" ? hex$3.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
@@ -36949,7 +37758,7 @@ zoo`.split("\n"));
 						type: "tr",
 						pubkey: data
 					};
-					else if (version === 1 && equalBytes(data, P2A_PROGRAM)) return {
+					else if (version === 1 && equalBytes$3(data, P2A_PROGRAM)) return {
 						type: "p2a",
 						script: Script.encode([1, data])
 					};
@@ -36982,7 +37791,7 @@ zoo`.split("\n"));
 		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
 		OutP2A = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
+				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes$3(from[1], P2A_PROGRAM)) return;
 				return {
 					type: "p2a",
 					script: Script.encode(from)
@@ -37208,7 +38017,7 @@ zoo`.split("\n"));
 			decodeStream: (r) => {
 				const raw = r.bytes(r.leftBytes);
 				const out = OutScript.decode(raw);
-				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
+				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes$3(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
 				return out;
 			}
 		})))();
@@ -37231,7 +38040,7 @@ zoo`.split("\n"));
 		checkCanonicalScript = (script, name, allowNonCanonicalScript) => {
 			if (allowNonCanonicalScript) return;
 			const decoded = Script.decode(script);
-			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
+			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes$3(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
 		};
 		p2sh = (child, network = NETWORK, allowNonCanonicalScript = false) => {
 			validateObject(child, {}, {}, "child");
@@ -37318,7 +38127,7 @@ zoo`.split("\n"));
 		throw new Error(`cloneDeep: unknown type=${typeof obj}`);
 	}
 	function getTaprootKeys(privKey, pubKey, internalKey, merkleRoot = EMPTY$2) {
-		if (equalBytes(internalKey, pubKey)) {
+		if (equalBytes$3(internalKey, pubKey)) {
 			privKey = taprootTweakPrivKey(privKey, merkleRoot);
 			pubKey = pubSchnorr(privKey);
 		}
@@ -37447,7 +38256,7 @@ zoo`.split("\n"));
 		}
 		const checkOutputKey = (internalKey, merkleRoot, parity) => {
 			const [outputKey, outputParity] = taprootTweakPubkey(internalKey, merkleRoot);
-			if (!equalBytes(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
+			if (!equalBytes$3(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
 			if (parity !== void 0 && outputParity !== parity) throw new Error("validateInput: Taproot control-block parity does not match previous output");
 		};
 		if (input.tapLeafScript) for (const [controlBlock, scriptWithVersion] of input.tapLeafScript) {
@@ -37456,8 +38265,8 @@ zoo`.split("\n"));
 			let merkleRoot = tapLeafHash(script, leafVersion);
 			for (const sibling of controlBlock.merklePath) merkleRoot = compareBytes$2(sibling, merkleRoot) === -1 ? tagSchnorr("TapBranch", sibling, merkleRoot) : tagSchnorr("TapBranch", merkleRoot, sibling);
 			checkOutputKey(controlBlock.internalKey, merkleRoot, controlBlock.version & 1);
-			if (input.tapInternalKey && !equalBytes(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
-			if (input.tapMerkleRoot && !equalBytes(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
+			if (input.tapInternalKey && !equalBytes$3(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
+			if (input.tapMerkleRoot && !equalBytes$3(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
 		}
 		if (input.tapInternalKey && (input.tapMerkleRoot || !((_input$tapLeafScript2 = input.tapLeafScript) === null || _input$tapLeafScript2 === void 0 ? void 0 : _input$tapLeafScript2.length))) checkOutputKey(input.tapInternalKey, input.tapMerkleRoot || EMPTY$2);
 	}
@@ -37504,7 +38313,7 @@ zoo`.split("\n"));
 			const last = _i.nonWitnessUtxo.outputs.length - 1;
 			if (_i.index > last) throw new Error(`validateInput: index(${_i.index}) not in nonWitnessUtxo`);
 			prevOut = _i.nonWitnessUtxo.outputs[_i.index];
-			if (_i.witnessUtxo && (!equalBytes(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
+			if (_i.witnessUtxo && (!equalBytes$3(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
 			if (_i.txid) {
 				if (_i.nonWitnessUtxo.outputs.length - 1 < _i.index) throw new Error("nonWitnessUtxo: incorect output index");
 				const tx = Transaction.fromRaw(RawTx.encode(_i.nonWitnessUtxo), {
@@ -38150,7 +38959,7 @@ zoo`.split("\n"));
 				const nextLockTime = resolvePSBTLocktime(inputs, (_this$global$fallback3 = this.global.fallbackLocktime) !== null && _this$global$fallback3 !== void 0 ? _this$global$fallback3 : 0);
 				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
 				const current = this.inputs[idx];
-				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
+				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes$3(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
 				this.inputs[idx] = normalized;
 			}
 			checkOutputIdx(idx) {
@@ -38205,7 +39014,7 @@ zoo`.split("\n"));
 				}
 				const current = this.outputs[idx];
 				const normalized = cloneDeep(this.normalizeOutput(output, current, allowedFields));
-				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
+				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes$3(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
 				this.outputs[idx] = normalized;
 			}
 			addOutputAddress(address, amount, network = NETWORK) {
@@ -38308,14 +39117,14 @@ zoo`.split("\n"));
 				const canSign = (privateKey) => {
 					if (inputType.txType === "taproot") {
 						const pubKey = pubSchnorr(privateKey);
-						if (input.tapInternalKey && equalBytes(pubKey, input.tapInternalKey)) return true;
+						if (input.tapInternalKey && equalBytes$3(pubKey, input.tapInternalKey)) return true;
 						if (!input.tapLeafScript) return false;
-						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes(op, pubKey)) return true;
+						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes$3(op, pubKey)) return true;
 						return false;
 					}
 					const pubKey = pubECDSA(privateKey);
 					const pubKeyHash = hash160(pubKey);
-					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
+					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes$3(op, pubKey) || equalBytes$3(op, pubKeyHash))) return true;
 					return false;
 				};
 				if (!isBytes(privateKey)) {
@@ -38326,7 +39135,7 @@ zoo`.split("\n"));
 						const signers = rows.filter((row) => row.fingerprint == root.fingerprint).map((row) => {
 							let s = root;
 							for (const i of row.path) s = s.deriveChild(i);
-							if (!equalBytes(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
+							if (!equalBytes$3(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
 							if (!s.privateKey) throw new Error(`${label}: no privateKey`);
 							return s;
 						});
@@ -38368,7 +39177,7 @@ zoo`.split("\n"));
 					if (input.tapInternalKey) {
 						const { pubKey, privKey } = getTaprootKeys(privateKey, schnorrPub, input.tapInternalKey, merkleRoot);
 						const [taprootPubKey, _] = taprootTweakPubkey(input.tapInternalKey, merkleRoot);
-						if (equalBytes(taprootPubKey, pubKey)) {
+						if (equalBytes$3(taprootPubKey, pubKey)) {
 							const hash = this.preimageWitnessV1(idx, prevOutScript, sighash, amount);
 							const sig = concatBytes(signSchnorr(hash, privKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapKeySig: sig }, true);
@@ -38382,7 +39191,7 @@ zoo`.split("\n"));
 							const scriptDecoded = Script.decode(script);
 							const ver = _script[_script.length - 1];
 							const hash = tapLeafHash(script, ver);
-							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, schnorrPub)) === -1) continue;
+							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes$3(i, schnorrPub)) === -1) continue;
 							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
 							const sig = concatBytes(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapScriptSig: [[{
@@ -38398,7 +39207,7 @@ zoo`.split("\n"));
 					const pubKey = pubECDSA(privateKey);
 					let hasPubkey = false;
 					const pubKeyHash = hash160(pubKey);
-					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
+					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes$3(i, pubKey) || equalBytes$3(i, pubKeyHash))) hasPubkey = true;
 					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
 					let hash;
 					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
@@ -38443,7 +39252,7 @@ zoo`.split("\n"));
 							const ver = _script[_script.length - 1];
 							const outScript = OutScript.decode(script);
 							const hash = tapLeafHash(script, ver);
-							const scriptSig = input.tapScriptSig.filter((i) => equalBytes(i[0].leafHash, hash));
+							const scriptSig = input.tapScriptSig.filter((i) => equalBytes$3(i[0].leafHash, hash));
 							let signatures = [];
 							let witness;
 							if (outScript.type === "tr_ms") {
@@ -38451,7 +39260,7 @@ zoo`.split("\n"));
 								const pubkeys = outScript.pubkeys;
 								let added = 0;
 								for (const pub of pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
 									if (added === m || sigIdx === -1) {
 										signatures.push(EMPTY$2);
 										continue;
@@ -38462,7 +39271,7 @@ zoo`.split("\n"));
 								if (added !== m) continue;
 							} else if (outScript.type === "tr_ns") {
 								for (const pub of outScript.pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
 									if (sigIdx === -1) continue;
 									signatures.push(scriptSig[sigIdx][1]);
 								}
@@ -38470,7 +39279,7 @@ zoo`.split("\n"));
 							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
 								const scriptDecoded = Script.decode(script);
 								signatures = scriptSig.map(([{ pubKey }, signature]) => {
-									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, pubKey));
+									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes$3(i, pubKey));
 									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
 									return {
 										signature,
@@ -38517,7 +39326,7 @@ zoo`.split("\n"));
 					const pubkeys = inputType.last.pubkeys;
 					let signatures = [];
 					for (const pub of pubkeys) {
-						const sign = input.partialSig.find((s) => equalBytes(pub, s[0]));
+						const sign = input.partialSig.find((s) => equalBytes$3(pub, s[0]));
 						if (!sign) continue;
 						signatures.push(sign[1]);
 					}
@@ -38571,7 +39380,7 @@ zoo`.split("\n"));
 				}
 				for (const k of ["inputs", "outputs"]) if (this[k].length !== other[k].length) throw new Error(`Transaction/combine: different ${k} length this=${this[k].length} other=${other[k].length}`);
 				const unsignedTx = this.unsignedTx;
-				if (!equalBytes(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
+				if (!equalBytes$3(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
 				let txModifiable;
 				if (thisV2 && otherV2) {
 					const policy = (tx) => {
@@ -38626,7 +39435,7 @@ zoo`.split("\n"));
 				candidate.inputs = inputs;
 				candidate.outputs = outputs;
 				if ((!thisV2 || !otherV2) && candidate.isPSBTv2()) candidate.global.txModifiable = candidate.txModifiable;
-				if (!equalBytes(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
+				if (!equalBytes$3(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
 				this.global = candidate.global;
 				this.inputs = candidate.inputs;
 				this.outputs = candidate.outputs;
@@ -38649,7 +39458,7 @@ zoo`.split("\n"));
 	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
 	* class).
 	*/
-	var MAINNET_BIP32 = {
+	var MAINNET_BIP32$1 = {
 		public: 76067358,
 		private: 76066276
 	};
@@ -38664,7 +39473,7 @@ zoo`.split("\n"));
 			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
 			params: NETWORK,
 			coinType: 0,
-			bip32: MAINNET_BIP32
+			bip32: MAINNET_BIP32$1
 		},
 		{
 			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
@@ -38698,10 +39507,10 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8$2 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
-	var concat$1 = (...parts) => {
+	var LEGACY_MAGIC = utf8$2("Bitcoin Signed Message:\n");
+	var concat$3 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -38711,12 +39520,12 @@ zoo`.split("\n"));
 		return out;
 	};
 	/** CompactSize length prefix for the one-byte form. */
-	var varint = (n) => Uint8Array.of(n);
+	var varint$1 = (n) => Uint8Array.of(n);
 	var COMPACT_SIZE_ONE_BYTE_MAX = 252;
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$1(varint(data.length), data);
+		return concat$3(varint$1(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -38730,8 +39539,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8$2(BIP322_TAG));
+		return sha256$1(concat$3(tag, tag, utf8$2(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -38739,8 +39548,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$1(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$1(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$3(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$3(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -38801,15 +39610,15 @@ zoo`.split("\n"));
 	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
 	var encodeBip322Simple = (witness) => {
-		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$3(varint$1(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$3(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
 	*/
-	var encodeLegacySignature = (yParity, compact) => base64(concat$1(Uint8Array.of(27 + yParity + 4), compact));
+	var encodeLegacySignature = (yParity, compact) => base64(concat$3(Uint8Array.of(27 + yParity + 4), compact));
 	/**
 	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
 	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
@@ -38832,7 +39641,7 @@ zoo`.split("\n"));
 	var taprootTask = (tx, index, input, type, key) => {
 		if (input.tapLeafScript !== void 0 || input.tapMerkleRoot !== void 0) throw cannotSign(index);
 		const x = key.publicKey.slice(1);
-		if (input.tapInternalKey === void 0 || !equalBytes(input.tapInternalKey, x)) throw cannotSign(index);
+		if (input.tapInternalKey === void 0 || !equalBytes$3(input.tapInternalKey, x)) throw cannotSign(index);
 		const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
 		const prevouts = prevoutsOf(tx, index);
 		return {
@@ -38847,7 +39656,7 @@ zoo`.split("\n"));
 	var ecdsaTask = (tx, index, input, type, key) => {
 		const pubHash = hash160(key.publicKey);
 		let digest;
-		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes(type.last.hash, pubHash)) {
+		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes$3(type.last.hash, pubHash)) {
 			const scriptCode = OutScript.encode({
 				type: "pkh",
 				hash: type.last.hash
@@ -38859,7 +39668,7 @@ zoo`.split("\n"));
 				throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
 			}
 			digest = tx.preimageWitnessV0(index, scriptCode, type.sighash, prevOut.amount);
-		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
+		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes$3(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
 		else throw cannotSign(index);
 		return {
 			scheme: "ecdsa-secp256k1",
@@ -38929,7 +39738,7 @@ zoo`.split("\n"));
 		const decoded = decodeAddress(request.network, request.address);
 		const pubHash = hash160(key.publicKey);
 		if (request.format === "legacy") {
-			if (decoded.type !== "pkh" || !equalBytes(decoded.hash, pubHash)) throw cannotSignAddress();
+			if (decoded.type !== "pkh" || !equalBytes$3(decoded.hash, pubHash)) throw cannotSignAddress();
 			return {
 				kind: "bitcoin.message",
 				format: "legacy",
@@ -38943,7 +39752,7 @@ zoo`.split("\n"));
 			};
 		}
 		const scriptPubKey = OutScript.encode(decoded);
-		if (decoded.type === "wpkh" && equalBytes(decoded.hash, pubHash)) {
+		if (decoded.type === "wpkh" && equalBytes$3(decoded.hash, pubHash)) {
 			const tx = bip322ToSign(scriptPubKey, request.message);
 			return {
 				kind: "bitcoin.message",
@@ -38963,7 +39772,7 @@ zoo`.split("\n"));
 		if (decoded.type === "tr") {
 			const x = key.publicKey.slice(1);
 			const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
-			if (equalBytes(decoded.pubkey, outputKey)) {
+			if (equalBytes$3(decoded.pubkey, outputKey)) {
 				const tx = bip322ToSign(scriptPubKey, request.message);
 				return {
 					kind: "bitcoin.message",
@@ -39046,18 +39855,18 @@ zoo`.split("\n"));
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
 	* marker.
 	*/
-	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isRecord$1$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	/**
 	* Bip32Derivation values are [pubkey, { fingerprint, path }] tuples; tapBip32Derivation values are
 	* { hashes, der: { fingerprint, path } }.
 	*/
 	var derivationPaths = (map) => {
-		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$1(map) ? Object.values(map) : [];
+		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$1$1(map) ? Object.values(map) : [];
 		const paths = [];
 		for (const entry of entries) {
 			const value = Array.isArray(entry) ? entry[1] : entry;
-			if (!isRecord$1(value)) continue;
-			const { path } = isRecord$1(value["der"]) ? value["der"] : value;
+			if (!isRecord$1$1(value)) continue;
+			const { path } = isRecord$1$1(value["der"]) ? value["der"] : value;
 			if (Array.isArray(path) && path.every((p) => typeof p === "number")) paths.push(path);
 		}
 		return paths;
@@ -39080,13 +39889,13 @@ zoo`.split("\n"));
 	};
 	var DEFAULT_SIGHASH = 0;
 	var SIGHASH_ALL = 1;
-	var TEMPLATES = /* @__PURE__ */ new Set([
+	var TEMPLATES$1 = /* @__PURE__ */ new Set([
 		"btc.bip44",
 		"btc.bip49",
 		"btc.bip84",
 		"btc.bip86"
 	]);
-	var isSignEntry = (value) => isRecord$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES.has(value["template"]);
+	var isSignEntry = (value) => isRecord$1$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES$1.has(value["template"]);
 	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
 	/**
 	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller). Every
@@ -39149,6 +39958,15 @@ zoo`.split("\n"));
 		const address = template === "btc.bip84" ? p2wpkh(pub, net.params).address : template === "btc.bip49" ? p2sh(p2wpkh(pub, net.params), net.params).address : template === "btc.bip44" ? p2pkh(pub, net.params).address : p2tr(pub.subarray(1), void 0, net.params).address;
 		if (address === void 0) throw new ChainError("invalid-request", "could not encode the derived address");
 		return address;
+	}
+	/**
+	* The compressed (P2WPKH) or x-only (P2TR) public key at `change`/`index` under an account-level
+	* xpub — the key placed in a PSBT's bip32Derivation/tapBip32Derivation entry so the signing kernel
+	* can re-derive it.
+	*/
+	function bitcoinPubkeyFromXpub(xpub, template, network, change, index) {
+		const pub = xpubChild(xpub, network, change, index);
+		return template === "btc.bip86" ? pub.subarray(1) : pub;
 	}
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
@@ -39253,9 +40071,9 @@ zoo`.split("\n"));
 	};
 	var samePrevout = (a, b) => {
 		const [x, y] = [a.witnessUtxo, b.witnessUtxo];
-		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes(x.script, y.script);
+		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes$3(x.script, y.script);
 		const [m, n] = [a.nonWitnessUtxo, b.nonWitnessUtxo];
-		const full = m === void 0 || n === void 0 ? m === n : equalBytes(RawTx.encode(m), RawTx.encode(n));
+		const full = m === void 0 || n === void 0 ? m === n : equalBytes$3(RawTx.encode(m), RawTx.encode(n));
 		return witness && full;
 	};
 	/**
@@ -39267,7 +40085,7 @@ zoo`.split("\n"));
 		try {
 			const want = Transaction.fromPSBT(requested);
 			const got = Transaction.fromPSBT(signed);
-			if (!equalBytes(want.unsignedTx, got.unsignedTx)) return false;
+			if (!equalBytes$3(want.unsignedTx, got.unsignedTx)) return false;
 			return Array.from({ length: want.inputsLength }, (_, i) => i).every((i) => samePrevout(want.getInput(i), got.getInput(i)));
 		} catch (_unused3) {
 			return false;
@@ -40407,7 +41225,7 @@ zoo`.split("\n"));
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
-	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
+	var fingerprintNumber = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 	var PURPOSES = [
 		44,
 		49,
@@ -40415,7 +41233,7 @@ zoo`.split("\n"));
 		86
 	];
 	/** The PSBT derivation entry that claims this account's fingerprint and path, if any. */
-	var derivationOf = (owner, fingerprint, purpose) => {
+	var derivationOf$1 = (owner, fingerprint, purpose) => {
 		var _owner$bip32Derivatio;
 		if (purpose === 86) {
 			var _owner$tapBip32Deriva;
@@ -40455,7 +41273,7 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		const { index: idx } = entry;
 		const input = tx.getInput(idx);
-		const der = derivationOf(input, b.fingerprint, purpose);
+		const der = derivationOf$1(input, b.fingerprint, purpose);
 		if (der === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
 		const pub = await childAt(b, purpose, der.path);
 		if (!deepEqual(der.pubkey, expectedPub(purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
@@ -40491,12 +41309,13 @@ zoo`.split("\n"));
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
 			for (const purpose of PURPOSES) {
-				const entry = derivationOf(output, b.fingerprint, purpose);
+				const entry = derivationOf$1(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
 					const pub = await childAt(b, purpose, entry.path);
 					if (deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
-				} catch (_unused) {
+				} catch (error) {
+					if (error instanceof KernelError && error.code === "device-required") throw error;
 					continue;
 				}
 			}
@@ -40582,7 +41401,7 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(request.network);
 		const b = {
 			material,
-			fingerprint: fingerprintNumber$1(await material.fingerprint()),
+			fingerprint: fingerprintNumber(await material.fingerprint()),
 			coinType: net.coinType,
 			hardened: 2147483648,
 			groupIndex: account.groupIndex,
@@ -40647,9 +41466,9 @@ zoo`.split("\n"));
 	init_secp256k1();
 	init_bip32();
 	init_utils();
-	var HARDENED$6 = 2147483648;
+	var HARDENED$9 = 2147483648;
 	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$6 ? `/${i - HARDENED$6}'` : `/${i}`).join("")}`;
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$9 ? `/${i - HARDENED$9}'` : `/${i}`).join("")}`;
 	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
 	var seedKeys = (seed, random) => {
 		const secpNodes = /* @__PURE__ */ new Map();
@@ -40716,7 +41535,7 @@ zoo`.split("\n"));
 			wipe: () => {
 				wiped = true;
 				for (const node of secpNodes.values()) node.wipePrivateData();
-				for (const node of edNodes.values()) wipe(node.privateKey);
+				for (const node of edNodes.values()) wipe$1(node.privateKey);
 				secpNodes.clear();
 				edNodes.clear();
 			}
@@ -40755,7 +41574,7 @@ zoo`.split("\n"));
 			} }),
 			wipe: () => {
 				wiped = true;
-				wipe(secret);
+				wipe$1(secret);
 			}
 		};
 	};
@@ -41004,19 +41823,19 @@ zoo`.split("\n"));
 	* source — the plan itself is reused, never recomputed.
 	*/
 	init_objectSpread2();
-	var HARDENED$5 = 2147483648;
+	var HARDENED$8 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED$5,
-			HARDENED$5
+			groupIndex + HARDENED$8,
+			HARDENED$8
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$5,
-			HARDENED$5,
+			(family === "tron" ? 195 : 60) + HARDENED$8,
+			HARDENED$8,
 			0,
 			groupIndex
 		];
@@ -41049,9 +41868,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$5,
-			net.coinType + HARDENED$5,
-			groupIndex + HARDENED$5
+			purpose + HARDENED$8,
+			net.coinType + HARDENED$8,
+			groupIndex + HARDENED$8
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -41062,7 +41881,7 @@ zoo`.split("\n"));
 			path: pathString(path)
 		};
 	};
-	var walletAccounts = async (ctx, params, session, cache, external) => {
+	var walletAccounts = async (ctx, params, session, cache) => {
 		var _cache$get, _cache$get2;
 		const { dek } = ctx.session.require(session);
 		const record = findWalletRecord(ctx.image, params.walletId);
@@ -41078,7 +41897,7 @@ zoo`.split("\n"));
 			} finally {
 				keys.wipe();
 			}
-		}) : await accountFor(external(ctx.image, record), params.template, params.network, params.groupIndex);
+		}) : await accountFor(ctx.externalMaterial(record), params.template, params.network, params.groupIndex);
 		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
 		accounts.set(key, account);
 		cache.set(record, accounts);
@@ -41100,11 +41919,12 @@ zoo`.split("\n"));
 		]
 	};
 	/**
-	* The request family must match the account's template — the same check the local HD source runs,
-	* shared with the external-signer executor.
+	* The request family must match the account's template — the same check every HD sign path runs
+	* (local seed, card, external device). Imported keys have no template.
 	*/
 	var assertHdTemplates = (request) => {
 		const { account } = request;
+		if (account.kind !== "hd") return;
 		if (request.kind === "bitcoin.psbt") {
 			if (request.sign.some((s) => BTC_PURPOSE[s.template] === void 0)) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		} else {
@@ -41114,14 +41934,16 @@ zoo`.split("\n"));
 			if (!("template" in account) || !expected.includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 		}
 	};
-	/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+	/** The HD source: the wallet's entropy record, and the seed via `withWalletSeed`. */
 	var hdSource = (ctx, request, dek) => {
 		const { account } = request;
 		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
-		assertHdTemplates(request);
 		const record = findWalletRecord(ctx.image, account.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
-		if (record.kind !== "entropy") throw new KernelError("device-required", "this wallet signs on its device");
+		if (record.kind !== "entropy") {
+			ctx.externalMaterial(record);
+			throw new KernelError("device-required", "this wallet signs on its device");
+		}
 		return async (use) => withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
@@ -41151,7 +41973,7 @@ zoo`.split("\n"));
 				return await use(keys);
 			} finally {
 				keys.wipe();
-				wipe(secret);
+				wipe$1(secret);
 			}
 		};
 	};
@@ -41185,22 +42007,31 @@ zoo`.split("\n"));
 		if (header.scheme !== "hyperliquid-l1-agent" || header.owner !== signer || header.scope !== action.chain || header.name !== action.name || header.validUntil !== action.validUntil) throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
 		return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: true });
 	};
+	var prepareApproval = async (ctx, request, material, dek) => {
+		assertHdTemplates(request);
+		const prepared = await prepareFor(request, material, ctx.platform.now());
+		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+		assertSignable(ctx, dek, prompt);
+		return {
+			request,
+			prompt,
+			plan: prepared.plan
+		};
+	};
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { request, verify } = params;
 		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
-		const prepared = await openKeys(async (keys) => prepareFor(request, keys.material, ctx.platform.now()));
-		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-		assertSignable(ctx, dek, prompt);
+		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek));
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor, _ctx$platform$keystor2;
-			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prompt);
+			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
 		});
 		ctx.session.require(session);
 		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
 		return openKeys(async (keys) => signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))));
 	};
-	function createChainsModule(external) {
+	function createChainsModule() {
 		let accounts = /* @__PURE__ */ new WeakMap();
 		return {
 			vault: {
@@ -41214,9 +42045,4366 @@ zoo`.split("\n"));
 				parseHeader: () => void 0
 			},
 			handlers: {
-				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts, external),
+				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
 				"chain.sign": chainSign
 			}
+		};
+	}
+	// packages/wallet-kernel/src/modules/card/text.ts
+	var OP_NAME = {
+		"zh-Hans": {
+			status: "卡片状态",
+			add: "添加卡片",
+			accounts: "读取账户",
+			health: "卡片检查",
+			"change-access": "修改访问码",
+			erase: "抹掉卡片",
+			create: "创建卡钱包",
+			transfer: "迁入卡钱包",
+			reseal: "重写访问码",
+			sign: "签名"
+		},
+		en: {
+			status: "Card status",
+			add: "Add card",
+			accounts: "Load accounts",
+			health: "Card check",
+			"change-access": "Change access code",
+			erase: "Erase card",
+			create: "Create card wallet",
+			transfer: "Provision card",
+			reseal: "Reseal card",
+			sign: "Sign"
+		}
+	};
+	/** Reader sheet text for a tap step: the op name plus the card's short ID when known. */
+	function tapPrompt(locale, op, reason, card) {
+		const name = OP_NAME[locale][op];
+		if (reason === "retry") return card === void 0 ? locale === "zh-Hans" ? `${name} — 再次贴卡以继续` : `${name} — tap the card again to continue` : locale === "zh-Hans" ? `${name} — 再次贴卡片 ${card} 以继续` : `${name} — tap card ${card} again to continue`;
+		if (card === void 0) return locale === "zh-Hans" ? `${name} — 将卡片贴近读卡器` : `${name} — hold a qntx card to the reader`;
+		return locale === "zh-Hans" ? `${name} — 将卡片 ${card} 贴近读卡器` : `${name} — hold card ${card} to the reader`;
+	}
+	var codeFor = (locale, card) => card === void 0 ? locale === "zh-Hans" ? "输入这张卡的访问码" : "Enter this card's access code" : locale === "zh-Hans" ? `输入卡片 ${card} 的访问码` : `Enter the access code for card ${card}`;
+	/** Secure-input label for an access-code ask; `remaining` is the card's attempts left. */
+	function accessCodeLabel(locale, card, remaining) {
+		const base = codeFor(locale, card);
+		if (remaining === void 0) return base;
+		if (remaining === 1) return locale === "zh-Hans" ? `${base} — 最后一次机会，输错会抹掉这张卡` : `${base} — last attempt, a wrong code erases this card`;
+		return locale === "zh-Hans" ? `${base} — 还剩 ${remaining} 次` : `${base} — ${remaining} left`;
+	}
+	/** Secure-input label for a new access code. */
+	function newAccessCodeLabel(locale, card) {
+		return locale === "zh-Hans" ? "设置新的访问码（8–64 个可打印字符；6–7 位需要再次输入确认）" : "Choose a new access code (8–64 printable characters; 6–7 needs a second entry)";
+	}
+	/** Secure-input label for the confirmation entry of a new access code. */
+	function confirmAccessCodeLabel(locale, card, short) {
+		if (short) return locale === "zh-Hans" ? "访问码较短 — 再次输入以确认" : "The code is short — enter it again to confirm";
+		return locale === "zh-Hans" ? "再次输入新的访问码" : "Enter the new access code again";
+	}
+	/** Secure-input label for the short ID printed on a card. */
+	function shortIdLabel(locale) {
+		return locale === "zh-Hans" ? "输入卡片上印的短 ID" : "Enter the short ID printed on the card";
+	}
+	/**
+	* The card line under a rendered signing intent on the reader (design §8): the pinned member's
+	* short ID when the wallet has one, else an untargeted tap ask.
+	*/
+	function signCardLine(locale, cards) {
+		const [card] = cards;
+		if (card === void 0) return locale === "zh-Hans" ? "贴一张 qntx 卡以签名" : "Tap a qntx card to sign";
+		return locale === "zh-Hans" ? `贴卡片 ${card} 以签名` : `Tap card ${card} to sign`;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/access.ts
+	init_utils$2();
+	var LABEL_ACCESS = ascii$2("qntx-card/v1/access");
+	var COST = {
+		memoryKiB: 65536,
+		passes: 3,
+		lanes: 4
+	};
+	async function accessHash(code, cardId, argon2id) {
+		if (cardId.length !== 16) throw new CardError("invalid-input", "cardId is not 16 bytes");
+		if (code.length < 6 || code.length > 64) throw new CardError("invalid-input", "access code length outside 6..64");
+		for (const byte of code) if (byte < 32 || byte > 126) throw new CardError("invalid-input", "access code is not printable ASCII");
+		const password = new Uint8Array(code);
+		try {
+			const derived = await argon2id(password, concatBytes$3(LABEL_ACCESS, cardId), COST, 32);
+			if (derived.length !== 32) {
+				wipe(derived);
+				throw new CardError("invalid-input", "argon2id returned a hash that is not 32 bytes");
+			}
+			return derived;
+		} finally {
+			wipe(password);
+		}
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/commands.ts
+	/**
+	* Inner command builders (protocol.md §9.2–9.14). Every builder validates its host-side parameters
+	* — `invalid-input` on anything out of range — and produces the plaintext record `INS ‖ P1 ‖ P2 ‖
+	* data` a session wraps.
+	*/
+	init_secp256k1();
+	init_utils$1();
+	init_utils$2();
+	init_bip32();
+	var INS = {
+		status: 32,
+		create: 33,
+		verify: 34,
+		change: 35,
+		erase: 36,
+		wait: 37,
+		"public-key": 48,
+		"sign-ecdsa": 49,
+		"sign-bip340": 50,
+		"ed25519-begin": 51,
+		"ed25519-update": 51,
+		"ed25519-finish": 51,
+		offer: 64,
+		"export-head": 65,
+		"export-payload": 65,
+		"import-head": 66,
+		"import-payload": 66
+	};
+	var PATH_HARDENED = 2147483648;
+	var CHUNK$3 = 236;
+	function inner(name, p1, p2, data) {
+		return {
+			name,
+			ins: INS[name],
+			p1,
+			p2,
+			data
+		};
+	}
+	function exact$1(what, value, length) {
+		if (value.length !== length) throw new CardError("invalid-input", `${what} must be ${length} bytes`);
+		return value;
+	}
+	/** `path = depth ‖ u32(index)…`, depth 1–10 (§9.2); ed25519 paths must be all-hardened. */
+	function encodePath$1(path, hardenedOnly) {
+		if (path.length === 0 || path.length > 10) throw new CardError("invalid-input", "path depth outside 1..10");
+		const out = new Uint8Array(1 + 4 * path.length);
+		out[0] = path.length;
+		const view = new DataView(out.buffer);
+		for (const [position, index] of path.entries()) {
+			if (!Number.isInteger(index) || index < 0 || index > 4294967295) throw new CardError("invalid-input", "path index outside 0..2^32-1");
+			if (hardenedOnly && index < PATH_HARDENED) throw new CardError("invalid-input", "ed25519 path index is not hardened");
+			view.setUint32(1 + 4 * position, index);
+		}
+		return out;
+	}
+	/** `others` is 0–2 pairwise-distinct 16-byte member IDs (§9.4). */
+	function checkOthers(others) {
+		if (others.length > 2) throw new CardError("invalid-input", "more than two other member IDs");
+		for (const [i, id] of others.entries()) {
+			if (id.length !== 16) throw new CardError("invalid-input", "member ID is not 16 bytes");
+			if (others.slice(i + 1).some((other) => equalBytes$9(other, id))) throw new CardError("invalid-input", "member IDs are not pairwise distinct");
+		}
+	}
+	/**
+	* The BIP-32 master public key a CREATE import seed yields. `invalid-input` when `HDKey` rejects
+	* the seed — sent unchecked, the card would answer `6A80` (§9.4).
+	*/
+	function masterPublicKey(seed) {
+		let key;
+		try {
+			key = HDKey$1.fromMasterSeed(seed);
+		} catch (_unused) {
+			throw new CardError("invalid-input", "seed does not yield a valid master key");
+		}
+		try {
+			const { publicKey } = key;
+			if (publicKey === null) throw new CardError("invalid-input", "seed does not yield a valid master key");
+			return publicKey;
+		} finally {
+			key.wipePrivateData();
+		}
+	}
+	/**
+	* The CREATE argument contract (§9.4), shared by `cmd.create` and `decode.created`: accessHash 32
+	* bytes; entropy 32 bytes for `generate`, a 64-byte seed that yields a master key for `import`;
+	* `others` per `checkOthers`.
+	*/
+	function checkCreateParams(params) {
+		checkOthers(params.others);
+		exact$1("accessHash", params.accessHash, 32);
+		if (params.mode === "generate") exact$1("entropy", params.entropy, 32);
+		else {
+			exact$1("seed", params.seed, 64);
+			masterPublicKey(params.seed);
+		}
+	}
+	var cmd = {
+		status: () => inner("status", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		create: (params) => {
+			checkCreateParams(params);
+			const head = params.mode === "generate" ? concatBytes$3(params.accessHash, params.entropy) : concatBytes$3(params.accessHash, params.seed);
+			return inner("create", params.mode === "generate" ? 0 : 1, 0, concatBytes$3(head, ...params.others));
+		},
+		verify: (accessHash) => inner("verify", 0, 0, exact$1("accessHash", accessHash, 32)),
+		change: (newAccessHash) => inner("change", 0, 0, exact$1("newAccessHash", newAccessHash, 32)),
+		erase: () => inner("erase", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		wait: () => inner("wait", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		publicKey: (curve, path) => inner("public-key", curve === "ed25519" ? 1 : 0, 0, encodePath$1(path, curve === "ed25519")),
+		signEcdsa: (digest, path) => inner("sign-ecdsa", 0, 0, concatBytes$3(exact$1("digest", digest, 32), encodePath$1(path, false))),
+		signBip340: (message, tweak, path) => {
+			exact$1("message", message, 32);
+			exact$1("tweak", tweak, 32);
+			if (bytesToNumberBE(tweak) >= secp256k1.Point.Fn.ORDER) throw new CardError("invalid-input", "tweak is not below the curve order");
+			return inner("sign-bip340", 0, 0, concatBytes$3(message, tweak, encodePath$1(path, false)));
+		},
+		ed25519Begin: (path) => inner("ed25519-begin", 0, 0, encodePath$1(path, true)),
+		/**
+		* §9.11/§12.3: the stream `encode(R) ‖ encode(A) ‖ M` in ≤236-byte chunks; the last is finish.
+		* The stream is at least 64 bytes, so every chunk — finish included (amendment B2: 1–236 bytes) —
+		* is non-empty.
+		*/
+		ed25519Stream: (encodedR, publicKey, message) => {
+			const stream = concatBytes$3(exact$1("encodedR", encodedR, 32), exact$1("publicKey", publicKey, 32), message);
+			const chunks = [];
+			for (let offset = 0; offset < stream.length; offset += CHUNK$3) {
+				const last = offset + CHUNK$3 >= stream.length;
+				chunks.push(inner(last ? "ed25519-finish" : "ed25519-update", last ? 2 : 1, 0, stream.subarray(offset, Math.min(offset + CHUNK$3, stream.length))));
+			}
+			return chunks;
+		},
+		offer: () => inner("offer", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		export0: (certT, offer) => inner("export-head", 0, 0, concatBytes$3(exact$1("certT", certT, 97), exact$1("offer.linkKey", offer.linkKey, 65), exact$1("offer.signature", offer.signature, 64))),
+		export1: (accessHashT) => inner("export-payload", 1, 0, exact$1("accessHashT", accessHashT, 32)),
+		import0: (certS, head) => inner("import-head", 0, 0, concatBytes$3(exact$1("certS", certS, 97), exact$1("head.ephemeral", head.ephemeral, 65), exact$1("head.signature", head.signature, 64))),
+		import1: (payload) => {
+			if (payload.length !== 160 && payload.length !== 176) throw new CardError("invalid-input", "transfer payload is not 160 or 176 bytes");
+			return inner("import-payload", 1, 0, payload);
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/protocol/signatures.ts
+	/**
+	* Signature verification and assembly for card signing commands (protocol.md §12). Card outputs are
+	* verified before they are returned; any failure is `card-fault`. Arguments the host itself
+	* produced (keys, digests, tweaks, member parameters) are shape-checked first and throw
+	* `invalid-input`.
+	*/
+	init_secp256k1();
+	init_utils$1();
+	init_utils$2();
+	var N = secp256k1.Point.Fn.ORDER;
+	var fault$2 = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	var input$2 = (message) => {
+		throw new CardError("invalid-input", message);
+	};
+	function exact(data, length, what) {
+		if (data.length !== length) input$2(`${what} is not ${length} bytes`);
+	}
+	/** Compressed secp256k1 key argument: 33 bytes on the curve. */
+	function checkIdentityKey(key, what) {
+		exact(key, 33, what);
+		if (!validPoint(key)) input$2(`${what} is not a valid point`);
+	}
+	function recoveryBit(r, lowS, digest, publicKey) {
+		return equalBytes$9(new secp256k1.Signature(r, lowS).addRecoveryBit(0).recoverPublicKey(digest).toBytes(true), publicKey) ? 0 : 1;
+	}
+	/**
+	* §12.1: card output `r ‖ s` over a pre-computed `digest`; `s` may be high. The host verifies
+	* (accepting high s), normalises to low s and derives the recovery bit. A repeated `r` — any value
+	* in `previousR` — is a card fault: the card must never reuse a nonce point.
+	*/
+	function ecdsa(data, digest, publicKey, previousR) {
+		exact(digest, 32, "digest");
+		checkIdentityKey(publicKey, "publicKey");
+		for (const r of previousR) exact(r, 32, "previousR entry");
+		if (data.length !== 64) fault$2("SIGN_ECDSA response is not 64 bytes");
+		const rBytes = data.subarray(0, 32);
+		const r = bytesToNumberBE(rBytes);
+		const s = bytesToNumberBE(data.subarray(32, 64));
+		if (!secp256k1.verify(data, digest, publicKey, {
+			prehash: false,
+			lowS: false
+		})) fault$2("ECDSA signature does not verify");
+		if (previousR.some((previous) => equalBytes$9(previous, rBytes))) fault$2("card reused an r value");
+		const lowS = s > N / 2n ? N - s : s;
+		return {
+			signature: concatBytes$3(numberToBytesBE(r, 32), numberToBytesBE(lowS, 32)),
+			recovery: recoveryBit(r, lowS, digest, publicKey)
+		};
+	}
+	/**
+	* The BIP-341 output key `x(lift_x(x(P)) + t·G)` a SIGN_BIP340 signature verifies under — `lift_x`
+	* picks the even-y lift so an odd internal key is negated first (§12.2). `card-fault` when the
+	* lifted point is off the curve; `invalid-data` when the tweak is out of range.
+	*/
+	function bip340OutputX(internalKey, tweak) {
+		checkIdentityKey(internalKey, "internalKey");
+		exact(tweak, 32, "tweak");
+		const t = bytesToNumberBE(tweak);
+		if (t >= N) input$2("tweak is not below the curve order");
+		try {
+			const internal = schnorr.utils.lift_x(bytesToNumberBE(internalKey.subarray(1, 33)));
+			const output = t === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(t));
+			return schnorr.utils.pointToBytes(output);
+		} catch (_unused) {
+			return fault$2("tweaked output key is not on the curve");
+		}
+	}
+	/**
+	* §12.2: verifies `R_x ‖ s` under the tweaked output key `Q = lift_x(x(P)) + t·G` (BIP-341,
+	* `lift_x` picks the even-y lift so an odd internal key is negated first). Returns the signature on
+	* success.
+	*/
+	function bip340(data, message, internalKey, tweak) {
+		exact(message, 32, "message");
+		if (data.length !== 64) fault$2("SIGN_BIP340 response is not 64 bytes");
+		if (!schnorr.verify(data, message, bip340OutputX(internalKey, tweak))) fault$2("BIP-340 signature does not verify under the tweaked key");
+		return new Uint8Array(data);
+	}
+	/**
+	* §12.3: card output `le32(S)` for a stream `encode(R) ‖ encode(A) ‖ M`. Requires `S < ℓ`,
+	* assembles `encode(R) ‖ le32(S)` and verifies it under strict RFC 8032 rules.
+	*/
+	function ed25519Signature(data, encodedR, publicKey, message) {
+		exact(encodedR, 32, "encodedR");
+		exact(publicKey, 32, "publicKey");
+		if (data.length !== 32) fault$2("SIGN_ED25519 finish response is not 32 bytes");
+		const signature = concatBytes$3(encodedR, data);
+		if (!ed25519.verify(signature, message, publicKey, { zip215: false })) fault$2("assembled Ed25519 signature does not verify");
+		return signature;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/status.ts
+	/** Words each command may legitimately fail with; `verify`'s `63Cx` range is checked separately. */
+	var ALLOWED = {
+		status: [],
+		create: [27013, 27264],
+		verify: [
+			27011,
+			27013,
+			27014
+		],
+		change: [27013, 27010],
+		erase: [27013, 27010],
+		wait: [27013],
+		"public-key": [
+			27013,
+			27010,
+			27264
+		],
+		"sign-ecdsa": [
+			27013,
+			27010,
+			27264
+		],
+		"sign-bip340": [
+			27013,
+			27010,
+			27264
+		],
+		"ed25519-begin": [
+			27013,
+			27010,
+			27264
+		],
+		"ed25519-update": [27013, 27010],
+		"ed25519-finish": [27013, 27010],
+		offer: [],
+		"export-head": [
+			27013,
+			27010,
+			27264
+		],
+		"export-payload": [27013, 27010],
+		"import-head": [27013, 27264],
+		"import-payload": [27013, 27264]
+	};
+	function result(command, response) {
+		const { sw, data } = response;
+		if (sw === 36864) return data;
+		if (sw === 28416) throw new CardError("card-fault", "card reported an internal fault", sw);
+		if (data.length > 0) throw new CardError("card-fault", "a failed command returned data", sw);
+		const { name } = command;
+		if (name === "verify" && sw >= 25537 && sw <= 25545) throw new CardError("wrong-access-code", "access code rejected", sw, sw - 25536);
+		if (!ALLOWED[name].includes(sw)) throw new CardError("card-fault", "command returned a status word it cannot produce", sw);
+		if (sw === 27011) throw new CardError("wallet-erased", "failure count reached the erase limit", sw);
+		if (sw === 27014) throw new CardError("wait-required", "verify is gated by the wait counter", sw);
+		if (sw === 27013) throw new CardError("wrong-state", "command is not allowed in this card state", sw);
+		if (sw === 27010) throw new CardError("not-verified", "command requires a verified session", sw);
+		throw new CardError("invalid-data", "command data was rejected by the card", sw);
+	}
+	/** §7.3 access policy: L failure limit, F free attempts, W waits per gated attempt. */
+	var ACCESS_LIMITS = {
+		failures: 10,
+		free: 3,
+		waits: 15
+	};
+	/**
+	* Waits needed before a `VERIFY` so the card accepts it without `6986` (§9.5 step 3, §9.15): `W`
+	* while `tries ≤ L − F`, else `0`. `BLANK` — no wallet — and `tries = 0` — the next attempt would
+	* erase without comparing — are `wrong-state`.
+	*/
+	function waitsBeforeVerify(status) {
+		if (status.life === "blank") throw new CardError("wrong-state", "a blank card holds no wallet");
+		if (status.tries === 0) throw new CardError("wrong-state", "the next verify would erase without comparing");
+		return status.tries <= ACCESS_LIMITS.failures - ACCESS_LIMITS.free ? ACCESS_LIMITS.waits : 0;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/transfer.ts
+	init_utils$2();
+	var LABEL_OFFER = ascii$2("qntx-card/v1/offer");
+	var LABEL_EXPORT = ascii$2("qntx-card/v1/export");
+	/** `"qntx-card/v1/offer" ‖ LK` — what the target's identity key signs. */
+	function offerMessage(linkKey) {
+		return concatBytes$3(LABEL_OFFER, linkKey);
+	}
+	/** `"qntx-card/v1/export" ‖ A_S ‖ A_T ‖ LK ‖ E` — what the source's identity key signs (§9.13). */
+	function exportMessage(source, target, linkKey, ephemeral) {
+		return concatBytes$3(LABEL_EXPORT, source, target, linkKey, ephemeral);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/wei25519.ts
+	/**
+	* Wei25519 → edwards25519 mapping (protocol.md §10.4). The card emits `W(P) = X ‖ Y`, affine
+	* coordinates big-endian; the host maps it to the edwards point and re-encodes. Every failure is
+	* `card-fault`: the input is always card output.
+	*/
+	init_utils$1();
+	var { Fp } = ed25519.Point;
+	/** A₃ = 486662/3 mod q, the Montgomery-to-Wei25519 offset of §10.4. */
+	var A3 = BigInt("0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad2451");
+	/** Sqrt(−486664 mod q), the root that maps G_W onto the RFC 8032 base point (§10.4). */
+	var C = BigInt("0x70d9120b9f5ff9442d84f723fc03b0813a5e2c2eb482e57d3391fb5500ba81e7");
+	var fault$1 = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	/**
+	* `u = X − A₃`, `y = (u−1)(u+1)⁻¹`, `x = c·u·Y⁻¹` (mod q), then encode per RFC 8032 §5.1.2. Rejects
+	* non-canonical coordinates, `Y = 0`, `u + 1 = 0`, and any result that is off the edwards curve,
+	* the identity, or in the torsion subgroup.
+	*/
+	function edwardsEncode(wei) {
+		if (wei.length !== 64) fault$1("Wei25519 point is not 64 bytes");
+		const x0 = bytesToNumberBE(wei.subarray(0, 32));
+		const y0 = bytesToNumberBE(wei.subarray(32, 64));
+		if (x0 >= Fp.ORDER || y0 >= Fp.ORDER) fault$1("Wei25519 coordinate is not reduced mod q");
+		if (Fp.is0(y0)) fault$1("Wei25519 Y is zero");
+		const u = Fp.sub(x0, A3);
+		const uPlusOne = Fp.add(u, Fp.ONE);
+		if (Fp.is0(uPlusOne)) fault$1("Wei25519 point has no edwards image");
+		const y = Fp.mul(Fp.sub(u, Fp.ONE), Fp.inv(uPlusOne));
+		const x = Fp.mul(Fp.mul(C, u), Fp.inv(y0));
+		const point = ed25519.Point.fromAffine({
+			x,
+			y
+		});
+		try {
+			point.assertValidity();
+		} catch (_unused) {
+			fault$1("Wei25519 point does not map onto edwards25519");
+		}
+		if (!point.isTorsionFree()) fault$1("Wei25519 point maps to a torsion point");
+		return point.toBytes();
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/decode.ts
+	/**
+	* Response layouts and card-output validation (protocol.md §9.2, §9.4–9.14). Every decoder checks
+	* the response's exact structure and the semantics the design assigns the host; anything else is
+	* `card-fault`. Decoders that take host inputs (a cardId, params) reject out-of-shape arguments
+	* with `invalid-input`.
+	*/
+	init_secp256k1();
+	init_sha2();
+	var fault = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	var input$1 = (message) => {
+		throw new CardError("invalid-input", message);
+	};
+	/** Compressed secp256k1 identity key argument: 33 bytes on the curve. */
+	function checkIdentity(key, what) {
+		if (key.length !== 33 || !validPoint(key)) input$1(`${what} is not a valid identity key`);
+	}
+	/** §9.3: `life ‖ tries` — `01 00` BLANK; `02` with `tries ∈ [0, L]` LOADED. */
+	function status(data) {
+		if (data.length !== 2) fault("STATUS response is not 2 bytes");
+		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		const life = bytes.getUint8(0);
+		const tries = bytes.getUint8(1);
+		if (life === 1 && tries === 0) return {
+			life: "blank",
+			tries: 0
+		};
+		if (life === 2 && tries <= ACCESS_LIMITS.failures) return {
+			life: "loaded",
+			tries
+		};
+		return fault("STATUS response carries an unknown life or tries");
+	}
+	function parseWalletInfo(data) {
+		if (data.length < 51 || (data.length - 35) % 16 !== 0) fault("WalletInfo has an invalid length");
+		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		const count = bytes.getUint8(34);
+		if (count < 1 || count > 3 || data.length !== 35 + 16 * count) fault("WalletInfo member count is inconsistent");
+		const masterPublicKey = data.subarray(0, 33);
+		if (!validPoint(masterPublicKey)) fault("WalletInfo master key is not a valid point");
+		const origin = bytes.getUint8(33);
+		if (origin !== 1 && origin !== 2) fault("WalletInfo origin is neither generated nor imported");
+		const members = [];
+		for (let i = 0; i < count; i += 1) members.push(new Uint8Array(data.subarray(35 + 16 * i, 35 + 16 * (i + 1))));
+		for (const [i, id] of members.entries()) if (members.slice(i + 1).some((other) => equalBytes$9(other, id))) fault("WalletInfo member IDs are not pairwise distinct");
+		return {
+			masterPublicKey: new Uint8Array(masterPublicKey),
+			originByte: origin,
+			members
+		};
+	}
+	var originName = (byte) => byte === 1 ? "generated" : "imported";
+	function checkCardId(cardId) {
+		if (cardId.length !== 16) throw new CardError("invalid-input", "cardId is not 16 bytes");
+	}
+	/** §9.2 WalletInfo; the session card's own `ID(A)` must be a member. */
+	function walletInfo(data, cardId) {
+		checkCardId(cardId);
+		const { masterPublicKey, originByte, members } = parseWalletInfo(data);
+		if (!members.some((member) => equalBytes$9(member, cardId))) fault("WalletInfo does not list this card as a member");
+		return {
+			masterPublicKey,
+			origin: originName(originByte),
+			members
+		};
+	}
+	/**
+	* WalletInfo echoed by CREATE (§9.4): `members = ID(A) ‖ others` in order, `origin` matching the
+	* mode, and for `import` the master public key recomputed from the host's seed.
+	*/
+	function created(data, params, cardId) {
+		checkCardId(cardId);
+		checkCreateParams(params);
+		const { masterPublicKey: echoed, originByte, members } = parseWalletInfo(data);
+		if (originByte !== (params.mode === "generate" ? 1 : 2)) fault("CREATE echoed a different origin than requested");
+		if (members.length !== 1 + params.others.length) fault("CREATE echoed a different member count");
+		for (const [i, member] of members.entries()) {
+			const expected = i === 0 ? cardId : params.others[i - 1];
+			if (expected === void 0 || !equalBytes$9(member, expected)) fault("CREATE echoed the members in a different order");
+		}
+		if (params.mode === "import" && !equalBytes$9(masterPublicKey(params.seed), echoed)) fault("CREATE echoed a different master public key");
+		return {
+			masterPublicKey: echoed,
+			origin: originName(originByte),
+			members
+		};
+	}
+	/** §9.8 secp256k1 response: `publicKey(33) ‖ chainCode(32)`; the key must be a valid point. */
+	function publicKey(data) {
+		if (data.length !== 65) fault("PUBLIC_KEY response is not 65 bytes");
+		const key = data.subarray(0, 33);
+		if (!validPoint(key)) fault("PUBLIC_KEY returned a point that is not on the curve");
+		return {
+			publicKey: new Uint8Array(key),
+			chainCode: new Uint8Array(data.subarray(33, 65))
+		};
+	}
+	/** Commands whose success response is empty. */
+	function empty(data) {
+		if (data.length > 0) fault("a command with an empty layout returned data");
+	}
+	/** §9.13 `P1 = 0x01` response: `ct ‖ tag` — 160 bytes (c = 2) or 176 (c = 3). */
+	function exportPayload(data) {
+		if (data.length !== 160 && data.length !== 176) fault("export payload is not 160 or 176 bytes");
+		return new Uint8Array(data);
+	}
+	/**
+	* §9.12 OFFER response `LK ‖ Sign(idKey_T, "qntx-card/v1/offer" ‖ LK)`; `target` is the offering
+	* card's compressed identity key (its session's `identity`). High-s signatures verify, like every
+	* card signature.
+	*/
+	function offer(data, target) {
+		checkIdentity(target, "target");
+		if (data.length !== 129) fault("OFFER response is not 129 bytes");
+		const linkKey = data.subarray(0, 65);
+		const signature = data.subarray(65, 129);
+		if (!validUncompressedPoint(linkKey)) fault("OFFER link key is not a valid point");
+		if (!secp256k1.verify(signature, sha256$1(offerMessage(linkKey)), target, {
+			prehash: false,
+			lowS: false
+		})) fault("OFFER signature does not verify under the target identity");
+		return {
+			linkKey: new Uint8Array(linkKey),
+			signature: new Uint8Array(signature)
+		};
+	}
+	/**
+	* §9.13 EXPORT `P1 = 0x00` response `E ‖ Sign(idKey_S, M)` with `M = "qntx-card/v1/export" ‖ A_S ‖
+	* A_T ‖ LK ‖ E` — all keys bound into the message.
+	*/
+	function exportHead(data, params) {
+		checkIdentity(params.source, "source");
+		checkIdentity(params.target, "target");
+		if (params.linkKey.length !== 65 || !validUncompressedPoint(params.linkKey)) input$1("linkKey is not a valid uncompressed point");
+		if (data.length !== 129) fault("EXPORT head is not 129 bytes");
+		const ephemeral = data.subarray(0, 65);
+		const signature = data.subarray(65, 129);
+		if (!validUncompressedPoint(ephemeral)) fault("EXPORT ephemeral is not a valid point");
+		const message = exportMessage(params.source, params.target, params.linkKey, ephemeral);
+		if (!secp256k1.verify(signature, sha256$1(message), params.source, {
+			prehash: false,
+			lowS: false
+		})) fault("EXPORT signature does not verify under the source identity");
+		return {
+			ephemeral: new Uint8Array(ephemeral),
+			signature: new Uint8Array(signature)
+		};
+	}
+	var decode$2 = {
+		status,
+		walletInfo,
+		created,
+		publicKey,
+		weiPoint: edwardsEncode,
+		empty,
+		ecdsa,
+		bip340,
+		ed25519: ed25519Signature,
+		offer,
+		exportHead,
+		exportPayload
+	};
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/asyncIterator.js
+	function _asyncIterator(r) {
+		var n, t, o, e = 2;
+		for ("undefined" != typeof Symbol && (t = Symbol.asyncIterator, o = Symbol.iterator); e--;) {
+			if (t && null != (n = r[t])) return n.call(r);
+			if (o && null != (n = r[o])) return new AsyncFromSyncIterator(n.call(r));
+			t = "@@asyncIterator", o = "@@iterator";
+		}
+		throw new TypeError("Object is not async iterable");
+	}
+	function AsyncFromSyncIterator(r) {
+		function AsyncFromSyncIteratorContinuation(r) {
+			if (Object(r) !== r) return Promise.reject(/* @__PURE__ */ new TypeError(r + " is not an object."));
+			var n = r.done;
+			return Promise.resolve(r.value).then(function(r) {
+				return {
+					value: r,
+					done: n
+				};
+			});
+		}
+		return AsyncFromSyncIterator = function AsyncFromSyncIterator(r) {
+			this.s = r, this.n = r.next;
+		}, AsyncFromSyncIterator.prototype = {
+			s: null,
+			n: null,
+			next: function next() {
+				return AsyncFromSyncIteratorContinuation(this.n.apply(this.s, arguments));
+			},
+			"return": function _return(r) {
+				var n = this.s["return"];
+				return void 0 === n ? Promise.resolve({
+					value: r,
+					done: !0
+				}) : AsyncFromSyncIteratorContinuation(n.apply(this.s, arguments));
+			},
+			"throw": function _throw(r) {
+				var n = this.s["return"];
+				return void 0 === n ? Promise.reject(r) : AsyncFromSyncIteratorContinuation(n.apply(this.s, arguments));
+			}
+		}, new AsyncFromSyncIterator(r);
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/OverloadYield.js
+	function _OverloadYield(e, d) {
+		this.v = e, this.k = d;
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/asyncGeneratorDelegate.js
+	function _asyncGeneratorDelegate(t) {
+		var e = {}, n = !1;
+		function pump(e, r) {
+			return n = !0, r = new Promise(function(n) {
+				n(t[e](r));
+			}), {
+				done: !1,
+				value: new _OverloadYield(r, 1)
+			};
+		}
+		return e["undefined" != typeof Symbol && Symbol.iterator || "@@iterator"] = function() {
+			return this;
+		}, e.next = function(t) {
+			return n ? (n = !1, t) : pump("next", t);
+		}, "function" == typeof t["throw"] && (e["throw"] = function(t) {
+			if (n) throw n = !1, t;
+			return pump("throw", t);
+		}), "function" == typeof t["return"] && (e["return"] = function(t) {
+			return n ? (n = !1, t) : pump("return", t);
+		}), e;
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/wrapAsyncGenerator.js
+	function _wrapAsyncGenerator(e) {
+		return function() {
+			return new AsyncGenerator(e.apply(this, arguments));
+		};
+	}
+	function AsyncGenerator(e) {
+		var r, t;
+		function resume(r, t) {
+			try {
+				var n = e[r](t), o = n.value, u = o instanceof _OverloadYield;
+				Promise.resolve(u ? o.v : o).then(function(t) {
+					if (u) {
+						var i = "return" === r ? "return" : "next";
+						if (!o.k || t.done) return resume(i, t);
+						t = e[i](t).value;
+					}
+					settle(n.done ? "return" : "normal", t);
+				}, function(e) {
+					resume("throw", e);
+				});
+			} catch (e) {
+				settle("throw", e);
+			}
+		}
+		function settle(e, n) {
+			switch (e) {
+				case "return":
+					r.resolve({
+						value: n,
+						done: !0
+					});
+					break;
+				case "throw":
+					r.reject(n);
+					break;
+				default: r.resolve({
+					value: n,
+					done: !1
+				});
+			}
+			(r = r.next) ? resume(r.key, r.arg) : t = null;
+		}
+		this._invoke = function(e, n) {
+			return new Promise(function(o, u) {
+				var i = {
+					key: e,
+					arg: n,
+					resolve: o,
+					reject: u,
+					next: null
+				};
+				t ? t = t.next = i : (r = t = i, resume(e, n));
+			});
+		}, "function" != typeof e["return"] && (this["return"] = void 0);
+	}
+	AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+		return this;
+	}, AsyncGenerator.prototype.next = function(e) {
+		return this._invoke("next", e);
+	}, AsyncGenerator.prototype["throw"] = function(e) {
+		return this._invoke("throw", e);
+	}, AsyncGenerator.prototype["return"] = function(e) {
+		return this._invoke("return", e);
+	};
+	// packages/wallet-kernel/src/modules/card/ops/shared.ts
+	/**
+	* Shared machinery for the single-card ops (design §7): the step plumbing (`ask`, `tapRetry`, run
+	* outcomes), the access-code policy (`askNewCode`, `validCode`), record readers (`walletOf`,
+	* `pinnedShortId`, `holdDue`, `lowestTries`, `memberIds`), the registration and needed path sets,
+	* the PUBLIC_KEY fetcher, and the record/hash builders every op shares.
+	*/
+	init_utils$2();
+	init_objectSpread2();
+	var HARDENED$7 = 2147483648;
+	/** Headroom kept inside the plan so the tap can still finish its commit and close. */
+	var PLAN_MARGIN_MS = 1e3;
+	/** The input contract: 6–64 printable ASCII bytes (§7.1, enforced again in accessHash). */
+	var CODE_LIMITS = {
+		min: 6,
+		confirmBelow: 8,
+		max: 64
+	};
+	var badStep = () => new KernelError("integrity", "a card step resolved with the wrong outcome");
+	/** The engine feeds Uint8Array to input steps and TapOutcome to tap steps — nothing else. */
+	var asRunOutcome = (value) => {
+		if (typeof value !== "object" || value === null || !("status" in value)) throw badStep();
+		if (value.status === "done") return { status: "done" };
+		if (value.status === "reexport") return {
+			status: "reexport",
+			remaining: 0
+		};
+		if (value.status === "need-code" && "card" in value && typeof value.card === "string") return {
+			status: "need-code",
+			card: value.card
+		};
+		if (value.status === "wrong-code" && "remaining" in value && typeof value.remaining === "number") return {
+			status: "wrong-code",
+			remaining: value.remaining
+		};
+		throw badStep();
+	};
+	/** Yields an input step and resolves with the entered bytes. */
+	function* ask(pending) {
+		const outcome = yield _objectSpread2({ kind: "input" }, pending);
+		if (!(outcome instanceof Uint8Array)) throw badStep();
+		return outcome;
+	}
+	/** Yields the tap; on a lost session re-yields it with `reason: "retry"` until it completes. */
+	function* tapRetry(build) {
+		let retry = false;
+		for (;;) {
+			const outcome = yield _objectSpread2({ kind: "tap" }, build(retry));
+			if (outcome === void 0 || outcome instanceof Uint8Array) throw badStep();
+			if (outcome.ok) return asRunOutcome(outcome.value);
+			retry = true;
+		}
+	}
+	/** The entered bytes are a usable access code — checked before they ever reach Argon2id. */
+	var validCode = (code) => code.length >= CODE_LIMITS.min && code.length <= CODE_LIMITS.max && code.every((b) => b >= 32 && b <= 126);
+	/** New → confirm, looping on an invalid code or a mismatch (§3). */
+	function askNewCode(_x) {
+		return _askNewCode.apply(this, arguments);
+	}
+	function _askNewCode() {
+		_askNewCode = _wrapAsyncGenerator(function* (env) {
+			let code;
+			try {
+				for (;;) {
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "new-access-code",
+						secure: "access-code",
+						label: newAccessCodeLabel(env.locale, void 0)
+					})));
+					if (!validCode(code)) {
+						wipe$1(code);
+						code = void 0;
+						continue;
+					}
+					const confirm = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "confirm-access-code",
+						secure: "access-code",
+						label: confirmAccessCodeLabel(env.locale, void 0, code.length < CODE_LIMITS.confirmBelow)
+					})));
+					const matched = equalBytes$9(code, confirm);
+					wipe$1(confirm);
+					if (matched) {
+						const accepted = code;
+						code = void 0;
+						return accepted;
+					}
+					wipe$1(code);
+					code = void 0;
+				}
+			} finally {
+				if (code !== void 0) wipe$1(code);
+			}
+		});
+		return _askNewCode.apply(this, arguments);
+	}
+	/** Reads a card-wallet record off the live image + bodies; absent body → integrity. */
+	var walletOf = (env, walletId) => {
+		const record = env.ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		const body = env.bodies.get(walletId);
+		if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+		if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+		return {
+			header: parseCardWalletHeader(record.header),
+			body,
+			record
+		};
+	};
+	/** The pinned-cert short ID of a card entry, when this kernel has seen the card. */
+	var pinnedShortId = (header, cardIdHex) => {
+		var _header$cards$find;
+		const cert = (_header$cards$find = header.cards.find((c) => c.cardId === cardIdHex)) === null || _header$cards$find === void 0 ? void 0 : _header$cards$find.cert;
+		return cert === void 0 ? void 0 : shortId(hexToBytes$3(cert).subarray(0, 33));
+	};
+	/** `hold` — waits are due when the recorded tries are at or below the wait threshold. */
+	var holdDue = (header, cards) => cards.some((id) => {
+		var _header$cards$find2;
+		const tries = (_header$cards$find2 = header.cards.find((c) => c.cardId === id)) === null || _header$cards$find2 === void 0 ? void 0 : _header$cards$find2.tries;
+		return tries !== void 0 && tries <= ACCESS_LIMITS.failures - ACCESS_LIMITS.free;
+	}) || void 0;
+	/** The lowest recorded tries among a card set — drives the last-attempt label. */
+	var lowestTries = (header, cards) => {
+		let lowest;
+		for (const id of cards) {
+			var _header$cards$find3;
+			const tries = (_header$cards$find3 = header.cards.find((c) => c.cardId === id)) === null || _header$cards$find3 === void 0 ? void 0 : _header$cards$find3.tries;
+			if (tries !== void 0 && (lowest === void 0 || tries < lowest)) lowest = tries;
+		}
+		return lowest;
+	};
+	/** The registration set (design §6): account parents plus group nodes, mainnet coin type. */
+	var registrationPaths = (groups) => {
+		const paths = [{
+			curve: "secp256k1",
+			path: [
+				2147483692,
+				2147483708,
+				HARDENED$7
+			]
+		}, {
+			curve: "secp256k1",
+			path: [
+				2147483692,
+				2147483843,
+				HARDENED$7
+			]
+		}];
+		for (const purpose of [
+			44,
+			49,
+			84,
+			86
+		]) {
+			paths.push({
+				curve: "secp256k1",
+				path: [purpose + HARDENED$7, HARDENED$7]
+			});
+			for (let g = 0; g < groups; g += 1) paths.push({
+				curve: "secp256k1",
+				path: [
+					purpose + HARDENED$7,
+					HARDENED$7,
+					g + HARDENED$7
+				]
+			});
+		}
+		for (let g = 0; g < groups; g += 1) paths.push({
+			curve: "ed25519",
+			path: [
+				2147483692,
+				2147484149,
+				g + HARDENED$7,
+				HARDENED$7
+			]
+		});
+		return paths;
+	};
+	/** The nodes `accounts` must hold so the requested accounts resolve without a tap. */
+	var neededPaths$1 = (templates, groupIndex, network) => {
+		const paths = [];
+		const seen = /* @__PURE__ */ new Set();
+		const push = (needed) => {
+			const key = `${needed.curve}:${pathString(needed.path)}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				paths.push(needed);
+			}
+		};
+		for (const template of templates) {
+			if (template === "evm.bip44") {
+				push({
+					curve: "secp256k1",
+					path: [
+						2147483692,
+						2147483708,
+						HARDENED$7
+					]
+				});
+				continue;
+			}
+			if (template === "tron.bip44") {
+				push({
+					curve: "secp256k1",
+					path: [
+						2147483692,
+						2147483843,
+						HARDENED$7
+					]
+				});
+				continue;
+			}
+			if (template === "solana.bip44-change") {
+				push({
+					curve: "ed25519",
+					path: [
+						2147483692,
+						2147484149,
+						groupIndex + HARDENED$7,
+						HARDENED$7
+					]
+				});
+				continue;
+			}
+			const purpose = BTC_PURPOSE[template];
+			if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
+			const coin = bitcoinNetwork(network).coinType;
+			push({
+				curve: "secp256k1",
+				path: [purpose + HARDENED$7, coin + HARDENED$7]
+			});
+			push({
+				curve: "secp256k1",
+				path: [
+					purpose + HARDENED$7,
+					coin + HARDENED$7,
+					groupIndex + HARDENED$7
+				]
+			});
+		}
+		return paths;
+	};
+	/** The registration/needed paths still missing from this body. */
+	var missingIn = (body, paths) => {
+		if (body === void 0) return [...paths];
+		return paths.filter(({ curve, path }) => curve === "secp256k1" ? body.nodes[pathString(path)] === void 0 : body.ed25519[pathString(path)] === void 0);
+	};
+	/**
+	* Fetches up to the plan budget of `paths` through PUBLIC_KEY and stages every node as it arrives —
+	* a lost session keeps what already landed, so the retry never refetches it. secp256k1 keeps key +
+	* chainCode of the 65-byte response, ed25519 keeps the RFC 8032 encoding.
+	*/
+	var fetchNodes = async (tap, paths, plan = PLAN_MS) => {
+		const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
+		const batch = paths.slice(0, Math.max(0, room));
+		if (batch.length === 0) return;
+		const staged = {
+			nodes: {},
+			ed25519: {}
+		};
+		tap.update((d) => {
+			if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, {
+				nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), staged.nodes),
+				ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), staged.ed25519)
+			});
+		});
+		for (const needed of batch) {
+			const key = pathString(needed.path);
+			const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
+			if (needed.curve === "secp256k1") {
+				const { publicKey, chainCode } = decode$2.publicKey(data);
+				staged.nodes[key] = {
+					key: bytesToHex$4(publicKey),
+					chainCode: bytesToHex$4(chainCode)
+				};
+			} else staged.ed25519[key] = bytesToHex$4(decode$2.weiPoint(data));
+		}
+	};
+	/** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */
+	var recordFrom = (env, cardId, info, access) => ({
+		header: {
+			v: 1,
+			walletId: walletIdOf(info.masterPublicKey),
+			origin: info.origin,
+			createdAt: env.ctx.platform.now(),
+			members: info.members.map(bytesToHex$4),
+			cards: info.members.map((id) => ({
+				cardId: bytesToHex$4(id),
+				state: equalBytes$9(id, cardId) ? "ready" : "unknown"
+			}))
+		},
+		body: _objectSpread2({
+			master: bytesToHex$4(info.masterPublicKey),
+			nodes: {},
+			ed25519: {},
+			ephemerals: {}
+		}, access === void 0 ? {} : { access })
+	});
+	/** Fills `hashes` for every allowed cardId from `code`, then wipes the code. */
+	var hashAll = async (env, hashes, code, ids) => {
+		for (const id of ids) {
+			const key = bytesToHex$4(id);
+			if (!hashes.has(key)) hashes.set(key, await accessHash(code, id, env.ctx.platform.argon2id));
+		}
+	};
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/awaitAsyncGenerator.js
+	function _awaitAsyncGenerator(e) {
+		return new _OverloadYield(e, 0);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/accounts.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** `accounts` — VERIFY on a member, fetch the missing nodes, answer from the fresh cache. */
+	function accountsOp(_x, _x2) {
+		return _accountsOp.apply(this, arguments);
+	}
+	function _accountsOp() {
+		_accountsOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const paths = neededPaths$1(op.templates, op.groupIndex, op.network);
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			try {
+				var _wallet$body$access;
+				const wallet = walletOf(env, walletId);
+				const saved = (_wallet$body$access = wallet.body.access) !== null && _wallet$body$access !== void 0 ? _wallet$body$access : {};
+				if (!wallet.header.members.every((m) => saved[m] !== void 0)) {
+					const remaining = lowestTries(wallet.header, wallet.header.members);
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				for (;;) {
+					if (missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const fresh = walletOf(env, walletId);
+						return {
+							reason: retry ? "retry" : "member",
+							hold: holdDue(fresh.header, fresh.header.members),
+							prompt: tapPrompt(env.locale, "accounts", retry ? "retry" : "member", void 0),
+							expect: {
+								life: "loaded",
+								cards: fresh.header.members.map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									var _env$bodies$get$acces, _env$bodies$get;
+									const remembered = ((_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {})[id];
+									if (remembered !== void 0) {
+										hash = hexToBytes$3(remembered);
+										hashes.set(id, hash);
+									} else if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									else {
+										await hashAll(env, hashes, code, fresh.header.members.map(hexToBytes$3));
+										wipe$1(code);
+										code = void 0;
+										hash = hashes.get(id);
+									}
+								}
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									tap.update((d) => {
+										var _d$body;
+										if (((_d$body = d.body) === null || _d$body === void 0 ? void 0 : _d$body.access) !== void 0 && d.body.access[id] !== void 0) {
+											const access = Object.fromEntries(Object.entries(d.body.access).filter(([key]) => key !== id));
+											d.body = _objectSpread2({
+												master: d.body.master,
+												nodes: d.body.nodes,
+												ed25519: d.body.ed25519,
+												ephemerals: d.body.ephemerals
+											}, Object.keys(access).length === 0 ? {} : { access });
+										}
+									});
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: outcome.remaining,
+						label: accessCodeLabel(env.locale, void 0, outcome.remaining)
+					})));
+				}
+				const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
+				const accounts = [];
+				for (const template of op.templates) accounts.push(yield _awaitAsyncGenerator(accountFor(material, template, op.network, op.groupIndex)));
+				return {
+					kind: "accounts",
+					accounts
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _accountsOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/add.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `add` — adopt a card group: code → tap(any loaded non-member): VERIFY → walletId → already-exists
+	* gate → the record lands in that tap's commit → registration PUBLIC_KEYs across as many taps of
+	* the same card as the budget needs.
+	*/
+	function addOp(_x, _x2) {
+		return _addOp.apply(this, arguments);
+	}
+	function _addOp() {
+		_addOp = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups;
+			const paths = registrationPaths((_op$groups = op.groups) !== null && _op$groups !== void 0 ? _op$groups : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			let info;
+			let presented;
+			let remaining;
+			try {
+				for (;;) {
+					var _code;
+					(_code = code) !== null && _code !== void 0 || (code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					}))));
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "any",
+						prompt: tapPrompt(env.locale, "add", retry ? "retry" : "any", void 0),
+						expect: { life: "loaded" },
+						run: async (tap) => {
+							if (tap.memberOf !== void 0) throw new KernelError("already-exists", "this card already belongs to a wallet");
+							const id = bytesToHex$4(tap.cardId);
+							let hash = hashes.get(id);
+							if (hash === void 0) {
+								if (code === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+								hashes.set(id, hash);
+								wipe$1(code);
+								code = void 0;
+							}
+							const verified = await tap.verify(hash);
+							if (!verified.ok) {
+								wipe$1(hash);
+								hashes.delete(id);
+								return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+							}
+							const walletId = walletIdOf(verified.info.masterPublicKey);
+							if (env.ctx.image.records.some((r) => r.id === walletId)) throw new KernelError("already-exists", "this card's wallet is already in the vault");
+							tap.update((d) => {
+								const record = recordFrom(env, tap.cardId, verified.info);
+								d.header = record.header;
+								d.body = record.body;
+							});
+							({info} = verified);
+							({cardId: presented} = tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					({remaining} = outcome);
+				}
+				if (presented === void 0 || info === void 0) throw new KernelError("integrity", "the verified card was not recorded");
+				const walletId = walletIdOf(info.masterPublicKey);
+				const only = new Uint8Array(presented);
+				for (;;) {
+					if (missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const short = pinnedShortId(walletOf(env, walletId).header, bytesToHex$4(only));
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							prompt: tapPrompt(env.locale, "add", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: [only],
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								const hash = hashes.get(id);
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code" || outcome.status === "wrong-code") {
+						const label = outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining);
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label }))));
+						yield _awaitAsyncGenerator(hashAll(env, hashes, code, [only]));
+						wipe$1(code);
+						code = void 0;
+					}
+				}
+				return {
+					kind: "add",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _addOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/change-access.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `change-access` — old + new + confirm inputs, then per member VERIFY(old) → CHANGE(new). A CHANGE
+	* response lost mid-tap retries VERIFY(new) first — the code may already be changed, and that probe
+	* costs the card one attempt, which the retry label warns about.
+	*/
+	function changeAccessOp(_x, _x2) {
+		return _changeAccessOp.apply(this, arguments);
+	}
+	function _changeAccessOp() {
+		_changeAccessOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const oldHashes = /* @__PURE__ */ new Map();
+			const newHashes = /* @__PURE__ */ new Map();
+			const changeSent = /* @__PURE__ */ new Set();
+			let oldCode;
+			let newCode;
+			try {
+				const first = walletOf(env, walletId);
+				const remaining = lowestTries(first.header, first.header.members);
+				oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					remaining,
+					label: accessCodeLabel(env.locale, void 0, remaining)
+				})));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				const done = /* @__PURE__ */ new Set();
+				for (;;) {
+					let lastCard;
+					if (walletOf(env, walletId).header.members.every((m) => done.has(m))) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _undone$;
+						const fresh = walletOf(env, walletId);
+						const undone = fresh.header.members.filter((m) => !done.has(m));
+						const short = undone.length === 1 ? pinnedShortId(fresh.header, (_undone$ = undone[0]) !== null && _undone$ !== void 0 ? _undone$ : "") : void 0;
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(fresh.header, undone),
+							prompt: tapPrompt(env.locale, "change-access", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: undone.map(hexToBytes$3),
+								exclude: [...done].map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								lastCard = id;
+								if (oldCode === void 0 && !oldHashes.has(id)) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								if (oldCode !== void 0) {
+									const { argon2id } = env.ctx.platform;
+									for (const member of walletOf(env, walletId).header.members) {
+										const idBytes = hexToBytes$3(member);
+										if (!oldHashes.has(member)) oldHashes.set(member, await accessHash(oldCode, idBytes, argon2id));
+									}
+									for (const member of walletOf(env, walletId).header.members) {
+										const idBytes = hexToBytes$3(member);
+										if (!newHashes.has(member) && newCode !== void 0) newHashes.set(member, await accessHash(newCode, idBytes, argon2id));
+									}
+									wipe$1(oldCode);
+									oldCode = void 0;
+									if (newCode !== void 0) {
+										wipe$1(newCode);
+										newCode = void 0;
+									}
+								}
+								const oldHash = oldHashes.get(id);
+								const newHash = newHashes.get(id);
+								if (oldHash === void 0 || newHash === void 0) throw new KernelError("integrity", "member hash was not derived");
+								if (changeSent.has(id)) {
+									if ((await tap.verify(newHash)).ok) return { status: "done" };
+								}
+								const verified = await tap.verify(oldHash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								changeSent.add(id);
+								decode$2.empty(await tap.send(cmd.change(newHash)));
+								tap.update((d) => {
+									if (d.body !== void 0) {
+										var _d$body$access;
+										const access = op.remember === true ? _objectSpread2(_objectSpread2({}, d.body.access), {}, { [id]: bytesToHex$4(newHash) }) : Object.fromEntries(Object.entries((_d$body$access = d.body.access) !== null && _d$body$access !== void 0 ? _d$body$access : {}).filter(([key]) => key !== id));
+										d.body = _objectSpread2({
+											master: d.body.master,
+											nodes: d.body.nodes,
+											ed25519: d.body.ed25519,
+											ephemerals: d.body.ephemerals
+										}, Object.keys(access).length === 0 ? {} : { access });
+									}
+								});
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") {
+						if (lastCard === void 0) throw new KernelError("integrity", "a verified tap did not record its card");
+						done.add(lastCard);
+						continue;
+					}
+					if (outcome.status === "need-code") {
+						oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					for (const hash of oldHashes.values()) wipe$1(hash);
+					oldHashes.clear();
+					const again = outcome.remaining;
+					oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: again,
+						label: accessCodeLabel(env.locale, void 0, again)
+					})));
+				}
+				return {
+					kind: "change-access",
+					walletId
+				};
+			} finally {
+				if (oldCode !== void 0) wipe$1(oldCode);
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of oldHashes.values()) wipe$1(hash);
+				for (const hash of newHashes.values()) wipe$1(hash);
+			}
+		});
+		return _changeAccessOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/transfer-shared.ts
+	/**
+	* The transfer machinery the multi-card ops share (§11): OFFER/EXPORT/IMPORT step bodies, the typed
+	* short-ID ask, and the target-side record comparison. The I4 target gate lives in the op structure
+	* itself — a `Target` only ever exists because this operation OFFERed that card (create) or because
+	* the wallet record names it as the member being provisioned (transfer/reseal); the card-ID gates
+	* on every tap (`expect.cards`/`exclude`/`shortId`) are what keep a different physical card from
+	* ever receiving a hash or payload.
+	*/
+	init_utils$2();
+	/** OFFER on the session's card; the signature must verify under the card's own identity (§9.12). */
+	var takeOffer = async (tap) => decode$2.offer(await tap.send(cmd.offer()), tap.identity);
+	/**
+	* EXPORT head + payload to `target` (§9.13): the head is bound to this session's identity, the
+	* target identity and the link key by the decoder's signature check; the payload is sealed under
+	* `accessHashT`, the access hash for exactly `target.cardId` (I4: never another card's hash).
+	*/
+	var exportTo = async (tap, target, accessHashT) => {
+		return {
+			head: decode$2.exportHead(await tap.send(cmd.export0(target.cert, target.offer)), {
+				source: tap.identity,
+				target: target.identity,
+				linkKey: target.offer.linkKey
+			}),
+			payload: decode$2.exportPayload(await tap.send(cmd.export1(accessHashT)))
+		};
+	};
+	/**
+	* IMPORT pair on the session's card (§9.14). `wrong-state` on IMPORT P1=0 means `offer = NONE`: the
+	* offer was consumed by a completed T-INSTALL (LOADED target — the caller VERIFYs to confirm) or
+	* lost on a BLANK one (the caller re-offers and re-exports). `invalid-data` passes through: on a
+	* LOADED card it means the sender is not in its members or the export data is corrupt — a wrong
+	* card, not a committed install (a committed install has `offer = NONE`).
+	*/
+	var importOutcome = async (tap, sourceCert, transfer) => {
+		try {
+			decode$2.empty(await tap.send(cmd.import0(sourceCert, transfer.head)));
+		} catch (error) {
+			if (error instanceof CardError && error.code === "wrong-state") return "offer-gone";
+			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-device", "the loaded card does not accept this wallet's export");
+			throw error;
+		}
+		try {
+			return decode$2.walletInfo(await tap.send(cmd.import1(transfer.payload)), tap.cardId);
+		} catch (error) {
+			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-device", "the loaded card holds a different wallet");
+			throw error;
+		}
+	};
+	/**
+	* The WalletInfo an install (or its VERIFY confirmation) returns must echo the record exactly: same
+	* master key and the same member list in the same order — anything else is a wrong card.
+	*/
+	var checkInfo = (header, body, info) => {
+		if (bytesToHex$4(info.masterPublicKey) !== body.master || header.members.length !== info.members.length || !header.members.every((m, i) => {
+			const member = info.members[i];
+			return member !== void 0 && equalBytes$9(hexToBytes$3(m), member);
+		})) throw new KernelError("wrong-device", "the card's wallet does not match the record");
+	};
+	/**
+	* The target-side run of an install tap — the lost-response contract of §11:
+	*
+	* - Fresh BLANK tap: IMPORT P1=0 then P1=1; the WalletInfo must echo the record.
+	* - Retry finding the target LOADED: a `wrong-state` IMPORT P1=0 means the earlier install committed
+	*   and consumed the offer — VERIFY the target's hash to prove it, which also records the card
+	*   ready through the engine's bookkeeping. (`invalid-data` there means the card holds a foreign
+	*   wallet — `wrong-device`, never a probing VERIFY.)
+	* - Retry finding it still BLANK with the offer gone (`wrong-state`): OFFER again on the spot and ask
+	*   the op for a re-export (`reexport`). Any other answer stays a real fault.
+	*/
+	var installRun = async (opts) => {
+		const { tap, target } = opts;
+		if (target.transfer === void 0) throw new KernelError("integrity", "no export is staged for this target");
+		const installed = await importOutcome(tap, opts.sourceCert, target.transfer);
+		if (installed === "offer-gone") {
+			if (tap.status.life === "loaded") {
+				const hash = opts.hashT();
+				if (hash === void 0) return {
+					status: "need-code",
+					card: tap.shortId
+				};
+				const confirmed = await tap.verify(hash);
+				if (!confirmed.ok) throw new KernelError("wrong-device", "the loaded card did not accept this wallet's code");
+				checkInfo(opts.entry.header, opts.entry.body, confirmed.info);
+				return { status: "done" };
+			}
+			if (target.refreshed === true) throw new CardError("card-fault", "the target keeps refusing the staged export");
+			target.refreshed = true;
+			target.offer = await takeOffer(tap);
+			target.transfer = void 0;
+			return {
+				status: "reexport",
+				remaining: 0
+			};
+		}
+		checkInfo(opts.entry.header, opts.entry.body, installed);
+		tap.installed(installed);
+		return { status: "done" };
+	};
+	/** The printed short ID, re-asked until it parses. */
+	function* askShortId(labelLocale) {
+		for (;;) {
+			const raw = yield* ask({
+				purpose: "short-id",
+				secure: "short-id",
+				label: shortIdLabel(labelLocale)
+			});
+			const text = new TextDecoder().decode(raw);
+			wipe$1(raw);
+			if (/^[0-9A-F]{4}-[0-9A-F]{4}$/.test(text)) return text;
+		}
+	}
+	/** `t`'s facts from a just-OFFERed session card. */
+	var targetFrom = (tap, offer) => ({
+		cardId: new Uint8Array(tap.cardId),
+		identity: new Uint8Array(tap.identity),
+		cert: new Uint8Array(tap.cert),
+		shortId: tap.shortId,
+		offer
+	});
+	// packages/wallet-kernel/src/modules/card/ops/create.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `create` — move a wallet onto `op.cards` cards (§11.3). `cards: 1` keeps the single-card imported
+	* flow; `cards: 2|3` OFFERs k−1 blank targets in the user's order, CREATEs the source with their
+	* card IDs under one access code (each card's access hash derives from that code and its own card
+	* ID), EXPORTs to each target and IMPORTs them — the source stays usable and the unfinished targets
+	* stay `pending` if the op is abandoned mid-way (`transfer` finishes them).
+	*/
+	function createOp(_x, _x2) {
+		return _createOp.apply(this, arguments);
+	}
+	function _createOp() {
+		_createOp = _wrapAsyncGenerator(function* (env, op) {
+			if (op.cards === 1) return yield* _asyncGeneratorDelegate(_asyncIterator(createOne(env, op)));
+			return yield* _asyncGeneratorDelegate(_asyncIterator(createSet(env, op)));
+		});
+		return _createOp.apply(this, arguments);
+	}
+	/**
+	* `create` k=1 — move a vault HD wallet onto one card: short ID → new/confirm code → tap(blank,
+	* shortId): CREATE import the 64-byte seed → the record lands in the same commit that deletes
+	* `entropy` — then the registration set. A CREATE response lost mid-tap leaves the card LOADED or
+	* BLANK; the retry takes life "any" and VERIFYs the same hash to tell them apart.
+	*/
+	function createOne(_x3, _x4) {
+		return _createOne.apply(this, arguments);
+	}
+	function _createOne() {
+		_createOne = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups;
+			if (op.source.kind !== "wallet") throw new KernelError("unsupported", "a generated wallet needs at least two cards");
+			const sourceId = op.source.walletId;
+			const paths = registrationPaths((_op$groups = op.groups) !== null && _op$groups !== void 0 ? _op$groups : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			let newCode;
+			let info;
+			let presented;
+			try {
+				const typed = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				let walletId;
+				for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "source",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", typed),
+						expect: {
+							life: retry ? "any" : "blank",
+							shortId: typed,
+							walletId
+						},
+						run: async (tap) => {
+							const id = bytesToHex$4(tap.cardId);
+							let hash = hashes.get(id);
+							if (hash === void 0) {
+								if (newCode === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								hash = await accessHash(newCode, tap.cardId, env.ctx.platform.argon2id);
+								hashes.set(id, hash);
+								wipe$1(newCode);
+								newCode = void 0;
+							}
+							/** The card-wallet record plus the entropy deletion — staged in this tap's commit. */
+							const stage = (verified) => {
+								const wallet = walletIdOf(verified.masterPublicKey);
+								if (wallet !== sourceId) throw new KernelError("wrong-device", "the card's wallet does not match the source wallet");
+								walletId = wallet;
+								tap.update((d) => {
+									const record = recordFrom(env, tap.cardId, verified, op.remember === true ? { [id]: bytesToHex$4(hash) } : void 0);
+									d.header = record.header;
+									d.body = record.body;
+									d.extra.push({
+										op: "delete-record",
+										kind: "entropy",
+										id: sourceId
+									});
+									for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+								});
+							};
+							if (tap.status.life === "loaded") {
+								const confirmed = await tap.verify(hash);
+								if (!confirmed.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: confirmed.remaining
+									};
+								}
+								stage(confirmed.info);
+								({info} = confirmed);
+								({cardId: presented} = tap);
+								return { status: "done" };
+							}
+							const { dek } = env.ctx.session.current();
+							const source = env.ctx.image.records.find((r) => r.kind === "entropy" && r.id === sourceId);
+							if (source === void 0) throw new KernelError("not-found", "the source wallet is gone");
+							const created = await withWalletSeed(env.ctx.platform.pbkdf2, dek, source, async (seed) => {
+								const params = {
+									mode: "import",
+									accessHash: hash,
+									seed,
+									others: []
+								};
+								const data = await tap.send(cmd.create(params));
+								const echoed = decode$2.created(data, params, tap.cardId);
+								tap.installed(echoed);
+								return echoed;
+							});
+							stage(created);
+							info = created;
+							({cardId: presented} = tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+						continue;
+					}
+					if (outcome.status === "reexport") throw new KernelError("integrity", "a single-card create cannot re-export");
+					const { remaining } = outcome;
+					newCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				if (presented === void 0 || info === void 0) throw new KernelError("integrity", "the created card was not recorded");
+				const walletIdFinal = walletIdOf(info.masterPublicKey);
+				const only = new Uint8Array(presented);
+				for (;;) {
+					if (missingIn(env.bodies.get(walletIdFinal), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const entry = walletOf(env, walletIdFinal);
+						const short = pinnedShortId(entry.header, bytesToHex$4(only));
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(entry.header, entry.header.members),
+							prompt: tapPrompt(env.locale, "create", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: [only],
+								walletId: walletIdFinal
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								const hash = hashes.get(id);
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								await fetchNodes(tap, missingIn(env.bodies.get(walletIdFinal), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					if (outcome.status === "wrong-code") {
+						const old = hashes.get(bytesToHex$4(only));
+						if (old !== void 0) {
+							wipe$1(old);
+							hashes.delete(bytesToHex$4(only));
+						}
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [only]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "create",
+					walletId: walletIdFinal
+				};
+			} finally {
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _createOne.apply(this, arguments);
+	}
+	/**
+	* `create` k=2|3 — §11.3's set flow. Targets are OFFERed first (each a fresh BLANK card named by
+	* its typed short ID and excluded from the other slots), then the source is CREATEd with the target
+	* IDs in order — generated mode spends 32 bytes of host entropy, imported mode the vault wallet's
+	* 64-byte seed. The record lands in the CREATE tap's commit: the source ready, every target
+	* `pending` with its OPEN certificate pinned. Later source taps VERIFY under the same code and
+	* EXPORT to each target as the plan budget allows; the target taps IMPORT and compare the returned
+	* WalletInfo to the record — `done` only once every member is ready.
+	*/
+	function createSet(_x6, _x7) {
+		return _createSet.apply(this, arguments);
+	}
+	function _createSet() {
+		_createSet = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups2;
+			const generate = op.source.kind === "generate";
+			const sourceId = generate ? void 0 : op.source.walletId;
+			const paths = registrationPaths((_op$groups2 = op.groups) !== null && _op$groups2 !== void 0 ? _op$groups2 : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			const targets = [];
+			let newCode;
+			let sourceCert;
+			let sourceCard;
+			let walletId;
+			try {
+				for (let i = 0; i < op.cards - 1; i += 1) {
+					const typed = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					const exclude = targets.map((t) => t.cardId);
+					yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "target",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "target", typed),
+						expect: {
+							life: "blank",
+							shortId: typed,
+							exclude
+						},
+						run: async (tap) => {
+							targets.push(targetFrom(tap, await takeOffer(tap)));
+							return { status: "done" };
+						}
+					}))));
+				}
+				const typedSource = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				/** Stages the card-wallet record — targets pending with their pinned certs. */
+				const stage = (tap, verified) => {
+					const wallet = walletIdOf(verified.masterPublicKey);
+					if (sourceId !== void 0 && wallet !== sourceId) throw new KernelError("wrong-device", "the card's wallet does not match the source wallet");
+					const expected = [tap.cardId, ...targets.map((t) => t.cardId)];
+					if (verified.members.length !== expected.length || !verified.members.every((m, i) => {
+						var _expected$i;
+						return equalBytes$9(m, (_expected$i = expected[i]) !== null && _expected$i !== void 0 ? _expected$i : m);
+					})) throw new KernelError("wrong-device", "the card's member list does not match this set");
+					if (generate && verified.origin !== "generated") throw new KernelError("wrong-device", "the card's wallet was not generated");
+					if (!generate && verified.origin !== "imported") throw new KernelError("wrong-device", "the card's wallet was not imported");
+					walletId = wallet;
+					const id = bytesToHex$4(tap.cardId);
+					const hash = hashes.get(id);
+					tap.update((d) => {
+						const record = recordFrom(env, tap.cardId, verified, op.remember === true && hash !== void 0 ? { [id]: bytesToHex$4(hash) } : void 0);
+						d.header = _objectSpread2(_objectSpread2({}, record.header), {}, { cards: record.header.cards.map((card) => {
+							const target = targets.find((t) => bytesToHex$4(t.cardId) === card.cardId);
+							return target === void 0 ? card : {
+								cardId: card.cardId,
+								cert: bytesToHex$4(target.cert),
+								state: "pending"
+							};
+						}) });
+						d.body = record.body;
+						if (sourceId !== void 0) {
+							d.extra.push({
+								op: "delete-record",
+								kind: "entropy",
+								id: sourceId
+							});
+							for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+						}
+					});
+				};
+				/** Pending source-side work — exports the plan still affords, after the nodes it affords. */
+				const work = async (tap) => {
+					if (walletId !== void 0) await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths), env.planMs);
+					for (const target of targets) {
+						if (target.transfer !== void 0) continue;
+						if (tap.cost() + priceOf("export-head") + priceOf("export-payload") > env.planMs - 1e3) break;
+						const hashT = hashes.get(bytesToHex$4(target.cardId));
+						if (hashT === void 0) continue;
+						target.transfer = await exportTo(tap, target, hashT);
+					}
+				};
+				for (;;) {
+					if (sourceCard !== void 0 && walletId !== void 0 && targets.every((t) => t.transfer !== void 0) && missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "source",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", sourceCard === void 0 ? typedSource : void 0),
+						expect: sourceCard === void 0 ? {
+							life: retry ? "any" : "blank",
+							shortId: typedSource,
+							exclude: targets.map((t) => t.cardId)
+						} : {
+							life: "loaded",
+							cards: [sourceCard],
+							walletId
+						},
+						run: async (tap) => {
+							const id = bytesToHex$4(tap.cardId);
+							if (!hashes.has(id)) {
+								if (newCode === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const code = newCode;
+								newCode = void 0;
+								await hashAll(env, hashes, code, [tap.cardId, ...targets.map((t) => t.cardId)]);
+								wipe$1(code);
+							}
+							const hash = hashes.get(id);
+							if (hash === void 0) return {
+								status: "need-code",
+								card: tap.shortId
+							};
+							if (sourceCard !== void 0) {
+								const verified = await tap.verify(hash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								await work(tap);
+								return { status: "done" };
+							}
+							if (tap.status.life === "loaded") {
+								const confirmed = await tap.verify(hash);
+								if (!confirmed.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: confirmed.remaining
+									};
+								}
+								stage(tap, confirmed.info);
+								tap.installed(confirmed.info);
+							} else if (generate) {
+								const params = {
+									mode: "generate",
+									accessHash: hash,
+									entropy: env.ctx.platform.random(32),
+									others: targets.map((t) => t.cardId)
+								};
+								try {
+									const echoed = decode$2.created(await tap.send(cmd.create(params)), params, tap.cardId);
+									tap.installed(echoed);
+									stage(tap, echoed);
+								} finally {
+									wipe$1(params.entropy);
+								}
+							} else {
+								const { dek } = env.ctx.session.current();
+								const source = env.ctx.image.records.find((r) => r.kind === "entropy" && r.id === sourceId);
+								if (source === void 0) throw new KernelError("not-found", "the source wallet is gone");
+								const created = await withWalletSeed(env.ctx.platform.pbkdf2, dek, source, async (seed) => {
+									const build = {
+										mode: "import",
+										accessHash: hash,
+										seed,
+										others: targets.map((t) => t.cardId)
+									};
+									const echoed = decode$2.created(await tap.send(cmd.create(build)), build, tap.cardId);
+									tap.installed(echoed);
+									return echoed;
+								});
+								stage(tap, created);
+								({cardId: sourceCard, cert: sourceCert} = tap);
+								await work(tap);
+								return { status: "done" };
+							}
+							({cardId: sourceCard, cert: sourceCert} = tap);
+							await work(tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+					if (outcome.status === "need-code") {
+						newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+						continue;
+					}
+					const { remaining } = outcome;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+					const old = sourceCard === void 0 ? void 0 : hashes.get(bytesToHex$4(sourceCard));
+					if (old !== void 0) {
+						var _sourceCard;
+						wipe$1(old);
+						hashes.delete(bytesToHex$4((_sourceCard = sourceCard) !== null && _sourceCard !== void 0 ? _sourceCard : /* @__PURE__ */ new Uint8Array()));
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [...sourceCard === void 0 ? [] : [sourceCard], ...targets.map((t) => t.cardId)]));
+					wipe$1(asked);
+				}
+				if (sourceCard === void 0 || sourceCert === void 0 || walletId === void 0) throw new KernelError("integrity", "the created card was not recorded");
+				const own = sourceCard;
+				const cert = sourceCert;
+				const wid = walletId;
+				/** One source tap that (re-)exports `target` — VERIFY under the source hash first. */
+				function reExport(_x5) {
+					return _reExport.apply(this, arguments);
+				}
+				function _reExport() {
+					_reExport = _wrapAsyncGenerator(function* (target) {
+						for (;;) {
+							const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+								const entry = walletOf(env, wid);
+								const short = pinnedShortId(entry.header, bytesToHex$4(own));
+								return {
+									reason: retry ? "retry" : "source",
+									card: short,
+									hold: holdDue(entry.header, entry.header.members),
+									prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", short),
+									expect: {
+										life: "loaded",
+										cards: [own],
+										walletId: wid
+									},
+									run: async (tap) => {
+										const hashS = hashes.get(bytesToHex$4(tap.cardId));
+										if (hashS === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const verified = await tap.verify(hashS);
+										if (!verified.ok) return {
+											status: "wrong-code",
+											remaining: verified.remaining
+										};
+										const hashT = hashes.get(bytesToHex$4(target.cardId));
+										if (hashT === void 0) return {
+											status: "need-code",
+											card: target.shortId
+										};
+										target.transfer = await exportTo(tap, target, hashT);
+										return { status: "done" };
+									}
+								};
+							})));
+							if (outcome.status === "done") return;
+							if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+							const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+								purpose: "access-code",
+								secure: "access-code"
+							}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+							const old = hashes.get(bytesToHex$4(own));
+							if (outcome.status === "wrong-code" && old !== void 0) {
+								wipe$1(old);
+								hashes.delete(bytesToHex$4(own));
+							}
+							yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [own, target.cardId]));
+							wipe$1(asked);
+						}
+					});
+					return _reExport.apply(this, arguments);
+				}
+				for (const target of targets) for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						walletOf(env, wid);
+						return {
+							reason: retry ? "retry" : "target",
+							card: target.shortId,
+							prompt: tapPrompt(env.locale, "create", retry ? "retry" : "target", target.shortId),
+							expect: {
+								life: "any",
+								cards: [target.cardId],
+								shortId: target.shortId,
+								walletId: wid
+							},
+							run: async (tap) => installRun({
+								tap,
+								target,
+								sourceCert: cert,
+								hashT: () => hashes.get(bytesToHex$4(target.cardId)),
+								entry: walletOf(env, wid)
+							})
+						};
+					})));
+					if (outcome.status === "done") break;
+					if (outcome.status === "reexport") {
+						yield* _asyncGeneratorDelegate(_asyncIterator(reExport(target)));
+						continue;
+					}
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					const old = hashes.get(bytesToHex$4(target.cardId));
+					if (outcome.status === "wrong-code" && old !== void 0) {
+						wipe$1(old);
+						hashes.delete(bytesToHex$4(target.cardId));
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [target.cardId]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "create",
+					walletId: wid
+				};
+			} finally {
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+				for (const target of targets) if (target.transfer !== void 0) wipe$1(target.transfer.payload);
+			}
+		});
+		return _createSet.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/erase.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** `erase` — VERIFY then ERASE; drops the card entry, and deletes a now card-less record. */
+	function eraseOp(_x, _x2) {
+		return _eraseOp.apply(this, arguments);
+	}
+	function _eraseOp() {
+		_eraseOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const target = op.card;
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			try {
+				const wallet = walletOf(env, walletId);
+				const short = pinnedShortId(wallet.header, target);
+				const remaining = lowestTries(wallet.header, [target]);
+				code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					card: short,
+					remaining,
+					label: accessCodeLabel(env.locale, short, remaining)
+				})));
+				for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const fresh = walletOf(env, walletId);
+						const card = pinnedShortId(fresh.header, target);
+						return {
+							reason: retry ? "retry" : "member",
+							card,
+							hold: holdDue(fresh.header, [target]),
+							prompt: tapPrompt(env.locale, "erase", retry ? "retry" : "member", card),
+							expect: {
+								life: "loaded",
+								cards: [hexToBytes$3(target)],
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+									hashes.set(id, hash);
+									wipe$1(code);
+									code = void 0;
+								}
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								decode$2.empty(await tap.send(cmd.erase()));
+								tap.update((d) => {
+									if (d.header === void 0 || d.body === void 0) return;
+									const cards = d.header.cards.filter((c) => c.cardId !== target);
+									if (cards.length === 0) {
+										d.header = void 0;
+										d.body = void 0;
+										d.extra.push({
+											op: "delete-record",
+											kind: CARD_WALLET_KIND,
+											id: walletId
+										});
+										return;
+									}
+									d.header = _objectSpread2(_objectSpread2({}, d.header), {}, { cards });
+								});
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					const { remaining } = outcome;
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				return {
+					kind: "erase",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _eraseOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/forget-access.ts
+	init_utils$2();
+	/** `forget-access` — no tap: reseal the record without `access`; it completes in `card.begin`. */
+	function forgetAccessOp(_x, _x2) {
+		return _forgetAccessOp.apply(this, arguments);
+	}
+	function _forgetAccessOp() {
+		_forgetAccessOp = _wrapAsyncGenerator(function* (env, op) {
+			const { header, body } = walletOf(env, op.walletId);
+			const stripped = {
+				master: body.master,
+				nodes: body.nodes,
+				ed25519: body.ed25519,
+				ephemerals: body.ephemerals
+			};
+			const { dek } = env.ctx.session.current();
+			const record = sealRecord(env.ctx.platform, dek, CARD_WALLET_KIND, op.walletId, encodeCardWalletHeader(header), utf8ToBytes$1(encodeCardWalletBody(stripped)));
+			yield _awaitAsyncGenerator(env.ctx.commit([{
+				op: "put-record",
+				record
+			}]));
+			return {
+				kind: "forget-access",
+				walletId: op.walletId
+			};
+		});
+		return _forgetAccessOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/health.ts
+	init_utils$2();
+	/** `health` — one input, then a VERIFY tap for every member, any order. */
+	function healthOp(_x, _x2) {
+		return _healthOp.apply(this, arguments);
+	}
+	function _healthOp() {
+		_healthOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			const done = /* @__PURE__ */ new Set();
+			try {
+				code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					label: accessCodeLabel(env.locale, void 0, void 0)
+				})));
+				for (;;) {
+					if (walletOf(env, walletId).header.members.every((m) => done.has(m))) break;
+					let lastCard;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _undone$;
+						const fresh = walletOf(env, walletId);
+						const undone = fresh.header.members.filter((m) => !done.has(m));
+						const short = undone.length === 1 ? pinnedShortId(fresh.header, (_undone$ = undone[0]) !== null && _undone$ !== void 0 ? _undone$ : "") : void 0;
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(fresh.header, undone),
+							prompt: tapPrompt(env.locale, "health", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: undone.map(hexToBytes$3),
+								exclude: [...done].map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								lastCard = id;
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									await hashAll(env, hashes, code, fresh.header.members.map(hexToBytes$3));
+									wipe$1(code);
+									code = void 0;
+									hash = hashes.get(id);
+								}
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") {
+						if (lastCard === void 0) throw new KernelError("integrity", "a verified tap did not record its card");
+						done.add(lastCard);
+						continue;
+					}
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					const { remaining } = outcome;
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				return {
+					kind: "health",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _healthOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/reseal.ts
+	init_utils$2();
+	init_objectSpread2();
+	init_toPropertyKey();
+	init_objectWithoutProperties();
+	/**
+	* `reseal` — give member `op.card` a fresh access code without knowing the old one (§11.3): the
+	* target is never erased and never VERIFYed — OFFER is allowed on a LOADED card and a valid offer
+	* just re-answers the same link key. Another ready member (`op.member`, or the first ready member
+	* that is not the target) VERIFYs under its own code and EXPORTs under the target's new hash; the
+	* target IMPORTs and its WalletInfo must echo the record. Covers both a LOADED card whose code was
+	* forgotten (T-INSTALL rewrites equal wallet data, new code) and a BLANK card the failure limit
+	* erased (fresh install).
+	*/
+	function resealOp(_x, _x2) {
+		return _resealOp.apply(this, arguments);
+	}
+	function _resealOp() {
+		_resealOp = _wrapAsyncGenerator(function* (env, op) {
+			var _op$member, _header$cards$find;
+			const { header } = walletOf(env, op.walletId);
+			const targetId = hexToBytes$3(op.card);
+			const member = (_op$member = op.member) !== null && _op$member !== void 0 ? _op$member : (_header$cards$find = header.cards.find((c) => c.state === "ready" && c.cardId !== op.card)) === null || _header$cards$find === void 0 ? void 0 : _header$cards$find.cardId;
+			if (member === void 0) throw new KernelError("invalid-input", "no other ready member can reseal this card");
+			const memberId = hexToBytes$3(member);
+			const hashes = /* @__PURE__ */ new Map();
+			let memberCode;
+			let newCode;
+			let sourceCert;
+			let target;
+			try {
+				const typedT = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+					walletOf(env, op.walletId);
+					return {
+						reason: retry ? "retry" : "target",
+						prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "target", typedT),
+						expect: {
+							life: "any",
+							cards: [targetId],
+							shortId: typedT,
+							walletId: op.walletId
+						},
+						run: async (tap) => {
+							target = targetFrom(tap, await takeOffer(tap));
+							return { status: "done" };
+						}
+					};
+				})));
+				if (target === void 0) throw new KernelError("integrity", "the target's offer was not taken");
+				const peer = target;
+				const typedM = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				memberCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					card: typedM,
+					label: accessCodeLabel(env.locale, typedM, void 0)
+				})));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				for (;;) {
+					while (peer.transfer === void 0) {
+						const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+							const entry = walletOf(env, op.walletId);
+							const short = pinnedShortId(entry.header, member);
+							return {
+								reason: retry ? "retry" : "source",
+								card: short !== null && short !== void 0 ? short : typedM,
+								hold: holdDue(entry.header, [member]),
+								prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "source", short !== null && short !== void 0 ? short : typedM),
+								expect: {
+									life: "loaded",
+									cards: [memberId],
+									shortId: typedM,
+									walletId: op.walletId
+								},
+								run: async (tap) => {
+									const id = bytesToHex$4(tap.cardId);
+									if (!hashes.has(id)) {
+										if (memberCode === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const code = memberCode;
+										memberCode = void 0;
+										await hashAll(env, hashes, code, [tap.cardId]);
+										wipe$1(code);
+									}
+									if (!hashes.has(bytesToHex$4(peer.cardId))) {
+										if (newCode === void 0) return {
+											status: "need-code",
+											card: peer.shortId
+										};
+										await hashAll(env, hashes, newCode, [peer.cardId]);
+									}
+									const hashS = hashes.get(id);
+									if (hashS === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									const verified = await tap.verify(hashS);
+									if (!verified.ok) return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+									const hashT = hashes.get(bytesToHex$4(peer.cardId));
+									if (hashT === void 0) return {
+										status: "need-code",
+										card: peer.shortId
+									};
+									peer.transfer = await exportTo(tap, peer, hashT);
+									({cert: sourceCert} = tap);
+									return { status: "done" };
+								}
+							};
+						})));
+						if (outcome.status === "done") break;
+						if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+						const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+						const old = hashes.get(member);
+						if (outcome.status === "wrong-code" && old !== void 0) {
+							wipe$1(old);
+							hashes.delete(member);
+						}
+						yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [memberId]));
+						wipe$1(asked);
+					}
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "target",
+						card: peer.shortId,
+						prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "target", peer.shortId),
+						expect: {
+							life: "any",
+							cards: [peer.cardId],
+							shortId: peer.shortId,
+							walletId: op.walletId
+						},
+						run: async (tap) => {
+							if (sourceCert === void 0) throw new KernelError("integrity", "the exporting member was never tapped");
+							const result = await installRun({
+								tap,
+								target: peer,
+								sourceCert,
+								hashT: () => hashes.get(op.card),
+								entry: walletOf(env, op.walletId)
+							});
+							if (result.status === "done") tap.update((d) => {
+								var _d$body$access;
+								if (d.body !== void 0 && ((_d$body$access = d.body.access) === null || _d$body$access === void 0 ? void 0 : _d$body$access[op.card]) !== void 0) {
+									const _d$body$access2 = d.body.access, _op$card = op.card, { [_op$card]: _removed } = _d$body$access2, access = _objectWithoutProperties(_d$body$access2, [_op$card].map(toPropertyKey));
+									d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { access });
+								}
+							});
+							return result;
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "reexport") continue;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					const old = hashes.get(op.card);
+					if (outcome.status === "wrong-code" && old !== void 0) {
+						wipe$1(old);
+						hashes.delete(op.card);
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [targetId]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "reseal",
+					walletId: op.walletId
+				};
+			} finally {
+				if (memberCode !== void 0) wipe$1(memberCode);
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _resealOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/backend.ts
+	/**
+	* The card signing backend (design §8, protocol §9.9–§9.11): turns one prepared `ChainTask` into
+	* the card commands that produce its signature. The card never sees a request or a plan — only
+	* digests, paths and the Ed25519 challenge stream — and every response is re-verified against the
+	* task's public key by `decode`, so a hostile or faulty card cannot slip a bad signature through.
+	*/
+	/**
+	* Estimated card ms of one task's commands — the price of its APDUs, matching the wire the backend
+	* sends: a single command for ecdsa/bip340, begin + ceil((64+|M|)/236) chunks for ed25519 (the
+	* stream `encode(R)‖encode(A)‖M` of §12.3).
+	*/
+	var taskPrice = (task) => {
+		switch (task.scheme) {
+			case "ecdsa-secp256k1": return priceOf("sign-ecdsa");
+			case "bip340": return priceOf("sign-bip340");
+			case "ed25519": {
+				const chunks = Math.ceil((64 + task.message.length) / 236);
+				return priceOf("ed25519-begin") + chunks * priceOf("ed25519-finish");
+			}
+		}
+	};
+	/**
+	* SIGN_ECDSA — `digest(32) ‖ path` → `r‖s`, verified against `task.digest`/`task.publicKey` by
+	* decode (§12.1); a repeated `r` — the nonce-reuse signature — is `card-fault` at decode. Returns
+	* the signature and its `r` so the op can feed it to the next task.
+	*/
+	var signEcdsaTask = async (tap, task, previousR) => {
+		const { signature } = decode$2.ecdsa(await tap.send(cmd.signEcdsa(task.digest, task.path)), task.digest, task.publicKey, previousR);
+		return {
+			signature,
+			r: signature.subarray(0, 32)
+		};
+	};
+	/**
+	* SIGN_BIP340 — `message(32) ‖ tweak(32) ‖ path` → `R_x‖s`; decode verifies it against the tweaked
+	* internal key `P` and the tweaked output key is checked to be the task's (§12.2).
+	*/
+	var signBip340Task = async (tap, task, internalKey) => {
+		if (!equalBytes$9(bip340OutputX(internalKey, task.tweak), task.publicKey)) throw new KernelError("card-fault", "the card's tweaked key is not the task's output key");
+		return decode$2.bip340(await tap.send(cmd.signBip340(task.message, task.tweak, task.path)), task.message, internalKey, task.tweak);
+	};
+	/**
+	* SIGN_ED25519 — begin(path) → `W(R)`, then the challenge stream `encode(R)‖encode(A)‖M` in
+	* ≤236-byte update chunks and one finish carrying `le32(S)`; decode assembles and verifies the RFC
+	* 8032 signature (§12.3). `publicKey` is the task's RFC 8032 key.
+	*/
+	var signEd25519Task = async (tap, task, publicKey) => {
+		const encodedR = decode$2.weiPoint(await tap.send(cmd.ed25519Begin(task.path)));
+		const chunks = cmd.ed25519Stream(encodedR, publicKey, task.message);
+		let data = /* @__PURE__ */ new Uint8Array(0);
+		for (const chunk of chunks) data = await tap.send(chunk);
+		return decode$2.ed25519(data, encodedR, publicKey, task.message);
+	};
+	/**
+	* Sign one prepared task on the open card session. BIP-340 derives the internal key `P` at
+	* `task.path` from card material (a miss → `device-required`), ed25519 insists the cached key is
+	* exactly `task.publicKey` (`integrity` otherwise — the prepare already bound it), ecdsa tracks `r`
+	* across the op so a reused nonce is `card-fault`.
+	*/
+	var signTask = async (tap, task, material, previousR) => {
+		switch (task.scheme) {
+			case "ecdsa-secp256k1": {
+				const { signature, r } = await signEcdsaTask(tap, task, previousR);
+				previousR.push(r);
+				return signature;
+			}
+			case "bip340": return signBip340Task(tap, task, await material.secp256k1(task.path));
+			case "ed25519": {
+				const publicKey = await material.ed25519(task.path);
+				if (!equalBytes$9(publicKey, task.publicKey)) throw new KernelError("integrity", "the card's ed25519 key is not the task's key");
+				return signEd25519Task(tap, task, publicKey);
+			}
+		}
+	};
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
+	init_defineProperty();
+	var BLOCK_SIZE = 16;
+	var POLY = 283;
+	function validateKeyLength(key) {
+		if (![
+			16,
+			24,
+			32
+		].includes(key.length)) throw new Error("\"aes key\" expected Uint8Array of length 16/24/32, got length=" + key.length);
+	}
+	function mul2(n) {
+		return n << 1 ^ POLY & -(n >> 7);
+	}
+	function mul(a, b) {
+		let res = 0;
+		for (; b > 0; b >>= 1) {
+			res ^= a & -(b & 1);
+			a = mul2(a);
+		}
+		return res;
+	}
+	var sbox = /* @__PURE__ */ (() => {
+		const t = /* @__PURE__ */ new Uint8Array(256);
+		for (let i = 0, x = 1; i < 256; i++, x ^= mul2(x)) t[i] = x;
+		const box = /* @__PURE__ */ new Uint8Array(256);
+		box[0] = 99;
+		for (let i = 0; i < 255; i++) {
+			let x = t[255 - i];
+			x |= x << 8;
+			box[t[i]] = (x ^ x >> 4 ^ x >> 5 ^ x >> 6 ^ x >> 7 ^ 99) & 255;
+		}
+		clean$1(t);
+		return box;
+	})();
+	var invSbox = /* @__PURE__ */ sbox.map((_, j) => sbox.indexOf(j));
+	var rotr32_8 = (n) => n << 24 | n >>> 8;
+	var rotl32_8 = (n) => n << 8 | n >>> 24;
+	function genTtable(sbox, fn) {
+		if (sbox.length !== 256) throw new Error("wrong sbox length");
+		const T0 = (/* @__PURE__ */ new Uint32Array(256)).map((_, j) => fn(sbox[j]));
+		const T1 = T0.map(rotl32_8);
+		const T2 = T1.map(rotl32_8);
+		const T3 = T2.map(rotl32_8);
+		const T01 = /* @__PURE__ */ new Uint32Array(65536);
+		const T23 = /* @__PURE__ */ new Uint32Array(65536);
+		const sbox2 = /* @__PURE__ */ new Uint16Array(65536);
+		for (let i = 0; i < 256; i++) for (let j = 0; j < 256; j++) {
+			const idx = i * 256 + j;
+			T01[idx] = T0[i] ^ T1[j];
+			T23[idx] = T2[i] ^ T3[j];
+			sbox2[idx] = sbox[i] << 8 | sbox[j];
+		}
+		return {
+			sbox,
+			sbox2,
+			T0,
+			T1,
+			T2,
+			T3,
+			T01,
+			T23
+		};
+	}
+	var tableEncoding = /* @__PURE__ */ genTtable(sbox, (s) => mul(s, 3) << 24 | s << 16 | s << 8 | mul(s, 2));
+	var tableDecoding = /* @__PURE__ */ genTtable(invSbox, (s) => mul(s, 11) << 24 | mul(s, 13) << 16 | mul(s, 9) << 8 | mul(s, 14));
+	var xPowers = /* @__PURE__ */ (() => {
+		const p = /* @__PURE__ */ new Uint8Array(16);
+		for (let i = 0, x = 1; i < 16; i++, x = mul2(x)) p[i] = x;
+		return p;
+	})();
+	/** Forward AES key expansion used across ECB/CBC/CTR/GCM/CMAC/KW-style paths. */
+	function expandKeyLE(key) {
+		abytes$3(key);
+		const len = key.length;
+		validateKeyLength(key);
+		const { sbox2 } = tableEncoding;
+		const toClean = [];
+		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
+		const k32 = swap32IfBE$1(u32$7(key));
+		const Nk = k32.length;
+		const subByte = (n) => applySbox(sbox2, n, n, n, n);
+		const xk = new Uint32Array(len + 28);
+		xk.set(k32);
+		for (let i = Nk; i < xk.length; i++) {
+			let t = xk[i - 1];
+			if (i % Nk === 0) t = subByte(rotr32_8(t)) ^ xPowers[i / Nk - 1];
+			else if (Nk > 6 && i % Nk === 4) t = subByte(t);
+			xk[i] = xk[i - Nk] ^ t;
+		}
+		clean$1(...toClean);
+		return xk;
+	}
+	function expandKeyDecLE(key) {
+		const encKey = expandKeyLE(key);
+		const xk = encKey.slice();
+		const Nk = encKey.length;
+		const { sbox2 } = tableEncoding;
+		const { T0, T1, T2, T3 } = tableDecoding;
+		for (let i = 0; i < Nk; i += 4) for (let j = 0; j < 4; j++) xk[i + j] = encKey[Nk - i - 4 + j];
+		clean$1(encKey);
+		for (let i = 4; i < Nk - 4; i++) {
+			const x = xk[i];
+			const w = applySbox(sbox2, x, x, x, x);
+			xk[i] = T0[w & 255] ^ T1[w >>> 8 & 255] ^ T2[w >>> 16 & 255] ^ T3[w >>> 24];
+		}
+		return xk;
+	}
+	function apply0123(T01, T23, s0, s1, s2, s3) {
+		return T01[s0 << 8 & 65280 | s1 >>> 8 & 255] ^ T23[s2 >>> 8 & 65280 | s3 >>> 24 & 255];
+	}
+	function applySbox(sbox2, s0, s1, s2, s3) {
+		return sbox2[s0 & 255 | s1 & 65280] | sbox2[s2 >>> 16 & 255 | s3 >>> 16 & 65280] << 16;
+	}
+	function encrypt$3(xk, s0, s1, s2, s3) {
+		const { sbox2, T01, T23 } = tableEncoding;
+		let k = 0;
+		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
+		const rounds = xk.length / 4 - 2;
+		for (let i = 0; i < rounds; i++) {
+			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s1, s2, s3);
+			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s2, s3, s0);
+			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s3, s0, s1);
+			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s0, s1, s2);
+			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
+		}
+		return {
+			s0: xk[k++] ^ applySbox(sbox2, s0, s1, s2, s3),
+			s1: xk[k++] ^ applySbox(sbox2, s1, s2, s3, s0),
+			s2: xk[k++] ^ applySbox(sbox2, s2, s3, s0, s1),
+			s3: xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2)
+		};
+	}
+	function decrypt$2(xk, s0, s1, s2, s3) {
+		const { sbox2, T01, T23 } = tableDecoding;
+		let k = 0;
+		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
+		const rounds = xk.length / 4 - 2;
+		for (let i = 0; i < rounds; i++) {
+			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s3, s2, s1);
+			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s0, s3, s2);
+			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s1, s0, s3);
+			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s2, s1, s0);
+			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
+		}
+		return {
+			s0: xk[k++] ^ applySbox(sbox2, s0, s3, s2, s1),
+			s1: xk[k++] ^ applySbox(sbox2, s1, s0, s3, s2),
+			s2: xk[k++] ^ applySbox(sbox2, s2, s1, s0, s3),
+			s3: xk[k++] ^ applySbox(sbox2, s3, s2, s1, s0)
+		};
+	}
+	function validateBlockDecrypt(data, dst) {
+		abytes$3(data);
+		if (data.length % BLOCK_SIZE !== 0) throw new Error("ciphertext must be multiple of 16");
+		if (dst !== void 0) {
+			getOutput(data.length, dst);
+			complexOverlapBytes(data, dst);
+		}
+	}
+	function validateBlockEncrypt(plaintext, pkcs5, dst) {
+		abytes$3(plaintext);
+		let outLen = plaintext.length;
+		const remaining = outLen % BLOCK_SIZE;
+		if (!pkcs5 && remaining !== 0) throw new Error("plaintext must be multiple of 16");
+		if (pkcs5) {
+			let left = BLOCK_SIZE - remaining;
+			if (!left) left = BLOCK_SIZE;
+			outLen = outLen + left;
+		}
+		if (dst !== void 0) {
+			getOutput(outLen, dst);
+			complexOverlapBytes(plaintext, dst);
+		}
+		return outLen;
+	}
+	function prepareBlockEncrypt(plaintext, outLen, dst) {
+		if (dst === void 0) dst = new Uint8Array(outLen);
+		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
+		const o = u32$7(dst);
+		return {
+			b: plaintext,
+			o,
+			out: dst
+		};
+	}
+	function validatePKCS(data, pkcs5) {
+		if (!pkcs5) return data;
+		const len = data.length;
+		if (len === 0) throw new Error("pkcs7: empty ciphertext not allowed");
+		const lastByte = data[len - 1];
+		let valid = 1;
+		valid &= lastByte - 1 >>> 31 ^ 1;
+		valid &= 16 - lastByte >>> 31 ^ 1;
+		for (let i = 0; i < 16; i++) {
+			const shouldCheck = i - lastByte >>> 31;
+			const eq = (data[len - 1 - i] ^ lastByte) === 0 ? 1 : 0;
+			valid &= eq | shouldCheck ^ 1;
+		}
+		if (!valid) throw new Error("aes: bad decrypt");
+		return data.subarray(0, len - lastByte);
+	}
+	function padPCKS(left) {
+		const tmp = /* @__PURE__ */ new Uint8Array(16);
+		const tmp32 = u32$7(tmp);
+		tmp.set(left);
+		const paddingByte = BLOCK_SIZE - left.length;
+		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
+		return tmp32;
+	}
+	/**
+	* **ECB** (Electronic Codebook): Deterministic encryption; identical plaintext blocks yield
+	* identical ciphertexts. Not secure due to pattern leakage.
+	* See {@link https://words.filippo.io/the-ecb-penguin/ | the AES Penguin}.
+	* @param key - AES key bytes.
+	* @param opts - Padding options. See {@link BlockOpts}.
+	* @returns Cipher instance with `encrypt()` and `decrypt()`.
+	* @example
+	* Shows the basic ECB encrypt call shape with a fresh key; avoid ECB in new designs.
+	*
+	* ```ts
+	* import { ecb } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* const cipher = ecb(key);
+	* cipher.encrypt(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	var ecb = /* @__PURE__ */ wrapCipher({ blockSize: 16 }, function aesecb(key, opts = {}) {
+		const pkcs5 = !opts.disablePadding;
+		return {
+			encrypt(plaintext, dst) {
+				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
+				const xk = expandKeyLE(key);
+				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
+				const b = u32$7(input);
+				swap32IfBE$1(b);
+				let i = 0;
+				for (; i + 4 <= b.length;) {
+					const { s0, s1, s2, s3 } = encrypt$3(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				if (pkcs5) {
+					const tmp32 = padPCKS(plaintext.subarray(i * 4));
+					swap32IfBE$1(tmp32);
+					const { s0, s1, s2, s3 } = encrypt$3(xk, tmp32[0], tmp32[1], tmp32[2], tmp32[3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+					clean$1(tmp32);
+				}
+				swap32IfBE$1(o);
+				clean$1(xk);
+				if (input !== plaintext) clean$1(input);
+				return _out;
+			},
+			decrypt(ciphertext, dst) {
+				validateBlockDecrypt(ciphertext, dst);
+				const xk = expandKeyDecLE(key);
+				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
+				const b = u32$7(ciphertext);
+				const o = u32$7(dst);
+				swap32IfBE$1(b);
+				for (let i = 0; i + 4 <= b.length;) {
+					const { s0, s1, s2, s3 } = decrypt$2(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				return validatePKCS(dst, pkcs5);
+			}
+		};
+	});
+	/**
+	* **CBC** (Cipher Block Chaining): Each plaintext block is XORed with the
+	* previous block of ciphertext before encryption.
+	* Hard to use: requires proper padding and an unpredictable IV. Unauthenticated: needs MAC.
+	* Bad padding is reported as decrypt failure, which can be a padding oracle if exposed.
+	* @param key - AES key bytes.
+	* @param iv - 16-byte unpredictable initialization vector.
+	* @param opts - Padding options. See {@link BlockOpts}.
+	* @returns Cipher instance with `encrypt()` and `decrypt()`.
+	* @example
+	* Encrypts a padded message with a fresh key and 16-byte IV.
+	*
+	* ```ts
+	* import { cbc } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* const iv = randomBytes(16);
+	* const cipher = cbc(key, iv);
+	* cipher.encrypt(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	var cbc = /* @__PURE__ */ wrapCipher({
+		blockSize: 16,
+		nonceLength: 16
+	}, function aescbc(key, iv, opts = {}) {
+		const pkcs5 = !opts.disablePadding;
+		return {
+			encrypt(plaintext, dst) {
+				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
+				const xk = expandKeyLE(key);
+				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
+				const b = u32$7(input);
+				swap32IfBE$1(b);
+				let _iv = iv;
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				const n32 = u32$7(_iv);
+				swap32IfBE$1(n32);
+				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
+				let i = 0;
+				for (; i + 4 <= b.length;) {
+					s0 ^= b[i + 0], s1 ^= b[i + 1], s2 ^= b[i + 2], s3 ^= b[i + 3];
+					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				if (pkcs5) {
+					const tmp32 = padPCKS(plaintext.subarray(i * 4));
+					swap32IfBE$1(tmp32);
+					s0 ^= tmp32[0], s1 ^= tmp32[1], s2 ^= tmp32[2], s3 ^= tmp32[3];
+					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+					clean$1(tmp32);
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				if (input !== plaintext) clean$1(input);
+				return _out;
+			},
+			decrypt(ciphertext, dst) {
+				validateBlockDecrypt(ciphertext, dst);
+				const xk = expandKeyDecLE(key);
+				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
+				let _iv = iv;
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				const n32 = u32$7(_iv);
+				swap32IfBE$1(n32);
+				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
+				const b = u32$7(ciphertext);
+				const o = u32$7(dst);
+				swap32IfBE$1(b);
+				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
+				for (let i = 0; i + 4 <= b.length;) {
+					const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
+					s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
+					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$2(xk, s0, s1, s2, s3);
+					o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				return validatePKCS(dst, pkcs5);
+			}
+		};
+	});
+	function isBytes32(a) {
+		return a instanceof Uint32Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint32Array";
+	}
+	function encryptBlock(xk, block) {
+		abytes$3(block, 16, "block");
+		if (!isBytes32(xk)) throw new Error("_encryptBlock accepts result of expandKeyLE");
+		const b32 = u32$7(block);
+		swap32IfBE$1(b32);
+		let { s0, s1, s2, s3 } = encrypt$3(xk, b32[0], b32[1], b32[2], b32[3]);
+		b32[0] = s0, b32[1] = s1, b32[2] = s2, b32[3] = s3;
+		swap32IfBE$1(b32);
+		return block;
+	}
+	/**
+	* Left-shift by one bit and conditionally XOR with 0x87:
+	* ```
+	* if MSB(L) is equal to 0
+	* then    K1 := L << 1;
+	* else    K1 := (L << 1) XOR const_Rb;
+	* ```
+	*
+	* Specs:
+	* {@link https://www.rfc-editor.org/rfc/rfc4493.html#section-2.3 | RFC 4493 Section 2.3},
+	* {@link https://datatracker.ietf.org/doc/html/rfc5297.html#section-2.3 | RFC 5297 Section 2.3}
+	*
+	* @returns modified `block` (for chaining)
+	*/
+	function dbl(block) {
+		let carry = 0;
+		for (let i = 15; i >= 0; i--) {
+			const newCarry = (block[i] & 128) >>> 7;
+			block[i] = block[i] << 1 | carry;
+			carry = newCarry;
+		}
+		block[15] ^= 135 & -carry;
+		return block;
+	}
+	/**
+	* `a XOR b`, running in-place on `a`.
+	* @param a left operand and output
+	* @param b right operand
+	* @returns `a` (for chaining)
+	*/
+	function xorBlock(a, b) {
+		if (a.length !== b.length) throw new Error("xorBlock: blocks must have same length");
+		for (let i = 0; i < a.length; i++) a[i] = a[i] ^ b[i];
+		return a;
+	}
+	/**
+	* Internal CMAC class.
+	*/
+	var _CMAC = class {
+		constructor(key) {
+			_defineProperty(this, "blockLen", BLOCK_SIZE);
+			_defineProperty(this, "outputLen", BLOCK_SIZE);
+			_defineProperty(this, "buffer", void 0);
+			_defineProperty(this, "pos", void 0);
+			_defineProperty(this, "finished", void 0);
+			_defineProperty(this, "destroyed", void 0);
+			_defineProperty(this, "k1", void 0);
+			_defineProperty(this, "k2", void 0);
+			_defineProperty(this, "x", void 0);
+			_defineProperty(this, "x32", void 0);
+			_defineProperty(this, "xk", void 0);
+			abytes$3(key);
+			validateKeyLength(key);
+			this.xk = expandKeyLE(key);
+			this.buffer = new Uint8Array(BLOCK_SIZE);
+			this.pos = 0;
+			this.finished = false;
+			this.destroyed = false;
+			this.x = new Uint8Array(BLOCK_SIZE);
+			this.x32 = u32$7(this.x);
+			const L = new Uint8Array(BLOCK_SIZE);
+			encryptBlock(this.xk, L);
+			this.k1 = dbl(L);
+			this.k2 = dbl(new Uint8Array(this.k1));
+		}
+		process(data, pos) {
+			const { x, x32, xk } = this;
+			for (let i = 0; i < BLOCK_SIZE; i++) x[i] ^= data[pos + i];
+			swap32IfBE$1(x32);
+			const { s0, s1, s2, s3 } = encrypt$3(xk, x32[0], x32[1], x32[2], x32[3]);
+			x32[0] = s0, x32[1] = s1, x32[2] = s2, x32[3] = s3;
+			swap32IfBE$1(x32);
+		}
+		update(data) {
+			aexists$1(this);
+			abytes$3(data);
+			let pos = 0;
+			if (this.pos) {
+				const take = Math.min(BLOCK_SIZE - this.pos, data.length);
+				this.buffer.set(data.subarray(0, take), this.pos);
+				this.pos += take;
+				pos = take;
+				if (this.pos === BLOCK_SIZE && pos < data.length) {
+					this.process(this.buffer, 0);
+					this.pos = 0;
+				}
+			}
+			while (pos + BLOCK_SIZE < data.length) {
+				this.process(data, pos);
+				pos += BLOCK_SIZE;
+			}
+			if (pos < data.length) {
+				this.buffer.set(data.subarray(pos), 0);
+				this.pos = data.length - pos;
+			}
+			return this;
+		}
+		digestInto(out) {
+			aexists$1(this);
+			aoutput32(out, this);
+			this.finished = true;
+			const view = out.subarray(0, this.outputLen);
+			let last = new Uint8Array(BLOCK_SIZE);
+			if (this.pos === BLOCK_SIZE) {
+				last.set(this.buffer);
+				xorBlock(last, this.k1);
+			} else {
+				last.set(this.buffer.subarray(0, this.pos));
+				last[this.pos] = 128;
+				xorBlock(last, this.k2);
+			}
+			view.set(this.x);
+			xorBlock(view, last);
+			encryptBlock(this.xk, view);
+			clean$1(last);
+		}
+		digest() {
+			const { buffer, outputLen } = this;
+			this.digestInto(buffer);
+			const res = buffer.slice(0, outputLen);
+			this.destroy();
+			return res;
+		}
+		destroy() {
+			const { buffer, destroyed, x, xk, k1, k2 } = this;
+			if (destroyed) return;
+			this.destroyed = true;
+			clean$1(buffer, x, xk, k1, k2);
+		}
+	};
+	/**
+	* AES-CMAC (Cipher-based Message Authentication Code).
+	* Specs: {@link https://www.rfc-editor.org/rfc/rfc4493.html | RFC 4493}.
+	* @param msg - Message bytes to authenticate.
+	* @param key - AES key bytes.
+	* @returns 16-byte authentication tag. `cmac.create(...)` follows the same incremental MAC shape as
+	* the other keyed helpers in this repo, including `blockLen`,
+	* `outputLen`, `digestInto()` and `destroy()`.
+	* @example
+	* Authenticates a message with AES-CMAC and a fresh key.
+	*
+	* ```ts
+	* import { cmac } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* cmac(new Uint8Array(), key);
+	* ```
+	*/
+	var cmac = /* @__PURE__ */ wrapMacConstructor(16, (key) => new _CMAC(key));
+	// packages/wallet-kernel/src/modules/card/protocol/kdf.ts
+	init_sha2();
+	init_utils$2();
+	/** `KDF(Z, label, ctx, len)` = first `len` bytes of `SHA-256(u32(i) ‖ Z ‖ label ‖ ctx)`, `len ≤ 64`. */
+	function kdf(z, label, ctx, len) {
+		if (len < 1 || len > 64) throw new CardError("invalid-input", "KDF output length outside 1..64");
+		const fixedInfo = concatBytes$3(label, ctx);
+		const out = new Uint8Array(len <= 32 ? 32 : 64);
+		out.set(sha256$1(concatBytes$3(u32$1(1), z, fixedInfo)), 0);
+		if (len > 32) out.set(sha256$1(concatBytes$3(u32$1(2), z, fixedInfo)), 32);
+		return new Uint8Array(out.subarray(0, len));
+	}
+	/** `M2(X)` = `X ‖ 0x80 ‖ 0ᵏ` with the smallest `k ≥ 0` making the length a multiple of 16. */
+	function m2(data) {
+		const padded = new Uint8Array(data.length + 1 + (16 - (data.length + 1) % 16) % 16);
+		padded.set(data);
+		padded[data.length] = 128;
+		return padded;
+	}
+	/**
+	* `unM2(Y)` — `undefined` when `Y` is empty, not a multiple of 16, when the last non-zero byte is
+	* not `0x80`, or when more than 15 zero bytes follow it (protocol.md §1).
+	*/
+	function unM2(padded) {
+		if (padded.length === 0 || padded.length % 16 !== 0) return;
+		let marker = padded.length - 1;
+		while (marker >= 0 && padded[marker] === 0) marker -= 1;
+		if (padded[marker] !== 128 || padded.length - 1 - marker > 15) return;
+		return padded.subarray(0, marker);
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
+	function _classPrivateMethodInitSpec(e, a) {
+		_checkPrivateRedeclaration(e, a), a.add(e);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/session.ts
+	/**
+	* OPEN (protocol.md §8.1–8.2) and the §8.4 secure session. One request/response record pair per
+	* inner command, AES-128 CBC + CMAC under the four session keys, u16 counters. The session is torn
+	* down — keys wiped, every further call `session-broken` — on any framing or cryptographic failure,
+	* after an inner `6F00`, or after the response that uses `ctr = 0xFFFF`.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	init_defineProperty();
+	var INS_OPEN = 16;
+	var INS_SESSION = 18;
+	var MAX_RANDOM_DRAWS = 8;
+	var COUNTER_MAX = 65535;
+	var LABEL_SESSION = ascii$2("qntx-card/v1/session");
+	var LABEL_KDF_SESSION = ascii$2("qntx-card/v1/kdf-session");
+	/** `00 A4 04 00 07 F0716E74780101 00` — SELECT the wallet applet by its AID (§6). */
+	var SELECT_APDU = hexToBytes$3("00a4040007f0716e7478010100");
+	/**
+	* Draws a host ephemeral secret and returns the `80 10 00 00 41 hostEph 00` OPEN APDU. `random` is
+	* the injected randomness; invalid draws are wiped and retried — after 8 the source is treated as
+	* broken (`invalid-input`).
+	*/
+	function openRequest(random) {
+		for (let draw = 0; draw < MAX_RANDOM_DRAWS; draw += 1) {
+			const secret = random(32);
+			if (!secp256k1.utils.isValidSecretKey(secret)) {
+				wipe(secret);
+				continue;
+			}
+			const hostEph = secp256k1.getPublicKey(secret, false);
+			return {
+				apdu: concatBytes$3(new Uint8Array([
+					128,
+					INS_OPEN,
+					0,
+					0,
+					65
+				]), hostEph, new Uint8Array([0])),
+				secret
+			};
+		}
+		throw new CardError("invalid-input", "random source did not yield a valid scalar");
+	}
+	/**
+	* Verifies the card's OPEN response (`cardEph ‖ sig ‖ cert ‖ 9000`, §8.1) and derives the session
+	* keys. `secret` and the ECDH output are wiped on every path; every failure of the response itself
+	* is `card-not-genuine` — except a repeated `cardEph`, which is `card-fault`.
+	*/
+	function openResponse(secret, request, response, anchors, recentEphemerals) {
+		let shared;
+		try {
+			if (!secp256k1.utils.isValidSecretKey(secret)) throw new CardError("invalid-input", "host ephemeral is not a valid scalar");
+			const hostEph = secp256k1.getPublicKey(secret, false);
+			if (!equalBytes$9(request, concatBytes$3(new Uint8Array([
+				128,
+				INS_OPEN,
+				0,
+				0,
+				65
+			]), hostEph, new Uint8Array([0])))) throw new CardError("invalid-input", "request does not carry the host ephemeral");
+			if (response.length !== 228 || response.at(-2) !== 144 || response.at(-1) !== 0) throw new CardError("card-not-genuine", "OPEN response is not 226 bytes + 9000", response.length >= 2 ? readSw(response) : void 0);
+			const cardEph = response.subarray(0, 65);
+			const signature = response.subarray(65, 129);
+			const cert = response.subarray(129, 226);
+			const { identity, batch } = verifyCertificate(cert, anchors);
+			if (!validUncompressedPoint(cardEph)) throw new CardError("card-not-genuine", "cardEph is not a valid uncompressed point");
+			const transcriptHash = sha256$1(concatBytes$3(LABEL_SESSION, hostEph, cardEph, identity));
+			if (!secp256k1.verify(signature, transcriptHash, identity, {
+				prehash: false,
+				lowS: false
+			})) throw new CardError("card-not-genuine", "session signature does not verify");
+			const ephemeralTag = sha256$1(cardEph).subarray(0, 8);
+			if (recentEphemerals.some((seen) => equalBytes$9(seen, ephemeralTag))) throw new CardError("card-fault", "cardEph repeats a recently seen value");
+			shared = secp256k1.getSharedSecret(secret, cardEph, true);
+			return sessionFromKeys(kdf(shared.subarray(1, 33), LABEL_KDF_SESSION, transcriptHash, 64), identity, cert, batch, ephemeralTag);
+		} finally {
+			wipe(secret);
+			if (shared !== void 0) wipe(shared);
+		}
+	}
+	var _keys$1 = /* @__PURE__ */ new WeakMap();
+	var _sent = /* @__PURE__ */ new WeakMap();
+	var _received = /* @__PURE__ */ new WeakMap();
+	var _CardSession_brand = /* @__PURE__ */ new WeakSet();
+	var CardSession = class {
+		constructor(keys, identity, cert, batch, ephemeralTag) {
+			_classPrivateMethodInitSpec(this, _CardSession_brand);
+			_defineProperty(this, "identity", void 0);
+			_defineProperty(this, "cert", void 0);
+			_defineProperty(this, "cardId", void 0);
+			_defineProperty(this, "batch", void 0);
+			_defineProperty(this, "ephemeralTag", void 0);
+			_classPrivateFieldInitSpec(this, _keys$1, void 0);
+			_classPrivateFieldInitSpec(this, _sent, 0);
+			_classPrivateFieldInitSpec(this, _received, 0);
+			_classPrivateFieldSet2(_keys$1, this, keys);
+			this.identity = identity;
+			this.cert = cert;
+			this.cardId = cardId(identity);
+			this.batch = batch;
+			this.ephemeralTag = ephemeralTag;
+		}
+		get closed() {
+			return _classPrivateFieldGet2(_keys$1, this) === void 0;
+		}
+		wrap(command) {
+			checkInner(command);
+			const keys = _assertClassBrand(_CardSession_brand, this, _open$1).call(this);
+			if (_classPrivateFieldGet2(_sent, this) > COUNTER_MAX) _assertClassBrand(_CardSession_brand, this, _break).call(this, "command counter exhausted");
+			const counter = _classPrivateFieldGet2(_sent, this);
+			const kce = keys.subarray(0, 16);
+			const plaintext = concatBytes$3(new Uint8Array([
+				command.ins,
+				command.p1,
+				command.p2
+			]), command.data);
+			const padded = m2(plaintext);
+			wipe(plaintext);
+			let ciphertext;
+			try {
+				ciphertext = cbc(kce, recordIv(kce, 1, counter), { disablePadding: true }).encrypt(padded);
+			} finally {
+				wipe(padded);
+			}
+			const tag = cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(16, 32)).subarray(0, 8);
+			_classPrivateFieldSet2(_sent, this, counter + 1);
+			return concatBytes$3(new Uint8Array([
+				128,
+				INS_SESSION,
+				0,
+				0,
+				ciphertext.length + tag.length
+			]), ciphertext, tag, new Uint8Array([0]));
+		}
+		unwrap(rapdu) {
+			const keys = _assertClassBrand(_CardSession_brand, this, _open$1).call(this);
+			if (_classPrivateFieldGet2(_received, this) >= _classPrivateFieldGet2(_sent, this)) _assertClassBrand(_CardSession_brand, this, _break).call(this, "no command awaiting a response");
+			if (rapdu.length < 2) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response is shorter than a status word");
+			const sw = readSw(rapdu);
+			if (sw !== 36864) _assertClassBrand(_CardSession_brand, this, _break).call(this, "secure-messaging status is not 9000", sw);
+			const bodyLength = rapdu.length - 10;
+			if (bodyLength % 16 !== 0 || bodyLength > 240) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response ciphertext has an invalid length");
+			const ciphertext = rapdu.subarray(0, bodyLength);
+			const tag = rapdu.subarray(bodyLength, -2);
+			const counter = _classPrivateFieldGet2(_received, this);
+			if (!equalBytes$9(tag, cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(48, 64)).subarray(0, 8))) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response MAC does not verify");
+			const kre = keys.subarray(32, 48);
+			const padded = cbc(kre, recordIv(kre, 2, counter), { disablePadding: true }).decrypt(ciphertext);
+			try {
+				const plaintext = unM2(padded);
+				if (plaintext === void 0 || plaintext.length < 2) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response padding is malformed");
+				_classPrivateFieldSet2(_received, this, counter + 1);
+				const response = {
+					data: new Uint8Array(plaintext.subarray(0, -2)),
+					sw: readSw(plaintext)
+				};
+				if (response.sw === 28416 || counter === COUNTER_MAX) _assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+				return response;
+			} finally {
+				wipe(padded);
+			}
+		}
+		close() {
+			_assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+		}
+	};
+	function _open$1() {
+		const keys = _classPrivateFieldGet2(_keys$1, this);
+		if (keys === void 0) _assertClassBrand(_CardSession_brand, this, _break).call(this, "session is closed");
+		return keys;
+	}
+	function _teardown() {
+		const keys = _classPrivateFieldGet2(_keys$1, this);
+		_classPrivateFieldSet2(_keys$1, this, void 0);
+		if (keys !== void 0) wipe(keys);
+	}
+	function _break(message, sw) {
+		_assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+		throw new CardError("session-broken", message, sw);
+	}
+	/**
+	* Opens a session directly from the four concatenated session keys (`K_ce ‖ K_cm ‖ K_re ‖ K_rm`, 64
+	* bytes) — the constructor `openResponse` uses after the ECDH exchange and KDF. It is exported from
+	* session.ts so tests can drive sessions without an OPEN exchange; index.ts does not re-export it.
+	* Takes ownership of `keys` and wipes it on close and on every teardown path.
+	*/
+	function sessionFromKeys(keys, identity, cert, batch, ephemeralTag) {
+		if (keys.length !== 64 || identity.length !== 33 || cert.length !== 97 || ephemeralTag.length !== 8) throw new CardError("invalid-input", "session material has wrong lengths");
+		return new CardSession(keys, new Uint8Array(identity), new Uint8Array(cert), batch, new Uint8Array(ephemeralTag));
+	}
+	/** `IV = AES-ECB(key, direction ‖ 13×0x00 ‖ u16(counter))` (§8.4). */
+	function recordIv(key, direction, counter) {
+		const block = /* @__PURE__ */ new Uint8Array(16);
+		block[0] = direction;
+		block.set(u16(counter), 14);
+		return ecb(key, { disablePadding: true }).encrypt(block);
+	}
+	function checkInner(command) {
+		if ([
+			command.ins,
+			command.p1,
+			command.p2
+		].some((value) => !Number.isInteger(value) || value < 0 || value > 255) || command.data.length > 236) throw new CardError("invalid-input", "inner command fields are out of range");
+	}
+	// packages/wallet-kernel/src/modules/card/tap.ts
+	/**
+	* The tap engine (design §6): one `tap` step is one reader session — SELECT → OPEN (certificate
+	* chain + session signature) → ephemeral-tag history → cert pin → card-ID gate → short-ID check →
+	* STATUS gates → the op's commands → one record commit → close. Every failure path closes the
+	* session and, when STATUS was read, still lands the per-tap record bookkeeping.
+	*/
+	init_utils$2();
+	init_defineProperty();
+	init_objectSpread2();
+	var ERROR_CODE = {
+		"card-not-genuine": "card-not-genuine",
+		"wallet-erased": "card-erased",
+		"session-broken": "card-fault",
+		"card-fault": "card-fault",
+		"invalid-data": "card-fault",
+		"not-verified": "card-fault",
+		"wrong-state": "card-fault",
+		"wait-required": "card-fault",
+		"wrong-access-code": "card-fault",
+		"invalid-input": "integrity"
+	};
+	/** The CardError → KernelError table (§5): the one place protocol errors become kernel codes. */
+	function cardToKernel(error) {
+		if (error instanceof KernelError) throw error;
+		if (error instanceof CardError) throw new KernelError(ERROR_CODE[error.code], error.message);
+		throw error;
+	}
+	/** A transmit's reader failure, rethrown so `run` unwinds to the session bookkeeping. */
+	var LostError = class extends Error {
+		constructor(failure, detail) {
+			super(failure);
+			_defineProperty(this, "failure", void 0);
+			_defineProperty(this, "detail", void 0);
+			this.name = "LostError";
+			this.failure = failure;
+			this.detail = detail;
+		}
+	};
+	var lostOf = (failure) => failure === "tag-lost" || failure === "timeout" || failure === "interrupted" ? failure : "interrupted";
+	/**
+	* One reader session for `pending`. `bodies` is the card module's live map — the engine parses
+	* headers from `ctx.image` itself. Resolves the op's outcome; KernelErrors propagate.
+	*/
+	async function runTap(ctx, pending, bodies, unaccounted) {
+		var _ctx$platform$keystor, _ctx$platform$keystor2;
+		const { card } = ctx.platform;
+		if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+		const { expect } = pending;
+		const { reader } = card;
+		if (utf8ToBytes$1(pending.prompt).length > 1024) throw new KernelError("card-unsupported", "the reader prompt does not fit the card surface");
+		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
+		const closedText = (error) => {
+			if (error instanceof KernelError && error.code === "card-tampered") return locale === "zh-Hans" ? "这张卡上有人在别处试过访问码" : "Someone else tried codes on this card";
+			return "";
+		};
+		const recordOf = (walletId) => {
+			const record = ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+			const body = bodies.get(walletId);
+			if (record === void 0) return;
+			if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+			return {
+				header: parseCardWalletHeader(record.header),
+				body
+			};
+		};
+		/** The card-wallet record whose `cards[]` tracks this cardId, whichever wallet it is. */
+		const recordForCard = (cardIdHex) => {
+			for (const record of ctx.image.records) {
+				if (record.kind !== "card-wallet") continue;
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.some((c) => c.cardId === cardIdHex)) {
+					const body = bodies.get(record.id);
+					if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+					return {
+						header,
+						body
+					};
+				}
+			}
+		};
+		const draft = {
+			header: void 0,
+			body: void 0,
+			extra: []
+		};
+		const updates = [];
+		if (expect.walletId !== void 0) {
+			const entry = recordOf(expect.walletId);
+			draft.header = entry === null || entry === void 0 ? void 0 : entry.header;
+			draft.body = entry === null || entry === void 0 ? void 0 : entry.body;
+		}
+		/** The bookkeeping fields the engine owns for the card it just talked to. */
+		let triesNow;
+		let verifyInfo;
+		let certHex;
+		let tagHex;
+		let cardIdHex = "";
+		let own;
+		/** The card self-erased this session — its record entry goes back to `unknown`. */
+		let markErased = false;
+		/** Applies the engine's bookkeeping to the record entry that tracks `cardIdHex`. */
+		const bookkeep = (entry) => {
+			var _entry$body$ephemeral;
+			const cards = entry.header.cards.map((c) => {
+				if (c.cardId !== cardIdHex) return c;
+				if (markErased) return {
+					cardId: c.cardId,
+					state: "unknown"
+				};
+				return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, c), triesNow === void 0 ? {} : { tries: triesNow }), c.cert === void 0 && certHex !== void 0 ? { cert: certHex } : {}), verifyInfo === void 0 ? {} : {
+					state: "ready",
+					verifiedAt: ctx.platform.now()
+				});
+			});
+			const ephemerals = tagHex === void 0 ? entry.body.ephemerals : _objectSpread2(_objectSpread2({}, entry.body.ephemerals), {}, { [cardIdHex]: [tagHex, ...(_entry$body$ephemeral = entry.body.ephemerals[cardIdHex]) !== null && _entry$body$ephemeral !== void 0 ? _entry$body$ephemeral : []].slice(0, 16) });
+			return {
+				header: _objectSpread2(_objectSpread2({}, entry.header), {}, { cards }),
+				body: _objectSpread2(_objectSpread2({}, entry.body), {}, { ephemerals })
+			};
+		};
+		/**
+		* The tap's single commit: the op's staged changes plus the engine's bookkeeping — the ephemeral
+		* tag of every OPENed known card and the tries read on every post-STATUS exit. Bookkeeping lands
+		* on the record that lists this card: the draft's when it does (member taps, staged creates), the
+		* presented card's own record when it belongs to a different wallet.
+		*/
+		const commit = async () => {
+			var _draft$header;
+			for (const update of updates) update(draft);
+			if (!ctx.session.unlocked) return;
+			const seal = (entry) => sealRecord(ctx.platform, ctx.session.current().dek, CARD_WALLET_KIND, entry.header.walletId, encodeCardWalletHeader(entry.header), utf8ToBytes$1(encodeCardWalletBody(entry.body)));
+			const bookkeeping = tagHex !== void 0 || triesNow !== void 0 || verifyInfo !== void 0 || markErased;
+			const inDraft = ((_draft$header = draft.header) === null || _draft$header === void 0 ? void 0 : _draft$header.cards.some((c) => c.cardId === cardIdHex)) === true;
+			const ops = [];
+			if (own !== void 0 && !inDraft && bookkeeping) ops.push({
+				op: "put-record",
+				record: seal(bookkeep(own))
+			});
+			if (draft.header !== void 0 && draft.body !== void 0 && (updates.length > 0 || inDraft && bookkeeping)) {
+				if (inDraft && bookkeeping) {
+					const booked = bookkeep({
+						header: draft.header,
+						body: draft.body
+					});
+					draft.header = booked.header;
+					draft.body = booked.body;
+				}
+				ops.push({
+					op: "put-record",
+					record: seal({
+						header: draft.header,
+						body: draft.body
+					})
+				});
+			}
+			ops.push(...draft.extra);
+			if (ops.length > 0) await ctx.commit(ops);
+		};
+		const opened = await reader.open(pending.prompt);
+		if (!opened.ok) {
+			if (opened.failure === "cancelled") throw new KernelError("cancelled", "the card session was dismissed");
+			if (opened.failure === "unavailable") throw new KernelError("unavailable", "the card reader is unavailable", void 0, false, opened.detail);
+			return {
+				ok: false,
+				lost: lostOf(opened.failure)
+			};
+		}
+		let session;
+		try {
+			var _own$body$ephemerals$, _ctx$image$records$fi, _pending$doneText;
+			const sendRaw = async (apdu) => {
+				const response = await reader.transmit(apdu);
+				if (!response.ok) throw new LostError(response.failure, response.detail);
+				return response.value;
+			};
+			const selected = await sendRaw(SELECT_APDU);
+			if (selected.length !== 2 || selected[0] !== 144 || selected[1] !== 0) throw new CardError("card-not-genuine", "SELECT did not answer 9000");
+			const request = openRequest(ctx.platform.random);
+			const answered = await sendRaw(request.apdu);
+			const sess = openResponse(request.secret, request.apdu, answered, card.anchors, []);
+			session = sess;
+			cardIdHex = bytesToHex$4(sess.cardId);
+			certHex = bytesToHex$4(sess.cert);
+			own = recordForCard(cardIdHex);
+			const tag = bytesToHex$4(sess.ephemeralTag);
+			if (own !== void 0 && ((_own$body$ephemerals$ = own.body.ephemerals[cardIdHex]) !== null && _own$body$ephemerals$ !== void 0 ? _own$body$ephemerals$ : []).includes(tag)) throw new CardError("card-fault", "cardEph repeats a recently seen value");
+			tagHex = tag;
+			const entry = own === null || own === void 0 ? void 0 : own.header.cards.find((c) => c.cardId === cardIdHex);
+			if ((entry === null || entry === void 0 ? void 0 : entry.cert) !== void 0 && !equalBytes$9(hexToBytes$3(entry.cert), sess.cert)) throw new CardError("card-not-genuine", "the card presented a different certificate");
+			if (expect.cards !== void 0 && !expect.cards.some((id) => equalBytes$9(id, sess.cardId)) || expect.exclude !== void 0 && expect.exclude.some((id) => equalBytes$9(id, sess.cardId))) throw new KernelError("card-id-mismatch", "this tap expects a different card");
+			if (expect.shortId !== void 0 && expect.shortId !== shortId(sess.identity)) throw new KernelError("card-id-mismatch", "the card's short ID does not match");
+			const spent = { ms: 200 };
+			const send = async (inner) => {
+				const response = await reader.transmit(sess.wrap(inner));
+				spent.ms += priceOf(inner.name);
+				if (!response.ok) throw new LostError(response.failure, response.detail);
+				return result(inner, sess.unwrap(response.value));
+			};
+			const status = decode$2.status(await send(cmd.status()));
+			triesNow = status.tries;
+			const ourMissedAttempt = unaccounted.delete(cardIdHex);
+			const memberOf = (_ctx$image$records$fi = ctx.image.records.find((record) => {
+				if (record.kind !== "card-wallet") return false;
+				return parseCardWalletHeader(record.header).members.includes(cardIdHex);
+			})) === null || _ctx$image$records$fi === void 0 ? void 0 : _ctx$image$records$fi.id;
+			if (expect.life === "loaded" && status.life === "blank") {
+				markErased = true;
+				throw new KernelError("card-erased", "the card is blank — its wallet was erased");
+			}
+			if (expect.life === "blank" && status.life === "loaded") throw new KernelError("card-id-mismatch", "this tap expects a blank card");
+			const recorded = entry === null || entry === void 0 ? void 0 : entry.tries;
+			if (recorded !== void 0 && status.life === "loaded" && status.tries < recorded && !(ourMissedAttempt && status.tries === recorded - 1)) throw new KernelError("card-tampered", "the card's failure count dropped since the last tap");
+			if (status.life === "loaded" && status.tries === 0) throw new KernelError("card-locked", "the card is locked — the next code would erase it");
+			const verify = async (hash) => {
+				const waits = waitsBeforeVerify(status);
+				for (let i = 0; i < waits; i += 1) await send(cmd.wait());
+				let data;
+				try {
+					data = await send(cmd.verify(hash));
+				} catch (error) {
+					if (error instanceof LostError) unaccounted.add(cardIdHex);
+					if (error instanceof CardError && error.code === "wrong-access-code") {
+						var _error$remaining;
+						triesNow = error.remaining;
+						return {
+							ok: false,
+							remaining: (_error$remaining = error.remaining) !== null && _error$remaining !== void 0 ? _error$remaining : 0
+						};
+					}
+					throw error;
+				}
+				triesNow = ACCESS_LIMITS.failures;
+				const info = decode$2.walletInfo(data, sess.cardId);
+				if (draft.header !== void 0 && draft.body !== void 0) {
+					const { members } = draft.header;
+					if (bytesToHex$4(info.masterPublicKey) !== draft.body.master || members.length !== info.members.length || !members.every((m) => info.members.some((id) => bytesToHex$4(id) === m))) throw new KernelError("wrong-device", "the card's wallet does not match the record");
+				}
+				verifyInfo = info;
+				return {
+					ok: true,
+					info
+				};
+			};
+			const tap = {
+				identity: sess.identity,
+				cert: sess.cert,
+				cardId: sess.cardId,
+				shortId: shortId(sess.identity),
+				status,
+				memberOf,
+				send,
+				verify,
+				installed: (info) => {
+					triesNow = ACCESS_LIMITS.failures;
+					verifyInfo = info;
+				},
+				cost: () => spent.ms,
+				update: (fn) => {
+					updates.push(fn);
+				}
+			};
+			const value = await pending.run(tap);
+			await commit();
+			reader.close("success", (_pending$doneText = pending.doneText) !== null && _pending$doneText !== void 0 ? _pending$doneText : "");
+			session.close();
+			session = void 0;
+			return {
+				ok: true,
+				value
+			};
+		} catch (error) {
+			const live = session;
+			session = void 0;
+			live === null || live === void 0 || live.close();
+			if (error instanceof CardError && error.code === "wallet-erased") markErased = true;
+			const bookkeeping = (async () => {
+				try {
+					await commit();
+				} catch (_unused) {}
+			})();
+			if (error instanceof LostError) {
+				reader.close("failure", "");
+				await bookkeeping;
+				if (error.failure === "cancelled") throw new KernelError("cancelled", "the card session was dismissed");
+				if (error.failure === "unavailable") throw new KernelError("unavailable", "the card reader is unavailable", void 0, false, error.detail);
+				return {
+					ok: false,
+					lost: lostOf(error.failure)
+				};
+			}
+			reader.close("failure", closedText(error));
+			await bookkeeping;
+			return cardToKernel(error);
+		} finally {
+			session === null || session === void 0 || session.close();
+		}
+	}
+	// packages/wallet-kernel/src/modules/card/ops/sign.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** A 7702 stage-1 plan signs the authorization, then the envelope under the same account. */
+	var isTwoStage = (plan) => plan.kind === "evm.transaction" && "authorization" in plan && plan.authorization === void 0 && plan.tx.type === "eip7702";
+	/** Greedy pack: how many taps `prices` need at `budget`, the first tap also paying `waits`. */
+	var estimateTaps = (prices, waits, budget) => {
+		let taps = 0;
+		let spent = 0;
+		for (const price of prices) {
+			if (spent === 0) {
+				taps += 1;
+				spent = 200 + priceOf("verify") + (taps === 1 ? waits : 0);
+			}
+			if (spent + price + 1e3 > budget) {
+				taps += 1;
+				spent = 200 + priceOf("verify");
+			}
+			spent += price;
+		}
+		return taps;
+	};
+	/**
+	* The sign op's begin-time work (design §8): wallet lookup, `prepareApproval` on the card's public
+	* material — every miss is `device-required`, and the same normalize/ownership/agent checks
+	* `chain.sign` runs — then the prompt the reader shows (`chainPrompt`'s title + description plus a
+	* card line, ≤ 1024 UTF-8 bytes) and the budget bounds: every task must fit an empty tap and the
+	* whole plan — a 7702's two stages included — at most two taps.
+	*/
+	var prepareSign = async (env, op, dek) => {
+		const { request } = op;
+		if (request.account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
+		const { walletId } = request.account;
+		const { header, record } = walletOf(env, walletId);
+		const material = env.ctx.externalMaterial(record);
+		if (request.kind === "solana.message" && request.message.length > 16384) throw new KernelError("card-unsupported", "the message is too large for the card");
+		const prepared = await prepareApproval(env.ctx, request, material, dek);
+		const keystore = chainPrompt(env.locale, prepared.prompt);
+		const cards = header.cards.map((c) => pinnedShortId(header, c.cardId)).filter((s) => s !== void 0);
+		const tapText = `${keystore.title}\n${keystore.description}\n${signCardLine(env.locale, cards)}`;
+		if (utf8ToBytes$1(tapText).length > 1024) throw new KernelError("card-unsupported", "the signing text is too long for the reader");
+		const budget = env.planMs;
+		const waits = holdDue(header, header.members) ? ACCESS_LIMITS.waits * priceOf("wait") : 0;
+		const base = 200 + priceOf("verify") + waits;
+		for (const task of prepared.plan.tasks) if (base + taskPrice(task) + 1e3 > budget) throw new KernelError("card-unsupported", "a signing task does not fit one tap");
+		const prices = prepared.plan.tasks.map(taskPrice);
+		if (isTwoStage(prepared.plan)) prices.push(priceOf("sign-ecdsa"));
+		if (estimateTaps(prices, waits, budget) > 2) throw new KernelError("card-unsupported", "the signing plan needs more than two taps");
+		return {
+			walletId,
+			prompt: prepared.prompt,
+			plan: prepared.plan,
+			verifyPrompt: () => {
+				var _env$ctx$platform$key, _env$ctx$platform$key2;
+				return chainPrompt(promptLocale((_env$ctx$platform$key = (_env$ctx$platform$key2 = env.ctx.platform.keystore) === null || _env$ctx$platform$key2 === void 0 ? void 0 : _env$ctx$platform$key2.locale) !== null && _env$ctx$platform$key !== void 0 ? _env$ctx$platform$key : "en"), prepared.prompt);
+			},
+			tapText
+		};
+	};
+	var signOp = (env, op, prepared) => _wrapAsyncGenerator(function* () {
+		const { walletId, tapText } = prepared;
+		const hashes = /* @__PURE__ */ new Map();
+		/**
+		* `r` values the card already produced this op — member cards share the seed, so a repeated r
+		* on any of them is nonce reuse. Spans taps, retries and continuation stages.
+		*/
+		const previousR = [];
+		/** The card the first successful VERIFY bound this approval to — later taps accept only it. */
+		let boundCard;
+		let boundShort;
+		let code;
+		try {
+			const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
+			const saved = () => {
+				var _env$bodies$get$acces, _env$bodies$get;
+				return (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
+			};
+			{
+				const { header } = walletOf(env, walletId);
+				if (!header.members.every((id) => saved()[id] !== void 0)) code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					remaining: lowestTries(header, header.members),
+					label: accessCodeLabel(env.locale, void 0, lowestTries(header, header.members))
+				})));
+			}
+			let current = prepared.plan;
+			for (;;) {
+				const pending = current.tasks.map((task, index) => ({
+					index,
+					task
+				}));
+				const signatures = [];
+				while (pending.length > 0) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _boundShort;
+						const fresh = walletOf(env, walletId);
+						if (op.request.kind === "evm.fiat24-session") assertFiat24Deadline(op.request, env.ctx.platform.now());
+						const bound = boundCard === void 0 ? fresh.header.members.map(hexToBytes$3) : [boundCard];
+						return _objectSpread2(_objectSpread2({
+							reason: retry ? "retry" : "member",
+							hold: holdDue(fresh.header, fresh.header.members)
+						}, boundShort === void 0 ? {} : { card: boundShort }), {}, {
+							prompt: retry ? tapPrompt(env.locale, "sign", "retry", (_boundShort = boundShort) !== null && _boundShort !== void 0 ? _boundShort : fresh.header.cards.map((c) => pinnedShortId(fresh.header, c.cardId)).find((s) => s !== void 0)) : tapText,
+							expect: {
+								life: "loaded",
+								cards: bound,
+								walletId
+							},
+							run: async (tap) => {
+								const cardIdHex = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(cardIdHex);
+								if (hash === void 0) {
+									const remembered = saved()[cardIdHex];
+									if (remembered !== void 0) {
+										hash = hexToBytes$3(remembered);
+										hashes.set(cardIdHex, hash);
+									} else if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									else {
+										hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+										wipe$1(code);
+										code = void 0;
+										hashes.set(cardIdHex, hash);
+									}
+								}
+								const verified = await tap.verify(hash);
+								if (verified.ok) {
+									boundCard = tap.cardId;
+									boundShort = tap.shortId;
+								} else {
+									wipe$1(hash);
+									hashes.delete(cardIdHex);
+									tap.update((d) => {
+										var _d$body;
+										if (((_d$body = d.body) === null || _d$body === void 0 ? void 0 : _d$body.access) !== void 0 && d.body.access[cardIdHex] !== void 0) {
+											const access = Object.fromEntries(Object.entries(d.body.access).filter(([key]) => key !== cardIdHex));
+											d.body = _objectSpread2({
+												master: d.body.master,
+												nodes: d.body.nodes,
+												ed25519: d.body.ed25519,
+												ephemerals: d.body.ephemerals
+											}, Object.keys(access).length === 0 ? {} : { access });
+										}
+									});
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								if (op.remember === true) {
+									const savedHash = bytesToHex$4(hash);
+									tap.update((d) => {
+										if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { access: _objectSpread2(_objectSpread2({}, d.body.access), {}, { [cardIdHex]: savedHash }) });
+									});
+								}
+								for (;;) {
+									const [item] = pending;
+									if (item === void 0 || tap.cost() + taskPrice(item.task) + 1e3 > env.planMs) break;
+									signatures[item.index] = await signTask(tap, item.task, material, previousR);
+									pending.shift();
+								}
+								return { status: "done" };
+							}
+						});
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: outcome.remaining,
+						label: accessCodeLabel(env.locale, void 0, outcome.remaining)
+					})));
+				}
+				let result;
+				try {
+					result = assembleChain(current, signatures);
+				} catch (error) {
+					if (error instanceof ChainError) throw new KernelError("integrity", "assembled card signatures were refused");
+					throw error;
+				}
+				if (result.kind === "signed") return {
+					kind: "sign",
+					result: result.artefact
+				};
+				current = result.plan;
+			}
+		} finally {
+			if (code !== void 0) wipe$1(code);
+			for (const hash of hashes.values()) wipe$1(hash);
+		}
+	})();
+	// packages/wallet-kernel/src/modules/card/ops/status.ts
+	init_objectSpread2();
+	/** `status` — one tap, life any; no VERIFY, no record write. */
+	function statusOp(_x) {
+		return _statusOp.apply(this, arguments);
+	}
+	function _statusOp() {
+		_statusOp = _wrapAsyncGenerator(function* (env) {
+			let life;
+			let tries;
+			let memberOf;
+			yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+				reason: retry ? "retry" : "any",
+				prompt: tapPrompt(env.locale, "status", retry ? "retry" : "any", void 0),
+				expect: { life: "any" },
+				run: async (tap) => {
+					({life, tries} = tap.status);
+					({memberOf} = tap);
+					return { status: "done" };
+				}
+			}))));
+			if (life === void 0 || tries === void 0) throw new KernelError("integrity", "the status tap did not report");
+			return _objectSpread2({
+				kind: "status",
+				life,
+				tries
+			}, memberOf === void 0 ? {} : { walletId: memberOf });
+		});
+		return _statusOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/transfer.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `transfer` — provision the wallet's unfinished members (§11.3): every `pending` member, or when
+	* none are pending the members not yet proven `ready` (an erased card shows BLANK). Each target is
+	* OFFERed by typed short ID, the user names a ready member as the source, enters the source's
+	* existing code and the target's new code; the source VERIFYs and EXPORTs under the target's hash,
+	* the target IMPORTs and its WalletInfo must echo the record. I4 is structural: the export's target
+	* is exactly the card this operation OFFERed and the record lists.
+	*/
+	function transferOp(_x, _x2) {
+		return _transferOp.apply(this, arguments);
+	}
+	function _transferOp() {
+		_transferOp = _wrapAsyncGenerator(function* (env, op) {
+			const { header } = walletOf(env, op.walletId);
+			const pending = header.cards.filter((c) => c.state === "pending").map((c) => c.cardId);
+			const targetIds = pending.length > 0 ? pending : header.cards.filter((c) => c.state !== "ready").map((c) => c.cardId);
+			if (targetIds.length === 0) throw new KernelError("invalid-input", "every member of this wallet is already provisioned");
+			const readyIds = header.cards.filter((c) => c.state === "ready").map((c) => c.cardId);
+			if (readyIds.length === 0) throw new KernelError("invalid-input", "no ready member can export this wallet");
+			const ready = readyIds.map(hexToBytes$3);
+			const hashes = /* @__PURE__ */ new Map();
+			let sourceCode;
+			let targetCode;
+			let sourceCert;
+			try {
+				for (const targetIdHex of targetIds) {
+					var _sourceCode;
+					const targetId = hexToBytes$3(targetIdHex);
+					const typedT = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					let target;
+					yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						walletOf(env, op.walletId);
+						return {
+							reason: retry ? "retry" : "target",
+							prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "target", typedT),
+							expect: {
+								life: "any",
+								cards: [targetId],
+								shortId: typedT,
+								walletId: op.walletId
+							},
+							run: async (tap) => {
+								target = targetFrom(tap, await takeOffer(tap));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (target === void 0) throw new KernelError("integrity", "the target's offer was not taken");
+					const peer = target;
+					const typedS = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					(_sourceCode = sourceCode) !== null && _sourceCode !== void 0 || (sourceCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						card: typedS,
+						label: accessCodeLabel(env.locale, typedS, void 0)
+					}))));
+					targetCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+					for (;;) {
+						while (peer.transfer === void 0) {
+							const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+								const entry = walletOf(env, op.walletId);
+								const short = typedS;
+								return {
+									reason: retry ? "retry" : "source",
+									card: short,
+									hold: holdDue(entry.header, readyIds),
+									prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "source", short),
+									expect: {
+										life: "loaded",
+										cards: ready,
+										shortId: typedS,
+										walletId: op.walletId
+									},
+									run: async (tap) => {
+										const id = bytesToHex$4(tap.cardId);
+										if (!hashes.has(id)) {
+											if (sourceCode === void 0) return {
+												status: "need-code",
+												card: tap.shortId
+											};
+											const code = sourceCode;
+											sourceCode = void 0;
+											await hashAll(env, hashes, code, [tap.cardId]);
+											wipe$1(code);
+										}
+										if (!hashes.has(bytesToHex$4(peer.cardId))) {
+											if (targetCode === void 0) return {
+												status: "need-code",
+												card: peer.shortId
+											};
+											await hashAll(env, hashes, targetCode, [peer.cardId]);
+										}
+										const hashS = hashes.get(id);
+										if (hashS === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const verified = await tap.verify(hashS);
+										if (!verified.ok) return {
+											status: "wrong-code",
+											remaining: verified.remaining
+										};
+										const hashT = hashes.get(bytesToHex$4(peer.cardId));
+										if (hashT === void 0) return {
+											status: "need-code",
+											card: peer.shortId
+										};
+										peer.transfer = await exportTo(tap, peer, hashT);
+										({cert: sourceCert} = tap);
+										return { status: "done" };
+									}
+								};
+							})));
+							if (outcome.status === "done") break;
+							if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+							const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+								purpose: "access-code",
+								secure: "access-code"
+							}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+							if (outcome.status === "wrong-code") for (const id of readyIds) {
+								const old = hashes.get(id);
+								if (old !== void 0) {
+									wipe$1(old);
+									hashes.delete(id);
+								}
+							}
+							yield _awaitAsyncGenerator(hashAll(env, hashes, asked, ready));
+							wipe$1(asked);
+						}
+						const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+							reason: retry ? "retry" : "target",
+							card: peer.shortId,
+							prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "target", peer.shortId),
+							expect: {
+								life: "any",
+								cards: [peer.cardId],
+								shortId: peer.shortId,
+								walletId: op.walletId
+							},
+							run: async (tap) => {
+								if (sourceCert === void 0) throw new KernelError("integrity", "the exporting member was never tapped");
+								const result = await installRun({
+									tap,
+									target: peer,
+									sourceCert,
+									hashT: () => hashes.get(targetIdHex),
+									entry: walletOf(env, op.walletId)
+								});
+								if (result.status === "done" && targetCode !== void 0) {
+									wipe$1(targetCode);
+									targetCode = void 0;
+								}
+								return result;
+							}
+						}))));
+						if (outcome.status === "done" || outcome.status === "reexport") break;
+						const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+						const old = hashes.get(targetIdHex);
+						if (outcome.status === "wrong-code" && old !== void 0) {
+							wipe$1(old);
+							hashes.delete(targetIdHex);
+						}
+						yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [targetId]));
+						wipe$1(asked);
+					}
+				}
+				return {
+					kind: "transfer",
+					walletId: op.walletId
+				};
+			} finally {
+				if (sourceCode !== void 0) wipe$1(sourceCode);
+				if (targetCode !== void 0) wipe$1(targetCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _transferOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/index.ts
+	/** Preconditions that end `card.begin` before any step: wallets exist, gates, unsupported ops. */
+	var checkOperation = (ctx, op) => {
+		const cardRecord = (walletId) => ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		switch (op.kind) {
+			case "accounts":
+			case "health":
+			case "change-access":
+			case "forget-access":
+				if (cardRecord(op.walletId) === void 0) throw new KernelError("not-found", "no such card wallet");
+				return;
+			case "sign": {
+				const { account } = op.request;
+				if (account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
+				if (cardRecord(account.walletId) === void 0) throw ctx.image.records.some((r) => r.id === account.walletId) ? new KernelError("invalid-input", "the account's wallet is not a card wallet") : new KernelError("not-found", "no such card wallet");
+				return;
+			}
+			case "erase": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (!header.cards.some((c) => c.cardId === op.card)) throw new KernelError("not-found", "no such card in this wallet");
+				if (header.cards.length === 1 && header.origin === "generated" && op.last !== true) throw new KernelError("invalid-input", "erasing the only card of a generated wallet needs last: true");
+				return;
+			}
+			case "create": {
+				if (op.source.kind === "generate") {
+					if (op.cards === 1) throw new KernelError("invalid-input", "a card-generated wallet needs at least two cards");
+					break;
+				}
+				const sourceId = op.source.walletId;
+				const source = ctx.image.records.find((r) => r.id === sourceId);
+				if (source === void 0) throw new KernelError("not-found", "no such source wallet");
+				if (source.kind !== "entropy") throw new KernelError("invalid-input", "the source is not a vault HD wallet");
+				break;
+			}
+			case "transfer": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.every((c) => c.state === "ready")) throw new KernelError("invalid-input", "every member of this wallet is already provisioned");
+				if (!header.cards.some((c) => c.state === "ready")) throw new KernelError("invalid-input", "no ready member can export this wallet");
+				break;
+			}
+			case "reseal": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.find((c) => c.cardId === op.card) === void 0) throw new KernelError("not-found", "no such card in this wallet");
+				if (op.member !== void 0) {
+					const member = header.cards.find((c) => c.cardId === op.member);
+					if (member === void 0) throw new KernelError("not-found", "no such card in this wallet");
+					if (op.member === op.card) throw new KernelError("invalid-input", "the resealing member must be another card");
+					if (member.state !== "ready") throw new KernelError("invalid-input", "the resealing member is not ready");
+				} else if (!header.cards.some((c) => c.state === "ready" && c.cardId !== op.card)) throw new KernelError("invalid-input", "no other ready member can reseal this card");
+				break;
+			}
+		}
+	};
+	/** Whether the op takes a `verify`, forbids one, or is not in this layer. */
+	var verifyGate = (op) => {
+		switch (op.kind) {
+			case "status":
+			case "add":
+			case "accounts":
+			case "health": return "forbidden";
+			case "change-access":
+			case "erase":
+			case "create":
+			case "transfer":
+			case "reseal":
+			case "forget-access":
+			case "sign": return "required";
+		}
+	};
+	/** Which prompt kind a verify-bearing op uses. */
+	var promptKind = (op) => {
+		switch (op.kind) {
+			case "change-access": return "card-change-access";
+			case "erase": return "card-erase";
+			case "transfer": return "card-transfer";
+			case "reseal": return "card-reseal";
+			case "forget-access": return "card-forget-access";
+			default: return "card-create";
+		}
+	};
+	/** `remember` needs app lock on and a hardware verify — else `unsupported` at begin. */
+	var rememberGated = (ctx, op, verifyKind) => {
+		if (!((op.kind === "change-access" || op.kind === "create" || op.kind === "sign") && op.remember === true)) return;
+		if (verifyKind !== "hardware" || ctx.image.factors.some((f) => f.kind === "device")) throw new KernelError("unsupported", "saving the card code needs app lock and a hardware verify");
+	};
+	/** The short IDs an op's verify prompt names — the pinned cards of the wallet, or the target. */
+	var promptCards = (ctx, op) => {
+		const walletId = "walletId" in op && typeof op.walletId === "string" ? op.walletId : void 0;
+		if (walletId === void 0) return [];
+		const record = ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		if (record === void 0) return [];
+		const header = parseCardWalletHeader(record.header);
+		if (op.kind === "erase") {
+			const short = pinnedShortId(header, op.card);
+			return short === void 0 ? [] : [short];
+		}
+		return header.cards.map((c) => pinnedShortId(header, c.cardId)).filter((s) => s !== void 0);
+	};
+	/** Builds the op's generator — thrown precondition failures happen before any yield. */
+	var makeOp = (env, op, prepared) => {
+		switch (op.kind) {
+			case "status": return statusOp(env);
+			case "add": return addOp(env, op);
+			case "accounts": return accountsOp(env, op);
+			case "health": return healthOp(env, op);
+			case "change-access": return changeAccessOp(env, op);
+			case "erase": return eraseOp(env, op);
+			case "create": return createOp(env, op);
+			case "transfer": return transferOp(env, op);
+			case "reseal": return resealOp(env, op);
+			case "forget-access": return forgetAccessOp(env, op);
+			case "sign":
+				if (prepared === void 0) throw new KernelError("integrity", "the sign operation was not prepared");
+				return signOp(env, op, prepared);
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/index.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** A step may wait this long for its host work — re-armed at every step boundary. */
+	var STEP_TIMEOUT_MS = 12e4;
+	/** The public shape of a pending step — never carries labels, prompts, expectations or APDUs. */
+	var publicOf = (pending) => {
+		if (pending.kind === "input") return _objectSpread2(_objectSpread2({
+			kind: "input",
+			purpose: pending.purpose
+		}, pending.card === void 0 ? {} : { card: pending.card }), pending.remaining === void 0 ? {} : { remaining: pending.remaining });
+		return _objectSpread2(_objectSpread2({
+			kind: "tap",
+			reason: pending.reason
+		}, pending.card === void 0 ? {} : { card: pending.card }), pending.hold === void 0 ? {} : { hold: true });
+	};
+	function createCardModule(platform) {
+		const live = /* @__PURE__ */ new Map();
+		let current;
+		/** The value a discarded generator completes with — only its `finally` matters. */
+		const DISCARDED = {
+			kind: "status",
+			life: "blank",
+			tries: 0
+		};
+		const discard = async (active) => {
+			if (current === active) current = void 0;
+			active.cancelTimer();
+			await active.gen.return(DISCARDED);
+		};
+		/** Aborts an operation: a step in flight is interrupted, an idle generator just winds down. */
+		const abort = (active) => {
+			if (current === active) current = void 0;
+			active.cancelTimer();
+			if (active.stepActive) {
+				var _platform$card, _platform$card2;
+				active.aborted = true;
+				(_platform$card = platform.card) === null || _platform$card === void 0 || _platform$card.secureInput.cancel();
+				(_platform$card2 = platform.card) === null || _platform$card2 === void 0 || _platform$card2.reader.close("failure", "");
+			} else active.gen.return(DISCARDED);
+		};
+		const interrupt = (opId) => {
+			if ((current === null || current === void 0 ? void 0 : current.opId) === opId) abort(current);
+		};
+		/** The no-progress timeout — armed at every step boundary; fires interrupt + discard. */
+		const arm = (active) => {
+			active.cancelTimer();
+			active.cancelTimer = platform.setTimer(STEP_TIMEOUT_MS, () => interrupt(active.opId));
+		};
+		return {
+			vault: {
+				ownsRecord: (kind) => kind === CARD_WALLET_KIND,
+				claimUnlocked: (records) => {
+					const unclaimed = [];
+					for (const record of records) {
+						if (record.kind !== "card-wallet") {
+							unclaimed.push(record);
+							continue;
+						}
+						try {
+							const text = new TextDecoder().decode(record.plaintext);
+							live.set(record.id, parseCardWalletBody(text, record.id));
+						} finally {
+							wipe$1(record.plaintext);
+						}
+					}
+					return unclaimed;
+				},
+				forget: (kind, id) => {
+					if (kind === "card-wallet") live.delete(id);
+				},
+				lock: () => {
+					if (current !== void 0) abort(current);
+					live.clear();
+				},
+				walletDeleteOps: () => [],
+				parseHeader: (record) => {
+					parseCardWalletHeader(record.header);
+				}
+			},
+			handlers: {
+				"card.begin": async (ctx, params, session) => {
+					var _platform$keystore$lo, _platform$keystore, _card$planMs;
+					const { dek } = ctx.session.require(session);
+					const { card } = platform;
+					if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const gate = verifyGate(params.op);
+					if (gate === "unsupported") throw new KernelError("unsupported", "card operations arrive in a later build");
+					checkOperation(ctx, params.op);
+					if (gate === "forbidden" && params.verify !== void 0) throw new KernelError("invalid-input", "this card operation takes no verify");
+					const env = {
+						ctx,
+						bodies: live,
+						locale: promptLocale((_platform$keystore$lo = (_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.locale) !== null && _platform$keystore$lo !== void 0 ? _platform$keystore$lo : "en"),
+						planMs: (_card$planMs = card.planMs) !== null && _card$planMs !== void 0 ? _card$planMs : PLAN_MS
+					};
+					let prepared;
+					if (gate === "required") {
+						if (params.verify === void 0) throw new KernelError("invalid-input", "this card operation needs a verify");
+						rememberGated(ctx, params.op, params.verify.kind);
+						const prompt = params.op.kind === "sign" ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt : cardPromptFor(platform.keystore, promptKind(params.op), () => promptCards(ctx, params.op));
+						await verifyFactor(platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+					}
+					if (current !== void 0) await discard(current);
+					const gen = makeOp(env, params.op, prepared);
+					const opId = bytesToHex$4(platform.random(16));
+					const first = await gen.next(void 0);
+					if (first.done === true) return {
+						opId,
+						step: {
+							kind: "done",
+							result: first.value
+						}
+					};
+					const active = {
+						opId,
+						gen,
+						pending: first.value,
+						stepActive: false,
+						aborted: false,
+						unaccounted: /* @__PURE__ */ new Set(),
+						cancelTimer: () => void 0
+					};
+					arm(active);
+					current = active;
+					return {
+						opId,
+						step: publicOf(first.value)
+					};
+				},
+				"card.step": async (ctx, params, session) => {
+					ctx.session.require(session);
+					const { card } = platform;
+					if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const active = current;
+					if (active === void 0 || active.opId !== params.opId) throw new KernelError("not-found", "no such card operation");
+					active.stepActive = true;
+					try {
+						let outcome;
+						if (active.pending.kind === "input") {
+							const response = await card.secureInput.request(active.pending.secure, active.pending.label);
+							if (!response.ok) throw response.failure === "cancelled" ? new KernelError("cancelled", "the secure input was dismissed") : new KernelError("unavailable", "the secure input is unavailable");
+							outcome = response.value;
+						} else outcome = await runTap(ctx, active.pending, live, active.unaccounted);
+						if (active.aborted) throw new KernelError("cancelled", "the card operation was cancelled");
+						const next = await active.gen.next(outcome);
+						if (active.aborted) throw new KernelError("cancelled", "the card operation was cancelled");
+						if (next.done === true) {
+							const result = next.value;
+							await discard(active);
+							return {
+								kind: "done",
+								result
+							};
+						}
+						active.pending = next.value;
+						arm(active);
+						return publicOf(next.value);
+					} catch (error) {
+						await discard(active).catch(() => void 0);
+						throw error;
+					} finally {
+						active.stepActive = false;
+					}
+				},
+				"card.cancel": async (ctx, params, session) => {
+					ctx.session.require(session);
+					if (platform.card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const active = current;
+					if (active !== void 0 && active.opId === params.opId) await discard(active);
+					return null;
+				}
+			},
+			material: (walletId) => {
+				const body = live.get(walletId);
+				return body === void 0 ? void 0 : pinnedMaterial(cardPin(body));
+			},
+			interrupt
 		};
 	}
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/util-D8wUYmm0.mjs
@@ -41294,7 +46482,7 @@ zoo`.split("\n"));
 		assertByteLength(bytes, 32, "secret key");
 	}
 	/** Structural guard: a plain record (not `null`, not an array). */
-	function isRecord(value) {
+	function isRecord$1(value) {
 		return typeof value === "object" && value !== null && !Array.isArray(value);
 	}
 	/**
@@ -41379,7 +46567,7 @@ zoo`.split("\n"));
 	}
 	/** Structural validation of an unsigned event (no crypto). */
 	function validateEvent(event) {
-		if (!isRecord(event)) return false;
+		if (!isRecord$1(event)) return false;
 		if (typeof event["kind"] !== "number" || !Number.isSafeInteger(event["kind"]) || event["kind"] < 0 || event["kind"] > 65535) return false;
 		if (typeof event["content"] !== "string" || hasLoneSurrogate(event["content"])) return false;
 		if (typeof event["created_at"] !== "number" || !Number.isSafeInteger(event["created_at"]) || event["created_at"] < 0) return false;
@@ -41393,7 +46581,7 @@ zoo`.split("\n"));
 	}
 	/** Structural validation of a full event including id and sig hex shape. */
 	function validateSignedEvent(event) {
-		if (isRecord(event) && validatedEvents.has(event)) return true;
+		if (isRecord$1(event) && validatedEvents.has(event)) return true;
 		if (!validateEvent(event)) return false;
 		const e = event;
 		if (typeof e["id"] !== "string" || !isHex32(e["id"])) return false;
@@ -41607,299 +46795,6 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "SignerDisposedError");
 		}
 	};
-	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
-	var BLOCK_SIZE = 16;
-	var POLY = 283;
-	function validateKeyLength(key) {
-		if (![
-			16,
-			24,
-			32
-		].includes(key.length)) throw new Error("\"aes key\" expected Uint8Array of length 16/24/32, got length=" + key.length);
-	}
-	function mul2(n) {
-		return n << 1 ^ POLY & -(n >> 7);
-	}
-	function mul(a, b) {
-		let res = 0;
-		for (; b > 0; b >>= 1) {
-			res ^= a & -(b & 1);
-			a = mul2(a);
-		}
-		return res;
-	}
-	var sbox = /* @__PURE__ */ (() => {
-		const t = /* @__PURE__ */ new Uint8Array(256);
-		for (let i = 0, x = 1; i < 256; i++, x ^= mul2(x)) t[i] = x;
-		const box = /* @__PURE__ */ new Uint8Array(256);
-		box[0] = 99;
-		for (let i = 0; i < 255; i++) {
-			let x = t[255 - i];
-			x |= x << 8;
-			box[t[i]] = (x ^ x >> 4 ^ x >> 5 ^ x >> 6 ^ x >> 7 ^ 99) & 255;
-		}
-		clean$1(t);
-		return box;
-	})();
-	var invSbox = /* @__PURE__ */ sbox.map((_, j) => sbox.indexOf(j));
-	var rotr32_8 = (n) => n << 24 | n >>> 8;
-	var rotl32_8 = (n) => n << 8 | n >>> 24;
-	function genTtable(sbox, fn) {
-		if (sbox.length !== 256) throw new Error("wrong sbox length");
-		const T0 = (/* @__PURE__ */ new Uint32Array(256)).map((_, j) => fn(sbox[j]));
-		const T1 = T0.map(rotl32_8);
-		const T2 = T1.map(rotl32_8);
-		const T3 = T2.map(rotl32_8);
-		const T01 = /* @__PURE__ */ new Uint32Array(65536);
-		const T23 = /* @__PURE__ */ new Uint32Array(65536);
-		const sbox2 = /* @__PURE__ */ new Uint16Array(65536);
-		for (let i = 0; i < 256; i++) for (let j = 0; j < 256; j++) {
-			const idx = i * 256 + j;
-			T01[idx] = T0[i] ^ T1[j];
-			T23[idx] = T2[i] ^ T3[j];
-			sbox2[idx] = sbox[i] << 8 | sbox[j];
-		}
-		return {
-			sbox,
-			sbox2,
-			T0,
-			T1,
-			T2,
-			T3,
-			T01,
-			T23
-		};
-	}
-	var tableEncoding = /* @__PURE__ */ genTtable(sbox, (s) => mul(s, 3) << 24 | s << 16 | s << 8 | mul(s, 2));
-	var tableDecoding = /* @__PURE__ */ genTtable(invSbox, (s) => mul(s, 11) << 24 | mul(s, 13) << 16 | mul(s, 9) << 8 | mul(s, 14));
-	var xPowers = /* @__PURE__ */ (() => {
-		const p = /* @__PURE__ */ new Uint8Array(16);
-		for (let i = 0, x = 1; i < 16; i++, x = mul2(x)) p[i] = x;
-		return p;
-	})();
-	/** Forward AES key expansion used across ECB/CBC/CTR/GCM/CMAC/KW-style paths. */
-	function expandKeyLE(key) {
-		abytes$3(key);
-		const len = key.length;
-		validateKeyLength(key);
-		const { sbox2 } = tableEncoding;
-		const toClean = [];
-		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$6(key));
-		const Nk = k32.length;
-		const subByte = (n) => applySbox(sbox2, n, n, n, n);
-		const xk = new Uint32Array(len + 28);
-		xk.set(k32);
-		for (let i = Nk; i < xk.length; i++) {
-			let t = xk[i - 1];
-			if (i % Nk === 0) t = subByte(rotr32_8(t)) ^ xPowers[i / Nk - 1];
-			else if (Nk > 6 && i % Nk === 4) t = subByte(t);
-			xk[i] = xk[i - Nk] ^ t;
-		}
-		clean$1(...toClean);
-		return xk;
-	}
-	function expandKeyDecLE(key) {
-		const encKey = expandKeyLE(key);
-		const xk = encKey.slice();
-		const Nk = encKey.length;
-		const { sbox2 } = tableEncoding;
-		const { T0, T1, T2, T3 } = tableDecoding;
-		for (let i = 0; i < Nk; i += 4) for (let j = 0; j < 4; j++) xk[i + j] = encKey[Nk - i - 4 + j];
-		clean$1(encKey);
-		for (let i = 4; i < Nk - 4; i++) {
-			const x = xk[i];
-			const w = applySbox(sbox2, x, x, x, x);
-			xk[i] = T0[w & 255] ^ T1[w >>> 8 & 255] ^ T2[w >>> 16 & 255] ^ T3[w >>> 24];
-		}
-		return xk;
-	}
-	function apply0123(T01, T23, s0, s1, s2, s3) {
-		return T01[s0 << 8 & 65280 | s1 >>> 8 & 255] ^ T23[s2 >>> 8 & 65280 | s3 >>> 24 & 255];
-	}
-	function applySbox(sbox2, s0, s1, s2, s3) {
-		return sbox2[s0 & 255 | s1 & 65280] | sbox2[s2 >>> 16 & 255 | s3 >>> 16 & 65280] << 16;
-	}
-	function encrypt$3(xk, s0, s1, s2, s3) {
-		const { sbox2, T01, T23 } = tableEncoding;
-		let k = 0;
-		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-		const rounds = xk.length / 4 - 2;
-		for (let i = 0; i < rounds; i++) {
-			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s1, s2, s3);
-			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s2, s3, s0);
-			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s3, s0, s1);
-			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s0, s1, s2);
-			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
-		}
-		return {
-			s0: xk[k++] ^ applySbox(sbox2, s0, s1, s2, s3),
-			s1: xk[k++] ^ applySbox(sbox2, s1, s2, s3, s0),
-			s2: xk[k++] ^ applySbox(sbox2, s2, s3, s0, s1),
-			s3: xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2)
-		};
-	}
-	function decrypt$2(xk, s0, s1, s2, s3) {
-		const { sbox2, T01, T23 } = tableDecoding;
-		let k = 0;
-		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-		const rounds = xk.length / 4 - 2;
-		for (let i = 0; i < rounds; i++) {
-			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s3, s2, s1);
-			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s0, s3, s2);
-			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s1, s0, s3);
-			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s2, s1, s0);
-			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
-		}
-		return {
-			s0: xk[k++] ^ applySbox(sbox2, s0, s3, s2, s1),
-			s1: xk[k++] ^ applySbox(sbox2, s1, s0, s3, s2),
-			s2: xk[k++] ^ applySbox(sbox2, s2, s1, s0, s3),
-			s3: xk[k++] ^ applySbox(sbox2, s3, s2, s1, s0)
-		};
-	}
-	function validateBlockDecrypt(data, dst) {
-		abytes$3(data);
-		if (data.length % BLOCK_SIZE !== 0) throw new Error("ciphertext must be multiple of 16");
-		if (dst !== void 0) {
-			getOutput(data.length, dst);
-			complexOverlapBytes(data, dst);
-		}
-	}
-	function validateBlockEncrypt(plaintext, pkcs5, dst) {
-		abytes$3(plaintext);
-		let outLen = plaintext.length;
-		const remaining = outLen % BLOCK_SIZE;
-		if (!pkcs5 && remaining !== 0) throw new Error("plaintext must be multiple of 16");
-		if (pkcs5) {
-			let left = BLOCK_SIZE - remaining;
-			if (!left) left = BLOCK_SIZE;
-			outLen = outLen + left;
-		}
-		if (dst !== void 0) {
-			getOutput(outLen, dst);
-			complexOverlapBytes(plaintext, dst);
-		}
-		return outLen;
-	}
-	function prepareBlockEncrypt(plaintext, outLen, dst) {
-		if (dst === void 0) dst = new Uint8Array(outLen);
-		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$6(dst);
-		return {
-			b: plaintext,
-			o,
-			out: dst
-		};
-	}
-	function validatePKCS(data, pkcs5) {
-		if (!pkcs5) return data;
-		const len = data.length;
-		if (len === 0) throw new Error("pkcs7: empty ciphertext not allowed");
-		const lastByte = data[len - 1];
-		let valid = 1;
-		valid &= lastByte - 1 >>> 31 ^ 1;
-		valid &= 16 - lastByte >>> 31 ^ 1;
-		for (let i = 0; i < 16; i++) {
-			const shouldCheck = i - lastByte >>> 31;
-			const eq = (data[len - 1 - i] ^ lastByte) === 0 ? 1 : 0;
-			valid &= eq | shouldCheck ^ 1;
-		}
-		if (!valid) throw new Error("aes: bad decrypt");
-		return data.subarray(0, len - lastByte);
-	}
-	function padPCKS(left) {
-		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$6(tmp);
-		tmp.set(left);
-		const paddingByte = BLOCK_SIZE - left.length;
-		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
-		return tmp32;
-	}
-	/**
-	* **CBC** (Cipher Block Chaining): Each plaintext block is XORed with the
-	* previous block of ciphertext before encryption.
-	* Hard to use: requires proper padding and an unpredictable IV. Unauthenticated: needs MAC.
-	* Bad padding is reported as decrypt failure, which can be a padding oracle if exposed.
-	* @param key - AES key bytes.
-	* @param iv - 16-byte unpredictable initialization vector.
-	* @param opts - Padding options. See {@link BlockOpts}.
-	* @returns Cipher instance with `encrypt()` and `decrypt()`.
-	* @example
-	* Encrypts a padded message with a fresh key and 16-byte IV.
-	*
-	* ```ts
-	* import { cbc } from '@noble/ciphers/aes.js';
-	* import { randomBytes } from '@noble/ciphers/utils.js';
-	* const key = randomBytes(16);
-	* const iv = randomBytes(16);
-	* const cipher = cbc(key, iv);
-	* cipher.encrypt(new Uint8Array([1, 2, 3]));
-	* ```
-	*/
-	var cbc = /* @__PURE__ */ wrapCipher({
-		blockSize: 16,
-		nonceLength: 16
-	}, function aescbc(key, iv, opts = {}) {
-		const pkcs5 = !opts.disablePadding;
-		return {
-			encrypt(plaintext, dst) {
-				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
-				const xk = expandKeyLE(key);
-				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$6(input);
-				swap32IfBE$1(b);
-				let _iv = iv;
-				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
-				swap32IfBE$1(n32);
-				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-				let i = 0;
-				for (; i + 4 <= b.length;) {
-					s0 ^= b[i + 0], s1 ^= b[i + 1], s2 ^= b[i + 2], s3 ^= b[i + 3];
-					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
-					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-				}
-				if (pkcs5) {
-					const tmp32 = padPCKS(plaintext.subarray(i * 4));
-					swap32IfBE$1(tmp32);
-					s0 ^= tmp32[0], s1 ^= tmp32[1], s2 ^= tmp32[2], s3 ^= tmp32[3];
-					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
-					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-					clean$1(tmp32);
-				}
-				swap32IfBE$1(o);
-				clean$1(...toClean);
-				if (input !== plaintext) clean$1(input);
-				return _out;
-			},
-			decrypt(ciphertext, dst) {
-				validateBlockDecrypt(ciphertext, dst);
-				const xk = expandKeyDecLE(key);
-				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
-				let _iv = iv;
-				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
-				swap32IfBE$1(n32);
-				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$6(ciphertext);
-				const o = u32$6(dst);
-				swap32IfBE$1(b);
-				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-				for (let i = 0; i + 4 <= b.length;) {
-					const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
-					s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
-					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$2(xk, s0, s1, s2, s3);
-					o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
-				}
-				swap32IfBE$1(o);
-				clean$1(...toClean);
-				return validatePKCS(dst, pkcs5);
-			}
-		};
-	});
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip04.mjs
 	init_utils$2();
 	init_base();
@@ -42080,7 +46975,7 @@ zoo`.split("\n"));
 		var _opts$maxPayloadChars;
 		const { nonce, ciphertext, mac } = decodePayload(payload, (_opts$maxPayloadChars = opts === null || opts === void 0 ? void 0 : opts.maxPayloadChars) !== null && _opts$maxPayloadChars !== void 0 ? _opts$maxPayloadChars : DEFAULT_MAX_PAYLOAD_CHARS);
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
-		if (!equalBytes$6(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
+		if (!equalBytes$9(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip59.mjs
@@ -42114,7 +47009,7 @@ zoo`.split("\n"));
 		}
 	}
 	function parseRumor(value) {
-		if (!isRecord(value)) throw new Nip59Error("invalid rumor");
+		if (!isRecord$1(value)) throw new Nip59Error("invalid rumor");
 		if (Object.hasOwn(value, "sig")) throw new Nip59Error("rumor must be unsigned");
 		const givenId = value["id"];
 		if (!validateEvent(value)) throw new Nip59Error("invalid rumor");
@@ -42153,10 +47048,6 @@ zoo`.split("\n"));
 	}
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip46.mjs
 	init_defineProperty();
-	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
-	function _classPrivateMethodInitSpec(e, a) {
-		_checkPrivateRedeclaration(e, a), a.add(e);
-	}
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/signer-Y3gcghwd.mjs
 	init_utils$2();
 	init_objectSpread2();
@@ -42394,9 +47285,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$5(B);
-		const V = u32$5(new Uint8Array(blockSize * N));
-		const tmp = u32$5(new Uint8Array(blockSize));
+		const B32 = u32$6(B);
+		const V = u32$6(new Uint8Array(blockSize * N));
+		const tmp = u32$6(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;
@@ -42569,7 +47460,7 @@ zoo`.split("\n"));
 				this.signers.set(publicKey, signer);
 				return publicKey;
 			} finally {
-				wipe(secretKey);
+				wipe$1(secretKey);
 			}
 		}
 		get(publicKey) {
@@ -42735,7 +47626,7 @@ zoo`.split("\n"));
 					}]);
 					return nostrKeyInfo(header);
 				} finally {
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 			} finally {
 				master.wipePrivateData();
@@ -42757,7 +47648,7 @@ zoo`.split("\n"));
 						index,
 						publicKey: getPublicKey(secretKey)
 					});
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 				return { keys };
 			} finally {
@@ -42782,11 +47673,11 @@ zoo`.split("\n"));
 		try {
 			return params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
 		} finally {
-			wipe(secretKey);
+			wipe$1(secretKey);
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/ops.ts
-	async function sign$1(ctx, pool, params, requestSession) {
+	async function sign$2(ctx, pool, params, requestSession) {
 		ctx.session.require(requestSession);
 		return signEvent(pool, params.publicKey, params.event);
 	}
@@ -42863,7 +47754,7 @@ zoo`.split("\n"));
 					}
 					return { publicKey };
 				} finally {
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 			} finally {
 				master.wipePrivateData();
@@ -42942,7 +47833,7 @@ zoo`.split("\n"));
 				"nostr.deriveKey": async (ctx, params, session) => deriveKey(ctx, params, session),
 				"nostr.removeKey": async (ctx, params, session) => removeKey(ctx, params, session),
 				"nostr.exportKey": async (ctx, params, session) => exportKey(ctx, params, session),
-				"nostr.signEvent": async (ctx, params, session) => sign$1(ctx, pool, params, session),
+				"nostr.signEvent": async (ctx, params, session) => sign$2(ctx, pool, params, session),
 				"nostr.nip04Encrypt": async (ctx, params, session) => nip04Encrypt(ctx, pool, params, session),
 				"nostr.nip04Decrypt": async (ctx, params, session) => nip04Decrypt(ctx, pool, params, session),
 				"nostr.nip44Encrypt": async (ctx, params, session) => nip44Encrypt(ctx, pool, params, session),
@@ -43135,7 +48026,7 @@ zoo`.split("\n"));
 		for (let attempt = 0; attempt < MAX_KEY_DRAWS; attempt++) {
 			const draw = platform.random(32);
 			if (secp256k1.utils.isValidSecretKey(draw)) return draw;
-			wipe(draw);
+			wipe$1(draw);
 		}
 		throw new KernelError("integrity", "could not draw a valid session key");
 	};
@@ -43204,7 +48095,7 @@ zoo`.split("\n"));
 			}]);
 			return { address };
 		} finally {
-			wipe(priv);
+			wipe$1(priv);
 		}
 	};
 	var listSessions = (ctx, _params, session) => {
@@ -43237,7 +48128,7 @@ zoo`.split("\n"));
 			if (priv.length !== 32 || !secp256k1.utils.isValidSecretKey(priv) || evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)).toLowerCase() !== record.id) throw new KernelError("integrity", "session key does not match its record", void 0, true);
 			return { signature: signEvmTypedData(typedData, priv) };
 		} finally {
-			wipe(priv);
+			wipe$1(priv);
 		}
 	};
 	// packages/wallet-kernel/src/modules/sessions/index.ts
@@ -43254,7 +48145,7 @@ zoo`.split("\n"));
 							continue;
 						}
 						const matches = record.plaintext.length === 32 && secp256k1.utils.isValidSecretKey(record.plaintext) && evmAddressFromPublicKey(secp256k1.getPublicKey(record.plaintext, true)).toLowerCase() === record.id;
-						wipe(record.plaintext);
+						wipe$1(record.plaintext);
 						if (!matches) throw new KernelError("integrity", "session key does not match its record", void 0, true);
 					}
 					return unclaimed;
@@ -43284,205 +48175,6 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	// packages/wallet-kernel/src/modules/signers/record.ts
-	/**
-	* The `hardware-wallet` record: a hardware wallet under external custody. The kernel keeps no
-	* secret for it — the public header carries what the device claims to be, the sealed body the
-	* public material pairing pinned (BIP-32 account nodes and SLIP-10 ed25519 keys). Every device
-	* answer is checked against the pin before it can influence a request.
-	*
-	* Header `{ device, fingerprint, model?, firmware?, createdAt }` is stored as fixed-order JSON and
-	* enters the envelope AAD verbatim; the body is strict JSON `{ nodes, ed25519 }` keyed by `m/…`
-	* paths. Parsing validates fully: a malformed row is `integrity`, never silently ignored.
-	*/
-	init_secp256k1();
-	init_sha2();
-	init_utils$2();
-	var HARDWARE_WALLET_KIND = "hardware-wallet";
-	var HARDENED$4 = 2147483648;
-	/** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
-	var DEVICE_TEXT$1 = /^[\u0020-\u007E]{1,64}$/;
-	var HEX$1 = /^[0-9a-f]+$/;
-	var MAX_NODES = 512;
-	var MAX_ED25519 = 256;
-	/**
-	* Stable hardware-wallet identifier, domain-separated from the software wallet id:
-	* SHA-256(UTF-8("qntx-wallet/hardware-wallet-id/v1") ‖ UTF-8(device) ‖ 0x00 ‖ fingerprint4)[0..8].
-	* The same device re-paired maps to the same id — the pair handler answers `already-exists`.
-	*/
-	function hardwareWalletId(device, fingerprint) {
-		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/hardware-wallet-id/v1"), utf8ToBytes$1(device), new Uint8Array([0]), fingerprint)).slice(0, 8));
-	}
-	/** The `hardware-wallet` record for `walletId`, when the vault has one. */
-	function hardwareWallet(image, walletId) {
-		return image.records.find((r) => r.kind === "hardware-wallet" && r.id === walletId);
-	}
-	var asDevice = (value) => {
-		if (typeof value !== "string") throw headerFailure();
-		const device = HARDWARE_DEVICES.find((d) => d === value);
-		if (device === void 0) throw headerFailure();
-		return device;
-	};
-	var asFingerprint = (value) => {
-		if (typeof value !== "string" || !/^[0-9a-f]{8}$/.test(value)) throw headerFailure();
-		return hexToBytes$3(value);
-	};
-	var asDeviceText = (value) => {
-		if (typeof value !== "string" || !DEVICE_TEXT$1.test(value)) throw headerFailure();
-		return value;
-	};
-	function encodeHardwareHeader(header) {
-		const fields = {
-			device: header.device,
-			fingerprint: bytesToHex$4(header.fingerprint)
-		};
-		if (header.model !== void 0) fields["model"] = header.model;
-		if (header.firmware !== void 0) fields["firmware"] = header.firmware;
-		fields["createdAt"] = header.createdAt;
-		return JSON.stringify(fields);
-	}
-	/** Strict header parse; every failure is `integrity` — status marks the vault corrupted. */
-	function parseHardwareHeader(text) {
-		const object = headerObject(text);
-		expectKeys(object, [
-			"device",
-			"fingerprint",
-			"createdAt",
-			...["model", "firmware"].filter((key) => Object.hasOwn(object, key))
-		]);
-		const header = {
-			device: asDevice(object["device"]),
-			fingerprint: asFingerprint(object["fingerprint"]),
-			createdAt: asCreatedAt(object["createdAt"])
-		};
-		if (object["model"] !== void 0) header.model = asDeviceText(object["model"]);
-		if (object["firmware"] !== void 0) header.firmware = asDeviceText(object["firmware"]);
-		return header;
-	}
-	/** The `HardwareWalletInfo` a hardware-wallet record's public header reports. */
-	function hardwareWalletInfo(header) {
-		const info = {
-			custody: "hardware",
-			walletId: hardwareWalletId(header.device, header.fingerprint),
-			device: header.device,
-			fingerprint: bytesToHex$4(header.fingerprint),
-			createdAt: header.createdAt
-		};
-		if (header.model !== void 0) info.model = header.model;
-		if (header.firmware !== void 0) info.firmware = header.firmware;
-		return info;
-	}
-	var bodyFailure = () => new KernelError("integrity", "invalid hardware wallet record");
-	/** `m/…` → `KeyPath`; depth 1–10, hardened segments carry `'`, indices stay under 2^31. */
-	function pathFromString(text) {
-		if (!/^m(\/[0-9]+'?){1,10}$/.test(text)) throw bodyFailure();
-		return text.slice(2).split("/").map((segment) => {
-			const hardened = segment.endsWith("'");
-			const digits = hardened ? segment.slice(0, -1) : segment;
-			if (digits.length > 1 && digits.startsWith("0")) throw bodyFailure();
-			const index = Number(digits);
-			if (!Number.isSafeInteger(index) || index > 2147483647) throw bodyFailure();
-			return hardened ? index + HARDENED$4 : index;
-		});
-	}
-	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; empty paths are `m`. */
-	function pathToString(path) {
-		return `m${path.map((i) => i >= HARDENED$4 ? `/${i - HARDENED$4}'` : `/${i}`).join("")}`;
-	}
-	var asHexBytes = (value, length) => {
-		if (typeof value !== "string" || value.length !== length * 2 || !HEX$1.test(value)) throw bodyFailure();
-		return hexToBytes$3(value);
-	};
-	var parseNode = (value) => {
-		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
-		const node = value;
-		const hasParent = Object.hasOwn(node, "parent");
-		if (Object.keys(node).length !== (hasParent ? 3 : 2)) throw bodyFailure();
-		const publicKey = asHexBytes(node["key"], 33);
-		if (!secp256k1.utils.isValidPublicKey(publicKey)) throw bodyFailure();
-		const parsed = {
-			key: publicKey,
-			chainCode: asHexBytes(node["chainCode"], 32)
-		};
-		if (hasParent) parsed.parent = asHexBytes(node["parent"], 4);
-		return parsed;
-	};
-	/**
-	* Parses the sealed body: every node is a real secp256k1 point, every ed25519 entry a real point,
-	* every path well-formed, and the caps (512 nodes, 256 ed25519) hold. Anything less is
-	* `integrity`.
-	*/
-	function parseHardwareBody(plaintext) {
-		let text;
-		try {
-			text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
-		} catch (_unused) {
-			throw bodyFailure();
-		}
-		let value;
-		try {
-			value = JSON.parse(text);
-		} catch (_unused2) {
-			throw bodyFailure();
-		}
-		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
-		const body = value;
-		if (Object.keys(body).length !== 2) throw bodyFailure();
-		const { nodes } = body;
-		const ed = body["ed25519"];
-		if (typeof nodes !== "object" || nodes === null || Array.isArray(nodes) || typeof ed !== "object" || ed === null || Array.isArray(ed)) throw bodyFailure();
-		const nodeEntries = Object.entries(nodes);
-		const edEntries = Object.entries(ed);
-		if (nodeEntries.length > MAX_NODES || edEntries.length > MAX_ED25519) throw bodyFailure();
-		return {
-			nodes: nodeEntries.map(([path, entry]) => {
-				const parsed = parseNode(entry);
-				const node = {
-					path: pathFromString(path),
-					publicKey: parsed.key,
-					chainCode: parsed.chainCode
-				};
-				if (parsed.parent !== void 0) node.parent = parsed.parent;
-				return node;
-			}),
-			ed25519: edEntries.map(([path, entry]) => {
-				const publicKey = asHexBytes(entry, 32);
-				if (!ed25519.utils.isValidPublicKey(publicKey)) throw bodyFailure();
-				const parsedPath = pathFromString(path);
-				if (parsedPath.some((i) => i < HARDENED$4)) throw bodyFailure();
-				return {
-					path: parsedPath,
-					publicKey
-				};
-			})
-		};
-	}
-	/** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
-	function encodeHardwareBody(keys) {
-		const nodes = {};
-		for (const node of keys.nodes) {
-			const entry = {
-				key: bytesToHex$4(node.publicKey),
-				chainCode: bytesToHex$4(node.chainCode)
-			};
-			if (node.parent !== void 0) entry.parent = bytesToHex$4(node.parent);
-			nodes[pathToString(node.path)] = entry;
-		}
-		const ed = {};
-		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$4(key.publicKey);
-		return utf8ToBytes$1(JSON.stringify({
-			nodes,
-			ed25519: ed
-		}));
-	}
-	/** The pin a record seals: the claimed fingerprint plus the pinned keys. */
-	function hardwarePin(header, keys) {
-		return {
-			fingerprint: header.fingerprint,
-			nodes: keys.nodes,
-			ed25519: keys.ed25519
-		};
-	}
 	// packages/wallet-kernel/src/modules/signers/keystone/cbor.ts
 	init_utils$2();
 	/** Device answers are QR payloads — the protocol already bounds them; the decoder re-asserts. */
@@ -43493,7 +48185,7 @@ zoo`.split("\n"));
 	function fail$4() {
 		throw new KernelError("integrity", "malformed cbor");
 	}
-	var utf8 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$1 = new TextDecoder("utf-8", { fatal: true });
 	var take = (cursor, length) => {
 		if (length < 0 || cursor.offset + length > cursor.bytes.length) fail$4();
 		const slice = cursor.bytes.subarray(cursor.offset, cursor.offset + length);
@@ -43550,7 +48242,7 @@ zoo`.split("\n"));
 				try {
 					return {
 						kind: "text",
-						value: utf8.decode(raw)
+						value: utf8$1.decode(raw)
 					};
 				} catch (_unused) {
 					return fail$4();
@@ -43979,50 +48671,50 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$3 = 2147483648;
+	var HARDENED$6 = 2147483648;
 	/** The BIP-32 account nodes the sync pins: btc purposes, ethereum and tron, coin 0' account 0'. */
 	var SECP256K1_PATHS = [
 		[
 			2147483692,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483697,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483732,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483734,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483692,
 			2147483708,
-			HARDENED$3
+			HARDENED$6
 		],
 		[
 			2147483692,
 			2147483843,
-			HARDENED$3
+			HARDENED$6
 		]
 	];
 	/** The solana account and its change leaf — the only ed25519 keys the sync pins. */
 	var ED25519_PATHS = [[
 		2147483692,
 		2147484149,
-		HARDENED$3
+		HARDENED$6
 	], [
 		2147483692,
 		2147484149,
-		HARDENED$3,
-		HARDENED$3
+		HARDENED$6,
+		HARDENED$6
 	]];
 	function fail$2() {
 		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
@@ -44032,11 +48724,11 @@ zoo`.split("\n"));
 		const components = [];
 		for (const component of keyPath.components) {
 			if (component.index === void 0 || component.index > 2147483647) return;
-			components.push(component.index + (component.hardened ? HARDENED$3 : 0));
+			components.push(component.index + (component.hardened ? HARDENED$6 : 0));
 		}
 		return components;
 	};
-	var samePath$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var samePath$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 	var parseSync = (response) => {
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") fail$2();
@@ -44048,19 +48740,19 @@ zoo`.split("\n"));
 			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
 			if (key.origin !== void 0) {
 				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) fail$2();
+				if (source !== void 0 && !equalBytes$9(source, accounts.masterFingerprint)) fail$2();
 			}
 			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) continue;
-			if (claimed.some((seen) => samePath$2(seen, path))) fail$2();
+			if (claimed.some((seen) => samePath$1(seen, path))) fail$2();
 			claimed.push(path);
-			if (SECP256K1_PATHS.some((wanted) => samePath$2(path, wanted))) {
+			if (SECP256K1_PATHS.some((wanted) => samePath$1(path, wanted))) {
 				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) fail$2();
 				nodes.push(_objectSpread2({
 					path,
 					publicKey: new Uint8Array(key.key),
 					chainCode: new Uint8Array(key.chainCode)
 				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
-			} else if (ED25519_PATHS.some((wanted) => samePath$2(path, wanted))) {
+			} else if (ED25519_PATHS.some((wanted) => samePath$1(path, wanted))) {
 				if (key.key.length !== 32) fail$2();
 				ed25519.push({
 					path,
@@ -44086,9 +48778,9 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$2 = 2147483648;
+	var HARDENED$5 = 2147483648;
 	var ORIGIN$1 = "qntx";
-	var h = (...indices) => indices.map((i) => i + HARDENED$2);
+	var h = (...indices) => indices.map((i) => i + HARDENED$5);
 	/**
 	* The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a prefix
 	* matches the path itself or any extension of it.
@@ -44123,7 +48815,7 @@ zoo`.split("\n"));
 		h(44, 9e3)
 	];
 	var under = (prefix, path) => path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
-	function integrity$2() {
+	function integrity$3() {
 		throw new KernelError("integrity", "malformed key-derivation answer");
 	}
 	/** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
@@ -44140,7 +48832,7 @@ zoo`.split("\n"));
 			},
 			scan: ["crypto-multi-accounts"]
 		});
-		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$2();
+		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$3();
 		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
 		const nodes = [];
 		const ed25519 = [];
@@ -44149,18 +48841,18 @@ zoo`.split("\n"));
 			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
 			if (key.origin !== void 0) {
 				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) integrity$2();
+				if (source !== void 0 && !equalBytes$9(source, accounts.masterFingerprint)) integrity$3();
 			}
-			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$2();
-			if (need.secp256k1.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$2();
+			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$3();
+			if (need.secp256k1.some((wanted) => samePath$1(path, wanted))) {
+				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$3();
 				nodes.push(_objectSpread2({
 					path,
 					publicKey: new Uint8Array(key.key),
 					chainCode: new Uint8Array(key.chainCode)
 				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
-			} else if (need.ed25519.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 32) integrity$2();
+			} else if (need.ed25519.some((wanted) => samePath$1(path, wanted))) {
+				if (key.key.length !== 32) integrity$3();
 				ed25519.push({
 					path,
 					publicKey: new Uint8Array(key.key)
@@ -44169,7 +48861,7 @@ zoo`.split("\n"));
 			answered.push(path);
 		}
 		const wanted = [...need.secp256k1, ...need.ed25519];
-		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$2(a, w)))) integrity$2();
+		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$1(a, w)))) integrity$3();
 		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
 			nodes,
 			ed25519
@@ -44192,14 +48884,14 @@ zoo`.split("\n"));
 	init_transaction();
 	init_objectSpread2();
 	var ORIGIN = "qntx";
-	function integrity$1() {
+	function integrity$2() {
 		throw new KernelError("integrity", "malformed device sign exchange");
 	}
 	function wrongDevice() {
 		throw new KernelError("wrong-device", "the signature answers a different request");
 	}
 	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
-	var display = (_request, plan) => {
+	var display$1 = (_request, plan) => {
 		switch (plan.kind) {
 			case "evm.transaction": return plan.tx.type === "legacy" || plan.tx.type === "eip1559" ? "clear" : "unsupported";
 			case "evm.personal-message":
@@ -44225,31 +48917,31 @@ zoo`.split("\n"));
 			show,
 			scan: [type]
 		});
-		if (response.kind !== "qr" || response.ur.type !== type) integrity$1();
+		if (response.kind !== "qr" || response.ur.type !== type) integrity$2();
 		return decodeCbor(response.ur.cbor);
 	};
 	/** A signature answer must name the request id this exchange minted. */
 	var checkRequestId = (returned, sent) => {
-		if (returned === void 0 || !equalBytes$6(returned, sent)) wrongDevice();
+		if (returned === void 0 || !equalBytes$9(returned, sent)) wrongDevice();
 	};
 	var compactSecp256k1 = (signature, requestId, length) => {
 		checkRequestId(signature.requestId, requestId);
-		if (signature.signature.length !== length) integrity$1();
+		if (signature.signature.length !== length) integrity$2();
 		return signature.signature.subarray(0, 64);
 	};
 	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
-	var expectDigest = (computed, task) => {
-		if (!equalBytes$6(computed, task.digest)) integrity$1();
+	var personalDigest$1 = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	var expectDigest$1 = (computed, task) => {
+		if (!equalBytes$9(computed, task.digest)) integrity$2();
 	};
-	var evm = async (link, context, request, stage) => {
+	var evm$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
 		const requestId = context.random(16);
 		let signData;
 		let dataType;
 		let chainId;
 		if (stage.kind === "evm.transaction") {
-			if (request.kind !== "evm.transaction") integrity$1();
+			if (request.kind !== "evm.transaction") integrity$2();
 			const { tx } = request;
 			signData = evmSigningPreimage(tx);
 			const { chainId: txChainId } = tx;
@@ -44259,21 +48951,21 @@ zoo`.split("\n"));
 			} else if (tx.type === "eip1559") {
 				dataType = 4;
 				chainId = txChainId;
-			} else integrity$1();
-			expectDigest(keccak_256(signData), task);
+			} else integrity$2();
+			expectDigest$1(keccak_256(signData), task);
 		} else if (stage.kind === "evm.typed-data") {
-			if (request.kind !== "evm.typed-data") integrity$1();
+			if (request.kind !== "evm.typed-data") integrity$2();
 			signData = utf8ToBytes$1(request.typedData);
 			dataType = 2;
-			expectDigest(planEvm(request, {
+			expectDigest$1(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
 			}).tasks[0].digest, task);
 		} else {
-			if (request.kind !== stage.kind) integrity$1();
+			if (request.kind !== stage.kind) integrity$2();
 			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
 			dataType = 3;
-			expectDigest(personalDigest(signData), task);
+			expectDigest$1(personalDigest$1(signData), task);
 		}
 		return compactSecp256k1(ethSignature(await exchange(link, {
 			type: "eth-sign-request",
@@ -44288,7 +48980,7 @@ zoo`.split("\n"));
 			}))
 		}, "eth-signature")), requestId, 65);
 	};
-	var tron = async (link, context, request, stage) => {
+	var tron$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
 		const requestId = context.random(16);
 		let signData;
@@ -44296,12 +48988,12 @@ zoo`.split("\n"));
 		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
 			signData = request.rawData;
 			dataType = 1;
-			expectDigest(sha256$1(signData), task);
+			expectDigest$1(sha256$1(signData), task);
 		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			signData = request.message;
 			dataType = 2;
-			expectDigest(tronMessageDigest(signData), task);
-		} else integrity$1();
+			expectDigest$1(tronMessageDigest(signData), task);
+		} else integrity$2();
 		return compactSecp256k1(tronSignature(await exchange(link, {
 			type: "tron-sign-request",
 			cbor: tronSignRequest({
@@ -44314,11 +49006,11 @@ zoo`.split("\n"));
 			})
 		}, "tron-signature")), requestId, 65);
 	};
-	var solana = async (link, context, request, stage) => {
+	var solana$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.kind !== stage.kind) integrity$1();
+		if (request.kind !== stage.kind) integrity$2();
 		const signData = request.message;
-		if (!equalBytes$6(signData, task.message)) integrity$1();
+		if (!equalBytes$9(signData, task.message)) integrity$2();
 		const requestId = context.random(16);
 		const answer = solSignature(await exchange(link, {
 			type: "sol-sign-request",
@@ -44332,50 +49024,50 @@ zoo`.split("\n"));
 			})
 		}, "sol-signature"));
 		checkRequestId(answer.requestId, requestId);
-		if (answer.signature.length !== 64) integrity$1();
+		if (answer.signature.length !== 64) integrity$2();
 		return answer.signature;
 	};
-	var bitcoinPsbt = async (link, stage) => {
+	var bitcoinPsbt$1 = async (link, stage) => {
 		const signed = cryptoPsbtBytes(await exchange(link, {
 			type: "crypto-psbt",
 			cbor: cryptoPsbt(stage.psbt)
 		}, "crypto-psbt"));
-		if (!samePsbtContent(stage.psbt, signed)) integrity$1();
+		if (!samePsbtContent(stage.psbt, signed)) integrity$2();
 		let transaction;
 		try {
 			transaction = Transaction.fromPSBT(signed);
 		} catch (_unused) {
-			integrity$1();
+			integrity$2();
 		}
 		return stage.tasks.map((task, index) => {
 			var _input$partialSig;
 			const planned = stage.inputs[index];
-			if (planned === void 0) integrity$1();
+			if (planned === void 0) integrity$2();
 			const input = transaction.getInput(planned.index);
 			if (task.scheme === "bip340") {
 				const signature = input.tapKeySig;
-				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$1();
-				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$1();
+				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$2();
+				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$2();
 				return signature.subarray(0, 64);
 			}
-			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$6(key, task.publicKey));
-			if (entry === void 0) integrity$1();
+			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$9(key, task.publicKey));
+			if (entry === void 0) integrity$2();
 			const [, der] = entry;
-			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$1();
+			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$2();
 			let signature;
 			try {
 				signature = secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
 			} catch (_unused2) {
-				integrity$1();
+				integrity$2();
 			}
 			return signature;
 		});
 	};
-	var bitcoinMessage = async (link, context, request, stage) => {
+	var bitcoinMessage$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$2();
 		const signData = utf8ToBytes$1(request.message);
-		expectDigest(legacyMessageHash(request.message), task);
+		expectDigest$1(legacyMessageHash(request.message), task);
 		const requestId = context.random(16);
 		const answer = btcSignature(await exchange(link, {
 			type: "btc-sign-request",
@@ -44388,44 +49080,52 @@ zoo`.split("\n"));
 			})
 		}, "btc-signature"));
 		checkRequestId(answer.requestId, requestId);
-		if (!equalBytes$6(answer.publicKey, task.publicKey)) wrongDevice();
-		if (answer.signature.length !== 65) integrity$1();
+		if (!equalBytes$9(answer.publicKey, task.publicKey)) wrongDevice();
+		if (answer.signature.length !== 65) integrity$2();
 		return answer.signature.subarray(1);
 	};
-	var sign = async (link, context) => {
+	var sign$1 = async (link, context) => {
 		const { request, stage } = context;
 		switch (stage.kind) {
 			case "evm.transaction":
 			case "evm.personal-message":
 			case "evm.fiat24-session":
 			case "evm.typed-data":
-				if (request.kind !== stage.kind) integrity$1();
-				return [await evm(link, context, request, stage)];
+				if (request.kind !== stage.kind) integrity$2();
+				return [await evm$1(link, context, request, stage)];
 			case "tron.transaction":
 			case "tron.message":
-				if (request.kind !== stage.kind) integrity$1();
-				return [await tron(link, context, request, stage)];
+				if (request.kind !== stage.kind) integrity$2();
+				return [await tron$1(link, context, request, stage)];
 			case "solana.transaction":
 			case "solana.message":
-				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$1();
-				return [await solana(link, context, request, stage)];
+				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$2();
+				return [await solana$1(link, context, request, stage)];
 			case "bitcoin.psbt":
-				if (request.kind !== "bitcoin.psbt") integrity$1();
-				return bitcoinPsbt(link, stage);
+				if (request.kind !== "bitcoin.psbt") integrity$2();
+				return bitcoinPsbt$1(link, stage);
 			case "bitcoin.message":
-				if (request.kind !== "bitcoin.message") integrity$1();
-				return [await bitcoinMessage(link, context, request, stage)];
+				if (request.kind !== "bitcoin.message") integrity$2();
+				return [await bitcoinMessage$1(link, context, request, stage)];
 			default: throw new KernelError("unsupported", "keystone cannot sign this request");
 		}
 	};
-	// packages/wallet-kernel/src/modules/signers/drivers.ts
-	var DRIVERS = { keystone: {
+	// packages/wallet-kernel/src/modules/signers/keystone/driver.ts
+	/**
+	* The Keystone driver: QR air-gapped pairing, compare-style address checks, and QR signing. `pair`
+	* scans the device's `crypto-multi-accounts` sync and pins the public material `sync.ts` admits;
+	* `verifyAddress` asks the host to show the kernel's address for the user to compare against the
+	* device menu (Keystone has no host-initiated address display). `sign` shows the registry request
+	* `sign.ts` builds and admits only the answer to that exchange; `accounts` runs the
+	* `qr-hardware-call` key-derivation exchange `derive.ts` pins.
+	*/
+	var KEYSTONE_DRIVER = {
 		pair: async (link) => parseSync(await link.exchange({
 			kind: "qr",
 			scan: ["crypto-multi-accounts"]
 		})),
-		display,
-		sign,
+		display: display$1,
+		sign: sign$1,
 		accounts: derive,
 		verifyAddress: async (link, target) => {
 			const response = await link.exchange({
@@ -44439,59 +49139,2280 @@ zoo`.split("\n"));
 				matched: response.matched
 			};
 		}
-	} };
-	// packages/wallet-kernel/src/modules/signers/material.ts
-	init_bip32();
-	var HARDENED$1 = 2147483648;
-	var deviceRequired = () => new KernelError("device-required", "the device must derive this path");
-	var samePath$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-	var nodeAt = (pin, path) => pin.nodes.find((node) => samePath$1(node.path, path));
-	/**
-	* The deepest pinned ancestor whose remaining tail is fully non-hardened — the only situation in
-	* which BIP-32 public derivation reaches `path`. `[]` is never derivable.
-	*/
-	var derivingAncestor = (pin, path) => pin.nodes.filter((node) => node.path.length < path.length && path.slice(0, node.path.length).every((v, i) => v === node.path[i]) && path.slice(node.path.length).every((v) => v < HARDENED$1)).sort((a, b) => b.path.length - a.path.length)[0];
-	var derivePublic = (node, path) => {
-		const root = new HDKey$1({
-			publicKey: node.publicKey,
-			chainCode: node.chainCode
-		});
-		const tail = path.slice(node.path.length);
-		const child = tail.length === 0 ? root : root.derive(`m/${tail.join("/")}`);
-		if (child.publicKey === null) throw deviceRequired();
-		return child.publicKey;
 	};
-	var fingerprintNumber = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
-	/** The record's pinned material as a `PublicMaterial`; the fingerprint is the pinned claim. */
-	var pinnedMaterial = (pin) => ({
-		secp256k1: async (path) => {
-			if (path.length === 0) throw deviceRequired();
-			const node = nodeAt(pin, path);
-			if (node !== void 0) return node.publicKey;
-			const ancestor = derivingAncestor(pin, path);
-			if (ancestor === void 0) throw deviceRequired();
-			return derivePublic(ancestor, path);
+	// packages/wallet-kernel/src/modules/signers/ledger/display.ts
+	/**
+	* What the device would show for a request: `clear` only when the pinned app renders the full
+	* request natively without a setting, `blind` when it signs behind a setting or a hash, and
+	* `unsupported` when the pinned build cannot serve the request at all. The rule of thumb: claiming
+	* `clear` for what the device would blind-sign is the bug to avoid — `blind` is the safe answer.
+	*
+	* Verified against the pinned app sources:
+	*
+	* - Ethereum 1.24.0: tx without calldata renders the review flow; calldata or creation needs "Blind
+	*   signing"; EIP-712 shows domain fields + message hash only; EIP-7702 is not in the default build
+	*   (EIP7702_SUPPORT ?= 0).
+	* - Tron 0.8.2 (src/handlers/sign.c): dedicated screens exist for the contract types listed below —
+	*   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
+	*   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
+	*   a TRC20 transfer/approve needs "Custom contracts"; a contract call carrying TRX/TRC10 value
+	*   with a TRC20 selector is refused outright (E_INCORRECT_DATA). A personal message is always
+	*   hash-signed: handleSignPersonalMessage shows the keccak hash and refuses without "Blind
+	*   signing" (sign_personal_message.c S_SIGN_BY_HASH).
+	* - Solana 1.16.0: the app renders System Program transfers; every other instruction is a blind sign
+	*   (handle_sign_offchain_message.c / libsol parser); off-chain messages are the v0 `\xffsolana
+	*   offchain` document — format 0 restricted-ASCII shows text, format 1 UTF-8 shows a hash behind
+	*   the blind setting.
+	* - Bitcoin 2.5.1: a default-wallet PSBT renders its own address/amount review; mixed-template inputs
+	*   cannot form one policy; message signing renders printable ASCII only.
+	*/
+	/** TRC20 selectors the device ABI-decodes to a token screen (parse.c SELECTOR). */
+	var TRC20_SELECTORS = [Uint8Array.of(169, 5, 156, 187), Uint8Array.of(9, 94, 167, 179)];
+	/**
+	* Contract types with a dedicated approval screen on the pinned app (sign.c's ux_flow_display
+	* switch). Not listed: CancelAllUnfreezeV2Contract — the app has no case for it, so it signs behind
+	* "Sign by hash".
+	*/
+	var DEDICATED_CONTRACTS = /* @__PURE__ */ new Set([
+		"TransferContract",
+		"TransferAssetContract",
+		"VoteWitnessContract",
+		"FreezeBalanceV2Contract",
+		"UnfreezeBalanceV2Contract",
+		"WithdrawExpireUnfreezeContract",
+		"DelegateResourceContract",
+		"UnDelegateResourceContract",
+		"WithdrawBalanceContract",
+		"AccountPermissionUpdateContract"
+	]);
+	/** Whether a TriggerSmartContract is a TRC20 transfer/approve the device ABI-decodes. */
+	var isTrc20Call = (contract) => {
+		const { data } = contract;
+		return data.length === 68 && TRC20_SELECTORS.some((sel) => sel.every((b, i) => data[i] === b));
+	};
+	var OFFCHAIN_DOMAIN = Uint8Array.of(255, ...new TextEncoder().encode("solana offchain"));
+	/** Printable-ASCII per the app: 0x20..0x7e plus LF (libsol/string_utils.c is_data_ascii). */
+	var isAscii = (bytes) => bytes.every((b) => b >= 32 && b <= 126 || b === 10);
+	/**
+	* The v0 off-chain message the pinned app accepts: `ff"solana offchain" ‖ version 0 ‖ appDomain 32
+	* ‖ format ≤1 ‖ signerCount ≥1 ‖ signers ‖ len(u16 LE) ‖ message`, message length matching exactly.
+	* Returns the message body or `undefined` when the bytes are not that document.
+	*/
+	var offchainMessage = (message) => {
+		const head = OFFCHAIN_DOMAIN.length + 1 + 32 + 1 + 1;
+		if (message.length < head + 2) return;
+		if (!OFFCHAIN_DOMAIN.every((b, i) => message[i] === b) || message[16] !== 0) return;
+		const { 49: format, 50: signers } = message;
+		if (format === void 0 || format > 1 || signers === void 0 || signers === 0) return;
+		const bodyAt = head + signers * 32;
+		const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
+		if (message.length < bodyAt + 2 || view.getUint16(bodyAt, true) !== message.length - bodyAt - 2) return;
+		return message.subarray(bodyAt + 2);
+	};
+	var BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
+	/** The protobuf message name behind a contract slot's `typeUrl`. */
+	var contractType = (slot) => slot.typeUrl.slice(slot.typeUrl.lastIndexOf(".") + 1);
+	/** The decoded TriggerSmartContract of a raw transaction, or undefined for another/unknown slot. */
+	var tronTrigger = (rawData) => {
+		var _decodeTronContract;
+		const slot = decodeTronRawData(rawData).contract;
+		if (contractType(slot) !== "TriggerSmartContract") return;
+		const decoded = (_decodeTronContract = decodeTronContract(slot.typeId, slot.value)) === null || _decodeTronContract === void 0 ? void 0 : _decodeTronContract.contract;
+		return (decoded === null || decoded === void 0 ? void 0 : decoded.type) === "TriggerSmartContract" ? decoded : void 0;
+	};
+	/**
+	* The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
+	* data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
+	* dedicated screen needs "Sign by hash".
+	*/
+	var tronSettings = (rawData) => {
+		const raw = decodeTronRawData(rawData);
+		const type = contractType(raw.contract);
+		const trigger = type === "TriggerSmartContract" ? tronTrigger(rawData) : void 0;
+		return {
+			dataAllowed: raw.memo !== void 0 && raw.memo.length > 0,
+			customContracts: type === "TriggerSmartContract" && (trigger === void 0 || !isTrc20Call(trigger)),
+			signByHash: type !== "TriggerSmartContract" && !DEDICATED_CONTRACTS.has(type)
+		};
+	};
+	/**
+	* Whether a decoded tron transaction is rendered by a dedicated screen with no setting: a dedicated
+	* contract — or a TRC20 transfer/approve — and no `data` memo (data needs Allow data).
+	*/
+	var tronClears = (rawData) => {
+		const needs = tronSettings(rawData);
+		if (needs.dataAllowed || needs.customContracts || needs.signByHash) return false;
+		const trigger = tronTrigger(rawData);
+		return trigger === void 0 || trigger.callValue === 0n && trigger.callTokenValue === 0n;
+	};
+	/** Whether a compiled solana message is all System transfers / ComputeBudget instructions. */
+	var solanaClears = (message) => {
+		const parsed = parseCompiledMessage(message);
+		if (parsed.lookups.length > 0) return false;
+		const { staticAccounts, instructions } = parsed;
+		return instructions.every((ix) => {
+			const program = staticAccounts[ix.programAddressIndex];
+			if (program === PROGRAM_IDS.computeBudget) return true;
+			if (program !== PROGRAM_IDS.system) return false;
+			const view = new DataView(ix.data.buffer, ix.data.byteOffset, ix.data.byteLength);
+			return ix.data.length === 12 && view.getUint32(0, true) === 2;
+		});
+	};
+	/** The off-chain message classification the display needs. */
+	var solanaOffchain = (message) => {
+		const body = offchainMessage(message);
+		if (body === void 0) return;
+		return isAscii(body) ? "ascii" : "utf8";
+	};
+	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
+	var display = (request, plan) => {
+		if (plan.kind === "evm.transaction") {
+			const { tx } = plan;
+			if (tx.type === "eip7702") return "unsupported";
+			return tx.to !== void 0 && (tx.data === "0x" || tx.data === "") ? "clear" : "blind";
+		}
+		if (plan.kind === "evm.personal-message" || plan.kind === "evm.fiat24-session") return "clear";
+		if (plan.kind === "evm.typed-data") return "blind";
+		if (plan.kind === "tron.transaction") {
+			if (request.kind !== "tron.transaction") return "unsupported";
+			return tronClears(request.rawData) ? "clear" : "blind";
+		}
+		if (plan.kind === "tron.message") return "blind";
+		if (plan.kind === "tron.typed-data") return "blind";
+		if (plan.kind === "solana.transaction") {
+			if (request.kind !== "solana.transaction") return "unsupported";
+			return solanaClears(request.message) ? "clear" : "blind";
+		}
+		if (plan.kind === "solana.message") {
+			if (request.kind !== "solana.message") return "unsupported";
+			const offchain = solanaOffchain(request.message);
+			return offchain === void 0 ? "unsupported" : offchain === "ascii" ? "clear" : "blind";
+		}
+		if (plan.kind === "bitcoin.psbt") {
+			if (request.kind !== "bitcoin.psbt" || request.network !== BITCOIN_MAINNET) return "unsupported";
+			return new Set(request.sign.map((s) => s.template)).size === 1 ? "clear" : "unsupported";
+		}
+		if (plan.kind === "bitcoin.message" && request.kind === "bitcoin.message" && request.network === BITCOIN_MAINNET && plan.format === "legacy" && request.format === "legacy") {
+			const bytes = new TextEncoder().encode(request.message);
+			return bytes.length <= 640 && bytes.every((b) => b >= 32 && b <= 126) ? "clear" : "blind";
+		}
+		return "unsupported";
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/errors.ts
+	init_defineProperty();
+	var LedgerError = class extends Error {
+		constructor(code, message, sw) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			_defineProperty(
+				this,
+				/** The status word that triggered the error, when one did. */
+				"sw",
+				void 0
+			);
+			this.name = "LedgerError";
+			this.code = code;
+			this.sw = sw;
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/bytes.ts
+	init_defineProperty();
+	var input = (message) => new LedgerError("invalid-input", message);
+	var response = (message) => new LedgerError("invalid-response", message);
+	function u32(value) {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	}
+	/** Bitcoin CompactSize varint (doc/merkle.md "Merkleized maps" counts keys this way). */
+	function varint(value) {
+		if (!Number.isSafeInteger(value) || value < 0) throw input("varint value is not a non-negative safe integer");
+		if (value < 253) return Uint8Array.of(value);
+		if (value <= 65535) {
+			const out = /* @__PURE__ */ new Uint8Array(3);
+			new DataView(out.buffer).setUint8(0, 253);
+			new DataView(out.buffer).setUint16(1, value, true);
+			return out;
+		}
+		if (value <= 4294967295) {
+			const out = /* @__PURE__ */ new Uint8Array(5);
+			new DataView(out.buffer).setUint8(0, 254);
+			new DataView(out.buffer).setUint32(1, value, true);
+			return out;
+		}
+		const out = /* @__PURE__ */ new Uint8Array(9);
+		new DataView(out.buffer).setUint8(0, 255);
+		new DataView(out.buffer).setBigUint64(1, BigInt(value), true);
+		return out;
+	}
+	/**
+	* `depth ‖ u32(index)…` (ledger-app-solana/doc/api.md "BIP32 path encoding"): depth 1..maxDepth,
+	* indices are u32 (≥ 0x80000000 hardened), else `invalid-input`.
+	*/
+	function encodePath(path, maxDepth) {
+		if (path.length === 0 || path.length > maxDepth) throw input("derivation path depth out of range");
+		const out = new Uint8Array(1 + 4 * path.length);
+		out[0] = path.length;
+		const view = new DataView(out.buffer);
+		for (const [i, index] of path.entries()) {
+			if (!Number.isSafeInteger(index) || index < 0 || index > 4294967295) throw input("derivation path index is not a u32");
+			view.setUint32(1 + 4 * i, index);
+		}
+		return out;
+	}
+	/**
+	* A bounded cursor over a device response: every read checks its span, `end()` requires the buffer
+	* consumed. Any overrun or leftover is `invalid-response`.
+	*/
+	var Reader = class {
+		constructor(data) {
+			_defineProperty(this, "offset", 0);
+			_defineProperty(this, "data", void 0);
+			this.data = data;
+		}
+		get remaining() {
+			return this.data.length - this.offset;
+		}
+		take(count) {
+			if (count < 0 || this.remaining < count) throw response("response is shorter than its declared layout");
+			const out = this.data.subarray(this.offset, this.offset + count);
+			this.offset += count;
+			return out;
+		}
+		view(count, read) {
+			const slice = this.take(count);
+			return read(new DataView(slice.buffer, slice.byteOffset, slice.byteLength));
+		}
+		u8() {
+			return this.view(1, (v) => v.getUint8(0));
+		}
+		u16() {
+			return this.view(2, (v) => v.getUint16(0));
+		}
+		u32() {
+			return this.view(4, (v) => v.getUint32(0));
+		}
+		bytes(count) {
+			return this.take(count);
+		}
+		/** U8-length-prefixed bytes. */
+		lv() {
+			const length = this.u8();
+			return this.take(length);
+		}
+		/** Bitcoin CompactSize varint; counts beyond u53 are not representable and rejected. */
+		varint() {
+			const tag = this.u8();
+			if (tag < 253) return tag;
+			if (tag === 253) return this.view(2, (v) => v.getUint16(0, true));
+			if (tag === 254) return this.view(4, (v) => v.getUint32(0, true));
+			const value = this.view(8, (v) => v.getBigUint64(0, true));
+			if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw response("varint count does not fit in a safe integer");
+			return Number(value);
+		}
+		rest() {
+			return this.take(this.remaining);
+		}
+		end() {
+			if (this.remaining !== 0) throw response("response has trailing bytes");
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/status.ts
+	/** The error assigned to a status word the allow-list knows. */
+	function mapped(app, sw) {
+		switch (sw) {
+			case 21781: return "device-locked";
+			case 21761: return "user-rejected";
+			case 28160: return "app-not-open";
+			case 27904: return "unsupported";
+		}
+		switch (app) {
+			case "dashboard":
+				if (sw === 26631) return "app-not-installed";
+				break;
+			case "solana":
+				if (sw === 27010) return "user-rejected";
+				if (sw === 26632) return "setting-required";
+				break;
+			case "tron":
+				if (sw === 27275 || sw === 27276 || sw === 27277) return "setting-required";
+				if (sw === 27278) return "unsupported";
+				break;
+			case "bitcoin": if (sw === 27266) return "unsupported";
+		}
+		if (app !== "dashboard" && sw === 27013) return "user-rejected";
+	}
+	var MESSAGES = {
+		"invalid-input": "input out of range",
+		transport: "transport framing violation",
+		"invalid-response": "device returned an invalid response",
+		"device-locked": "device is locked",
+		"app-not-open": "the app is not open on the device",
+		"app-not-installed": "the app is not installed on the device",
+		"user-rejected": "the operation was refused on the device",
+		"setting-required": "the app requires a setting that is off",
+		unsupported: "the device does not support this request",
+		"device-fault": "the device returned an unknown status word"
+	};
+	/** The LedgerError for status word `sw` seen on `app`; the word is always recorded. */
+	function statusError(app, sw) {
+		var _mapped;
+		const code = (_mapped = mapped(app, sw)) !== null && _mapped !== void 0 ? _mapped : "device-fault";
+		return new LedgerError(code, MESSAGES[code], sw);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/apdu.ts
+	/**
+	* Short-APDU codec and the exchange primitive every app call is built on
+	* (ledger-app-solana/doc/api.md "APDU Command payload encoding").
+	*
+	* Wire command: `CLA ‖ INS ‖ P1 ‖ P2 ‖ Lc ‖ data` — Lc is always present, data ≤ 255 bytes. Wire
+	* response: `data ‖ SW(2)` — the transport layer's length prefix is stripped before this.
+	*/
+	var byte = (value) => {
+		if (!Number.isSafeInteger(value) || value < 0 || value > 255) throw input("APDU header field is not a byte");
+	};
+	function encodeCommand(command) {
+		const { cla, ins, p1, p2, data } = command;
+		for (const field of [
+			cla,
+			ins,
+			p1,
+			p2
+		]) byte(field);
+		if (data.length > 255) throw input("APDU data exceeds 255 bytes");
+		const out = new Uint8Array(5 + data.length);
+		out.set([
+			cla,
+			ins,
+			p1,
+			p2,
+			data.length
+		]);
+		out.set(data, 5);
+		return out;
+	}
+	function decodeResponse(bytes) {
+		if (bytes.length < 2) throw new LedgerError("transport", "response is shorter than a status word");
+		return {
+			data: bytes.subarray(0, -2),
+			sw: new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 2, 2).getUint16(0)
+		};
+	}
+	/** One command → its data, or the LedgerError the status word maps to. */
+	async function transmit(exchange, app, command) {
+		const { data, sw } = decodeResponse(await exchange(encodeCommand(command)));
+		if (sw !== 36864) throw statusError(app, sw);
+		return data;
+	}
+	/**
+	* A multi-chunk command sequence: every non-last reply must be `9000` with empty data
+	* (ledger-app-ethereum/doc/apdu.md "streamed to the device in 255 bytes maximum data chunks"); a
+	* non-empty intermediate reply is `invalid-response`. Returns the last reply's data.
+	*/
+	async function transmitChunks(exchange, app, commands) {
+		const last = commands.at(-1);
+		if (last === void 0) throw input("empty command sequence");
+		for (const command of commands.slice(0, -1)) if ((await transmit(exchange, app, command)).length > 0) throw new LedgerError("invalid-response", "an intermediate chunk returned data");
+		return transmit(exchange, app, last);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/merkle.ts
+	init_sha2();
+	/** `sha256(0x00 ‖ data)` — the domain-separated leaf hash of doc/merkle.md. */
+	function leafHash(data) {
+		const h = new Uint8Array(1 + data.length);
+		h.set(data, 1);
+		return sha256$1(h);
+	}
+	var nodeHash = (left, right) => {
+		const h = /* @__PURE__ */ new Uint8Array(65);
+		h[0] = 1;
+		h.set(left, 1);
+		h.set(right, 33);
+		return sha256$1(h);
+	};
+	var checkLeaves = (leafHashes) => {
+		for (const leaf of leafHashes) if (leaf.length !== 32) throw input("a Merkle leaf hash is not 32 bytes");
+	};
+	/** The largest power of two strictly below n (merkle.ts highestPowerOf2LessThan); requires n ≥ 2. */
+	var largestSplit = (n) => {
+		let k = 1;
+		while (k * 2 < n) k *= 2;
+		return k;
+	};
+	/** The MTH of a list of leaf hashes — empty → 32 zero bytes, single → the leaf itself. */
+	function merkleRoot(leafHashes) {
+		checkLeaves(leafHashes);
+		const [first] = leafHashes;
+		if (first === void 0) return /* @__PURE__ */ new Uint8Array(32);
+		if (leafHashes.length === 1) return Uint8Array.from(first);
+		const k = largestSplit(leafHashes.length);
+		return nodeHash(merkleRoot(leafHashes.slice(0, k)), merkleRoot(leafHashes.slice(k)));
+	}
+	/**
+	* The audit path for leaf `index`: sibling hashes bottom-up (merkle.ts proveNode — the sibling at
+	* the leaf's own level first, then each ancestor's sibling up to below the root).
+	*/
+	function merkleProof(leafHashes, index) {
+		checkLeaves(leafHashes);
+		if (!Number.isSafeInteger(index) || index < 0 || index >= leafHashes.length) throw input("Merkle proof index is out of range");
+		const walk = (leaves, i) => {
+			if (leaves.length === 1) return [];
+			const k = largestSplit(leaves.length);
+			return i < k ? [...walk(leaves.slice(0, k), i), merkleRoot(leaves.slice(k))] : [...walk(leaves.slice(k), i - k), merkleRoot(leaves.slice(0, k))];
+		};
+		return walk(leafHashes, index);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/policy.ts
+	init_sha2();
+	init_utils$2();
+	init_bip32();
+	var HARDENED$4 = 2147483648;
+	var MAX_ACCOUNT = 100;
+	var TEMPLATES = {
+		"btc.bip44": {
+			template: "pkh(@0/**)",
+			purpose: 44
 		},
-		ed25519: async (path) => {
-			const key = pin.ed25519.find((k) => samePath$1(k.path, path));
-			if (key === void 0) throw deviceRequired();
-			return key.publicKey;
+		"btc.bip49": {
+			template: "sh(wpkh(@0/**))",
+			purpose: 49
 		},
-		extendedPublicKey: async (path, versions) => {
-			var _path$at;
-			const node = nodeAt(pin, path);
-			if (node === void 0 || path.length === 0 || node.parent === void 0) throw deviceRequired();
-			return new HDKey$1({
-				versions,
-				depth: path.length,
-				index: (_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0,
-				parentFingerprint: fingerprintNumber(node.parent),
-				chainCode: node.chainCode,
-				publicKey: node.publicKey
-			}).publicExtendedKey;
+		"btc.bip84": {
+			template: "wpkh(@0/**)",
+			purpose: 84
 		},
-		fingerprint: async () => pin.fingerprint
+		"btc.bip86": {
+			template: "tr(@0/**)",
+			purpose: 86
+		}
+	};
+	/** BIP-32 mainnet version bytes (BIP32_PUBKEY_VERSION in the pinned Makefile, COIN=bitcoin). */
+	var MAINNET_BIP32 = {
+		public: 76067358,
+		private: 76066276
+	};
+	var xpubKey = (xpub) => {
+		try {
+			return HDKey$1.fromExtendedKey(xpub, MAINNET_BIP32);
+		} catch (_unused) {
+			throw input("the policy key is not a mainnet xpub");
+		}
+	};
+	var ascii$1 = (value) => new TextEncoder().encode(value);
+	/**
+	* `[fingerprinthex/purpose'/coin'/account']xpub` for a default wallet. `account` must be the three
+	* hardened steps of the matching BIP (purpose matching the template, coin 0' or 1', account' at
+	* most 100 per doc/wallet.md) and `xpub` a mainnet extended public key at that depth.
+	*/
+	function defaultPolicy(template, fingerprint, account, xpub) {
+		const spec = TEMPLATES[template];
+		if (spec === void 0) throw input("unknown bitcoin account template");
+		if (fingerprint.length !== 4) throw input("the master fingerprint is not 4 bytes");
+		const [purpose, coin, index] = account;
+		if (purpose === void 0 || coin === void 0 || index === void 0 || account.length !== 3 || !account.every((step) => Number.isSafeInteger(step) && step >= HARDENED$4 && step <= 4294967295)) throw input("the account path is not three hardened steps");
+		if (purpose - HARDENED$4 !== spec.purpose) throw input("the account purpose does not match the template");
+		if (coin - HARDENED$4 !== 0 && coin - HARDENED$4 !== 1) throw input("the account coin type is not 0' or 1'");
+		if (index - HARDENED$4 > MAX_ACCOUNT) throw input("the account index is above 100");
+		if (xpubKey(xpub).depth !== account.length) throw input("the xpub depth does not match the account path");
+		const origin = account.map((step) => `${String(step - HARDENED$4)}'`).join("/");
+		return {
+			template: spec.template,
+			key: `[${bytesToHex$4(fingerprint)}/${origin}]${xpub}`
+		};
+	}
+	var TEMPLATE_NAMES = /* @__PURE__ */ new Set([
+		"pkh(@0/**)",
+		"sh(wpkh(@0/**))",
+		"wpkh(@0/**)",
+		"tr(@0/**)"
+	]);
+	var KEY_RE = /^\[([0-9a-f]{8})((?:\/\d+'){3})\](.+)$/;
+	/**
+	* Parse `policy.key` back into origin and xpub. A default policy's key always carries origin
+	* information (doc/wallet.md: compulsory for keys the device must treat as internal), so a key
+	* without it — or with a path that is not exactly three hardened steps — is `invalid-input`.
+	*/
+	function policyKey(policy) {
+		if (!TEMPLATE_NAMES.has(policy.template)) throw input("unknown wallet policy template");
+		const match = KEY_RE.exec(policy.key);
+		if (match === null) throw input("the policy key has no valid origin");
+		const [, fpr, origin, xpub] = match;
+		if (fpr === void 0 || origin === void 0 || xpub === void 0) throw input("the policy key has no valid origin");
+		const fingerprint = /* @__PURE__ */ new Uint8Array(4);
+		for (let i = 0; i < 4; i += 1) fingerprint[i] = Number.parseInt(fpr.slice(2 * i, 2 * i + 2), 16);
+		const account = origin.slice(1).split("/").map((step) => {
+			const n = Number(step.slice(0, -1));
+			if (n > 2147483647) throw input("a policy origin step is not a hardened index");
+			return n + HARDENED$4;
+		});
+		if (xpubKey(xpub).depth !== account.length) throw input("the policy key origin does not match its xpub");
+		return {
+			fingerprint,
+			account,
+			xpub
+		};
+	}
+	var WALLET_POLICY_V2 = 2;
+	/**
+	* `02 ‖ 00 (empty name) ‖ varint templateLen ‖ sha256(template) ‖ varint 1 ‖ merkleRoot(keys)` —
+	* doc/wallet.md "Serialization" for a default (nameless, single-key) wallet.
+	*/
+	function serializePolicy(policy) {
+		const template = ascii$1(policy.template);
+		const keyRoot = merkleRoot([leafHash(ascii$1(policy.key))]);
+		const out = new Uint8Array(2 + varint(template.length).length + 32 + 1 + 32);
+		out[0] = WALLET_POLICY_V2;
+		out[1] = 0;
+		out.set(varint(template.length), 2);
+		out.set(sha256$1(template), 2 + varint(template.length).length);
+		out.set(varint(1), 2 + varint(template.length).length + 32);
+		out.set(keyRoot, 2 + varint(template.length).length + 32 + 1);
+		return out;
+	}
+	/** The 32-byte wallet policy id — `sha256(serializePolicy)` (doc/wallet.md). */
+	function policyId(policy) {
+		return sha256$1(serializePolicy(policy));
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/client.ts
+	init_sha2();
+	init_utils$2();
+	var newKnown = () => ({
+		preimages: /* @__PURE__ */ new Map(),
+		trees: /* @__PURE__ */ new Map()
 	});
+	/** AddKnownPreimage — a plain sha256 lookup for blobs like the serialized policy/template. */
+	var knownPreimage = (known, preimage) => {
+		known.preimages.set(bytesToHex$4(sha256$1(preimage)), preimage);
+	};
+	/**
+	* AddKnownList — every element is served both as the leaf-hash preimage `0x00 ‖ element` (the
+	* device asks for sha256(0x00‖el) and strips the leaf domain byte) and through its tree root.
+	*/
+	var knownList = (known, elements) => {
+		const leaves = elements.map((el) => leafHash(el));
+		for (const el of elements) {
+			const preimage = new Uint8Array(1 + el.length);
+			preimage.set(el, 1);
+			knownPreimage(known, preimage);
+		}
+		known.trees.set(bytesToHex$4(merkleRoot(leaves)), leaves);
+	};
+	/** AddKnownMapping — a merkleized map registers its key list and its value list. */
+	var knownMapping = (known, kvs) => {
+		knownList(known, kvs.map((kv) => kv.key));
+		knownList(known, kvs.map((kv) => kv.value));
+	};
+	/** AddKnownWalletPolicy — policy serialization, descriptor template, and the key-info list. */
+	var knownWalletPolicy = (known, policy) => {
+		knownPreimage(known, serializePolicy(policy));
+		knownPreimage(known, ascii$1(policy.template));
+		knownList(known, [ascii$1(policy.key)]);
+	};
+	/**
+	* The round bound for `interact`. A compliant device asks a leaf-index or leaf-proof command plus a
+	* preimage command per element and re-walks a tree per leaf it visits, so usage grows quadratically
+	* in tree size: the recorded Speculos transcripts use ≤ 1.4 rounds per (preimage + Σn² over trees).
+	* `8 + 6 × (preimages + Σn²) + Σceil(len/253)` leaves the largest recorded case under a quarter of
+	* its bound while still cutting off a device that loops.
+	*/
+	var maxRounds = (known) => {
+		let cost = 0;
+		for (const preimage of known.preimages.values()) cost += Math.ceil(preimage.length / 253);
+		for (const tree of known.trees.values()) cost += tree.length * tree.length;
+		return 8 + 6 * (known.preimages.size + cost);
+	};
+	var invalid$2 = (message) => new LedgerError("invalid-response", message);
+	var concat$2 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var yieldCommand = (state, request) => {
+		if (request.length === 0) throw invalid$2("YIELD carries no data");
+		state.yielded.push(Uint8Array.from(request));
+		return /* @__PURE__ */ new Uint8Array(0);
+	};
+	var preimageCommand = (state, request) => {
+		const reader = new Reader(request);
+		if (reader.u8() !== 0) throw invalid$2("GET_PREIMAGE request version is not 0");
+		const hash = reader.bytes(32);
+		reader.end();
+		const preimage = state.known.preimages.get(bytesToHex$4(hash));
+		if (preimage === void 0) throw invalid$2("GET_PREIMAGE asked for an unknown hash");
+		const count = varint(preimage.length);
+		const payload = Math.min(255 - count.length - 1, preimage.length);
+		for (let i = payload; i < preimage.length; i += 1) state.queue.push(preimage.subarray(i, i + 1));
+		return concat$2(count, Uint8Array.of(payload), preimage.subarray(0, payload));
+	};
+	var leafProofCommand = (state, request) => {
+		const reader = new Reader(request);
+		const root = bytesToHex$4(reader.bytes(32));
+		const size = reader.varint();
+		const index = reader.varint();
+		reader.end();
+		const tree = state.known.trees.get(root);
+		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_PROOF asked for an unknown root");
+		if (size !== tree.length || index >= size) throw invalid$2("GET_MERKLE_LEAF_PROOF size or index is out of range");
+		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_PROOF arrived with a pending queue");
+		const proof = merkleProof(tree, index);
+		const answer = Math.min(Math.floor(221 / 32), proof.length);
+		for (const hash of proof.slice(answer)) state.queue.push(hash);
+		return concat$2(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
+	};
+	var leafIndexCommand = (state, request) => {
+		const reader = new Reader(request);
+		const root = bytesToHex$4(reader.bytes(32));
+		const leaf = reader.bytes(32);
+		reader.end();
+		const tree = state.known.trees.get(root);
+		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_INDEX asked for an unknown root");
+		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
+		const index = tree.findIndex((hash) => equalBytes$2(hash, leaf));
+		return concat$2(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
+	};
+	var moreElementsCommand = (state, request) => {
+		if (request.length > 0) throw invalid$2("GET_MORE_ELEMENTS carries trailing bytes");
+		const [first] = state.queue;
+		if (first === void 0) throw invalid$2("GET_MORE_ELEMENTS has an empty queue");
+		const count = Math.min(Math.floor(253 / first.length), state.queue.length);
+		const returned = state.queue.splice(0, count);
+		return concat$2(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
+	};
+	var dispatch = (state, request) => {
+		const [code] = request;
+		const rest = request.subarray(1);
+		switch (code) {
+			case 16: return yieldCommand(state, rest);
+			case 64: return preimageCommand(state, rest);
+			case 65: return leafProofCommand(state, rest);
+			case 66: return leafIndexCommand(state, rest);
+			case 160: return moreElementsCommand(state, rest);
+			default: throw invalid$2("unknown client command code");
+		}
+	};
+	/**
+	* Run `command` (an `E1` APDU) and serve every client command the device asks, up to `maxRounds`
+	* interruptions. Returns the final response data and everything the device yielded.
+	*/
+	async function interact(exchange, command, known, rounds) {
+		if (!Number.isSafeInteger(rounds) || rounds < 0) throw input("maxRounds is not a non-negative integer");
+		const state = {
+			known,
+			queue: [],
+			yielded: []
+		};
+		let { data, sw } = decodeResponse(await exchange(encodeCommand(command)));
+		for (let round = 0;; round += 1) {
+			if (sw === 36864) return {
+				data,
+				yielded: state.yielded
+			};
+			if (sw !== 57344) throw statusError("bitcoin", sw);
+			if (round >= rounds) throw invalid$2("the device exceeded its client-command budget");
+			const response = await exchange(encodeCommand({
+				cla: 248,
+				ins: 1,
+				p1: 0,
+				p2: 1,
+				data: dispatch(state, data)
+			}));
+			({data, sw} = decodeResponse(response));
+		}
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/psbt.ts
+	init_transaction();
+	var MAGIC = Uint8Array.of(112, 115, 98, 116, 255);
+	var KEY_INPUT_COUNT = 4;
+	var KEY_OUTPUT_COUNT = 5;
+	var KEY_VERSION = 251;
+	var invalid$1 = (message) => input(message);
+	var equalBytes$1 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var compareKeys = (a, b) => {
+		const av = new DataView(a.buffer, a.byteOffset, a.byteLength);
+		const bv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+		for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+			const d = av.getUint8(i) - bv.getUint8(i);
+			if (d !== 0) return d;
+		}
+		return a.length - b.length;
+	};
+	/** Keys must be sorted and unique within a map (doc/merkle.md "Merkleized maps"). */
+	var sortMap = (kvs) => {
+		const sorted = [...kvs].sort((x, y) => compareKeys(x.key, y.key));
+		let prev;
+		for (const kv of sorted) {
+			if (prev !== void 0 && equalBytes$1(prev, kv.key)) throw invalid$1("a PSBT map has a duplicate key");
+			prev = kv.key;
+		}
+		return sorted;
+	};
+	/** A CompactSize-encoded number stored as a standalone value (inputCount/outputCount). */
+	var countValue = (global, type) => {
+		const hit = global.find((kv) => kv.key.length === 1 && kv.key[0] === type);
+		if (hit === void 0) throw invalid$1("the PSBTv2 global map lacks a required count field");
+		try {
+			const reader = new Reader(hit.value);
+			const count = reader.varint();
+			reader.end();
+			return count;
+		} catch (_unused) {
+			throw invalid$1("a PSBTv2 count field is not a varint");
+		}
+	};
+	/** Split the raw `psbt‖…‖0x00` stream into maps; every malformed byte is `invalid-input`. */
+	var splitMaps = (v2) => {
+		const reader = new Reader(v2);
+		const maps = [];
+		try {
+			if (!equalBytes$1(reader.bytes(5), MAGIC)) throw invalid$1("the PSBTv2 stream has no magic prefix");
+			let map = [];
+			while (reader.remaining > 0) {
+				const keyLength = reader.varint();
+				if (keyLength === 0) {
+					maps.push(map);
+					map = [];
+					continue;
+				}
+				const key = reader.bytes(keyLength);
+				const valueLength = reader.varint();
+				map.push({
+					key,
+					value: reader.bytes(valueLength)
+				});
+			}
+			if (map.length > 0) throw invalid$1("the last PSBT map is not terminated");
+		} catch (error) {
+			if (error instanceof LedgerError && error.code === "invalid-input") throw error;
+			throw invalid$1("the PSBTv2 stream is malformed");
+		}
+		const [global] = maps;
+		if (global === void 0) throw invalid$1("the PSBTv2 stream has no global map");
+		return {
+			maps,
+			global: sortMap(global)
+		};
+	};
+	/** PSBT_GLOBAL_VERSION is a 4-byte little-endian number (BIP-370); absent on v0/v1. */
+	var versionOf = (global) => {
+		const hit = global.find((kv) => kv.key.length === 1 && kv.key[0] === KEY_VERSION);
+		if (hit === void 0 || hit.value.length !== 4) return;
+		return new DataView(hit.value.buffer, hit.value.byteOffset, 4).getUint32(0, true);
+	};
+	/**
+	* The global, per-input and per-output raw maps of `psbt`, each sorted by key bytes. A stream that
+	* is already PSBTv2 keeps its maps verbatim — unknown and proprietary key/value pairs included;
+	* anything else is normalized through @scure/btc-signer (v0/v1 → v2), and whatever it cannot decode
+	* is `invalid-input`.
+	*/
+	var toV2 = (psbt) => {
+		try {
+			return Transaction.fromPSBT(psbt, {
+				unknown: "ignore",
+				proprietary: "ignore",
+				allowUnknownVersion: true,
+				allowUnknownInputs: true,
+				allowUnknownOutputs: true,
+				disableScriptCheck: true
+			}).toPSBT(2);
+		} catch (_unused2) {
+			throw invalid$1("the PSBT does not decode or cannot be expressed as version 2");
+		}
+	};
+	function psbtV2Maps(psbt) {
+		let parsed;
+		try {
+			parsed = splitMaps(psbt);
+		} catch (_unused3) {
+			parsed = void 0;
+		}
+		const { maps, global } = parsed !== void 0 && versionOf(parsed.global) === 2 ? parsed : splitMaps(toV2(psbt));
+		const inputCount = countValue(global, KEY_INPUT_COUNT);
+		const outputCount = countValue(global, KEY_OUTPUT_COUNT);
+		if (maps.length !== 1 + inputCount + outputCount) throw invalid$1("the PSBTv2 map count does not match its global counts");
+		return {
+			global,
+			inputs: maps.slice(1, 1 + inputCount).map(sortMap),
+			outputs: maps.slice(1 + inputCount).map(sortMap)
+		};
+	}
+	/**
+	* `varint n ‖ merkleRoot(keys) ‖ merkleRoot(values)` — the 65–73 byte commitment of doc/merkle.md
+	* (MerkleMap.commitment). `kvs` must already be the sorted map psbtV2Maps returns.
+	*/
+	function mapCommitment(kvs) {
+		const count = varint(kvs.length);
+		const out = new Uint8Array(count.length + 64);
+		out.set(count, 0);
+		out.set(merkleRoot(kvs.map((kv) => leafHash(kv.key))), count.length);
+		out.set(merkleRoot(kvs.map((kv) => leafHash(kv.value))), count.length + 32);
+		return out;
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/index.ts
+	init_secp256k1();
+	init_utils$2();
+	init_bip32();
+	init_utils();
+	var CLA$3 = 225;
+	var PROTOCOL_VERSION = 1;
+	var INS_GET_EXTENDED_PUBKEY = 0;
+	var INS_GET_WALLET_ADDRESS = 3;
+	var INS_SIGN_PSBT = 4;
+	var INS_GET_MASTER_FINGERPRINT = 5;
+	var INS_SIGN_MESSAGE$1 = 16;
+	var MAX_PATH_DEPTH$3 = 10;
+	var MAX_ADDRESS_INDEX = 5e4;
+	var MESSAGE_CHUNK = 64;
+	var MAINNET = "bip122:000000000019d6689c085ae165831e93";
+	var PSBT_IN_BIP32_DERIVATION = 6;
+	var PSBT_IN_TAP_BIP32_DERIVATION = 22;
+	var CHAINS_TEMPLATE = {
+		"pkh(@0/**)": "btc.bip44",
+		"sh(wpkh(@0/**))": "btc.bip49",
+		"wpkh(@0/**)": "btc.bip84",
+		"tr(@0/**)": "btc.bip86"
+	};
+	var invalid = (message) => new LedgerError("invalid-response", message);
+	var concat$1 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	var equalBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var PRINTABLE$1 = (byte) => byte >= 32 && byte <= 126;
+	var asciiReply = (data) => {
+		if (!data.every(PRINTABLE$1)) throw invalid("a response string is not printable ASCII");
+		return new TextDecoder().decode(data);
+	};
+	var command$2 = (ins, data) => ({
+		cla: CLA$3,
+		ins,
+		p1: 0,
+		p2: PROTOCOL_VERSION,
+		data
+	});
+	/** `E1 05 00 01` → the 4-byte master fingerprint (doc/bitcoin.md GET_MASTER_FINGERPRINT). */
+	async function btcMasterFingerprint(exchange) {
+		const data = await transmit(exchange, "bitcoin", command$2(INS_GET_MASTER_FINGERPRINT, /* @__PURE__ */ new Uint8Array(0)));
+		if (data.length !== 4) throw invalid("the master fingerprint is not 4 bytes");
+		return Uint8Array.from(data);
+	}
+	/**
+	* `E1 00 00 01` — `display ‖ n ‖ path` → the ASCII xpub at `path` (doc/bitcoin.md
+	* GET_EXTENDED_PUBKEY). The returned extended key must decode as a mainnet xpub whose depth and
+	* child index match the request — a wrong key is `invalid-response`.
+	*/
+	async function btcExtendedPublicKey(exchange, path, display) {
+		const last = path.at(-1);
+		if (last === void 0) throw input("the derivation path is empty");
+		const xpub = asciiReply(await transmit(exchange, "bitcoin", command$2(INS_GET_EXTENDED_PUBKEY, concat$1(Uint8Array.of(display ? 1 : 0), encodePath(path, MAX_PATH_DEPTH$3)))));
+		const key = (() => {
+			try {
+				return HDKey$1.fromExtendedKey(xpub, MAINNET_BIP32);
+			} catch (_unused) {
+				throw invalid("the extended pubkey does not decode");
+			}
+		})();
+		if (key.depth !== path.length || key.index !== last) throw invalid("the extended pubkey does not match the requested path");
+		return xpub;
+	}
+	/** The local address for `policy` at `change`/`index` — the device reply must equal it. */
+	var expectedAddress = (policy, change, index) => {
+		const { xpub } = policyKey(policy);
+		return bitcoinAddressFromXpub(xpub, CHAINS_TEMPLATE[policy.template], MAINNET, change, index);
+	};
+	/**
+	* `E1 03 00 01` — `display ‖ policyId ‖ 32×00 (default-wallet HMAC) ‖ change ‖ u32 index` → the
+	* ASCII address (doc/bitcoin.md GET_WALLET_ADDRESS). doc/wallet.md caps the default-wallet index at
+	* 50000; the reply must equal the address derived from the policy key locally.
+	*/
+	async function btcWalletAddress(exchange, policy, change, index, display) {
+		if (change !== 0 && change !== 1) throw input("change must be 0 or 1");
+		if (!Number.isSafeInteger(index) || index < 0 || index > MAX_ADDRESS_INDEX) throw input("the address index is out of range");
+		const expected = expectedAddress(policy, change, index);
+		const known = newKnown();
+		knownWalletPolicy(known, policy);
+		const { data } = await interact(exchange, command$2(INS_GET_WALLET_ADDRESS, concat$1(Uint8Array.of(display ? 1 : 0), policyId(policy), /* @__PURE__ */ new Uint8Array(32), Uint8Array.of(change), u32(index))), known, maxRounds(known));
+		const address = asciiReply(data);
+		if (address !== expected) throw invalid("the device address does not match the policy key");
+		return address;
+	}
+	/**
+	* A `bip32Derivation`/`tapBip32Derivation` value — `fpr4 ‖ u32le path[]`, prefixed by a varint
+	* tapleaf-hash list under BIP-371. Returns undefined when the entry does not parse.
+	*/
+	var derivationOf = (value, taproot) => {
+		try {
+			const reader = new Reader(value);
+			if (taproot) reader.bytes(reader.varint() * 32);
+			const fingerprint = reader.bytes(4);
+			const path = [];
+			while (reader.remaining > 0) {
+				const step = reader.bytes(4);
+				path.push(new DataView(step.buffer, step.byteOffset, 4).getUint32(0, true));
+			}
+			return {
+				fingerprint,
+				path
+			};
+		} catch (_unused2) {
+			return;
+		}
+	};
+	/**
+	* `path` must be `policy.account ‖ change ‖ index` with a non-hardened tail — the only keys a
+	* default policy derives (`@0/**`). Returns the expected public key form (33-byte compressed, or
+	* 32-byte x-only for the taproot template), or undefined when the entry does not name this policy.
+	*/
+	var policyChild = (path, parsed, taproot) => {
+		const { account, xpub } = parsed;
+		if (path.length !== account.length + 2 || !account.every((step, i) => path[i] === step)) return;
+		const change = path.at(-2);
+		const index = path.at(-1);
+		if (change !== 0 && change !== 1 || index === void 0 || index >= 2147483648) return;
+		return bitcoinPubkeyFromXpub(xpub, taproot ? "btc.bip86" : "btc.bip84", MAINNET, change, index);
+	};
+	/**
+	* The yielded `pubkey` must be the key the input's own derivation fields claim under the policy —
+	* the ownership check doc/wallet.md's key origin performs on the device. For ECDSA the yield
+	* carries the derivation entry's compressed pubkey; for a taproot key-path spend it carries the
+	* _tweaked output key_ while `tapBip32Derivation` is keyed by the internal x-only key (BIP-371), so
+	* the match is `tweak(derive(path))` — verified live against the pinned 2.5.1 app.
+	*/
+	var ownKey = (kvs, pubkey, parsed) => {
+		if (pubkey.length === 32) {
+			for (const { key, value } of kvs) {
+				if (key.length !== 33 || key[0] !== PSBT_IN_TAP_BIP32_DERIVATION) continue;
+				const derivation = derivationOf(value, true);
+				if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+				const internal = policyChild(derivation.path, parsed, true);
+				if (internal === void 0 || !equalBytes(internal, key.subarray(1))) continue;
+				const [tweaked] = taprootTweakPubkey(internal, /* @__PURE__ */ new Uint8Array());
+				if (equalBytes(tweaked, pubkey)) return;
+			}
+			throw invalid("the yielded pubkey does not belong to the wallet policy");
+		}
+		for (const { key, value } of kvs) {
+			if (key.length !== 34 || key[0] !== PSBT_IN_BIP32_DERIVATION || !equalBytes(key.subarray(1), pubkey)) continue;
+			const derivation = derivationOf(value, false);
+			if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+			const expected = policyChild(derivation.path, parsed, false);
+			if (expected !== void 0 && equalBytes(expected, pubkey)) return;
+		}
+		throw invalid("the yielded pubkey does not belong to the wallet policy");
+	};
+	/**
+	* One YIELD item: `varint tagOrInput ‖ u8 pubkeyAugmLen ‖ pubkeyAugm ‖ signature` (doc/bitcoin.md
+	* SIGN_PSBT, src/handler/sign_psbt/sign_input.c yield_signature). Tags above 65535 are MuSig2
+	* frames and a 64-byte pubkey augmentation is a tapscript spend — neither exists under the single-
+	* key default policies this client supports, so both are `invalid-response`.
+	*/
+	var parseYield = (item, inputs) => {
+		const reader = new Reader(item);
+		const index = reader.varint();
+		if (index > 65535) throw invalid("a yielded tag is not a signature under a default policy");
+		const kvs = inputs[index];
+		if (kvs === void 0) throw invalid("a yielded input index is out of range");
+		const pubkey = reader.bytes(reader.u8());
+		const signature = reader.rest();
+		reader.end();
+		if (pubkey.length === 64) throw invalid("tapscript signatures are not supported");
+		if (pubkey.length === 33) {
+			try {
+				secp256k1.Signature.fromBytes(signature.subarray(0, -1), "der");
+			} catch (_unused3) {
+				throw invalid("the yielded ECDSA signature is not DER plus a sighash byte");
+			}
+			return {
+				input: index,
+				pubkey,
+				signature,
+				kvs
+			};
+		}
+		if (pubkey.length === 32) {
+			if (signature.length !== 64 && signature.length !== 65) throw invalid("the yielded taproot signature is not 64 or 65 bytes");
+			return {
+				input: index,
+				pubkey,
+				signature,
+				kvs
+			};
+		}
+		throw invalid("the yielded pubkey is not 32 or 33 bytes");
+	};
+	/**
+	* `E1 04 00 01` — the merkleized global/input/output map commitments plus `policyId ‖ 32×00`
+	* (doc/bitcoin.md SIGN_PSBT); signatures arrive through YIELD. Every yield is re-validated: input
+	* index in range, pubkey shape, DER-plus-sighash or 64/65-byte signature, no duplicate (input,
+	* pubkey) pair, and the key must belong to the policy.
+	*/
+	async function btcSignPsbt(exchange, psbt, policy) {
+		const parsed = policyKey(policy);
+		const maps = psbtV2Maps(psbt);
+		const inputCommitments = maps.inputs.map((m) => mapCommitment(m));
+		const outputCommitments = maps.outputs.map((m) => mapCommitment(m));
+		const known = newKnown();
+		knownWalletPolicy(known, policy);
+		knownMapping(known, maps.global);
+		for (const map of maps.inputs) knownMapping(known, map);
+		for (const map of maps.outputs) knownMapping(known, map);
+		knownList(known, inputCommitments);
+		knownList(known, outputCommitments);
+		const { yielded } = await interact(exchange, command$2(INS_SIGN_PSBT, concat$1(mapCommitment(maps.global), varint(maps.inputs.length), merkleRoot(inputCommitments.map((c) => leafHash(c))), varint(maps.outputs.length), merkleRoot(outputCommitments.map((c) => leafHash(c))), policyId(policy), /* @__PURE__ */ new Uint8Array(32))), known, maxRounds(known));
+		const seen = /* @__PURE__ */ new Set();
+		const out = [];
+		for (const item of yielded) {
+			const yield1 = parseYield(item, maps.inputs);
+			const tag = `${String(yield1.input)}:${bytesToHex$4(yield1.pubkey)}`;
+			if (seen.has(tag)) throw invalid("a signature was yielded twice for the same input and key");
+			seen.add(tag);
+			ownKey(yield1.kvs, yield1.pubkey, parsed);
+			out.push({
+				input: yield1.input,
+				publicKey: yield1.pubkey,
+				signature: yield1.signature
+			});
+		}
+		return out;
+	}
+	/**
+	* `E1 10 00 01` — `n ‖ path ‖ varint len ‖ merkleRoot(64-byte chunks)` → exactly 65 bytes
+	* (doc/bitcoin.md SIGN_MESSAGE). The first byte is `27 + 4 + parity` in the pinned source
+	* (src/handler/sign_message.c — 31 or 32); r‖s follows.
+	*/
+	async function btcSignMessage(exchange, path, message) {
+		const chunks = [];
+		for (let offset = 0; offset < message.length; offset += MESSAGE_CHUNK) chunks.push(message.subarray(offset, offset + MESSAGE_CHUNK));
+		const known = newKnown();
+		knownList(known, chunks);
+		const { data } = await interact(exchange, command$2(INS_SIGN_MESSAGE$1, concat$1(encodePath(path, MAX_PATH_DEPTH$3), varint(message.length), merkleRoot(chunks.map((c) => leafHash(c))))), known, maxRounds(known));
+		if (data.length !== 65) throw invalid("the message signature is not 65 bytes");
+		const [header] = data;
+		if (header !== 31 && header !== 32) throw invalid("the message signature header is invalid");
+		return {
+			header,
+			signature: data.subarray(1)
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/ethereum.ts
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	var CLA$2 = 224;
+	var INS_GET_PUBLIC_KEY$1 = 2;
+	var INS_SIGN$1 = 4;
+	var INS_GET_APP_CONFIGURATION$2 = 6;
+	var INS_SIGN_PERSONAL_MESSAGE$1 = 8;
+	var INS_SIGN_EIP_712_MESSAGE = 12;
+	var INS_EIP712_STRUCT_DEF = 26;
+	var INS_EIP712_STRUCT_IMPL = 28;
+	var P1_CONFIRM$2 = 1;
+	var P1_NON_CONFIRM = 0;
+	var P1_FIRST$1 = 0;
+	var P1_MORE$1 = 128;
+	var P2_EIP712_V1_IMPLEM = 1;
+	var P2_DEF_NAME = 0;
+	var P2_DEF_FIELD = 255;
+	var P2_IMPL_NAME = 0;
+	var P2_IMPL_ARRAY = 15;
+	var P2_IMPL_FIELD = 255;
+	var P1_DEF_COMPLETE = 0;
+	var P1_IMPL_PARTIAL = 1;
+	var P1_IMPL_COMPLETE = 0;
+	var MAX_PATH_DEPTH$2 = 10;
+	var CHUNK$2 = 255;
+	var utf8 = (value) => utf8ToBytes$1(value);
+	/** The JSON value form kernel typed-data parsing produces for struct fields. */
+	var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var command$1 = (ins, p1, p2, data) => ({
+		cla: CLA$2,
+		ins,
+		p1,
+		p2,
+		data
+	});
+	/** Validates a 65-byte uncompressed key and returns its 33-byte compressed form. */
+	var secp256k1Compressed = (bytes) => {
+		try {
+			return secp256k1.Point.fromBytes(bytes).toBytes(true);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "the returned key is not a secp256k1 point");
+		}
+	};
+	/** `r ‖ s` from a 65-byte `v ‖ r ‖ s` reply; parity is recovered when the document is assembled. */
+	var rsSignature = (data) => {
+		if (data.length !== 65) throw new LedgerError("invalid-response", "signature reply is not 65 bytes");
+		return data.subarray(1, 65);
+	};
+	/**
+	* `LV(65 uncompressed) ‖ LV(40 ascii hex) ‖ [chain code 32]` — the ASCII address must be the
+	* address of the returned key, so a swapped address string cannot pass.
+	*/
+	var publicNodeReply$1 = (data, chainCode) => {
+		const reader = new Reader(data);
+		const uncompressed = reader.lv();
+		if (uncompressed.length !== 65 || uncompressed[0] !== 4) throw new LedgerError("invalid-response", "ethereum public key is not a 65-byte point");
+		const publicKey = secp256k1Compressed(uncompressed);
+		const ascii = reader.lv();
+		if (ascii.length !== 40) throw new LedgerError("invalid-response", "ethereum address is not 40 hex characters");
+		let hexAddress;
+		try {
+			hexAddress = new TextDecoder("ascii", { fatal: true }).decode(ascii);
+		} catch (_unused2) {
+			throw new LedgerError("invalid-response", "ethereum address is not ASCII");
+		}
+		const code = chainCode ? reader.bytes(32) : void 0;
+		reader.end();
+		const address = evmAddressFromPublicKey(uncompressed);
+		if (hexAddress.toLowerCase() !== address.slice(2).toLowerCase()) throw new LedgerError("invalid-response", "the address does not match the public key");
+		return _objectSpread2({
+			publicKey,
+			address
+		}, code === void 0 ? {} : { chainCode: code });
+	};
+	/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+	async function ethAddress(exchange, keyPath, display) {
+		const { publicKey, address } = publicNodeReply$1(await transmit(exchange, "ethereum", command$1(INS_GET_PUBLIC_KEY$1, display ? P1_CONFIRM$2 : P1_NON_CONFIRM, 0, encodePath(keyPath, MAX_PATH_DEPTH$2))), false);
+		return {
+			publicKey,
+			address
+		};
+	}
+	/** `INS_02` (P2 `0x01`) → the compressed key plus the 32-byte BIP-32 chain code (doc/apdu.md). */
+	async function ethPublicNode(exchange, keyPath) {
+		const { publicKey, chainCode } = publicNodeReply$1(await transmit(exchange, "ethereum", command$1(INS_GET_PUBLIC_KEY$1, P1_NON_CONFIRM, 1, encodePath(keyPath, MAX_PATH_DEPTH$2))), true);
+		if (chainCode === void 0) throw new LedgerError("invalid-response", "ethereum reply carries no chain code");
+		return {
+			publicKey,
+			chainCode
+		};
+	}
+	/** Encoded size of the RLP item starting at `offset`; overruns and bad lengths → invalid-input. */
+	var rlpItemLength = (rlp, offset) => {
+		const first = rlp[offset];
+		if (first === void 0) throw input("truncated RLP");
+		if (first <= 127) return 1;
+		let header;
+		let payload;
+		if (first <= 183) {
+			header = 1;
+			payload = first - 128;
+		} else {
+			const count = first <= 191 ? first - 183 : first - 247;
+			const lenStart = offset + 1;
+			let declared = 0;
+			for (let i = 0; i < count; i += 1) {
+				const byte = rlp[lenStart + i];
+				if (byte === void 0) throw input("truncated RLP length");
+				declared = declared * 256 + byte;
+			}
+			header = 1 + count;
+			payload = declared;
+		}
+		if (offset + header + payload > rlp.length) throw input("RLP item overruns the buffer");
+		return header + payload;
+	};
+	/**
+	* Encoded length of the last three top-level items of a legacy RLP list (the v, r, s tail — see
+	* safeChunkTransaction's `encodedVrs`). Throws invalid-input on malformed RLP.
+	*/
+	var rlpVrsTailLength = (tx) => {
+		const { 0: first } = tx;
+		if (first === void 0 || first < 192) throw input("legacy transaction is not an RLP list");
+		let offset = 1;
+		if (first > 247) {
+			const count = first - 247;
+			let declared = 0;
+			for (let i = 0; i < count; i += 1) {
+				const byte = tx[offset + i];
+				if (byte === void 0) throw input("truncated RLP list header");
+				declared = declared * 256 + byte;
+			}
+			offset += count;
+			if (offset + declared !== tx.length) throw input("RLP list length does not cover the transaction");
+		}
+		let antepenultimate = 0;
+		let penultimate = 0;
+		let last = 0;
+		let count = 0;
+		while (offset < tx.length) {
+			antepenultimate = penultimate;
+			penultimate = last;
+			last = offset;
+			offset += rlpItemLength(tx, offset);
+			count += 1;
+		}
+		if (offset !== tx.length || count < 3) throw input("transaction is not a well-formed RLP list");
+		return tx.length - antepenultimate;
+	};
+	/**
+	* Splits `path ‖ tx` into ≤255 chunks. A legacy transaction must never end a chunk such that only
+	* its v,r,s tail remains in the last chunk (hw-app-eth safeChunkTransaction); typed transactions
+	* (type byte < 0x80) use a naive split.
+	*/
+	var safeChunk = (path, tx) => {
+		const payload = new Uint8Array(path.length + tx.length);
+		payload.set(path);
+		payload.set(tx, path.length);
+		if (payload.length <= CHUNK$2) return [payload];
+		let chunkSize = CHUNK$2;
+		const { 0: first } = tx;
+		if (first !== void 0 && first >= 192) {
+			const tail = rlpVrsTailLength(tx);
+			const remainder = payload.length % CHUNK$2;
+			if (remainder !== 0 && remainder <= tail) for (let candidate = 254; candidate >= 1; candidate -= 1) {
+				const last = payload.length % candidate;
+				if (last === 0 || last > tail) {
+					chunkSize = candidate;
+					break;
+				}
+			}
+		}
+		const chunks = [];
+		for (let offset = 0; offset < payload.length; offset += chunkSize) chunks.push(payload.subarray(offset, offset + chunkSize));
+		return chunks;
+	};
+	/** Splits `payload` into ≤255 chunks: first `P1 0x00`, continuations `P1 0x80` (apdu_constants.h). */
+	var chunked = (ins, payload) => {
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$2) commands.push(command$1(ins, offset === 0 ? P1_FIRST$1 : P1_MORE$1, 0, payload.subarray(offset, offset + CHUNK$2)));
+		return commands;
+	};
+	/**
+	* `INS_04` — `unsigned` is the serialized unsigned transaction (typed: `type ‖ rlp`; legacy: the
+	* RLP list including the EIP-155 `chainId,0,0` tail).
+	*/
+	async function ethSignTransaction(exchange, keyPath, unsigned) {
+		if (unsigned.length === 0) throw input("transaction is empty");
+		const { 0: first } = unsigned;
+		if (first === void 0 || first < 1 || first >= 128 && first < 192) throw input("transaction is neither typed nor a legacy RLP list");
+		return rsSignature(await transmitChunks(exchange, "ethereum", safeChunk(encodePath(keyPath, MAX_PATH_DEPTH$2), unsigned).map((data, i) => command$1(INS_SIGN$1, i === 0 ? P1_FIRST$1 : P1_MORE$1, 0, data))));
+	}
+	/** `INS_08` — `path ‖ u32 length ‖ message`, streamed in ≤255-byte chunks. */
+	async function ethSignPersonalMessage(exchange, keyPath, message) {
+		if (message.length > 4294967295) throw input("message exceeds the u32 length field");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH$2);
+		const payload = new Uint8Array(path.length + 4 + message.length);
+		payload.set(path);
+		payload.set(u32(message.length), path.length);
+		payload.set(message, path.length + 4);
+		return rsSignature(await transmitChunks(exchange, "ethereum", chunked(INS_SIGN_PERSONAL_MESSAGE$1, payload)));
+	}
+	/** Atomic EIP-712 type keys — eip712_v1_commands.c + utils.ts EIP712_TYPE_PROPERTIES. */
+	var TYPE_KEYS = {
+		custom: 0,
+		int: 1,
+		uint: 2,
+		address: 3,
+		bool: 4,
+		string: 5,
+		bytesFixed: 6,
+		bytesDynamic: 7
+	};
+	/** Port of destructTypeFromString: `baseType` + array suffixes in declaration order. */
+	var destructType = (typeName) => {
+		var _sized$;
+		const match = /^([^[\]]*)((?:\[\d*\])*)$/.exec(typeName);
+		const base = match === null || match === void 0 ? void 0 : match[1];
+		const suffix = match === null || match === void 0 ? void 0 : match[2];
+		if (match === null || base === void 0 || base === "" || suffix === void 0) throw input("malformed EIP-712 type");
+		const sized = /^(u?int|bytes)(\d{0,3})$/.exec(base);
+		const name = (_sized$ = sized === null || sized === void 0 ? void 0 : sized[1]) !== null && _sized$ !== void 0 ? _sized$ : base;
+		const sizeText = sized === null || sized === void 0 ? void 0 : sized[2];
+		const size = sizeText === void 0 || sizeText === "" ? void 0 : Number(sizeText);
+		if ((name === "int" || name === "uint") && size !== void 0 && (size % 8 !== 0 || size < 8 || size > 256)) throw input("invalid EIP-712 integer width");
+		if (name === "bytes" && size !== void 0 && (size < 1 || size > 32)) throw input("invalid EIP-712 bytes width");
+		const arrays = [];
+		for (const dim of suffix.matchAll(/\[(\d*)\]/g)) arrays.push(dim[1] === void 0 || dim[1] === "" ? void 0 : Number(dim[1]));
+		return {
+			name,
+			size,
+			arrays
+		};
+	};
+	var ATOMIC = /* @__PURE__ */ new Set([
+		"int",
+		"uint",
+		"address",
+		"bool",
+		"string",
+		"bytes"
+	]);
+	var atomicKind = (t) => {
+		switch (t.name) {
+			case "int": return TYPE_KEYS.int;
+			case "uint": return TYPE_KEYS.uint;
+			case "address": return TYPE_KEYS.address;
+			case "bool": return TYPE_KEYS.bool;
+			case "string": return TYPE_KEYS.string;
+			case "bytes": return t.size === void 0 ? TYPE_KEYS.bytesDynamic : TYPE_KEYS.bytesFixed;
+			default: return;
+		}
+	};
+	/**
+	* The field-definition payload (utils.ts makeTypeEntryStructBuffer): typedesc byte (bit7 array,
+	* bit6 has-size, low nibble type key), optional custom-type name, optional type size, optional
+	* array levels, then `u8 ‖ name`.
+	*/
+	var structFieldDefinition = (fieldName, typeName) => {
+		var _t$size;
+		const t = destructType(typeName);
+		const key = atomicKind(t);
+		const isArray = t.arrays.length > 0;
+		const isCustom = key === void 0;
+		const typeSize = key === TYPE_KEYS.int || key === TYPE_KEYS.uint ? Math.floor(((_t$size = t.size) !== null && _t$size !== void 0 ? _t$size : 256) / 8) : key === TYPE_KEYS.bytesFixed ? t.size : void 0;
+		const parts = [(isArray ? 128 : 0) | (typeSize === void 0 ? 0 : 64) | (isCustom ? TYPE_KEYS.custom : key)];
+		if (isCustom) {
+			const name = utf8(t.name);
+			if (name.length > 255) throw input("EIP-712 type name exceeds 255 bytes");
+			parts.push(name.length, ...name);
+		}
+		if (typeSize !== void 0) parts.push(typeSize);
+		if (isArray) {
+			if (t.arrays.length > 255) throw input("array level count exceeds 255");
+			parts.push(t.arrays.length);
+			for (const size of t.arrays) if (size === void 0) parts.push(0);
+			else {
+				if (size > 255) throw input("fixed array size exceeds 255");
+				parts.push(1, size);
+			}
+		}
+		const field = utf8(fieldName);
+		if (field.length > 255) throw input("EIP-712 field name exceeds 255 bytes");
+		parts.push(field.length, ...field);
+		return Uint8Array.from(parts);
+	};
+	var bigEndianMinimal = (value) => {
+		if (value < 0n) throw input("negative value cannot be encoded unsigned");
+		if (value === 0n) return Uint8Array.of(0);
+		let hex = value.toString(16);
+		if (hex.length % 2 === 1) hex = `0${hex}`;
+		return hexToBytes$3(hex);
+	};
+	/** Mirrors the value forms ox's ABI integer encoding accepts — anything `BigInt()` parses. */
+	var toBigInt = (value) => {
+		switch (typeof value) {
+			case "bigint":
+			case "boolean":
+			case "number":
+			case "string": try {
+				return BigInt(value);
+			} catch (_unused3) {
+				return;
+			}
+			default: return;
+		}
+	};
+	var hexBytes = (value) => {
+		if (typeof value !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(value)) return;
+		return hexToBytes$3(value.slice(2));
+	};
+	/**
+	* The wire encoding of one atomic field value (utils.ts EIP712_TYPE_ENCODERS). Accepted value forms
+	* mirror the encoder the kernel hashes with (ox TypedData → AbiParameters.encode): int/uint take
+	* anything `BigInt()` parses, bool only `boolean`, address/bytes only `0x` hex (bytesN exact
+	* length), string is stringified. A missing field is `invalid-input` — a zero fail-safe could never
+	* match the hash of a document the field is absent from.
+	*/
+	var encodeFieldValue = (t, value) => {
+		var _t$size2;
+		if (value === void 0) throw input("EIP-712 field has no value");
+		const bits = (_t$size2 = t.size) !== null && _t$size2 !== void 0 ? _t$size2 : 256;
+		switch (t.name) {
+			case "uint": {
+				const v = toBigInt(value);
+				if (v === void 0 || v < 0n || v >= 2n ** BigInt(bits)) throw input("uint value out of range");
+				return bigEndianMinimal(v);
+			}
+			case "int": {
+				const v = toBigInt(value);
+				const min = -(2n ** BigInt(bits - 1));
+				const max = 2n ** BigInt(bits - 1) - 1n;
+				if (v === void 0 || v < min || v > max) throw input("int value out of range");
+				return bigEndianMinimal(v < 0n ? v + 2n ** BigInt(bits) : v);
+			}
+			case "address": {
+				const bytes = hexBytes(value);
+				if (bytes === void 0 || bytes.length !== 20) throw input("address value is not a 0x-prefixed 20-byte hex string");
+				return bytes;
+			}
+			case "bool":
+				if (typeof value !== "boolean") throw input("bool value is not a boolean");
+				return Uint8Array.of(value ? 1 : 0);
+			case "string": return utf8(String(value));
+			case "bytes": {
+				const bytes = hexBytes(value);
+				if (bytes === void 0) throw input("bytes value is not 0x-prefixed hex");
+				if (t.size !== void 0 && bytes.length !== t.size) throw input("fixed bytes value is not the declared size");
+				return bytes;
+			}
+			default: throw input("not an atomic EIP-712 type");
+		}
+	};
+	/**
+	* `INS_1C` field value: `u16 ‖ encoded` split across APDUs of ≤255 bytes; non-last chunks carry
+	* `P1_PARTIAL`, the last `P1_COMPLETE` (eip712_v1_commands.c accepts any non-zero P1 as partial).
+	*/
+	var implFieldCommands = (encoded) => {
+		const payload = new Uint8Array(2 + encoded.length);
+		new DataView(payload.buffer).setUint16(0, encoded.length);
+		payload.set(encoded, 2);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$2) {
+			const last = offset + CHUNK$2 >= payload.length;
+			commands.push(command$1(INS_EIP712_STRUCT_IMPL, last ? P1_IMPL_COMPLETE : P1_IMPL_PARTIAL, P2_IMPL_FIELD, payload.subarray(offset, offset + CHUNK$2)));
+		}
+		return commands;
+	};
+	/** `Object.entries` comparator matching `Object.keys(types).sort()` ordering. */
+	var byTypeName = ([a], [b]) => a < b ? -1 : a > b ? 1 : 0;
+	/**
+	* `INS_0C` full mode (`P2 0x01`) — sends all struct definitions (types sorted alphabetically, as
+	* hw-app-eth does to keep the schema hash stable), then the EIP712Domain and primaryType
+	* implementations, then the signing path. Sends no filters: on the pinned app that leaves the BASIC
+	* filtering mode, which requires the blind-signing setting to sign.
+	*/
+	async function ethSignTypedData(exchange, keyPath, typedData) {
+		const { types, primaryType, domain, message } = typedData;
+		if (types[primaryType] === void 0) throw input("primary type is not declared in types");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH$2);
+		const commands = [];
+		for (const [typeName, fields] of Object.entries(types).sort(byTypeName)) {
+			commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_NAME, utf8(typeName)));
+			for (const field of fields) commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_FIELD, structFieldDefinition(field.name, field.type)));
+		}
+		const implFields = (structName, value, depth) => {
+			if (depth > 32) throw input("EIP-712 nesting exceeds the depth bound");
+			const fields = types[structName];
+			if (fields === void 0) throw input(`undeclared EIP-712 struct ${JSON.stringify(structName)}`);
+			for (const field of fields) implValue(destructType(field.type), value[field.name], depth);
+		};
+		const implValue = (t, value, depth) => {
+			if (t.arrays.length > 0) {
+				const [level, ...rest] = t.arrays;
+				if (!Array.isArray(value)) throw input("EIP-712 array field is not an array");
+				if (level !== void 0 && value.length !== level) throw input("fixed array length does not match its declared size");
+				if (value.length > 255) throw input("EIP-712 array has more than 255 entries");
+				commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_ARRAY, Uint8Array.of(value.length)));
+				for (const entry of value) implValue({
+					name: t.name,
+					size: t.size,
+					arrays: rest
+				}, entry, depth + 1);
+				return;
+			}
+			if (!ATOMIC.has(t.name)) {
+				if (!isRecord(value)) throw input("EIP-712 struct field is not an object");
+				implFields(t.name, value, depth + 1);
+				return;
+			}
+			commands.push(...implFieldCommands(encodeFieldValue(t, value)));
+		};
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8("EIP712Domain")));
+		const domainFields = types["EIP712Domain"];
+		if (domainFields === void 0) throw input("types has no EIP712Domain");
+		for (const field of domainFields) implValue(destructType(field.type), domain[field.name], 0);
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8(primaryType)));
+		implFields(primaryType, message, 0);
+		commands.push(command$1(INS_SIGN_EIP_712_MESSAGE, P1_NON_CONFIRM, P2_EIP712_V1_IMPLEM, path));
+		return rsSignature(await transmitChunks(exchange, "ethereum", commands));
+	}
+	/**
+	* `INS_06` — `flags ‖ major ‖ minor ‖ patch`; flags bit 0 is APP_FLAG_DATA_ALLOWED, the "Blind
+	* signing" setting (src/apdu_constants.h).
+	*/
+	async function ethConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "ethereum", command$1(INS_GET_APP_CONFIGURATION$2, 0, 0, /* @__PURE__ */ new Uint8Array(0))));
+		const flags = reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			blindSigning: (flags & 1) !== 0
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/solana.ts
+	/**
+	* Solana app client (CLA `0xE0`). Sources: refs/ledger-app-solana src/globals.h (`InsGetPubkey
+	* 0x05`, `InsSignMessage 0x06`, `InsSignOffchainMessage 0x07`, `InsGetAppConfiguration 0x04`,
+	* `P1_NON_CONFIRM 0x00`, `P2_EXTEND 0x01`, `P2_MORE 0x02`), src/main_application.c (configuration
+	* reply layout) and doc/api.md (payload layouts).
+	*/
+	var CLA$1 = 224;
+	var INS_GET_APP_CONFIGURATION$1 = 4;
+	var INS_GET_PUBKEY = 5;
+	var INS_SIGN_MESSAGE = 6;
+	var INS_SIGN_OFFCHAIN_MESSAGE = 7;
+	var P1_CONFIRM$1 = 1;
+	var P2_EXTEND = 1;
+	var P2_MORE = 2;
+	var MAX_PATH_DEPTH$1 = 5;
+	var MAX_MESSAGE = 1232;
+	var CHUNK$1 = 255;
+	var HARDENED$3 = 2147483648;
+	/** Solana derives hardened-only paths; depth 1..5 per the app docs. */
+	var path = (keyPath) => {
+		for (const index of keyPath) if (!Number.isSafeInteger(index) || index < HARDENED$3 || index > 4294967295) throw input("solana derivation path indices must all be hardened");
+		return encodePath(keyPath, MAX_PATH_DEPTH$1);
+	};
+	/** `INS ‖ P1 ‖ P2 0x00` command. */
+	var command = (ins, p1, data) => ({
+		cla: CLA$1,
+		ins,
+		p1,
+		p2: 0,
+		data
+	});
+	/** Exactly 64 bytes of ed25519 signature, or invalid-response. */
+	var signature64 = (data) => {
+		if (data.length !== 64) throw new LedgerError("invalid-response", "solana signature is not 64 bytes");
+		return data;
+	};
+	/** `INS_05` → the 32-byte ed25519 public key, validated to decode as a curve point. */
+	async function solanaAddress(exchange, keyPath, display) {
+		const data = await transmit(exchange, "solana", command(INS_GET_PUBKEY, display ? P1_CONFIRM$1 : 0, path(keyPath)));
+		if (data.length !== 32) throw new LedgerError("invalid-response", "solana public key is not 32 bytes");
+		try {
+			ed25519.Point.fromBytes(data);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "solana public key is not an ed25519 point");
+		}
+		return data;
+	}
+	/**
+	* Chunks `payload` into ≤255-byte APDU data fields: the first chunk carries `P2 = 0`, continuations
+	* `P2_EXTEND`, and every chunk but the last `P2_MORE` (globals.h).
+	*/
+	var signCommands$1 = (ins, keyPath, message) => {
+		if (message.length === 0 || message.length > MAX_MESSAGE) throw input("solana message is not 1..1232 bytes");
+		const prefix = path(keyPath);
+		const payload = new Uint8Array(1 + prefix.length + message.length);
+		payload[0] = 1;
+		payload.set(prefix, 1);
+		payload.set(message, 1 + prefix.length);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$1) {
+			const slice = payload.subarray(offset, offset + CHUNK$1);
+			const p2 = (offset === 0 ? 0 : P2_EXTEND) + (offset + CHUNK$1 < payload.length ? P2_MORE : 0);
+			commands.push({
+				cla: CLA$1,
+				ins,
+				p1: P1_CONFIRM$1,
+				p2,
+				data: slice
+			});
+		}
+		return commands;
+	};
+	/** `INS_06` — signs a serialized transaction message. */
+	async function solanaSignTransaction(exchange, keyPath, message) {
+		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_MESSAGE, keyPath, message)));
+	}
+	/** `INS_07` — signs a serialized off-chain message. */
+	async function solanaSignOffchainMessage(exchange, keyPath, message) {
+		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_OFFCHAIN_MESSAGE, keyPath, message)));
+	}
+	/**
+	* `INS_04` — `allow_blind_sign ‖ pubkey_display ‖ major ‖ minor ‖ patch`, exactly 5 bytes on the
+	* pinned build: main_application.c `InsGetAppConfiguration` only appends `tx_check_opt_in ‖
+	* tx_check_enable` under HAVE_TRANSACTION_CHECKS, which the pinned tag does not define.
+	*/
+	async function solanaConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "solana", command(INS_GET_APP_CONFIGURATION$1, 0, /* @__PURE__ */ new Uint8Array(0))));
+		const blindSigning = reader.u8() !== 0;
+		reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			blindSigning
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/tron.ts
+	init_secp256k1();
+	init_objectSpread2();
+	var CLA = 224;
+	var INS_GET_PUBLIC_KEY = 2;
+	var INS_SIGN = 4;
+	var INS_GET_APP_CONFIGURATION = 6;
+	var INS_SIGN_PERSONAL_MESSAGE = 8;
+	var INS_SIGN_TIP_712_MESSAGE = 12;
+	var P1_CONFIRM = 1;
+	var P1_SIGN = 16;
+	var P1_FIRST = 0;
+	var P1_MORE = 128;
+	var P1_LAST = 144;
+	var MAX_PATH_DEPTH = 10;
+	var CHUNK = 255;
+	var secp256k1OnCurve = (bytes) => {
+		try {
+			return secp256k1.Point.fromBytes(bytes).toBytes(true);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "the returned key is not a secp256k1 point");
+		}
+	};
+	/** `r ‖ s` from the app's 65-byte `r ‖ s ‖ v` signature; v is recovered when the tx is assembled. */
+	var signature = (data) => {
+		if (data.length !== 65) throw new LedgerError("invalid-response", "tron signature is not 65 bytes");
+		return data.subarray(0, 64);
+	};
+	/**
+	* `INS_02` → `LV(65 uncompressed) ‖ LV(34 base58) ‖ [chain code 32 when P2 requests it]`. The
+	* returned base58 address must be the one derived from the returned key — anything else means the
+	* bytes in between are not the address the device signed for (docs/APDU.md).
+	*/
+	var publicNodeReply = (data, chainCode) => {
+		const reader = new Reader(data);
+		const uncompressed = reader.lv();
+		if (uncompressed.length !== 65 || uncompressed[0] !== 4) throw new LedgerError("invalid-response", "tron public key is not a 65-byte point");
+		const publicKey = secp256k1OnCurve(uncompressed);
+		const addressBytes = reader.lv();
+		if (addressBytes.length !== 34) throw new LedgerError("invalid-response", "tron address is not 34 base58 characters");
+		let address;
+		try {
+			address = new TextDecoder("ascii", { fatal: true }).decode(addressBytes);
+		} catch (_unused2) {
+			throw new LedgerError("invalid-response", "tron address is not ASCII");
+		}
+		const code = chainCode ? reader.bytes(32) : void 0;
+		reader.end();
+		if (address !== tronAddressFromPublicKey(uncompressed)) throw new LedgerError("invalid-response", "the address does not match the public key");
+		return _objectSpread2({
+			publicKey,
+			address
+		}, code === void 0 ? {} : { chainCode: code });
+	};
+	/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+	async function tronAddress(exchange, keyPath, display) {
+		const { publicKey, address } = publicNodeReply(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_PUBLIC_KEY,
+			p1: display ? P1_CONFIRM : 0,
+			p2: 0,
+			data: encodePath(keyPath, MAX_PATH_DEPTH)
+		}), false);
+		return {
+			publicKey,
+			address
+		};
+	}
+	/** `INS_02` (P2 `0x01` P2_CHAINCODE) → the compressed key plus the 32-byte chain code. */
+	async function tronPublicNode(exchange, keyPath) {
+		const { publicKey, chainCode } = publicNodeReply(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_PUBLIC_KEY,
+			p1: 0,
+			p2: 1,
+			data: encodePath(keyPath, MAX_PATH_DEPTH)
+		}), true);
+		if (chainCode === void 0) throw new LedgerError("invalid-response", "tron reply carries no chain code");
+		return {
+			publicKey,
+			chainCode
+		};
+	}
+	/**
+	* Chunks `path ‖ body` for INS 04: a single chunk carries `P1_SIGN`, otherwise `P1_FIRST` /
+	* `P1_MORE` / `P1_LAST` (src/handlers/sign.c).
+	*/
+	var signCommands = (ins, keyPath, body, lastP1) => {
+		const prefix = encodePath(keyPath, MAX_PATH_DEPTH);
+		const payload = new Uint8Array(prefix.length + body.length);
+		payload.set(prefix);
+		payload.set(body, prefix.length);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK) {
+			const slice = payload.subarray(offset, offset + CHUNK);
+			const first = offset === 0;
+			const last = offset + CHUNK >= payload.length;
+			commands.push({
+				cla: CLA,
+				ins,
+				p1: first && last ? P1_SIGN : first ? P1_FIRST : last ? lastP1 : P1_MORE,
+				p2: 0,
+				data: slice
+			});
+		}
+		return commands;
+	};
+	/** `INS_04` — signs `raw_data` (the protobuf-encoded transaction content). */
+	async function tronSignTransaction(exchange, keyPath, rawData) {
+		return signature(await transmitChunks(exchange, "tron", signCommands(INS_SIGN, keyPath, rawData, P1_LAST)));
+	}
+	/**
+	* `INS_08` — `path ‖ u32 length ‖ message`; chunks use `P1_SIGN` single, `P1_FIRST` then `P1_MORE`
+	* for the rest — there is no distinct last flag, the app counts the declared message length down
+	* (src/handlers/sign_personal_message.c).
+	*/
+	async function tronSignPersonalMessage(exchange, keyPath, message) {
+		const body = new Uint8Array(4 + message.length);
+		body.set(u32(message.length));
+		body.set(message, 4);
+		return signature(await transmitChunks(exchange, "tron", signCommands(INS_SIGN_PERSONAL_MESSAGE, keyPath, body, P1_MORE)));
+	}
+	/** `INS_0C` — `path ‖ domainHash(32) ‖ messageHash(32)` in a single APDU (requires Sign by hash). */
+	async function tronSignTypedDataHash(exchange, keyPath, domainHash, messageHash) {
+		if (domainHash.length !== 32 || messageHash.length !== 32) throw input("TIP-712 hashes must be 32 bytes");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH);
+		const data = new Uint8Array(path.length + 64);
+		data.set(path);
+		data.set(domainHash, path.length);
+		data.set(messageHash, path.length + 32);
+		return signature(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_SIGN_TIP_712_MESSAGE,
+			p1: 0,
+			p2: 0,
+			data
+		}));
+	}
+	/**
+	* `INS_06` — `config ‖ major ‖ minor ‖ patch`, config bits: 0 data allowed, 1 custom contract, 3
+	* sign by hash (src/handlers/get_app_configuration.c).
+	*/
+	async function tronConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_APP_CONFIGURATION,
+			p1: 0,
+			p2: 0,
+			data: /* @__PURE__ */ new Uint8Array(0)
+		}));
+		const flags = reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			dataAllowed: (flags & 1) !== 0,
+			customContracts: (flags & 2) !== 0,
+			signByHash: (flags & 8) !== 0
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/ledger/errors.ts
+	/**
+	* Ledger protocol errors into kernel errors: the wire-level `LedgerError` codes the protocol
+	* clients throw map onto the signer module's contract codes. `user-rejected` is the only code a
+	* caller may want to intercept before mapping (an address check answers `matched: false` rather
+	* than failing), so the map is exported as a pure function and the catch is the caller's.
+	*/
+	var CODES = {
+		"device-locked": "device-locked",
+		"app-not-open": "device-app-closed",
+		"app-not-installed": "device-app-closed",
+		"user-rejected": "device-rejected",
+		"setting-required": "blind-signing-disabled",
+		unsupported: "unsupported",
+		"invalid-input": "unsupported",
+		"invalid-response": "integrity",
+		transport: "integrity",
+		"device-fault": "unsupported"
+	};
+	/** Maps one `LedgerError` to the kernel code its ledger code names. */
+	var mapLedgerError = (error) => new KernelError(CODES[error.code], error.code === "device-fault" ? "the device refused the request" : error.message);
+	/**
+	* Runs `job` and maps any `LedgerError` it throws to the kernel code for that ledger code —
+	* `device-fault` loses its (unreliable, status-word-dependent) message for the fixed refusal text.
+	* Kernel errors from the driver's own guards pass through untouched.
+	*/
+	var call$3 = async (job) => {
+		try {
+			return await job();
+		} catch (error) {
+			if (error instanceof LedgerError) throw mapLedgerError(error);
+			throw error;
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/device.ts
+	var PRINTABLE = (b) => b >= 32 && b <= 126;
+	var ascii = (bytes) => {
+		if (!bytes.every(PRINTABLE)) throw new LedgerError("invalid-response", "a response string is not printable ASCII");
+		return new TextDecoder().decode(bytes);
+	};
+	/** `B0 01 00 00` — `01 ‖ LV(name) ‖ LV(version) ‖ [LV(flags)]`, nothing after. */
+	async function appAndVersion(exchange) {
+		const reader = new Reader(await transmit(exchange, "dashboard", {
+			cla: 176,
+			ins: 1,
+			p1: 0,
+			p2: 0,
+			data: /* @__PURE__ */ new Uint8Array(0)
+		}));
+		if (reader.u8() !== 1) throw new LedgerError("invalid-response", "GET_APP_AND_VERSION format is not 0x01");
+		const name = ascii(reader.lv());
+		const version = ascii(reader.lv());
+		const flags = reader.remaining > 0 ? reader.lv() : /* @__PURE__ */ new Uint8Array(0);
+		reader.end();
+		return {
+			name,
+			version,
+			flags
+		};
+	}
+	/**
+	* Names and minimum versions pinned in scripts/ledger/apps.json — device-release tags
+	* `nanos+_1.6.1_2.5.1_sdk_v26.6.2`, `nanos+_1.7.0_1.24.0_sdk_v27.1.7`,
+	* `nanos+_1.6.1_1.16.0_sdk_v26.4.0`, `nanos+_1.7.0_0.8.2_sdk_v27.1.5`. A unit test keeps this table
+	* equal to apps.json.
+	*/
+	var LEDGER_APPS = {
+		bitcoin: {
+			name: "Bitcoin",
+			minimum: [
+				2,
+				5,
+				1
+			]
+		},
+		ethereum: {
+			name: "Ethereum",
+			minimum: [
+				1,
+				24,
+				0
+			]
+		},
+		solana: {
+			name: "Solana",
+			minimum: [
+				1,
+				16,
+				0
+			]
+		},
+		tron: {
+			name: "Tron",
+			minimum: [
+				0,
+				8,
+				2
+			]
+		}
+	};
+	/** Wrong app in the foreground → app-not-open; malformed or too-old version → unsupported. */
+	function requireApp(info, app) {
+		if (info.name !== LEDGER_APPS[app].name) throw new LedgerError("app-not-open", "the app is not open on the device");
+		const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(info.version);
+		if (match === null) throw new LedgerError("unsupported", "the app version is not x.y.z");
+		const actual = [
+			Number(match[1]),
+			Number(match[2]),
+			Number(match[3])
+		];
+		const { minimum } = LEDGER_APPS[app];
+		for (const i of [
+			0,
+			1,
+			2
+		]) if (actual[i] !== minimum[i]) {
+			if (actual[i] < minimum[i]) throw new LedgerError("unsupported", "the app version is below the pinned minimum");
+			return;
+		}
+	}
+	// packages/wallet-kernel/src/modules/signers/ledger/link.ts
+	/**
+	* The link adapter every Ledger operation uses: one APDU is one `message` request on the
+	* `DeviceLink`, and the answer must be a `message` too — the raw `data ‖ SW` the host's byte pipe
+	* returned. Any other response kind means the host lied about the exchange it ran: `integrity`. App
+	* pinning is shared too: `requiredApp` reads `appAndVersion` and enforces the pinned name and
+	* minimum version before any operation-specific exchange.
+	*/
+	var apduExchange = (link) => {
+		const exchange = async (apdu) => {
+			const response = await link.exchange({
+				kind: "message",
+				data: apdu
+			});
+			if (response.kind !== "message") throw new KernelError("integrity", "the device answered a message with another kind");
+			return response.data;
+		};
+		return exchange;
+	};
+	/** `appAndVersion` plus `requireApp`: wrong app or too-old version fails before any other APDU. */
+	var requiredApp = async (exchange, app) => call$3(async () => {
+		const info = await appAndVersion(exchange);
+		requireApp(info, app);
+		return info;
+	});
+	// packages/wallet-kernel/src/modules/signers/ledger/pair.ts
+	/**
+	* Pairing and account fetch. The Bitcoin app is the identity source: it is the only Ledger app that
+	* reveals the BIP-32 master fingerprint (the ETH/Tron/Solana apps are path-locked to their coin
+	* type — the pinned Makefiles' PATH_APP_LOAD_PARAMS), so `pair` requires it and pins the four
+	* group-0 account xpubs it serves. `accounts` serves one chain family per call — coin type 0' →
+	* bitcoin (re-checking the master fingerprint against the pin), 60' → ethereum, 195' → tron, 501' →
+	* solana; any other type or a mix is `unsupported`.
+	*/
+	init_bip32();
+	var HARDENED$2 = 2147483648;
+	var PAIR_PURPOSES = [
+		44,
+		49,
+		84,
+		86
+	];
+	var unsupported = (message) => {
+		throw new KernelError("unsupported", message);
+	};
+	/** The pinned node the xpub at `path` carries — public key, chain code and parent fingerprint. */
+	var nodeAt = (path, xpub) => {
+		const key = HDKey$1.fromExtendedKey(xpub);
+		if (key.publicKey === null || key.chainCode === null) throw new KernelError("integrity", "the account xpub carries no public material");
+		const parent = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(parent.buffer).setUint32(0, key.parentFingerprint);
+		return {
+			path,
+			publicKey: key.publicKey,
+			chainCode: key.chainCode,
+			parent
+		};
+	};
+	/**
+	* The pairing ceremony: the Bitcoin app must be open — only it reveals the master fingerprint. The
+	* pinned nodes are the four group-0 account xpubs m/{44,49,84,86}'/0'/0'.
+	*/
+	var pair = async (link) => call$3(async () => {
+		const exchange = apduExchange(link);
+		const info = await requiredApp(exchange, "bitcoin");
+		const fingerprint = await btcMasterFingerprint(exchange);
+		const nodes = [];
+		for (const purpose of PAIR_PURPOSES) {
+			const path = [
+				purpose + HARDENED$2,
+				HARDENED$2,
+				HARDENED$2
+			];
+			nodes.push(nodeAt(path, await btcExtendedPublicKey(exchange, path, false)));
+		}
+		return {
+			fingerprint,
+			firmware: `Bitcoin ${info.version}`,
+			nodes,
+			ed25519: []
+		};
+	});
+	/** The coin type a BIP-44-style account path names — `undefined` when the path has no second step. */
+	var coinType = (path) => {
+		const [, coin] = path;
+		return coin === void 0 || coin < HARDENED$2 ? void 0 : coin - HARDENED$2;
+	};
+	var SECP_FAMILY = {
+		0: "bitcoin",
+		60: "ethereum",
+		195: "tron"
+	};
+	/**
+	* Fetches the pinned material for `need` — one chain family per call. Bitcoin re-checks the master
+	* fingerprint (`wrong-device` on a different seed); ethereum/tron take the chain-code public-node
+	* variant; solana reads the ed25519 keys directly.
+	*/
+	var accounts = async (link, need, pin) => {
+		const families = /* @__PURE__ */ new Set();
+		for (const path of need.secp256k1) {
+			const coin = coinType(path);
+			const app = coin === void 0 ? void 0 : SECP_FAMILY[coin];
+			if (app === void 0) throw new KernelError("unsupported", "the account path is not a supported ledger family");
+			families.add(app);
+		}
+		for (const path of need.ed25519) {
+			if (coinType(path) !== 501) unsupported("the ed25519 path is not the solana family");
+			families.add("solana");
+		}
+		if (families.size > 1) unsupported("fetch one chain family at a time");
+		const [app] = families;
+		if (app === void 0) return {
+			fingerprint: pin.fingerprint,
+			nodes: [],
+			ed25519: []
+		};
+		return call$3(async () => {
+			const exchange = apduExchange(link);
+			await requiredApp(exchange, app);
+			if (app === "bitcoin") {
+				if (!equalBytes$9(await btcMasterFingerprint(exchange), pin.fingerprint)) throw new KernelError("wrong-device", "the device is not the paired one");
+				const nodes = [];
+				for (const path of need.secp256k1) nodes.push(nodeAt(path, await btcExtendedPublicKey(exchange, path, false)));
+				return {
+					fingerprint: pin.fingerprint,
+					nodes,
+					ed25519: []
+				};
+			}
+			if (app === "ethereum" || app === "tron") {
+				const get = app === "ethereum" ? ethPublicNode : tronPublicNode;
+				const nodes = [];
+				for (const path of need.secp256k1) {
+					const node = await get(exchange, path);
+					nodes.push({
+						path,
+						publicKey: node.publicKey,
+						chainCode: node.chainCode
+					});
+				}
+				return {
+					fingerprint: pin.fingerprint,
+					nodes,
+					ed25519: []
+				};
+			}
+			const ed25519 = [];
+			for (const path of need.ed25519) ed25519.push({
+				path,
+				publicKey: await solanaAddress(exchange, path, false)
+			});
+			return {
+				fingerprint: pin.fingerprint,
+				nodes: [],
+				ed25519
+			};
+		});
+	};
+	// packages/wallet-kernel/src/modules/signers/ledger/sign.ts
+	/**
+	* Ledger signing: what the device is sent for one plan stage and the admission checks on what comes
+	* back. The device payload is always recomputed from the request — never trusted from the plan —
+	* and checked against the task digest (`expectDigest`) before any APDU leaves, so a kernel-side
+	* inconsistency fails closed. Requests the device can only blind-sign first read the app's
+	* configuration: the required setting off means `blind-signing-disabled` before the device is even
+	* asked. Bitcoin PSBT yields are released only when they match the plan — the yielded input, the
+	* yielded key and the sighash byte must all agree, and yields outside the plan are ignored.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	function integrity$1() {
+		throw new KernelError("integrity", "malformed device sign exchange");
+	}
+	var blind = () => new KernelError("blind-signing-disabled", "the device setting required to sign is off");
+	var expectDigest = (computed, task) => {
+		if (!equalBytes$9(computed, task.digest)) integrity$1();
+	};
+	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
+	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	var evmBlind = (tx) => tx.to === void 0 || tx.data !== "0x" && tx.data !== "";
+	var evm = async (exchange, request, stage) => {
+		await requiredApp(exchange, "ethereum");
+		const [task] = stage.tasks;
+		if (stage.kind === "evm.transaction") {
+			if (request.kind !== "evm.transaction") integrity$1();
+			const { tx } = request;
+			if (tx.type === "eip7702") integrity$1();
+			const preimage = evmSigningPreimage(tx);
+			expectDigest(keccak_256(preimage), task);
+			if (evmBlind(tx)) {
+				if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+			}
+			return call$3(async () => ethSignTransaction(exchange, task.path, preimage));
+		}
+		if (stage.kind === "evm.typed-data") {
+			if (request.kind !== "evm.typed-data") integrity$1();
+			expectDigest(planEvm(request, {
+				path: task.path,
+				publicKey: task.publicKey
+			}).tasks[0].digest, task);
+			if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+			return call$3(async () => ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json));
+		}
+		if (request.kind !== stage.kind) integrity$1();
+		const signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
+		expectDigest(personalDigest(signData), task);
+		return call$3(async () => ethSignPersonalMessage(exchange, task.path, signData));
+	};
+	var tron = async (exchange, request, stage) => {
+		await requiredApp(exchange, "tron");
+		const [task] = stage.tasks;
+		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
+			const { rawData } = request;
+			expectDigest(sha256$1(rawData), task);
+			const needs = tronSettings(rawData);
+			if (needs.dataAllowed || needs.customContracts || needs.signByHash) {
+				const config = await call$3(async () => tronConfiguration(exchange));
+				if (needs.dataAllowed && !config.dataAllowed || needs.customContracts && !config.customContracts || needs.signByHash && !config.signByHash) throw blind();
+			}
+			return call$3(async () => tronSignTransaction(exchange, task.path, rawData));
+		}
+		if (request.kind === "tron.message" && stage.kind === "tron.message") {
+			expectDigest(tronMessageDigest(request.message), task);
+			if (!(await call$3(async () => tronConfiguration(exchange))).signByHash) throw blind();
+			return call$3(async () => tronSignPersonalMessage(exchange, task.path, request.message));
+		}
+		if (request.kind === "tron.typed-data" && stage.kind === "tron.typed-data") {
+			const { json } = parseTronTypedData(request.typedData);
+			const { domain, message } = tronTypedDataHashes(json);
+			expectDigest(keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message)), task);
+			if (!(await call$3(async () => tronConfiguration(exchange))).signByHash) throw blind();
+			return call$3(async () => tronSignTypedDataHash(exchange, task.path, domain, message));
+		}
+		return integrity$1();
+	};
+	var solana = async (exchange, request, stage) => {
+		await requiredApp(exchange, "solana");
+		const [task] = stage.tasks;
+		if (!equalBytes$9(request.message, task.message)) integrity$1();
+		if (request.kind === "solana.transaction") {
+			if (!solanaClears(request.message)) {
+				if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+			}
+			return call$3(async () => solanaSignTransaction(exchange, task.path, request.message));
+		}
+		const offchain = solanaOffchain(request.message);
+		if (offchain === void 0) integrity$1();
+		if (offchain === "utf8") {
+			if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+		}
+		return call$3(async () => solanaSignOffchainMessage(exchange, task.path, request.message));
+	};
+	var bitcoinPsbt = async (exchange, context, request, stage) => {
+		await requiredApp(exchange, "bitcoin");
+		const templates = new Set(request.sign.map((s) => s.template));
+		if (templates.size !== 1) integrity$1();
+		const [template] = templates;
+		const [firstTask] = stage.tasks;
+		if (template === void 0 || firstTask === void 0) integrity$1();
+		const account = firstTask.path.slice(0, 3);
+		const net = bitcoinNetwork(request.network);
+		const xpub = await pinnedMaterial({
+			fingerprint: context.pin.fingerprint,
+			keys: context.pin
+		}).extendedPublicKey(account, net.bip32);
+		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
+		const yielded = await call$3(async () => btcSignPsbt(exchange, stage.psbt, policy));
+		return stage.tasks.map((task, index) => {
+			const planned = stage.inputs[index];
+			if (planned === void 0) return integrity$1();
+			const hit = yielded.find((y) => y.input === planned.index);
+			if (hit === void 0) return integrity$1();
+			if (task.scheme === "bip340") {
+				if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+				const { signature } = hit;
+				if (signature.length !== (planned.sighash === 0 ? 64 : 65)) return integrity$1();
+				if (signature.length === 65 && signature[64] !== planned.sighash) return integrity$1();
+				return signature.subarray(0, 64);
+			}
+			if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+			const der = hit.signature;
+			if (der.at(-1) !== planned.sighash) return integrity$1();
+			return secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
+		});
+	};
+	var bitcoinMessage = async (exchange, request, stage) => {
+		await requiredApp(exchange, "bitcoin");
+		const [task] = stage.tasks;
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		expectDigest(legacyMessageHash(request.message), task);
+		return (await call$3(async () => btcSignMessage(exchange, task.path, utf8ToBytes$1(request.message)))).signature;
+	};
+	var sign = async (link, context) => {
+		const { request, stage } = context;
+		const exchange = apduExchange(link);
+		if (stage.kind === "evm.transaction" || stage.kind === "evm.personal-message" || stage.kind === "evm.fiat24-session" || stage.kind === "evm.typed-data") {
+			if (request.kind !== stage.kind) return integrity$1();
+			return [await evm(exchange, request, stage)];
+		}
+		if (stage.kind === "tron.transaction" || stage.kind === "tron.message" || stage.kind === "tron.typed-data") {
+			if (request.kind !== stage.kind) return integrity$1();
+			return [await tron(exchange, request, stage)];
+		}
+		if (stage.kind === "solana.transaction" || stage.kind === "solana.message") {
+			if (request.kind !== "solana.transaction" && request.kind !== "solana.message") return integrity$1();
+			return [await solana(exchange, request, stage)];
+		}
+		if (stage.kind === "bitcoin.psbt") {
+			if (request.kind !== "bitcoin.psbt") return integrity$1();
+			return bitcoinPsbt(exchange, context, request, stage);
+		}
+		if (stage.kind === "bitcoin.message") {
+			if (request.kind !== "bitcoin.message") return integrity$1();
+			return [await bitcoinMessage(exchange, request, stage)];
+		}
+		return integrity$1();
+	};
+	// packages/wallet-kernel/src/modules/signers/ledger/verify.ts
+	init_objectSpread2();
+	var BTC_TEMPLATE = /* @__PURE__ */ new Set([
+		"btc.bip44",
+		"btc.bip49",
+		"btc.bip84",
+		"btc.bip86"
+	]);
+	var isBitcoinTemplate = (template) => BTC_TEMPLATE.has(template);
+	/** The device's answer to the display, or `undefined` when the user rejected it there. */
+	var shown = async (job) => {
+		try {
+			return await job();
+		} catch (error) {
+			if (error instanceof LedgerError && error.code === "user-rejected") return;
+			if (error instanceof LedgerError) throw mapLedgerError(error);
+			throw error;
+		}
+	};
+	var bitcoin = async (exchange, target, pin) => {
+		const [purpose, coin, group, change, index] = target.path;
+		if (index === void 0 || purpose === void 0 || coin === void 0 || group === void 0 || target.path.length !== 5 || change !== 0 && change !== 1) throw new KernelError("integrity", "a bitcoin address path is m/purpose'/coin'/account'/*/i");
+		const account = [
+			purpose,
+			coin,
+			group
+		];
+		const net = bitcoinNetwork(target.network);
+		const xpub = await pinnedMaterial({
+			fingerprint: pin.fingerprint,
+			keys: pin
+		}).extendedPublicKey(account, net.bip32);
+		const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
+		return shown(async () => btcWalletAddress(exchange, policy, change, index, true));
+	};
+	var verifyAddress = async (link, target, pin) => {
+		const exchange = apduExchange(link);
+		const expected = target.template === "evm.bip44" ? target.address.toLowerCase() : target.address;
+		let deviceAddress;
+		if (isBitcoinTemplate(target.template)) {
+			await requiredApp(exchange, "bitcoin");
+			deviceAddress = await bitcoin(exchange, _objectSpread2(_objectSpread2({}, target), {}, { template: target.template }), pin);
+		} else if (target.template === "evm.bip44") {
+			await requiredApp(exchange, "ethereum");
+			deviceAddress = await shown(async () => {
+				return (await ethAddress(exchange, target.path, true)).address.toLowerCase();
+			});
+		} else if (target.template === "tron.bip44") {
+			await requiredApp(exchange, "tron");
+			deviceAddress = await shown(async () => {
+				return (await tronAddress(exchange, target.path, true)).address;
+			});
+		} else if (target.template === "solana.bip44-change") {
+			await requiredApp(exchange, "solana");
+			deviceAddress = await shown(async () => solanaAddressFromPublicKey(await solanaAddress(exchange, target.path, true)));
+		} else throw new KernelError("unsupported", "the device cannot check this address");
+		return {
+			method: "device",
+			matched: deviceAddress === expected
+		};
+	};
+	// packages/wallet-kernel/src/modules/signers/drivers.ts
+	var DRIVERS = {
+		keystone: KEYSTONE_DRIVER,
+		ledger: {
+			pair,
+			display,
+			sign,
+			accounts,
+			verifyAddress
+		}
+	};
 	// packages/wallet-kernel/src/modules/signers/operation.ts
 	init_utils$2();
 	/** 300 s without a `step` answer discards the operation (I6). */
@@ -44620,7 +51541,10 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/signers/prompt.ts
-	var DEVICE_NAME = { keystone: "Keystone" };
+	var DEVICE_NAME = {
+		keystone: "Keystone",
+		ledger: "Ledger"
+	};
 	var LINES = {
 		"zh-Hans": {
 			clear: "设备将完整显示请求内容，请在设备上核对",
@@ -44633,6 +51557,139 @@ zoo`.split("\n"));
 	};
 	function devicePromptLine(locale, display, device) {
 		return `${DEVICE_NAME[device]}: ${LINES[locale][display]}`;
+	}
+	// packages/wallet-kernel/src/modules/signers/record.ts
+	init_sha2();
+	init_utils$2();
+	var HARDWARE_WALLET_KIND = "hardware-wallet";
+	var HARDENED$1 = 2147483648;
+	/** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
+	var DEVICE_TEXT$1 = /^[ -~]{1,64}$/;
+	/** The device-kind shape: a lowercase slug — unknown kinds are authenticated but inert. */
+	var DEVICE_KIND = /^[a-z][a-z0-9-]{1,31}$/;
+	/** Whether this build ships a driver for the header's device kind. */
+	var deviceSupported = (device) => HARDWARE_DEVICES.some((known) => known === device);
+	/**
+	* Stable hardware-wallet identifier, domain-separated from the software wallet id:
+	* SHA-256(UTF-8("qntx-wallet/hardware-wallet-id/v1") ‖ UTF-8(device) ‖ 0x00 ‖ fingerprint4)[0..8].
+	* The same device re-paired maps to the same id — the pair handler answers `already-exists`.
+	*/
+	function hardwareWalletId(device, fingerprint) {
+		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/hardware-wallet-id/v1"), utf8ToBytes$1(device), new Uint8Array([0]), fingerprint)).slice(0, 8));
+	}
+	/** The `hardware-wallet` record for `walletId`, when the vault has one. */
+	function hardwareWallet(image, walletId) {
+		return image.records.find((r) => r.kind === "hardware-wallet" && r.id === walletId);
+	}
+	var asDevice = (value) => {
+		if (typeof value !== "string" || !DEVICE_KIND.test(value)) throw headerFailure();
+		return value;
+	};
+	var asFingerprint = (value) => {
+		if (typeof value !== "string" || !/^[0-9a-f]{8}$/.test(value)) throw headerFailure();
+		return hexToBytes$3(value);
+	};
+	var asDeviceText = (value) => {
+		if (typeof value !== "string" || !DEVICE_TEXT$1.test(value)) throw headerFailure();
+		return value;
+	};
+	function encodeHardwareHeader(header) {
+		const fields = {
+			device: header.device,
+			fingerprint: bytesToHex$4(header.fingerprint)
+		};
+		if (header.model !== void 0) fields["model"] = header.model;
+		if (header.firmware !== void 0) fields["firmware"] = header.firmware;
+		fields["createdAt"] = header.createdAt;
+		return JSON.stringify(fields);
+	}
+	/** Strict header parse; every failure is `integrity` — status marks the vault corrupted. */
+	function parseHardwareHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"device",
+			"fingerprint",
+			"createdAt",
+			...["model", "firmware"].filter((key) => Object.hasOwn(object, key))
+		]);
+		const header = {
+			device: asDevice(object["device"]),
+			fingerprint: asFingerprint(object["fingerprint"]),
+			createdAt: asCreatedAt(object["createdAt"])
+		};
+		if (object["model"] !== void 0) header.model = asDeviceText(object["model"]);
+		if (object["firmware"] !== void 0) header.firmware = asDeviceText(object["firmware"]);
+		return header;
+	}
+	/** The `HardwareWalletInfo` a hardware-wallet record's public header reports. */
+	function hardwareWalletInfo(header) {
+		const info = {
+			custody: "hardware",
+			walletId: hardwareWalletId(header.device, header.fingerprint),
+			device: header.device,
+			supported: deviceSupported(header.device),
+			fingerprint: bytesToHex$4(header.fingerprint),
+			createdAt: header.createdAt
+		};
+		if (header.model !== void 0) info.model = header.model;
+		if (header.firmware !== void 0) info.firmware = header.firmware;
+		return info;
+	}
+	var bodyFailure = () => new KernelError("integrity", "invalid hardware wallet record");
+	/**
+	* Parses the sealed body through the shared pinned-material codec: every node is a real secp256k1
+	* point, every ed25519 entry a real point, every path well-formed, and the caps (512 nodes, 256
+	* ed25519) hold. Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no
+	* public derivation, so a softer path could never be served. Anything less is `integrity`.
+	*/
+	function parseHardwareBody(plaintext) {
+		let text;
+		try {
+			text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+		} catch (_unused) {
+			throw bodyFailure();
+		}
+		let value;
+		try {
+			value = JSON.parse(text);
+		} catch (_unused2) {
+			throw bodyFailure();
+		}
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
+		const body = value;
+		if (Object.keys(body).length !== 2) throw bodyFailure();
+		const keys = {
+			nodes: parsePinnedNodes(body["nodes"]),
+			ed25519: parsePinnedEd25519(body["ed25519"])
+		};
+		for (const key of keys.ed25519) if (key.path.some((i) => i < HARDENED$1)) throw bodyFailure();
+		return keys;
+	}
+	/** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
+	function encodeHardwareBody(keys) {
+		const nodes = {};
+		for (const node of keys.nodes) {
+			const entry = {
+				key: bytesToHex$4(node.publicKey),
+				chainCode: bytesToHex$4(node.chainCode)
+			};
+			if (node.parent !== void 0) entry.parent = bytesToHex$4(node.parent);
+			nodes[pathToString(node.path)] = entry;
+		}
+		const ed = {};
+		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$4(key.publicKey);
+		return utf8ToBytes$1(JSON.stringify({
+			nodes,
+			ed25519: ed
+		}));
+	}
+	/** The pin a record seals: the claimed fingerprint plus the pinned keys. */
+	function hardwarePin(header, keys) {
+		return {
+			fingerprint: header.fingerprint,
+			nodes: keys.nodes,
+			ed25519: keys.ed25519
+		};
 	}
 	// packages/wallet-kernel/src/modules/signers/index.ts
 	/**
@@ -44665,10 +51722,11 @@ zoo`.split("\n"));
 	* existing record with no claimed body means the vault lied about its records — `integrity`.
 	*/
 	var pinAt = (pins, record) => {
-		const keys = pins.get(record.id);
-		if (keys === void 0) throw integrity("hardware wallet record has no authenticated material");
 		const header = parseHardwareHeader(record.header);
 		if (hardwareWalletId(header.device, header.fingerprint) !== record.id) throw integrity("hardware wallet record does not match its id");
+		if (!deviceSupported(header.device)) throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
+		const keys = pins.get(record.id);
+		if (keys === void 0) throw integrity("hardware wallet record has no authenticated material");
 		return hardwarePin(header, keys);
 	};
 	/** Whether the pinned material fails to serve `path` — only `device-required` counts as a gap. */
@@ -44695,7 +51753,10 @@ zoo`.split("\n"));
 	* evm/tron/btc, the all-hardened leaf for solana. A path the pin already serves is not asked for.
 	*/
 	var neededPaths = async (pin, template, network, groupIndex) => {
-		const material = pinnedMaterial(pin);
+		const material = pinnedMaterial({
+			fingerprint: pin.fingerprint,
+			keys: pin
+		});
 		const need = {
 			secp256k1: [],
 			ed25519: []
@@ -44751,8 +51812,11 @@ zoo`.split("\n"));
 		};
 		const driverFor = (record) => {
 			const header = parseHardwareHeader(record.header);
+			const device = HARDWARE_DEVICES.find((d) => d === header.device);
+			if (device === void 0) throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
 			return {
-				driver: drivers[header.device],
+				driver: drivers[device],
+				device,
 				header
 			};
 		};
@@ -44775,7 +51839,7 @@ zoo`.split("\n"));
 					ed25519: result.ed25519
 				});
 				const record = sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, id, encodeHardwareHeader(header), body);
-				wipe(body);
+				wipe$1(body);
 				await ctx.commit([{
 					op: "put-record",
 					record
@@ -44804,16 +51868,19 @@ zoo`.split("\n"));
 						secp256k1,
 						ed25519
 					}, pin);
-					if (!equalBytes$6(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
+					if (!equalBytes$9(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
 					pin = mergePin(pin, fetched);
 					const body = authenticatedBody(pin);
 					await ctx.commit([{
 						op: "put-record",
 						record: sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, record.id, record.header, body)
 					}]);
-					wipe(body);
+					wipe$1(body);
 				}
-				const material = pinnedMaterial(pin);
+				const material = pinnedMaterial({
+					fingerprint: pin.fingerprint,
+					keys: pin
+				});
 				const accounts = [];
 				for (const template of op.templates) accounts.push(await accountFor(material, template, op.network, op.groupIndex));
 				return {
@@ -44830,7 +51897,10 @@ zoo`.split("\n"));
 			if (BTC_PURPOSE[op.template] !== void 0 && op.index === void 0) throw new KernelError("invalid-input", "a bitcoin address check needs an index");
 			return async (link) => {
 				const pin = pinAt(pins, record);
-				const material = pinnedMaterial(pin);
+				const material = pinnedMaterial({
+					fingerprint: pin.fingerprint,
+					keys: pin
+				});
 				let address;
 				let path;
 				if (op.template === "evm.bip44") {
@@ -44879,20 +51949,20 @@ zoo`.split("\n"));
 			if (op.kind !== "sign" || params.verify === void 0) throw new KernelError("integrity", "unreachable: sign begin without the sign op or verify");
 			const { request } = op;
 			if (request.account.kind === "imported") throw new KernelError("invalid-input", "an imported key is not a hardware wallet");
-			assertHdTemplates(request);
 			const record = hardwareRecord(ctx, request.account.walletId);
-			const { driver, header } = driverFor(record);
+			const { driver, device } = driverFor(record);
 			const pin = pinAt(pins, record);
-			const prepared = await prepareFor(request, pinnedMaterial(pin), ctx.platform.now());
-			const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+			const prepared = await prepareApproval(ctx, request, pinnedMaterial({
+				fingerprint: pin.fingerprint,
+				keys: pin
+			}), dek);
 			const display = driver.display(request, prepared.plan);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
-			assertSignable(ctx, dek, prompt);
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => devicePrompt(chainPrompt(locale, prompt), locale, display, header.device));
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => devicePrompt(chainPrompt(locale, prepared.prompt), locale, display, device));
 			ctx.session.require(session);
 			if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
-			return executorOf(ctx.platform).begin(header.device, display, async (link) => ({
+			return executorOf(ctx.platform).begin(device, display, async (link) => ({
 				kind: "sign",
 				result: await signStages(prepared.plan, async (stage) => driver.sign(link, {
 					request,
@@ -44913,11 +51983,11 @@ zoo`.split("\n"));
 							continue;
 						}
 						try {
-							pins.set(record.id, parseHardwareBody(record.plaintext));
+							if (deviceSupported(parseHardwareHeader(record.header).device)) pins.set(record.id, parseHardwareBody(record.plaintext));
 						} catch (_unused) {
 							throw new KernelError("integrity", "hardware wallet record failed authentication", void 0, true);
 						} finally {
-							wipe(record.plaintext);
+							wipe$1(record.plaintext);
 						}
 					}
 					return unclaimed;
@@ -44947,8 +52017,8 @@ zoo`.split("\n"));
 					const exec = executorOf(ctx.platform);
 					switch (op.kind) {
 						case "pair": return exec.begin(op.device, void 0, pairBody(ctx, op.device));
-						case "accounts": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).header.device, void 0, accountsBody(ctx, op));
-						case "verify-address": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).header.device, void 0, verifyAddressBody(ctx, op));
+						case "accounts": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).device, void 0, accountsBody(ctx, op));
+						case "verify-address": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).device, void 0, verifyAddressBody(ctx, op));
 					}
 				},
 				"hardware.step": async (ctx, params, session) => {
@@ -44963,7 +52033,13 @@ zoo`.split("\n"));
 					return null;
 				}
 			},
-			material: (_image, record) => pinnedMaterial(pinAt(pins, record))
+			material: (record) => {
+				const pin = pinAt(pins, record);
+				return pinnedMaterial({
+					fingerprint: pin.fingerprint,
+					keys: pin
+				});
+			}
 		};
 	}
 	// packages/wallet-kernel/src/modules/spark/prompt.ts
@@ -54605,7 +61681,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			throw mapError(state, error);
 		} finally {
-			wipe(accountKey);
+			wipe$1(accountKey);
 		}
 	};
 	/**
@@ -54613,13 +61689,13 @@ zoo`.split("\n"));
 	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
 	* cumulative budget deduped by leaf public key.
 	*/
-	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$6(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$9(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
 	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
 		const signer = state.signers.get(key);
 		const { paymentHash } = approval.decoded;
 		const budget = approval.decoded.invoiceAmountSats;
 		if (signer === void 0 || paymentHash === void 0 || budget === void 0) return false;
-		if (!equalBytes$6(rt.lightningSendHtlcScript({
+		if (!equalBytes$9(rt.lightningSendHtlcScript({
 			paymentHash,
 			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
 			identityPublicKey: await signer.identityPublicKey()
@@ -54632,7 +61708,7 @@ zoo`.split("\n"));
 	var exitCovered = (outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.exitOutputs.some((output) => equalBytes$6(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
+		if (!outflow.exitOutputs.some((output) => equalBytes$9(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
 		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
 		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
@@ -54641,7 +61717,7 @@ zoo`.split("\n"));
 	var onchainCovered = (rt, outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.outputs.every((output) => equalBytes$6(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$6(output.script, addressScript))) return false;
+		if (!outflow.outputs.every((output) => equalBytes$9(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$9(output.script, addressScript))) return false;
 		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
 	};
 	/**
@@ -54659,8 +61735,8 @@ zoo`.split("\n"));
 		const spent = /* @__PURE__ */ new Map();
 		for (const output of outputs) {
 			var _spent$get;
-			if (equalBytes$6(output.ownerPublicKey, identity)) continue;
-			if (!equalBytes$6(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			if (equalBytes$9(output.ownerPublicKey, identity)) continue;
+			if (!equalBytes$9(output.tokenIdentifier, intent.tokenIdentifier)) return false;
 			const owner = bytesToHex$4(output.ownerPublicKey);
 			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
 		}
@@ -54862,7 +61938,7 @@ zoo`.split("\n"));
 			}
 		}
 		for (const record of image.records) try {
-			if (record.kind === "entropy") wallets.push(walletInfo(parseEntropyHeader(record.header)));
+			if (record.kind === "entropy") wallets.push(walletInfo$1(parseEntropyHeader(record.header)));
 			else if (record.kind === "data-key") parseDataKeyHeader(record.header);
 			else if (record.kind === "key") {
 				const header = parseKeyHeader(record.header);
@@ -54870,7 +61946,8 @@ zoo`.split("\n"));
 			} else if (record.kind === "hardware-wallet") {
 				const header = parseHardwareHeader(record.header);
 				wallets.push(_objectSpread2(_objectSpread2({}, hardwareWalletInfo(header)), {}, { walletId: record.id }));
-			} else if (record.kind === "backup-key") {
+			} else if (record.kind === "card-wallet") wallets.push(cardWalletInfo(parseCardWalletHeader(record.header)));
+			else if (record.kind === "backup-key") {
 				if (record.id === "default") {
 					const header = parseBackupKeyHeader(record.header);
 					backup = {
@@ -54951,10 +62028,10 @@ zoo`.split("\n"));
 		const plaintext = openRecord(dek, record);
 		if (record.kind === "entropy") try {
 			const { entropy, passphrase } = splitWalletSecret(parseEntropyHeader(record.header), plaintext);
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		} catch (error) {
-			wipe(plaintext);
+			wipe$1(plaintext);
 			throw error;
 		}
 		return plaintext;
@@ -54975,6 +62052,10 @@ zoo`.split("\n"));
 		return "unavailable";
 	}
 	function startKernel(host, port, drivers = DRIVERS) {
+		var _captures$;
+		const captures = [];
+		for (const each of [0, 1]) captures.push(() => each);
+		if (((_captures$ = captures[0]) === null || _captures$ === void 0 ? void 0 : _captures$.call(captures)) !== 0) throw new Error("kernel requires Hermes compiled with -Xes6-block-scoping");
 		const platform = serializeCeremonies(host, (active) => {
 			post({
 				v: 3,
@@ -54983,11 +62064,12 @@ zoo`.split("\n"));
 			});
 		});
 		const nostr = createNostrModule(platform.backends.nostr);
+		const card = createCardModule(platform);
 		const spark = createSparkModule();
 		const signers = createSignersModule(drivers);
-		const chains = createChainsModule(signers.material);
+		const chains = createChainsModule();
 		const sessions = createSessionsModule();
-		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers), signers.handlers);
+		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), card.handlers), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers), signers.handlers);
 		let dirty = false;
 		let inRequest = false;
 		let pendingLock;
@@ -55025,13 +62107,15 @@ zoo`.split("\n"));
 					if (prior === void 0) opened.push({
 						kind: record.kind,
 						id: record.id,
+						header: record.header,
 						plaintext: openChecked(dek, record)
 					});
 					else {
 						before.delete(`${record.kind}/${record.id}`);
-						if (prior.header !== record.header || !equalBytes$6(prior.sealed, record.sealed)) opened.push({
+						if (prior.header !== record.header || !equalBytes$9(prior.sealed, record.sealed)) opened.push({
 							kind: record.kind,
 							id: record.id,
+							header: record.header,
 							plaintext: openChecked(dek, record)
 						});
 					}
@@ -55040,14 +62124,14 @@ zoo`.split("\n"));
 				let unclaimed = opened;
 				for (const module of ctx.modules) unclaimed = module.claimUnlocked(unclaimed);
 				handedOff = true;
-				for (const record of unclaimed) wipe(record.plaintext);
+				for (const record of unclaimed) wipe$1(record.plaintext);
 				const priorFactors = new Map(prev.factors.map((factor) => [factor.id, factor]));
 				for (const factor of next.factors) {
 					const prior = priorFactors.get(factor.id);
-					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$6(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
+					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$9(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
 				}
 			} catch (_unused) {
-				if (!handedOff) for (const record of opened) wipe(record.plaintext);
+				if (!handedOff) for (const record of opened) wipe$1(record.plaintext);
 				integrityFailure = true;
 				setHealth("corrupted");
 			}
@@ -55131,8 +62215,18 @@ zoo`.split("\n"));
 				spark.vault,
 				chains.vault,
 				sessions.vault,
-				signers.vault
+				signers.vault,
+				card.vault
 			],
+			externalMaterial: (record) => {
+				if (record.kind === "card-wallet") {
+					const material = card.material(record.id);
+					if (material === void 0) throw new KernelError("integrity", "card wallet material is not loaded");
+					return material;
+				}
+				if (record.kind === "hardware-wallet") return signers.material(record);
+				throw new KernelError("integrity", "record is not an external-custody wallet");
+			},
 			image: EMPTY_IMAGE,
 			health: "ok",
 			commit: async (ops, options) => {
@@ -55264,6 +62358,7 @@ zoo`.split("\n"));
 			enqueue(reloadAndPost);
 		});
 		port.listen((message) => {
+			if (typeof message === "object" && message !== null && "method" in message && message.method === "card.cancel" && "params" in message && typeof message.params === "object" && message.params !== null && "opId" in message.params && typeof message.params.opId === "string") card.interrupt(message.params.opId);
 			enqueue(async () => handle(message));
 		});
 		enqueue(reloadAndPost);
@@ -55288,6 +62383,87 @@ zoo`.split("\n"));
 	*/
 	function detailOf(detail) {
 		return detail !== void 0 && detail.length <= 80 && /^[A-Za-z0-9_.:-]+$/.test(detail) ? detail : void 0;
+	}
+	// packages/wallet-native/kernel/card.ts
+	var RESPONSE_MIN = 2;
+	var RESPONSE_MAX = 258;
+	var isReaderFailure = (code) => code === "cancelled" || code === "timeout" || code === "tag-lost" || code === "interrupted" || code === "unavailable";
+	function readerOutcome(code, detail) {
+		return {
+			ok: false,
+			failure: isReaderFailure(code) ? code : "unavailable",
+			detail: detailOf(detail)
+		};
+	}
+	function bindNativeCardReader(raw) {
+		return {
+			open: async (prompt) => new Promise((resolve) => {
+				raw.open(prompt, (code, detail) => {
+					resolve(code === void 0 ? {
+						ok: true,
+						value: void 0
+					} : readerOutcome(code, detail));
+				});
+			}),
+			transmit: async (apdu) => new Promise((resolve) => {
+				raw.transmit(apdu, (response, code, detail) => {
+					if (response !== void 0) {
+						resolve(response instanceof Uint8Array && response.length >= RESPONSE_MIN && response.length <= RESPONSE_MAX ? {
+							ok: true,
+							value: response
+						} : {
+							ok: false,
+							failure: "unavailable",
+							detail: void 0
+						});
+						return;
+					}
+					resolve(readerOutcome(code, detail));
+				});
+			}),
+			close: (outcome, text) => {
+				raw.close(outcome, text);
+			}
+		};
+	}
+	/**
+	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
+	* short id is exactly 8 upper-case hex characters. A platform that hands over out-of-shape bytes
+	* gets them wiped, not forwarded.
+	*/
+	function validFor(kind, value) {
+		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
+		return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
+	}
+	function bindNativeSecureInput(raw) {
+		return {
+			request: async (kind, label) => new Promise((resolve) => {
+				raw.request(kind, label, (value, code) => {
+					if (value instanceof Uint8Array) {
+						if (validFor(kind, value)) {
+							resolve({
+								ok: true,
+								value
+							});
+							return;
+						}
+						value.fill(0);
+						resolve({
+							ok: false,
+							failure: "unavailable"
+						});
+						return;
+					}
+					resolve({
+						ok: false,
+						failure: code === "cancelled" ? "cancelled" : "unavailable"
+					});
+				});
+			}),
+			cancel: () => {
+				raw.cancel();
+			}
+		};
 	}
 	// packages/wallet-native/kernel/keystore.ts
 	/**
@@ -58300,6 +65476,11 @@ zoo`.split("\n"));
 		anchor: bindNativeAnchor(__qntx.anchor),
 		keystore: bindNativeKeystore(__qntx.keystore),
 		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
+		card: {
+			reader: bindNativeCardReader(__qntx.cardReader),
+			secureInput: bindNativeSecureInput(__qntx.secureInput),
+			anchors: PRODUCTION_ANCHORS
+		},
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

@@ -83,7 +83,7 @@ const estimateTaps = (prices: ReadonlyArray<number>, waits: number, budget: numb
 
 /**
  * The sign op's begin-time work (design §8): wallet lookup, `prepareApproval` on the card's public
- * material — every miss is `card-required`, and the same normalize/ownership/agent checks
+ * material — every miss is `device-required`, and the same normalize/ownership/agent checks
  * `chain.sign` runs — then the prompt the reader shows (`chainPrompt`'s title + description plus a
  * card line, ≤ 1024 UTF-8 bytes) and the budget bounds: every task must fit an empty tap and the
  * whole plan — a 7702's two stages included — at most two taps.
@@ -98,11 +98,8 @@ export const prepareSign = async (
     throw new KernelError("invalid-input", "only an hd account signs on a card");
   }
   const { walletId } = request.account;
-  const { header } = walletOf(env, walletId);
-  const material = env.ctx.cardMaterial(walletId);
-  if (material === undefined) {
-    throw new KernelError("integrity", "card wallet material is not loaded");
-  }
+  const { header, record } = walletOf(env, walletId);
+  const material = env.ctx.externalMaterial(record);
   if (request.kind === "solana.message" && request.message.length > 16_384) {
     throw new KernelError("card-unsupported", "the message is too large for the card");
   }
@@ -165,10 +162,7 @@ export const signOp = (
     let boundShort: string | undefined;
     let code: Uint8Array | undefined;
     try {
-      const material = env.ctx.cardMaterial(walletId);
-      if (material === undefined) {
-        throw new KernelError("integrity", "card wallet material is not loaded");
-      }
+      const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
       const saved = (): Readonly<Record<string, string>> => env.bodies.get(walletId)?.access ?? {};
       {
         const { header } = walletOf(env, walletId);

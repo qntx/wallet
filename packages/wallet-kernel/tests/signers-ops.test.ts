@@ -781,6 +781,30 @@ describe("record id binding", () => {
   });
 });
 
+describe("keys.import against hardware wallets", () => {
+  it("refuses a private key that is a paired hardware wallet's own account", async () => {
+    const { h, session } = await boot();
+    await pairDevice(h, session);
+    // The pin's evm node is m/44'/60'/0'; the group-0 leaf key is the device's account.
+    const master = HDKey.fromMasterSeed(SEED);
+    const leaf = master.derive("m/44'/60'/0'/0/0");
+    const secret = new Uint8Array(leaf.privateKey!);
+    try {
+      expect(errCode(await h.call("keys.import", { family: "evm", secret }, session))).toBe(
+        "conflict",
+      );
+    } finally {
+      leaf.wipePrivateData();
+      master.wipePrivateData();
+    }
+    // A key that is none of the wallet's accounts still imports.
+    const res = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(32).fill(3) }, session),
+    );
+    expect(strField(res, "family")).toBe("evm");
+  });
+});
+
 describe("vault lifecycle", () => {
   it("a paired hardware wallet survives lock/unlock next to the seed wallet", async () => {
     const { h, session, walletId } = await boot(undefined, { idleMs: 60_000 });

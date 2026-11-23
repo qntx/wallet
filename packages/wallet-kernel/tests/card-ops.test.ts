@@ -894,7 +894,7 @@ describe("card tap gates and code policy (fake card)", () => {
     expect(r.reader.sent.length - before).toBe(2); // SELECT + OPEN only
   });
 
-  it("a WalletInfo lying about the master key is wrong-card", async () => {
+  it("a WalletInfo lying about the master key is wrong-device", async () => {
     const r = await rig();
     const card = await loadedCard();
     const added = await drive(
@@ -909,11 +909,11 @@ describe("card tap gates and code policy (fake card)", () => {
       { kind: "health", walletId: strField(added, "walletId") },
       { codes: [freshCode()], cards: [card] },
     );
-    expect(error).toBe("wrong-card");
+    expect(error).toBe("wrong-device");
     expect(card.received).toStrictEqual([0x20, 0x22]); // VERIFY ran; nothing after the lie
   });
 
-  it("a WalletInfo lying about the member set is wrong-card", async () => {
+  it("a WalletInfo lying about the member set is wrong-device", async () => {
     const r = await rig();
     const card = await loadedCard();
     const added = await drive(
@@ -928,7 +928,7 @@ describe("card tap gates and code policy (fake card)", () => {
       { kind: "health", walletId: strField(added, "walletId") },
       { codes: [freshCode()], cards: [card] },
     );
-    expect(error).toBe("wrong-card");
+    expect(error).toBe("wrong-device");
     expect(card.received).toStrictEqual([0x20, 0x22]);
   });
 
@@ -1056,7 +1056,7 @@ describe("card tap gates and code policy (fake card)", () => {
     expect(card.received).toStrictEqual([]); // the gate is before STATUS — no CREATE, nothing
   });
 
-  it("a torn create that loaded a different wallet is wrong-card and keeps the source", async () => {
+  it("a torn create that loaded a different wallet is wrong-device and keeps the source", async () => {
     const r = await rig();
     const source = await vaultWalletId(r);
     const codeText = "the new code";
@@ -1089,7 +1089,7 @@ describe("card tap gates and code policy (fake card)", () => {
     expect(step).toMatchObject({ kind: "tap", reason: "retry" });
     r.reader.present(card);
     await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
-      "wrong-card",
+      "wrong-device",
     );
     // Nothing was staged: the source entropy record survived and no card wallet exists.
     const { records } = await r.h.store.load();
@@ -1822,7 +1822,7 @@ describe("card module mutation coverage (fake card)", () => {
     expect(states).toStrictEqual(["ready", "unknown"]);
   });
 
-  it("a torn create whose verify names foreign members is wrong-card", async () => {
+  it("a torn create whose verify names foreign members is wrong-device", async () => {
     const r = await rig();
     const source = await vaultWalletId(r);
     const codeText = "the new code";
@@ -1859,7 +1859,7 @@ describe("card module mutation coverage (fake card)", () => {
       } else if (step["reason"] === "target") {
         r.reader.present(target);
       } else if (lost) {
-        r.reader.present(card); // same master, foreign member list → wrong-card
+        r.reader.present(card); // same master, foreign member list → wrong-device
         presented = true;
       } else {
         // The source tap expects BLANK — lose it so the retry admits the loaded liar.
@@ -1869,7 +1869,7 @@ describe("card module mutation coverage (fake card)", () => {
       }
       const next = await r.h.call("card.step", { opId: first.opId }, r.session);
       if ("err" in next) {
-        expect(next.err.code).toBe("wrong-card");
+        expect(next.err.code).toBe("wrong-device");
         expect(presented).toBe(true);
         return;
       }
@@ -2733,12 +2733,12 @@ describe("card sign (fake card)", () => {
     expect(r.reader.sent).toHaveLength(before);
   });
 
-  it("a psbt input under an uncached account answers card-required before any tap", async () => {
+  it("a psbt input under an uncached account answers device-required before any tap", async () => {
     const r = await rig();
     const card = await loadedCard();
     const walletId = await addWallet(r, card);
     // m/84'/0'/3'/0/0: the group-3 account is not in this card's cached registration set, so the
-    // ownership probe reaches a hardened cache miss — `card-required`, never "not ours".
+    // ownership probe reaches a hardened cache miss — `device-required`, never "not ours".
     const child = HDKey.fromMasterSeed(seed).derive("m/84'/0'/3'/0/0");
     const pub = child.publicKey;
     if (pub === null) {
@@ -2774,7 +2774,7 @@ describe("card sign (fake card)", () => {
       { codes: [freshCode()], cards: taps(card) },
       verifyPasskey(),
     );
-    expect(error).toBe("card-required");
+    expect(error).toBe("device-required");
     expect(r.reader.sent).toHaveLength(before);
   });
 

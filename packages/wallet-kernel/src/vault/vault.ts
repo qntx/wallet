@@ -272,6 +272,7 @@ async function kekFor(
 export type OpenedRecord = {
   readonly kind: string;
   readonly id: string;
+  readonly header: string;
   readonly plaintext: Uint8Array;
 };
 
@@ -675,7 +676,10 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
 }
 
 /** Record kinds whose wallets sign outside the vault (a device or qntx cards) — they hold no seed. */
-const EXTERNAL_CUSTODY_KINDS = new Set(["hardware-wallet", CARD_WALLET_KIND]);
+export const EXTERNAL_CUSTODY_KINDS: ReadonlySet<string> = new Set([
+  "hardware-wallet",
+  CARD_WALLET_KIND,
+]);
 
 /**
  * The `entropy` record for `walletId`, or the reason there is none: `unsupported` when the id names
