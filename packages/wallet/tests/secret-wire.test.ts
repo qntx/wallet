@@ -795,6 +795,7 @@ describe("method classification", () => {
       | "nostr.exportKey"
       | "chain.sign"
       | "spark.approve"
+      | "hardware.begin"
     >();
 
     // Type-level assertions live in a never-invoked function: tsc checks the body.
@@ -823,8 +824,10 @@ describe("method classification", () => {
       | "challenge"
       | "ciphertext"
       | "ciphertexts"
+      | "cbor"
       | "connectorTx"
       | "credentialId"
+      | "data"
       | "exitTx"
       | "hashLockPublicKey"
       | "hiding"

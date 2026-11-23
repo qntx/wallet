@@ -383,7 +383,9 @@ export class BackupController extends Controller<BackupControllerState> {
       record !== undefined &&
       record.id === snapshot.backup.id &&
       record.digest !== undefined;
-    const wallets = snapshot.wallets.filter((w) => w.backup !== "mnemonic");
+    const wallets = snapshot.wallets.filter(
+      (w) => w.custody === "vault" && w.backup !== "mnemonic",
+    );
     const walletIds = wallets
       .map((w) => w.walletId)
       .filter((id) => !covered || !record.walletIds.includes(id));

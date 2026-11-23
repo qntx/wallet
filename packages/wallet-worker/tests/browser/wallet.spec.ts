@@ -45,7 +45,10 @@ async function walletCount(page: Page): Promise<number> {
 }
 
 async function backup(page: Page): Promise<string | undefined> {
-  return page.evaluate(() => qntx.snapshot().wallets[0]?.backup);
+  return page.evaluate(() => {
+    const [w] = qntx.snapshot().wallets;
+    return w?.custody === "vault" ? w.backup : undefined;
+  });
 }
 
 async function spawned(page: Page): Promise<number> {

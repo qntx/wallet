@@ -142,7 +142,7 @@ describe("node host end to end", () => {
     const { wallet } = await nodeWallet(passkey);
     const created = await wallet.wallets.createWithPasskey({ name: "Node Test Wallet" });
     expect(created.backup).toBe("none");
-    expect(wallet.getSnapshot().wallets[0]?.backup).toBe("none");
+    expect(wallet.getSnapshot().wallets[0]).toMatchObject({ backup: "none" });
     await wallet.destroy();
   }, 60_000);
 

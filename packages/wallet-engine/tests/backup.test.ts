@@ -54,7 +54,7 @@ function corruptFirstRead(inner: CloudStore): CloudStore {
 }
 
 function unprotectedWallets(info: WalletInfo): ReadonlyArray<string> {
-  return info.backup === "mnemonic" ? [] : [info.walletId];
+  return info.custody === "vault" && info.backup === "mnemonic" ? [] : [info.walletId];
 }
 
 type Rig = {

@@ -21,6 +21,8 @@ import {
 } from "./core.ts";
 import type { MethodSpec } from "./core.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
+import { HARDWARE_METHODS } from "./hardware.ts";
+// oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { SESSIONS_METHODS } from "./sessions.ts";
@@ -211,7 +213,8 @@ export const METHODS: {
   typeof NOSTR_METHODS &
   typeof CHAINS_METHODS &
   typeof SPARK_METHODS &
-  typeof SESSIONS_METHODS = {
+  typeof SESSIONS_METHODS &
+  typeof HARDWARE_METHODS = {
   status: {
     session: false,
     presence: false,
@@ -223,6 +226,7 @@ export const METHODS: {
   ...NOSTR_METHODS,
   ...SPARK_METHODS,
   ...SESSIONS_METHODS,
+  ...HARDWARE_METHODS,
 };
 
 // A method name must live in exactly one table: an overlap violates the never constraint.
@@ -235,6 +239,11 @@ export type MethodTablesDisjoint = [
   AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>,
   AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>,
   AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CORE_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof NOSTR_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CHAINS_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SESSIONS_METHODS>,
 ];
 
 export type MethodName = keyof typeof METHODS;
@@ -271,7 +280,17 @@ export const responseError: Validator<{
   detail?: string | undefined;
 }> = errorPayload;
 
-export { NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS };
+export { NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS, HARDWARE_METHODS };
+export type {
+  DeviceDisplay,
+  DeviceRequest,
+  DeviceResponse,
+  HardwareDevice,
+  HardwareOperation,
+  HardwareResult,
+  HardwareStep,
+  QrPayload,
+} from "./hardware.ts";
 export type {
   HyperliquidL1Action,
   HyperliquidL1Order,
@@ -285,6 +304,7 @@ export { CHAINS_METHODS } from "./chains.ts";
 export type {
   ChainAccount,
   ChainAccountsParams,
+  ChainSignRequest,
   ChainSignResult,
   ChainTemplate,
 } from "./chains.ts";
