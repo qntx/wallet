@@ -135,6 +135,34 @@ describe("hardware(wallet)", () => {
     expect(kernel.received).not.toContain("hardware.step");
   });
 
+  it("does not issue the next device request once the signal aborted during step", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
+    const controller = new AbortController();
+    kernel.handlers.set("hardware.step", () => {
+      controller.abort();
+      return { ok: exchangeStep };
+    });
+    kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
+    const wallet = await connect(kernel);
+    let exchanges = 0;
+    const io = responding({
+      signal: controller.signal,
+      exchange: async () => {
+        exchanges += 1;
+        return Promise.resolve({
+          kind: "qr",
+          ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+        });
+      },
+    });
+    await expect(hardware(wallet).pair("keystone", io)).rejects.toSatisfy(
+      (e) => walletError(e).code === "cancelled",
+    );
+    expect(exchanges).toBe(1);
+    expect(kernel.received).toContain("hardware.cancel");
+  });
+
   it("cancels the operation and rethrows when the transport rejects", async () => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
