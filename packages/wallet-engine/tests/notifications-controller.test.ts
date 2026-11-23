@@ -21,7 +21,7 @@ import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
 import { PUSH_AUTH_SCHEME, pushSubscriptionRequest } from "../src/gateway/contract/push.ts";
 import type { NetworkControllerState } from "../src/networks/controller.ts";
 import { NotificationsController } from "../src/notifications/controller.ts";
-import type { NotificationEvent } from "../src/notifications/controller.ts";
+import type { NotificationEvent, PushKeyStore } from "../src/notifications/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionControllerState } from "../src/transactions/controller.ts";
 
@@ -84,10 +84,7 @@ type Options = {
   readonly served?: ReadonlyArray<string>;
   readonly addresses?: ReadonlyArray<string>;
   readonly families?: ReadonlyArray<"evm" | "solana" | "bitcoin" | "tron">;
-  readonly keys?: {
-    put: (id: string, key: Uint8Array) => Promise<void>;
-    delete: (id: string) => Promise<void>;
-  };
+  readonly keys?: PushKeyStore;
   readonly now?: () => number;
 };
 
@@ -285,7 +282,7 @@ describe("NotificationsController", () => {
     await h.controller.setToken("apns", TOKEN);
     await h.controller.enable("w1");
     await h.flush();
-    const [liveId] = [...h.keyStore.keys()];
+    const liveId = [...h.keyStore.keys()][0]!;
     expect(liveId).toBeDefined();
     // Orphans an erased vault or a crash between the row write and the key export leaves:
     // the gateway keeps delivering for them within retention and the extension can no longer
