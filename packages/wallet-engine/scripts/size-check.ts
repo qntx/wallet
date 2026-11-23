@@ -76,10 +76,10 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
-       deposit and the nonce/tracking fixes; the approvals inventory and the revocation
-       pipeline measure 156 692 B; the merge takes the larger budget pending re-measurement. */
-    budget: 154 * 1024,
+    /* Measured 173 412 B on the merged tree: the approvals lane's 156 692 B plus the NFT
+       controller (accepted +6 KiB index increase), the notifications controller, the versioned
+       backup controller with cloud transports and the hardware-wallet custody handling. */
+    budget: 172 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",
