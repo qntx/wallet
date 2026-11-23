@@ -10,7 +10,13 @@ import { corePromptFor } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { Secret } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { findRecord, openRecord, sealRecord, verifyFactor } from "../../vault/vault.ts";
+import {
+  findRecord,
+  findSeedWallet,
+  openRecord,
+  sealRecord,
+  verifyFactor,
+} from "../../vault/vault.ts";
 import { nostrKeyAt } from "./derive.ts";
 import { ncryptsecFromSecretKey, nsecFromSecretKey } from "./pool.ts";
 import type { NostrKeyHeader } from "./record.ts";
@@ -44,7 +50,7 @@ export async function deriveKey(
   requestSession: string | undefined,
 ): Promise<NostrKeyInfo> {
   const { dek } = ctx.session.require(requestSession);
-  const record = findRecord(ctx.image, "entropy", params.walletId);
+  const record = findSeedWallet(ctx.image, params.walletId);
   return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
     const master = masterKey(seed);
     try {
@@ -75,7 +81,7 @@ export async function discover(
   requestSession: string | undefined,
 ): Promise<{ keys: Array<{ index: number; publicKey: string }> }> {
   const { dek } = ctx.session.require(requestSession);
-  const record = findRecord(ctx.image, "entropy", params.walletId);
+  const record = findSeedWallet(ctx.image, params.walletId);
   if (params.from + params.count - 1 > 0x7ffffffe) {
     throw new KernelError("invalid-input", "identity range exceeds 0x7ffffffe");
   }

@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
  * names and superseded names are deleted once the new head is confirmed.
  */
 import { verifyEvent } from "@qntx/nostr";
-import type { Wallet, WalletInfo } from "@qntx/wallet";
+import type { VaultWalletInfo, Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 import { BackupControllerError } from "../src/backup/errors.ts";
@@ -55,6 +55,7 @@ function corruptFirstRead(inner: CloudStore): CloudStore {
     delete: async (name) => inner.delete(name),
   };
 }
+
 
 type Rig = {
   readonly wallet: Wallet;
@@ -198,7 +199,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   };
 }
 
-async function vaultWithMnemonic(wallet: Wallet): Promise<WalletInfo> {
+async function vaultWithMnemonic(wallet: Wallet): Promise<VaultWalletInfo> {
   const draft = await wallet.wallets.createMnemonic({
     words: 12,
     factor: { kind: "password", password: PASSWORD },

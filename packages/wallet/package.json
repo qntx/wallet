@@ -66,6 +66,11 @@
     "./chains": {
       "types": "./dist/chains.d.mts",
       "default": "./dist/chains.mjs"
+    },
+    "./hardware": {
+      "types": "./dist/hardware.d.mts",
+      "import": "./dist/hardware.mjs",
+      "default": "./dist/hardware.mjs"
     }
   },
   "publishConfig": {
@@ -89,6 +94,7 @@
     "@qntx/nostr": "0.15.4",
     "@qntx/spark": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
+    "@qntx/ur": "3.0.0",
     "@qntx/wallet-chains": "0.13.0",
     "@scure/bip32": "2.4.0",
     "@scure/bip39": "2.4.0",
@@ -101,6 +107,7 @@
   "peerDependencies": {
     "@qntx/nostr": "~0.15.4",
     "@qntx/spark": "~0.5.2",
+    "@qntx/ur": "3.0.0",
     "@qntx/wallet-chains": "0.13.0"
   },
   "peerDependenciesMeta": {
@@ -108,6 +115,9 @@
       "optional": true
     },
     "@qntx/spark": {
+      "optional": true
+    },
+    "@qntx/ur": {
       "optional": true
     },
     "@qntx/wallet-chains": {

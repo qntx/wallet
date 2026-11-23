@@ -425,7 +425,9 @@ export class BackupController extends Controller<BackupControllerState> {
 
   private coverage(snapshot: WalletSnapshot): Coverage {
     return {
-      walletIds: sorted(snapshot.wallets.map((w) => w.walletId)),
+      walletIds: sorted(
+        snapshot.wallets.filter((w) => w.custody === "vault").map((w) => w.walletId),
+      ),
       keyIds: sorted(snapshot.importedKeys.map((k) => k.keyId)),
     };
   }
@@ -439,7 +441,7 @@ export class BackupController extends Controller<BackupControllerState> {
         ? head.coverage.walletIds
         : [];
     const walletIds = snapshot.wallets
-      .filter((w) => w.backup !== "mnemonic")
+      .filter((w) => w.custody === "vault" && w.backup !== "mnemonic")
       .map((w) => w.walletId)
       .filter((id) => !headIds.includes(id));
     return { walletIds: sorted(walletIds) };

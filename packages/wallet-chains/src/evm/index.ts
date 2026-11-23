@@ -46,6 +46,7 @@ export type {
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
 export { FIAT24_CHAIN, fiat24SessionMessage } from "./fiat24.ts";
 export type { EvmToken, EvmTokenTable } from "./tokens.ts";
+export { evmSigningPreimage } from "./envelope.ts";
 export { planEvm } from "./plan.ts";
 export { assembleEvm } from "./assemble.ts";
 export type { EvmSignPlan } from "./plan.ts";

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 type BunBuildOutput = {
   success: boolean;
   logs: ReadonlyArray<{ toString: () => string }>;
-  outputs: ReadonlyArray<{ kind: string }>;
+  outputs: ReadonlyArray<{ kind: string; text: () => Promise<string> }>;
 };
 declare const Bun: {
   build: (options: {
@@ -30,23 +30,32 @@ async function main(): Promise<number> {
     console.error("set HERMES to the hermes binary");
     return 1;
   }
+  // Raw `hermes` has no TextDecoder or crypto; the chains modules construct them at module
+  // scope, so the same test globals the kernel smoke installs must evaluate before the bundle.
+  // Concatenating two iifes keeps that ordering independent of import sorting.
+  const globals = await Bun.build({
+    entrypoints: [resolve(root, "../wallet-worker/tests/hermes/globals.ts")],
+    target: "browser",
+    format: "iife",
+  });
   const result = await Bun.build({
     entrypoints: [resolve(root, "tests/hermes/entry.ts")],
     target: "browser",
     format: "iife",
   });
-  if (!result.success) {
-    for (const log of result.logs) {
+  if (!globals.success || !result.success) {
+    for (const log of [...globals.logs, ...result.logs]) {
       console.error(String(log));
     }
     return 1;
   }
+  const shim = globals.outputs.find((o) => o.kind === "entry-point");
   const bundle = result.outputs.find((o) => o.kind === "entry-point");
-  if (!bundle) {
+  if (!shim || !bundle) {
     console.error("bun build produced no entry-point output");
     return 1;
   }
-  await Bun.write(outfile, bundle);
+  await Bun.write(outfile, `${await shim.text()}\n${await bundle.text()}`);
   const run = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
   const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
   console.log(out);

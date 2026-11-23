@@ -20,7 +20,14 @@ export type FactorInfo =
     }
   | { readonly kind: "password"; readonly id: string; readonly createdAt: number };
 
-export type WalletInfo = {
+/** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
+export const HARDWARE_DEVICES = ["keystone"] as const;
+
+/** A hardware-signing device family the kernel knows; each signer adds a literal. */
+export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
+
+export type VaultWalletInfo = {
+  readonly custody: "vault";
   readonly walletId: string;
   readonly origin: "passkey" | "mnemonic";
   readonly words: 12 | 15 | 18 | 21 | 24;
@@ -35,6 +42,23 @@ export type WalletInfo = {
   readonly passphrase: boolean;
   readonly createdAt: number;
 };
+
+/**
+ * An externally signed wallet: the vault stores the device's master fingerprint and its pinned
+ * public material — never a seed — so there is no origin, word count or backup state to report.
+ */
+export type HardwareWalletInfo = {
+  readonly custody: "hardware";
+  readonly walletId: string;
+  readonly device: HardwareDevice;
+  /** The device master fingerprint as 8 lowercase hex chars. */
+  readonly fingerprint: string;
+  readonly model?: string;
+  readonly firmware?: string;
+  readonly createdAt: number;
+};
+
+export type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
 
 export type NostrKeyRef = {
   readonly kind: "derived";
@@ -70,7 +94,12 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
-  | "crashed";
+  | "crashed"
+  | "device-required"
+  | "device-locked"
+  | "device-app-closed"
+  | "device-rejected"
+  | "wrong-device";
 
 /**
  * The vault half of the status payload: `corrupted` means authentication or structural data failed
@@ -257,7 +286,7 @@ export type MnemonicDraft = {
   readonly confirm: (
     answers: ReadonlyArray<string>,
     options?: { readonly passphrase?: string },
-  ) => Promise<WalletInfo>;
+  ) => Promise<VaultWalletInfo>;
   readonly discard: () => Promise<void>;
 };
 
@@ -287,10 +316,10 @@ export type WalletsApi = {
     /** Display name for the new passkey credential (1–64 characters after trimming). */
     readonly name: string;
     readonly factor?: InitialFactor;
-  }) => Promise<WalletInfo>;
+  }) => Promise<VaultWalletInfo>;
   readonly restoreWithPasskey: (options?: {
     readonly factor?: InitialFactor;
-  }) => Promise<WalletInfo>;
+  }) => Promise<VaultWalletInfo>;
   readonly createMnemonic: (options: {
     readonly words: 12 | 24;
     readonly factor?: InitialFactor;
@@ -300,7 +329,7 @@ export type WalletsApi = {
     /** BIP-39 passphrase; omit or pass "" for none. Spaces are significant. */
     readonly passphrase?: string;
     readonly factor?: InitialFactor;
-  }) => Promise<WalletInfo>;
+  }) => Promise<VaultWalletInfo>;
   /** One-shot mnemonic (and passphrase) export; requires re-verification every call. */
   readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
   readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
@@ -337,7 +366,7 @@ export type BackupApi = {
     }>;
     readonly factor?: InitialFactor;
   }) => Promise<{
-    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly wallets: ReadonlyArray<VaultWalletInfo>;
     readonly passphraseRequired: ReadonlyArray<string>;
   }>;
 };

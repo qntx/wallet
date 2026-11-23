@@ -16,7 +16,8 @@ import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
 import { promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
-import { verifyFactor } from "../../vault/vault.ts";
+import type { StoredRecord } from "../../vault/store.ts";
+import { findSeedWallet, verifyFactor } from "../../vault/vault.ts";
 /**
  * The spark module: the SparkSigner pool and every spark.* command. The module keeps no records —
  * signers are derived lazily per walletId/groupIndex/network from the wallet's entropy record and
@@ -281,12 +282,14 @@ const signerFor = async (
   requestSession: string | undefined,
 ): Promise<SparkSigner> => {
   const { dek } = ctx.session.require(requestSession);
-  const record = ctx.image.records.find(
-    (entry) => entry.kind === "entropy" && entry.id === account.walletId,
-  );
-  if (record === undefined) {
-    disposeWallet(state, account.walletId);
-    throw new KernelError("not-found", "no such wallet");
+  let record: StoredRecord;
+  try {
+    record = findSeedWallet(ctx.image, account.walletId);
+  } catch (error) {
+    if (error instanceof KernelError && error.code === "not-found") {
+      disposeWallet(state, account.walletId);
+    }
+    throw error;
   }
   const existing = state.signers.get(poolKey(account));
   if (existing !== undefined) {
@@ -538,12 +541,7 @@ const sparkApprove = async (
   session: string | undefined,
 ) => {
   const { dek } = ctx.session.require(session);
-  const record = ctx.image.records.find(
-    (entry) => entry.kind === "entropy" && entry.id === params.account.walletId,
-  );
-  if (record === undefined) {
-    throw new KernelError("not-found", "no such wallet");
-  }
+  findSeedWallet(ctx.image, params.account.walletId);
   const key = poolKey(params.account);
   if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) {
     throw new KernelError("invalid-input", "approval cap reached for this account");

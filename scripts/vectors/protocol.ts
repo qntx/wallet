@@ -59,6 +59,7 @@ const passkeyFactor = {
 };
 
 const walletInfo = {
+  custody: "vault",
   walletId: WALLET_ID,
   origin: "mnemonic",
   words: 12,

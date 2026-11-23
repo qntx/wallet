@@ -298,6 +298,9 @@ type EvmAccessListEntry = {
 export function evmAddressFromPublicKey(pubkey: Uint8Array): string;
 
 // @public
+export const evmSigningPreimage: (tx: EvmTransaction) => Uint8Array;
+
+// @public
 export type EvmSignPlan = {
     readonly kind: "evm.transaction";
     readonly tx: EvmTransaction;

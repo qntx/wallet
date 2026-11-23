@@ -1257,6 +1257,7 @@
           ],
           "wallets": [
             {
+              "custody": "vault",
               "walletId": "0011223344556677",
               "origin": "mnemonic",
               "words": 12,
@@ -1391,6 +1392,7 @@
         "id": 11,
         "ok": {
           "wallet": {
+            "custody": "vault",
             "walletId": "0011223344556677",
             "origin": "mnemonic",
             "words": 12,
@@ -1410,6 +1412,7 @@
         "id": 11,
         "ok": {
           "wallet": {
+            "custody": "vault",
             "walletId": "0011223344556677",
             "origin": "mnemonic",
             "words": 12,
@@ -1459,6 +1462,7 @@
         "ok": {
           "wallets": [
             {
+              "custody": "vault",
               "walletId": "0011223344556677",
               "origin": "mnemonic",
               "words": 12,
@@ -1796,6 +1800,7 @@
           ],
           "wallets": [
             {
+              "custody": "vault",
               "walletId": "0011223344556677",
               "origin": "mnemonic",
               "words": 12,
@@ -1876,6 +1881,7 @@
           ],
           "wallets": [
             {
+              "custody": "vault",
               "walletId": "0011223344556677",
               "origin": "mnemonic",
               "words": 12,
@@ -2730,6 +2736,7 @@
         "ok": {
           "wallets": [
             {
+              "custody": "vault",
               "walletId": "0011223344556677",
               "origin": "mnemonic",
               "words": 12,

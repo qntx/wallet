@@ -7,9 +7,10 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import * as AbiFunction from "ox/AbiFunction";
 import { privateKeyToAccount } from "viem/accounts";
-import { getContractAddress, keccak256 } from "viem/utils";
+import { bytesToHex, getContractAddress, keccak256, serializeTransaction } from "viem/utils";
 import { describe, expect, it } from "vite-plus/test";
 
+import { evmEnvelope } from "../src/evm/envelope.ts";
 import {
   DELEGATION_MANAGER,
   ENTRY_POINT_V08,
@@ -22,13 +23,14 @@ import {
   isEvmAddress,
   networkChainId,
   normalizeEvm,
+  evmSigningPreimage,
   verifiabilityEvm,
 } from "../src/evm/index.ts";
 import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
 import { evmTokenTable } from "../src/evm/tokens.ts";
 import type { EvmTokenTable } from "../src/evm/tokens.ts";
 import { ChainError } from "../src/index.ts";
-import type { EvmTransaction } from "../src/index.ts";
+import type { EvmTransaction, SignRequest } from "../src/index.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
@@ -879,5 +881,62 @@ describe("approval and transfer decode", () => {
     expect(decode(calldata(sig, [[{ token: TOKEN, spender: SPENDER }]])).verifiability).toBe(
       "opaque",
     );
+  });
+});
+
+const evmTxOf = (request: SignRequest): EvmTransaction => {
+  if (request.kind !== "evm.transaction") {
+    throw new Error(`unexpected request ${request.kind}`);
+  }
+  return request.tx;
+};
+
+const unsignedSerialize = (tx: EvmTransaction): string => {
+  const base = {
+    chainId: tx.chainId,
+    nonce: tx.nonce,
+    to: tx.to as `0x${string}`,
+    value: BigInt(tx.value),
+    data: tx.data as `0x${string}`,
+    gas: BigInt(tx.gas),
+  };
+  if (tx.type === "legacy") {
+    return serializeTransaction({ ...base, type: "legacy", gasPrice: BigInt(tx.gasPrice) });
+  }
+  if (tx.type === "eip1559") {
+    return serializeTransaction({
+      ...base,
+      type: "eip1559",
+      accessList: [],
+      maxFeePerGas: BigInt(tx.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+    });
+  }
+  throw new Error(`unexpected type ${tx.type}`);
+};
+
+describe("the transaction signing preimage", () => {
+  const cases = [
+    normalizeEvm(txReq({ type: "legacy", chainId: 1, gasPrice: "0x2540be400", data: "0x1234" })),
+    normalizeEvm(
+      txReq({ type: "legacy", chainId: 56, nonce: 7, value: "0xde0b6b3a7640000" }, "eip155:56"),
+    ),
+    normalizeEvm(
+      txReq({ type: "eip1559", maxFeePerGas: "0x59682f00", maxPriorityFeePerGas: "0x3b9aca00" }),
+    ),
+  ];
+
+  it("hashes to the envelope payload for legacy and eip1559", () => {
+    for (const request of cases) {
+      const tx = evmTxOf(request);
+      expect(keccak256(evmSigningPreimage(tx))).toBe(evmEnvelope(tx).payload);
+    }
+  });
+
+  it("equals viem's unsigned serialization", () => {
+    for (const request of cases) {
+      const tx = evmTxOf(request);
+      expect(bytesToHex(evmSigningPreimage(tx))).toBe(unsignedSerialize(tx));
+    }
   });
 });

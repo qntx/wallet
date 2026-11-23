@@ -11,6 +11,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { HDKey } from "@scure/bip32";
 import type { Versions } from "@scure/bip32";
+import { hash160 } from "@scure/btc-signer/utils.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import type { KeyPath, SignTask } from "@qntx/wallet-chains";
@@ -32,6 +33,8 @@ export type PublicMaterial = {
   readonly ed25519: (path: KeyPath) => Promise<Uint8Array>;
   /** The base58 account xpub at the path under the network's version bytes. HD only. */
   readonly extendedPublicKey: (path: KeyPath, versions: Versions) => Promise<string>;
+  /** The 4-byte BIP-32 master fingerprint: hash160(master pubkey)[0..4]. HD only. */
+  readonly fingerprint: () => Promise<Uint8Array>;
 };
 
 /** Supplies one 64-byte signature per task — the local seed backend today, a card later. */
@@ -115,6 +118,13 @@ export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): K
         return pub;
       },
       ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+      fingerprint: async () => {
+        const pub = secpNode([]).publicKey;
+        if (pub === null) {
+          throw new KernelError("integrity", "no public key at path");
+        }
+        return hash160(pub).subarray(0, 4);
+      },
       // A fresh tree under the network's version bytes: xpubs serialize with them.
       extendedPublicKey: async (path, versions) => {
         alive();
@@ -180,6 +190,9 @@ export const importedKeys = (
       },
       extendedPublicKey: async () => {
         throw new KernelError("integrity", "imported keys have no extended public key");
+      },
+      fingerprint: async () => {
+        throw new KernelError("integrity", "imported keys have no fingerprint");
       },
     },
     backend: (sign) => ({

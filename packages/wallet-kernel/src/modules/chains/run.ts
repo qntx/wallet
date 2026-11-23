@@ -96,20 +96,18 @@ export const assembleChain = (
 };
 
 /**
- * Signs a plan end to end: tasks go to the backend sequentially — a hardware backend serves one at
- * a time — and every stage's material is verified during assemble before the next runs.
+ * Runs a plan's stages to a `ChainSignResult`: `signStage` produces one 64-byte signature per task
+ * of a stage — local backends sign each task in-memory, the signers module turns a stage into one
+ * device round — and every stage's material is verified during assemble before the next runs.
  */
-export const signPlan = async (
+export const signStages = async (
   plan: ChainPlan,
-  backend: SigningBackend,
+  signStage: (stage: ChainPlan) => Promise<ReadonlyArray<Uint8Array>>,
 ): Promise<ChainSignResult> => {
   let current: ChainPlan = plan;
   for (;;) {
-    const signatures: Uint8Array[] = [];
-    for (const task of current.tasks) {
-      // oxlint-disable-next-line no-await-in-loop -- a hardware backend serves one task at a time
-      signatures.push(await backend.sign(task));
-    }
+    // oxlint-disable-next-line no-await-in-loop -- signing stages run in order, assemble gates each
+    const signatures = await signStage(current);
     let result: Assembled<ChainSignResult, ChainPlan>;
     try {
       result = assembleChain(current, signatures);
@@ -125,3 +123,20 @@ export const signPlan = async (
     current = result.plan;
   }
 };
+
+/**
+ * Signs a plan end to end: tasks go to the backend sequentially — a hardware backend serves one at
+ * a time — and every stage's material is verified during assemble before the next runs.
+ */
+export const signPlan = async (
+  plan: ChainPlan,
+  backend: SigningBackend,
+): Promise<ChainSignResult> =>
+  signStages(plan, async (stage) => {
+    const signatures: Uint8Array[] = [];
+    for (const task of stage.tasks) {
+      // oxlint-disable-next-line no-await-in-loop -- a hardware backend serves one task at a time
+      signatures.push(await backend.sign(task));
+    }
+    return signatures;
+  });

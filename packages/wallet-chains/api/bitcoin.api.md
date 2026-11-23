@@ -416,6 +416,9 @@ type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyon
 type KeyPath = ReadonlyArray<number>;
 
 // @public
+export const legacyMessageHash: (message: string) => Uint8Array;
+
+// @public
 type MessageContent = {
     readonly kind: "text";
     readonly text: string;

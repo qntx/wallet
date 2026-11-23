@@ -1,6 +1,7 @@
 import { HDKey } from "@scure/bip32";
 import { describe, expect, it } from "vite-plus/test";
 
+import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
@@ -12,10 +13,10 @@ const W = "w";
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const LOGGER: EngineLogger = { warn: () => {} };
 
-const walletStub = (): Wallet =>
+const walletStub = (custody: "vault" | "hardware" = "vault"): Wallet =>
   ({
     getSnapshot: () => ({
-      wallets: [{ walletId: W }],
+      wallets: [{ walletId: W, custody }],
       nostr: { keys: [] as unknown[] },
     }),
   }) as unknown as Wallet;
@@ -28,8 +29,11 @@ type Rig = {
   readonly btcUsed: Set<number>;
   readonly tronUsed: Set<number>;
   readonly sparkUsed: Set<number>;
+  readonly deviceRequired: Set<string>;
+  readonly custody: "vault" | "hardware";
   readonly failOn: Set<string>;
   readonly calls: string[];
+  readonly sparkAccounts: ReadonlyArray<ReadonlyArray<unknown>>;
   evmGroup: number;
   solGroup: number;
   btcGroup: number;
@@ -45,8 +49,11 @@ const rig = (over: Partial<Rig> = {}): Rig => {
     btcUsed: over.btcUsed === undefined ? new Set() : new Set(over.btcUsed),
     tronUsed: over.tronUsed === undefined ? new Set() : new Set(over.tronUsed),
     sparkUsed: over.sparkUsed === undefined ? new Set() : new Set(over.sparkUsed),
+    deviceRequired: over.deviceRequired === undefined ? new Set() : new Set(over.deviceRequired),
+    custody: over.custody ?? "vault",
     failOn: over.failOn === undefined ? new Set() : new Set(over.failOn),
     calls: [],
+    sparkAccounts: [],
     evmGroup: -1,
     solGroup: -1,
     btcGroup: -1,
@@ -61,11 +68,16 @@ const rig = (over: Partial<Rig> = {}): Rig => {
       r.calls.push("spark");
       return Promise.resolve({ balanceSats: 0, used: r.sparkUsed.has(ref.groupIndex) });
     },
-    setAccounts: () => {},
+    setAccounts: (refs: ReadonlyArray<unknown>) => {
+      (r.sparkAccounts as unknown[][]).push([...refs]);
+    },
     setStore: () => {},
   } as unknown as SparkController;
   const chains = {
     account: async (p: { readonly groupIndex: number; readonly template: string }) => {
+      if (r.deviceRequired.has(p.template)) {
+        throw new WalletError("device-required", "the device must derive this path");
+      }
       if (p.template === "evm.bip44") {
         r.evmGroup = p.groupIndex;
       } else if (p.template === "solana.bip44-change") {
@@ -145,7 +157,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
   };
   const ctl = new AccountTreeController({
     setTimer: () => () => undefined,
-    wallet: walletStub(),
+    wallet: walletStub(r.custody),
     spark,
     sparkNetwork: "regtest",
     chains,
@@ -343,5 +355,42 @@ describe("discovery and the per-group sync stamp", () => {
     };
     b.mergeMeta(W, remote);
     expect(group(b, 1)).toMatchObject({ name: "Renamed", updatedAt: T1 });
+  });
+});
+
+describe("a hardware wallet's account tree", () => {
+  it("never inspects spark during discovery and still stops on two unused groups", async () => {
+    const r = rig({ custody: "hardware", sparkUsed: new Set([1, 2, 3, 4, 5]) });
+    await init(r);
+    const found = await r.ctl.discoverGroups(W);
+    expect(found).toStrictEqual([0]);
+    expect(r.calls).not.toContain("spark");
+  });
+
+  it("treats a device-required family as unused, not an error", async () => {
+    const r = rig({ custody: "hardware", deviceRequired: new Set(["evm.bip44"]) });
+    await init(r);
+    await r.ctl.discoverGroups(W);
+    const group0 = r.ctl.getState().groups[W]?.find((g) => g.index === 0);
+    expect(group0?.used?.["evm"]).toBe(false);
+    expect(group0?.errors?.["evm"]).toBeUndefined();
+  });
+
+  it("drives no spark account for a selected hardware group", async () => {
+    const r = rig({ custody: "hardware" });
+    await init(r);
+    expect(r.sparkAccounts.length).toBeGreaterThan(0);
+    expect(r.sparkAccounts.every((refs) => refs.length === 0)).toBe(true);
+  });
+
+  it("refreshes no spark totals for hardware groups", async () => {
+    const r = rig({ custody: "hardware" });
+    await init(r);
+    r.ctl.addGroup(W);
+    r.ctl.select(W, 1);
+    const before = r.calls.length;
+    await r.ctl.refreshTotals();
+    expect(r.calls.slice(before)).not.toContain("spark");
+    expect(r.calls.slice(before)).toHaveLength(0);
   });
 });

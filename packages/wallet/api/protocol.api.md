@@ -171,7 +171,7 @@ type ChainSignParams = {
 };
 
 // @public
-type ChainSignRequest = {
+export type ChainSignRequest = {
     readonly kind: "evm.transaction";
     readonly network: string;
     readonly account: AccountRef;
@@ -333,7 +333,7 @@ export const CORE_METHODS: {
         }>;
         readonly factor?: Factor;
     }, {
-        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
         readonly session: string;
     }>;
@@ -383,7 +383,7 @@ export const CORE_METHODS: {
 
 // @public
 export type CreatedResult = {
-    readonly wallet: WalletInfo;
+    readonly wallet: VaultWalletInfo;
     readonly session: string;
 };
 
@@ -407,6 +407,35 @@ export type CreateWithPasskeyParams = {
 type DerivedNostrKey = {
     readonly index: number;
     readonly publicKey: string;
+};
+
+// @public (undocumented)
+export type DeviceDisplay = "clear" | "blind";
+
+// @public (undocumented)
+export type DeviceRequest = {
+    readonly kind: "qr";
+    readonly show?: QrPayload;
+    readonly scan: ReadonlyArray<string>;
+} | {
+    readonly kind: "message";
+    readonly data: Uint8Array;
+} | {
+    readonly kind: "compare";
+    readonly address: string;
+    readonly path: string;
+};
+
+// @public (undocumented)
+export type DeviceResponse = {
+    readonly kind: "qr";
+    readonly ur: QrPayload;
+} | {
+    readonly kind: "message";
+    readonly data: Uint8Array;
+} | {
+    readonly kind: "compare";
+    readonly matched: boolean;
 };
 
 // @public (undocumented)
@@ -521,6 +550,90 @@ export type FrostSignJob = {
         readonly connectorTx: Uint8Array;
         readonly exitTx: Uint8Array;
     };
+};
+
+// @public
+const HARDWARE_DEVICES: readonly ["keystone"];
+
+// @public (undocumented)
+export const HARDWARE_METHODS: {
+    readonly "hardware.begin": MethodSpec<{
+        readonly op: HardwareOperation;
+        readonly verify?: VerifyFactor;
+    }, {
+        readonly opId: string;
+        readonly step: HardwareStep;
+    }>;
+    readonly "hardware.step": MethodSpec<{
+        readonly opId: string;
+        readonly response: DeviceResponse;
+    }, HardwareStep>;
+    readonly "hardware.cancel": MethodSpec<{
+        readonly opId: string;
+    }, NullValue>;
+};
+
+// @public
+export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
+
+// @public (undocumented)
+export type HardwareOperation = {
+    readonly kind: "pair";
+    readonly device: HardwareDevice;
+} | {
+    readonly kind: "accounts";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly templates: ReadonlyArray<ChainTemplate>;
+    readonly network: string;
+} | {
+    readonly kind: "sign";
+    readonly request: ChainSignRequest;
+} | {
+    readonly kind: "verify-address";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly template: ChainTemplate;
+    readonly network: string;
+    readonly index?: number;
+};
+
+// @public (undocumented)
+export type HardwareResult = {
+    readonly kind: "pair";
+    readonly wallet: WalletInfo;
+} | {
+    readonly kind: "accounts";
+    readonly accounts: ReadonlyArray<ChainAccount>;
+} | {
+    readonly kind: "sign";
+    readonly result: ChainSignResult;
+} | {
+    readonly kind: "verify-address";
+    readonly address: string;
+    readonly method: "device" | "compare";
+};
+
+// @public (undocumented)
+export type HardwareStep = {
+    readonly kind: "exchange";
+    readonly device: HardwareDevice;
+    readonly request: DeviceRequest;
+    readonly display?: DeviceDisplay;
+} | {
+    readonly kind: "done";
+    readonly result: HardwareResult;
+};
+
+// @public
+type HardwareWalletInfo = {
+    readonly custody: "hardware";
+    readonly walletId: string;
+    readonly device: HardwareDevice;
+    readonly fingerprint: string;
+    readonly model?: string;
+    readonly firmware?: string;
+    readonly createdAt: number;
 };
 
 // @public
@@ -643,7 +756,7 @@ export type MethodName = keyof typeof METHODS;
 // @public (undocumented)
 export const METHODS: {
     readonly status: MethodSpec<NullValue, StatusPayload>;
-} & typeof CORE_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof SESSIONS_METHODS;
+} & typeof CORE_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof SESSIONS_METHODS & typeof HARDWARE_METHODS;
 
 // @public (undocumented)
 export type MethodSpec<P, R> = {
@@ -654,7 +767,7 @@ export type MethodSpec<P, R> = {
 };
 
 // @public (undocumented)
-export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>];
+export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SESSIONS_METHODS>];
 
 // @public (undocumented)
 export const NOSTR_METHODS: {
@@ -829,6 +942,12 @@ export const PROTOCOL_VERSION = 3;
 // @public (undocumented)
 export type ProtocolValue = NullValue | boolean | number | string | Uint8Array | ReadonlyArray<ProtocolValue> | {
     readonly [key: string]: ProtocolValue;
+};
+
+// @public (undocumented)
+export type QrPayload = {
+    readonly type: string;
+    readonly cbor: Uint8Array;
 };
 
 // @public
@@ -1195,6 +1314,17 @@ export type Validator<T> = (value: unknown) => T;
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
 // @public (undocumented)
+type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
 export const verifier: Validator<VerifyFactor>;
 
 // @public
@@ -1203,20 +1333,13 @@ export type VerifyFactor = Exclude<Factor, {
 }>;
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
 
 // @public (undocumented)
 export const walletErrorCode: Validator<WalletErrorCode>;
 
 // @public (undocumented)
-type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
 
 // (No @packageDocumentation comment for this package)
 

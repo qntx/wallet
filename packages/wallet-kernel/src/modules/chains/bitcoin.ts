@@ -5,7 +5,6 @@
  */
 import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
-import { hash160 } from "@scure/btc-signer/utils.js";
 
 import type { DisplayIntent, TaskKey } from "@qntx/wallet-chains";
 import {
@@ -29,11 +28,9 @@ const isPath = (path: unknown): path is number[] =>
 const hex = (bytes: Uint8Array): string =>
   bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 
-/** The BIP-32 master fingerprint: first 4 bytes big-endian of hash160(master pubkey). */
-const fingerprintOf = (pub: Uint8Array): number => {
-  const h = hash160(pub);
-  return new DataView(h.buffer, h.byteOffset, h.byteLength).getUint32(0);
-};
+/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
+const fingerprintNumber = (bytes: Uint8Array): number =>
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 
 type DerivationOwner = {
   bip32Derivation?: ReadonlyArray<readonly [Uint8Array, { fingerprint: number; path: number[] }]>;
@@ -319,7 +316,7 @@ export const prepareBitcoin = async (
   const net = bitcoinNetwork(request.network);
   const b: BitcoinDerive = {
     material,
-    fingerprint: fingerprintOf(await material.secp256k1([])),
+    fingerprint: fingerprintNumber(await material.fingerprint()),
     coinType: net.coinType,
     hardened: 0x80000000,
     groupIndex: account.groupIndex,

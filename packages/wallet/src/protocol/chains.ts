@@ -53,7 +53,7 @@ export type ChainAccount =
       readonly path: string;
     };
 
-const template: Validator<ChainTemplate> = union(
+export const template: Validator<ChainTemplate> = union(
   literal("evm.bip44"),
   literal("solana.bip44-change"),
   literal("tron.bip44"),
@@ -68,7 +68,7 @@ const btcTemplate = union(
   literal("btc.bip86"),
 );
 
-const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
+export const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
 const addressResult = (
   t: "evm.bip44" | "solana.bip44-change" | "tron.bip44",
   address: Validator<string> = str(128, /^[0-9a-zA-Z-]{20,128}$/),
@@ -278,7 +278,7 @@ const evmTx: Validator<EvmTransactionWire> = union(
   }),
 );
 
-const signRequest: Validator<ChainSignRequest> = union(
+export const signRequest: Validator<ChainSignRequest> = union(
   obj({ kind: literal("evm.transaction"), network: caip2, account: accountRef, tx: evmTx }),
   obj({
     kind: literal("evm.personal-message"),
@@ -351,7 +351,7 @@ const signRequest: Validator<ChainSignRequest> = union(
   }),
 );
 
-const signResult: Validator<ChainSignResult> = union(
+export const signResult: Validator<ChainSignResult> = union(
   obj({ kind: literal("evm.transaction"), signedTransaction: bytes(1, 65536) }),
   obj({
     kind: union(
@@ -373,6 +373,24 @@ const signResult: Validator<ChainSignResult> = union(
   }),
 );
 
+export const chainAccount: Validator<ChainAccount> = union(
+  addressResult("evm.bip44"),
+  addressResult("solana.bip44-change"),
+  addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)),
+  obj({
+    template: union(
+      literal("btc.bip44"),
+      literal("btc.bip49"),
+      literal("btc.bip84"),
+      literal("btc.bip86"),
+    ),
+    network: caip2,
+    xpub: str(111, /^[a-zA-Z0-9]{111}$/),
+    fingerprint: str(8, /^[0-9a-f]{8}$/),
+    path: str(11, /^m\/[0-9'/]+$/),
+  }),
+);
+
 export const CHAINS_METHODS: {
   readonly "wallet.accounts": MethodSpec<ChainAccountsParams, ChainAccount>;
   readonly "chain.sign": MethodSpec<ChainSignParams, ChainSignResult>;
@@ -381,23 +399,7 @@ export const CHAINS_METHODS: {
     session: true,
     presence: false,
     params: obj({ walletId, groupIndex, template, network: caip2 }),
-    result: union(
-      addressResult("evm.bip44"),
-      addressResult("solana.bip44-change"),
-      addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)),
-      obj({
-        template: union(
-          literal("btc.bip44"),
-          literal("btc.bip49"),
-          literal("btc.bip84"),
-          literal("btc.bip86"),
-        ),
-        network: caip2,
-        xpub: str(111, /^[a-zA-Z0-9]{111}$/),
-        fingerprint: str(8, /^[0-9a-f]{8}$/),
-        path: str(11, /^m\/[0-9'/]+$/),
-      }),
-    ),
+    result: chainAccount,
   },
   "chain.sign": {
     session: true,

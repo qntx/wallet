@@ -21,7 +21,7 @@ type BackupApi = {
         }>;
         readonly factor?: InitialFactor;
     }) => Promise<{
-        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
 };
@@ -89,6 +89,23 @@ type FactorInfo = {
 export type FactorMode = "hardware" | "software";
 
 // @public
+const HARDWARE_DEVICES: readonly ["keystone"];
+
+// @public
+type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
+
+// @public
+type HardwareWalletInfo = {
+    readonly custody: "hardware";
+    readonly walletId: string;
+    readonly device: HardwareDevice;
+    readonly fingerprint: string;
+    readonly model?: string;
+    readonly firmware?: string;
+    readonly createdAt: number;
+};
+
+// @public
 type InitialFactor = {
     readonly kind: "passkey";
     readonly name: string;
@@ -133,7 +150,7 @@ type MnemonicDraft = {
     readonly quiz: ReadonlyArray<number>;
     readonly confirm: (answers: ReadonlyArray<string>, options?: {
         readonly passphrase?: string;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly discard: () => Promise<void>;
 };
 
@@ -246,6 +263,17 @@ type VaultApi = {
 // @public
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
+// @public (undocumented)
+type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
 // @public
 type VerifyFactor = Exclude<UnlockFactor, {
     readonly kind: "device";
@@ -264,24 +292,17 @@ type Wallet = {
 };
 
 // @public (undocumented)
-type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
 
 // @public (undocumented)
 type WalletsApi = {
     readonly createWithPasskey: (options: {
         readonly name: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly restoreWithPasskey: (options?: {
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly createMnemonic: (options: {
         readonly words: 12 | 24;
         readonly factor?: InitialFactor;
@@ -290,7 +311,7 @@ type WalletsApi = {
         readonly mnemonic: string;
         readonly passphrase?: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
     readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
 };

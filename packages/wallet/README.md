@@ -2,8 +2,8 @@
 
 Public API surface of the qntx wallet: the `Wallet` interface, the immutable `WalletSnapshot`,
 `WalletError`, the core API groups (vault, wallets, dataKeys), the host/kernel wire protocol, and
-the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark`, `./chains` and
-`./sessions` are the other module subpaths). This package contains no runtime of
+the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark`, `./chains`,
+`./sessions` and `./hardware` are the other module subpaths). This package contains no runtime of
 its own — a `Wallet` comes from a host package that spawns the kernel, currently
 [`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node and
 [`@qntx/wallet-native`](https://www.npmjs.com/package/@qntx/wallet-native) for React Native.
@@ -63,6 +63,14 @@ at most 60 s after it is made and a nonce within ±60 s, both measured on the de
 device clock running S ahead of real time stretches the 60 s to S + 60 s of real time. The engine
 refuses to sign when the device is more than 5 s off Hyperliquid's server time, but that check runs
 in the main runtime.
+
+`@qntx/wallet/hardware` drives external signers — currently the Keystone 3 Pro over QR — that keep
+their seed entirely off the device running the wallet. `hardware(wallet)` exposes `pair`,
+`accounts`, `sign` and `verifyAddress`; each takes a host `DeviceIo` that transports the kernel's
+requests (for a Keystone: animate `qrParts(request.show)`, fold scanned frames through
+`qrReader(request.scan)`). The kernel validates every frame, checks every returned signature, and
+a `sign` re-runs the same verification as `chains().sign`; the host only moves bytes and shows
+prompts. `@qntx/ur` is an optional peer required only by this subpath.
 
 ### React
 

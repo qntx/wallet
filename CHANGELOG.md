@@ -216,6 +216,12 @@ Gateway (operators):
   backup keep both versions, and a version that holds wallets this device lacks reports `conflict`
   without blocking this device's upload. `BackupController.list()` items carry the backup `id`;
   `BackupErrorCategory` gains `quota` and `auth-required` (status `error`). (MIGRATION §28)
+- `WalletInfo` is a `custody` union — `wallet.custody === "vault"` narrows to the shape
+  0.13.0 returned; `custody: "hardware"` wallets carry `device`, `fingerprint` and optional
+  `model`/`firmware`. Seed-bound commands answer `unsupported` for a hardware wallet
+  (`exportMnemonic`, Nostr key derivation and sync, Spark, `sessions.create`), `chain.sign`
+  answers `device-required`, and `wallet.accounts` answers `device-required` for a group the
+  device has not exported yet. (MIGRATION §24)
 
 ### Added
 
@@ -1007,6 +1013,32 @@ Gateway (operators):
   (`BackupHeaderKey`).
 - `apps/harness`: a cloud-store page (`EXPO_PUBLIC_CLOUD_STORE=1`) that probes the platform store and
   runs the real-device conformance checks.
+- **Hardware signers** (`packages/wallet-kernel/src/modules/signers/`): the kernel drives external
+  signing devices through `hardware.begin` / `hardware.step` / `hardware.cancel` — a single
+  operation coroutine the host pumps frame by frame. The `hardware-wallet` vault record holds only
+  public material (device identity, master fingerprint, pinned public keys); `pinnedMaterial`
+  serves `wallet.accounts`, including public derivation off the non-hardened tail. A wallet whose
+  `custody` is `"hardware"` carries no seed, so no hardware secret ever exists in the kernel.
+- `@qntx/wallet`: `WalletInfo` is a `custody` union — `VaultWalletInfo` (the existing shape) or
+  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`). `HARDWARE_DEVICES`
+  lists the supported devices. Error codes `device-required`, `device-locked`,
+  `device-app-closed`, `device-rejected`, `wrong-device`.
+- `@qntx/wallet/hardware`: `hardware(wallet)` — `pair`, `accounts`, `sign`, `verifyAddress` over a
+  host-supplied `DeviceIo`; `sign` takes the same `verify` factor and re-runs the same result
+  checks as `chains().sign`. `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
+  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` (optional
+  peer).
+- **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
+  `crypto-multi-accounts`, per-group account keys via `qr-hardware-call` key derivation (firmware
+  path allow-list enforced before any QR is shown), signing for every supported request kind —
+  EVM legacy/EIP-1559/EIP-7702/personal/typed-data, TRON transaction/message, Solana
+  transaction/message, Bitcoin PSBT (incl. taproot) and legacy message — and on-device address
+  verification. Firmware-3.2.2-compatible CBOR registries, digest self-checks before display,
+  request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
+  `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
+  encoders.
+- `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
+  keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
 
 ### Changed
 
@@ -1174,6 +1206,12 @@ Gateway (operators):
   longer appears in the token list (custom tokens excepted).
 - Gateway: `PriceCache` / `priceCacheOf` become the shared `EdgeCache` / `edgeCacheOf(origin, open)`;
   `GatewayOptions.nfts.cache` is required.
+- `@qntx/wallet-chains`: `PublicMaterial` gains `fingerprint()` (seed material: hash160 of the
+  master public key's first four bytes; imported keys fail `integrity`), and `signStages` splits
+  `signPlan` so an external signer can drive one stage per device exchange.
+- `@qntx/wallet-engine`: the account tree skips seed-bound services for `custody !== "vault"`
+  wallets — `discoverSpark`/`refreshTotals`/`driveSpark` never touch Spark, a `device-required`
+  family counts as unused rather than an error — and meta sync signs only for vault wallets.
 
 ### Fixed
 

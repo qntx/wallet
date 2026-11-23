@@ -1001,6 +1001,7 @@ describe("ExportedSecret", () => {
 });
 
 const PASSPHRASE_WALLET = {
+  custody: "vault",
   walletId: "0123456789abcdef",
   origin: "mnemonic",
   words: 12,
@@ -1195,6 +1196,7 @@ describe("passkey restore purpose", () => {
     kernel.handlers.set("wallet.restoreWithPasskey", () => ({
       ok: {
         wallet: {
+          custody: "vault",
           walletId: "0123456789abcdef",
           origin: "passkey",
           words: 12,
@@ -1276,6 +1278,7 @@ describe("kernel-run passkey ceremonies (hardware host)", () => {
       return {
         ok: {
           wallet: {
+            custody: "vault",
             walletId: "0123456789abcdef",
             origin: "passkey",
             words: 12,

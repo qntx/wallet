@@ -7,7 +7,7 @@ import { masterKey } from "../../derive/hd.ts";
 import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { findRecord, sealRecord } from "../../vault/vault.ts";
+import { findSeedWallet, sealRecord } from "../../vault/vault.ts";
 import { nostrKeyAt } from "./derive.ts";
 import { signEvent } from "./pool.ts";
 import type { SignerPool } from "./pool.ts";
@@ -25,7 +25,7 @@ const SYNC_INDEX = 0x7fffffff;
 /** The vault's one sync-key record for `walletId`, or `not-found`. */
 function syncRecord(ctx: KernelContext, walletId: string): StoredRecord {
   // Every wallet is an entropy record — an unknown walletId answers not-found here too.
-  findRecord(ctx.image, "entropy", walletId);
+  findSeedWallet(ctx.image, walletId);
   for (const record of ctx.image.records) {
     if (record.kind === NOSTR_SYNC_KEY_KIND) {
       const header = parseSyncKeyHeader(record.header);
@@ -55,7 +55,7 @@ export async function syncKey(
     }
     // No record yet — derive and commit below.
   }
-  const wallet = findRecord(ctx.image, "entropy", params.walletId);
+  const wallet = findSeedWallet(ctx.image, params.walletId);
   return withWalletSeed(ctx.platform.pbkdf2, dek, wallet, async (seed) => {
     const master = masterKey(seed);
     try {

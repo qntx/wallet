@@ -1069,6 +1069,7 @@ export function sparkStateLabel(state: SparkPaymentState): string {
 | gateway                          | `outcome-unknown` (`502`), `too-costly` (`413`), `unsupported` (`404`)                                 | A broadcast whose outcome is unknown, never retried on another provider; one request costing more than a client's share window (split it); no coverage for this network or asset (never retry). |
 | `ChainErrorCode`                 | `invalid-signature`                                                                                    | An assembler refused a signature that does not verify under its task key.                                                                                                                       |
 | engine errors                    | `TronThrottledError` (`retryAfterMs`), `SolanaClusterBindingError` (`reason`)                          | See sections 17 and 20.                                                                                                                                                                         |
+| `WalletError.code`               | `device-required`, `device-locked`, `device-app-closed`, `device-rejected`, `wrong-device`             | A hardware wallet needs its device (§24): pair/accounts first, unlock it, open the wallet app, approve on device, check the fingerprint.                                                          |
 
 [`tests/migration/error-codes.ts`](tests/migration/error-codes.ts):
 
@@ -1080,7 +1081,8 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
  * Exhaustive maps: adding or removing a code fails this file, so the list in MIGRATION.md stays
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
  * (`no-device-credential` is gone); `weak-password`; `auth-required`; `quota`; `unknown`;
- * `EngineErrorCode` lost `integrity`.
+ * `EngineErrorCode` lost `integrity`; `device-required`, `device-locked`, `device-app-closed`,
+ * `device-rejected`, `wrong-device`.
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -1102,6 +1104,11 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   "blind-signing-disabled": true,
   "approval-required": false,
   crashed: false,
+  "device-required": true,
+  "device-locked": true,
+  "device-app-closed": true,
+  "device-rejected": true,
+  "wrong-device": true,
 };
 
 export const BACKUP_ERROR_IS_NEW: Readonly<Record<BackupErrorCategory, boolean>> = {
@@ -1560,6 +1567,7 @@ nothing new. Each has a compiled example and a README section.
 | App providers (`AppDefinition`)                                     | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                        |
 | `@qntx/wallet/sessions`                                             | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
 | Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
+| `@qntx/wallet/hardware` (`hardware(wallet)`), `WalletInfo` `custody` union | [`hardware-wallets.ts`](tests/migration/hardware-wallets.ts)                                                                                                                                                                                                     | Hardware signers (§24): Keystone 3 Pro over QR — `pair`, `accounts`, `sign`, `verifyAddress` through a host `DeviceIo`. `WalletInfo.custody` is breaking for every host. |
 | `engine.approvals`                                                  | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`. |
 | `engine.nfts`                                                       | [`nfts.ts`](tests/migration/nfts.ts)                                                                                                                                                                                                                 | NFT inventory and transfers (§26): display-only gateway data, `evm-nft-send` `items` and `solana-nft-send` through requests. Gateway operators deploy the four `/v1/nfts/*` routes. |
 | `engine.notifications`, `@qntx/wallet-engine/push`                  | [`push-notifications.ts`](tests/migration/push-notifications.ts)                                                                                                                                                                                     | Push notifications (§27): per-wallet subscriptions, `openPush` for the notification extension; gateway PushObject deploy is non-rollbackable. |
@@ -1567,6 +1575,36 @@ nothing new. Each has a compiled example and a README section.
 | `@qntx/wallet-engine/apps/fiat24`                                 | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS). |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
+## 24. Hardware signers (Keystone 3 Pro over QR)
+
+Compiled snippet: [`tests/migration/hardware-wallets.ts`](tests/migration/hardware-wallets.ts). Changes affect every host that reads
+`WalletInfo` or switches on `WalletErrorCode`, and every host that wants hardware wallets.
+Nothing changes in the vault format for software wallets; a `hardware-wallet` record joins the
+vault alongside them.
+
+1. **`WalletInfo` is a `custody` union.** The 0.13.0 shape is `VaultWalletInfo`
+   (`custody: "vault"`); a paired device produces `HardwareWalletInfo` (`custody: "hardware"`,
+   `device`, `fingerprint`, `model`, `firmware`). Every read of `origin`, `words`, `backup` or
+   `passphrase` must narrow on `custody` first — `walletBadge` in the snippet. Anywhere a list of
+   wallets feeds an action only a seed wallet can do (export mnemonic, passphrase, cloud backup),
+   filter `custody === "vault"` instead of assuming the shape (`requiresSeed`).
+2. **Five new error codes.** `device-required` (the kernel has no public material for the path —
+   run `hardware().accounts` first), `device-locked`, `device-app-closed`, `device-rejected`,
+   `wrong-device` (the answering device's fingerprint is not the wallet's — the user picked up a
+   different unit). `deviceErrorHint` in the snippet maps them to host hints; the exhaustive map
+   in `tests/migration/error-codes.ts` flags them as new.
+3. **Seed-bound calls refuse cleanly.** For a hardware wallet `exportMnemonic`, Nostr key
+   derivation and sync, Spark and `sessions.create` answer `unsupported`; `chain.sign` answers
+   `device-required` (sign through the device instead); `wallet.accounts` answers
+   `device-required` for a group the device has not exported yet. A host must not offer these on
+   a `custody: "hardware"` wallet.
+4. **Driving a device.** `@qntx/wallet/hardware` exports `hardware(wallet)` with `pair`,
+   `accounts`, `sign` and `verifyAddress`, each taking a host `DeviceIo`. The kernel validates
+   and decodes everything; the host only transports: for an air-gapped Keystone, `qrParts`
+   produces the cyclic UR frames to animate and `qrReader` folds scanned frames back into the
+   payload (`keystoneQrIo` in the snippet). `sign` takes the same `verify` factor as
+   `chains().sign` and its result passes the same verification. `pairKeystone` and
+   `signOnDevice` show the two calls a host makes.
 ## 25. Approvals inventory and revocation
 
 Compiled snippet: [`tests/migration/approvals.ts`](tests/migration/approvals.ts). Additive for `@qntx/wallet-engine` hosts; gateway

@@ -20,8 +20,8 @@ import type {
   FactorInfo,
   KeyInfo,
   NostrKeyInfo,
+  VaultWalletInfo,
   Wallet,
-  WalletInfo,
 } from "@qntx/wallet";
 import { parseBackupHeader } from "@qntx/wallet";
 
@@ -43,7 +43,7 @@ type FakeVault = {
   appLock: false;
   verification: "available";
   factors: FactorInfo[];
-  wallets: WalletInfo[];
+  wallets: VaultWalletInfo[];
   nostr: { keys: NostrKeyInfo[] };
   importedKeys: KeyInfo[];
   backup: BackupInfo | null;
@@ -131,7 +131,7 @@ function fakeWallet(state: FakeVault, bekId: string): Wallet {
         const header = parseBackupHeader(envelope);
         const given = new Set((passphrases ?? []).map((p) => p.walletId));
         const held = new Set(state.wallets.map((w) => w.walletId));
-        const restored: WalletInfo[] = [];
+        const restored: VaultWalletInfo[] = [];
         const passphraseRequired: string[] = [];
         for (const w of header.wallets) {
           if (held.has(w.walletId)) {
@@ -141,8 +141,9 @@ function fakeWallet(state: FakeVault, bekId: string): Wallet {
             passphraseRequired.push(w.walletId);
             continue;
           }
-          const info: WalletInfo = {
+          const info: VaultWalletInfo = {
             walletId: w.walletId,
+            custody: "vault",
             origin: w.origin,
             words: w.words,
             backup: w.origin,
@@ -320,6 +321,7 @@ function device(tag: Device["tag"], cloud: CloudStore, options?: { fresh?: boole
 function addWallet(d: Device, walletId: string, options?: { passphrase?: boolean }): void {
   d.state.wallets.push({
     walletId,
+    custody: "vault",
     origin: "mnemonic",
     words: 12,
     backup: "mnemonic",

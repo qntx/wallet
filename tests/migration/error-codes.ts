@@ -5,7 +5,8 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
  * Exhaustive maps: adding or removing a code fails this file, so the list in MIGRATION.md stays
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
  * (`no-device-credential` is gone); `weak-password`; `auth-required`; `quota`; `unknown`;
- * `EngineErrorCode` lost `integrity`.
+ * `EngineErrorCode` lost `integrity`; `device-required`, `device-locked`, `device-app-closed`,
+ * `device-rejected`, `wrong-device`.
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -27,6 +28,11 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   "blind-signing-disabled": true,
   "approval-required": false,
   crashed: false,
+  "device-required": true,
+  "device-locked": true,
+  "device-app-closed": true,
+  "device-rejected": true,
+  "wrong-device": true,
 };
 
 export const BACKUP_ERROR_IS_NEW: Readonly<Record<BackupErrorCategory, boolean>> = {

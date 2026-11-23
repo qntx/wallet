@@ -33,6 +33,11 @@
     "native:consumer": "bun scripts/native-consumer.ts"
   },
   "devDependencies": {
+    "@keystonehq/bc-ur-registry": "0.8.1",
+    "@keystonehq/bc-ur-registry-btc": "0.1.1",
+    "@keystonehq/bc-ur-registry-eth": "0.23.0",
+    "@keystonehq/bc-ur-registry-sol": "0.9.5",
+    "@keystonehq/bc-ur-registry-tron": "0.5.0",
     "@metamask/eth-sig-util": "9.0.0",
     "@microsoft/api-extractor": "7.60.1",
     "@nktkas/hyperliquid": "0.33.3",
@@ -51,6 +56,7 @@
     "bumpp": "12.3.0",
     "cborg": "6.1.5",
     "madge": "8.0.0",
+    "micro-key-producer": "0.10.2",
     "tronweb": "6.5.2",
     "typescript": "7.0.2",
     "viem": "2.57.12",

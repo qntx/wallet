@@ -3,6 +3,7 @@
  * kernel's signer and by the host's round-trip check, which re-serializes it with the returned
  * signature to prove the kernel signed exactly the requested transaction.
  */
+import { hexToBytes } from "@noble/hashes/utils.js";
 import type * as Authorization from "ox/Authorization";
 import type * as Hex from "ox/Hex";
 import type * as Signature from "ox/Signature";
@@ -46,6 +47,15 @@ export type EvmEnvelope = {
   readonly serialize: (signature: Signature.Signature) => Hex.Hex;
 };
 
+const baseEnvelope = (tx: EvmTransaction) => ({
+  chainId: tx.chainId,
+  to: tx.to === undefined ? undefined : hex(tx.to, "to"),
+  data: hex(tx.data, "data"),
+  value: BigInt(tx.value),
+  nonce: BigInt(tx.nonce),
+  gas: BigInt(tx.gas),
+});
+
 /**
  * The envelope of `tx`. An `eip7702` transaction embeds its signed authorization, so the caller
  * passes the signature over `evmAuthorization(tx)`.
@@ -54,14 +64,7 @@ export const evmEnvelope = (
   tx: EvmTransaction,
   authorization?: Signature.Signature,
 ): EvmEnvelope => {
-  const base = {
-    chainId: tx.chainId,
-    to: tx.to === undefined ? undefined : hex(tx.to, "to"),
-    data: hex(tx.data, "data"),
-    value: BigInt(tx.value),
-    nonce: BigInt(tx.nonce),
-    gas: BigInt(tx.gas),
-  };
+  const base = baseEnvelope(tx);
   if (tx.type === "legacy") {
     const envelope = { ...base, type: "legacy" as const, gasPrice: BigInt(tx.gasPrice) };
     return {
@@ -117,4 +120,44 @@ export const evmEnvelope = (
     payload: TxEnvelopeEip1559.getSignPayload(envelope),
     serialize: (signature) => TxEnvelopeEip1559.serialize(envelope, { signature }),
   };
+};
+
+/**
+ * The unsigned signing preimage of `tx`: the EIP-155 / EIP-2718 serialization whose keccak256 is
+ * `evmEnvelope(tx).payload`. An `eip7702` transaction has no unsigned preimage — its payload is the
+ * authorization's, produced by `evmAuthorization(tx)`.
+ */
+export const evmSigningPreimage = (tx: EvmTransaction): Uint8Array => {
+  const base = baseEnvelope(tx);
+  if (tx.type === "legacy") {
+    return hexToBytes(
+      TxEnvelopeLegacy.serialize({
+        ...base,
+        type: "legacy" as const,
+        gasPrice: BigInt(tx.gasPrice),
+      }).slice(2),
+    );
+  }
+  if (tx.type === "eip2930") {
+    return hexToBytes(
+      TxEnvelopeEip2930.serialize({
+        ...base,
+        type: "eip2930" as const,
+        gasPrice: BigInt(tx.gasPrice),
+        accessList: tx.accessList.map(accessEntry),
+      }).slice(2),
+    );
+  }
+  if (tx.type === "eip7702") {
+    throw new ChainError("invalid-request", "an eip7702 transaction has no unsigned preimage");
+  }
+  return hexToBytes(
+    TxEnvelopeEip1559.serialize({
+      ...base,
+      type: "eip1559" as const,
+      accessList: tx.accessList.map(accessEntry),
+      maxFeePerGas: BigInt(tx.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+    }).slice(2),
+  );
 };

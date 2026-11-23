@@ -16,6 +16,7 @@ export {
   verifyBitcoinPsbtSignatures,
   verifyLegacyBitcoinMessage,
 } from "./verify.ts";
+export { legacyMessageHash } from "./message.ts";
 export { planBitcoinPsbt, planBitcoinMessage } from "./plan.ts";
 export { assembleBitcoinPsbt, assembleBitcoinMessage } from "./assemble.ts";
 export type { BitcoinPsbtPlan, BitcoinMessagePlan } from "./plan.ts";

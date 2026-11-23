@@ -6,6 +6,7 @@ const config: UserConfig = defineConfig({
     entry: {
       index: "src/index.ts",
       chains: "src/chains/index.ts",
+      hardware: "src/hardware/index.ts",
       host: "src/host.ts",
       sessions: "src/sessions/index.ts",
       nostr: "src/nostr/index.ts",
@@ -14,7 +15,7 @@ const config: UserConfig = defineConfig({
       types: "src/types.ts",
     },
     deps: {
-      neverBundle: ["@qntx/nostr", "@qntx/spark"],
+      neverBundle: ["@qntx/nostr", "@qntx/spark", "@qntx/ur"],
       // Same rule: src imports of undeclared packages must not be inlined into dist.
       onlyBundle: [],
     },

@@ -51,9 +51,9 @@ import type {
   StatusPayload,
   UnlockFactor,
   VaultApi,
+  VaultWalletInfo,
   VerifyFactor,
   Wallet,
-  WalletInfo,
   WalletSnapshot,
   WalletsApi,
 } from "./types.ts";
@@ -486,7 +486,7 @@ export class KernelWallet implements Wallet {
     createWithPasskey: async (options: {
       readonly name: string;
       readonly factor?: InitialFactor;
-    }): Promise<WalletInfo> =>
+    }): Promise<VaultWalletInfo> =>
       this.withVerifying(async () => {
         const name = passkeyName(options.name);
         if (this.factorMode === "hardware") {
@@ -532,7 +532,7 @@ export class KernelWallet implements Wallet {
       }),
     restoreWithPasskey: async (options?: {
       readonly factor?: InitialFactor;
-    }): Promise<WalletInfo> =>
+    }): Promise<VaultWalletInfo> =>
       this.withVerifying(async () => {
         if (this.factorMode === "hardware") {
           const created = await this.secretCall("wallet.restoreWithPasskey", async (wire) => {
@@ -591,7 +591,7 @@ export class KernelWallet implements Wallet {
         confirm: async (
           answers: ReadonlyArray<string>,
           confirmOptions?: { readonly passphrase?: string },
-        ): Promise<WalletInfo> => {
+        ): Promise<VaultWalletInfo> => {
           const confirmed = await this.secretCall("wallet.confirmMnemonic", (wire) => ({
             draft: draftId,
             answers: answers.map((word) => wire.text(word)),
@@ -609,7 +609,7 @@ export class KernelWallet implements Wallet {
       readonly mnemonic: string;
       readonly passphrase?: string;
       readonly factor?: InitialFactor;
-    }): Promise<WalletInfo> => {
+    }): Promise<VaultWalletInfo> => {
       const created = await this.secretCall("wallet.importMnemonic", async (wire) => {
         const factor = await this.createFactorParam(options.factor, wire);
         return {
@@ -685,7 +685,7 @@ export class KernelWallet implements Wallet {
       }>;
       readonly factor?: InitialFactor;
     }): Promise<{
-      readonly wallets: ReadonlyArray<WalletInfo>;
+      readonly wallets: ReadonlyArray<VaultWalletInfo>;
       readonly passphraseRequired: ReadonlyArray<string>;
     }> =>
       this.withVerifying(async () => {
