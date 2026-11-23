@@ -310,6 +310,7 @@ export { verifier } from "./core.ts";
 export type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
+  BackupHeaderKey,
   BackupHeaderWallet,
   BackupHeaderWire,
   BackupInfo,

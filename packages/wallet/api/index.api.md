@@ -40,11 +40,12 @@ export type BackupHeader = {
     readonly version: 1;
     readonly createdAt: number;
     readonly wallets: ReadonlyArray<BackupHeaderWallet>;
+    readonly keys: ReadonlyArray<BackupHeaderKey>;
     readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
 
 // @public (undocumented)
-type BackupHeaderKey = {
+export type BackupHeaderKey = {
     readonly keyId: string;
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
