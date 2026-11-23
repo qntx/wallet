@@ -45,6 +45,8 @@ type Active = {
   stepActive: boolean;
   /** An interrupt fired mid-step — the step must resolve, then answer `cancelled`. */
   aborted: boolean;
+  /** VERIFY sends whose response never arrived, per card ID — the torn-attempt allowance. */
+  readonly unaccounted: Set<string>;
   cancelTimer: () => void;
 };
 
@@ -210,6 +212,7 @@ export function createCardModule(platform: KernelPlatform): CardModule {
         pending: first.value,
         stepActive: false,
         aborted: false,
+        unaccounted: new Set(),
         cancelTimer: () => undefined,
       };
       arm(active);
@@ -242,7 +245,7 @@ export function createCardModule(platform: KernelPlatform): CardModule {
           }
           outcome = response.value;
         } else {
-          outcome = await runTap(ctx, active.pending, live);
+          outcome = await runTap(ctx, active.pending, live, active.unaccounted);
         }
         if (active.aborted) {
           throw new KernelError("cancelled", "the card operation was cancelled");

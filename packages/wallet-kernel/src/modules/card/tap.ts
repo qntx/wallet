@@ -167,6 +167,7 @@ export async function runTap(
   ctx: KernelContext,
   pending: PendingTap,
   bodies: ReadonlyMap<string, CardWalletBody>,
+  unaccounted: Set<string>,
 ): Promise<TapOutcome> {
   const { card } = ctx.platform;
   if (card === undefined) {
@@ -390,6 +391,9 @@ export async function runTap(
     // on every exit from here on.
     const status = decode.status(await send(cmd.status()));
     triesNow = status.tries;
+    // A previously torn VERIFY owed this card one unaccounted attempt — consumed by the first
+    // STATUS that reads it back, whether or not the counter actually moved.
+    const ourMissedAttempt = unaccounted.delete(cardIdHex);
     const memberOf = ctx.image.records.find((record) => {
       if (record.kind !== CARD_WALLET_KIND) {
         return false;
@@ -404,7 +408,18 @@ export async function runTap(
       throw new KernelError("card-id-mismatch", "this tap expects a blank card");
     }
     const recorded = entry?.tries;
-    if (recorded !== undefined && status.life === "loaded" && status.tries < recorded) {
+    if (
+      recorded !== undefined &&
+      status.life === "loaded" &&
+      status.tries < recorded &&
+      // host.md §2: tamper means failures this kernel did not make. A VERIFY whose response was
+      // lost may still have committed its pre-check increment (§9.5), so the op forgives exactly
+      // one `recorded − 1` read-back per unaccounted send — a drop of two or more is a foreign
+      // attempt even when the allowance is armed. The allowance dies with the op: across
+      // operations a missing attempt is indistinguishable from tampering, so the record stays
+      // authoritative there.
+      !(ourMissedAttempt && status.tries === recorded - 1)
+    ) {
       throw new KernelError("card-tampered", "the card's failure count dropped since the last tap");
     }
     if (status.life === "loaded" && status.tries === 0) {
@@ -422,6 +437,11 @@ export async function runTap(
       try {
         data = await send(cmd.verify(hash));
       } catch (error) {
+        if (error instanceof LostError) {
+          // The response never arrived after the VERIFY transmit started — the card may have
+          // committed the failure count before comparing. One attempt is now unaccounted for.
+          unaccounted.add(cardIdHex);
+        }
         if (error instanceof CardError && error.code === "wrong-access-code") {
           triesNow = error.remaining;
           return { ok: false, remaining: error.remaining ?? 0 };

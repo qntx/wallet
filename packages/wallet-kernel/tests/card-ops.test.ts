@@ -516,6 +516,91 @@ describe("card operations (fake card)", () => {
     throw new Error("health completed despite the lying STATUS");
   });
 
+  it("a torn VERIFY is forgiven once — the retry accepts recorded − 1", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+    );
+    const walletId = strField(added, "walletId");
+    // VERIFY's second write commits the bumped counter, then the card dies mid-response:
+    // fails is now 1 (tries 9) and the kernel never saw the answer. The retry's STATUS reads
+    // recorded − 1 — forgiven once, the op finishes, and VERIFY's reset lands 10 again.
+    card.tearAt(2);
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "health", walletId } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step).toMatchObject({ kind: "tap", reason: "retry" });
+    card.reset(); // power cycle — a torn card answers nothing until it is
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("done");
+    expect(card.state.fails).toBe(0);
+  });
+
+  it("tries recorded − 2 is still card-tampered after a torn VERIFY", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+    );
+    const walletId = strField(added, "walletId");
+    card.tearAt(2); // torn VERIFY — one unaccounted attempt (fails = 1)
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "health", walletId } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step).toMatchObject({ kind: "tap", reason: "retry" });
+    // Another failure this kernel did not make — the read-back is recorded − 2, which the
+    // single-attempt allowance must not forgive.
+    card.state.fails += 1;
+    card.reset();
+    r.reader.present(card);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "card-tampered",
+    );
+  });
+
+  it("a tag loss before the VERIFY transmit arms no allowance", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+    );
+    const walletId = strField(added, "walletId");
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "health", walletId } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    r.reader.loseAfter(2); // SELECT and OPEN answer — STATUS is lost, VERIFY never sent
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step).toMatchObject({ kind: "tap", reason: "retry" });
+    // A foreign attempt meanwhile: recorded − 1 with no armed allowance is tampering.
+    card.state.fails = 1;
+    r.reader.present(card);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "card-tampered",
+    );
+  });
+
   it("a corrupted response MAC breaks the session as card-fault", async () => {
     const r = await rig();
     const card = createFakeCard({ knobs: { badMacAfter: 0 } });
