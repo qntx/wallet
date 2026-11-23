@@ -112,6 +112,29 @@ describe("nft items page", () => {
     expect(up.callsTo(ETH_API)[0]?.url).toContain(`owner=${OWNER.toLowerCase()}`);
   });
 
+  it("keeps the good items when one page row fails its shape", async () => {
+    const base = fixture("evm-owned-page") as { ownedNfts: unknown[]; pageKey: unknown };
+    const page = {
+      ownedNfts: [base.ownedNfts[0], null, { contract: "not a record" }, base.ownedNfts[1]],
+      pageKey: null,
+    };
+    const up = fakeFetch({ [ETH_API]: () => json(page) });
+    const app = gateway({ fetch: up.fetch, networks: NETWORKS });
+    const res = await app.request(nftItemsPath(ETH), post({ owner: OWNER }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).items).toHaveLength(2);
+  });
+
+  it("keeps the good DAS assets when one row fails its shape", async () => {
+    const base = (fixture("solana-owned-page") as { result: { items: unknown[] } }).result.items;
+    const result = { items: [base[0], "broken", base[1]] };
+    const up = fakeFetch({ [SOL_RPC]: () => json({ jsonrpc: "2.0", result, id: 1 }) });
+    const app = gateway({ fetch: up.fetch, networks: NETWORKS });
+    const res = await app.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).items).toHaveLength(2);
+  });
+
   it("maps a DAS owner page: compressed/programmable/plain metaplex, Custom skipped", async () => {
     const up = fakeFetch({ [SOL_RPC]: () => json(fixture("solana-owned-page")) });
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });

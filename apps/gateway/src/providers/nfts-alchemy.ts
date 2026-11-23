@@ -143,7 +143,8 @@ const upstreamEvmNft = z.looseObject({
 });
 
 const upstreamEvmPage = z.looseObject({
-  ownedNfts: z.array(upstreamEvmNft),
+  // Items are validated one by one — a single bad NFT must not fail the page.
+  ownedNfts: z.array(z.unknown()),
   pageKey: optStr,
 });
 
@@ -187,7 +188,7 @@ const dasPage = z.looseObject({
   total: z.optional(z.number()),
   page: z.optional(z.number()),
   limit: z.optional(z.number()),
-  items: z.array(dasAsset),
+  items: z.array(z.unknown()),
 });
 
 const dasResponse = z.looseObject({
@@ -503,8 +504,12 @@ export const alchemyNftPage = async (
         if (!result.success) {
           throw new ProviderFailure("malformed", false);
         }
-        const items = result.data.items.flatMap((asset) => {
-          const item = mapDasItem(network.id, asset);
+        const items = result.data.items.flatMap((raw) => {
+          const asset = z.safeParse(dasAsset, raw);
+          if (!asset.success) {
+            return [];
+          }
+          const item = mapDasItem(network.id, asset.data);
           return item === undefined ? [] : [item];
         });
         response = {
@@ -525,8 +530,12 @@ export const alchemyNftPage = async (
         if (!result.success) {
           throw new ProviderFailure("malformed", false);
         }
-        const items = result.data.ownedNfts.flatMap((nft) => {
-          const item = mapEvmItem(network.id, nft);
+        const items = result.data.ownedNfts.flatMap((raw) => {
+          const nft = z.safeParse(upstreamEvmNft, raw);
+          if (!nft.success) {
+            return [];
+          }
+          const item = mapEvmItem(network.id, nft.data);
           return item === undefined ? [] : [item];
         });
         response = { items, cursor: result.data.pageKey ?? null };

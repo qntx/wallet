@@ -1,4 +1,5 @@
 import { sValidator } from "@hono/standard-validator";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import * as z from "zod/mini";
 
@@ -7,6 +8,7 @@ import {
   nftCollection,
   nftCollectionRequest,
   nftFloor,
+  nftFloorRequest,
   nftItem,
   nftItemRequest,
   nftItems,
@@ -18,7 +20,7 @@ import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { Family, NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import type { RateLimitVariables } from "../middleware/rate-limit.ts";
-import type { Forwarder } from "../providers/forward.ts";
+import type { Forwarded, Forwarder } from "../providers/forward.ts";
 import {
   alchemyNftCollection,
   alchemyNftDetail,
@@ -44,6 +46,8 @@ type Deps = {
   readonly cache: EdgeCache;
   readonly log: (line: string) => void;
 };
+
+type RouteContext = Context<{ Variables: NetworkVariables & RateLimitVariables }>;
 
 /** The request-side address rule: EVM in any hex case, normalised lowercase; Solana base58. */
 const requestAddress = (family: Family, value: string): string | undefined => {
@@ -103,6 +107,22 @@ export function nftRoutes({
 }: Deps): Hono<{ Variables: NetworkVariables & RateLimitVariables }> {
   const routes = new Hono<{ Variables: NetworkVariables & RateLimitVariables }>();
 
+  /** Answer from the edge cache or `load`, caching only a successful answer. */
+  const answerCached = async (
+    c: RouteContext,
+    key: string,
+    ttlSeconds: number,
+    load: () => Promise<Forwarded<unknown>>,
+  ): Promise<Response> => {
+    const hit = await readCached(cache, key, log);
+    if (hit !== undefined) {
+      return c.json(hit.body, 200, { [PROVIDERS_HEADER]: hit.providerId });
+    }
+    const { value, providerId } = await load();
+    await writeCached(cache, key, { providerId, body: value }, ttlSeconds, log);
+    return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
+  };
+
   routes.post(
     nftItems.path,
     limitBody(MAX_BODY_BYTES),
@@ -132,26 +152,22 @@ export function nftRoutes({
         page = body.cursor === undefined ? 1 : Number(body.cursor);
       }
       const key = `items/${network.id}/${owner}/${body.cursor ?? ""}`;
-      const hit = await readCached(cache, key, log);
-      if (hit !== undefined) {
-        return c.json(hit.body, 200, { [PROVIDERS_HEADER]: hit.providerId });
-      }
-      const { value, providerId } = await alchemyNftPage(
-        forwarder,
-        providers,
-        {
-          network,
-          owner,
-          ...(network.family === "solana"
-            ? { page }
-            : body.cursor === undefined
-              ? {}
-              : { cursor: body.cursor }),
-        },
-        c.get("meter"),
+      return answerCached(c, key, ITEMS_TTL_SECONDS, async () =>
+        alchemyNftPage(
+          forwarder,
+          providers,
+          {
+            network,
+            owner,
+            ...(network.family === "solana"
+              ? { page }
+              : body.cursor === undefined
+                ? {}
+                : { cursor: body.cursor }),
+          },
+          c.get("meter"),
+        ),
       );
-      await writeCached(cache, key, { providerId, body: value }, ITEMS_TTL_SECONDS, log);
-      return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
     },
   );
 
@@ -179,22 +195,18 @@ export function nftRoutes({
         throw new GatewayHttpError(400, "invalid-request");
       }
       const key = `item/${network.id}/${contract}/${body.tokenId ?? ""}`;
-      const hit = await readCached(cache, key, log);
-      if (hit !== undefined) {
-        return c.json(hit.body, 200, { [PROVIDERS_HEADER]: hit.providerId });
-      }
-      const { value, providerId } = await alchemyNftDetail(
-        forwarder,
-        providers,
-        {
-          network,
-          contract,
-          ...(body.tokenId === undefined ? {} : { tokenId: body.tokenId }),
-        },
-        c.get("meter"),
+      return answerCached(c, key, ITEM_TTL_SECONDS, async () =>
+        alchemyNftDetail(
+          forwarder,
+          providers,
+          {
+            network,
+            contract,
+            ...(body.tokenId === undefined ? {} : { tokenId: body.tokenId }),
+          },
+          c.get("meter"),
+        ),
       );
-      await writeCached(cache, key, { providerId, body: value }, ITEM_TTL_SECONDS, log);
-      return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
     },
   );
 
@@ -219,18 +231,9 @@ export function nftRoutes({
         throw new GatewayHttpError(400, "invalid-request");
       }
       const key = `collection/${network.id}/${collection}`;
-      const hit = await readCached(cache, key, log);
-      if (hit !== undefined) {
-        return c.json(hit.body, 200, { [PROVIDERS_HEADER]: hit.providerId });
-      }
-      const { value, providerId } = await alchemyNftCollection(
-        forwarder,
-        providers,
-        { network, collection },
-        c.get("meter"),
+      return answerCached(c, key, COLLECTION_TTL_SECONDS, async () =>
+        alchemyNftCollection(forwarder, providers, { network, collection }, c.get("meter")),
       );
-      await writeCached(cache, key, { providerId, body: value }, COLLECTION_TTL_SECONDS, log);
-      return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
     },
   );
 
@@ -238,7 +241,7 @@ export function nftRoutes({
     nftFloor.path,
     limitBody(MAX_BODY_BYTES),
     resolveNetwork(served, ["evm", "solana"]),
-    sValidator("json", nftCollectionRequest, (result) => {
+    sValidator("json", nftFloorRequest, (result) => {
       if (!result.success) {
         throw new GatewayHttpError(400, "invalid-request");
       }
@@ -256,18 +259,9 @@ export function nftRoutes({
         throw new GatewayHttpError(400, "invalid-request");
       }
       const key = `floor/${network.id}/${collection}`;
-      const hit = await readCached(cache, key, log);
-      if (hit !== undefined) {
-        return c.json(hit.body, 200, { [PROVIDERS_HEADER]: hit.providerId });
-      }
-      const { value, providerId } = await alchemyNftFloor(
-        forwarder,
-        providers,
-        { contract: collection },
-        c.get("meter"),
+      return answerCached(c, key, FLOOR_TTL_SECONDS, async () =>
+        alchemyNftFloor(forwarder, providers, { contract: collection }, c.get("meter")),
       );
-      await writeCached(cache, key, { providerId, body: value }, FLOOR_TTL_SECONDS, log);
-      return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
     },
   );
 
