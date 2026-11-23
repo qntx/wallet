@@ -65,6 +65,7 @@ import {
   assessSignIn,
   assessRecipients,
   assessIntentRecipients,
+  assessWarnings,
   comparable,
   assessSimulation,
   impersonatesBuiltIn,
@@ -319,7 +320,7 @@ export type SolanaDisplay = {
   readonly kind: "solana.sign";
   readonly send: boolean;
   readonly count: number;
-  readonly transactions: ReadonlyArray<unknown>;
+  readonly transactions: ReadonlyArray<DisplayIntent>;
   /** A message request's content — text, or raw bytes when it is not UTF-8. */
   readonly message?: MessageContent;
   readonly signIn?: SignInFields;
@@ -688,6 +689,24 @@ type Entry = {
 
 const originKey = (origin: DappOrigin): string => `origin:${origin.origin}`;
 
+/**
+ * The decoded intents a display carries: a solana batch's per-transaction decodes, a bitcoin
+ * batch's per-PSBT decodes, the single intent of every other decoded display — none for the
+ * non-intent displays (spark, nostr, invoice, token watch).
+ */
+const displayIntents = (display: Built["display"]): ReadonlyArray<DisplayIntent> => {
+  if ("warnings" in display) {
+    return [display];
+  }
+  if (display.kind === "solana.sign") {
+    return display.transactions;
+  }
+  if (display.kind === "bitcoin.sign") {
+    return display.psbts ?? [];
+  }
+  return [];
+};
+
 /** A message request's content: its UTF-8 text with any sign-in parse, else the raw bytes. */
 const messageContent = (message: Uint8Array, signIn: SignInParse | undefined): MessageContent => {
   const text = utf8Text(message);
@@ -960,6 +979,8 @@ export class RequestController extends Controller<RequestControllerState> {
       origin?.kind === "walletconnect"
         ? [...originRisk(originStatus), ...verifyRisk(origin.verify)]
         : originRisk(originStatus);
+    /* Decoder warnings become risk findings for every origin — internal, dApp and app alike. */
+    const warningFindings = assessWarnings(displayIntents(built.display));
     const request: PendingRequest = {
       id,
       origin: origin ?? app ?? { kind: "internal" },
@@ -971,7 +992,7 @@ export class RequestController extends Controller<RequestControllerState> {
       display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
-      risk: mergeRisk(built.risk, originFindings),
+      risk: mergeRisk(mergeRisk(built.risk, originFindings), warningFindings),
       ...(built.simulation === undefined
         ? {}
         : { simulation: built.simulation, simulatedAt: createdAt }),
@@ -989,7 +1010,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ? undefined
         : {
             ...built.resimulation,
-            risk: mergeRisk(built.resimulation.risk, originFindings),
+            risk: mergeRisk(mergeRisk(built.resimulation.risk, originFindings), warningFindings),
           };
     this.entries.set(id, {
       prepared: built.run,

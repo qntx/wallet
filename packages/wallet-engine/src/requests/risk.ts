@@ -2,6 +2,7 @@ import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siw
 import type {
   AssetFlow,
   DisplayIntent,
+  IntentWarningKind,
   MessageContent,
   SafeTransaction,
   SeaportOrder,
@@ -59,7 +60,14 @@ export type RiskFinding = {
     | "token-recipient-empty"
     | "fee-limit-below-estimate"
     | "verify-mismatch"
-    | "verify-threat";
+    | "verify-threat"
+    | "fiat24-internal-account"
+    | "fiat24-card-pull"
+    | "fiat24-unlimited-approval"
+    | "fiat24-exact-out-unbounded"
+    | "fiat24-payee-offchain"
+    | "fiat24-account-move"
+    | "fiat24-account-burn";
   readonly level: "warning" | "danger";
 };
 
@@ -99,6 +107,70 @@ export function mergeRisk(
     byCode.set(finding.code, finding);
   }
   return byDanger([...byCode.values()]);
+}
+
+/**
+ * The finding a decoder's {@link IntentWarning} maps to — one entry for every `IntentWarningKind`,
+ * `undefined` where the prompt rows already carry the fact and no request-level risk exists:
+ *
+ * - `platform-fee` — the fee is a prompt row.
+ * - `stake-lockup` — the lockup window is a prompt row.
+ * - `sighash-single-anyonecanpay` — already `bitcoin-sighash-single` via assessBitcoinPsbts.
+ * - `permit2-witness` — the bound message is a prompt row.
+ * - `delegation-replaced` — the replaced delegation is a prompt row.
+ * - `token-2022-transfer-fee` — the withheld fee is a prompt row.
+ * - `token-2022-extension` — the extension note is a prompt row.
+ * - `fiat24-issuer-rate` — the issuer's applied rate is a prompt row.
+ * - `fiat24-swap-quote` — the quoted rate is a prompt row.
+ * - `fiat24-account-link` — the account link is a prompt row.
+ */
+export const WARNING_RISK: Readonly<
+  Record<
+    IntentWarningKind,
+    { readonly code: RiskFinding["code"]; readonly level: RiskFinding["level"] } | undefined
+  >
+> = {
+  "platform-fee": undefined,
+  "stake-lockup": undefined,
+  "sighash-single-anyonecanpay": undefined,
+  "permit2-witness": undefined,
+  "delegation-replaced": undefined,
+  "token-2022-transfer-fee": undefined,
+  "token-2022-extension": undefined,
+  "fiat24-internal-account": { code: "fiat24-internal-account", level: "warning" },
+  "fiat24-card-pull": { code: "fiat24-card-pull", level: "warning" },
+  "fiat24-unlimited-approval": { code: "fiat24-unlimited-approval", level: "danger" },
+  "fiat24-issuer-rate": undefined,
+  "fiat24-exact-out-unbounded": { code: "fiat24-exact-out-unbounded", level: "warning" },
+  "fiat24-payee-offchain": { code: "fiat24-payee-offchain", level: "warning" },
+  "fiat24-swap-quote": undefined,
+  "fiat24-account-link": undefined,
+  "fiat24-account-move": { code: "fiat24-account-move", level: "danger" },
+  "fiat24-account-burn": { code: "fiat24-account-burn", level: "warning" },
+};
+
+/**
+ * Findings for every warning the decoded intents carry, through {@link WARNING_RISK}, deduplicated,
+ * `danger` first. A warning stamped `level: "danger"` is a `danger` finding whatever the table says
+ * — the decoder knows the concrete shape better than the kind default.
+ */
+export function assessWarnings(
+  intents: ReadonlyArray<Pick<DisplayIntent, "warnings">>,
+): ReadonlyArray<RiskFinding> {
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  for (const intent of intents) {
+    for (const warning of intent.warnings) {
+      const entry = WARNING_RISK[warning.kind];
+      if (entry === undefined) {
+        continue;
+      }
+      const level = warning.level ?? entry.level;
+      if (found.get(entry.code)?.level !== "danger") {
+        found.set(entry.code, { code: entry.code, level });
+      }
+    }
+  }
+  return byDanger([...found.values()]);
 }
 
 /**

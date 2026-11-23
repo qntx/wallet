@@ -4,7 +4,7 @@
 
 ```ts
 
-import { AccountStatus } from '@qntx/fiat24';
+import { AccountStatus } from '@qntx/fiat24/core';
 import { AccountView } from '@qntx/fiat24/flows';
 import { Bank } from '@qntx/fiat24/api';
 import { Banks } from '@qntx/fiat24/api';
@@ -17,11 +17,11 @@ import { chains } from '@qntx/wallet/chains';
 import { CooperativeExitResult } from '@qntx/spark';
 import { Countries } from '@qntx/fiat24/api';
 import { CountryCities } from '@qntx/fiat24/api';
-import { Currency } from '@qntx/fiat24';
+import { Currency } from '@qntx/fiat24/core';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
 import { Event as Event_2 } from '@qntx/nostr';
 import { ExchangeState } from '@qntx/fiat24/flows';
-import { Fiat24ErrorCode } from '@qntx/fiat24';
+import { Fiat24ErrorCode } from '@qntx/fiat24/core';
 import { FlowState } from '@qntx/fiat24/flows';
 import { KycStatus } from '@qntx/fiat24/api';
 import { LightningInvoice } from '@qntx/spark';
@@ -34,16 +34,16 @@ import { NetworkMeta } from '@qntx/wallet-chains/networks';
 import { NostrKeyRef } from '@qntx/wallet';
 import { OnboardingState } from '@qntx/fiat24/flows';
 import { PaymentPurpose } from '@qntx/fiat24/api';
-import { PayoutCurrency } from '@qntx/fiat24';
+import { PayoutCurrency } from '@qntx/fiat24/core';
 import { PayoutDraft } from '@qntx/fiat24/flows';
-import { PayoutSettlement } from '@qntx/fiat24';
+import { PayoutSettlement } from '@qntx/fiat24/chain';
 import { PayoutState } from '@qntx/fiat24/flows';
 import { PayoutTarget } from '@qntx/fiat24/flows';
 import { Profile } from '@qntx/fiat24/api';
 import { PublicClient } from 'viem';
 import { Rate } from '@qntx/fiat24/api';
 import { RatePair } from '@qntx/fiat24/api';
-import { Recipient } from '@qntx/fiat24';
+import { Recipient } from '@qntx/fiat24/core';
 import { SignRequest } from '@qntx/wallet-chains';
 import { SparkAccountRef } from '@qntx/wallet/protocol';
 import { SparkApproveIntent } from '@qntx/wallet/protocol';
@@ -747,8 +747,14 @@ export type Fiat24Config = {
 
 export { Fiat24ErrorCode }
 
+// @public
+export type Fiat24Flow = Fiat24FlowEntry | {
+    readonly id: string;
+    readonly invalid: true;
+};
+
 // @public (undocumented)
-export type Fiat24Flow = {
+export type Fiat24FlowEntry = {
     readonly id: string;
     readonly state: FlowState | PayoutDraft;
     readonly refusal?: Fiat24Refusal;
@@ -793,8 +799,8 @@ export type Fiat24FlowInput = {
 // @public (undocumented)
 export type Fiat24Flows = {
     readonly list: (group: AppGroup) => Promise<ReadonlyArray<Fiat24Flow>>;
-    readonly start: (group: AppGroup, input: Fiat24FlowInput) => Promise<Fiat24Flow>;
-    readonly advance: (group: AppGroup, id: string) => Promise<Fiat24Flow>;
+    readonly start: (group: AppGroup, input: Fiat24FlowInput) => Promise<Fiat24FlowEntry>;
+    readonly advance: (group: AppGroup, id: string) => Promise<Fiat24FlowEntry>;
     readonly discard: (group: AppGroup, id: string) => Promise<void>;
     readonly payoutSettlement: (group: AppGroup, id: string) => Promise<PayoutSettlement & {
         readonly txid: string;
@@ -1333,7 +1339,7 @@ type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn";
     readonly level: "warning" | "danger";
 };
 
@@ -1425,7 +1431,7 @@ type SolanaDisplay = {
     readonly kind: "solana.sign";
     readonly send: boolean;
     readonly count: number;
-    readonly transactions: ReadonlyArray<unknown>;
+    readonly transactions: ReadonlyArray<DisplayIntent>;
     readonly message?: MessageContent;
     readonly signIn?: SignInFields;
 };
