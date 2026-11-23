@@ -522,11 +522,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Ethereum\nThere may be other outflows\nSend  #42 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+          "description": "Network: Ethereum\nThere may be other outflows\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Ethereum\n可能还有其他转出\n发送  #42 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+          "description": "网络：Ethereum\n可能还有其他转出\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -559,11 +559,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Ethereum\nThere may be other outflows\nSend  #42 to 0x00000000000000000000000000000000DeaDBeef\nSend  #7 ×2 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+          "description": "Network: Ethereum\nThere may be other outflows\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Ethereum\n可能还有其他转出\n发送  #42 到 0x00000000000000000000000000000000DeaDBeef\n发送  #7 ×2 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+          "description": "网络：Ethereum\n可能还有其他转出\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
         }
       }
     },

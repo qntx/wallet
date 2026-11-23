@@ -708,8 +708,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `${net}\nThere may be other outflows\nSend  #42 to ${TO}\n${fee}`,
-      `${netZh}\n可能还有其他转出\n发送  #42 到 ${TO}\n${feeZh}`,
+      `${net}\nThere may be other outflows\nSend ${OS_1155} #42 to ${TO}\n${fee}`,
+      `${netZh}\n可能还有其他转出\n发送 ${OS_1155} #42 到 ${TO}\n${feeZh}`,
     ),
   },
   {
@@ -728,8 +728,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `${net}\nThere may be other outflows\nSend  #42 to ${TO}\nSend  #7 ×2 to ${TO}\n${fee}`,
-      `${netZh}\n可能还有其他转出\n发送  #42 到 ${TO}\n发送  #7 ×2 到 ${TO}\n${feeZh}`,
+      `${net}\nThere may be other outflows\nSend ${OS_1155} #42 to ${TO}\nSend ${OS_1155} #7 ×2 to ${TO}\n${fee}`,
+      `${netZh}\n可能还有其他转出\n发送 ${OS_1155} #42 到 ${TO}\n发送 ${OS_1155} #7 ×2 到 ${TO}\n${feeZh}`,
     ),
   },
   {
