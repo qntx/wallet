@@ -26,6 +26,7 @@ export {
   type LockReason,
   type MnemonicDraft,
   type NativeAutoLockPolicy,
+  type SignerTask,
   type NostrKeyInfo,
   type NostrKeyRef,
   type PasskeyConfig,
