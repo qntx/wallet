@@ -325,6 +325,7 @@ class BackupController extends Controller<BackupControllerState> {
     init(): Promise<void>;
     list(): Promise<ReadonlyArray<{
         readonly name: string;
+        readonly id: string;
         readonly header: BackupHeader;
     }>>;
     lock(): void;

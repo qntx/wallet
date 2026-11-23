@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 /**
  * BackupController over a REAL Node kernel + a memory CloudStore (wrapped to inject failures and
- * foreign writes). The kernel keeps the BEK; the engine only ever moves ciphertext.
+ * foreign writes). The kernel keeps the BEK; the engine only ever moves ciphertext. Every upload
+ * lands as a new `qntx-wallet-backup-<id>-<sha256(text)>.json` file — coverage changes produce new
+ * names and superseded names are deleted once the new head is confirmed.
  */
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
@@ -12,6 +14,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 
 import { BackupControllerError } from "../src/backup/errors.ts";
 import { createMemoryCloudStore } from "../src/backup/memory.ts";
+import { CloudStoreError } from "../src/backup/port.ts";
 import type { CloudStore } from "../src/backup/port.ts";
 import { backupPasswordStrength } from "../src/backup/strength.ts";
 import { createWalletEngine } from "../src/engine.ts";
@@ -31,6 +34,7 @@ const PASSKEY_CONFIG = {
 };
 const PW = { kind: "password" as const, password: PASSWORD };
 const BPW = { kind: "password" as const, password: BACKUP_PASSWORD };
+const FILE_NAME = /^qntx-wallet-backup-[0-9a-f]{32}-[0-9a-f]{64}\.json$/;
 
 const LOGGER: EngineLogger = { warn: () => {} };
 
@@ -52,10 +56,6 @@ function corruptFirstRead(inner: CloudStore): CloudStore {
   };
 }
 
-function unprotectedWallets(info: WalletInfo): ReadonlyArray<string> {
-  return info.backup === "mnemonic" ? [] : [info.walletId];
-}
-
 type Rig = {
   readonly wallet: Wallet;
   readonly cloud: CloudStore;
@@ -65,6 +65,8 @@ type Rig = {
     write: boolean;
     read: boolean;
     del: boolean;
+    /** When set, every list() throws it. */
+    list: unknown;
     /** Next write lands, then throws like a timed-out call. */
     landThenThrow: boolean;
     /** Next write lands; the following read serves the pre-write value once (eventual consistency). */
@@ -92,6 +94,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     write: false,
     read: false,
     del: false,
+    list: undefined as unknown,
     landThenThrow: false,
     lagRead: false,
     stale: undefined as { readonly v: string | undefined } | undefined,
@@ -100,7 +103,12 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     stallCalls: 0,
   };
   const cloud: CloudStore = {
-    list: async () => inner.list(),
+    list: async () => {
+      if (faults.list !== undefined) {
+        throw faults.list;
+      }
+      return inner.list();
+    },
     read: async (name) => {
       if (faults.read) {
         throw new Error("read failed");
@@ -206,14 +214,6 @@ async function until<T>(read: () => T, want: (v: T) => boolean, ms = 5000): Prom
 
 const isSettled = (s: string): boolean => s === "synced" || s === "conflict" || s === "error";
 
-/** Arms `faults.read` the moment the controller reports `error` — parks a run at error. */
-const holdAtError = (r: Rig): (() => void) =>
-  r.engine.backup.store.subscribe((s) => {
-    if (s.status === "error") {
-      r.faults.read = true;
-    }
-  });
-
 const tick = Promise.resolve();
 
 /**
@@ -266,22 +266,23 @@ function remoteName(files: Map<string, string>): string {
 vi.setConfig({ testTimeout: 30_000 });
 
 describe("BackupController", () => {
-  it("no cloud store → unavailable, unprotected lists the mnemonic-unbacked wallet", async () => {
+  it("no cloud store → unavailable; unprotected lists only wallets with no own backup", async () => {
     const r = await rig({ cloud: false });
     try {
-      const created = await vaultWithMnemonic(r.wallet);
-      // A mnemonic wallet reports backup:"mnemonic" — it is NOT unprotected. Add a passkey one?
-      // The created wallet's backup field is "mnemonic" after confirm; assert empty unprotected.
+      const mnemonic = await vaultWithMnemonic(r.wallet);
+      const passkey = await r.wallet.wallets.createWithPasskey({ name: "passkey wallet" });
       await settle(r);
       const s = r.engine.backup.getState();
       expect(s.status).toBe("unavailable");
-      expect(s.unprotected.walletIds).toStrictEqual(unprotectedWallets(created));
+      // A mnemonic-exportable wallet is protected by its words; the passkey one is not.
+      expect(s.unprotected.walletIds).toStrictEqual([passkey.walletId]);
+      expect(mnemonic.backup).toBe("mnemonic");
     } finally {
       await r.close();
     }
   });
 
-  it("enable → remote file, read-back, synced, unprotected empty", async () => {
+  it("enable → versioned remote file, read-back, synced, unprotected empty", async () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
@@ -290,78 +291,86 @@ describe("BackupController", () => {
       expect(s.status).toBe("synced");
       expect(s.unprotected.walletIds).toStrictEqual([]);
       const name = remoteName(r.files);
-      expect(name).toMatch(/^qntx-wallet-backup-[0-9a-f]{32}\.json$/);
+      expect(name).toMatch(FILE_NAME);
       const listed = await r.engine.backup.list();
       expect(listed.map((f) => f.name)).toStrictEqual([name]);
       const { header: firstHeader } = listed[0]!;
       expect(firstHeader.wallets).toHaveLength(1);
+      expect(firstHeader.keys).toStrictEqual([]);
     } finally {
       await r.close();
     }
   });
 
-  it("import / delete / nostr-key changes each auto-sync the remote", async () => {
+  it("import / delete changes each upload a new version and delete the superseded one", async () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
-      const name = remoteName(r.files);
+      const first = remoteName(r.files);
 
-      // Import a second mnemonic wallet → new remote header.
+      // Import a second mnemonic wallet → a new versioned file; the first is superseded.
       const draft = await r.wallet.wallets.importMnemonic({
         mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
       });
       await settle(r);
       let listed = await r.engine.backup.list();
-      let { header } = listed[0]!;
-      expect(header.wallets).toHaveLength(2);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.header.wallets).toHaveLength(2);
+      const second = remoteName(r.files);
+      expect(second).not.toBe(first);
+      expect(r.files.has(first)).toBe(false);
 
-      // Delete the wallet → back to 1 wallet.
+      // Delete the wallet → back to 1 wallet, another new file.
       await r.wallet.wallets.delete(draft.walletId, PW);
       await settle(r);
       listed = await r.engine.backup.list();
-      ({ header } = listed[0]!);
-      expect(header.wallets).toHaveLength(1);
-      expect(remoteName(r.files)).toBe(name); // same file, rewritten
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.header.wallets).toHaveLength(1);
+      expect(remoteName(r.files)).not.toBe(second);
+      expect(r.files.has(second)).toBe(false);
     } finally {
       await r.close();
     }
   });
 
-  it("foreign write → conflict; own-lineage restore merges and syncs the superset", async () => {
+  it("foreign version → conflict; own-lineage restore merges and syncs the superset", async () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
-      const name = remoteName(r.files);
 
       // Another device of the same backup lineage uploads a wallet this one does not hold:
-      // recorded here by importing it, syncing, then deleting it again.
+      // recorded here by importing it, syncing, then deleting it again and resurrecting the file.
       const foreign = await r.wallet.wallets.importMnemonic({
         mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
       });
       await settle(r);
-      const foreignText = r.files.get(name)!;
+      const foreignName = remoteName(r.files);
+      const foreignText = r.files.get(foreignName)!;
       await r.wallet.wallets.delete(foreign.walletId, PW);
       await settle(r);
-      r.files.set(name, foreignText);
+      r.files.set(foreignName, foreignText);
 
-      // This device changes coverage → reconcile takes the update path → foreign digest → conflict.
+      // This device changes coverage differently → the foreign version's header coverage is
+      // not contained in the local coverage → conflict.
       await r.wallet.wallets.importMnemonic({
         mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
       });
       await settle(r);
       expect(r.engine.backup.getState().status).toBe("conflict");
+      expect(r.files.has(foreignName)).toBe(true); // foreign versions are never deleted
 
       // Own-lineage restore merges the foreign file, then the next sync uploads the superset:
-      // this device's two wallets plus the foreign one.
-      const merged = await r.engine.backup.restore({ name, backupFactor: BPW });
+      // this device's two wallets plus the foreign one — and prunes the foreign file.
+      const merged = await r.engine.backup.restore({ name: foreignName, backupFactor: BPW });
       expect(merged.wallets.map((w) => w.walletId)).toStrictEqual([foreign.walletId]);
       await settle(r);
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed = await r.engine.backup.list();
-      const { header } = listed[0]!;
-      expect(header.wallets).toHaveLength(3);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.header.wallets).toHaveLength(3);
+      expect(r.files.has(foreignName)).toBe(false);
     } finally {
       await r.close();
     }
@@ -461,6 +470,48 @@ describe("BackupController", () => {
     }
   });
 
+  it("a restore of a foreign-lineage file records nothing", async () => {
+    const r = await rig();
+    const other = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      await vaultWithMnemonic(other.wallet);
+      await other.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const foreign = [...other.files.keys()][0]!;
+      const foreignText = other.files.get(foreign)!;
+      // Copy the other device's file into our cloud under its own name — a different backup id.
+      r.files.set(foreign, foreignText);
+
+      const restored = await r.engine.backup.restore({ name: foreign, backupFactor: BPW });
+      expect(restored.wallets).toHaveLength(1);
+      expect(r.engine.backup.getState().status).toBe("synced");
+      // The foreign file is of another backup id entirely: it is not ours, so it stays.
+      expect(r.files.has(foreign)).toBe(true);
+    } finally {
+      await r.close();
+      await other.close();
+    }
+  });
+
+  it("a corrupt version (digest mismatch) fails restore and reads as absent in list", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const name = remoteName(r.files);
+      r.files.set(name, `${r.files.get(name)!}corrupt`);
+
+      await expect(r.engine.backup.restore({ name, backupFactor: BPW })).rejects.toMatchObject({
+        name: "BackupControllerError",
+        category: "cloud",
+      });
+      await expect(r.engine.backup.list()).resolves.toStrictEqual([]);
+    } finally {
+      await r.close();
+    }
+  });
+
   it("lock during an in-flight sync: no cloud or store writes land afterwards", async () => {
     const r = await rig();
     try {
@@ -469,31 +520,25 @@ describe("BackupController", () => {
       const name = remoteName(r.files);
 
       // Change coverage and stall the cloud write so the reconcile is in flight at lock time.
-      let release: (() => void) | undefined;
-      const stall = new Promise<void>((resolve) => {
+      let release!: () => void;
+      r.faults.stall = new Promise<void>((resolve) => {
         release = () => resolve();
       });
-      const inner = createMemoryCloudStore(r.files);
-      const stalled: CloudStore = {
-        list: async () => inner.list(),
-        read: async (n) => inner.read(n),
-        write: async (n, text) => {
-          await stall;
-          return inner.write(n, text);
-        },
-        delete: async (n) => inner.delete(n),
-      };
-      void stalled;
       await r.wallet.wallets.importMnemonic({
         mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
       });
-      const before = r.files.get(name);
+      await until(
+        () => r.faults.stallCalls,
+        (n) => n === 1,
+      );
+      const before = new Map(r.files);
       await r.wallet.vault.lock();
       await new Promise((resolve) => setTimeout(resolve, 50));
-      release?.();
+      release();
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(r.engine.backup.getState().status).toBe("locked");
-      expect(r.files.get(name)).toBe(before); // the pending upload never landed
+      expect(r.files).toStrictEqual(before); // the pending upload never landed
+      expect(r.files.get(name)).toBeDefined();
     } finally {
       await r.close();
     }
@@ -519,7 +564,7 @@ describe("BackupController", () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
-      await r.wallet.backup.enable({ verify: PW, factors: [BPW] });
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
       const files2 = new Map<string, string>();
       const wallet2 = await createNodeWallet({
         verifyEvent,
@@ -586,7 +631,7 @@ describe("BackupController", () => {
       await settle(r);
       un();
 
-      // The error pass visited; the pending digest then confirmed our own landed write —
+      // The error pass visited; the pending name then confirmed our own landed write —
       // converging to synced without another backup.update or cloud write.
       expect(seen).toContain("error");
       expect(r.engine.backup.getState().status).toBe("synced");
@@ -625,28 +670,36 @@ describe("BackupController", () => {
     }
   });
 
-  it("a foreign overwrite after a lagged read-back still reports conflict", async () => {
+  it("a foreign version plus an unconfirmed pending still reports conflict", async () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
-      const name = remoteName(r.files);
 
-      // Hold the run at `error`: once the failed read-back lands, fail further reads so the
-      // pending write stays unconfirmed while another device overwrites the remote file.
-      const un = holdAtError(r);
-      r.faults.lagRead = true;
+      // Capture a same-lineage version this device no longer holds, to replay as foreign.
+      const foreign = await r.wallet.wallets.importMnemonic({
+        mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+      });
+      await settle(r);
+      const foreignName = remoteName(r.files);
+      const foreignText = r.files.get(foreignName)!;
+      await r.wallet.wallets.delete(foreign.walletId, PW);
+      await settle(r);
+
+      // Hold the next upload unconfirmed: the write never lands.
+      r.faults.write = true;
       await r.wallet.wallets.importMnemonic({
         mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
       });
       await settle(r);
-      un();
       expect(r.engine.backup.getState().status).toBe("error");
+      r.faults.write = false;
 
-      r.faults.read = false;
-      r.files.set(name, '{"device":"other"}');
+      // The foreign version shows up while our pending upload is still unconfirmed.
+      r.files.set(foreignName, foreignText);
       await r.engine.backup.sync();
       expect(r.engine.backup.getState().status).toBe("conflict");
+      expect(r.files.has(foreignName)).toBe(true);
     } finally {
       await r.close();
     }
@@ -658,7 +711,6 @@ describe("BackupController", () => {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
       const name = remoteName(r.files);
-      const baseline = r.files.get(name);
 
       r.faults.write = true;
       await r.wallet.wallets.importMnemonic({
@@ -666,14 +718,15 @@ describe("BackupController", () => {
       });
       await settle(r);
       expect(r.engine.backup.getState().status).toBe("error");
-      expect(r.files.get(name)).toBe(baseline);
+      expect(r.files.has(name)).toBe(true);
 
-      // The remote still holds the baseline file: pending does not match, the pass falls
-      // through to the ordinary upload path.
+      // The pending file never landed: the pass falls through to the ordinary upload path —
+      // a new versioned name, no conflict.
       r.faults.write = false;
       await r.engine.backup.sync();
       expect(r.engine.backup.getState().status).toBe("synced");
-      expect(r.files.get(name)).not.toBe(baseline);
+      expect(remoteName(r.files)).not.toBe(name);
+      expect(r.files.has(name)).toBe(false);
     } finally {
       await r.close();
     }
@@ -720,7 +773,7 @@ describe("BackupController", () => {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
       const name = remoteName(r.files);
-      const id = name.slice("qntx-wallet-backup-".length, -".json".length);
+      const text = r.files.get(name)!;
       const stage = async (pending: unknown): Promise<void> =>
         persistentEngineStore(r.storeBacking)
           .collection("backup")
@@ -728,23 +781,39 @@ describe("BackupController", () => {
             "state",
             new TextEncoder().encode(
               JSON.stringify({
-                id,
-                digest: "0".repeat(64),
+                head: {
+                  name,
+                  coverage: { walletIds: [], keyIds: [] },
+                },
                 uploadedAt: 1,
-                walletIds: [],
+                superseded: [],
                 pending,
               }),
             ),
           );
-      // A pending digest that is not 64 lowercase hex drops the whole record → the remote file
-      // reads as foreign → conflict.
-      await stage({ id, digest: "not-a-digest", walletIds: [] });
+      // A pending name that is not a versioned file drops the whole record → the head is lost
+      // and the device re-uploads; the existing file reads as foreign but covered → synced.
+      await stage({ name: "not-a-versioned-name", coverage: { walletIds: [], keyIds: [] } });
       await r.engine.backup.sync();
-      expect(r.engine.backup.getState().status).toBe("conflict");
-      // Same for a pending id that is not a backup id.
-      await stage({ id: "not-a-backup-id", digest: "0".repeat(64), walletIds: [] });
+      expect(r.engine.backup.getState().status).toBe("synced");
+      const listed = await r.engine.backup.list();
+      expect(listed).toHaveLength(2); // the old file stays — foreign versions are never deleted
+      expect(r.files.has(name)).toBe(true);
+      // Same for a superseded entry that is not a versioned name.
+      await persistentEngineStore(r.storeBacking)
+        .collection("backup")
+        .put(
+          "state",
+          new TextEncoder().encode(
+            JSON.stringify({
+              head: { name, coverage: { walletIds: ["w"], keyIds: [] } },
+              superseded: ["not-a-versioned-name"],
+            }),
+          ),
+        );
       await r.engine.backup.sync();
-      expect(r.engine.backup.getState().status).toBe("conflict");
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(r.files.get(name)).toBe(text);
     } finally {
       await r.close();
     }
@@ -755,7 +824,6 @@ describe("BackupController", () => {
     try {
       await vaultWithMnemonic(r.wallet);
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
-      const name = remoteName(r.files);
 
       // Park the reconcile inside the cloud write, then lock + unlock while it is in flight:
       // the post-unlock trigger must still earn a pass under the new generation.
@@ -779,8 +847,8 @@ describe("BackupController", () => {
       await until(() => r.engine.backup.getState().status, isSettled);
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed = await r.engine.backup.list();
+      expect(listed).toHaveLength(1);
       expect(listed[0]!.header.wallets).toHaveLength(2);
-      expect(r.files.get(name)).toBeDefined();
     } finally {
       await r.close();
     }
@@ -826,6 +894,34 @@ describe("BackupController", () => {
       expect(caught).toBeInstanceOf(BackupControllerError);
       expect((caught as BackupControllerError).category).toBe("unavailable");
       expect(r.wallet.getSnapshot().backup).toBeNull();
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("enable maps a typed cloud pre-check failure to its category", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      r.faults.list = new CloudStoreError("quota", "drive is full");
+      await expect(r.engine.backup.enable({ verify: PW, factors: [BPW] })).rejects.toMatchObject({
+        name: "BackupControllerError",
+        category: "quota",
+      });
+      expect(r.wallet.getSnapshot().backup).toBeNull();
+      r.faults.list = new CloudStoreError("unavailable", "offline");
+      await expect(r.engine.backup.enable({ verify: PW, factors: [BPW] })).rejects.toMatchObject({
+        name: "BackupControllerError",
+        category: "unavailable",
+      });
+      r.faults.list = new CloudStoreError("auth-required", "consent needed");
+      await expect(r.engine.backup.enable({ verify: PW, factors: [BPW] })).rejects.toMatchObject({
+        name: "BackupControllerError",
+        category: "auth-required",
+      });
+      r.faults.list = undefined;
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      expect(r.engine.backup.getState().status).toBe("synced");
     } finally {
       await r.close();
     }
