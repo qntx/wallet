@@ -619,9 +619,9 @@ describe("BackupController", () => {
 
       // Restoring the file that IS the head changes nothing — not even a record write.
       let puts = 0;
-      r.storeHooks.set("backupstate", () => {
+      r.storeHooks.set("backupstate", async () => {
+        await Promise.resolve();
         puts += 1;
-        return Promise.resolve();
       });
       await r.engine.backup.restore({ name: head, backupFactor: BPW });
       await settle(r);

@@ -59,12 +59,12 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@qntx/wallet-engine": "0.13.0",
     "@qntx/nostr": "0.15.4",
     "@qntx/nostr-native": "0.15.4",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-native": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
+    "@qntx/wallet-engine": "0.13.0",
     "@scure/base": "2.4.0",
     "nitrogen": "0.37.1",
     "publint": "0.3.25",
