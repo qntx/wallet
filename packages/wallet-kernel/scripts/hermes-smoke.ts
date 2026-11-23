@@ -23,15 +23,9 @@ declare const Bun: {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const outfile = resolve(root, ".hermes-card.iife.js");
 
-async function main(): Promise<number> {
-  const hermes = process.env.HERMES;
-  if (hermes === undefined || hermes === "") {
-    console.error("set HERMES to the hermes binary");
-    return 1;
-  }
-
+const runOne = async (hermes: string, name: "card" | "ledger", marker: string): Promise<number> => {
+  const outfile = resolve(root, `.hermes-${name}.iife.js`);
   // Same pipeline as scripts/build-kernel.ts: the es2017 target lowers class static blocks
   // (ox emits them) that bare Hermes cannot parse.
   await build({
@@ -39,10 +33,10 @@ async function main(): Promise<number> {
     logLevel: "warn",
     build: {
       lib: {
-        entry: resolve(root, "tests/hermes/card.ts"),
+        entry: resolve(root, `tests/hermes/${name}.ts`),
         formats: ["iife"],
-        name: "qntxHermesCard",
-        fileName: () => ".hermes-card.iife.js",
+        name: `qntxHermes${name}`,
+        fileName: () => `.hermes-${name}.iife.js`,
       },
       outDir: root,
       emptyOutDir: false,
@@ -55,11 +49,24 @@ async function main(): Promise<number> {
   const proc = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
   const out = proc.stdout.toString() + proc.stderr.toString();
   process.stdout.write(out);
-  if (proc.exitCode !== 0 || !out.includes("HERMES_CARD_OK")) {
-    console.error(`hermes card smoke failed (exit ${proc.exitCode}): no HERMES_CARD_OK`);
+  if (proc.exitCode !== 0 || !out.includes(marker)) {
+    console.error(`hermes ${name} smoke failed (exit ${proc.exitCode}): no ${marker}`);
     return 1;
   }
   return 0;
+};
+
+async function main(): Promise<number> {
+  const hermes = process.env.HERMES;
+  if (hermes === undefined || hermes === "") {
+    console.error("set HERMES to the hermes binary");
+    return 1;
+  }
+  const card = await runOne(hermes, "card", "HERMES_CARD_OK");
+  if (card !== 0) {
+    return card;
+  }
+  return runOne(hermes, "ledger", "HERMES_LEDGER_OK");
 }
 
 process.exitCode = await main();

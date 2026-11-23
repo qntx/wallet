@@ -133,6 +133,18 @@ export type NavigateOptions = {
   /** Hold both buttons this long instead of a click — for "Hold to sign" screens. */
   holdMs?: number;
   maxSteps?: number;
+  /**
+   * Warning interstitials to confirm with both buttons and continue (e.g. "Blind signing ahead — To
+   * accept risk, press both buttons"); checked before `match` so a warning that happens to contain
+   * the match word does not end navigation early.
+   */
+  through?: RegExp;
+  /**
+   * Menu screens to wait out without pressing — the review may not have drawn yet when navigation
+   * starts; a right-press on a stale menu screen is consumed by the review's first page and can
+   * skip straight to its Reject page.
+   */
+  leave?: RegExp;
 };
 
 /**
@@ -184,6 +196,13 @@ export class Screen {
         this.lastScreen = screen;
         this.texts.push(screen);
       }
+      if (opts.through?.test(screen) === true) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- warnings are confirmed one at a time
+        await this.button("both", "press-and-release");
+        // oxlint-disable-next-line eslint/no-await-in-loop -- let the device redraw between steps
+        await sleep(200);
+        continue;
+      }
       if (match.test(screen)) {
         if (opts.holdMs !== undefined && opts.holdMs > 0) {
           // oxlint-disable-next-line eslint/no-await-in-loop -- hold is sequential by definition
@@ -197,6 +216,11 @@ export class Screen {
           await this.button("both", "press-and-release");
         }
         return;
+      }
+      if (opts.leave?.test(screen) === true) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- poll until the review draws
+        await sleep(250);
+        continue;
       }
       // oxlint-disable-next-line eslint/no-await-in-loop -- pages advance one at a time
       await this.button("right", "press-and-release");

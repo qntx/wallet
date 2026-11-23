@@ -30,6 +30,8 @@ jobs:
             .cache/ledger/build.json
           key: ledger-elf-${{ hashFiles('scripts/ledger/apps.json') }}
       - run: bun install --frozen-lockfile
+      # speculos tests import kernel source, which imports @qntx/wallet-chains — build it first
+      - run: bunx vp run @qntx/wallet-chains#build
       - run: bun scripts/ledger/build-apps.ts
       - run: bun scripts/ledger/speculos.ts
       - run: bun run --cwd packages/wallet-kernel test:speculos

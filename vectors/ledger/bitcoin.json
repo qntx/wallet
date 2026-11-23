@@ -1,0 +1,27 @@
+{
+  "app": "bitcoin",
+  "appVersion": "2.5.1",
+  "appCommit": "44ecd0410dcd6ca2f4728cf3c1b49800c30ca74a",
+  "speculos": "ghcr.io/ledgerhq/speculos@sha256:56c7ec84c903147dac28e68706d3241218a3d9beb9562dd4a8c02947b2a24f47",
+  "seed": "glory promote mansion idle axis finger extra february uncover one trip resource lawn turtle enact monster seven myth punch hobby comfort wild raise skin",
+  "cases": [
+    {
+      "name": "app-and-version",
+      "call": {
+        "fn": "device"
+      },
+      "commands": [
+        {
+          "apdu": "b001000000",
+          "response": "0107426974636f696e05322e352e3101009000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "name": "Bitcoin",
+        "version": "2.5.1",
+        "flags": "00"
+      }
+    }
+  ]
+}

@@ -1,0 +1,351 @@
+{
+  "app": "tron",
+  "appVersion": "0.8.2",
+  "appCommit": "0dffd0c8b81fbc324fb05a67d929082ed9e67044",
+  "speculos": "ghcr.io/ledgerhq/speculos@sha256:56c7ec84c903147dac28e68706d3241218a3d9beb9562dd4a8c02947b2a24f47",
+  "seed": "glory promote mansion idle axis finger extra february uncover one trip resource lawn turtle enact monster seven myth punch hobby comfort wild raise skin",
+  "cases": [
+    {
+      "name": "app-and-version",
+      "call": {
+        "fn": "device"
+      },
+      "commands": [
+        {
+          "apdu": "b001000000",
+          "response": "010454726f6e05302e382e3201009000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "name": "Tron",
+        "version": "0.8.2",
+        "flags": "00"
+      }
+    },
+    {
+      "name": "address",
+      "call": {
+        "fn": "tronAddress",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "display": false
+      },
+      "commands": [
+        {
+          "apdu": "e002000015058000002c800000c3800000000000000000000000",
+          "response": "410468607df0f5bd24773280155303c61818140d8836cfbe0e34e6ed8ce7ddd14ae1ba772c18c87e9a89cbe1cdf0c6049579f025259f595e70c3160a32b515f6d9be22544d566b6635384d6b364a69564858467153637246434366793563674d6f4b684e319000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "publicKey": "0268607df0f5bd24773280155303c61818140d8836cfbe0e34e6ed8ce7ddd14ae1",
+        "address": "TMVkf58Mk6JiVHXFqScrFCCfy5cgMoKhN1"
+      }
+    },
+    {
+      "name": "address-display",
+      "call": {
+        "fn": "tronAddress",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "display": true
+      },
+      "commands": [
+        {
+          "apdu": "e002010015058000002c800000c3800000000000000000000000",
+          "response": "410468607df0f5bd24773280155303c61818140d8836cfbe0e34e6ed8ce7ddd14ae1ba772c18c87e9a89cbe1cdf0c6049579f025259f595e70c3160a32b515f6d9be22544d566b6635384d6b364a69564858467153637246434366793563674d6f4b684e319000"
+        }
+      ],
+      "screens": [
+        "Tron app is ready",
+        "Verify Tron address",
+        "Address TMVkf58Mk6JiVHXFq ScrFCCfy5cgMoKhN1",
+        "Confirm"
+      ],
+      "result": {
+        "publicKey": "0268607df0f5bd24773280155303c61818140d8836cfbe0e34e6ed8ce7ddd14ae1",
+        "address": "TMVkf58Mk6JiVHXFqScrFCCfy5cgMoKhN1"
+      }
+    },
+    {
+      "name": "tx-transfer",
+      "call": {
+        "fn": "tronSignTransaction",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "rawData": "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541f39fd6e51aad88f6f4ce6ab8827279cfffb922661215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d7080d0eab6b733"
+      },
+      "commands": [
+        {
+          "apdu": "e00410009a058000002c800000c38000000000000000000000000a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541f39fd6e51aad88f6f4ce6ab8827279cfffb922661215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d7080d0eab6b733",
+          "response": "4a3022409dac2c9b856a8a1a6ee349f83b18fc49c53ec645578030da2a77514727772225c04613d10f8effa44e15d194fd9edb4d8637149f9bf14180efc07afa019000"
+        }
+      ],
+      "screens": [
+        "Tron app is ready",
+        "Review Transaction",
+        "Amount 1",
+        "Token TRX",
+        "To TJRyWwFs9wTFGZg3J brVriFbNfCug5tDeC",
+        "From TYBNgWfhGuNzdLtjK txXTfskAhTbMcqbaG",
+        "Sign Transaction"
+      ],
+      "result": "4a3022409dac2c9b856a8a1a6ee349f83b18fc49c53ec645578030da2a77514727772225c04613d10f8effa44e15d194fd9edb4d8637149f9bf14180efc07afa"
+    },
+    {
+      "name": "tx-trc20",
+      "call": {
+        "fn": "tronSignTransaction",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "rawData": "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb0000000000000000000000005cd0fb0ab3ce40f3051414c604b27756e69e43db00000000000000000000000000000000000000000000000000000000009896807080d0eab6b73390018087a70e"
+      },
+      "commands": [
+        {
+          "apdu": "e0041000e8058000002c800000c38000000000000000000000000a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb0000000000000000000000005cd0fb0ab3ce40f3051414c604b27756e69e43db00000000000000000000000000000000000000000000000000000000009896807080d0eab6b73390018087a70e",
+          "response": "292cef12f1c6ccef2560d26318e1d5bf4f68c1d1473db17c60df0c2039effc230ee74d167fe9640f12f81afcd0666afc4bdbca3bafeaab71d7b330d06373ce3a009000"
+        }
+      ],
+      "screens": [
+        "Tron app is ready",
+        "Review Transaction",
+        "Amount 10",
+        "Token USDT",
+        "To TJRyWwFs9wTFGZg3J brVriFbNfCug5tDeC",
+        "From TYBNgWfhGuNzdLtjK txXTfskAhTbMcqbaG",
+        "Max Fee 30",
+        "Sign Transaction"
+      ],
+      "result": "292cef12f1c6ccef2560d26318e1d5bf4f68c1d1473db17c60df0c2039effc230ee74d167fe9640f12f81afcd0666afc4bdbca3bafeaab71d7b330d06373ce3a"
+    },
+    {
+      "name": "tx-big",
+      "call": {
+        "fn": "tronSignTransaction",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "rawData": "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244095ea7b300000000000000000000000051b5659b685047f35498f763dce619c4720d2aa7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7080d0eab6b73390018087a70e"
+      },
+      "commands": [
+        {
+          "apdu": "e0041000e8058000002c800000c38000000000000000000000000a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244095ea7b300000000000000000000000051b5659b685047f35498f763dce619c4720d2aa7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7080d0eab6b73390018087a70e",
+          "response": "3bd761ebd7539af5e9267c0b4575135d1b3979608c9ee4bca99fd7885dbc50b87ea19d4bc641ea109939cbcfba746033c3a70f02264e456aeb48353e3faaeaad009000"
+        }
+      ],
+      "screens": [
+        "Tron app is ready",
+        "Review Transaction",
+        "Amount (1/2) 115792089237316195 423570985008687907 853269984665640564",
+        "Amount (2/2) 039457584007913129 .639935",
+        "Token USDT",
+        "Allow THRF3GuPnvvPzKoaT 8pJex5XHmo8NNbCb 3",
+        "From TYBNgWfhGuNzdLtjK txXTfskAhTbMcqbaG",
+        "Max Fee 30",
+        "Sign Transaction"
+      ],
+      "result": "3bd761ebd7539af5e9267c0b4575135d1b3979608c9ee4bca99fd7885dbc50b87ea19d4bc641ea109939cbcfba746033c3a70f02264e456aeb48353e3faaeaad"
+    },
+    {
+      "name": "personal-short",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "tronSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "68656c6c6f2074726f6e"
+      },
+      "commands": [
+        {
+          "apdu": "e008100023058000002c800000c38000000000000000000000000000000a68656c6c6f2074726f6e",
+          "response": "5ea79e95faa16ed67421e1b4de36731b11c315ed6ee4f3757be885657f388e617e7e0f7cbf714c94a95b043392ae3c16df60237334d73043df7eb5d032d6c910009000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Review message",
+        "Message hash (1/2) 85FDC81D273D14847 AFD4EF8B63674E9C9 B9A285F00C4FCC792",
+        "Message hash (2/2) E541A98D25C16",
+        "Sign with TMVkf58Mk6JiVHXFq ScrFCCfy5cgMoKhN1",
+        "Sign message"
+      ],
+      "result": "5ea79e95faa16ed67421e1b4de36731b11c315ed6ee4f3757be885657f388e617e7e0f7cbf714c94a95b043392ae3c16df60237334d73043df7eb5d032d6c910"
+    },
+    {
+      "name": "personal-long",
+      "call": {
+        "fn": "tronSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b"
+      },
+      "commands": [
+        {
+          "apdu": "e0080000ff058000002c800000c38000000000000000000000000000012c000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5",
+          "response": "9000"
+        },
+        {
+          "apdu": "e008800046e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b",
+          "response": "90b31de719a94eb9a2c97c17944312057738cdde7a6dcc8526ea084d6a96f40a5689f1da926ba0802e32fdca6e39fc09f7d2350278d65bc7fbd3f77dcda83713019000"
+        }
+      ],
+      "screens": [
+        "Tron app is ready",
+        "Review message",
+        "Message hash (1/2) 9A551C17A7071DB04 6F3D703100392252BD 843DFE667A73A191E",
+        "Message hash (2/2) A27E702F6970",
+        "Sign with TMVkf58Mk6JiVHXFq ScrFCCfy5cgMoKhN1",
+        "Sign message"
+      ],
+      "result": "90b31de719a94eb9a2c97c17944312057738cdde7a6dcc8526ea084d6a96f40a5689f1da926ba0802e32fdca6e39fc09f7d2350278d65bc7fbd3f77dcda83713"
+    },
+    {
+      "name": "tip712-hash-off",
+      "setting": "Blind signing=off",
+      "call": {
+        "fn": "tronSignTypedDataHash",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "domainHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "messageHash": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "commands": [
+        {
+          "apdu": "e00c000055058000002c800000c380000000000000000000000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
+          "response": "6a8c"
+        }
+      ],
+      "screens": [],
+      "error": {
+        "code": "setting-required",
+        "sw": 27276
+      }
+    },
+    {
+      "name": "tip712-hash-on",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "tronSignTypedDataHash",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "domainHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "messageHash": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "commands": [
+        {
+          "apdu": "e00c000055058000002c800000c380000000000000000000000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
+          "response": "38645de871404acc3303198e88b5903f6c8c8c0d86a39cca7b0711871af6284565fd283c0fff6714f5aab663b7a26b17707a085ad9264febf6353702050d6b50009000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Review message",
+        "Domain hash (1/2) 0x11111111111111111 1111111111111111111 1111111111111111111",
+        "Domain hash (2/2) 111111111",
+        "Message hash (1/2) 0x22222222222222222 2222222222222222222 2222222222222222222",
+        "Message hash (2/2) 222222222",
+        "Sign with TMVkf58Mk6JiVHXFq ScrFCCfy5cgMoKhN1",
+        "Sign message"
+      ],
+      "result": "38645de871404acc3303198e88b5903f6c8c8c0d86a39cca7b0711871af6284565fd283c0fff6714f5aab663b7a26b17707a085ad9264febf6353702050d6b50"
+    },
+    {
+      "name": "reject",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "tronSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "72656a656374206d65"
+      },
+      "commands": [
+        {
+          "apdu": "e008100022058000002c800000c38000000000000000000000000000000972656a656374206d65",
+          "response": "6985"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Review message",
+        "Message hash (1/2) CE25166E4EE788A599 B62203B62D5A021F39 E6CAA770050976C5A",
+        "Message hash (2/2) DC6EA1BF567",
+        "Sign with TMVkf58Mk6JiVHXFq ScrFCCfy5cgMoKhN1",
+        "Sign message",
+        "Reject transaction"
+      ],
+      "error": {
+        "code": "user-rejected",
+        "sw": 27013
+      }
+    },
+    {
+      "name": "configuration",
+      "call": {
+        "fn": "tronConfiguration"
+      },
+      "commands": [
+        {
+          "apdu": "e006000000",
+          "response": "080008029000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "version": "0.8.2",
+        "dataAllowed": false,
+        "customContracts": false,
+        "signByHash": true
+      }
+    }
+  ]
+}

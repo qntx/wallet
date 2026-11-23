@@ -27,6 +27,7 @@ playwright-report/
 packages/wallet-worker/.hermes-smoke.iife.js
 packages/wallet-chains/.hermes-chains.iife.js
 packages/wallet-kernel/.hermes-card.iife.js
+packages/wallet-kernel/.hermes-ledger.iife.js
 
 # Android CMake/Gradle build outputs
 **/.cxx/

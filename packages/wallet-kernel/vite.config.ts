@@ -26,6 +26,8 @@ const config: UserConfig = defineConfig({
           name: "speculos",
           include: ["tests/speculos/*.test.ts"],
           testTimeout: 120_000,
+          // all speculos specs drive the same four app containers — serial files only
+          fileParallelism: false,
         },
       },
     ],
