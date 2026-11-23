@@ -108,7 +108,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-fiat24",
     source: "src/apps/fiat24/index.ts",
-    /* Measured 115243 B: the bundled @qntx/fiat24 SDK (read actions, flows state machines, the
+    /* Measured 115557 B: the bundled @qntx/fiat24 SDK (read actions, flows state machines, the
        REST/session client, deployments, zod schemas) + the viem client core, plus the provider
        itself — errors, the corroborating rpc transport, owner/account reads, the live view, the
        enablement record machine, the signer bridge, flows and sessions. */

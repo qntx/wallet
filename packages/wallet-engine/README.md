@@ -660,6 +660,81 @@ open-orders list and trade events debounce into a REST re-read. A disconnect kee
 `stale` and falls back to a 10 s REST poll (`source: "poll"`) until the socket reconnects and the
 view returns to `live`/`stream`; a lock or a missing-credential stop closes the view for good.
 
+## Fiat24
+
+Fiat24 support lives under `apps.fiat24` when `createApps` lists `fiat24(config)` from
+`@qntx/wallet-engine/apps/fiat24`. The provider is built on the `@qntx/fiat24` SDK (Arbitrum One
+only): the account read and the resumable flows run over a viem client built from
+`engine.networks` — with an independent endpoint configured every pinned read must agree on both
+sides, and the SDK's own deployment check stays on, so a drifted deployment reports the typed
+status `contract-changed` rather than signing against unexpected code. The REST API is optional:
+`fiat24({ fetch })` is for `api.fiat24.com` only.
+
+```ts
+import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
+
+const apps = createApps({
+  /* … the same options as above … */
+  apps: [fiat24({ fetch: fiat24Fetch })], // see "The REST api" — omit for a chain-only build
+});
+```
+
+- `account(group)` reads the group's account once: `no-account`, an `AccountStatus` (or `stale`
+  for a failed read), or `contract-changed`. `live(group)` is the same read as a store facade,
+  polled every 15 s (`FIAT24_POLL_MS`) while `setVisible(true)` and unlocked.
+- `flows` is `start` / `advance` / `list` / `discard` / `payoutSettlement` over the SDK's
+  resumable transfer, exchange, payout, top-up, onboarding and card flows. Advances are
+  serialised per group, `start` refuses `flow-unresolved` while another flow could still send,
+  and an entry that no longer decodes lists as `{ id, invalid: true }` — `discard` is the only
+  way out of it, so have the user check the account's activity first.
+- `session(group)` is the secured reads (`profile`, `cards`, `cardDisplayToken`,
+  `transactions`) through a lazy SDK session. `api` is the unauthenticated reads (`rates`,
+  `paymentPurposes`, `countries`, `countryCities`, `banks`, `bankByIban`, `kycUrl`).
+
+**Every SDK write is exactly one `{ kind: "app", id: "fiat24" }` request** on `engine.requests`:
+transactions are `evm-sign` `evm.transaction` requests at the SDK-chosen nonce (the engine pins
+it — `prepare` fails with `NonceConflictError` if the sender's next nonce moved on), and session
+grants are `evm.fiat24-session` requests. A `Fiat24Flow.refusal` on a returned entry says why a
+send did not happen. Reconcile — on unlock and every 15 s while visible — only ever advances
+records in `sending`/`submitted`/`unknown`, which the SDK resolves by polling receipts and
+nonces; it can never sign or broadcast.
+
+**Persistence.** Flow states persist as `encodeFlowState` text in the app's EngineStore
+collection — pseudonymous chain fields only, no PII. Payout drafts hold unverified payee data
+and stay in memory. Session grants are bearer credentials held only in memory; lock, disable and
+wallet removal end them (disable also rejects the group's still-open requests).
+
+**Jurisdiction.** `enable` needs an eligibility answer of `available` or `close-only` — a
+restricted jurisdiction still gets the read surface to wind positions down — and onboarding and
+top-up refuse when the chain reports the feature `unavailable`.
+
+### The REST api
+
+`api.fiat24.com` sends no CORS headers and the gateway does not proxy it, so the host owns the
+transport:
+
+- **React Native:** inject the platform `fetch`, uninstrumented — exclude `api.fiat24.com` from
+  logging/Sentry interceptors, disable its HTTP cache, and note RN's fetch follows redirects
+  whatever `redirect` says; inject one that does not if that matters.
+- **Web:** inject a `fetch` that sends the request to a host proxy for `https://api.fiat24.com`.
+  The proxy sees the session grant headers, which are a bearer credential for the account until
+  their deadline — treat them accordingly.
+
+Without `fetch` the chain flows still work — transfers, exchanges, top-ups, payouts to a saved
+contact, and onboarding up to KYC — while the secured and public REST reads, a bank or Swiss-QR
+payout draft's verify step, a card flow's API write, and the onboarding `tourist`/`kyc` steps
+throw `Fiat24AppError("api-unavailable")`.
+
+### Security
+
+Residual risks a host must state, from the SDK's README: exact-in FX and top-up have no on-chain
+minimum output (the issuer's rate can move between the flow's quote check and inclusion); a
+payout's payee is bound off-chain — the signed transaction carries only the contact id and
+reference, and Fiat24 resolves the recipient; and a single EOA owns the ProxyAdmin of every
+Fiat24 proxy (it can pause, re-wire and upgrade the deployment, which is why writes fail closed
+with `contract-changed`). See the [SDK README](https://github.com/qntx/fiat24#residual-risks) for
+the full list.
+
 ## WalletConnect
 
 `@qntx/wallet-engine/walletconnect` is a separate entry point: the wallet side of WalletConnect

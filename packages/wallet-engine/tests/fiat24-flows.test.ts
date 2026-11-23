@@ -15,6 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { arbitrum as deployment } from "@qntx/fiat24";
 import { transferCall } from "@qntx/fiat24/calls";
 import { decodeFlowState, encodeFlowState } from "@qntx/fiat24/flows";
+import type { FlowState } from "@qntx/fiat24/flows";
 
 import type { Fiat24FlowEntry } from "../src/apps/fiat24/index.ts";
 import type { RequestController } from "../src/requests/controller.ts";
@@ -1749,10 +1750,269 @@ describe("fiat24 flow gates and settlement reads", () => {
       },
     });
     await expect(w.f24.flows.advance(w.group, started.id)).rejects.toMatchObject({
-      category: "protocol",
+      category: "api-unavailable",
     });
     /* The draft stays in memory — the host can advance it again once the api exists. */
     await expect(w.f24.flows.list(w.group)).resolves.toHaveLength(1);
+    await w.destroy();
+  }, 30_000);
+});
+
+describe("fiat24 api-unavailable advances", () => {
+  const MINT_HASH: `0x${string}` = `0x${"ab".repeat(32)}`;
+  /** The Swiss QR bill payload from the SDK's own docs — CHF 1949.75 on a Liechtenstein IBAN. */
+  const DOC_QR = decodeURIComponent(
+    "SPC%0D%0A0200%0D%0A1%0D%0ALI7830174502999200012%0D%0AS%0D%0ARobert%20Schneider%20AG%0D%0A" +
+      "Musterstrasse%0D%0A18%0D%0A9490%0D%0AVaduz%0D%0ALI%0D%0A%0D%0A%0D%0A%0D%0A%0D%0A%0D%0A" +
+      "%0D%0A%0D%0A1949.75%0D%0ACHF%0D%0AS%0D%0AHans%20Mustermann%0D%0AMusterstrasse%0D%0A27a" +
+      "%0D%0A9490%0D%0AVaduz%0D%0ALI%0D%0AQRR%0D%0A210000000003139471430009017%0D%0AAuftrag%20vom" +
+      "%2015.06.2020%0D%0AEPD%0D%0A%2F%2FS1%2F11%2F200427%2F30%2F102673386%2F31%2F200427%2F32%2F" +
+      "7.7%2F40%2F0%3A30",
+  );
+
+  const forge = async (w: World, id: string, state: FlowState): Promise<void> => {
+    await w.store
+      .collection("apps.fiat24")
+      .put(`${w.walletId}/0/flow/${id}`, new TextEncoder().encode(encodeFlowState(state)));
+  };
+
+  it("refuses a payout draft's Swiss-QR verify without the api", async () => {
+    const calls = mergeCalls(liveTable(OWNER, 4), availabilityEntries({}));
+    const { w } = await setup({ calls, api: false });
+    const started = await w.f24.flows.start(w.group, {
+      flow: "payout",
+      currency: "CHF24",
+      amount: 194975n,
+      target: { kind: "swiss-qr", qr: DOC_QR },
+    });
+    await expect(w.f24.flows.advance(w.group, started.id)).rejects.toMatchObject({
+      category: "api-unavailable",
+    });
+    await w.destroy();
+  }, 30_000);
+
+  it("still verifies a contact payout draft without the api — no session involved", async () => {
+    const calls = mergeCalls(liveTable(OWNER, 4), availabilityEntries({}));
+    const { w } = await setup({ calls, api: false });
+    const started = await w.f24.flows.start(w.group, {
+      flow: "payout",
+      currency: "EUR24",
+      amount: 100n,
+      target: { kind: "contact", contactId: "EA-123456" },
+    });
+    const verified = await w.f24.flows.advance(w.group, started.id);
+    expect(verified.state.step).toBe("verified");
+    const stored = await storedText(w, started.id);
+    expect(decodeFlowState(stored ?? "").flow).toBe("payout");
+    await w.destroy();
+  }, 30_000);
+
+  it("sends a verified payout without the api — the write leg is chain-only", async () => {
+    const calls = mergeCalls(
+      payoutTable({
+        owner: OWNER,
+        tokenId: SENDER_ID,
+        purposeId: 2n,
+        ref: "469709-50fb0941-4f59-4a89-8735-dd78ba7d53a3",
+      }),
+      liveTable(OWNER),
+    );
+    const { w, chain } = await setup({ calls, api: false });
+    await forge(w, "apip0001", {
+      flow: "payout",
+      version: 1,
+      owner: OWNER,
+      txs: [],
+      step: "verified",
+      tokenId: SENDER_ID,
+      currency: "EUR24",
+      amount: 100n,
+      contactId: "EA-123456",
+      purposeId: 2n,
+      ref: "469709-50fb0941-4f59-4a89-8735-dd78ba7d53a3",
+    });
+    const sending = w.f24.flows.advance(w.group, "apip0001");
+    sending.catch(() => undefined);
+    await until(() => openRequests(w).length === 1, 5000);
+    await approveNext(w);
+    const sent = await sending;
+    expect(sent.state.step).toBe("tx");
+    expect(chain.sent).toHaveLength(1);
+    await w.destroy();
+  }, 30_000);
+
+  it("refuses a card API write at ready without the api", async () => {
+    const { w } = await setup({ calls: liveTable(OWNER), api: false });
+    await forge(w, "apic0001", {
+      flow: "card",
+      version: 1,
+      owner: OWNER,
+      txs: [],
+      step: "ready",
+      tokenId: SENDER_ID,
+      operation: { kind: "block", externalId: "123456" },
+    });
+    await expect(w.f24.flows.advance(w.group, "apic0001")).rejects.toMatchObject({
+      category: "api-unavailable",
+    });
+    await w.destroy();
+  }, 30_000);
+
+  it.each(["ready", "sending", "unknown"] as const)(
+    "refuses a card %s write record without the api — the write reconciles by GET /cards",
+    async (phase) => {
+      const { w } = await setup({ calls: liveTable(OWNER), api: false });
+      await forge(w, "apic0002", {
+        flow: "card",
+        version: 1,
+        owner: OWNER,
+        txs: [
+          {
+            purpose: "main",
+            phase,
+            ...(phase === "unknown" ? { error: "unknown-outcome" as const } : {}),
+          },
+        ],
+        step: "tx",
+        tokenId: SENDER_ID,
+        operation: { kind: "block", externalId: "123456" },
+      });
+      await expect(w.f24.flows.advance(w.group, "apic0002")).rejects.toMatchObject({
+        category: "api-unavailable",
+      });
+      await w.destroy();
+    },
+    30_000,
+  );
+
+  it("refuses the card write reached after a satisfied cap — the residual the SDK throws", async () => {
+    /* `cap` is a chain leg `needsApi` cannot call statically: the SDK reads the allowance first
+       and only then falls into `advanceApiWrite` → `session-required`, mapped to api-unavailable. */
+    const calls = mergeCalls(
+      cardTable({ owner: OWNER, tokenId: SENDER_ID, allowance: 100n }),
+      liveTable(OWNER),
+    );
+    const { w } = await setup({ calls, api: false });
+    await forge(w, "apic0003", {
+      flow: "card",
+      version: 1,
+      owner: OWNER,
+      txs: [],
+      step: "ready",
+      tokenId: SENDER_ID,
+      operation: { kind: "create" },
+      cap: { currency: "EUR24", amount: 100n },
+    });
+    await expect(w.f24.flows.advance(w.group, "apic0003")).rejects.toMatchObject({
+      category: "api-unavailable",
+    });
+    await w.destroy();
+  }, 30_000);
+
+  it("sends the cap approve leg without the api when the allowance misses", async () => {
+    const calls = mergeCalls(
+      cardTable({ owner: OWNER, tokenId: SENDER_ID, allowance: 0n }),
+      liveTable(OWNER),
+    );
+    const { w, chain } = await setup({ calls, api: false });
+    await forge(w, "apic0004", {
+      flow: "card",
+      version: 1,
+      owner: OWNER,
+      txs: [],
+      step: "ready",
+      tokenId: SENDER_ID,
+      operation: { kind: "create" },
+      cap: { currency: "EUR24", amount: 100n },
+    });
+    const sending = w.f24.flows.advance(w.group, "apic0004");
+    sending.catch(() => undefined);
+    await until(() => openRequests(w).length === 1, 5000);
+    await approveNext(w);
+    const sent = await sending;
+    expect(sent.state.step).toBe("tx");
+    expect(chain.sent).toHaveLength(1);
+    await w.destroy();
+  }, 30_000);
+
+  it("confirms a set-cap whose allowance already matches — no api, no request", async () => {
+    const calls = mergeCalls(
+      cardTable({ owner: OWNER, tokenId: SENDER_ID, allowance: 50n }),
+      liveTable(OWNER),
+    );
+    const { w, chain } = await setup({ calls, api: false });
+    await forge(w, "apic0005", {
+      flow: "card",
+      version: 1,
+      owner: OWNER,
+      txs: [],
+      step: "ready",
+      tokenId: SENDER_ID,
+      operation: { kind: "set-cap", currency: "EUR24", amount: 50n },
+    });
+    const done = await w.f24.flows.advance(w.group, "apic0005");
+    expect(done.state.step).toBe("confirmed");
+    expect(openRequests(w)).toStrictEqual([]);
+    expect(chain.sent).toHaveLength(0);
+    await w.destroy();
+  }, 30_000);
+
+  it("reconciles an in-flight cap approve without the api", async () => {
+    const { w, chain } = await setup({ calls: liveTable(OWNER), api: false, autoBlock: true });
+    await forge(w, "apic0006", {
+      flow: "card",
+      version: 1,
+      owner: OWNER,
+      txs: [{ purpose: "approve", phase: "sending", fromBlock: B, nonce: NONCE }],
+      step: "tx",
+      tokenId: SENDER_ID,
+      operation: { kind: "create" },
+      cap: { currency: "EUR24", amount: 100n },
+    });
+    const done = await w.f24.flows.advance(w.group, "apic0006");
+    expect(done.state.step).toBe("not-sent");
+    expect(chain.sent).toHaveLength(0);
+    await w.destroy();
+  }, 30_000);
+
+  it.each(["tourist", "kyc"] as const)(
+    "refuses an onboarding %s poll without the api",
+    async (step) => {
+      const { w } = await setup({ calls: liveTable(OWNER), api: false });
+      await forge(w, `apio${step === "tourist" ? "0001" : "0002"}`, {
+        flow: "onboarding",
+        version: 1,
+        owner: OWNER,
+        txs: [{ purpose: "main", phase: "confirmed", fromBlock: B, nonce: NONCE, hash: MINT_HASH }],
+        step,
+        tokenId: SENDER_ID,
+        payment: "eth",
+        quote: { input: 1000n, blockNumber: B },
+        ...(step === "kyc" ? { kyc: "pending-scan" as const } : {}),
+      });
+      await expect(
+        w.f24.flows.advance(w.group, `apio${step === "tourist" ? "0001" : "0002"}`),
+      ).rejects.toMatchObject({ category: "api-unavailable" });
+      await w.destroy();
+    },
+    30_000,
+  );
+
+  it("reconciles an in-flight onboarding mint without the api", async () => {
+    const { w, chain } = await setup({ calls: liveTable(OWNER), api: false, autoBlock: true });
+    await forge(w, "apio0003", {
+      flow: "onboarding",
+      version: 1,
+      owner: OWNER,
+      txs: [{ purpose: "main", phase: "sending", fromBlock: B, nonce: NONCE }],
+      step: "tx",
+      tokenId: SENDER_ID,
+      payment: "eth",
+      quote: { input: 1000n, blockNumber: B },
+    });
+    const done = await w.f24.flows.advance(w.group, "apio0003");
+    expect(done.state.step).toBe("not-sent");
+    expect(chain.sent).toHaveLength(0);
     await w.destroy();
   }, 30_000);
 });

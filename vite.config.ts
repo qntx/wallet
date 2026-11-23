@@ -160,7 +160,11 @@ const otherOverrides: OxlintOverride[] = [
     },
   },
   {
-    files: ["packages/wallet-kernel/tests/**", "packages/wallet-worker/tests/hermes/**"],
+    files: [
+      "packages/wallet-kernel/tests/**",
+      "packages/wallet-worker/tests/hermes/**",
+      "packages/wallet-engine/tests/hermes/**",
+    ],
     rules: {
       // The seeded PRNG (mulberry32) and the Hermes UTF-8/xorshift shims are integer
       // arithmetic on purpose.
@@ -247,6 +251,8 @@ const config: UserConfig = defineConfig({
       "**/*.toml",
       // Generated vectors stay byte-frozen.
       "vectors/**",
+      // Recorded Fiat24 API/RPC bodies stay byte-frozen (provenance in each SOURCE.json).
+      "packages/wallet-engine/tests/fixtures/fiat24/**",
       // Generated kernel payloads stay byte-frozen.
       "packages/wallet-native/kernel/generated/**",
       "packages/wallet-engine/src/connect/inject.generated.ts",

@@ -607,6 +607,51 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `apps/harness`: a card-surfaces page (`EXPO_PUBLIC_CARD_SURFACES=1`) that drives both surfaces
   through a real kernel runtime with a fake card reader, and a leak check proving the typed code
   never appears in any main-runtime message, log, event payload or React state.
+- `@qntx/wallet-engine/apps/fiat24`: the Fiat24 app (Arbitrum One), built on `@qntx/fiat24` 0.1.0
+  (pinned exactly). `fiat24({ fetch? })` is the definition `createApps` lists; the core `apps`
+  entry never loads it.
+  - `account(group)` reads the group's `evm.bip44` address on `eip155:42161` through a viem client
+    built from the engine's network controller: with an independent endpoint every pinned read must
+    agree on both, the lower head is pinned, pending nonces take the higher count, a receipt missing
+    on either side is missing, and a failing corroborator fails the read. The SDK's pinned
+    deployment check stays on; a drift is the typed status `contract-changed`, not an error.
+    `live(group)` polls every 15 s (`FIAT24_POLL_MS`) while `setVisible(true)` and unlocked.
+  - `flows`: `start`/`advance`/`list`/`discard`/`payoutSettlement` over the SDK's resumable
+    transfer, exchange (exact-in and exact-out with the bounded approval), payout (contact, bank,
+    Swiss QR), top-up, onboarding and card flows. Each state is stored as `encodeFlowState` text
+    in the app's EngineStore collection (no PII); payout drafts stay in memory. Advances run one at
+    a time per group; a new flow is refused while another is `sending`, `unknown` or undecodable;
+    reconciliation after unlock and every 15 s while visible only advances flows whose last
+    transaction is `sending`/`submitted`/`unknown`, so it never sends. Onboarding and top-up need
+    the app to be `available` in the caller's jurisdiction.
+  - Every SDK write is exactly one request attributed `{ kind: "app", id: "fiat24" }`: transactions
+    are `evm-sign` `evm.transaction` requests at the SDK-chosen nonce; session grants are
+    `evm.fiat24-session` requests. `Fiat24Flow.refusal` says why a send did not happen.
+  - `session(group)`: profile, cards, card display token and statements through a lazy SDK session
+    whose grant lives only in memory and ends on lock, disable and wallet removal; disable also
+    rejects the group's open requests.
+  - `api`: rates, payment purposes, countries, country cities, banks, `bankByIban`, `kycUrl`.
+  - The REST API has no CORS: it is reached only through the injected `fetch` (React Native: the
+    native fetch; Web: a host proxy that rewrites the URL). Without it every API-backed feature
+    throws `Fiat24AppError` `api-unavailable`.
+  - Errors are `Fiat24AppError` (`category`; `code` carries the SDK's `Fiat24ErrorCode` for
+    `protocol`); none carries a `cause`.
+- `@qntx/wallet-engine`: `EvmSignInput.nonce` pins the nonce of an app's `evm.transaction`;
+  `prepare` refuses with the new `NonceConflictError` (`expected`, `next`) before anything is shown
+  when the sender's next free nonce differs.
+- `@qntx/wallet-engine`: app origins may prepare `evm.transaction` and `evm.fiat24-session`
+  requests (decoded and prompted like any other); dApps still cannot request a Fiat24 session and
+  the wallet's internal requests still sign only typed data.
+- `@qntx/wallet-engine`: `RequestEndedError.signed` — whether the request had reached `signed`
+  when it ended; `false` proves nothing it produced was broadcast.
+- `@qntx/wallet-engine/apps`: `AppStorage.list(group)`.
+- `@qntx/wallet-engine`: the chain decoder's intent warnings become risk findings for every
+  origin. `RiskFinding.code` gains `fiat24-unlimited-approval` and `fiat24-account-move`
+  (`danger`), `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-exact-out-unbounded`,
+  `fiat24-payee-offchain` and `fiat24-account-burn` (`warning`); a warning the decoder marks
+  `level: "danger"` is always a `danger` finding.
+- **gateway:** `/v1/eligibility` answers `fiat24`: blocked in the sanctioned set, close-only where
+  Fiat24's `/countries` bans the nationality (US and territories, RU).
 
 ### Changed
 
@@ -1080,6 +1125,12 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   pod weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
   entitlement, `NFCReaderUsageDescription` and the ISO 7816 select identifiers
   `F0716E74780101`, `D2760000850101` (see the package README).
+- **BREAKING:** `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed`
+  argument.
+- **build:** `bunfig.toml` exempts `@qntx/fiat24` from the 7-day release cooldown until
+  2026-11-30 (0.1.0 was published 2026-11-23 with SLSA provenance from qntx/fiat24 v0.1.0;
+  bun 1.4.0 ignores `name@version` entries). Remove the entry after that date.
+- **build:** size budget `apps-fiat24` 118 KiB (measured 115 557 B: the bundled SDK).
 
 ### Removed
 

@@ -15,6 +15,7 @@ import type { Client } from "viem";
 import type { Fiat24Api } from "@qntx/fiat24/api";
 import type { PayoutSettlement } from "@qntx/fiat24/chain";
 import type { Currency, PayoutCurrency, Recipient } from "@qntx/fiat24/core";
+import { isFiat24Error } from "@qntx/fiat24/core";
 import {
   advanceCard,
   advanceExchange,
@@ -68,6 +69,34 @@ const FLOW_PREFIX = "flow/";
 const FIAT24_RECONCILE_MS = 15_000;
 /** Reconcile-only phases — `advanceTx` in these polls receipts/nonces and can never sign. */
 const UNRESOLVED: ReadonlySet<TxPhase> = new Set(["sending", "submitted", "unknown"]);
+
+/**
+ * Whether the state's next move must reach api.fiat24.com — read off the SDK's own dispatch: a
+ * payout `draft` with a `bank`/`swiss-qr` target (`verifyTarget` → `checkedSession`,
+ * flows/payout.ts:313 — contact targets skip the session); a card `ready` with no chain leg
+ * (`advanceApiWrite` → `checkedSession`, flows/card.ts:438,256) or a `tx`/`confirmed` whose last
+ * record is a `main` write; onboarding `tourist`/`kyc` (`api.kycStatus`, flows/onboarding.ts:313).
+ * The one reach it cannot see statically — a card `ready` with a chain leg (cap or set-cap), where
+ * the write follows only when the allowance already matches — throws `session-required` in the SDK
+ * and the advance catch maps it to the same `api-unavailable`.
+ */
+const needsApi = (state: FlowState | PayoutDraft): boolean => {
+  switch (state.flow) {
+    case "payout":
+      return state.step === "draft" && state.target.kind !== "contact";
+    case "card":
+      if (state.step === "tx" || state.step === "confirmed") {
+        return state.txs.at(-1)?.purpose === "main";
+      }
+      return (
+        state.step === "ready" && state.cap === undefined && state.operation.kind !== "set-cap"
+      );
+    case "onboarding":
+      return state.step === "tourist" || state.step === "kyc";
+    default:
+      return false;
+  }
+};
 
 export type Fiat24FlowEntry = {
   readonly id: string;
@@ -405,6 +434,12 @@ export function createFiat24Flows(options: {
     } else {
       state = draft;
     }
+    /* Refused before any SDK call: the state's next move reaches api.fiat24.com and none is
+       wired. An in-flight chain record (approve `sending`, mint `submitted`) is never in this
+       table — its advance polls the chain, not the API. */
+    if (options.api === undefined && needsApi(state)) {
+      throw new Fiat24AppError("api-unavailable", "the fiat24 api is not configured");
+    }
     const capture: { refusal?: Fiat24Refusal } = {};
     let next: FlowState;
     try {
@@ -430,6 +465,12 @@ export function createFiat24Flows(options: {
           break;
       }
     } catch (error) {
+      /* The one API reach `needsApi` cannot see: a card `ready` whose chain leg reads satisfied
+         falls into `advanceApiWrite` mid-advance. `session-required` can only mean no session was
+         wired (depsFor opens one whenever `options.api` exists) — it is `api-unavailable`. */
+      if (isFiat24Error(error) && error.code === "session-required") {
+        throw new Fiat24AppError("api-unavailable", "the fiat24 api is not configured");
+      }
       throw fromSdk(error);
     }
     if (!persistedId) {

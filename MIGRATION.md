@@ -2017,3 +2017,78 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Fiat24 app, pinned app nonces and intent-warning risk
+
+Compiled snippet: `tests/migration/fiat24-app.ts`.
+
+### Adding the Fiat24 app
+
+```ts
+import { createApps } from "@qntx/wallet-engine/apps";
+import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
+
+const apps = createApps({ ...options, apps: [fiat24({ fetch: fiat24Fetch })] });
+await apps.controller.acknowledgeTerms(group, "fiat24");
+await apps.controller.enable(group, "fiat24");
+
+const account = await apps.fiat24.account(group); // "no-account" | AccountStatus | "stale" | "contract-changed"
+let flow = await apps.fiat24.flows.start(group, {
+  flow: "transfer",
+  currency: "EUR24",
+  amount: 1000n,
+  to: { tokenId: 469709n },
+});
+flow = await apps.fiat24.flows.advance(group, flow.id); // opens one request; approve it as usual
+```
+
+- Enabling needs the terms flag and an eligibility answer of `available` or `close-only`. The
+  gateway answers `fiat24` once it runs this release; until then `enable` fails closed.
+- Call `advance` again until the flow is terminal (`confirmed`, `failed`, `not-sent`, or the
+  flow's own end states). Pace it on a flow whose last transaction is `sending`/`unknown`
+  (for example every 15 s): the app also reconciles such flows itself after unlock and every 15 s
+  while `setVisible(true)`, and never sends while doing so.
+- `refusal` on the returned flow says why nothing was sent (`rejected`, `expired`,
+  `invalidated`, `failed-before-signing`, `nonce-conflict`, `prepare-failed`, `invalid-call`);
+  advancing again prompts again.
+- `start` refuses (`flow-unresolved`) while another flow of the group has a `sending` or `unknown`
+  transaction, or a stored state that no longer decodes. `list` reports the latter as
+  `{ id, invalid: true }`; only `discard` removes it — have the user check the account's activity
+  first, because it can never be reconciled.
+
+### The Fiat24 REST API needs an injected `fetch`
+
+`api.fiat24.com` sends no CORS headers, so a browser cannot call it directly and the gateway does
+not proxy it. Pass `fiat24({ fetch })`:
+
+- React Native: the platform `fetch`, uninstrumented (exclude `api.fiat24.com` from Sentry,
+  Flipper and logging interceptors; disable its HTTP cache). React Native's `fetch` follows
+  redirects whatever `redirect` says; inject one that does not if that matters to you.
+- Web: a fetch that sends the request to your own proxy for `https://api.fiat24.com`. The proxy
+  sees the session grant headers, which are a bearer credential for the account until their
+  deadline.
+- Without `fetch`, the chain flows (transfer, exchange, top-up, payouts to a saved contact,
+  onboarding up to KYC) still work. Secured reads, the public API reads, and advancing a bank or
+  Swiss QR payout draft, a card flow's API step or onboarding's KYC step throw `Fiat24AppError`
+  `api-unavailable`.
+
+### Engine request changes
+
+- `EvmSignInput.nonce` (app `evm.transaction` only) pins the nonce; `prepare` throws
+  `NonceConflictError` before anything is shown when the sender's next free nonce differs, and a
+  plain error when `nonce` is set anywhere else.
+- App origins may prepare `evm.transaction` and `evm.fiat24-session` requests. Host approval UIs
+  must render both for `{ kind: "app" }` origins, not only typed data.
+- `new RequestEndedError(stage, message, signed)`: the third argument is required. Read
+  `error.signed` to tell whether anything may have been broadcast.
+- `AppStorage` has `list(group)`; a custom `AppStorage` implementation must provide it.
+
+### New risk codes
+
+`RiskFinding.code` gains `fiat24-unlimited-approval`, `fiat24-account-move` (danger) and
+`fiat24-internal-account`, `fiat24-card-pull`, `fiat24-exact-out-unbounded`,
+`fiat24-payee-offchain`, `fiat24-account-burn` (warning). They come from the decoder's intent
+warnings, for every origin, so an exhaustive `switch` over `RiskFinding["code"]` needs these cases.
+`requiredAcknowledgement` asks for the danger-level findings only (in `risk`, plus every request
+check in `checks`): an `approve` must echo those back exactly, while warning-level findings never
+require acknowledgement.
