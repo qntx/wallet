@@ -497,7 +497,10 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-Chf2pSL0.mjs
+	// packages/wallet/dist/types.mjs
+	/** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
+	var HARDWARE_DEVICES = ["keystone"];
+	// packages/wallet/dist/core-BVJx7-H0.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -510,42 +513,42 @@
 			_defineProperty(this, "name", "ValidationError");
 		}
 	};
-	function fail$3() {
+	function fail$6() {
 		throw new ValidationError();
 	}
 	function literal(expected) {
 		return (value) => {
-			if (value !== expected) fail$3();
+			if (value !== expected) fail$6();
 			return expected;
 		};
 	}
 	var nullValue = literal(null);
-	var bool = (value) => {
-		if (typeof value !== "boolean") fail$3();
+	var bool$1 = (value) => {
+		if (typeof value !== "boolean") fail$6();
 		return value;
 	};
 	function int(min, max) {
 		return (value) => {
-			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$3();
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$6();
 			return value;
 		};
 	}
 	function str(max, pattern) {
 		return (value) => {
-			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$3();
+			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$6();
 			return value;
 		};
 	}
-	function bytes(min, max) {
+	function bytes$1(min, max) {
 		const high = max !== null && max !== void 0 ? max : min;
 		return (value) => {
-			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$3();
+			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$6();
 			return value;
 		};
 	}
 	function arr(item, max, min = 0) {
 		return (value) => {
-			if (!Array.isArray(value) || value.length < min || value.length > max) fail$3();
+			if (!Array.isArray(value) || value.length < min || value.length > max) fail$6();
 			const out = [];
 			for (const element of value) out.push(item(element));
 			return out;
@@ -564,18 +567,18 @@
 	function obj(shape) {
 		const keys = Object.keys(shape);
 		return (value) => {
-			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$3();
+			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$6();
 			const record = value;
-			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$3();
+			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$6();
 			const out = {};
 			for (const key of keys) {
 				const field = shape[key];
-				if (field === void 0) fail$3();
+				if (field === void 0) fail$6();
 				const raw = record[key];
 				if (field instanceof Opt) {
 					if (raw !== void 0) out[key] = field.validator(raw);
 				} else {
-					if (!Object.hasOwn(record, key)) fail$3();
+					if (!Object.hasOwn(record, key)) fail$6();
 					out[key] = field(raw);
 				}
 			}
@@ -594,12 +597,12 @@
 	*/
 	function record(key, value, max) {
 		return (input) => {
-			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$3();
+			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$6();
 			const out = {};
 			const entries = Object.entries(input);
-			if (entries.length > max) fail$3();
+			if (entries.length > max) fail$6();
 			for (const [name, item] of entries) {
-				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$3();
+				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$6();
 				out[key(name)] = value(item);
 			}
 			return out;
@@ -613,7 +616,7 @@
 			} catch (error) {
 				if (!(error instanceof ValidationError)) throw error;
 			}
-			return fail$3();
+			return fail$6();
 		};
 	}
 	/** Validates a value and returns it, or undefined on a shape mismatch. */
@@ -625,6 +628,16 @@
 			throw error;
 		}
 	}
+	/**
+	* The core method table: vault, wallet and data-key commands — nothing protocol-specific. "Create
+	* or import" commands (createWithPasskey/restoreWithPasskey/createMnemonic/importMnemonic) are
+	* `session: false` here because the rule is dynamic: with an uninitialized vault they carry
+	* `factor` and establish the vault in one commit; with an established vault `factor` must be absent
+	* and a valid session is required.
+	*
+	* The shared wire validators (factor, wallet info, ids) live here too so the nostr module's table
+	* can reuse them — `protocol/nostr.ts` imports only from this file.
+	*/
 	var MAX_TEXT = 262144;
 	var MAX_TAGS = 1024;
 	var MAX_TAG_ITEM = 4096;
@@ -648,19 +661,19 @@
 	var identityIndex = int(0, 2147483646);
 	var factor = union(obj({ kind: literal("device") }), obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
-		password: bytes(1, 1024)
+		password: bytes$1(1, 1024)
 	}), obj({
 		kind: literal("passkey"),
-		credentialId: bytes(1, 1023),
-		prf: bytes(32)
+		credentialId: bytes$1(1, 1023),
+		prf: bytes$1(32)
 	}));
 	var verifier = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
-		password: bytes(1, 1024)
+		password: bytes$1(1, 1024)
 	}), obj({
 		kind: literal("passkey"),
-		credentialId: bytes(1, 1023),
-		prf: bytes(32)
+		credentialId: bytes$1(1, 1023),
+		prf: bytes$1(32)
 	}));
 	var factorInfo$1 = union(obj({
 		kind: literal("device"),
@@ -684,9 +697,9 @@
 	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
 	var hostEvidence = {
 		ceremony: literal("host"),
-		credentialId: bytes(1, 1023),
-		prfWallet: bytes(32),
-		synced: bool,
+		credentialId: bytes$1(1, 1023),
+		prfWallet: bytes$1(32),
+		synced: bool$1,
 		factor: opt(factor)
 	};
 	var createWithPasskeyParams = union(obj(hostEvidence), obj({
@@ -706,12 +719,12 @@
 	var hostBackupPasskey = obj({
 		kind: literal("passkey"),
 		ceremony: literal("host"),
-		credentialId: bytes(1, 1023),
-		prfBackup: bytes(32)
+		credentialId: bytes$1(1, 1023),
+		prfBackup: bytes$1(32)
 	});
 	var backupPassword = obj({
 		kind: literal("password"),
-		password: bytes(1, 1024)
+		password: bytes$1(1, 1024)
 	});
 	var backupFactor = union(backupPassword, hostBackupPasskey, obj({
 		kind: literal("passkey"),
@@ -726,19 +739,32 @@
 		rpId: str(253, RP_ID),
 		backupSalt: label(64)
 	}));
-	var walletInfo$1 = obj({
+	/** A hardware-signing device family on the wire; each signer adds a literal to HARDWARE_DEVICES. */
+	var hardwareDevice = union(...HARDWARE_DEVICES.map((device) => literal(device)));
+	var DEVICE_TEXT$2 = /^[\u0020-\u007E]{1,64}$/;
+	var vaultWalletInfo = obj({
+		custody: literal("vault"),
 		walletId,
 		origin: union(literal("passkey"), literal("mnemonic")),
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
-		passphrase: bool,
+		passphrase: bool$1,
 		createdAt: safeTime$1
 	});
+	var walletInfo$1 = union(vaultWalletInfo, obj({
+		custody: literal("hardware"),
+		walletId,
+		device: hardwareDevice,
+		fingerprint: str(8, /^[0-9a-f]{8}$/),
+		model: opt(str(64, DEVICE_TEXT$2)),
+		firmware: opt(str(64, DEVICE_TEXT$2)),
+		createdAt: safeTime$1
+	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
-	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
+	var passphraseBytes = bytes$1(1, 1024);
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
 	var createdResult = obj({
-		wallet: walletInfo$1,
+		wallet: vaultWalletInfo,
 		session: sessionId
 	});
 	var CORE_METHODS = {
@@ -788,7 +814,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				enabled: bool,
+				enabled: bool$1,
 				verify: verifier
 			}),
 			result: nullValue
@@ -797,7 +823,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				enabled: bool,
+				enabled: bool$1,
 				verify: verifier
 			}),
 			result: nullValue
@@ -823,7 +849,7 @@
 			}),
 			result: obj({
 				draft: draftId,
-				words: bytes(16, 1024),
+				words: bytes$1(16, 1024),
 				quiz: arr(int(0, 23), 3, 3)
 			})
 		},
@@ -832,7 +858,7 @@
 			presence: true,
 			params: obj({
 				draft: draftId,
-				answers: arr(bytes(1, 64), 3, 3),
+				answers: arr(bytes$1(1, 64), 3, 3),
 				passphrase: opt(passphraseBytes)
 			}),
 			result: createdResult
@@ -877,7 +903,7 @@
 				factor: opt(factor)
 			}),
 			result: obj({
-				wallets: arr(walletInfo$1, 1e3),
+				wallets: arr(vaultWalletInfo, 1e3),
 				passphraseRequired: arr(str(128), 1e3),
 				session: sessionId
 			})
@@ -886,7 +912,7 @@
 			session: false,
 			presence: true,
 			params: obj({
-				mnemonic: bytes(1, 1024),
+				mnemonic: bytes$1(1, 1024),
 				passphrase: opt(passphraseBytes),
 				factor: opt(factor)
 			}),
@@ -900,7 +926,7 @@
 				walletId
 			}),
 			result: obj({
-				mnemonic: bytes(16, 1024),
+				mnemonic: bytes$1(16, 1024),
 				passphrase: opt(passphraseBytes)
 			})
 		},
@@ -917,14 +943,14 @@
 			session: true,
 			presence: false,
 			params: obj({ purpose: str(32, /^[a-z0-9-]{1,32}$/) }),
-			result: bytes(32)
+			result: bytes$1(32)
 		},
 		"keys.import": {
 			session: true,
 			presence: true,
 			params: obj({
 				family: keyFamily,
-				secret: bytes(32, 64)
+				secret: bytes$1(32, 64)
 			}),
 			result: keyInfo
 		},
@@ -950,7 +976,7 @@
 				verify: verifier,
 				keyId
 			}),
-			result: bytes(1, 256)
+			result: bytes$1(1, 256)
 		}
 	};
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectSpread2.js
@@ -978,7 +1004,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DC18CY4v.mjs
+	// packages/wallet/dist/protocol-D1KgHYsD.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1092,7 +1118,7 @@
 		kind: literal("evm.personal-message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes(0, 65536)
+		message: bytes$1(0, 65536)
 	}), obj({
 		kind: literal("evm.fiat24-session"),
 		network: caip2,
@@ -1108,7 +1134,7 @@
 		kind: literal("solana.transaction"),
 		network: caip2,
 		account: accountRef,
-		message: bytes(1, 4096),
+		message: bytes$1(1, 4096),
 		lookupTables: opt(arr(obj({
 			address: solanaAddress,
 			addresses: arr(solanaAddress, 256)
@@ -1117,7 +1143,7 @@
 		kind: literal("solana.message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes(1, 65536),
+		message: bytes$1(1, 65536),
 		format: literal("raw")
 	}), obj({
 		kind: literal("bitcoin.psbt"),
@@ -1127,7 +1153,7 @@
 			walletId,
 			groupIndex
 		}),
-		psbt: bytes(1, 131072),
+		psbt: bytes$1(1, 131072),
 		sign: arr(obj({
 			index: int(0, 1024),
 			template: btcTemplate
@@ -1145,12 +1171,12 @@
 		kind: literal("tron.transaction"),
 		network: caip2,
 		account: accountRef,
-		rawData: bytes(1, 512e3)
+		rawData: bytes$1(1, 512e3)
 	}), obj({
 		kind: literal("tron.message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes(1, 65536)
+		message: bytes$1(1, 65536)
 	}), obj({
 		kind: literal("tron.typed-data"),
 		network: caip2,
@@ -1159,22 +1185,29 @@
 	}));
 	var signResult = union(obj({
 		kind: literal("evm.transaction"),
-		signedTransaction: bytes(1, 65536)
+		signedTransaction: bytes$1(1, 65536)
 	}), obj({
 		kind: union(literal("evm.personal-message"), literal("evm.fiat24-session"), literal("evm.typed-data")),
-		signature: bytes(65, 65)
+		signature: bytes$1(65, 65)
 	}), obj({
 		kind: union(literal("solana.transaction"), literal("solana.message")),
-		signature: bytes(64, 64)
+		signature: bytes$1(64, 64)
 	}), obj({
 		kind: literal("bitcoin.psbt"),
-		signedPsbt: bytes(1, 131072)
+		signedPsbt: bytes$1(1, 131072)
 	}), obj({
 		kind: literal("bitcoin.message"),
 		signature: str(512)
 	}), obj({
 		kind: union(literal("tron.transaction"), literal("tron.message"), literal("tron.typed-data")),
-		signature: bytes(65, 65)
+		signature: bytes$1(65, 65)
+	}));
+	var chainAccount = union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)), obj({
+		template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
+		network: caip2,
+		xpub: str(111, /^[a-zA-Z0-9]{111}$/),
+		fingerprint: str(8, /^[0-9a-f]{8}$/),
+		path: str(11, /^m\/[0-9'/]+$/)
 	}));
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
@@ -1186,13 +1219,7 @@
 				template,
 				network: caip2
 			}),
-			result: union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)), obj({
-				template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
-				network: caip2,
-				xpub: str(111, /^[a-zA-Z0-9]{111}$/),
-				fingerprint: str(8, /^[0-9a-f]{8}$/),
-				path: str(11, /^m\/[0-9'/]+$/)
-			}))
+			result: chainAccount
 		},
 		"chain.sign": {
 			session: true,
@@ -1202,6 +1229,108 @@
 				verify: verifier
 			}),
 			result: signResult
+		}
+	};
+	var UR_TYPE = /^[a-z0-9-]{1,64}$/;
+	var DERIVATION_PATH = /^m(\/[0-9]+'?){1,10}$/;
+	var qrPayload = obj({
+		type: str(64, UR_TYPE),
+		cbor: bytes$1(1, 262144)
+	});
+	var deviceRequest = union(obj({
+		kind: literal("qr"),
+		show: opt(qrPayload),
+		scan: arr(str(64, UR_TYPE), 4, 1)
+	}), obj({
+		kind: literal("message"),
+		data: bytes$1(1, 65536)
+	}), obj({
+		kind: literal("compare"),
+		address: str(128, /^.+$/),
+		path: str(128, DERIVATION_PATH)
+	}));
+	var deviceResponse = union(obj({
+		kind: literal("qr"),
+		ur: qrPayload
+	}), obj({
+		kind: literal("message"),
+		data: bytes$1(1, 65536)
+	}), obj({
+		kind: literal("compare"),
+		matched: bool$1
+	}));
+	var deviceDisplay = union(literal("clear"), literal("blind"));
+	var hardwareOperation = union(obj({
+		kind: literal("pair"),
+		device: hardwareDevice
+	}), obj({
+		kind: literal("accounts"),
+		walletId,
+		groupIndex,
+		templates: arr(template, 7, 1),
+		network: caip2
+	}), obj({
+		kind: literal("sign"),
+		request: signRequest
+	}), obj({
+		kind: literal("verify-address"),
+		walletId,
+		groupIndex,
+		template,
+		network: caip2,
+		index: opt(int(0, 2147483647))
+	}));
+	var hardwareResult = union(obj({
+		kind: literal("pair"),
+		wallet: walletInfo$1
+	}), obj({
+		kind: literal("accounts"),
+		accounts: arr(chainAccount, 64)
+	}), obj({
+		kind: literal("sign"),
+		result: signResult
+	}), obj({
+		kind: literal("verify-address"),
+		address: str(128, /^.+$/),
+		method: union(literal("device"), literal("compare"))
+	}));
+	var hardwareStep = union(obj({
+		kind: literal("exchange"),
+		device: hardwareDevice,
+		request: deviceRequest,
+		display: opt(deviceDisplay)
+	}), obj({
+		kind: literal("done"),
+		result: hardwareResult
+	}));
+	var opId = str(32, /^[0-9a-f]{32}$/);
+	var HARDWARE_METHODS = {
+		"hardware.begin": {
+			session: true,
+			presence: true,
+			params: obj({
+				op: hardwareOperation,
+				verify: opt(verifier)
+			}),
+			result: obj({
+				opId,
+				step: hardwareStep
+			})
+		},
+		"hardware.step": {
+			session: true,
+			presence: true,
+			params: obj({
+				opId,
+				response: deviceResponse
+			}),
+			result: hardwareStep
+		},
+		"hardware.cancel": {
+			session: true,
+			presence: false,
+			params: obj({ opId }),
+			result: nullValue
 		}
 	};
 	var hex128 = str(128, /^[0-9a-f]{128}$/);
@@ -1247,7 +1376,7 @@
 	});
 	var nostrExportFormat = union(obj({ kind: literal("nsec") }), obj({
 		kind: literal("ncryptsec"),
-		password: bytes(1, 1024)
+		password: bytes$1(1, 1024)
 	}));
 	var textParams = obj({
 		publicKey,
@@ -1289,7 +1418,7 @@
 				publicKey,
 				format: nostrExportFormat
 			}),
-			result: bytes(16, 4096)
+			result: bytes$1(16, 4096)
 		},
 		"nostr.signEvent": {
 			session: true,
@@ -1373,7 +1502,7 @@
 	var sessionInfo$1 = obj({
 		address: evmAddress,
 		scheme: schemeId,
-		supported: bool,
+		supported: bool$1,
 		walletId,
 		groupIndex,
 		owner: evmAddress,
@@ -1419,7 +1548,7 @@
 				address: evmAddress,
 				params: paramsValue
 			}),
-			result: obj({ signature: bytes(65, 65) })
+			result: obj({ signature: bytes$1(65, 65) })
 		}
 	};
 	/**
@@ -1449,10 +1578,10 @@
 	var identifier = str(64, /^[0-9a-f]{64}$/);
 	var leafId = str(64);
 	var transferId = str(64);
-	var bytes32$1 = bytes(32);
-	var bytes33 = bytes(33);
-	var bytes64 = bytes(64);
-	var ciphertext = bytes(1, MAX_CIPHERTEXT_BYTES);
+	var bytes32$1 = bytes$1(32);
+	var bytes33 = bytes$1(33);
+	var bytes64 = bytes$1(64);
+	var ciphertext = bytes$1(1, MAX_CIPHERTEXT_BYTES);
 	var sats = int(0, MAX_SATS$1);
 	var sparkLeafKey = union(obj({
 		type: literal("leaf"),
@@ -1480,14 +1609,14 @@
 		commitment: signingCommitment
 	});
 	var signingTarget = obj({
-		transaction: bytes(1, MAX_TX_BYTES),
+		transaction: bytes$1(1, MAX_TX_BYTES),
 		inputIndex: int(0, 2147483647),
 		prevouts: arr(obj({
-			script: bytes(0, MAX_SCRIPT_BYTES),
+			script: bytes$1(0, MAX_SCRIPT_BYTES),
 			amount: sats
 		}), MAX_PREVOUTS)
 	});
-	var adaptorPublicKey = opt(union(bytes(0), bytes(33)));
+	var adaptorPublicKey = opt(union(bytes$1(0), bytes$1(33)));
 	var frostSignJob = obj({
 		key: sparkKey,
 		target: signingTarget,
@@ -1496,8 +1625,8 @@
 		operatorCommitments: arr(operatorCommitment, MAX_OPERATORS),
 		adaptorPublicKey,
 		exit: opt(obj({
-			connectorTx: bytes(1, MAX_TX_BYTES),
-			exitTx: bytes(1, MAX_TX_BYTES)
+			connectorTx: bytes$1(1, MAX_TX_BYTES),
+			exitTx: bytes$1(1, MAX_TX_BYTES)
 		}))
 	});
 	var frostAggregateJob = obj({
@@ -1520,22 +1649,22 @@
 		txid: bytes32$1,
 		vout: int(0, 2147483647),
 		creditAmountSats: sats,
-		sspSignature: bytes(1, 1024)
+		sspSignature: bytes$1(1, 1024)
 	});
 	var identityStatement = union(obj({
 		kind: literal("so-challenge"),
-		challenge: bytes(1, 4096)
+		challenge: bytes$1(1, 4096)
 	}), obj({
 		kind: literal("ssp-challenge"),
 		protectedChallenge: str(8192)
 	}), obj({
 		kind: literal("transfer-package"),
 		transferId,
-		package: bytes(1, MAX_PACKAGE_BYTES)
+		package: bytes$1(1, MAX_PACKAGE_BYTES)
 	}), obj({
 		kind: literal("claim-package"),
 		transferId,
-		package: bytes(1, MAX_PACKAGE_BYTES)
+		package: bytes$1(1, MAX_PACKAGE_BYTES)
 	}), staticDepositClaimStatement, obj({
 		kind: literal("static-deposit-refund"),
 		network,
@@ -1550,10 +1679,10 @@
 		target: signingTarget
 	}), obj({
 		kind: literal("spark-invoice"),
-		invoice: bytes(1, 65536)
+		invoice: bytes$1(1, 65536)
 	}), obj({
 		kind: literal("token-transaction"),
-		partialTransaction: bytes(1, MAX_PACKAGE_BYTES)
+		partialTransaction: bytes$1(1, MAX_PACKAGE_BYTES)
 	}), obj({
 		kind: literal("lightning-address"),
 		action: literal("register"),
@@ -1569,7 +1698,7 @@
 		timestamp: safeTime$1
 	}));
 	var htlcTimeoutRequest = obj({
-		transaction: bytes(1, MAX_TX_BYTES),
+		transaction: bytes$1(1, MAX_TX_BYTES),
 		inputIndex: int(0, 2147483647),
 		prevoutAmountSats: sats,
 		paymentHash: bytes32$1,
@@ -1584,7 +1713,7 @@
 		}), MAX_LEAVES, 1)
 	});
 	var preparedTransfer = obj({
-		operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS),
+		operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS),
 		leaves: arr(obj({
 			leafId,
 			newPublicKey: bytes33,
@@ -1599,18 +1728,18 @@
 			secretCipher: ciphertext
 		}), MAX_LEAVES, 1)
 	});
-	var preparedClaim = obj({ operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS) });
+	var preparedClaim = obj({ operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS) });
 	var preparedLightningReceive = obj({
 		paymentHash: bytes32$1,
-		operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS)
+		operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS)
 	});
 	var staticDepositClaimRequest = obj({
 		index: int(0, 2147483647),
 		statement: staticDepositClaimStatement
 	});
 	var staticDepositClaimResult = obj({
-		encryptedSecretKey: bytes(1, MAX_CIPHERTEXT_BYTES),
-		signature: bytes(64, 128)
+		encryptedSecretKey: bytes$1(1, MAX_CIPHERTEXT_BYTES),
+		signature: bytes$1(64, 128)
 	});
 	var satsAmount = () => int(0, Number.MAX_SAFE_INTEGER);
 	var U128_MAX = 340282366920938463463374607431768211455n;
@@ -1632,9 +1761,9 @@
 		}),
 		obj({
 			kind: literal("token"),
-			tokenIdentifier: bytes(32),
+			tokenIdentifier: bytes$1(32),
 			receivers: arr(obj({
-				ownerPublicKey: bytes(33),
+				ownerPublicKey: bytes$1(33),
 				amount: decimalU128
 			}), 256, 1)
 		})
@@ -1642,7 +1771,7 @@
 	var approveIntent = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
-			identityPublicKey: bytes(33),
+			identityPublicKey: bytes$1(33),
 			amountSats: satsAmount()
 		}), 256, 1)
 	}), obj({
@@ -1654,12 +1783,12 @@
 	var approvalSummary = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
-			identityPublicKey: bytes(33),
+			identityPublicKey: bytes$1(33),
 			amountSats: satsAmount()
 		}), 256, 1)
 	}), obj({
 		kind: literal("lightning"),
-		paymentHash: bytes(32),
+		paymentHash: bytes$1(32),
 		invoiceAmountSats: opt(satsAmount()),
 		maxFeeSats: satsAmount()
 	}), ...outflowIntents);
@@ -1722,7 +1851,7 @@
 				account: account$1,
 				statement: identityStatement
 			}),
-			result: bytes(64, 128)
+			result: bytes$1(64, 128)
 		},
 		"spark.signKeySpend": {
 			session: true,
@@ -1873,20 +2002,20 @@
 		protocol: literal(3),
 		vault: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unsupported"), literal("unavailable")),
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
-		appLock: bool,
+		appLock: bool$1,
 		verification: union(literal("available"), literal("unavailable")),
 		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
 		backup: union(backupInfo, nullValue),
-		blindSigning: bool
+		blindSigning: bool$1
 	});
-	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
+	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
 		session: false,
 		presence: false,
 		params: nullValue,
 		result: statusPayload$1
-	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS);
+	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS), HARDWARE_METHODS);
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
@@ -1904,7 +2033,7 @@
 	}), obj({
 		v: literal(3),
 		event: literal("ceremony"),
-		active: bool
+		active: bool$1
 	});
 	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/utils.js
 	/**
@@ -8949,6 +9078,20 @@
 		if (record === void 0) throw new KernelError("not-found", "record not found");
 		return record;
 	}
+	/** Record kinds whose wallets sign outside the vault — they hold no seed. */
+	var EXTERNAL_CUSTODY_KINDS = /* @__PURE__ */ new Set(["hardware-wallet"]);
+	/**
+	* The `entropy` record for `walletId`, or the reason there is none: `unsupported` when the id names
+	* an externally signed wallet (its record exists but seals no seed) and `not-found` otherwise.
+	*/
+	function findSeedWallet(image, walletId) {
+		if (image.records.some((r) => EXTERNAL_CUSTODY_KINDS.has(r.kind) && r.id === walletId)) throw new KernelError("unsupported", "this wallet is signed outside the vault");
+		return findRecord(image, "entropy", walletId);
+	}
+	/** The wallet record for `walletId` under any custody — `wallet.delete` accepts them all. */
+	function findWalletRecord(image, walletId) {
+		return image.records.find((r) => (r.kind === "entropy" || EXTERNAL_CUSTODY_KINDS.has(r.kind)) && r.id === walletId);
+	}
 	/**
 	* Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
 	* not empty. `revision` comes from the caller: the anchor's floor plus one, so a vault image sealed
@@ -8999,9 +9142,10 @@
 			createdAt: header.createdAt
 		};
 	}
-	/** The `WalletInfo` an entropy record's public header reports. */
+	/** The `VaultWalletInfo` an entropy record's public header reports. */
 	function walletInfo(header) {
 		return {
+			custody: "vault",
 			walletId: header.walletId,
 			origin: header.origin,
 			words: header.words,
@@ -10436,7 +10580,7 @@
 		ripemd160 = /* @__PURE__ */ createHasher(() => new _RIPEMD160());
 	}));
 	// node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
-	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
+	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH$1, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
 	var init_bip32 = __esmMin((() => {
 		init_secp256k1();
 		init_hmac();
@@ -10458,7 +10602,7 @@
 			public: 76067358
 		};
 		HARDENED_OFFSET$2 = 2147483648;
-		MAX_DEPTH = 255;
+		MAX_DEPTH$1 = 255;
 		hash160$1 = (data) => ripemd160(sha256$1(data));
 		fromU32 = (data) => createView$1(data).getUint32(0, false);
 		toU32$1 = (n, title = "number") => {
@@ -10552,7 +10696,7 @@
 				const depth = (_opt$depth = opt.depth) !== null && _opt$depth !== void 0 ? _opt$depth : 0;
 				const index = (_opt$index = opt.index) !== null && _opt$index !== void 0 ? _opt$index : 0;
 				const parentFingerprint = (_opt$parentFingerprin = opt.parentFingerprint) !== null && _opt$parentFingerprin !== void 0 ? _opt$parentFingerprin : 0;
-				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH) throw new RangeError("HDKey: depth must be an integer in range 0..255");
+				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH$1) throw new RangeError("HDKey: depth must be an integer in range 0..255");
 				toU32$1(index, "index");
 				toU32$1(parentFingerprint, "parentFingerprint");
 				if (depth === 0 && (index !== 0 || parentFingerprint !== 0)) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
@@ -10575,7 +10719,7 @@
 				if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
 				if (/^[mM]'?$/.test(path)) return this;
 				const parts = path.replace(/^[mM]'?\//, "").split("/");
-				if (parts.length > MAX_DEPTH - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
+				if (parts.length > MAX_DEPTH$1 - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
 				let child = this;
 				for (const c of parts) {
 					const m = /^(\d+)('?)$/.exec(c);
@@ -10611,7 +10755,7 @@
 					parentFingerprint: this.fingerprint,
 					index
 				};
-				if (opt.depth > MAX_DEPTH) throw new Error("HDKey: depth exceeds the serializable value 255");
+				if (opt.depth > MAX_DEPTH$1) throw new Error("HDKey: depth exceeds the serializable value 255");
 				const retry = () => {
 					if (index >= (this._privateKey ? 2 ** 32 - 1 : 2147483647)) throw new Error(`HDKey: cannot retry child derivation at index ${index}`);
 					return this.deriveChild(index + 1);
@@ -12324,7 +12468,7 @@
 	//! (no leading zeros), IPv6 / IPvFuture / pct-encoding.
 	var UNRESERVED = /[A-Za-z0-9._~-]/;
 	var SUB_DELIM = /[!$&'()*+,;=]/;
-	var HEX$1 = /[0-9A-Fa-f]/;
+	var HEX$2 = /[0-9A-Fa-f]/;
 	function isScheme(s) {
 		if (s.length === 0 || !/[A-Za-z]/.test(s.charAt(0))) return false;
 		for (const c of s) if (!/[A-Za-z0-9+.-]/.test(c)) return false;
@@ -12335,7 +12479,7 @@
 		for (let i = 0; i < s.length; i++) {
 			const c = s.charAt(i);
 			if (c === "%") {
-				if (i + 2 >= s.length || !HEX$1.test(s.charAt(i + 1)) || !HEX$1.test(s.charAt(i + 2))) return false;
+				if (i + 2 >= s.length || !HEX$2.test(s.charAt(i + 1)) || !HEX$2.test(s.charAt(i + 2))) return false;
 				i += 2;
 				continue;
 			}
@@ -12364,7 +12508,7 @@
 		return parts.length === 4 && parts.every(isDecOctet);
 	}
 	function isH16(s) {
-		return s.length > 0 && s.length <= 4 && s.split("").every((c) => HEX$1.test(c));
+		return s.length > 0 && s.length <= 4 && s.split("").every((c) => HEX$2.test(c));
 	}
 	/**
 	* Count h16-equivalent groups in one half of an IPv6 literal (an IPv4 tail counts as two groups and
@@ -13225,7 +13369,7 @@
 	* and `eth_chainId` is bound to the message chain id (cached per provider on success only) before
 	* any `eth_call`.
 	*/
-	function evm$1(options) {
+	function evm$2(options) {
 		var _options$rpc;
 		const rpc = (_options$rpc = options === null || options === void 0 ? void 0 : options.rpc) !== null && _options$rpc !== void 0 ? _options$rpc : {};
 		const verifiedChains = /* @__PURE__ */ new Set();
@@ -13746,7 +13890,7 @@
 	};
 	var parseValid = (text, family) => {
 		if (family === "evm") {
-			const ns = evm$1();
+			const ns = evm$2();
 			const message = ns.parse(new TextEncoder().encode(text));
 			ns.account(message);
 			return plainFields(message);
@@ -19397,7 +19541,7 @@
 	var ZERO$3 = "0x0000000000000000000000000000000000000000";
 	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
 	var address$1 = (message, key) => typedDataAddress(message[key]);
-	var uint$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
+	var uint$1$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
 	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
 	var parse = (type, witness) => {
 		const { info } = witness;
@@ -19425,19 +19569,19 @@
 			return outputs;
 		};
 		const dutch = (m) => {
-			const start = uint$1(m, "startAmount");
-			const end = uint$1(m, "endAmount");
+			const start = uint$1$1(m, "startAmount");
+			const end = uint$1$1(m, "endAmount");
 			return start === void 0 || end === void 0 ? void 0 : start < end ? start : end;
 		};
 		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
 			const exclusive = type === "ExclusiveDutchOrder";
 			const prefix = exclusive ? "input" : "baseInput";
 			const inputToken = address$1(witness, `${prefix}Token`);
-			const start = uint$1(witness, `${prefix}StartAmount`);
-			const end = uint$1(witness, `${prefix}EndAmount`);
+			const start = uint$1$1(witness, `${prefix}StartAmount`);
+			const end = uint$1$1(witness, `${prefix}EndAmount`);
 			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
 			const filler = exclusive ? address$1(witness, "exclusiveFiller") : void 0;
-			const decayed = uint$1(witness, "decayStartTime") !== void 0 && uint$1(witness, "decayEndTime") !== void 0 && uint$1(witness, "exclusivityOverrideBps") !== void 0;
+			const decayed = uint$1$1(witness, "decayStartTime") !== void 0 && uint$1$1(witness, "decayEndTime") !== void 0 && uint$1$1(witness, "exclusivityOverrideBps") !== void 0;
 			const cosigned = exclusive || address$1(witness, "cosigner") !== void 0;
 			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
 			return _objectSpread2({
@@ -19449,10 +19593,10 @@
 		}
 		if (type === "V3DutchOrder") {
 			const input = witness["baseInput"];
-			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "startingBaseFee") === void 0) return;
+			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "startingBaseFee") === void 0) return;
 			const inputToken = address$1(input, "token");
-			const maxAmount = uint$1(input, "maxAmount");
-			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1(m, "minAmount") : void 0);
+			const maxAmount = uint$1$1(input, "maxAmount");
+			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1$1(m, "minAmount") : void 0);
 			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
 				info,
 				inputToken,
@@ -19461,10 +19605,10 @@
 			};
 		}
 		const { input } = witness;
-		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "auctionStartBlock") === void 0 || uint$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1(input, "mpsPerPriorityFeeWei") === void 0) return;
+		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "auctionStartBlock") === void 0 || uint$1$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1$1(input, "mpsPerPriorityFeeWei") === void 0) return;
 		const inputToken = address$1(input, "token");
-		const amount = uint$1(input, "amount");
-		const outputs = outputsOf("outputs", (m) => uint$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1(m, "amount"));
+		const amount = uint$1$1(input, "amount");
+		const outputs = outputsOf("outputs", (m) => uint$1$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1$1(m, "amount"));
 		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
 			info,
 			inputToken,
@@ -19495,14 +19639,14 @@
 		const { witness } = message;
 		const spender = address$1(message, "spender");
 		const permittedToken = isTypedDataMessage(permitted) ? address$1(permitted, "token") : void 0;
-		const permittedAmount = isTypedDataMessage(permitted) ? uint$1(permitted, "amount") : void 0;
+		const permittedAmount = isTypedDataMessage(permitted) ? uint$1$1(permitted, "amount") : void 0;
 		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
 		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
 		const { info } = parsed;
 		const reactor = address$1(info, "reactor");
 		const swapper = address$1(info, "swapper");
-		const nonce = uint$1(info, "nonce");
-		const deadline = uint$1(info, "deadline");
+		const nonce = uint$1$1(info, "nonce");
+		const deadline = uint$1$1(info, "deadline");
 		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
 		if (parsed.outputs.length > 8) return { kind: "oversize" };
 		const maker = checksumEvmAddress(signer);
@@ -22107,7 +22251,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/assemble-DbR9RP90.mjs
+	// packages/wallet-chains/dist/assemble-BaraFVuC.mjs
 	init_utils$2();
 	init_objectSpread2();
 	/**
@@ -22519,6 +22663,11 @@
 	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
 		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
 	};
+	/**
+	* The unsigned EIP-2718 envelope of a normalized transaction — one construction shared by the
+	* kernel's signer and by the host's round-trip check, which re-serializes it with the returned
+	* signature to prove the kernel signed exactly the requested transaction.
+	*/
 	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
 	function assertHex(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
@@ -22537,19 +22686,20 @@
 		address: hex$1(tx.authorization.address, "authorization.address"),
 		nonce: BigInt(tx.nonce + 1)
 	});
+	var baseEnvelope = (tx) => ({
+		chainId: tx.chainId,
+		to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
+		data: hex$1(tx.data, "data"),
+		value: BigInt(tx.value),
+		nonce: BigInt(tx.nonce),
+		gas: BigInt(tx.gas)
+	});
 	/**
 	* The envelope of `tx`. An `eip7702` transaction embeds its signed authorization, so the caller
 	* passes the signature over `evmAuthorization(tx)`.
 	*/
 	var evmEnvelope = (tx, authorization) => {
-		const base = {
-			chainId: tx.chainId,
-			to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
-			data: hex$1(tx.data, "data"),
-			value: BigInt(tx.value),
-			nonce: BigInt(tx.nonce),
-			gas: BigInt(tx.gas)
-		};
+		const base = baseEnvelope(tx);
 		if (tx.type === "legacy") {
 			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
 				type: "legacy",
@@ -22602,6 +22752,30 @@
 		};
 	};
 	/**
+	* The unsigned signing preimage of `tx`: the EIP-155 / EIP-2718 serialization whose keccak256 is
+	* `evmEnvelope(tx).payload`. An `eip7702` transaction has no unsigned preimage — its payload is the
+	* authorization's, produced by `evmAuthorization(tx)`.
+	*/
+	var evmSigningPreimage = (tx) => {
+		const base = baseEnvelope(tx);
+		if (tx.type === "legacy") return hexToBytes$3(serialize$1(_objectSpread2(_objectSpread2({}, base), {}, {
+			type: "legacy",
+			gasPrice: BigInt(tx.gasPrice)
+		})).slice(2));
+		if (tx.type === "eip2930") return hexToBytes$3(serialize$3(_objectSpread2(_objectSpread2({}, base), {}, {
+			type: "eip2930",
+			gasPrice: BigInt(tx.gasPrice),
+			accessList: tx.accessList.map(accessEntry)
+		})).slice(2));
+		if (tx.type === "eip7702") throw new ChainError("invalid-request", "an eip7702 transaction has no unsigned preimage");
+		return hexToBytes$3(serialize(_objectSpread2(_objectSpread2({}, base), {}, {
+			type: "eip1559",
+			accessList: tx.accessList.map(accessEntry),
+			maxFeePerGas: BigInt(tx.maxFeePerGas),
+			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
+		})).slice(2));
+	};
+	/**
 	* /evm/plan — the serialisable signing plan of a normalized request: the digests each signing
 	* backend must sign, and the transaction an EIP-7702 signature later re-enters. No key material.
 	*/
@@ -22611,7 +22785,7 @@
 		publicKey: key.publicKey,
 		digest
 	});
-	var personalDigest = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
+	var personalDigest$1 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
 	/**
 	* The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
 	* returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
@@ -22623,7 +22797,7 @@
 	});
 	var planEvmPersonalMessage = (message, key) => ({
 		kind: "evm.personal-message",
-		tasks: [ecdsa$1(personalDigest(message), key)]
+		tasks: [ecdsa$1(personalDigest$1(message), key)]
 	});
 	var planEvmTypedData = (typedData, key) => {
 		const { json } = parseTypedData(typedData);
@@ -22644,7 +22818,7 @@
 		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
 		if (request.kind === "evm.fiat24-session") return {
 			kind: "evm.fiat24-session",
-			tasks: [ecdsa$1(personalDigest(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+			tasks: [ecdsa$1(personalDigest$1(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
 		};
 		return planEvmTypedData(request.typedData, key);
 	};
@@ -22680,7 +22854,7 @@
 	};
 	// packages/wallet-chains/dist/networks.mjs
 	init_objectSpread2();
-	var evm = (chainId, name, symbol, testnet) => ({
+	var evm$1 = (chainId, name, symbol, testnet) => ({
 		id: `eip155:${chainId}`,
 		family: "evm",
 		name,
@@ -22690,73 +22864,73 @@
 		chainId
 	});
 	var EVM_NETWORKS = [
-		evm(1, "Ethereum", "ETH", false),
-		evm(8453, "Base", "ETH", false),
-		evm(42161, "Arbitrum One", "ETH", false),
-		evm(10, "OP Mainnet", "ETH", false),
-		evm(137, "Polygon", "POL", false),
-		evm(56, "BNB Smart Chain", "BNB", false),
-		evm(999, "HyperEVM", "HYPE", false),
-		evm(43114, "Avalanche C-Chain", "AVAX", false),
-		evm(4663, "Robinhood Chain", "ETH", false),
-		evm(143, "Monad", "MON", false),
-		evm(5042, "Arc", "USDC", false),
-		evm(9745, "Plasma", "XPL", false),
-		evm(196, "X Layer", "OKB", false),
-		evm(1672, "Pharos", "PROS", false),
-		evm(5e3, "Mantle", "MNT", false),
-		evm(25, "Cronos", "CRO", false),
-		evm(100, "Gnosis", "xDAI", false),
-		evm(988, "Stable", "USDT0", false),
-		evm(747474, "Katana", "ETH", false),
-		evm(80094, "Berachain", "BERA", false),
-		evm(480, "World Chain", "ETH", false),
-		evm(130, "Unichain", "ETH", false),
-		evm(1329, "Sei", "SEI", false),
-		evm(59144, "Linea", "ETH", false),
-		evm(42220, "Celo", "CELO", false),
-		evm(146, "Sonic", "S", false),
-		evm(324, "ZKsync Era", "ETH", false),
-		evm(1868, "Soneium", "ETH", false),
-		evm(4326, "MegaETH", "ETH", false),
-		evm(8217, "Kaia", "KAIA", false),
-		evm(33139, "ApeChain", "APE", false),
-		evm(57073, "Ink", "ETH", false),
-		evm(252, "Fraxtal", "FRAX", false),
-		evm(2020, "Ronin", "RON", false),
-		evm(534352, "Scroll", "ETH", false),
-		evm(60808, "BOB", "ETH", false),
-		evm(204, "opBNB", "BNB", false),
-		evm(42170, "Arbitrum Nova", "ETH", false),
-		evm(167e3, "Taiko", "ETH", false),
-		evm(14, "Flare", "FLR", false),
-		evm(7777777, "Zora", "ETH", false),
-		evm(11155111, "Sepolia", "ETH", true),
-		evm(84532, "Base Sepolia", "ETH", true),
-		evm(421614, "Arbitrum Sepolia", "ETH", true),
-		evm(11155420, "OP Sepolia", "ETH", true),
-		evm(80002, "Polygon Amoy", "POL", true),
-		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm(998, "HyperEVM Testnet", "HYPE", true),
-		evm(43113, "Avalanche Fuji", "AVAX", true),
-		evm(46630, "Robinhood Chain Testnet", "ETH", true),
-		evm(10143, "Monad Testnet", "MON", true),
-		evm(5042002, "Arc Testnet", "USDC", true),
-		evm(1952, "X Layer Testnet", "OKB", true),
-		evm(5003, "Mantle Sepolia", "MNT", true),
-		evm(10200, "Gnosis Chiado", "xDAI", true),
-		evm(1301, "Unichain Sepolia", "ETH", true),
-		evm(1328, "Sei Testnet", "SEI", true),
-		evm(59141, "Linea Sepolia", "ETH", true),
-		evm(11142220, "Celo Sepolia", "CELO", true),
-		evm(14601, "Sonic Testnet", "S", true),
-		evm(300, "ZKsync Sepolia", "ETH", true),
-		evm(1946, "Soneium Minato", "ETH", true),
-		evm(33111, "ApeChain Curtis", "APE", true),
-		evm(763373, "Ink Sepolia", "ETH", true),
-		evm(2523, "Fraxtal Hoodi", "FRAX", true),
-		evm(5611, "opBNB Testnet", "tBNB", true),
-		evm(999999999, "Zora Sepolia", "ETH", true)
+		evm$1(1, "Ethereum", "ETH", false),
+		evm$1(8453, "Base", "ETH", false),
+		evm$1(42161, "Arbitrum One", "ETH", false),
+		evm$1(10, "OP Mainnet", "ETH", false),
+		evm$1(137, "Polygon", "POL", false),
+		evm$1(56, "BNB Smart Chain", "BNB", false),
+		evm$1(999, "HyperEVM", "HYPE", false),
+		evm$1(43114, "Avalanche C-Chain", "AVAX", false),
+		evm$1(4663, "Robinhood Chain", "ETH", false),
+		evm$1(143, "Monad", "MON", false),
+		evm$1(5042, "Arc", "USDC", false),
+		evm$1(9745, "Plasma", "XPL", false),
+		evm$1(196, "X Layer", "OKB", false),
+		evm$1(1672, "Pharos", "PROS", false),
+		evm$1(5e3, "Mantle", "MNT", false),
+		evm$1(25, "Cronos", "CRO", false),
+		evm$1(100, "Gnosis", "xDAI", false),
+		evm$1(988, "Stable", "USDT0", false),
+		evm$1(747474, "Katana", "ETH", false),
+		evm$1(80094, "Berachain", "BERA", false),
+		evm$1(480, "World Chain", "ETH", false),
+		evm$1(130, "Unichain", "ETH", false),
+		evm$1(1329, "Sei", "SEI", false),
+		evm$1(59144, "Linea", "ETH", false),
+		evm$1(42220, "Celo", "CELO", false),
+		evm$1(146, "Sonic", "S", false),
+		evm$1(324, "ZKsync Era", "ETH", false),
+		evm$1(1868, "Soneium", "ETH", false),
+		evm$1(4326, "MegaETH", "ETH", false),
+		evm$1(8217, "Kaia", "KAIA", false),
+		evm$1(33139, "ApeChain", "APE", false),
+		evm$1(57073, "Ink", "ETH", false),
+		evm$1(252, "Fraxtal", "FRAX", false),
+		evm$1(2020, "Ronin", "RON", false),
+		evm$1(534352, "Scroll", "ETH", false),
+		evm$1(60808, "BOB", "ETH", false),
+		evm$1(204, "opBNB", "BNB", false),
+		evm$1(42170, "Arbitrum Nova", "ETH", false),
+		evm$1(167e3, "Taiko", "ETH", false),
+		evm$1(14, "Flare", "FLR", false),
+		evm$1(7777777, "Zora", "ETH", false),
+		evm$1(11155111, "Sepolia", "ETH", true),
+		evm$1(84532, "Base Sepolia", "ETH", true),
+		evm$1(421614, "Arbitrum Sepolia", "ETH", true),
+		evm$1(11155420, "OP Sepolia", "ETH", true),
+		evm$1(80002, "Polygon Amoy", "POL", true),
+		evm$1(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm$1(998, "HyperEVM Testnet", "HYPE", true),
+		evm$1(43113, "Avalanche Fuji", "AVAX", true),
+		evm$1(46630, "Robinhood Chain Testnet", "ETH", true),
+		evm$1(10143, "Monad Testnet", "MON", true),
+		evm$1(5042002, "Arc Testnet", "USDC", true),
+		evm$1(1952, "X Layer Testnet", "OKB", true),
+		evm$1(5003, "Mantle Sepolia", "MNT", true),
+		evm$1(10200, "Gnosis Chiado", "xDAI", true),
+		evm$1(1301, "Unichain Sepolia", "ETH", true),
+		evm$1(1328, "Sei Testnet", "SEI", true),
+		evm$1(59141, "Linea Sepolia", "ETH", true),
+		evm$1(11142220, "Celo Sepolia", "CELO", true),
+		evm$1(14601, "Sonic Testnet", "S", true),
+		evm$1(300, "ZKsync Sepolia", "ETH", true),
+		evm$1(1946, "Soneium Minato", "ETH", true),
+		evm$1(33111, "ApeChain Curtis", "APE", true),
+		evm$1(763373, "Ink Sepolia", "ETH", true),
+		evm$1(2523, "Fraxtal Hoodi", "FRAX", true),
+		evm$1(5611, "opBNB Testnet", "tBNB", true),
+		evm$1(999999999, "Zora Sepolia", "ETH", true)
 	];
 	var BUILT_IN_NETWORKS = Object.freeze([
 		...EVM_NETWORKS,
@@ -26107,20 +26281,20 @@ zoo`.split("\n"));
 	var BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 	var bytes32 = (value) => typeof value === "string" && BYTES32.test(value) ? value.toLowerCase() : void 0;
 	var nonZero = (hex) => hex === ZERO_BYTES32 ? void 0 : hex;
-	var uint = (value) => typedDataUint(value, MAX_UINT256$1);
+	var uint$1 = (value) => typedDataUint(value, MAX_UINT256$1);
 	var sameAddress = (a, b) => a !== void 0 && b !== void 0 && a.toLowerCase() === b.toLowerCase();
 	/** The strict parse both `Order` and `TypedDataSign.contents` share. */
 	var orderValues = (message) => {
 		const maker = typedDataAddress(message["maker"]);
 		const signer = typedDataAddress(message["signer"]);
-		const tokenId = uint(message["tokenId"]);
-		const makerAmount = uint(message["makerAmount"]);
-		const takerAmount = uint(message["takerAmount"]);
-		const side = uint(message["side"]);
-		const signatureType = uint(message["signatureType"]);
+		const tokenId = uint$1(message["tokenId"]);
+		const makerAmount = uint$1(message["makerAmount"]);
+		const takerAmount = uint$1(message["takerAmount"]);
+		const side = uint$1(message["side"]);
+		const signatureType = uint$1(message["signatureType"]);
 		const metadata = bytes32(message["metadata"]);
 		const builder = bytes32(message["builder"]);
-		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint(message["salt"]) === void 0 || uint(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
+		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint$1(message["salt"]) === void 0 || uint$1(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
 		const meta = nonZero(metadata);
 		const code = nonZero(builder);
 		return _objectSpread2(_objectSpread2({
@@ -26205,7 +26379,7 @@ zoo`.split("\n"));
 		const { message } = json;
 		const wallet = typedDataAddress(message["verifyingContract"]);
 		const { contents } = message;
-		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
+		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint$1(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
 		const order = orderValues(contents);
 		if (order === void 0 || order.signatureType !== 3n || !sameAddress(order.signer, wallet) || !sameAddress(order.maker, wallet)) return;
 		const content = orderContent(order, exchange, "deposit-wallet");
@@ -26227,7 +26401,7 @@ zoo`.split("\n"));
 		if (json.primaryType !== "ClobAuth" || domain["name"] !== "ClobAuthDomain" || domain["version"] !== "1" || chainId !== 137 && chainId !== 80002 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN_AUTH) || !typeSet(types, ["EIP712Domain", "ClobAuth"]) || !sameFields(types, "ClobAuth", CLOB_AUTH_FIELDS)) return;
 		const address = typedDataAddress(message["address"]);
 		const { timestamp } = message;
-		const nonce = uint(message["nonce"]);
+		const nonce = uint$1(message["nonce"]);
 		if (address === void 0 || !sameAddress(address, context.signer) || message["message"] !== CLOB_AUTH_MESSAGE || typeof timestamp !== "string" || !/^[0-9]{1,12}$/.test(timestamp) || nonce === void 0) return;
 		return {
 			content: { polymarket: {
@@ -26252,7 +26426,7 @@ zoo`.split("\n"));
 			"Batch",
 			"Call"
 		]) || !sameFields(types, "Batch", BATCH_FIELDS) || !sameFields(types, "Call", CALL_FIELDS) || !sameAddress(typedDataAddress(message["wallet"]), wallet)) return;
-		const nonce = uint(message["nonce"]);
+		const nonce = uint$1(message["nonce"]);
 		const deadline = typedDataUint(message["deadline"], MAX_UINT48);
 		const calls = typedDataMessages(message["calls"]);
 		if (nonce === void 0 || deadline === void 0 || calls === void 0 || calls.length === 0) return;
@@ -26273,7 +26447,7 @@ zoo`.split("\n"));
 		const decoded = [];
 		for (const call of calls) {
 			const target = typedDataAddress(call["target"]);
-			const value = uint(call["value"]);
+			const value = uint$1(call["value"]);
 			const data = typedDataBytes(call["data"]);
 			if (target === void 0 || value === void 0 || data === void 0) return;
 			decoded.push(decodeCall({
@@ -26824,7 +26998,7 @@ zoo`.split("\n"));
 			amount: value.toString(10)
 		};
 	};
-	var item = (message, chainId, table) => {
+	var item$1 = (message, chainId, table) => {
 		const itemType = typedDataUint(message["itemType"], 255n);
 		const token = typedDataAddress(message["token"]);
 		const identifier = typedDataUint(message["identifierOrCriteria"], MAX_UINT256);
@@ -26857,9 +27031,9 @@ zoo`.split("\n"));
 		const zone = typedDataAddress(message["zone"]);
 		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
 		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
-		const offer = all$2(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
+		const offer = all$2(typedDataMessages(message["offer"]), (entry) => item$1(entry, chainId, table));
 		const consideration = all$2(typedDataMessages(message["consideration"]), (entry) => {
-			const base = item(entry, chainId, table);
+			const base = item$1(entry, chainId, table);
 			const recipient = typedDataAddress(entry["recipient"]);
 			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
 		});
@@ -32105,7 +32279,7 @@ zoo`.split("\n"));
 	* bare-width `uint`), the difference can only change what it hashes to, never whether it signs — so
 	* strictness is a validation concern, not a compatibility one.
 	*/
-	var fail$2 = (what) => {
+	var fail$5 = (what) => {
 		throw new ChainError("invalid-typed-data", what);
 	};
 	var INT_TYPE = /^(u?)int(\d*)$/;
@@ -32158,21 +32332,21 @@ zoo`.split("\n"));
 		if (int !== null) {
 			const signed = int[1] === "";
 			const w = int[2] === "" ? NaN : Number(int[2]);
-			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$2(`invalid numeric width in type ${type}`);
+			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$5(`invalid numeric width in type ${type}`);
 			const [min, max] = intBounds(signed, w);
 			return (value) => {
 				const parsed = args ? looseInt(value) : strictInt(value, signed);
-				if (parsed === void 0 || parsed < min || parsed > max) return fail$2(`value is out of bounds for ${type}`);
+				if (parsed === void 0 || parsed < min || parsed > max) return fail$5(`value is out of bounds for ${type}`);
 				return word(parsed);
 			};
 		}
 		const fixed = FIXED_BYTES.exec(type);
 		if (fixed !== null) {
 			const w = Number(fixed[1]);
-			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$2(`invalid bytes width in type ${type}`);
+			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$5(`invalid bytes width in type ${type}`);
 			return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0 || bytes.length !== w) return fail$2(`invalid length for ${type}`);
+				if (bytes === void 0 || bytes.length !== w) return fail$5(`invalid length for ${type}`);
 				const out = /* @__PURE__ */ new Uint8Array(32);
 				out.set(bytes);
 				return out;
@@ -32182,21 +32356,21 @@ zoo`.split("\n"));
 			case "trcToken": return baseEncoder("uint256", args);
 			case "address": return (value) => {
 				const body = addressBody(value);
-				if (body === void 0) return fail$2("address is not a base58, 41-hex or 0x-hex TRON address");
+				if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
 				return concatBytes$3(/* @__PURE__ */ new Uint8Array(12), body);
 			};
 			case "bool": return (value) => {
 				if (args) return word(Boolean(value) ? 1n : 0n);
-				if (typeof value !== "boolean") return fail$2("bool is not a JSON boolean");
+				if (typeof value !== "boolean") return fail$5("bool is not a JSON boolean");
 				return word(value ? 1n : 0n);
 			};
 			case "bytes": return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$2("bytes is not 0x-prefixed even-length hex");
+				if (bytes === void 0) return fail$5("bytes is not 0x-prefixed even-length hex");
 				return keccak_256(bytes);
 			};
 			case "string": return (value) => {
-				if (typeof value !== "string") return fail$2("string value is not a string");
+				if (typeof value !== "string") return fail$5("string value is not a string");
 				return keccak_256(utf8ToBytes$1(value));
 			};
 			default: return;
@@ -32238,23 +32412,23 @@ zoo`.split("\n"));
 		}
 		for (const name of names) {
 			var _types$name2;
-			if (isBaseName(name)) fail$2(`struct type name ${JSON.stringify(name)} collides with a base type`);
+			if (isBaseName(name)) fail$5(`struct type name ${JSON.stringify(name)} collides with a base type`);
 			const seen = /* @__PURE__ */ new Set();
 			for (const field of (_types$name2 = types[name]) !== null && _types$name2 !== void 0 ? _types$name2 : []) {
 				var _parents$get, _links$get;
-				if (seen.has(field.name)) fail$2(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
+				if (seen.has(field.name)) fail$5(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
 				seen.add(field.name);
 				const base = baseName(field.type);
-				if (base === name) fail$2(`circular type reference to ${JSON.stringify(base)}`);
+				if (base === name) fail$5(`circular type reference to ${JSON.stringify(base)}`);
 				let baseIsAtomic;
 				try {
 					baseIsAtomic = baseEncoder(base, false) !== void 0;
 				} catch (error) {
-					if (error instanceof ChainError) fail$2(`invalid field type ${JSON.stringify(field.type)}`);
+					if (error instanceof ChainError) fail$5(`invalid field type ${JSON.stringify(field.type)}`);
 					throw error;
 				}
 				if (baseIsAtomic) continue;
-				if (!parents.has(base)) fail$2(`unknown type ${JSON.stringify(base)}`);
+				if (!parents.has(base)) fail$5(`unknown type ${JSON.stringify(base)}`);
 				((_parents$get = parents.get(base)) !== null && _parents$get !== void 0 ? _parents$get : []).push(name);
 				((_links$get = links.get(name)) !== null && _links$get !== void 0 ? _links$get : /* @__PURE__ */ new Set()).add(base);
 			}
@@ -32263,13 +32437,13 @@ zoo`.split("\n"));
 			var _parents$get2;
 			return ((_parents$get2 = parents.get(n)) !== null && _parents$get2 !== void 0 ? _parents$get2 : []).length === 0;
 		});
-		if (roots.length === 0) fail$2("missing primary type");
-		if (roots.length !== 1) fail$2(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
+		if (roots.length === 0) fail$5("missing primary type");
+		if (roots.length !== 1) fail$5(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
 		const primary = (_roots$ = roots[0]) !== null && _roots$ !== void 0 ? _roots$ : "";
 		const visited = /* @__PURE__ */ new Set();
 		const checkCircular = (type, found) => {
 			var _links$get2;
-			if (found.has(type)) fail$2(`circular type reference to ${JSON.stringify(type)}`);
+			if (found.has(type)) fail$5(`circular type reference to ${JSON.stringify(type)}`);
 			found.add(type);
 			visited.add(type);
 			for (const child of (_links$get2 = links.get(type)) !== null && _links$get2 !== void 0 ? _links$get2 : /* @__PURE__ */ new Set()) {
@@ -32280,7 +32454,7 @@ zoo`.split("\n"));
 			found.delete(type);
 		};
 		checkCircular(primary, /* @__PURE__ */ new Set());
-		if (visited.size !== names.length) fail$2("types contains types the primary type does not reach");
+		if (visited.size !== names.length) fail$5("types contains types the primary type does not reach");
 		const fullTypes = /* @__PURE__ */ new Map();
 		for (const [name, set] of subtypes) {
 			const st = [...set].sort();
@@ -32301,15 +32475,15 @@ zoo`.split("\n"));
 	var makeEncoder = (types, args) => {
 		const { primary, fullTypes } = checkTypes(types);
 		const encode = (type, value, depth) => {
-			if (depth > 32) fail$2("typedData nests too deeply");
+			if (depth > 32) fail$5("typedData nests too deeply");
 			const atomic = baseEncoder(type, args);
 			if (atomic !== void 0) return atomic(value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
 				var _tail$2;
-				if (!Array.isArray(value)) return fail$2(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$2(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
 				const elementType = (_tail$2 = tail[1]) !== null && _tail$2 !== void 0 ? _tail$2 : "";
 				const structElements = fullTypes.has(elementType);
 				return keccak_256(concatBytes$3(...value.map((v) => encode(elementType, v, depth + 1)).map((e) => structElements ? keccak_256(e) : e)));
@@ -32317,46 +32491,46 @@ zoo`.split("\n"));
 			const fields = types[type];
 			if (fields !== void 0) {
 				var _fullTypes$get;
-				if (!isRecord$4(value)) return fail$2(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
 				return concatBytes$3(keccak_256(utf8ToBytes$1((_fullTypes$get = fullTypes.get(type)) !== null && _fullTypes$get !== void 0 ? _fullTypes$get : "")), ...fields.map((f) => {
 					const e = encode(f.type, value[f.name], depth + 1);
 					return fullTypes.has(f.type) ? keccak_256(e) : e;
 				}));
 			}
-			return fail$2(`unknown type ${type}`);
+			return fail$5(`unknown type ${type}`);
 		};
 		const visitLeaf = (type, value) => {
 			if (/^bytes(\d*)/.test(type)) {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$2(`invalid bytes value for ${type}`);
+				if (bytes === void 0) return fail$5(`invalid bytes value for ${type}`);
 				return `0x${bytesToHex$4(bytes)}`;
 			}
 			if (/^u?int/.test(type) || type === "trcToken") {
 				const v = looseInt(value);
-				if (v === void 0) return fail$2(`invalid numeric value for ${type}`);
+				if (v === void 0) return fail$5(`invalid numeric value for ${type}`);
 				return v.toString(10);
 			}
 			switch (type) {
 				case "address": {
 					const body = addressBody(value);
-					if (body === void 0) return fail$2("address is not a base58, 41-hex or 0x-hex TRON address");
+					if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
 					return `41${bytesToHex$4(body)}`;
 				}
 				case "bool": return Boolean(value);
 				case "string":
-					if (typeof value !== "string") return fail$2("string value is not a string");
+					if (typeof value !== "string") return fail$5("string value is not a string");
 					return value;
-				default: return fail$2(`unsupported type ${type}`);
+				default: return fail$5(`unsupported type ${type}`);
 			}
 		};
 		const visit = (type, value, depth) => {
-			if (depth > 32) fail$2("typedData nests too deeply");
+			if (depth > 32) fail$5("typedData nests too deeply");
 			if (baseEncoder(type, true) !== void 0) return visitLeaf(type, value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
-				if (!Array.isArray(value)) return fail$2(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$2(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
 				return value.map((v) => {
 					var _tail$3;
 					return visit((_tail$3 = tail[1]) !== null && _tail$3 !== void 0 ? _tail$3 : "", v, depth + 1);
@@ -32364,10 +32538,10 @@ zoo`.split("\n"));
 			}
 			const fields = types[type];
 			if (fields !== void 0) {
-				if (!isRecord$4(value)) return fail$2(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
 				return Object.fromEntries(fields.map((f) => [f.name, visit(f.type, value[f.name], depth + 1)]));
 			}
-			return fail$2(`unknown type ${type}`);
+			return fail$5(`unknown type ${type}`);
 		};
 		return {
 			primary,
@@ -32406,7 +32580,7 @@ zoo`.split("\n"));
 			const value = domain[f.name];
 			if (value !== void 0 && value !== null) fields.push(f);
 		}
-		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$2(`invalid typed-data domain key ${JSON.stringify(key)}`);
+		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$5(`invalid typed-data domain key ${JSON.stringify(key)}`);
 		return fields;
 	};
 	var sameFieldList = (declared, expected) => declared.length === expected.length && declared.every((f, i) => {
@@ -32427,10 +32601,10 @@ zoo`.split("\n"));
 	*/
 	var parseTronTypedData = (typedData) => {
 		var _json$types$EIP712Dom;
-		const json = strictJson(typedData, (reason) => fail$2(`typedData ${reason}`));
-		if (!isTypedDataInput(json)) return fail$2("typedData must be a JSON object with types, primaryType, domain and message");
+		const json = strictJson(typedData, (reason) => fail$5(`typedData ${reason}`));
+		if (!isTypedDataInput(json)) return fail$5("typedData must be a JSON object with types, primaryType, domain and message");
 		const domainFields = domainFieldsOf(json.domain);
-		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$2("typedData must declare types.EIP712Domain"), domainFields)) fail$2("types.EIP712Domain is not the canonical field list of the domain keys present");
+		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$5("typedData must declare types.EIP712Domain"), domainFields)) fail$5("types.EIP712Domain is not the canonical field list of the domain keys present");
 		tronTypedDataDigest(json);
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
 	};
@@ -32445,7 +32619,7 @@ zoo`.split("\n"));
 		const messageTypes = {};
 		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
 		const encoder = makeEncoder(messageTypes, false);
-		if (encoder.primary !== json.primaryType) fail$2(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
+		if (encoder.primary !== json.primaryType) fail$5(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
 		const domain = makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain);
 		const message = encoder.hashStruct(json.primaryType, json.message);
 		return keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message));
@@ -34664,11 +34838,12 @@ zoo`.split("\n"));
 	async function deleteWallet(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "delete-wallet"));
-		findRecord(ctx.image, "entropy", params.walletId);
+		const record = findWalletRecord(ctx.image, params.walletId);
+		if (record === void 0) throw new KernelError("not-found", "record not found");
 		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
 		await ctx.commit([{
 			op: "delete-record",
-			kind: "entropy",
+			kind: record.kind,
 			id: params.walletId
 		}, ...extras]);
 		return null;
@@ -35211,7 +35386,7 @@ zoo`.split("\n"));
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		const header = parseEntropyHeader(record.header);
 		const { entropy, passphrase } = openWalletSecret(dek, record);
 		try {
@@ -38523,9 +38698,9 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8 = (s) => new TextEncoder().encode(s);
+	var utf8$1 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
+	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
 	var concat$1 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
@@ -38555,8 +38730,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8(message)));
+		const tag = sha256$1(utf8$1(BIP322_TAG));
+		return sha256$1(concat$1(tag, tag, utf8$1(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -38629,7 +38804,7 @@ zoo`.split("\n"));
 		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
@@ -38862,7 +39037,10 @@ zoo`.split("\n"));
 	};
 	// packages/wallet-chains/dist/bitcoin.mjs
 	init_payment();
+	init_utils();
 	init_transaction();
+	init_bip32();
+	init_script();
 	/**
 	* BIP-32 derivation paths carry a coin type: 0 for mainnet, 1 for every test network. This is what
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
@@ -38947,6 +39125,31 @@ zoo`.split("\n"));
 			sign: sorted
 		};
 	};
+	/** Public-derivation helpers for account-level extended keys — no secrets involved. */
+	var xpubChild = (xpub, network, change, index) => {
+		if (!Number.isInteger(index) || index < 0) throw new ChainError("invalid-request", "index must be a non-negative integer");
+		const net = bitcoinNetwork(network);
+		let node;
+		try {
+			node = HDKey$1.fromExtendedKey(xpub, net.bip32);
+		} catch (error) {
+			throw new ChainError("invalid-request", `xpub: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		const pub = node.derive(`m/${change}/${index}`).publicKey;
+		if (pub === null) throw new ChainError("invalid-request", "xpub carries no public key");
+		return pub;
+	};
+	/**
+	* Derive the address at `change`/`index` under an account-level xpub (`m/84'/c'/i'` or
+	* `m/86'/c'/i'`) — P2WPKH for `btc.bip84`, P2TR key-path for `btc.bip86`.
+	*/
+	function bitcoinAddressFromXpub(xpub, template, network, change, index) {
+		const net = bitcoinNetwork(network);
+		const pub = xpubChild(xpub, network, change, index);
+		const address = template === "btc.bip84" ? p2wpkh(pub, net.params).address : template === "btc.bip49" ? p2sh(p2wpkh(pub, net.params), net.params).address : template === "btc.bip44" ? p2pkh(pub, net.params).address : p2tr(pub.subarray(1), void 0, net.params).address;
+		if (address === void 0) throw new ChainError("invalid-request", "could not encode the derived address");
+		return address;
+	}
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
 	var OP_RETURN = 106;
@@ -39047,6 +39250,28 @@ zoo`.split("\n"));
 			}] : [],
 			verifiability
 		}, request.network, SATS, 8);
+	};
+	var samePrevout = (a, b) => {
+		const [x, y] = [a.witnessUtxo, b.witnessUtxo];
+		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes(x.script, y.script);
+		const [m, n] = [a.nonWitnessUtxo, b.nonWitnessUtxo];
+		const full = m === void 0 || n === void 0 ? m === n : equalBytes(RawTx.encode(m), RawTx.encode(n));
+		return witness && full;
+	};
+	/**
+	* Whether `signed` is the PSBT `requested` asked to sign: the same unsigned transaction and, on
+	* every input, the same prevout data the signatures commit to. A kernel that signs another
+	* transaction, or the same one over altered amounts, fails this before any signature is checked.
+	*/
+	var samePsbtContent = (requested, signed) => {
+		try {
+			const want = Transaction.fromPSBT(requested);
+			const got = Transaction.fromPSBT(signed);
+			if (!equalBytes(want.unsignedTx, got.unsignedTx)) return false;
+			return Array.from({ length: want.inputsLength }, (_, i) => i).every((i) => samePrevout(want.getInput(i), got.getInput(i)));
+		} catch (_unused3) {
+			return false;
+		}
 	};
 	var common = (request) => {
 		const base = requestBase(request);
@@ -40178,15 +40403,11 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/chains/bitcoin.ts
 	init_payment();
 	init_transaction();
-	init_utils();
 	init_objectSpread2();
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
-	/** The BIP-32 master fingerprint: first 4 bytes big-endian of hash160(master pubkey). */
-	var fingerprintOf = (pub) => {
-		const h = hash160(pub);
-		return new DataView(h.buffer, h.byteOffset, h.byteLength).getUint32(0);
-	};
+	/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
+	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 	var PURPOSES = [
 		44,
 		49,
@@ -40361,7 +40582,7 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(request.network);
 		const b = {
 			material,
-			fingerprint: fingerprintOf(await material.secp256k1([])),
+			fingerprint: fingerprintNumber$1(await material.fingerprint()),
 			coinType: net.coinType,
 			hardened: 2147483648,
 			groupIndex: account.groupIndex,
@@ -40425,9 +40646,10 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_bip32();
-	var HARDENED$1 = 2147483648;
+	init_utils();
+	var HARDENED$6 = 2147483648;
 	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$1 ? `/${i - HARDENED$1}'` : `/${i}`).join("")}`;
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$6 ? `/${i - HARDENED$6}'` : `/${i}`).join("")}`;
 	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
 	var seedKeys = (seed, random) => {
 		const secpNodes = /* @__PURE__ */ new Map();
@@ -40470,6 +40692,11 @@ zoo`.split("\n"));
 					return pub;
 				},
 				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+				fingerprint: async () => {
+					const pub = secpNode([]).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return hash160(pub).subarray(0, 4);
+				},
 				extendedPublicKey: async (path, versions) => {
 					alive();
 					const master = HDKey$1.fromMasterSeed(seed, versions);
@@ -40515,6 +40742,9 @@ zoo`.split("\n"));
 				},
 				extendedPublicKey: async () => {
 					throw new KernelError("integrity", "imported keys have no extended public key");
+				},
+				fingerprint: async () => {
+					throw new KernelError("integrity", "imported keys have no fingerprint");
 				}
 			},
 			backend: (sign) => ({ sign: async (task) => {
@@ -40664,14 +40894,14 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* Signs a plan end to end: tasks go to the backend sequentially — a hardware backend serves one at
-	* a time — and every stage's material is verified during assemble before the next runs.
+	* Runs a plan's stages to a `ChainSignResult`: `signStage` produces one 64-byte signature per task
+	* of a stage — local backends sign each task in-memory, the signers module turns a stage into one
+	* device round — and every stage's material is verified during assemble before the next runs.
 	*/
-	var signPlan = async (plan, backend) => {
+	var signStages = async (plan, signStage) => {
 		let current = plan;
 		for (;;) {
-			const signatures = [];
-			for (const task of current.tasks) signatures.push(await backend.sign(task));
+			const signatures = await signStage(current);
 			let result;
 			try {
 				result = assembleChain(current, signatures);
@@ -40683,6 +40913,15 @@ zoo`.split("\n"));
 			current = result.plan;
 		}
 	};
+	/**
+	* Signs a plan end to end: tasks go to the backend sequentially — a hardware backend serves one at
+	* a time — and every stage's material is verified during assemble before the next runs.
+	*/
+	var signPlan = async (plan, backend) => signStages(plan, async (stage) => {
+		const signatures = [];
+		for (const task of stage.tasks) signatures.push(await backend.sign(task));
+		return signatures;
+	});
 	// packages/wallet-kernel/src/modules/chains/solana.ts
 	init_objectSpread2();
 	/**
@@ -40755,21 +40994,29 @@ zoo`.split("\n"));
 		};
 	};
 	// packages/wallet-kernel/src/modules/chains/index.ts
-	init_utils();
+	/**
+	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
+	* index, derived from the wallet's entropy record once per session and then served from a cache of
+	* public data only. No records: seed and every node are wiped in `finally` on every path.
+	* `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
+	* ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
+	* (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
+	* source — the plan itself is reused, never recomputed.
+	*/
 	init_objectSpread2();
-	var HARDENED = 2147483648;
+	var HARDENED$5 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED,
-			HARDENED
+			groupIndex + HARDENED$5,
+			HARDENED$5
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED,
-			HARDENED,
+			(family === "tron" ? 195 : 60) + HARDENED$5,
+			HARDENED$5,
 			0,
 			groupIndex
 		];
@@ -40802,36 +41049,36 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED,
-			net.coinType + HARDENED,
-			groupIndex + HARDENED
+			purpose + HARDENED$5,
+			net.coinType + HARDENED$5,
+			groupIndex + HARDENED$5
 		];
-		const pub = await material.secp256k1([]);
+		const fingerprint = await material.fingerprint();
 		return {
 			template,
 			network,
 			xpub: await material.extendedPublicKey(path, net.bip32),
-			fingerprint: hash160(pub).subarray(0, 4).reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
+			fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
 			path: pathString(path)
 		};
 	};
-	var walletAccounts = async (ctx, params, session, cache) => {
+	var walletAccounts = async (ctx, params, session, cache, external) => {
 		var _cache$get, _cache$get2;
 		const { dek } = ctx.session.require(session);
-		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.walletId);
+		const record = findWalletRecord(ctx.image, params.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		checkNetwork(params.template, params.network);
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
 		if (known !== void 0) return known;
-		const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+		const account = record.kind === "entropy" ? await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
 				return await accountFor(keys.material, params.template, params.network, params.groupIndex);
 			} finally {
 				keys.wipe();
 			}
-		});
+		}) : await accountFor(external(ctx.image, record), params.template, params.network, params.groupIndex);
 		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
 		accounts.set(key, account);
 		cache.set(record, accounts);
@@ -40852,10 +41099,12 @@ zoo`.split("\n"));
 			"btc.bip86"
 		]
 	};
-	/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-	var hdSource = (ctx, request, dek) => {
+	/**
+	* The request family must match the account's template — the same check the local HD source runs,
+	* shared with the external-signer executor.
+	*/
+	var assertHdTemplates = (request) => {
 		const { account } = request;
-		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
 		if (request.kind === "bitcoin.psbt") {
 			if (request.sign.some((s) => BTC_PURPOSE[s.template] === void 0)) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		} else {
@@ -40864,8 +41113,15 @@ zoo`.split("\n"));
 			const expected = (_TEMPLATES_BY_FAMILY = TEMPLATES_BY_FAMILY[family !== null && family !== void 0 ? family : ""]) !== null && _TEMPLATES_BY_FAMILY !== void 0 ? _TEMPLATES_BY_FAMILY : [];
 			if (!("template" in account) || !expected.includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 		}
-		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
+	};
+	/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+	var hdSource = (ctx, request, dek) => {
+		const { account } = request;
+		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
+		assertHdTemplates(request);
+		const record = findWalletRecord(ctx.image, account.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
+		if (record.kind !== "entropy") throw new KernelError("device-required", "this wallet signs on its device");
 		return async (use) => withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
@@ -40944,7 +41200,7 @@ zoo`.split("\n"));
 		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
 		return openKeys(async (keys) => signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))));
 	};
-	function createChainsModule() {
+	function createChainsModule(external) {
 		let accounts = /* @__PURE__ */ new WeakMap();
 		return {
 			vault: {
@@ -40958,7 +41214,7 @@ zoo`.split("\n"));
 				parseHeader: () => void 0
 			},
 			handlers: {
-				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
+				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts, external),
 				"chain.sign": chainSign
 			}
 		};
@@ -42459,7 +42715,7 @@ zoo`.split("\n"));
 	}
 	async function deriveKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const master = masterKey(seed);
 			try {
@@ -42488,7 +42744,7 @@ zoo`.split("\n"));
 	}
 	async function discover(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		if (params.from + params.count - 1 > 2147483646) throw new KernelError("invalid-input", "identity range exceeds 0x7ffffffe");
 		const keys = [];
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
@@ -42530,7 +42786,7 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/ops.ts
-	async function sign(ctx, pool, params, requestSession) {
+	async function sign$1(ctx, pool, params, requestSession) {
 		ctx.session.require(requestSession);
 		return signEvent(pool, params.publicKey, params.event);
 	}
@@ -42566,7 +42822,7 @@ zoo`.split("\n"));
 	var SYNC_INDEX = 2147483647;
 	/** The vault's one sync-key record for `walletId`, or `not-found`. */
 	function syncRecord(ctx, walletId) {
-		findRecord(ctx.image, "entropy", walletId);
+		findSeedWallet(ctx.image, walletId);
 		for (const record of ctx.image.records) if (record.kind === "nostr-sync-key") {
 			if (parseSyncKeyHeader(record.header).walletId === walletId) return record;
 		}
@@ -42583,7 +42839,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			if (!(error instanceof KernelError && error.code === "not-found")) throw error;
 		}
-		const wallet = findRecord(ctx.image, "entropy", params.walletId);
+		const wallet = findSeedWallet(ctx.image, params.walletId);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, wallet, async (seed) => {
 			const master = masterKey(seed);
 			try {
@@ -42686,7 +42942,7 @@ zoo`.split("\n"));
 				"nostr.deriveKey": async (ctx, params, session) => deriveKey(ctx, params, session),
 				"nostr.removeKey": async (ctx, params, session) => removeKey(ctx, params, session),
 				"nostr.exportKey": async (ctx, params, session) => exportKey(ctx, params, session),
-				"nostr.signEvent": async (ctx, params, session) => sign(ctx, pool, params, session),
+				"nostr.signEvent": async (ctx, params, session) => sign$1(ctx, pool, params, session),
 				"nostr.nip04Encrypt": async (ctx, params, session) => nip04Encrypt(ctx, pool, params, session),
 				"nostr.nip04Decrypt": async (ctx, params, session) => nip04Decrypt(ctx, pool, params, session),
 				"nostr.nip44Encrypt": async (ctx, params, session) => nip44Encrypt(ctx, pool, params, session),
@@ -42737,12 +42993,12 @@ zoo`.split("\n"));
 	var id = int(0, 9007199254740991);
 	var orderWire = obj({
 		a: asset,
-		b: bool,
+		b: bool$1,
 		p: positive,
 		s: positive,
-		r: bool,
+		r: bool$1,
 		t: union(obj({ limit: obj({ tif: union(literal("Gtc"), literal("Ioc"), literal("Alo"), literal("FrontendMarket")) }) }), obj({ trigger: obj({
-			isMarket: bool,
+			isMarket: bool$1,
 			triggerPx: positive,
 			tpsl: union(literal("tp"), literal("sl"))
 		}) })),
@@ -42791,22 +43047,22 @@ zoo`.split("\n"));
 		}), obj({
 			type: literal("updateLeverage"),
 			asset,
-			isCross: bool,
+			isCross: bool$1,
 			leverage: int(1, 1e3)
 		}), obj({
 			type: literal("updateIsolatedMargin"),
 			asset,
-			isBuy: bool,
+			isBuy: bool$1,
 			ntli: int(-9007199254740991, 9007199254740991)
 		}), obj({
 			type: literal("twapOrder"),
 			twap: obj({
 				a: asset,
-				b: bool,
+				b: bool$1,
 				s: positive,
-				r: bool,
+				r: bool$1,
 				m: int(5, 1440),
-				t: bool
+				t: bool$1
 			})
 		}), obj({
 			type: literal("twapCancel"),
@@ -42913,7 +43169,7 @@ zoo`.split("\n"));
 		}
 		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
 		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
-		const entropy = findRecord(ctx.image, "entropy", params.owner.walletId);
+		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
 			try {
@@ -43026,6 +43282,1688 @@ zoo`.split("\n"));
 				"sessions.delete": deleteSession,
 				"sessions.sign": signSession
 			}
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/record.ts
+	/**
+	* The `hardware-wallet` record: a hardware wallet under external custody. The kernel keeps no
+	* secret for it — the public header carries what the device claims to be, the sealed body the
+	* public material pairing pinned (BIP-32 account nodes and SLIP-10 ed25519 keys). Every device
+	* answer is checked against the pin before it can influence a request.
+	*
+	* Header `{ device, fingerprint, model?, firmware?, createdAt }` is stored as fixed-order JSON and
+	* enters the envelope AAD verbatim; the body is strict JSON `{ nodes, ed25519 }` keyed by `m/…`
+	* paths. Parsing validates fully: a malformed row is `integrity`, never silently ignored.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	var HARDWARE_WALLET_KIND = "hardware-wallet";
+	var HARDENED$4 = 2147483648;
+	/** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
+	var DEVICE_TEXT$1 = /^[\u0020-\u007E]{1,64}$/;
+	var HEX$1 = /^[0-9a-f]+$/;
+	var MAX_NODES = 512;
+	var MAX_ED25519 = 256;
+	/**
+	* Stable hardware-wallet identifier, domain-separated from the software wallet id:
+	* SHA-256(UTF-8("qntx-wallet/hardware-wallet-id/v1") ‖ UTF-8(device) ‖ 0x00 ‖ fingerprint4)[0..8].
+	* The same device re-paired maps to the same id — the pair handler answers `already-exists`.
+	*/
+	function hardwareWalletId(device, fingerprint) {
+		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/hardware-wallet-id/v1"), utf8ToBytes$1(device), new Uint8Array([0]), fingerprint)).slice(0, 8));
+	}
+	/** The `hardware-wallet` record for `walletId`, when the vault has one. */
+	function hardwareWallet(image, walletId) {
+		return image.records.find((r) => r.kind === "hardware-wallet" && r.id === walletId);
+	}
+	var asDevice = (value) => {
+		if (typeof value !== "string") throw headerFailure();
+		const device = HARDWARE_DEVICES.find((d) => d === value);
+		if (device === void 0) throw headerFailure();
+		return device;
+	};
+	var asFingerprint = (value) => {
+		if (typeof value !== "string" || !/^[0-9a-f]{8}$/.test(value)) throw headerFailure();
+		return hexToBytes$3(value);
+	};
+	var asDeviceText = (value) => {
+		if (typeof value !== "string" || !DEVICE_TEXT$1.test(value)) throw headerFailure();
+		return value;
+	};
+	function encodeHardwareHeader(header) {
+		const fields = {
+			device: header.device,
+			fingerprint: bytesToHex$4(header.fingerprint)
+		};
+		if (header.model !== void 0) fields["model"] = header.model;
+		if (header.firmware !== void 0) fields["firmware"] = header.firmware;
+		fields["createdAt"] = header.createdAt;
+		return JSON.stringify(fields);
+	}
+	/** Strict header parse; every failure is `integrity` — status marks the vault corrupted. */
+	function parseHardwareHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"device",
+			"fingerprint",
+			"createdAt",
+			...["model", "firmware"].filter((key) => Object.hasOwn(object, key))
+		]);
+		const header = {
+			device: asDevice(object["device"]),
+			fingerprint: asFingerprint(object["fingerprint"]),
+			createdAt: asCreatedAt(object["createdAt"])
+		};
+		if (object["model"] !== void 0) header.model = asDeviceText(object["model"]);
+		if (object["firmware"] !== void 0) header.firmware = asDeviceText(object["firmware"]);
+		return header;
+	}
+	/** The `HardwareWalletInfo` a hardware-wallet record's public header reports. */
+	function hardwareWalletInfo(header) {
+		const info = {
+			custody: "hardware",
+			walletId: hardwareWalletId(header.device, header.fingerprint),
+			device: header.device,
+			fingerprint: bytesToHex$4(header.fingerprint),
+			createdAt: header.createdAt
+		};
+		if (header.model !== void 0) info.model = header.model;
+		if (header.firmware !== void 0) info.firmware = header.firmware;
+		return info;
+	}
+	var bodyFailure = () => new KernelError("integrity", "invalid hardware wallet record");
+	/** `m/…` → `KeyPath`; depth 1–10, hardened segments carry `'`, indices stay under 2^31. */
+	function pathFromString(text) {
+		if (!/^m(\/[0-9]+'?){1,10}$/.test(text)) throw bodyFailure();
+		return text.slice(2).split("/").map((segment) => {
+			const hardened = segment.endsWith("'");
+			const digits = hardened ? segment.slice(0, -1) : segment;
+			if (digits.length > 1 && digits.startsWith("0")) throw bodyFailure();
+			const index = Number(digits);
+			if (!Number.isSafeInteger(index) || index > 2147483647) throw bodyFailure();
+			return hardened ? index + HARDENED$4 : index;
+		});
+	}
+	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; empty paths are `m`. */
+	function pathToString(path) {
+		return `m${path.map((i) => i >= HARDENED$4 ? `/${i - HARDENED$4}'` : `/${i}`).join("")}`;
+	}
+	var asHexBytes = (value, length) => {
+		if (typeof value !== "string" || value.length !== length * 2 || !HEX$1.test(value)) throw bodyFailure();
+		return hexToBytes$3(value);
+	};
+	var parseNode = (value) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
+		const node = value;
+		const hasParent = Object.hasOwn(node, "parent");
+		if (Object.keys(node).length !== (hasParent ? 3 : 2)) throw bodyFailure();
+		const publicKey = asHexBytes(node["key"], 33);
+		if (!secp256k1.utils.isValidPublicKey(publicKey)) throw bodyFailure();
+		const parsed = {
+			key: publicKey,
+			chainCode: asHexBytes(node["chainCode"], 32)
+		};
+		if (hasParent) parsed.parent = asHexBytes(node["parent"], 4);
+		return parsed;
+	};
+	/**
+	* Parses the sealed body: every node is a real secp256k1 point, every ed25519 entry a real point,
+	* every path well-formed, and the caps (512 nodes, 256 ed25519) hold. Anything less is
+	* `integrity`.
+	*/
+	function parseHardwareBody(plaintext) {
+		let text;
+		try {
+			text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+		} catch (_unused) {
+			throw bodyFailure();
+		}
+		let value;
+		try {
+			value = JSON.parse(text);
+		} catch (_unused2) {
+			throw bodyFailure();
+		}
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
+		const body = value;
+		if (Object.keys(body).length !== 2) throw bodyFailure();
+		const { nodes } = body;
+		const ed = body["ed25519"];
+		if (typeof nodes !== "object" || nodes === null || Array.isArray(nodes) || typeof ed !== "object" || ed === null || Array.isArray(ed)) throw bodyFailure();
+		const nodeEntries = Object.entries(nodes);
+		const edEntries = Object.entries(ed);
+		if (nodeEntries.length > MAX_NODES || edEntries.length > MAX_ED25519) throw bodyFailure();
+		return {
+			nodes: nodeEntries.map(([path, entry]) => {
+				const parsed = parseNode(entry);
+				const node = {
+					path: pathFromString(path),
+					publicKey: parsed.key,
+					chainCode: parsed.chainCode
+				};
+				if (parsed.parent !== void 0) node.parent = parsed.parent;
+				return node;
+			}),
+			ed25519: edEntries.map(([path, entry]) => {
+				const publicKey = asHexBytes(entry, 32);
+				if (!ed25519.utils.isValidPublicKey(publicKey)) throw bodyFailure();
+				const parsedPath = pathFromString(path);
+				if (parsedPath.some((i) => i < HARDENED$4)) throw bodyFailure();
+				return {
+					path: parsedPath,
+					publicKey
+				};
+			})
+		};
+	}
+	/** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
+	function encodeHardwareBody(keys) {
+		const nodes = {};
+		for (const node of keys.nodes) {
+			const entry = {
+				key: bytesToHex$4(node.publicKey),
+				chainCode: bytesToHex$4(node.chainCode)
+			};
+			if (node.parent !== void 0) entry.parent = bytesToHex$4(node.parent);
+			nodes[pathToString(node.path)] = entry;
+		}
+		const ed = {};
+		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$4(key.publicKey);
+		return utf8ToBytes$1(JSON.stringify({
+			nodes,
+			ed25519: ed
+		}));
+	}
+	/** The pin a record seals: the claimed fingerprint plus the pinned keys. */
+	function hardwarePin(header, keys) {
+		return {
+			fingerprint: header.fingerprint,
+			nodes: keys.nodes,
+			ed25519: keys.ed25519
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/keystone/cbor.ts
+	init_utils$2();
+	/** Device answers are QR payloads — the protocol already bounds them; the decoder re-asserts. */
+	var MAX_BYTES = 262144;
+	/** Registry structures are flat: multi-accounts keys, a keypath's components, small maps. */
+	var MAX_DEPTH = 8;
+	var MAX_ITEMS = 4096;
+	function fail$4() {
+		throw new KernelError("integrity", "malformed cbor");
+	}
+	var utf8 = new TextDecoder("utf-8", { fatal: true });
+	var take = (cursor, length) => {
+		if (length < 0 || cursor.offset + length > cursor.bytes.length) fail$4();
+		const slice = cursor.bytes.subarray(cursor.offset, cursor.offset + length);
+		cursor.offset += length;
+		return slice;
+	};
+	/**
+	* One argument slot: the embedded value of a head. Only minimal encodings pass — a value that fits
+	* a shorter slot is a non-canonical, hand-built deviation (strict-CBOR decoders reject it).
+	*/
+	var argument = (cursor, info) => {
+		let value;
+		let bytes = 0;
+		if (info < 24) return info;
+		if (info === 24) bytes = 1;
+		else if (info === 25) bytes = 2;
+		else if (info === 26) bytes = 4;
+		else if (info === 27) bytes = 8;
+		else fail$4();
+		const slot = take(cursor, bytes);
+		if (bytes === 8) {
+			const wide = new DataView(slot.buffer, slot.byteOffset, 8).getBigUint64(0);
+			if (wide > BigInt(Number.MAX_SAFE_INTEGER)) fail$4();
+			value = Number(wide);
+		} else {
+			value = 0;
+			for (const byte of slot) value = value * 256 + byte;
+		}
+		if (value < (bytes === 1 ? 24 : bytes === 2 ? 256 : bytes === 4 ? 65536 : 2 ** 32)) fail$4();
+		return value;
+	};
+	var length = (cursor, info) => {
+		const value = argument(cursor, info);
+		if (value > MAX_ITEMS) fail$4();
+		return value;
+	};
+	var item = (cursor, depth) => {
+		var _take$;
+		if (depth > MAX_DEPTH) fail$4();
+		const head = (_take$ = take(cursor, 1)[0]) !== null && _take$ !== void 0 ? _take$ : 0;
+		const major = Math.trunc(head / 32);
+		const info = head % 32;
+		switch (major) {
+			case 0: return {
+				kind: "uint",
+				value: argument(cursor, info)
+			};
+			case 2: return {
+				kind: "bytes",
+				value: take(cursor, argument(cursor, info))
+			};
+			case 3: {
+				const raw = take(cursor, argument(cursor, info));
+				try {
+					return {
+						kind: "text",
+						value: utf8.decode(raw)
+					};
+				} catch (_unused) {
+					return fail$4();
+				}
+			}
+			case 4: {
+				const count = length(cursor, info);
+				const items = [];
+				for (let i = 0; i < count; i++) items.push(item(cursor, depth + 1));
+				return {
+					kind: "array",
+					items
+				};
+			}
+			case 5: {
+				const count = length(cursor, info);
+				const seen = /* @__PURE__ */ new Set();
+				const entries = [];
+				for (let i = 0; i < count; i++) {
+					const key = item(cursor, depth + 1);
+					const encoded = encodeCbor(key).join(",");
+					if (seen.has(encoded)) fail$4();
+					seen.add(encoded);
+					entries.push([key, item(cursor, depth + 1)]);
+				}
+				return {
+					kind: "map",
+					entries
+				};
+			}
+			case 6: return {
+				kind: "tag",
+				tag: argument(cursor, info),
+				item: item(cursor, depth + 1)
+			};
+			case 7:
+				if (info === 20 || info === 21) return {
+					kind: "bool",
+					value: info === 21
+				};
+				return fail$4();
+			default: return fail$4();
+		}
+	};
+	/** Parses exactly one canonical item from `bytes` — trailing input is malformed. */
+	var decodeCbor = (bytes) => {
+		if (bytes.length === 0 || bytes.length > MAX_BYTES) fail$4();
+		const cursor = {
+			bytes,
+			offset: 0
+		};
+		const parsed = item(cursor, 1);
+		if (cursor.offset !== bytes.length) fail$4();
+		return parsed;
+	};
+	var head = (major, value, out) => {
+		if (value < 24) out.push(major * 32 + value);
+		else if (value < 256) out.push(major * 32 + 24, value);
+		else if (value < 65536) out.push(major * 32 + 25, Math.trunc(value / 256), value % 256);
+		else if (value < 2 ** 32) out.push(major * 32 + 26, Math.trunc(value / 16777216), Math.trunc(value / 65536) % 256, Math.trunc(value / 256) % 256, value % 256);
+		else {
+			out.push(major * 32 + 27);
+			let rest = BigInt(value);
+			const slot = [];
+			for (let i = 0; i < 8; i++) {
+				slot.unshift(Number(rest % 256n));
+				rest /= 256n;
+			}
+			out.push(...slot);
+		}
+	};
+	/** Serialises the tree canonically — shortest heads, in-order map keys, definite lengths. */
+	var encodeCbor = (value) => {
+		const out = [];
+		const emit = (node) => {
+			switch (node.kind) {
+				case "uint":
+					head(0, node.value, out);
+					break;
+				case "bytes":
+					head(2, node.value.length, out);
+					for (const byte of node.value) out.push(byte);
+					break;
+				case "text": {
+					const raw = utf8ToBytes$1(node.value);
+					head(3, raw.length, out);
+					for (const byte of raw) out.push(byte);
+					break;
+				}
+				case "array":
+					head(4, node.items.length, out);
+					for (const entry of node.items) emit(entry);
+					break;
+				case "map":
+					head(5, node.entries.length, out);
+					for (const [key, entry] of node.entries) {
+						emit(key);
+						emit(entry);
+					}
+					break;
+				case "tag":
+					head(6, node.tag, out);
+					emit(node.item);
+					break;
+				case "bool": out.push(node.value ? 245 : 244);
+			}
+		};
+		emit(value);
+		return new Uint8Array(out);
+	};
+	// packages/wallet-kernel/src/modules/signers/keystone/registry.ts
+	init_objectSpread2();
+	var TAG_KEY_DERIVATION_CALL = 1301;
+	var TAG_KEY_DERIVATION_SCHEMA = 1302;
+	function fail$3() {
+		throw new KernelError("integrity", "malformed registry item");
+	}
+	var uint = (value) => {
+		if (value.kind !== "uint") fail$3();
+		return value.value;
+	};
+	var bytes = (value) => {
+		if (value.kind !== "bytes") fail$3();
+		return value.value;
+	};
+	var text = (value) => {
+		if (value.kind !== "text") fail$3();
+		return value.value;
+	};
+	var bool = (value) => {
+		if (value.kind !== "bool") fail$3();
+		return value.value;
+	};
+	var fingerprint = (value) => {
+		const n = uint(value);
+		if (n > 4294967295) fail$3();
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, n);
+		return out;
+	};
+	/** `uint` keys ≤ 2^32 are the only map keys the registry uses. */
+	var keyOf = (value) => {
+		if (value.kind !== "uint" || value.value > 4294967295) fail$3();
+		return value.value;
+	};
+	var tagged$1 = (value, tag) => {
+		if (value.kind !== "tag" || value.tag !== tag) fail$3();
+		return value.item;
+	};
+	var keyPath = (value) => {
+		var _components;
+		if (value.kind !== "map") fail$3();
+		let components;
+		let sourceFingerprint;
+		let depth;
+		for (const [key, entry] of value.entries) switch (keyOf(key)) {
+			case 1: {
+				if (entry.kind !== "array") fail$3();
+				const flat = entry.items;
+				if (flat.length % 2 !== 0) fail$3();
+				const parsed = [];
+				for (let i = 0; i < flat.length; i += 2) {
+					const index = flat[i];
+					const flag = flat[i + 1];
+					if (index === void 0 || flag === void 0) fail$3();
+					if (index.kind !== "uint" && !(index.kind === "array" && index.items.length === 0)) fail$3();
+					parsed.push({
+						index: index.kind === "uint" ? index.value : void 0,
+						hardened: bool(flag)
+					});
+				}
+				components = parsed;
+				break;
+			}
+			case 2:
+				sourceFingerprint = fingerprint(entry);
+				break;
+			case 3: depth = uint(entry);
+		}
+		return {
+			components: (_components = components) !== null && _components !== void 0 ? _components : [],
+			sourceFingerprint,
+			depth
+		};
+	};
+	var coinInfo = (value) => {
+		if (value.kind !== "map") fail$3();
+		let coinType;
+		let network;
+		for (const [key, entry] of value.entries) switch (keyOf(key)) {
+			case 1:
+				coinType = uint(entry);
+				break;
+			case 2: network = uint(entry);
+		}
+		return {
+			coinType,
+			network
+		};
+	};
+	var hdKey = (value) => {
+		if (value.kind !== "map") fail$3();
+		let isMaster = false;
+		let isPrivate = false;
+		let key;
+		let chainCode;
+		let useInfo;
+		let origin;
+		let children;
+		let parentFingerprint;
+		let name;
+		let note;
+		for (const [field, entry] of value.entries) switch (keyOf(field)) {
+			case 1:
+				isMaster = bool(entry);
+				break;
+			case 2:
+				isPrivate = bool(entry);
+				break;
+			case 3:
+				key = bytes(entry);
+				break;
+			case 4:
+				chainCode = bytes(entry);
+				break;
+			case 5:
+				useInfo = coinInfo(tagged$1(entry, 305));
+				break;
+			case 6:
+				origin = keyPath(tagged$1(entry, 304));
+				break;
+			case 7:
+				children = keyPath(tagged$1(entry, 304));
+				break;
+			case 8:
+				parentFingerprint = fingerprint(entry);
+				break;
+			case 9:
+				name = text(entry);
+				break;
+			case 10: note = text(entry);
+		}
+		return {
+			isMaster,
+			isPrivate,
+			key,
+			chainCode,
+			useInfo,
+			origin,
+			children,
+			parentFingerprint,
+			name,
+			note
+		};
+	};
+	/**
+	* The sync payload: the bare map — the UR's type already carries the `crypto-multi-accounts` tag,
+	* and a device-sized payload wrapped in it again would exceed the decoder's depth cap.
+	*/
+	var multiAccounts = (value) => {
+		if (value.kind !== "map") fail$3();
+		const root = value;
+		let masterFingerprint;
+		let keys;
+		let device;
+		let deviceId;
+		let deviceVersion;
+		for (const [key, entry] of root.entries) switch (keyOf(key)) {
+			case 1:
+				masterFingerprint = fingerprint(entry);
+				break;
+			case 2:
+				if (entry.kind !== "array") fail$3();
+				keys = entry.items.map((item) => hdKey(tagged$1(item, 303)));
+				break;
+			case 3:
+				device = text(entry);
+				break;
+			case 4:
+				deviceId = text(entry);
+				break;
+			case 5: deviceVersion = text(entry);
+		}
+		if (masterFingerprint === void 0 || keys === void 0) fail$3();
+		return {
+			masterFingerprint,
+			keys,
+			device,
+			deviceId,
+			deviceVersion
+		};
+	};
+	var HARDENED_BIT = 2147483648;
+	var cborUint = (value) => ({
+		kind: "uint",
+		value
+	});
+	var cborBytes = (value) => ({
+		kind: "bytes",
+		value
+	});
+	var cborText = (value) => ({
+		kind: "text",
+		value
+	});
+	var cborMap = (entries) => ({
+		kind: "map",
+		entries: entries.map(([key, value]) => [cborUint(key), value])
+	});
+	var keyPathCbor = (path, fingerprint) => {
+		if (fingerprint.length !== 4) fail$3();
+		return {
+			kind: "tag",
+			tag: 304,
+			item: cborMap([[1, {
+				kind: "array",
+				items: path.flatMap((component) => [cborUint(component % HARDENED_BIT), {
+					kind: "bool",
+					value: component >= HARDENED_BIT
+				}])
+			}], [2, cborUint(new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0))]])
+		};
+	};
+	var requestIdCbor = (requestId) => {
+		if (requestId.length !== 16) fail$3();
+		return {
+			kind: "tag",
+			tag: 37,
+			item: cborBytes(requestId)
+		};
+	};
+	var ethSignRequest = (fields) => encodeCbor(cborMap([
+		[1, requestIdCbor(fields.requestId)],
+		[2, cborBytes(fields.signData)],
+		[3, cborUint(fields.dataType)],
+		...fields.chainId === void 0 ? [] : [[4, cborUint(fields.chainId)]],
+		[5, keyPathCbor(fields.path, fields.fingerprint)],
+		[7, cborText(fields.origin)]
+	]));
+	var solSignRequest = (fields) => encodeCbor(cborMap([
+		[1, requestIdCbor(fields.requestId)],
+		[2, cborBytes(fields.signData)],
+		[3, keyPathCbor(fields.path, fields.fingerprint)],
+		[5, cborText(fields.origin)],
+		[6, cborUint(fields.signType)]
+	]));
+	var tronSignRequest = (fields) => encodeCbor(cborMap([
+		[1, requestIdCbor(fields.requestId)],
+		[2, cborBytes(fields.signData)],
+		[3, cborUint(fields.dataType)],
+		[4, keyPathCbor(fields.path, fields.fingerprint)],
+		[6, cborText(fields.origin)]
+	]));
+	var btcSignRequest = (fields) => encodeCbor(cborMap([
+		[1, requestIdCbor(fields.requestId)],
+		[2, cborBytes(fields.signData)],
+		[3, cborUint(1)],
+		[4, {
+			kind: "array",
+			items: fields.paths.map((path) => keyPathCbor(path, fields.fingerprint))
+		}],
+		[6, cborText(fields.origin)]
+	]));
+	/** A `crypto-psbt` payload is the bare PSBT byte string — the UR type carries tag 310. */
+	var cryptoPsbt = (psbt) => encodeCbor(cborBytes(psbt));
+	var derivationSchema = (path, curve, fingerprint) => ({
+		kind: "tag",
+		tag: TAG_KEY_DERIVATION_SCHEMA,
+		item: cborMap([
+			[1, keyPathCbor(path, fingerprint)],
+			[2, cborUint(curve)],
+			[3, cborUint(0)]
+		])
+	});
+	/**
+	* A `qr-hardware-call` key-derivation request: call-type 0, #1301 key-derivation-call wrapping the
+	* schemas and the wallet origin string. Version stays absent — V0 is the default every client sends
+	* (the vendor encoder drops a falsy version), which is what firmware 3.2.2 parses.
+	*/
+	var hardwareCall = (fields) => encodeCbor(cborMap([
+		[1, cborUint(0)],
+		[2, {
+			kind: "tag",
+			tag: TAG_KEY_DERIVATION_CALL,
+			item: cborMap([[1, {
+				kind: "array",
+				items: [...fields.secp256k1.map((path) => derivationSchema(path, 0, fields.fingerprint)), ...fields.ed25519.map((path) => derivationSchema(path, 1, fields.fingerprint))]
+			}]])
+		}],
+		[3, cborText(fields.origin)]
+	]));
+	var requestId = (entries) => {
+		var _entries$find;
+		const taggedId = (_entries$find = entries.find(([key]) => key.kind === "uint" && key.value === 1)) === null || _entries$find === void 0 ? void 0 : _entries$find[1];
+		return taggedId === void 0 ? void 0 : bytes(tagged$1(taggedId, 37));
+	};
+	var signatureFields = (value) => {
+		var _value$entries$find;
+		if (value.kind !== "map") fail$3();
+		const signature = (_value$entries$find = value.entries.find(([key]) => key.kind === "uint" && key.value === 2)) === null || _value$entries$find === void 0 ? void 0 : _value$entries$find[1];
+		if (signature === void 0) fail$3();
+		return {
+			requestId: requestId(value.entries),
+			signature: bytes(signature)
+		};
+	};
+	var ethSignature = (value) => signatureFields(value);
+	var solSignature = (value) => signatureFields(value);
+	var tronSignature = (value) => signatureFields(value);
+	var btcSignature = (value) => {
+		var _value$entries$find2;
+		if (value.kind !== "map") fail$3();
+		const publicKey = (_value$entries$find2 = value.entries.find(([key]) => key.kind === "uint" && key.value === 3)) === null || _value$entries$find2 === void 0 ? void 0 : _value$entries$find2[1];
+		if (publicKey === void 0) fail$3();
+		return _objectSpread2(_objectSpread2({}, signatureFields(value)), {}, { publicKey: bytes(publicKey) });
+	};
+	/** Decodes a `crypto-psbt` response payload: the signed PSBT byte string. */
+	var cryptoPsbtBytes = (value) => bytes(value);
+	// packages/wallet-kernel/src/modules/signers/keystone/sync.ts
+	/**
+	* The Keystone-Connect pairing sync: decode the `crypto-multi-accounts` the device shows over QR
+	* and pin exactly the public material the design names — the six BIP-32 account nodes and the two
+	* SLIP-10 ed25519 leaves a Keystone 3 Pro publishes. Every other key (DOGE/XRP/LTC/BCH/ZEC/ADA
+	* accounts, the ledger-legacy/live derivatives without chain code) parses structurally and is then
+	* ignored: it may not influence the pin.
+	*/
+	init_secp256k1();
+	init_objectSpread2();
+	var HARDENED$3 = 2147483648;
+	/** The BIP-32 account nodes the sync pins: btc purposes, ethereum and tron, coin 0' account 0'. */
+	var SECP256K1_PATHS = [
+		[
+			2147483692,
+			HARDENED$3,
+			HARDENED$3
+		],
+		[
+			2147483697,
+			HARDENED$3,
+			HARDENED$3
+		],
+		[
+			2147483732,
+			HARDENED$3,
+			HARDENED$3
+		],
+		[
+			2147483734,
+			HARDENED$3,
+			HARDENED$3
+		],
+		[
+			2147483692,
+			2147483708,
+			HARDENED$3
+		],
+		[
+			2147483692,
+			2147483843,
+			HARDENED$3
+		]
+	];
+	/** The solana account and its change leaf — the only ed25519 keys the sync pins. */
+	var ED25519_PATHS = [[
+		2147483692,
+		2147484149,
+		HARDENED$3
+	], [
+		2147483692,
+		2147484149,
+		HARDENED$3,
+		HARDENED$3
+	]];
+	function fail$2() {
+		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
+	}
+	/** The derivation path a keypath claims, or `undefined` when a wildcard makes it unpinnable. */
+	var pathOf = (keyPath) => {
+		const components = [];
+		for (const component of keyPath.components) {
+			if (component.index === void 0 || component.index > 2147483647) return;
+			components.push(component.index + (component.hardened ? HARDENED$3 : 0));
+		}
+		return components;
+	};
+	var samePath$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	/** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
+	var parseSync = (response) => {
+		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") fail$2();
+		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+		const nodes = [];
+		const ed25519 = [];
+		const claimed = [];
+		for (const key of accounts.keys) {
+			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
+			if (key.origin !== void 0) {
+				const source = key.origin.sourceFingerprint;
+				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) fail$2();
+			}
+			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) continue;
+			if (claimed.some((seen) => samePath$2(seen, path))) fail$2();
+			claimed.push(path);
+			if (SECP256K1_PATHS.some((wanted) => samePath$2(path, wanted))) {
+				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) fail$2();
+				nodes.push(_objectSpread2({
+					path,
+					publicKey: new Uint8Array(key.key),
+					chainCode: new Uint8Array(key.chainCode)
+				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
+			} else if (ED25519_PATHS.some((wanted) => samePath$2(path, wanted))) {
+				if (key.key.length !== 32) fail$2();
+				ed25519.push({
+					path,
+					publicKey: new Uint8Array(key.key)
+				});
+			}
+		}
+		if (nodes.length === 0 && ed25519.length === 0) fail$2();
+		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
+			nodes,
+			ed25519
+		});
+	};
+	// packages/wallet-kernel/src/modules/signers/keystone/derive.ts
+	/**
+	* The Keystone `qr-hardware-call` key-derivation exchange: the wallet asks the device to derive
+	* hardened nodes the sync could not pin (per-group account xpubs, solana change leaves). The
+	* request paths are checked against the firmware's `check_hardware_call_path` allow-list before
+	* anything is shown, and the `crypto-multi-accounts` answer must cover exactly the requested paths
+	* — anything missing, extra or duplicated fails closed (`integrity`). The claimed master
+	* fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch to
+	* `wrong-device`.
+	*/
+	init_secp256k1();
+	init_objectSpread2();
+	var HARDENED$2 = 2147483648;
+	var ORIGIN$1 = "qntx";
+	var h = (...indices) => indices.map((i) => i + HARDENED$2);
+	/**
+	* The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a prefix
+	* matches the path itself or any extension of it.
+	*/
+	var DERIVABLE_PREFIXES = [
+		h(44, 0),
+		h(49),
+		h(84),
+		h(86),
+		h(44, 60),
+		h(44, 501),
+		h(44, 144),
+		h(1852, 1815),
+		h(1853, 1815),
+		h(1854, 1815),
+		h(44, 195),
+		h(44, 145),
+		h(44, 637),
+		h(44, 784),
+		h(44, 5),
+		h(44, 472),
+		h(44, 148),
+		h(44, 118),
+		h(44, 394),
+		h(44, 459),
+		h(44, 330),
+		h(44, 529),
+		h(44, 564),
+		h(44, 234),
+		h(44, 931),
+		h(44, 4218),
+		h(44, 9e3)
+	];
+	var under = (prefix, path) => path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
+	function integrity$2() {
+		throw new KernelError("integrity", "malformed key-derivation answer");
+	}
+	/** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
+	var derive = async (link, need, pin) => {
+		for (const path of [...need.secp256k1, ...need.ed25519]) if (!DERIVABLE_PREFIXES.some((prefix) => under(prefix, path))) throw new KernelError("unsupported", `keystone cannot derive ${pathToString(path)} over QR`);
+		const response = await link.exchange({
+			kind: "qr",
+			show: {
+				type: "qr-hardware-call",
+				cbor: hardwareCall(_objectSpread2(_objectSpread2({}, need), {}, {
+					fingerprint: pin.fingerprint,
+					origin: ORIGIN$1
+				}))
+			},
+			scan: ["crypto-multi-accounts"]
+		});
+		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$2();
+		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+		const nodes = [];
+		const ed25519 = [];
+		const answered = [];
+		for (const key of accounts.keys) {
+			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
+			if (key.origin !== void 0) {
+				const source = key.origin.sourceFingerprint;
+				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) integrity$2();
+			}
+			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$2();
+			if (need.secp256k1.some((wanted) => samePath$2(path, wanted))) {
+				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$2();
+				nodes.push(_objectSpread2({
+					path,
+					publicKey: new Uint8Array(key.key),
+					chainCode: new Uint8Array(key.chainCode)
+				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
+			} else if (need.ed25519.some((wanted) => samePath$2(path, wanted))) {
+				if (key.key.length !== 32) integrity$2();
+				ed25519.push({
+					path,
+					publicKey: new Uint8Array(key.key)
+				});
+			}
+			answered.push(path);
+		}
+		const wanted = [...need.secp256k1, ...need.ed25519];
+		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$2(a, w)))) integrity$2();
+		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
+			nodes,
+			ed25519
+		});
+	};
+	// packages/wallet-kernel/src/modules/signers/keystone/sign.ts
+	/**
+	* Keystone signing: what the device is shown for each request kind, the QR sign request for one
+	* plan stage, and the admission checks on the signature UR that comes back. The payload sent is
+	* always recomputed from the request — never trusted from the plan — and re-checked against the
+	* task digest before the QR is shown, so a kernel-side inconsistency fails closed (`integrity`). A
+	* response is admitted only when its request id equals the one this exchange generated
+	* (`wrong-device` otherwise: a stale or foreign answer), its UR type matches, and its signature has
+	* the exact shape the task needs; recovery bits never leave this module — only `r‖s` is returned
+	* per task and the chain assemblers re-derive `v`.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	init_transaction();
+	init_objectSpread2();
+	var ORIGIN = "qntx";
+	function integrity$1() {
+		throw new KernelError("integrity", "malformed device sign exchange");
+	}
+	function wrongDevice() {
+		throw new KernelError("wrong-device", "the signature answers a different request");
+	}
+	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
+	var display = (_request, plan) => {
+		switch (plan.kind) {
+			case "evm.transaction": return plan.tx.type === "legacy" || plan.tx.type === "eip1559" ? "clear" : "unsupported";
+			case "evm.personal-message":
+			case "evm.fiat24-session":
+			case "evm.typed-data":
+			case "tron.transaction":
+			case "tron.message":
+			case "solana.transaction":
+			case "solana.message":
+			case "bitcoin.psbt": return "clear";
+			case "bitcoin.message": return plan.format === "legacy" ? "clear" : "unsupported";
+			default: return "unsupported";
+		}
+	};
+	/**
+	* Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` carrying
+	* strictly-decoded CBOR — anything else, including a well-formed payload under the wrong type, is
+	* `integrity`.
+	*/
+	var exchange = async (link, show, type) => {
+		const response = await link.exchange({
+			kind: "qr",
+			show,
+			scan: [type]
+		});
+		if (response.kind !== "qr" || response.ur.type !== type) integrity$1();
+		return decodeCbor(response.ur.cbor);
+	};
+	/** A signature answer must name the request id this exchange minted. */
+	var checkRequestId = (returned, sent) => {
+		if (returned === void 0 || !equalBytes$6(returned, sent)) wrongDevice();
+	};
+	var compactSecp256k1 = (signature, requestId, length) => {
+		checkRequestId(signature.requestId, requestId);
+		if (signature.signature.length !== length) integrity$1();
+		return signature.signature.subarray(0, 64);
+	};
+	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
+	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	var expectDigest = (computed, task) => {
+		if (!equalBytes$6(computed, task.digest)) integrity$1();
+	};
+	var evm = async (link, context, request, stage) => {
+		const [task] = stage.tasks;
+		const requestId = context.random(16);
+		let signData;
+		let dataType;
+		let chainId;
+		if (stage.kind === "evm.transaction") {
+			if (request.kind !== "evm.transaction") integrity$1();
+			const { tx } = request;
+			signData = evmSigningPreimage(tx);
+			const { chainId: txChainId } = tx;
+			if (tx.type === "legacy") {
+				dataType = 1;
+				chainId = txChainId;
+			} else if (tx.type === "eip1559") {
+				dataType = 4;
+				chainId = txChainId;
+			} else integrity$1();
+			expectDigest(keccak_256(signData), task);
+		} else if (stage.kind === "evm.typed-data") {
+			if (request.kind !== "evm.typed-data") integrity$1();
+			signData = utf8ToBytes$1(request.typedData);
+			dataType = 2;
+			expectDigest(planEvm(request, {
+				path: task.path,
+				publicKey: task.publicKey
+			}).tasks[0].digest, task);
+		} else {
+			if (request.kind !== stage.kind) integrity$1();
+			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
+			dataType = 3;
+			expectDigest(personalDigest(signData), task);
+		}
+		return compactSecp256k1(ethSignature(await exchange(link, {
+			type: "eth-sign-request",
+			cbor: ethSignRequest(_objectSpread2(_objectSpread2({
+				requestId,
+				signData,
+				dataType
+			}, chainId === void 0 ? {} : { chainId }), {}, {
+				path: task.path,
+				fingerprint: context.pin.fingerprint,
+				origin: ORIGIN
+			}))
+		}, "eth-signature")), requestId, 65);
+	};
+	var tron = async (link, context, request, stage) => {
+		const [task] = stage.tasks;
+		const requestId = context.random(16);
+		let signData;
+		let dataType;
+		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
+			signData = request.rawData;
+			dataType = 1;
+			expectDigest(sha256$1(signData), task);
+		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
+			signData = request.message;
+			dataType = 2;
+			expectDigest(tronMessageDigest(signData), task);
+		} else integrity$1();
+		return compactSecp256k1(tronSignature(await exchange(link, {
+			type: "tron-sign-request",
+			cbor: tronSignRequest({
+				requestId,
+				signData,
+				dataType,
+				path: task.path,
+				fingerprint: context.pin.fingerprint,
+				origin: ORIGIN
+			})
+		}, "tron-signature")), requestId, 65);
+	};
+	var solana = async (link, context, request, stage) => {
+		const [task] = stage.tasks;
+		if (request.kind !== stage.kind) integrity$1();
+		const signData = request.message;
+		if (!equalBytes$6(signData, task.message)) integrity$1();
+		const requestId = context.random(16);
+		const answer = solSignature(await exchange(link, {
+			type: "sol-sign-request",
+			cbor: solSignRequest({
+				requestId,
+				signData,
+				signType: request.kind === "solana.transaction" ? 1 : 2,
+				path: task.path,
+				fingerprint: context.pin.fingerprint,
+				origin: ORIGIN
+			})
+		}, "sol-signature"));
+		checkRequestId(answer.requestId, requestId);
+		if (answer.signature.length !== 64) integrity$1();
+		return answer.signature;
+	};
+	var bitcoinPsbt = async (link, stage) => {
+		const signed = cryptoPsbtBytes(await exchange(link, {
+			type: "crypto-psbt",
+			cbor: cryptoPsbt(stage.psbt)
+		}, "crypto-psbt"));
+		if (!samePsbtContent(stage.psbt, signed)) integrity$1();
+		let transaction;
+		try {
+			transaction = Transaction.fromPSBT(signed);
+		} catch (_unused) {
+			integrity$1();
+		}
+		return stage.tasks.map((task, index) => {
+			var _input$partialSig;
+			const planned = stage.inputs[index];
+			if (planned === void 0) integrity$1();
+			const input = transaction.getInput(planned.index);
+			if (task.scheme === "bip340") {
+				const signature = input.tapKeySig;
+				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$1();
+				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$1();
+				return signature.subarray(0, 64);
+			}
+			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$6(key, task.publicKey));
+			if (entry === void 0) integrity$1();
+			const [, der] = entry;
+			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$1();
+			let signature;
+			try {
+				signature = secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
+			} catch (_unused2) {
+				integrity$1();
+			}
+			return signature;
+		});
+	};
+	var bitcoinMessage = async (link, context, request, stage) => {
+		const [task] = stage.tasks;
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		const signData = utf8ToBytes$1(request.message);
+		expectDigest(legacyMessageHash(request.message), task);
+		const requestId = context.random(16);
+		const answer = btcSignature(await exchange(link, {
+			type: "btc-sign-request",
+			cbor: btcSignRequest({
+				requestId,
+				signData,
+				paths: [task.path],
+				fingerprint: context.pin.fingerprint,
+				origin: ORIGIN
+			})
+		}, "btc-signature"));
+		checkRequestId(answer.requestId, requestId);
+		if (!equalBytes$6(answer.publicKey, task.publicKey)) wrongDevice();
+		if (answer.signature.length !== 65) integrity$1();
+		return answer.signature.subarray(1);
+	};
+	var sign = async (link, context) => {
+		const { request, stage } = context;
+		switch (stage.kind) {
+			case "evm.transaction":
+			case "evm.personal-message":
+			case "evm.fiat24-session":
+			case "evm.typed-data":
+				if (request.kind !== stage.kind) integrity$1();
+				return [await evm(link, context, request, stage)];
+			case "tron.transaction":
+			case "tron.message":
+				if (request.kind !== stage.kind) integrity$1();
+				return [await tron(link, context, request, stage)];
+			case "solana.transaction":
+			case "solana.message":
+				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$1();
+				return [await solana(link, context, request, stage)];
+			case "bitcoin.psbt":
+				if (request.kind !== "bitcoin.psbt") integrity$1();
+				return bitcoinPsbt(link, stage);
+			case "bitcoin.message":
+				if (request.kind !== "bitcoin.message") integrity$1();
+				return [await bitcoinMessage(link, context, request, stage)];
+			default: throw new KernelError("unsupported", "keystone cannot sign this request");
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/drivers.ts
+	var DRIVERS = { keystone: {
+		pair: async (link) => parseSync(await link.exchange({
+			kind: "qr",
+			scan: ["crypto-multi-accounts"]
+		})),
+		display,
+		sign,
+		accounts: derive,
+		verifyAddress: async (link, target) => {
+			const response = await link.exchange({
+				kind: "compare",
+				address: target.address,
+				path: pathToString(target.path)
+			});
+			if (response.kind !== "compare") throw new KernelError("integrity", "the compare answer is not a compare verdict");
+			return {
+				method: "compare",
+				matched: response.matched
+			};
+		}
+	} };
+	// packages/wallet-kernel/src/modules/signers/material.ts
+	init_bip32();
+	var HARDENED$1 = 2147483648;
+	var deviceRequired = () => new KernelError("device-required", "the device must derive this path");
+	var samePath$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var nodeAt = (pin, path) => pin.nodes.find((node) => samePath$1(node.path, path));
+	/**
+	* The deepest pinned ancestor whose remaining tail is fully non-hardened — the only situation in
+	* which BIP-32 public derivation reaches `path`. `[]` is never derivable.
+	*/
+	var derivingAncestor = (pin, path) => pin.nodes.filter((node) => node.path.length < path.length && path.slice(0, node.path.length).every((v, i) => v === node.path[i]) && path.slice(node.path.length).every((v) => v < HARDENED$1)).sort((a, b) => b.path.length - a.path.length)[0];
+	var derivePublic = (node, path) => {
+		const root = new HDKey$1({
+			publicKey: node.publicKey,
+			chainCode: node.chainCode
+		});
+		const tail = path.slice(node.path.length);
+		const child = tail.length === 0 ? root : root.derive(`m/${tail.join("/")}`);
+		if (child.publicKey === null) throw deviceRequired();
+		return child.publicKey;
+	};
+	var fingerprintNumber = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
+	/** The record's pinned material as a `PublicMaterial`; the fingerprint is the pinned claim. */
+	var pinnedMaterial = (pin) => ({
+		secp256k1: async (path) => {
+			if (path.length === 0) throw deviceRequired();
+			const node = nodeAt(pin, path);
+			if (node !== void 0) return node.publicKey;
+			const ancestor = derivingAncestor(pin, path);
+			if (ancestor === void 0) throw deviceRequired();
+			return derivePublic(ancestor, path);
+		},
+		ed25519: async (path) => {
+			const key = pin.ed25519.find((k) => samePath$1(k.path, path));
+			if (key === void 0) throw deviceRequired();
+			return key.publicKey;
+		},
+		extendedPublicKey: async (path, versions) => {
+			var _path$at;
+			const node = nodeAt(pin, path);
+			if (node === void 0 || path.length === 0 || node.parent === void 0) throw deviceRequired();
+			return new HDKey$1({
+				versions,
+				depth: path.length,
+				index: (_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0,
+				parentFingerprint: fingerprintNumber(node.parent),
+				chainCode: node.chainCode,
+				publicKey: node.publicKey
+			}).publicExtendedKey;
+		},
+		fingerprint: async () => pin.fingerprint
+	});
+	// packages/wallet-kernel/src/modules/signers/operation.ts
+	init_utils$2();
+	/** 300 s without a `step` answer discards the operation (I6). */
+	var NO_PROGRESS_MS = 3e5;
+	var cancelled = () => new KernelError("cancelled", "the operation was cancelled");
+	function createOperationExecutor(platform) {
+		let active;
+		const armTimer = (op) => {
+			op.cancelTimer();
+			op.cancelTimer = platform.setTimer(NO_PROGRESS_MS, () => {
+				discard(op);
+			});
+		};
+		const discard = (op) => {
+			var _op$pending;
+			op.cancelTimer();
+			if (active === op) active = void 0;
+			(_op$pending = op.pending) === null || _op$pending === void 0 || _op$pending.reject(cancelled());
+			notify(op, {
+				kind: "failed",
+				error: cancelled()
+			});
+		};
+		const notify = (op, turn) => {
+			if (op.emit === void 0) op.events.push(turn);
+			else {
+				const { emit } = op;
+				op.emit = void 0;
+				emit(turn);
+			}
+		};
+		const waitTurn = async (op) => {
+			const queued = op.events.shift();
+			if (queued !== void 0) return queued;
+			return new Promise((resolve) => {
+				op.emit = resolve;
+			});
+		};
+		const toStep = (op, turn) => {
+			if (turn.kind === "failed") {
+				discard(op);
+				throw turn.error;
+			}
+			if (turn.kind === "done") {
+				discard(op);
+				return {
+					kind: "done",
+					result: turn.result
+				};
+			}
+			const step = {
+				kind: "exchange",
+				device: op.device,
+				request: turn.request
+			};
+			if (op.display !== void 0) step.display = op.display;
+			return step;
+		};
+		const begin = async (device, display, body) => {
+			if (active !== void 0) discard(active);
+			const op = {
+				opId: bytesToHex$4(platform.random(16)),
+				device,
+				display,
+				cancelTimer: () => void 0,
+				pending: void 0,
+				events: [],
+				emit: void 0
+			};
+			active = op;
+			armTimer(op);
+			const link = { exchange: async (request) => new Promise((resolve, reject) => {
+				op.pending = {
+					request,
+					resolve,
+					reject
+				};
+				notify(op, {
+					kind: "exchange",
+					request
+				});
+			}) };
+			(async () => {
+				try {
+					notify(op, {
+						kind: "done",
+						result: await body(link)
+					});
+				} catch (error) {
+					notify(op, {
+						kind: "failed",
+						error
+					});
+				}
+			})();
+			const step = toStep(op, await waitTurn(op));
+			return {
+				opId: op.opId,
+				step
+			};
+		};
+		const step = async (opId, response) => {
+			const op = active;
+			if (op === void 0 || op.opId !== opId) throw new KernelError("not-found", "no such operation");
+			const { pending } = op;
+			if (pending === void 0) throw new KernelError("invalid-input", "the operation is not waiting on the device");
+			if (pending.request.kind !== response.kind) {
+				discard(op);
+				throw new KernelError("invalid-input", "the response does not match the device request");
+			}
+			op.pending = void 0;
+			armTimer(op);
+			pending.resolve(response);
+			return toStep(op, await waitTurn(op));
+		};
+		const cancel = (opId) => {
+			const op = active;
+			if (op === void 0 || op.opId !== opId) throw new KernelError("not-found", "no such operation");
+			discard(op);
+		};
+		return {
+			begin,
+			step,
+			cancel,
+			abort: () => active === void 0 ? void 0 : discard(active)
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/prompt.ts
+	var DEVICE_NAME = { keystone: "Keystone" };
+	var LINES = {
+		"zh-Hans": {
+			clear: "设备将完整显示请求内容，请在设备上核对",
+			blind: "设备无法显示此请求的完整内容，属于盲签"
+		},
+		en: {
+			clear: "the device shows the full request — check it on the device",
+			blind: "the device cannot show this request in full — signing is blind"
+		}
+	};
+	function devicePromptLine(locale, display, device) {
+		return `${DEVICE_NAME[device]}: ${LINES[locale][display]}`;
+	}
+	// packages/wallet-kernel/src/modules/signers/index.ts
+	/**
+	* The signers module: `hardware-wallet` records, the hardware.* commands and the bridge to chain
+	* signing for externally held keys. The kernel never holds a secret for these wallets — the record
+	* seals only public material pairing pinned (I1), every device answer is checked against the pin
+	* before it can shape a request (I3), and the host only transports the frames the kernel produces
+	* (I4). One operation runs at a time; its state lives in kernel memory and dies with cancel, lock,
+	* timeout or a new begin (I6).
+	*
+	* The live `pins` map is rebuilt from the records at every unlock/reconcile — like the session-key
+	* records it is claimed only to authenticate, except the pin stays live because accounts and
+	* signing need it per request without re-opening the record.
+	*/
+	var HARDENED = 2147483648;
+	var DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
+	var integrity = (message) => new KernelError("integrity", message);
+	/**
+	* Checks that pairing output parses under the record-body rules — the same strictness a stored
+	* record gets, so a device can never pin what a later claim would call corrupt.
+	*/
+	var authenticatedBody = (keys) => {
+		const body = encodeHardwareBody(keys);
+		parseHardwareBody(body);
+		return body;
+	};
+	var samePath = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	/**
+	* The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An
+	* existing record with no claimed body means the vault lied about its records — `integrity`.
+	*/
+	var pinAt = (pins, record) => {
+		const keys = pins.get(record.id);
+		if (keys === void 0) throw integrity("hardware wallet record has no authenticated material");
+		const header = parseHardwareHeader(record.header);
+		if (hardwareWalletId(header.device, header.fingerprint) !== record.id) throw integrity("hardware wallet record does not match its id");
+		return hardwarePin(header, keys);
+	};
+	/** Whether the pinned material fails to serve `path` — only `device-required` counts as a gap. */
+	var deviceNeeded = async (serve) => {
+		try {
+			await serve();
+			return false;
+		} catch (error) {
+			if (error instanceof KernelError && error.code === "device-required") return true;
+			throw error;
+		}
+	};
+	/**
+	* The record lookup every wallet-scoped operation shares: the record must be a hardware-wallet row
+	* — any other id is `not-found`, never a custody surprise.
+	*/
+	var hardwareRecord = (ctx, walletId) => {
+		const record = hardwareWallet(ctx.image, walletId);
+		if (record === void 0) throw new KernelError("not-found", "no such wallet");
+		return record;
+	};
+	/**
+	* The paths a template needs from the device: the account node a leaf derives under for
+	* evm/tron/btc, the all-hardened leaf for solana. A path the pin already serves is not asked for.
+	*/
+	var neededPaths = async (pin, template, network, groupIndex) => {
+		const material = pinnedMaterial(pin);
+		const need = {
+			secp256k1: [],
+			ed25519: []
+		};
+		const purpose = BTC_PURPOSE[template];
+		if (template === "evm.bip44") {
+			const path = [
+				2147483692,
+				2147483708,
+				HARDENED
+			];
+			if (await deviceNeeded(async () => material.secp256k1(path))) need.secp256k1.push(path);
+		} else if (template === "tron.bip44") {
+			const path = [
+				2147483692,
+				2147483843,
+				HARDENED
+			];
+			if (await deviceNeeded(async () => material.secp256k1(path))) need.secp256k1.push(path);
+		} else if (template === "solana.bip44-change") {
+			const path = leafPath("solana", groupIndex);
+			if (await deviceNeeded(async () => material.ed25519(path))) need.ed25519.push(path);
+		} else if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
+		else {
+			const net = bitcoinNetwork(network);
+			const path = [
+				purpose + HARDENED,
+				net.coinType + HARDENED,
+				groupIndex + HARDENED
+			];
+			if (await deviceNeeded(async () => material.secp256k1(path))) need.secp256k1.push(path);
+		}
+		return need;
+	};
+	/** Merges freshly fetched pinned keys into the pin, deduplicating by path. */
+	var mergePin = (pin, fetched) => ({
+		fingerprint: pin.fingerprint,
+		nodes: [...pin.nodes, ...fetched.nodes.filter((n) => !pin.nodes.some((have) => samePath(have.path, n.path)))],
+		ed25519: [...pin.ed25519, ...fetched.ed25519.filter((k) => !pin.ed25519.some((have) => samePath(have.path, k.path)))]
+	});
+	/** The verification prompt's device line, appended to the chain prompt's description (I2). */
+	var devicePrompt = (base, locale, display, device) => ({
+		title: base.title,
+		description: `${base.description}\n${devicePromptLine(locale, display, device)}`
+	});
+	function createSignersModule(drivers) {
+		const pins = /* @__PURE__ */ new Map();
+		let executor;
+		const executorOf = (platform) => {
+			var _executor;
+			(_executor = executor) !== null && _executor !== void 0 || (executor = createOperationExecutor(platform));
+			return executor;
+		};
+		const driverFor = (record) => {
+			const header = parseHardwareHeader(record.header);
+			return {
+				driver: drivers[header.device],
+				header
+			};
+		};
+		const pairBody = (ctx, device) => {
+			return async (link) => {
+				const result = await drivers[device].pair(link);
+				if (result.fingerprint.length !== 4) throw integrity("the device returned a malformed fingerprint");
+				if (result.model !== void 0 && !DEVICE_TEXT.test(result.model) || result.firmware !== void 0 && !DEVICE_TEXT.test(result.firmware)) throw integrity("the device returned a malformed model or firmware string");
+				const id = hardwareWalletId(device, result.fingerprint);
+				if (ctx.image.records.some((record) => record.id === id)) throw new KernelError("already-exists", "this device is already paired");
+				const header = {
+					device,
+					fingerprint: result.fingerprint,
+					createdAt: ctx.platform.now()
+				};
+				if (result.model !== void 0) header.model = result.model;
+				if (result.firmware !== void 0) header.firmware = result.firmware;
+				const body = authenticatedBody({
+					nodes: result.nodes,
+					ed25519: result.ed25519
+				});
+				const record = sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, id, encodeHardwareHeader(header), body);
+				wipe(body);
+				await ctx.commit([{
+					op: "put-record",
+					record
+				}]);
+				return {
+					kind: "pair",
+					wallet: hardwareWalletInfo(header)
+				};
+			};
+		};
+		const accountsBody = (ctx, op) => {
+			const record = hardwareRecord(ctx, op.walletId);
+			const { driver } = driverFor(record);
+			for (const template of op.templates) checkNetwork(template, op.network);
+			return async (link) => {
+				let pin = pinAt(pins, record);
+				const secp256k1 = [];
+				const ed25519 = [];
+				for (const template of op.templates) {
+					const need = await neededPaths(pin, template, op.network, op.groupIndex);
+					for (const path of need.secp256k1) if (!secp256k1.some((have) => samePath(have, path))) secp256k1.push(path);
+					for (const path of need.ed25519) if (!ed25519.some((have) => samePath(have, path))) ed25519.push(path);
+				}
+				if (secp256k1.length > 0 || ed25519.length > 0) {
+					const fetched = await driver.accounts(link, {
+						secp256k1,
+						ed25519
+					}, pin);
+					if (!equalBytes$6(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
+					pin = mergePin(pin, fetched);
+					const body = authenticatedBody(pin);
+					await ctx.commit([{
+						op: "put-record",
+						record: sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, record.id, record.header, body)
+					}]);
+					wipe(body);
+				}
+				const material = pinnedMaterial(pin);
+				const accounts = [];
+				for (const template of op.templates) accounts.push(await accountFor(material, template, op.network, op.groupIndex));
+				return {
+					kind: "accounts",
+					accounts
+				};
+			};
+		};
+		const verifyAddressBody = (ctx, op) => {
+			const record = hardwareRecord(ctx, op.walletId);
+			const { driver } = driverFor(record);
+			checkNetwork(op.template, op.network);
+			if (BTC_PURPOSE[op.template] === void 0 && op.index !== void 0) throw new KernelError("invalid-input", "an index applies only to bitcoin templates");
+			if (BTC_PURPOSE[op.template] !== void 0 && op.index === void 0) throw new KernelError("invalid-input", "a bitcoin address check needs an index");
+			return async (link) => {
+				const pin = pinAt(pins, record);
+				const material = pinnedMaterial(pin);
+				let address;
+				let path;
+				if (op.template === "evm.bip44") {
+					path = leafPath("evm", op.groupIndex);
+					address = evmAddressFromPublicKey(await material.secp256k1(path));
+				} else if (op.template === "tron.bip44") {
+					path = leafPath("tron", op.groupIndex);
+					address = tronAddressFromPublicKey(await material.secp256k1(path));
+				} else if (op.template === "solana.bip44-change") {
+					path = leafPath("solana", op.groupIndex);
+					address = solanaAddressFromPublicKey(await material.ed25519(path));
+				} else {
+					const purpose = BTC_PURPOSE[op.template];
+					if (purpose === void 0 || op.index === void 0) throw integrity("unreachable: non-bitcoin template or missing index");
+					const net = bitcoinNetwork(op.network);
+					const account = [
+						purpose + HARDENED,
+						net.coinType + HARDENED,
+						op.groupIndex + HARDENED
+					];
+					address = bitcoinAddressFromXpub(await material.extendedPublicKey(account, net.bip32), op.template, op.network, 0, op.index);
+					path = [
+						...account,
+						0,
+						op.index
+					];
+				}
+				const verdict = await driver.verifyAddress(link, {
+					path,
+					address,
+					template: op.template,
+					network: op.network
+				}, pin);
+				if (!verdict.matched) throw new KernelError("wrong-device", "the device did not show this address");
+				return {
+					kind: "verify-address",
+					address,
+					method: verdict.method
+				};
+			};
+		};
+		const beginSign = async (ctx, params, session) => {
+			var _ctx$platform$keystor, _ctx$platform$keystor2;
+			const { dek } = ctx.session.require(session);
+			const { op } = params;
+			if (op.kind !== "sign" || params.verify === void 0) throw new KernelError("integrity", "unreachable: sign begin without the sign op or verify");
+			const { request } = op;
+			if (request.account.kind === "imported") throw new KernelError("invalid-input", "an imported key is not a hardware wallet");
+			assertHdTemplates(request);
+			const record = hardwareRecord(ctx, request.account.walletId);
+			const { driver, header } = driverFor(record);
+			const pin = pinAt(pins, record);
+			const prepared = await prepareFor(request, pinnedMaterial(pin), ctx.platform.now());
+			const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+			const display = driver.display(request, prepared.plan);
+			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
+			assertSignable(ctx, dek, prompt);
+			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => devicePrompt(chainPrompt(locale, prompt), locale, display, header.device));
+			ctx.session.require(session);
+			if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
+			return executorOf(ctx.platform).begin(header.device, display, async (link) => ({
+				kind: "sign",
+				result: await signStages(prepared.plan, async (stage) => driver.sign(link, {
+					request,
+					stage,
+					pin,
+					random: ctx.platform.random
+				}))
+			}));
+		};
+		return {
+			vault: {
+				ownsRecord: (kind) => kind === HARDWARE_WALLET_KIND,
+				claimUnlocked: (records) => {
+					const unclaimed = [];
+					for (const record of records) {
+						if (record.kind !== "hardware-wallet") {
+							unclaimed.push(record);
+							continue;
+						}
+						try {
+							pins.set(record.id, parseHardwareBody(record.plaintext));
+						} catch (_unused) {
+							throw new KernelError("integrity", "hardware wallet record failed authentication", void 0, true);
+						} finally {
+							wipe(record.plaintext);
+						}
+					}
+					return unclaimed;
+				},
+				forget: (_kind, id) => {
+					pins.delete(id);
+				},
+				lock: () => {
+					executor === null || executor === void 0 || executor.abort();
+					pins.clear();
+				},
+				walletDeleteOps: () => [],
+				parseHeader: (record) => {
+					const header = parseHardwareHeader(record.header);
+					if (hardwareWalletId(header.device, header.fingerprint) !== record.id) throw integrity("hardware wallet record does not match its id");
+				}
+			},
+			handlers: {
+				"hardware.begin": async (ctx, params, session) => {
+					ctx.session.require(session);
+					const { op, verify } = params;
+					if (op.kind === "sign") {
+						if (verify === void 0) throw new KernelError("invalid-input", "a sign operation needs a verification factor");
+						return beginSign(ctx, params, session);
+					}
+					if (verify !== void 0) throw new KernelError("invalid-input", "only a sign operation takes a verification factor");
+					const exec = executorOf(ctx.platform);
+					switch (op.kind) {
+						case "pair": return exec.begin(op.device, void 0, pairBody(ctx, op.device));
+						case "accounts": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).header.device, void 0, accountsBody(ctx, op));
+						case "verify-address": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).header.device, void 0, verifyAddressBody(ctx, op));
+					}
+				},
+				"hardware.step": async (ctx, params, session) => {
+					ctx.session.require(session);
+					if (executor === void 0) throw new KernelError("not-found", "no such operation");
+					return executor.step(params.opId, params.response);
+				},
+				"hardware.cancel": (ctx, params, session) => {
+					ctx.session.require(session);
+					if (executor === void 0) throw new KernelError("not-found", "no such operation");
+					executor.cancel(params.opId);
+					return null;
+				}
+			},
+			material: (_image, record) => pinnedMaterial(pinAt(pins, record))
 		};
 	}
 	// packages/wallet-kernel/src/modules/spark/prompt.ts
@@ -52637,10 +54575,12 @@ zoo`.split("\n"));
 	*/
 	var signerFor = async (state, ctx, account, requestSession) => {
 		const { dek } = ctx.session.require(requestSession);
-		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
-		if (record === void 0) {
-			disposeWallet(state, account.walletId);
-			throw new KernelError("not-found", "no such wallet");
+		let record;
+		try {
+			record = findSeedWallet(ctx.image, account.walletId);
+		} catch (error) {
+			if (error instanceof KernelError && error.code === "not-found") disposeWallet(state, account.walletId);
+			throw error;
 		}
 		const existing = state.signers.get(poolKey(account));
 		if (existing !== void 0) return existing;
@@ -52757,7 +54697,7 @@ zoo`.split("\n"));
 	};
 	var sparkApprove = async (state, ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
-		if (ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.account.walletId) === void 0) throw new KernelError("not-found", "no such wallet");
+		findSeedWallet(ctx.image, params.account.walletId);
 		const key = poolKey(params.account);
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
@@ -52927,6 +54867,9 @@ zoo`.split("\n"));
 			else if (record.kind === "key") {
 				const header = parseKeyHeader(record.header);
 				importedKeys.push(_objectSpread2({ keyId: record.id }, header));
+			} else if (record.kind === "hardware-wallet") {
+				const header = parseHardwareHeader(record.header);
+				wallets.push(_objectSpread2(_objectSpread2({}, hardwareWalletInfo(header)), {}, { walletId: record.id }));
 			} else if (record.kind === "backup-key") {
 				if (record.id === "default") {
 					const header = parseBackupKeyHeader(record.header);
@@ -53031,7 +54974,7 @@ zoo`.split("\n"));
 		}
 		return "unavailable";
 	}
-	function startKernel(host, port) {
+	function startKernel(host, port, drivers = DRIVERS) {
 		const platform = serializeCeremonies(host, (active) => {
 			post({
 				v: 3,
@@ -53041,9 +54984,10 @@ zoo`.split("\n"));
 		});
 		const nostr = createNostrModule(platform.backends.nostr);
 		const spark = createSparkModule();
-		const chains = createChainsModule();
+		const signers = createSignersModule(drivers);
+		const chains = createChainsModule(signers.material);
 		const sessions = createSessionsModule();
-		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers);
+		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers), signers.handlers);
 		let dirty = false;
 		let inRequest = false;
 		let pendingLock;
@@ -53186,7 +55130,8 @@ zoo`.split("\n"));
 				nostr.vault,
 				spark.vault,
 				chains.vault,
-				sessions.vault
+				sessions.vault,
+				signers.vault
 			],
 			image: EMPTY_IMAGE,
 			health: "ok",
