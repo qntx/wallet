@@ -713,6 +713,10 @@ const main = async () => {
   const LINK_EN =
     "Opening the account permanently links this address to the identity you verify with Fiat24";
   const LINK_ZH = "开通账户会将此地址与你向 Fiat24 验证的身份永久关联";
+  const BURN_EN =
+    "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract";
+  const BURN_ZH =
+    "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度";
   add({
     name: "mintByClient",
     signer: SIGNER,
@@ -723,14 +727,14 @@ const main = async () => {
     expect: {
       summary: "contract-call",
       verifiability: "partial",
-      warnings: ["fiat24-account-link"],
+      warnings: ["fiat24-account-link", "fiat24-account-burn"],
       prompt: txPrompt(
         "Confirm contract call",
         "确认合约调用",
         ["Open Fiat24 account #123456 for this address"],
         ["为此地址开通 Fiat24 账户 #123456"],
-        [LINK_EN],
-        [LINK_ZH],
+        [LINK_EN, BURN_EN],
+        [LINK_ZH, BURN_ZH],
       ),
     },
   });

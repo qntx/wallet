@@ -4215,7 +4215,7 @@ describe("Fiat24 prompts", () => {
     );
   });
 
-  it("minting an account warns about the identity link", () => {
+  it("minting an account warns about the identity link and the F24 burn", () => {
     const data = encodeFunctionData({
       abi: ACCOUNT_ABI,
       functionName: "mintByClient",
@@ -4224,10 +4224,10 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(ACCOUNT, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm contract call",
-      description: `Network: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000021 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24`,
+      description: `Network: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000021 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000021 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联`,
+      `网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000021 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度`,
     );
   });
 

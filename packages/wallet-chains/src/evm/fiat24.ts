@@ -3,7 +3,13 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import * as AbiFunction from "ox/AbiFunction";
 
 import { ChainError } from "../index.ts";
-import type { Fiat24Action, IntentSummary, AssetFlow, IntentWarning } from "../index.ts";
+import type {
+  Fiat24Action,
+  Fiat24Token,
+  IntentSummary,
+  AssetFlow,
+  IntentWarning,
+} from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { lookupEvmToken } from "./tokens.ts";
@@ -33,6 +39,18 @@ export const FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
  * (Fiat24CryptoDeposit.sol:66; Arbitrum One USDC).
  */
 export const FIAT24_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+
+/**
+ * The F24 utility token `mintByClient` burns at the issuer-set account price (Fiat24Account.sol:96
+ * `f24.burnFrom(msg.sender, fiat24PriceList.getPrice(_tokenId))`; the deposit contract's `f24()`
+ * getter returns this address on chain; Sourcify exact match —
+ * https://sourcify.dev/server/v2/contract/42161/0x22043fDdF353308B4F2e7dA2e5284E4D087449e1).
+ */
+const F24_BURN: Fiat24Token = {
+  asset: "0x22043fDdF353308B4F2e7dA2e5284E4D087449e1",
+  symbol: "F24",
+  decimals: 2,
+};
 
 /**
  * The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
@@ -401,11 +419,22 @@ const topUpToken = (
 };
 
 /** Minting an account permanently links the address to the identity Fiat24 verifies. */
-const openAccount = (id: bigint, outflows: ReadonlyArray<AssetFlow>): Fiat24Decode => ({
+const openAccount = (
+  id: bigint,
+  outflows: ReadonlyArray<AssetFlow>,
+  burn?: Fiat24Token,
+): Fiat24Decode => ({
   summary: "contract-call",
   outflows,
-  warnings: [{ kind: "fiat24-account-link", message: "" }],
-  fiat24: { kind: "open-account", account: id.toString(10) },
+  warnings: [
+    { kind: "fiat24-account-link", message: "" },
+    ...(burn === undefined ? [] : [{ kind: "fiat24-account-burn" as const, message: "" }]),
+  ],
+  fiat24: {
+    kind: "open-account",
+    account: id.toString(10),
+    ...(burn === undefined ? {} : { burn }),
+  },
 });
 
 /* Moving the account NFT moves control of the account — its balance and the identity verified
@@ -533,7 +562,10 @@ const decodeFiat24Deposit = (
 const decodeFiat24Account = (call: ValueCall): DecodeResult =>
   runCases(
     [
-      { fn: MINT_BY_CLIENT, run: (args) => openAccount(argUint(args, 0), []) },
+      /* `mintByClient` burns the account price in F24 from the caller — bounded only by the
+         caller's F24 allowance; `mintByClientWithETH` buys that F24 with the ETH value, which is
+         already an outflow (Fiat24Account.sol:92-96). */
+      { fn: MINT_BY_CLIENT, run: (args) => openAccount(argUint(args, 0), [], F24_BURN) },
       {
         fn: MINT_BY_CLIENT_WITH_ETH,
         payable: true,

@@ -400,6 +400,8 @@ const zh: Catalog = {
     "fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
     "fiat24-account-move": (message) =>
       `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
+    "fiat24-account-burn": () =>
+      "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -717,6 +719,8 @@ const en: Catalog = {
       "Opening the account permanently links this address to the identity you verify with Fiat24",
     "fiat24-account-move": (message) =>
       `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
+    "fiat24-account-burn": () =>
+      "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,

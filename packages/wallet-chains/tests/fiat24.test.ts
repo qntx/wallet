@@ -460,15 +460,32 @@ describe("Fiat24 payouts", () => {
   });
 });
 
+/* The F24 token mintByClient burns at the issuer-set account price — the deposit contract's
+   f24() getter on chain (Sourcify exact match). */
+const F24 = {
+  asset: "0x22043fDdF353308B4F2e7dA2e5284E4D087449e1",
+  symbol: "F24",
+  decimals: 2,
+};
+
 describe("Fiat24 account minting", () => {
-  it("mintByClient opens the account for the caller", () => {
+  it("mintByClient opens the account and discloses the F24 burn", () => {
     const data = fn(ACCOUNT_ABI, "mintByClient", [123456n]);
     const intent = decodeEvm(tx(ACCOUNT, data), SIGNER);
     expect(intent.summary).toBe("contract-call");
     expect(intent.verifiability).toBe("partial");
     expect(intent.outflows).toStrictEqual([]);
-    expect(intent.fiat24).toStrictEqual({ kind: "open-account", account: "123456" });
-    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-account-link", message: "" }]);
+    /* The burn amount is issuer storage — the intent names the token and the warning bounds
+       the cost by the caller's allowance. */
+    expect(intent.fiat24).toStrictEqual({
+      kind: "open-account",
+      account: "123456",
+      burn: F24,
+    });
+    expect(intent.warnings).toStrictEqual([
+      { kind: "fiat24-account-link", message: "" },
+      { kind: "fiat24-account-burn", message: "" },
+    ]);
   });
 
   it("mintByClientWithETH pays the fee in ETH to the account contract", () => {
