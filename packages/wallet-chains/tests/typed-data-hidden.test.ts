@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "../src/evm/index.ts";
+import { typedDataHasHiddenText } from "../src/evm/typed-data.ts";
 import type { SignRequest } from "../src/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
 import { ACCOUNT as TRON_ACCOUNT, OWNER as TRON_OWNER } from "./tron.ts";
@@ -206,4 +207,154 @@ describe("a hidden character in a typed-data string leaf is blind", () => {
       expect(decodeTron(tronTyped(committed(728126428)), TRON_OWNER).blind).toBe(blind);
     },
   );
+});
+
+describe("a hidden character in a typed-data name or type is blind", () => {
+  /* The EIP-712 type encoding signs `primaryType`, every key of `types` and every field's
+     `name`/`type` — a deceptive code point there is blind for the same reason as hidden
+     message bytes. Each slot is poisoned in a structurally valid document, including a type
+     nothing references (all declared types are scanned, not only reachable ones). */
+  const namedDoc = (place: string, text: string): unknown => {
+    switch (place) {
+      case "primary-type":
+        return {
+          types: {
+            EIP712Domain: [{ name: "name", type: "string" }],
+            [text]: [{ name: "a", type: "string" }],
+          },
+          primaryType: text,
+          domain: { name: "App" },
+          message: { a: "x" },
+        };
+      case "unused-type":
+        return {
+          types: {
+            EIP712Domain: [{ name: "name", type: "string" }],
+            Mail: [{ name: "note", type: "string" }],
+            [text]: [{ name: "a", type: "string" }],
+          },
+          primaryType: "Mail",
+          domain: { name: "App" },
+          message: { note: "x" },
+        };
+      case "field-name":
+        return {
+          types: {
+            EIP712Domain: [{ name: "name", type: "string" }],
+            Mail: [{ name: text, type: "string" }],
+          },
+          primaryType: "Mail",
+          domain: { name: "App" },
+          message: { [text]: "hello" },
+        };
+      case "field-type":
+        return {
+          types: {
+            EIP712Domain: [{ name: "name", type: "string" }],
+            Mail: [{ name: "note", type: text }],
+            [text]: [{ name: "a", type: "string" }],
+          },
+          primaryType: "Mail",
+          domain: { name: "App" },
+          message: { note: { a: "x" } },
+        };
+      default:
+        return {
+          types: {
+            EIP712Domain: [{ name: text, type: "string" }],
+            Mail: [{ name: "note", type: "string" }],
+          },
+          primaryType: "Mail",
+          domain: { [text]: "App" },
+          message: { note: "x" },
+        };
+    }
+  };
+
+  /* TIP-712's structural validator already refuses an unused declared type and a
+     non-canonical domain key before the hidden-text check runs, so for those slots the safe
+     outcome is the refusal itself. */
+  const tronNameBlind = (place: string, text: string): string => {
+    try {
+      return (
+        decodeTron(
+          {
+            kind: "tron.typed-data",
+            network: "tron:728126428",
+            account: TRON_ACCOUNT,
+            typedData: JSON.stringify(namedDoc(place, text)),
+          },
+          TRON_OWNER,
+        ).blind ?? "described"
+      );
+    } catch {
+      return "refused";
+    }
+  };
+
+  const nameBlinds = (place: string, text: string) => ({
+    evm: decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: EVM_ACCOUNT,
+        typedData: JSON.stringify(namedDoc(place, text)),
+      },
+      SIGNER,
+    ).blind,
+    tron: tronNameBlind(place, text),
+  });
+
+  /** Name → blind, so a failing diff names the sample that diverged. */
+  const nameBlindsByName = (place: string) =>
+    Object.fromEntries(vectors.hidden.map(({ name, text }) => [name, nameBlinds(place, text)]));
+
+  /* A poisoned `primaryType`, unreachable type key, field `type`, or domain field is blind
+     `message-bytes` — on TRON, a structurally refused slot (`unused-type`, `domain-field`)
+     reports "refused" for the refusal itself. A field *name* carrying a newline cannot render
+     on one row either, so that sample blinds earlier as `typed-data-oversize`. */
+  const nameExpected = (place: string, tron: string) =>
+    Object.fromEntries(
+      vectors.hidden.map(({ name, text }) => {
+        const oversize = place === "field-name" && text.includes("\n");
+        return [
+          name,
+          {
+            evm: oversize ? "typed-data-oversize" : "message-bytes",
+            tron: oversize ? "typed-data-oversize" : tron,
+          },
+        ];
+      }),
+    );
+
+  it.each([
+    ["primary-type", "message-bytes"],
+    ["unused-type", "refused"],
+    ["field-name", "message-bytes"],
+    ["field-type", "message-bytes"],
+    ["domain-field", "refused"],
+  ] as const)("every hidden sample in %s is blind or refused on both chains", (place, tron) => {
+    expect(nameBlindsByName(place)).toStrictEqual(nameExpected(place, tron));
+  });
+
+  /* A `primaryType` or field `type` whose name matches nothing declared never reaches decode —
+     the validator refuses it — but the scan is conservative and flags it anyway. */
+  it("a poisoned primaryType or field type is hidden even where the validator would refuse", () => {
+    const base = {
+      types: {
+        EIP712Domain: [{ name: "name", type: "string" }],
+        Mail: [{ name: "note", type: "string" }],
+      },
+      primaryType: "Mail",
+      domain: { name: "App" },
+      message: { note: "x" },
+    };
+    expect(typedDataHasHiddenText({ ...base, primaryType: "Ma\u202Eil" })).toBe(true);
+    expect(
+      typedDataHasHiddenText({
+        ...base,
+        types: { ...base.types, Mail: [{ name: "note", type: "Weird\u202EName" }] },
+      }),
+    ).toBe(true);
+  });
 });
