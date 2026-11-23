@@ -28,7 +28,8 @@ import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 import { PROGRAM_IDS } from "./ids.ts";
 import { JUPITER_PROGRAM, WSOL_MINT, decodeJupiterIx } from "./jupiter.ts";
 import type { JupiterSwap } from "./jupiter.ts";
-import { isWritableIndex, parseCompiledMessage, resolveAccountIndex } from "./message.ts";
+import { isWritableIndex, namedAccounts, parseCompiledMessage, resolveAccountIndex } from "./message.ts";
+import type { NamedAccounts } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 import { decodeStakeIx, decodeSystemCreate } from "./stake.ts";
 import type { StakeCreate, StakeIx, SystemCreate } from "./stake.ts";
@@ -90,23 +91,22 @@ type IxCall = {
  * non-canonical encodings out of the `full` class.
  */
 const classifyIx = (
-  parsed: ParsedSolanaMessage,
   ix: { programAddressIndex: number; accountIndices: ReadonlyArray<number>; data: Uint8Array },
-  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+  named: NamedAccounts,
   signer: string,
 ): IxCall => {
-  const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+  const program = named.at(ix.programAddressIndex);
   const { data } = ix;
   if (program === PROGRAM_IDS.system) {
     if (data.length === 12 && u32le(data, 0) === 2) {
       return {
         kind: "system-transfer",
-        from: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
-        to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+        from: named.at(ix.accountIndices[0] ?? 0),
+        to: named.at(ix.accountIndices[1] ?? 0),
         amount: u64le(data, 4),
       };
     }
-    const create = decodeSystemCreate(parsed, ix, lookups);
+    const create = decodeSystemCreate(ix, named);
     if (create !== undefined && create !== "other") {
       return create.owner === PROGRAM_IDS.stake
         ? {
@@ -150,20 +150,20 @@ const classifyIx = (
         kind: "token-transfer-checked",
         amount: u64le(data, 1),
         decimals: data[9],
-        to: resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups),
-        mint: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+        to: named.at(ix.accountIndices[2] ?? 0),
+        mint: named.at(ix.accountIndices[1] ?? 0),
       };
     }
     if (data.length === 9 && data[0] === 3 && ix.accountIndices.length === 3) {
       /* Transfer [source, destination, authority] — names no mint; the source account's contents
          move, so the shown asset is the account itself. Only the signer's own authority decodes. */
-      const authority = resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups);
+      const authority = named.at(ix.accountIndices[2] ?? 0);
       return authority === signer
         ? {
             kind: "token-transfer",
             amount: u64le(data, 1),
-            tokenAccount: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
-            to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+            tokenAccount: named.at(ix.accountIndices[0] ?? 0),
+            to: named.at(ix.accountIndices[1] ?? 0),
           }
         : { kind: "other" };
     }
@@ -173,13 +173,13 @@ const classifyIx = (
     ) {
       /* Burn [account, mint, owner] / BurnChecked — the checked decimals byte is not proof, so a
          listed mint alone carries symbol/decimals. */
-      const owner = resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups);
+      const owner = named.at(ix.accountIndices[2] ?? 0);
       return owner === signer
         ? {
             kind: "token-burn",
             amount: u64le(data, 1),
-            mint: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
-            to: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
+            mint: named.at(ix.accountIndices[1] ?? 0),
+            to: named.at(ix.accountIndices[0] ?? 0),
           }
         : { kind: "other" };
     }
@@ -187,7 +187,7 @@ const classifyIx = (
       return {
         kind: "token-approve",
         amount: u64le(data, 1),
-        to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+        to: named.at(ix.accountIndices[1] ?? 0),
       };
     }
     if (data.length === 1 && data[0] === 17) {
@@ -197,7 +197,7 @@ const classifyIx = (
     if (data.length === 1 && data[0] === 9) {
       /* CloseAccount [account, destination, owner] — rent to a foreign address is an outflow the
          amount cannot be read from; a close back to the signer is plumbing. */
-      const destination = resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups);
+      const destination = named.at(ix.accountIndices[1] ?? 0);
       return destination === signer ? { kind: "token-close-account" } : { kind: "other" };
     }
     if (data.length === 1 && data[0] === 1 && ix.accountIndices.length === 4) {
@@ -208,13 +208,13 @@ const classifyIx = (
       /* Revoke [account, owner] — drops the token account's delegate; nothing moves. */
       return {
         kind: "token-revoke",
-        tokenAccount: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
+        tokenAccount: named.at(ix.accountIndices[0] ?? 0),
       };
     }
     return { kind: "other" };
   }
   if (program === JUPITER_PROGRAM) {
-    const jupiter = decodeJupiterIx(parsed, ix, lookups);
+    const jupiter = decodeJupiterIx(ix, named);
     return jupiter !== undefined && jupiter.authority === signer
       ? { kind: "jupiter", jupiter }
       : { kind: "other" };
@@ -226,19 +226,19 @@ const classifyIx = (
     program === WHIRLPOOL_PROGRAM ||
     program === METEORA_DLMM_PROGRAM
   ) {
-    const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
+    const amm = decodeAmmSwapIx(ix, named, program);
     return amm !== undefined && amm.authority === signer
       ? { kind: "amm-swap", amm }
       : { kind: "other" };
   }
   if (program === MPL_CORE_PROGRAM) {
-    const core = decodeCoreIx(parsed, ix, lookups);
+    const core = decodeCoreIx(ix, named);
     return core !== undefined && core.authority === signer
       ? { kind: "core-transfer", core }
       : { kind: "other" };
   }
   if (program === PROGRAM_IDS.stake) {
-    const stake = decodeStakeIx(parsed, ix, lookups);
+    const stake = decodeStakeIx(ix, named);
     /* A Split whose staker is not the signer stays "other" — the core-instruction rule applies. */
     return stake === undefined || (stake.kind === "split" && stake.staker !== signer)
       ? { kind: "other" }
@@ -382,14 +382,16 @@ const decodeTransaction = (
     address: t.address,
     addresses: t.addresses,
   }));
-  const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
+  const named = namedAccounts(parsed, lookups);
+  const calls = parsed.instructions.map((ix) => classifyIx(ix, named, signer));
   if (
     calls.filter((c) => c.kind === "cu-limit").length > 1 ||
     calls.filter((c) => c.kind === "cu-price").length > 1
   ) {
     throw new ChainError("invalid-request", "duplicate compute-budget instruction");
   }
-  const verifiability = classify(parsed, calls, request.network, table);
+  const verifiability =
+    named.fromTable.size === 0 ? classify(parsed, calls, request.network, table) : "opaque";
   const outflows: AssetFlow[] = [];
   const approvals: ApprovalChange[] = [];
   const staking: StakeAction[] = [];
@@ -460,13 +462,19 @@ const decodeTransaction = (
       });
       const minimum = (swap.quotedOut * BigInt(10_000 - swap.slippageBps) + 9999n) / 10_000n;
       const buy = lookupSolanaToken(table, request.network, swap.destinationMint);
-      const destAta = associatedTokenAddress(
-        signer,
-        swap.destinationMint,
-        swap.destinationTokenProgram,
-      );
+      /* A named account that resolved through a lookup table reads as "" — unresolvable, never a
+         verified recipient. */
+      const destAta =
+        swap.destinationMint === "" || swap.destinationTokenProgram === ""
+          ? undefined
+          : associatedTokenAddress(signer, swap.destinationMint, swap.destinationTokenProgram);
       minimumReceived.push({
-        to: swap.destinationAccount === destAta ? signer : swap.destinationAccount,
+        to:
+          swap.destinationAccount === ""
+            ? ""
+            : swap.destinationAccount === destAta
+              ? signer
+              : swap.destinationAccount,
         amount:
           swap.destinationMint === WSOL_MINT
             ? { asset: SOLANA_NATIVE_ASSET, amount: minimum.toString(10) }
@@ -781,6 +789,11 @@ const decodeTransaction = (
       blind = "program-authority";
     }
   }
+  /* The signature binds the message bytes, not the caller's table contents: a named account
+     resolved through a lookup table is unverifiable whoever decoded it. */
+  if (named.fromTable.size > 0) {
+    blind = "lookup-table-account";
+  }
   const summary = hasSwap
     ? "swap"
     : otherTransfer
@@ -813,6 +826,22 @@ const decodeTransaction = (
     verifiability,
     ...(blind === undefined ? {} : { blind }),
   };
+};
+
+/**
+ * The resolved addresses a decoded intent would name to the user that come from caller-supplied
+ * lookup-table contents — the set a transaction builder must keep as static keys so the intent it
+ * signs is verifiable.
+ */
+export const namedTableAccounts = (
+  parsed: ParsedSolanaMessage,
+  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+): ReadonlyArray<string> => {
+  const named = namedAccounts(parsed, lookups);
+  for (const ix of parsed.instructions) {
+    classifyIx(ix, named, "");
+  }
+  return [...named.fromTable];
 };
 
 /** What the signer can guarantee about this request (WD-065). */

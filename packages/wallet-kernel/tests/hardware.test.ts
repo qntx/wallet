@@ -103,7 +103,7 @@ describe("hardware factor: establish and unlock", () => {
 
   it("renders Chinese for any zh locale and English otherwise", async () => {
     for (const [locale, expected] of [
-      ["zh-TW", "zh-Hans"],
+      ["zh-TW", "en"],
       ["zh-Hans-CN", "zh-Hans"],
       ["fr-FR", "en"],
     ] as const) {

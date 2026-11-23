@@ -573,6 +573,37 @@ export const resolveAccountIndex = (
   return loaded[index - parsed.staticAccounts.length];
 };
 
+/**
+ * The accounts a decoded intent names to the user — recipients, owners, authorities, delegates,
+ * mints, stake and vote accounts — must be static keys: the signature binds only the message
+ * bytes, never the caller-declared table contents an index resolves through. `at` therefore
+ * treats a loaded index as unresolvable and records the address the caller's table substituted.
+ */
+export type NamedAccounts = {
+  readonly at: (index: number) => string | undefined;
+  readonly fromTable: ReadonlySet<string>;
+};
+
+export const namedAccounts = (
+  parsed: ParsedSolanaMessage,
+  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+): NamedAccounts => {
+  const fromTable = new Set<string>();
+  return {
+    fromTable,
+    at: (index) => {
+      if (index < parsed.staticAccounts.length) {
+        return parsed.staticAccounts[index];
+      }
+      const resolved = resolveAccountIndex(parsed, index, lookups);
+      if (resolved !== undefined) {
+        fromTable.add(resolved);
+      }
+      return undefined;
+    },
+  };
+};
+
 /** All declared lookup-table entries must be valid base58 32-byte addresses. */
 export const validateLookupTables = (
   tables: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,

@@ -1461,6 +1461,8 @@ const corpus: CorpusEntry[] = [
     "repo vectors/chains/solana.json jupiter[0] 'route_v2-sol-usdc' (program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4)",
     solReq(hex(jupiterVector.message), jupiterVector.lookupTables),
     JUPITER_SIGNER,
+    /* The recorded message resolves the route's mints through the declared table. */
+    "lookup-table-account",
   ),
   sol(
     "sol-stake-create-delegate",
@@ -1595,6 +1597,8 @@ const corpus: CorpusEntry[] = [
       ),
       [{ address: LOOKUP_TABLE, addresses: [DEST] }],
     ),
+    SOL_SIGNER,
+    "lookup-table-account",
   ),
 ];
 

@@ -64,7 +64,7 @@ const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   "48QW6n6kwr32": [undefined, 1],
   "2WQtSrGHJ8ZA": [undefined, 2],
   "29uWmL2Jwbt9": [undefined, 2],
-  nPsLJ87bae9f: ["program-authority", 2],
+  nPsLJ87bae9f: ["lookup-table-account", 2],
   "2bJGJCSQg5za": ["program-authority", 1],
   RJGLC4Jsy7HM: [undefined, 1],
   "3haVxXtM5FZo": [undefined, 1],
@@ -73,8 +73,8 @@ const expected: Record<string, readonly [BlindReason | undefined, number]> = {
   "3gDLixGSjoHz": [undefined, 1],
   "5CM9JJCdwqzt": [undefined, 1],
   "4KtJNRr1kXZD": [undefined, 1],
-  "5jvyWbPYSPJZ": ["program-authority", 1],
-  "53p1zq9z7RF1": [undefined, 0],
+  "5jvyWbPYSPJZ": ["lookup-table-account", 3],
+  "53p1zq9z7RF1": ["lookup-table-account", 2],
 };
 
 const want = (signature: string): readonly [BlindReason | undefined, number] =>

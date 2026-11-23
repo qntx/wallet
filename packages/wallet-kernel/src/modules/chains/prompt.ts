@@ -106,6 +106,7 @@ type Catalog = {
   readonly externalInputs: string;
   readonly solanaPrograms: (ids: string) => string;
   readonly solanaProgramsWarning: string;
+  readonly solanaLookupTable: string;
   readonly programAuthority: (program: string, sol: boolean) => string;
   readonly programAuthorityAccounts: (program: string, items: ReadonlyArray<string>) => string;
   readonly programAuthorityYours: (symbol: string, address: string) => string;
@@ -307,6 +308,7 @@ const zh: Catalog = {
   externalInputs: "包含其他签名者的输入；无法核实手续费",
   solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
   solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+  solanaLookupTable: "提示点名的账户来自地址查找表，本设备无法核实其身份",
   programAuthority: (program, sol) =>
     sol
       ? `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL`
@@ -617,6 +619,8 @@ const en: Catalog = {
   externalInputs: "Includes inputs from other signers; the fee cannot be verified",
   solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
   solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+  solanaLookupTable:
+    "An account this prompt would name is loaded from an address lookup table the device cannot verify",
   programAuthority: (program, sol) =>
     sol
       ? `Program ${program} receives this account's signature: it can move ALL SOL in this account`
@@ -1224,8 +1228,15 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
                title carries the refusal reason, the program list is what the signature reaches. */
             intent.family === "solana" && intent.verifiability === "opaque"
             ? [
-                catalog.solanaPrograms((intent.programs ?? []).join(", ")),
-                catalog.solanaProgramsWarning,
+                ...(intent.blind === "lookup-table-account"
+                  ? [catalog.solanaLookupTable]
+                  : []),
+                ...(intent.programs === undefined || intent.programs.length === 0
+                  ? []
+                  : [
+                      catalog.solanaPrograms(intent.programs.join(", ")),
+                      catalog.solanaProgramsWarning,
+                    ]),
               ]
             : [];
   const warnings = intent.warnings ?? [];

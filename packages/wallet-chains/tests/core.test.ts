@@ -6,7 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { SignRequest } from "../src/index.ts";
 import { decodeCoreIx } from "../src/solana/core.ts";
 import { decodeSolana } from "../src/solana/decode.ts";
-import { parseCompiledMessage } from "../src/solana/message.ts";
+import { namedAccounts, parseCompiledMessage } from "../src/solana/message.ts";
 
 const vectors = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/solana.json"), "utf8"),
@@ -56,9 +56,8 @@ describe("metaplex core decode", () => {
     const ix = parsed.instructions[0]!;
     /* Mutate the args byte from 0 (None) to 1 (Some proof) — the layout is then a proof blob. */
     const core = decodeCoreIx(
-      parsed,
       { accountIndices: ix.accountIndices, data: Uint8Array.from([14, 1]) },
-      [],
+      namedAccounts(parsed, []),
     );
     expect(core).toBeUndefined();
   });
@@ -69,9 +68,8 @@ describe("metaplex core decode", () => {
     );
     const ix = parsed.instructions[0]!;
     const core = decodeCoreIx(
-      parsed,
       { accountIndices: ix.accountIndices, data: Uint8Array.from([12, 0]) },
-      [],
+      namedAccounts(parsed, []),
     );
     expect(core).toBeUndefined();
   });
