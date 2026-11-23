@@ -66,6 +66,10 @@
     "./chains": {
       "types": "./dist/chains.d.mts",
       "default": "./dist/chains.mjs"
+    },
+    "./card": {
+      "types": "./dist/card.d.mts",
+      "default": "./dist/card.mjs"
     }
   },
   "publishConfig": {
