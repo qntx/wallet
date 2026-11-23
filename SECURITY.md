@@ -36,7 +36,9 @@ disclosure timeline with you.
   backup is enabled.
 - **Web:** the kernel Worker holds seed, keys and the DEK, but the password and
   PRF output pass through the page's main thread, because WebAuthn is
-  main-thread only. The Web wallet is a hot wallet: it resists passive leaks,
+  main-thread only. WebAuthn ceremonies show no kernel-rendered text either:
+  the browser's dialog is all the user sees. The Web wallet is a hot wallet:
+  it resists passive leaks,
   not an active attacker running script in the page (XSS, malicious
   dependencies). Reports that need such an attacker are in scope only where
   they defeat the Worker boundary itself.
