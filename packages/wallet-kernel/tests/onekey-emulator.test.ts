@@ -159,6 +159,14 @@ describe("classic1s emulator replay", () => {
         "tron-trc20-transfer",
         "tron-delegate-energy",
         "tron-message",
+        "l5-init",
+        "bitcoin-psbt-every-template",
+        "bitcoin-psbt-single-anyonecanpay",
+        "bitcoin-psbt-mixed-prevtxs",
+        "bitcoin-psbt-change",
+        "bitcoin-message-legacy",
+        "bitcoin-message-bip322-p2wpkh",
+        "bitcoin-message-bip322-p2tr",
       ].toSorted(),
     );
   });
@@ -320,6 +328,14 @@ describe("pro emulator replay", () => {
         "tron-trc20-transfer",
         "tron-delegate-energy",
         "tron-message",
+        "l5-init",
+        "bitcoin-psbt-every-template",
+        "bitcoin-psbt-single-anyonecanpay",
+        "bitcoin-psbt-mixed-prevtxs",
+        "bitcoin-psbt-change",
+        "bitcoin-message-legacy",
+        "bitcoin-message-bip322-p2wpkh",
+        "bitcoin-message-bip322-p2tr",
       ].toSorted(),
     );
   });

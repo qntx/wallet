@@ -86,7 +86,12 @@ const CAPABILITY_BITCOIN_LIKE = 2;
 // family streams parsed EIP-712 structures only when it advertises this.
 const CAPABILITY_ETHEREUM_TYPED_DATA = 1000;
 
-export type OneKeyFeature = "evm-1559" | "evm-7702" | "evm-typed-data-stream" | "tron-message-v2";
+export type OneKeyFeature =
+  | "btc-bip322"
+  | "evm-1559"
+  | "evm-7702"
+  | "evm-typed-data-stream"
+  | "tron-message-v2";
 
 const CLASSIC_FAMILY: ReadonlySet<OneKeyModel> = new Set(["classic", "classic1s", "pure", "mini"]);
 
@@ -115,6 +120,9 @@ const atLeast = (
 // oxlint-disable-next-line typescript/consistent-return -- every feature returns above
 export function supports(info: DeviceInfo, feature: OneKeyFeature): boolean {
   switch (feature) {
+    case "btc-bip322":
+      // SDK api/btc/BTCSignMessage.ts: BIP-322 simple signing is pro-only from 4.9.3.
+      return info.model === "pro" && atLeast(info.firmware, [4, 9, 3]);
     case "evm-1559":
       return true;
     case "evm-7702":

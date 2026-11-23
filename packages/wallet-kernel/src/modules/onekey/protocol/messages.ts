@@ -989,3 +989,242 @@ export const TronMessageSignature: MessageDef<TronMessageSignatureFields> = defi
   address: { no: 1, kind: "bytes", rule: "required" },
   signature: { no: 2, kind: "bytes", rule: "required" },
 });
+
+// firmware-pro/classic1s common/protob/messages-bitcoin.proto — the streaming SignTx protocol.
+// Identical field numbering in both schemas.
+
+export type BtcSignTxFields = {
+  outputsCount: Field<"uint32", 1, "required">;
+  inputsCount: Field<"uint32", 2, "required">;
+  coinName: Field<"string", 3, "optional">;
+  version: Field<"uint32", 4, "optional">;
+  lockTime: Field<"uint32", 5, "optional">;
+};
+export const BtcSignTx: MessageDef<BtcSignTxFields> = defineMessage(15, {
+  outputsCount: { no: 1, kind: "uint32", rule: "required" },
+  inputsCount: { no: 2, kind: "uint32", rule: "required" },
+  coinName: { no: 3, kind: "string", rule: "optional" },
+  version: { no: 4, kind: "uint32", rule: "optional" },
+  lockTime: { no: 5, kind: "uint32", rule: "optional" },
+});
+
+export type BtcTxRequestDetailsFields = {
+  requestIndex: Field<"uint32", 1, "optional">;
+  txHash: Field<"bytes", 2, "optional">;
+  extraDataLen: Field<"uint32", 3, "optional">;
+  extraDataOffset: Field<"uint32", 4, "optional">;
+};
+const BtcTxRequestDetails: MessageDef<BtcTxRequestDetailsFields> = {
+  typeId: -1,
+  fields: {
+    requestIndex: { no: 1, kind: "uint32", rule: "optional" },
+    txHash: { no: 2, kind: "bytes", rule: "optional" },
+    extraDataLen: { no: 3, kind: "uint32", rule: "optional" },
+    extraDataOffset: { no: 4, kind: "uint32", rule: "optional" },
+  },
+};
+
+export type BtcTxRequestSerializedFields = {
+  signatureIndex: Field<"uint32", 1, "optional">;
+  signature: Field<"bytes", 2, "optional">;
+  serializedTx: Field<"bytes", 3, "optional">;
+};
+const BtcTxRequestSerialized: MessageDef<BtcTxRequestSerializedFields> = {
+  typeId: -1,
+  fields: {
+    signatureIndex: { no: 1, kind: "uint32", rule: "optional" },
+    signature: { no: 2, kind: "bytes", rule: "optional" },
+    serializedTx: { no: 3, kind: "bytes", rule: "optional" },
+  },
+};
+
+export type BtcTxRequestFields = {
+  requestType: Field<"enum", 1, "optional">;
+  details: MsgField<2, "optional", typeof BtcTxRequestDetails>;
+  serialized: MsgField<3, "optional", typeof BtcTxRequestSerialized>;
+};
+export const BtcTxRequest: MessageDef<BtcTxRequestFields> = defineMessage(21, {
+  requestType: { no: 1, kind: "enum", rule: "optional" },
+  details: { no: 2, kind: "message", rule: "optional", message: BtcTxRequestDetails },
+  serialized: { no: 3, kind: "message", rule: "optional", message: BtcTxRequestSerialized },
+});
+
+// TxInput — the input of the transaction being signed.
+export type BtcTxInputFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  prevHash: Field<"bytes", 2, "required">;
+  prevIndex: Field<"uint32", 3, "required">;
+  scriptSig: Field<"bytes", 4, "optional">;
+  sequence: Field<"uint32", 5, "optional">;
+  scriptType: Field<"enum", 6, "optional">;
+  amount: Field<"uint64", 8, "required">;
+  scriptPubkey: Field<"bytes", 19, "optional">;
+};
+export const BtcTxInput: MessageDef<BtcTxInputFields> = {
+  typeId: -1,
+  fields: {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    prevHash: { no: 2, kind: "bytes", rule: "required" },
+    prevIndex: { no: 3, kind: "uint32", rule: "required" },
+    scriptSig: { no: 4, kind: "bytes", rule: "optional" },
+    sequence: { no: 5, kind: "uint32", rule: "optional" },
+    scriptType: { no: 6, kind: "enum", rule: "optional" },
+    amount: { no: 8, kind: "uint64", rule: "required" },
+    scriptPubkey: { no: 19, kind: "bytes", rule: "optional" },
+  },
+};
+
+// TxOutput — the output of the transaction being signed.
+export type BtcTxOutputFields = {
+  address: Field<"string", 1, "optional">;
+  addressN: Field<"uint32", 2, "repeated">;
+  amount: Field<"uint64", 3, "required">;
+  scriptType: Field<"enum", 4, "optional">;
+  opReturnData: Field<"bytes", 6, "optional">;
+};
+export const BtcTxOutput: MessageDef<BtcTxOutputFields> = {
+  typeId: -1,
+  fields: {
+    address: { no: 1, kind: "string", rule: "optional" },
+    addressN: { no: 2, kind: "uint32", rule: "repeated" },
+    amount: { no: 3, kind: "uint64", rule: "required" },
+    scriptType: { no: 4, kind: "enum", rule: "optional" },
+    opReturnData: { no: 6, kind: "bytes", rule: "optional" },
+  },
+};
+
+// PrevTx / PrevInput / PrevOutput — pieces of a previous transaction the device asks for.
+export type BtcPrevTxFields = {
+  version: Field<"uint32", 1, "required">;
+  lockTime: Field<"uint32", 4, "required">;
+  inputsCount: Field<"uint32", 6, "required">;
+  outputsCount: Field<"uint32", 7, "required">;
+  extraDataLen: Field<"uint32", 9, "optional">;
+};
+const BtcPrevTx: MessageDef<BtcPrevTxFields> = {
+  typeId: -1,
+  fields: {
+    version: { no: 1, kind: "uint32", rule: "required" },
+    lockTime: { no: 4, kind: "uint32", rule: "required" },
+    inputsCount: { no: 6, kind: "uint32", rule: "required" },
+    outputsCount: { no: 7, kind: "uint32", rule: "required" },
+    extraDataLen: { no: 9, kind: "uint32", rule: "optional" },
+  },
+};
+
+export type BtcPrevInputFields = {
+  prevHash: Field<"bytes", 2, "required">;
+  prevIndex: Field<"uint32", 3, "required">;
+  scriptSig: Field<"bytes", 4, "required">;
+  sequence: Field<"uint32", 5, "required">;
+};
+const BtcPrevInput: MessageDef<BtcPrevInputFields> = {
+  typeId: -1,
+  fields: {
+    prevHash: { no: 2, kind: "bytes", rule: "required" },
+    prevIndex: { no: 3, kind: "uint32", rule: "required" },
+    scriptSig: { no: 4, kind: "bytes", rule: "required" },
+    sequence: { no: 5, kind: "uint32", rule: "required" },
+  },
+};
+
+export type BtcPrevOutputFields = {
+  amount: Field<"uint64", 1, "required">;
+  scriptPubkey: Field<"bytes", 2, "required">;
+};
+const BtcPrevOutput: MessageDef<BtcPrevOutputFields> = {
+  typeId: -1,
+  fields: {
+    amount: { no: 1, kind: "uint64", rule: "required" },
+    scriptPubkey: { no: 2, kind: "bytes", rule: "required" },
+  },
+};
+
+// The TxAck subtypes all carry MessageType 22 on the wire ((wire_type)=22); only their field-1
+// payload differs.
+export type BtcTxAckInputWrapperFields = {
+  input: MsgField<2, "required", typeof BtcTxInput>;
+};
+const BtcTxAckInputWrapper: MessageDef<BtcTxAckInputWrapperFields> = {
+  typeId: -1,
+  fields: {
+    input: { no: 2, kind: "message", rule: "required", message: BtcTxInput },
+  },
+};
+export type BtcTxAckInputFields = { tx: MsgField<1, "required", typeof BtcTxAckInputWrapper> };
+export const BtcTxAckInput: MessageDef<BtcTxAckInputFields> = defineMessage(22, {
+  tx: { no: 1, kind: "message", rule: "required", message: BtcTxAckInputWrapper },
+});
+
+export type BtcTxAckOutputWrapperFields = {
+  output: MsgField<5, "required", typeof BtcTxOutput>;
+};
+const BtcTxAckOutputWrapper: MessageDef<BtcTxAckOutputWrapperFields> = {
+  typeId: -1,
+  fields: {
+    output: { no: 5, kind: "message", rule: "required", message: BtcTxOutput },
+  },
+};
+export type BtcTxAckOutputFields = { tx: MsgField<1, "required", typeof BtcTxAckOutputWrapper> };
+export const BtcTxAckOutput: MessageDef<BtcTxAckOutputFields> = defineMessage(22, {
+  tx: { no: 1, kind: "message", rule: "required", message: BtcTxAckOutputWrapper },
+});
+
+export type BtcTxAckPrevMetaFields = { tx: MsgField<1, "required", typeof BtcPrevTx> };
+export const BtcTxAckPrevMeta: MessageDef<BtcTxAckPrevMetaFields> = defineMessage(22, {
+  tx: { no: 1, kind: "message", rule: "required", message: BtcPrevTx },
+});
+
+export type BtcTxAckPrevInputWrapperFields = {
+  input: MsgField<2, "required", typeof BtcPrevInput>;
+};
+const BtcTxAckPrevInputWrapper: MessageDef<BtcTxAckPrevInputWrapperFields> = {
+  typeId: -1,
+  fields: { input: { no: 2, kind: "message", rule: "required", message: BtcPrevInput } },
+};
+export type BtcTxAckPrevInputFields = {
+  tx: MsgField<1, "required", typeof BtcTxAckPrevInputWrapper>;
+};
+export const BtcTxAckPrevInput: MessageDef<BtcTxAckPrevInputFields> = defineMessage(22, {
+  tx: { no: 1, kind: "message", rule: "required", message: BtcTxAckPrevInputWrapper },
+});
+
+export type BtcTxAckPrevOutputWrapperFields = {
+  output: MsgField<3, "required", typeof BtcPrevOutput>;
+};
+const BtcTxAckPrevOutputWrapper: MessageDef<BtcTxAckPrevOutputWrapperFields> = {
+  typeId: -1,
+  fields: { output: { no: 3, kind: "message", rule: "required", message: BtcPrevOutput } },
+};
+export type BtcTxAckPrevOutputFields = {
+  tx: MsgField<1, "required", typeof BtcTxAckPrevOutputWrapper>;
+};
+export const BtcTxAckPrevOutput: MessageDef<BtcTxAckPrevOutputFields> = defineMessage(22, {
+  tx: { no: 1, kind: "message", rule: "required", message: BtcTxAckPrevOutputWrapper },
+});
+
+export type BtcSignMessageFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  message: Field<"bytes", 2, "required">;
+  coinName: Field<"string", 3, "optional">;
+  scriptType: Field<"enum", 4, "optional">;
+  noScriptType: Field<"bool", 5, "optional">;
+  isBip322Simple: Field<"bool", 10, "optional">;
+};
+export const BtcSignMessage: MessageDef<BtcSignMessageFields> = defineMessage(38, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  message: { no: 2, kind: "bytes", rule: "required" },
+  coinName: { no: 3, kind: "string", rule: "optional" },
+  scriptType: { no: 4, kind: "enum", rule: "optional" },
+  noScriptType: { no: 5, kind: "bool", rule: "optional" },
+  isBip322Simple: { no: 10, kind: "bool", rule: "optional" },
+});
+
+export type BtcMessageSignatureFields = {
+  address: Field<"string", 1, "required">;
+  signature: Field<"bytes", 2, "required">;
+};
+export const BtcMessageSignature: MessageDef<BtcMessageSignatureFields> = defineMessage(40, {
+  address: { no: 1, kind: "string", rule: "required" },
+  signature: { no: 2, kind: "bytes", rule: "required" },
+});

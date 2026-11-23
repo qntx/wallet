@@ -25,6 +25,11 @@ import {
   encodeTronContract,
   encodeTronRawData,
 } from "../../packages/wallet-chains/src/tron/index.ts";
+import {
+  bitcoinPrepare,
+  signBitcoinMessage,
+  signBitcoinTransaction,
+} from "../../packages/wallet-kernel/src/modules/onekey/protocol/bitcoin.ts";
 import { initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../../packages/wallet-kernel/src/modules/onekey/protocol/errors.ts";
 import { signTypedData } from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm-typed-data.ts";
@@ -53,6 +58,10 @@ import {
   signTronMessage,
   signTronTransaction,
 } from "../../packages/wallet-kernel/src/modules/onekey/protocol/tron.ts";
+import {
+  buildChangePsbt,
+  buildMixedPsbt,
+} from "../../packages/wallet-kernel/tests/onekey-emulator/bitcoin-fixtures.ts";
 import {
   LoadDevice,
   TEST_MNEMONIC,
@@ -591,6 +600,122 @@ if (DEVICE === "pro") {
     );
     sessions.push(session);
     console.log(`tron-message: sig=${bytesToHex(sig).slice(0, 24)}…`);
+  }
+}
+
+// Layer 5: Bitcoin. The `bitcoin-psbt-every-template` plan vector mixes a taproot input
+// that carries only witness_utxo — but in a mixed transaction both firmwares verify EVERY
+// input against its full previous transaction (core bitcoin.py step3_verify_inputs /
+// legacy signing.c), so the client refuses it `unsupported` before any exchange (empty
+// session). `bitcoin-psbt-mixed-prevtxs` rebuilds the same spend with a synthesized
+// non_witness_utxo for the taproot input — a real four-template signing session.
+// `bitcoin-psbt-single-anyonecanpay` uses SIGHASH_ANYONECANPAY → `unsupported`, no exchange.
+// `bitcoin-psbt-change` declares one change output the device derives itself.
+{
+  const initSession = { name: "l5-init", exchanges: [] as Step[] };
+  const info = await initialize(recording(initSession));
+  sessions.push(initSession);
+  console.log(`l5-init: ${info.model} ${info.firmware.join(".")}`);
+
+  const l5plans = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../vectors/chains/signing-plans.json"), "utf8"),
+  ) as {
+    cases: Array<{
+      name: string;
+      key: { path: number[]; publicKey: string };
+      request: {
+        kind: string;
+        psbt?: string;
+        message?: string;
+        format?: string;
+        inputs?: Array<{ index: number; path: number[]; publicKey: string }>;
+      };
+      stages: Array<Array<{ path: number[]; publicKey: string }>>;
+    }>;
+  };
+  const l5Case = (name: string) => {
+    const found = l5plans.cases.find((c) => c.name === name);
+    if (found === undefined) {
+      throw new Error(`plan case ${name} missing from signing-plans.json`);
+    }
+    return found;
+  };
+  const H = 0x80_00_00_00;
+  const scriptTypes = { 44: 0, 49: 4, 84: 3, 86: 5 } as Record<number, number>;
+  const signPlan = (name: string): Array<{ index: number; path: number[]; scriptType: number }> => {
+    const [stage] = l5Case(name).stages;
+    if (stage === undefined) {
+      throw new Error(`plan case ${name} has no stages`);
+    }
+    return stage.map((task, index) => {
+      const [purpose] = task.path;
+      if (purpose === undefined) {
+        throw new Error(`plan task ${name} has an empty path`);
+      }
+      return { index, path: task.path, scriptType: scriptTypes[purpose - H] ?? -1 };
+    });
+  };
+
+  const mixedPsbt = buildMixedPsbt(
+    l5Case("bitcoin-psbt-every-template").request.psbt ?? "",
+    l5Case("bitcoin-psbt-every-template").request.inputs?.[3]?.publicKey ?? "",
+  ).psbt;
+  const changePsbt = buildChangePsbt(l5Case("bitcoin-psbt-every-template").request.psbt ?? "").psbt;
+
+  for (const [name, psbt, change] of [
+    [
+      "bitcoin-psbt-every-template",
+      hexToBytes(l5Case("bitcoin-psbt-every-template").request.psbt ?? ""),
+      [],
+    ],
+    [
+      "bitcoin-psbt-single-anyonecanpay",
+      hexToBytes(l5Case("bitcoin-psbt-single-anyonecanpay").request.psbt ?? ""),
+      [],
+    ],
+    ["bitcoin-psbt-mixed-prevtxs", mixedPsbt, []],
+    ["bitcoin-psbt-change", changePsbt, [{ index: 1, path: [H + 84, H, H, 1, 0], scriptType: 3 }]],
+  ] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    sessions.push(session);
+    try {
+      const sign =
+        name === "bitcoin-psbt-change"
+          ? [{ index: 0, path: [H + 84, H, H, 0, 0], scriptType: 3 }]
+          : signPlan(name === "bitcoin-psbt-mixed-prevtxs" ? "bitcoin-psbt-every-template" : name);
+      const prepared = bitcoinPrepare(psbt, sign, "mainnet", change);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      const sigs = await signBitcoinTransaction(recording(session), info, prepared);
+      const [first] = sigs;
+      console.log(
+        `${name}: ${sigs.length} sigs, first=${first === undefined ? "-" : bytesToHex(first).slice(0, 24)}…`,
+      );
+    } catch (error) {
+      console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);
+    }
+  }
+
+  for (const [name, format, scriptType] of [
+    ["bitcoin-message-legacy", "legacy", 0],
+    ["bitcoin-message-bip322-p2wpkh", "bip322-simple", 3],
+    ["bitcoin-message-bip322-p2tr", "bip322-simple", 5],
+  ] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    sessions.push(session);
+    try {
+      const plan = l5Case(name);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      const sig = await signBitcoinMessage(
+        recording(session),
+        info,
+        plan.key.path,
+        new TextEncoder().encode(plan.request.message ?? ""),
+        { format, scriptType, network: "mainnet" },
+      );
+      console.log(`${name}: sig=${bytesToHex(sig).slice(0, 24)}…`);
+    } catch (error) {
+      console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);
+    }
   }
 }
 

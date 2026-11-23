@@ -34,3 +34,10 @@ export { signSolanaRawMessage, signSolanaTransaction, solanaDisplay } from "./so
 export type { SolanaDisplayRequest } from "./solana.ts";
 export { signTronMessage, signTronTransaction, tronDisplay } from "./tron.ts";
 export type { TronDisplayRequest } from "./tron.ts";
+export {
+  bitcoinDisplay,
+  bitcoinPrepare,
+  signBitcoinMessage,
+  signBitcoinTransaction,
+} from "./bitcoin.ts";
+export type { BitcoinDisplayRequest, BitcoinMessageOptions, BitcoinPrepared } from "./bitcoin.ts";
