@@ -178,7 +178,14 @@ export { backupPasswordStrength } from "./backup/strength.ts";
 export type { BackupPasswordStrength } from "./backup/strength.ts";
 export type { BackupErrorCategory } from "./backup/errors.ts";
 export { createMemoryCloudStore } from "./backup/memory.ts";
-export type { CloudStore } from "./backup/port.ts";
+export {
+  CLOUD_NAME_MAX_LENGTH,
+  CLOUD_TEXT_MAX_BYTES,
+  CloudStoreError,
+  checkCloudName,
+  checkCloudText,
+} from "./backup/port.ts";
+export type { CloudStore, CloudStoreErrorCode } from "./backup/port.ts";
 export { SparkController } from "./spark/controller.ts";
 export type {
   SparkAccountState,

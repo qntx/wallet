@@ -38,7 +38,6 @@ const LOGGER: EngineLogger = { warn: () => {} };
 function corruptFirstRead(inner: CloudStore): CloudStore {
   let used = false;
   return {
-    available: async () => inner.available(),
     list: async () => inner.list(),
     read: async (name) => {
       const text = await inner.read(name);
@@ -101,7 +100,6 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     stallCalls: 0,
   };
   const cloud: CloudStore = {
-    available: async () => inner.available(),
     list: async () => inner.list(),
     read: async (name) => {
       if (faults.read) {
@@ -477,7 +475,6 @@ describe("BackupController", () => {
       });
       const inner = createMemoryCloudStore(r.files);
       const stalled: CloudStore = {
-        available: async () => inner.available(),
         list: async () => inner.list(),
         read: async (n) => inner.read(n),
         write: async (n, text) => {

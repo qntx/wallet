@@ -396,7 +396,7 @@ export type BackupControllerState = {
 };
 
 // @public
-export type BackupErrorCategory = "cloud" | "conflict" | "unavailable" | "weak-password";
+export type BackupErrorCategory = "cloud" | "conflict" | "unavailable" | "weak-password" | "quota" | "auth-required";
 
 // @public
 export type BackupPasswordStrength = {
@@ -727,14 +727,35 @@ export type ChainRequestInput = ({
 // @public (undocumented)
 export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
 
+// @public (undocumented)
+export function checkCloudName(name: string): void;
+
+// @public (undocumented)
+export function checkCloudText(text: string): void;
+
+// @public (undocumented)
+export const CLOUD_NAME_MAX_LENGTH = 255;
+
+// @public (undocumented)
+export const CLOUD_TEXT_MAX_BYTES = 4000000;
+
 // @public
 export type CloudStore = {
-    readonly available: () => Promise<boolean>;
     readonly list: () => Promise<ReadonlyArray<string>>;
     readonly read: (name: string) => Promise<string | undefined>;
     readonly write: (name: string, text: string) => Promise<void>;
     readonly delete: (name: string) => Promise<void>;
 };
+
+// @public (undocumented)
+export class CloudStoreError extends Error {
+    constructor(code: CloudStoreErrorCode, message: string);
+    // (undocumented)
+    readonly code: CloudStoreErrorCode;
+}
+
+// @public (undocumented)
+export type CloudStoreErrorCode = "unavailable" | "auth-required" | "quota" | "invalid" | "failed";
 
 // @public (undocumented)
 export type ConnectionAccountGroup = {

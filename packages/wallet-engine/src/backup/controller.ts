@@ -27,6 +27,7 @@ import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import { BackupControllerError } from "./errors.ts";
 import type { BackupErrorCategory } from "./errors.ts";
+import { CloudStoreError } from "./port.ts";
 import type { CloudStore } from "./port.ts";
 import { backupPasswordStrength } from "./strength.ts";
 
@@ -220,8 +221,13 @@ export class BackupController extends Controller<BackupControllerState> {
   }): Promise<void> {
     // Check before the ceremony: the user must not verify and retain a BEK when there is
     // nowhere to upload it.
-    if (this.cloud === undefined || !(await this.cloud.available())) {
+    if (this.cloud === undefined) {
       throw new BackupControllerError("unavailable", "the cloud store is unavailable");
+    }
+    try {
+      await this.cloud.list();
+    } catch (error) {
+      throw toBackupControllerError(error);
     }
     const strengths = await Promise.all(
       options.factors.flatMap((factor) =>
@@ -338,7 +344,8 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.reconcile();
     const { status, error } = this.getState();
     if (status === "error" || status === "conflict" || status === "unavailable") {
-      throw new BackupControllerError(error ?? "cloud", `backup sync failed: ${status}`);
+      const category = error ?? (status === "unavailable" ? "unavailable" : "cloud");
+      throw new BackupControllerError(category, `backup sync failed: ${status}`);
     }
   }
 
@@ -418,6 +425,16 @@ export class BackupController extends Controller<BackupControllerState> {
     }));
   }
 
+  /** Maps a thrown cloud call: `unavailable` stands alone, every other failure is `error`. */
+  private setCloudError(generation: number, error: unknown, record?: BackupRecord): void {
+    const category = cloudErrorCategory(error);
+    if (category === "unavailable") {
+      this.setStatus(generation, "unavailable", undefined, record);
+    } else {
+      this.setStatus(generation, "error", category, record);
+    }
+  }
+
   /**
    * Single-flight: a trigger during a run flags exactly one rerun inside the same promise, so
    * `sync()`/`enable()` await real convergence instead of a mid-run snapshot.
@@ -449,8 +466,14 @@ export class BackupController extends Controller<BackupControllerState> {
       return;
     }
     let record = await this.readRecord();
-    if (this.cloud === undefined || !(await this.cloud.available())) {
+    if (this.cloud === undefined) {
       this.setStatus(generation, "unavailable", undefined, record);
+      return;
+    }
+    try {
+      await this.cloud.list();
+    } catch (error) {
+      this.setCloudError(generation, error, record);
       return;
     }
     if (generation !== this.generation) {
@@ -530,7 +553,7 @@ export class BackupController extends Controller<BackupControllerState> {
           return;
         }
         this.logger.warn("backup reconcile failed", error);
-        this.setStatus(generation, "error", "cloud", record);
+        this.setCloudError(generation, error, record);
         return;
       }
     }
@@ -602,7 +625,7 @@ export class BackupController extends Controller<BackupControllerState> {
         return;
       }
       this.logger.warn("backup reconcile failed", error);
-      this.setStatus(generation, "error", "cloud", record);
+      this.setCloudError(generation, error, record);
     }
   }
 }
@@ -615,6 +638,20 @@ function defaultState(): BackupControllerState {
     unprotected: { walletIds: [] },
     error: undefined,
   };
+}
+
+function cloudErrorCategory(error: unknown): BackupErrorCategory {
+  if (error instanceof CloudStoreError) {
+    return error.code === "unavailable" || error.code === "auth-required" || error.code === "quota"
+      ? error.code
+      : "cloud";
+  }
+  return "cloud";
+}
+
+function toBackupControllerError(error: unknown): BackupControllerError {
+  const message = error instanceof CloudStoreError ? error.message : "the cloud store check failed";
+  return new BackupControllerError(cloudErrorCategory(error), message);
 }
 
 function idFromName(name: string): string | undefined {
