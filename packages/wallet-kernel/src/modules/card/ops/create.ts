@@ -428,57 +428,48 @@ async function* createSet(env: OpEnv, op: CreateOp): CardOp {
             }
             stage(tap, confirmed.info);
             tap.installed(confirmed.info);
+          } else if (generate) {
+            const params: CreateParams = {
+              mode: "generate",
+              accessHash: hash,
+              entropy: env.ctx.platform.random(32),
+              others: targets.map((t) => t.cardId),
+            };
+            try {
+              const echoed = decode.created(await tap.send(cmd.create(params)), params, tap.cardId);
+              tap.installed(echoed);
+              stage(tap, echoed);
+            } finally {
+              wipe(params.entropy);
+            }
           } else {
-            let params: CreateParams;
-            if (generate) {
-              const entropy = env.ctx.platform.random(32);
-              try {
-                params = {
-                  mode: "generate",
+            const { dek } = env.ctx.session.current();
+            const source = env.ctx.image.records.find(
+              (r) => r.kind === "entropy" && r.id === sourceId,
+            );
+            if (source === undefined) {
+              throw new KernelError("not-found", "the source wallet is gone");
+            }
+            const created = await withWalletSeed(
+              env.ctx.platform.pbkdf2,
+              dek,
+              source,
+              async (seed) => {
+                const build: CreateParams = {
+                  mode: "import",
                   accessHash: hash,
-                  entropy,
+                  seed,
                   others: targets.map((t) => t.cardId),
                 };
-              } finally {
-                wipe(entropy);
-              }
-            } else {
-              const { dek } = env.ctx.session.current();
-              const source = env.ctx.image.records.find(
-                (r) => r.kind === "entropy" && r.id === sourceId,
-              );
-              if (source === undefined) {
-                throw new KernelError("not-found", "the source wallet is gone");
-              }
-              const created = await withWalletSeed(
-                env.ctx.platform.pbkdf2,
-                dek,
-                source,
-                async (seed) => {
-                  const build: CreateParams = {
-                    mode: "import",
-                    accessHash: hash,
-                    seed,
-                    others: targets.map((t) => t.cardId),
-                  };
-                  const echoed = decode.created(
-                    await tap.send(cmd.create(build)),
-                    build,
-                    tap.cardId,
-                  );
-                  tap.installed(echoed);
-                  return echoed;
-                },
-              );
-              stage(tap, created);
-              ({ cardId: sourceCard, cert: sourceCert } = tap);
-              await work(tap);
-              return { status: "done" };
-            }
-            const data = await tap.send(cmd.create(params));
-            const echoed = decode.created(data, params, tap.cardId);
-            tap.installed(echoed);
-            stage(tap, echoed);
+                const echoed = decode.created(await tap.send(cmd.create(build)), build, tap.cardId);
+                tap.installed(echoed);
+                return echoed;
+              },
+            );
+            stage(tap, created);
+            ({ cardId: sourceCard, cert: sourceCert } = tap);
+            await work(tap);
+            return { status: "done" };
           }
           ({ cardId: sourceCard, cert: sourceCert } = tap);
           await work(tap);
