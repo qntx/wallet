@@ -39,17 +39,17 @@
   },
   "devDependencies": {
     "@keystonehq/bc-ur-registry-btc": "0.1.1",
-    "@keystonehq/bc-ur-registry-eth": "0.23.0",
+    "@keystonehq/bc-ur-registry-eth": "0.23.1",
     "@keystonehq/bc-ur-registry-sol": "0.9.5",
     "@keystonehq/bc-ur-registry-tron": "0.5.0",
     "@metamask/eth-sig-util": "9.0.0",
     "@qntx/tsconfig": "1.0.1",
-    "@solana/kit": "8.5.0",
+    "@solana/kit": "8.6.0",
     "@types/node": "26.6.6",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
-    "viem": "2.57.12",
-    "vite-plus": "1.4.0"
+    "viem": "2.57.20",
+    "vite-plus": "1.6.0"
   },
   "devEngines": {
     "packageManager": {

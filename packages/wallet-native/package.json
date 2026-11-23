@@ -66,9 +66,9 @@
     "@qntx/tsconfig": "1.0.1",
     "@qntx/wallet-engine": "0.13.0",
     "@scure/base": "2.4.0",
-    "nitrogen": "0.37.1",
+    "nitrogen": "0.37.2",
     "publint": "0.3.25",
-    "react-native-nitro-modules": "0.37.1"
+    "react-native-nitro-modules": "0.37.2"
   },
   "peerDependencies": {
     "@qntx/nostr-native": "0.16.0",
