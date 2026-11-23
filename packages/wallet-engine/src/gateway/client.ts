@@ -4,6 +4,10 @@ import {
   esploraGet,
   history,
   networkById,
+  nftCollection,
+  nftFloor,
+  nftItem,
+  nftItems,
   rpc,
   swapQuote,
   swapQuoteSolana,
@@ -22,6 +26,10 @@ const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
+/** Every `/v1/nfts/*` route puts the network last, so one lookup covers all four. */
+const NFTS_PREFIXES: ReadonlyArray<string> = [nftItems, nftItem, nftCollection, nftFloor].map(
+  (route) => `${routePrefix(route.path)}/`,
+);
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -47,6 +55,10 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(TOKENS_PREFIX)) {
     return networkById(pathname.slice(TOKENS_PREFIX.length))?.family ?? "service";
+  }
+  const nftsPrefix = NFTS_PREFIXES.find((prefix) => pathname.startsWith(prefix));
+  if (nftsPrefix !== undefined) {
+    return networkById(pathname.slice(nftsPrefix.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";
