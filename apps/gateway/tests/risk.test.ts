@@ -88,6 +88,14 @@ const snapshotOf = (store: ReturnType<typeof memoryRiskStore>) =>
   };
 
 describe("phishing list generation", () => {
+  it("a source parse refuses a non-object document and a non-array field", () => {
+    const [metamask, polkadot] = PHISHING_SOURCES;
+    expect(() => metamask.parse("not json")).toThrow(TypeError);
+    expect(() => metamask.parse({ blacklist: {}, whitelist: [] })).toThrow(TypeError);
+    expect(() => polkadot.parse([1, 2])).toThrow(TypeError);
+    expect(() => polkadot.parse({ deny: "d", allow: [] })).toThrow(TypeError);
+  });
+
   it("merges both sources, normalizes, hashes, sorts and dedupes", async () => {
     const { store, build } = setup();
     await build(
