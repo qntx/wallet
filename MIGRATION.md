@@ -94,7 +94,9 @@ export async function restoreAfterReset(
   `lock`, `destroy`, `setStore`, `setAccounts`, `lockAll`, `reconcile`, `trigger`,
   `invalidateAll`), `store.setState`, metadata merges and the provider handlers' `options` are
   gone from the engine. A component typed with a controller class (`SparkController`, …) takes
-  `WalletEngine["spark"]` instead.
+  `WalletEngine["spark"]` instead. Build controllers only through `createWalletEngine`: the
+  exported controller classes' constructor options changed (for example `AssetsController` requires
+  `chains`, `gateway`, `fetch` and `now`; `SparkControllerOptions.random` is gone).
 - Every type in the engine's host-facing signatures has a name in `@qntx/wallet-engine`:
   `AccountRef`, `TrackedTransaction`, `TxState`, `PrepareParams`, `ChainRequestInput`,
   `RequestResult`, the request inputs, displays and results, `SparkTokenBalance`, `HistoryGroup`,
@@ -717,7 +719,7 @@ export async function showOlder(
   their `sources` entry reports zero.
 - UTXOs on taproot addresses or worth at most 20,000 sat are `protected` as possible inscription or
   rune carriers: sends do not pick them, the balance counts them in `protected` (0.13.0 named it
-  `frozen`, on `AccountBalances` and per-source totals), and a dApp PSBT spending one raises
+  `AccountBalances.frozen`), and a dApp PSBT spending one raises
   `bitcoin-inscription-input`. Naming one in `inputs` opts into spending it.
 - User freezes: `engine.transactions.setUtxosFrozen` / `frozenUtxos`, per account and network.
   Automatic selection, speed-up and CPFP skip frozen outpoints; a dApp PSBT spending one raises the
@@ -1006,7 +1008,7 @@ export function sparkStateLabel(state: SparkPaymentState): string {
 | `engine.connections.request`, `authorize`, `touch`                                                                     | nothing — dApp-side steps run inside the provider handlers                           |
 | `engine.accounts.exportMeta` / `mergeMeta`, `engine.addressBook.merge` / `syncEntries`                                 | `engine.metaSync`                                                                    |
 | `engine.networks.ensClient`, `independentClient`, `independentEnsClient`, `independentSolanaRpc`, `independentEsplora` | `engine.names.resolve`; cross-checks run inside the engine                           |
-| `AccountBalances.frozen`, `BitcoinTotals.frozen` (Bitcoin)                                                             | `protected`                                                                          |
+| `AccountBalances.frozen` (Bitcoin)                                                                                     | `protected`                                                                          |
 | `TrackedTransaction.evm.raw`                                                                                           | `TrackedTransaction.raw`                                                             |
 | `EngineOptions.gateway.installId`                                                                                      | nothing                                                                              |
 | `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount`   | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity` |
