@@ -874,3 +874,73 @@ describe("corrections — the pending map", () => {
     expect(rig.subscribes()).toBe(0);
   });
 });
+
+describe("a canceled row keeps its partial fill", () => {
+  const canceledRow = (sizeMatched: string) => ({ status: "CANCELED", sizeMatched });
+
+  it("an in-call CANCELED row resolves canceled with the row's size_matched", async () => {
+    const rig = unitRig({ order: async () => Promise.resolve(canceledRow("4.5")) });
+    const placed = await rig.trade.place(group, {
+      kind: "limit",
+      assetId: ASSET,
+      side: "BUY",
+      price: "0.51",
+      size: "10",
+      orderType: "GTC",
+    });
+    const outcome = await unitSettled(rig, placed.outcome);
+    expect(outcome).toStrictEqual({ kind: "canceled", orderId: placed.orderId, making: "4.5" });
+  });
+
+  it('a zero size_matched stays a plain cancel — making is "0"', async () => {
+    const rig = unitRig({ order: async () => Promise.resolve(canceledRow("0")) });
+    const placed = await rig.trade.place(group, {
+      kind: "limit",
+      assetId: ASSET,
+      side: "BUY",
+      price: "0.51",
+      size: "10",
+      orderType: "GTC",
+    });
+    const outcome = await unitSettled(rig, placed.outcome);
+    expect(outcome).toStrictEqual({ kind: "canceled", orderId: placed.orderId, making: "0" });
+  });
+
+  it("the late correction reports the fill the defensive DELETE raced", async () => {
+    let calls = 0;
+    const corrections: PolymarketOutcomeCorrection[] = [];
+    const rig = unitRig({
+      order: async () => {
+        calls += 1;
+        /* Three absent reconcile reads, then the late probe sees the row — canceled, but not
+           before it had filled 4.5 of the 10. */
+        return Promise.resolve(calls <= 3 ? undefined : canceledRow("4.5"));
+      },
+    });
+    rig.trade.corrections.subscribe((c) => {
+      corrections.push(c);
+    });
+    const placed = await rig.trade.place(group, {
+      kind: "limit",
+      assetId: ASSET,
+      side: "BUY",
+      price: "0.51",
+      size: "10",
+      orderType: "GTC",
+    });
+    const outcome = await unitSettled(rig, placed.outcome);
+    expect(outcome.kind).toBe("unknown");
+    for (let i = 0; corrections.length === 0 && i < 200; i += 1) {
+      rig.timers.pump();
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the probe is async
+      await realDelay();
+    }
+    expect(corrections).toStrictEqual([
+      {
+        group,
+        orderId: placed.orderId,
+        outcome: { kind: "canceled", orderId: placed.orderId, making: "4.5" },
+      },
+    ]);
+  });
+});

@@ -7,6 +7,7 @@
 import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { ChainError } from '@qntx/wallet-chains';
 import { chains } from '@qntx/wallet/chains';
 import { ChainsApi } from '@qntx/wallet/chains';
 import { ChainTemplate } from '@qntx/wallet/protocol';
@@ -1189,7 +1190,7 @@ export class HistoryController extends Controller<HistoryState> {
 
 // @public (undocumented)
 export type HistoryControllerOptions = {
-    readonly networks: Pick<NetworkController, "enabled" | "client" | "independentClient" | "independentSolanaRpc" | "independentEsplora" | "independentTronApi" | "solanaRpc" | "tronApi" | "esplora">;
+    readonly networks: Pick<NetworkController, "enabled" | "client" | "gatewayFirst" | "independentClient" | "independentSolanaRpc" | "independentEsplora" | "independentTronApi" | "solanaRpc" | "tronApi" | "esplora">;
     readonly chains: {
         readonly account: (params: {
             readonly walletId: string;
@@ -1276,6 +1277,7 @@ type Independent<T> = {
     readonly kind: "unavailable";
 } | {
     readonly kind: "available";
+    readonly source: "host" | "gateway";
     readonly client: T;
 };
 
@@ -1437,12 +1439,13 @@ export class NetworkController extends Controller<NetworkControllerState> {
     endpoints(network: string): ReadonlyArray<string>;
     ensClient(network: string): PublicClient;
     esplora(network: string): Esplora;
+    gatewayFirst(network: string): boolean;
     independentClient(network: string): Independent<PublicClient>;
     independentEnsClient(network: string): Independent<PublicClient>;
     // (undocumented)
     independentEsplora(network: string): Independent<Esplora>;
-    independentPinnedSolanaRpc(network: string): Independent<SolanaRpc>;
-    independentPinnedTronApi(network: string): Independent<TronApi>;
+    independentPinnedSolanaRpc(network: string, primaryUrl: string | undefined): Independent<SolanaRpc>;
+    independentPinnedTronApi(network: string, primaryUrl: string | undefined): Independent<TronApi>;
     // (undocumented)
     independentSolanaRpc(network: string): Independent<SolanaRpc>;
     independentTronApi(network: string): Independent<TronApi>;
@@ -1452,8 +1455,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
     init(): Promise<void>;
     // (undocumented)
     lock(): void;
-    pinnedSolanaRpc(network: string): SolanaRpc;
-    pinnedTronApi(network: string, until?: () => number): TronApi;
+    pinnedSolanaRpc(network: string): PinnedSolanaRpc;
+    pinnedTronApi(network: string, until?: () => number): PinnedTronApi;
     solanaRpc(network: string): SolanaRpc;
     tronApi(network: string): TronApi;
 }
@@ -1784,6 +1787,16 @@ export type PhishingState = {
 
 // @public
 export type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
+
+// @public
+type PinnedSolanaRpc = SolanaRpc & {
+    readonly pinnedUrl: () => string | undefined;
+};
+
+// @public
+type PinnedTronApi = TronApi & {
+    readonly pinnedUrl: () => string | undefined;
+};
 
 // @public
 type PreparedBitcoinPsbt = {
@@ -2176,6 +2189,16 @@ export type SolanaAccount = {
     readonly groupIndex: number;
     readonly address: string;
 };
+
+// @public
+export type SolanaBindingReason = "genesis-mismatch" | "blockhash-unknown" | "nonce-account-missing" | "nonce-mismatch" | "nonce-account-in-lookup-table" | "unconfirmed" | "testnet-gateway-only";
+
+// @public
+export class SolanaClusterBindingError extends ChainError {
+    constructor(reason: SolanaBindingReason, message: string);
+    // (undocumented)
+    readonly reason: SolanaBindingReason;
+}
 
 // @public (undocumented)
 type SolanaConnections = Pick<ConnectionController, "checkOrigin" | "session" | "authorize" | "sessionAccounts" | "request" | "touch" | "revoke" | "getState" | "store">;
@@ -2661,6 +2684,7 @@ export type TrackedTransaction = {
 export class TransactionController extends Controller<TransactionControllerState> {
     constructor(options: Options_2);
     batchById(origin: string, id: string): BatchRecord | undefined;
+    bindDappSolana(network: string, messages: ReadonlyArray<Uint8Array>): Promise<ReadonlyArray<RequestCheckCode>>;
     delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
     // (undocumented)
     destroy(): Promise<void>;

@@ -13,6 +13,7 @@ import type { RouteContext, TrackedTransaction } from "../src/transactions/route
 import { pollTron } from "../src/transactions/tron.ts";
 
 const GATEWAY = "https://gateway.test";
+const HOST = "https://host.test";
 const NET = "tron:3448148188";
 const HASH = "ab".repeat(32);
 const SOLID_ID = "cd".repeat(32);
@@ -84,6 +85,8 @@ type World = {
   /** A fresh pinned caller per call — like `NetworkController.pinnedTronApi`. */
   readonly api: () => ReturnType<typeof pinnedTronCaller>;
   readonly broadcasts: string[];
+  /** The world's fetch — for caller-level tests over multiple URLs. */
+  readonly fetchFn: typeof globalThis.fetch;
 };
 
 const world = (): World => {
@@ -123,17 +126,30 @@ const world = (): World => {
     },
   };
   const makeApi = pinnedTronCaller ?? ((_: ReadonlyArray<string>) => unpinned);
-  return { nodes, requests, api: () => makeApi([GATEWAY], fetchFn), broadcasts };
+  return { nodes, requests, api: () => makeApi([GATEWAY], fetchFn), broadcasts, fetchFn };
 };
 
 type Evidence = Map<string, { since: number; polls: number }>;
 
 const NOT_NEEDED = { kind: "not-needed" };
 
+/** A fetch that throws for any URL under `dead.url` — counting each attempt — delegating the rest. */
+const deadEndpoint =
+  (dead: { url: string; calls: number }, inner: typeof globalThis.fetch): typeof globalThis.fetch =>
+  async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.startsWith(dead.url)) {
+      dead.calls += 1;
+      throw new TypeError("fetch failed");
+    }
+    return inner(input, init);
+  };
+
 const ctx = (
   w: World,
   independent: unknown = NOT_NEEDED,
   now: () => number = () => 1_000_000,
+  networks: Record<string, unknown> = {},
 ): RouteContext => ({
   options: {
     networks: {
@@ -141,6 +157,7 @@ const ctx = (
       pinnedTronApi: w.api,
       independentTronApi: () => independent,
       independentPinnedTronApi: () => independent,
+      ...networks,
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
@@ -362,7 +379,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION + 1, solidInfo: info() }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const c = ctx(w, independent);
     await expect(polls(c, tx(), ev(), { t: 1_000_000 }, 3)).resolves.toBeUndefined();
   });
@@ -371,7 +388,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION + 1 }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollTron(ctx(w, independent), tx(), ev());
     expect(answer1).toStrictEqual({ kind: "ended", state: "dropped" });
   });
@@ -380,7 +397,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollTron(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
   });
 });
@@ -438,7 +455,7 @@ describe("a reorged answer must be proven the same way", () => {
         return answer(node({ fullHead: 95 }), path, body as Record<string, unknown>);
       },
     };
-    const independent = { kind: "available", client: host };
+    const independent = { kind: "available", source: "host", client: host };
     const answer1 = await pollTron(ctx(w, independent), tx({ ...included }), ev());
     expect(answer1).toStrictEqual({ kind: "reorged" });
   });
@@ -456,7 +473,84 @@ describe("a reorged answer must be proven the same way", () => {
         );
       },
     };
-    const independent = { kind: "available", client: host };
+    const independent = { kind: "available", source: "host", client: host };
     await expect(pollTron(ctx(w, independent), tx({ ...included }), ev())).resolves.toBeUndefined();
+  });
+});
+
+describe("the corroborator is never the pinned upstream", () => {
+  it("names the answering endpoint in pinnedUrl once it commits", async () => {
+    const w = world();
+    const api = pinnedTronCaller([GATEWAY], w.fetchFn);
+    expect(api.pinnedUrl()).toBeUndefined();
+    await api.post("/walletsolidity/getnowblock", {});
+    expect(api.pinnedUrl()).toBe(GATEWAY);
+    /* Failover names the endpoint that answered, not the dead first one — the pin, not the
+       list order, is what makes a corroborator "the same upstream". */
+    const dead = { url: GATEWAY, calls: 0 };
+    const failedOver = pinnedTronCaller([GATEWAY, HOST], deadEndpoint(dead, w.fetchFn));
+    await failedOver.post("/walletsolidity/getnowblock", {});
+    expect(dead.calls).toBe(1);
+    expect(failedOver.pinnedUrl()).toBe(HOST);
+  });
+
+  it("a drop poll pinned onto the host endpoint keeps the row for the streak", async () => {
+    const clock = { t: 1_000_000 };
+    const w = world();
+    w.nodes.a.solidTime = EXPIRATION + 1;
+    const dead = { url: GATEWAY, calls: 0 };
+    /* The real failover client: the gateway dies on the poll's first read and the pin lands on
+       the host URL — the same URL a host corroborator would read. */
+    const api = () => pinnedTronCaller([GATEWAY, HOST], deadEndpoint(dead, w.fetchFn));
+    const pins: Array<string | undefined> = [];
+    const c = ctx(w, NOT_NEEDED, () => clock.t, {
+      pinnedTronApi: api,
+      /* The controller contract: a corroborator identical to the pinned primary is not-needed,
+         so the host-only continuity rule decides instead of a second look at itself. */
+      independentPinnedTronApi: (_net: string, primaryUrl: string | undefined) => {
+        pins.push(primaryUrl);
+        return NOT_NEEDED;
+      },
+    });
+    const evidence = ev();
+    const t = tx();
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    expect(pins).toStrictEqual([HOST]);
+    /* The identical claim now earns the streak: three polls spanning more than one
+       solidification period. */
+    clock.t += SOLIDIFY_MS;
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    clock.t += 1;
+    await expect(pollTron(c, t, evidence)).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
+    expect(pins).toStrictEqual([HOST, HOST, HOST]);
+  });
+
+  it("a reorg poll pinned onto the host endpoint keeps the row for the streak", async () => {
+    const included = { block: { height: 90 } as const, state: "confirmed" as const, final: false };
+    const clock = { t: 1_000_000 };
+    const w = world();
+    w.nodes.a.fullHead = 95;
+    const dead = { url: GATEWAY, calls: 0 };
+    const api = () => pinnedTronCaller([GATEWAY, HOST], deadEndpoint(dead, w.fetchFn));
+    const pins: Array<string | undefined> = [];
+    const c = ctx(w, NOT_NEEDED, () => clock.t, {
+      pinnedTronApi: api,
+      independentPinnedTronApi: (_net: string, primaryUrl: string | undefined) => {
+        pins.push(primaryUrl);
+        return NOT_NEEDED;
+      },
+    });
+    const evidence = ev();
+    const t = tx({ ...included });
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    expect(pins).toStrictEqual([HOST]);
+    clock.t += SOLIDIFY_MS;
+    await expect(pollTron(c, t, evidence)).resolves.toBeUndefined();
+    clock.t += 1;
+    await expect(pollTron(c, t, evidence)).resolves.toStrictEqual({ kind: "reorged" });
+    expect(pins).toStrictEqual([HOST, HOST, HOST]);
   });
 });

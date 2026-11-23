@@ -434,7 +434,8 @@ export type IntentWarningKind =
   | "fiat24-payee-offchain"
   | "fiat24-swap-quote"
   | "fiat24-account-link"
-  | "fiat24-account-move";
+  | "fiat24-account-move"
+  | "fiat24-account-burn";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;
@@ -462,7 +463,12 @@ export type Fiat24Action =
       readonly ref?: string;
     }
   | { readonly kind: "top-up"; readonly receive: Fiat24Token }
-  | { readonly kind: "open-account"; readonly account: string }
+  | {
+      readonly kind: "open-account";
+      readonly account: string;
+      /** `mintByClient` only: the token burned at the issuer-set price, bounded by allowance. */
+      readonly burn?: Fiat24Token;
+    }
   | { readonly kind: "session-grant"; readonly account: string; readonly deadline: number };
 
 /** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */

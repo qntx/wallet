@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import * as fc from "fast-check";
 import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
@@ -110,12 +113,22 @@ describe("Fiat24 transferByAccountId", () => {
     expect(intent.warnings).toStrictEqual([]);
   });
 
+  /* The contract's own bound: Fiat24Account.sol:119 rejects
+     `_tokenId.hasFirstDigit(INTERNALDIGIT)` with INTERNALDIGIT = 9 — every account whose most
+     significant decimal digit is 9 is issuer-only, at any width. */
   it.each([
-    [9099n, []],
+    [9n, [{ kind: "fiat24-internal-account", message: "9" }]],
+    [95n, [{ kind: "fiat24-internal-account", message: "95" }]],
     [9100n, [{ kind: "fiat24-internal-account", message: "9100" }]],
     [9299n, [{ kind: "fiat24-internal-account", message: "9299" }]],
-    [9300n, []],
-  ] as const)("internal-account warning only inside 9100..9299: %s", (id, warnings) => {
+    [9300n, [{ kind: "fiat24-internal-account", message: "9300" }]],
+    [99999n, [{ kind: "fiat24-internal-account", message: "99999" }]],
+    [900001n, [{ kind: "fiat24-internal-account", message: "900001" }]],
+    [8n, []],
+    [19n, []],
+    [89n, []],
+    [1009n, []],
+  ] as const)("internal-account warning is every id starting with 9: %s", (id, warnings) => {
     const intent = decodeEvm(tx(EUR24, sendByAccount(id)), SIGNER);
     expect(intent.warnings).toStrictEqual(warnings);
   });
@@ -457,15 +470,32 @@ describe("Fiat24 payouts", () => {
   });
 });
 
+/* The F24 token mintByClient burns at the issuer-set account price — the deposit contract's
+   f24() getter on chain (Sourcify exact match). */
+const F24 = {
+  asset: "0x22043fDdF353308B4F2e7dA2e5284E4D087449e1",
+  symbol: "F24",
+  decimals: 2,
+};
+
 describe("Fiat24 account minting", () => {
-  it("mintByClient opens the account for the caller", () => {
+  it("mintByClient opens the account and discloses the F24 burn", () => {
     const data = fn(ACCOUNT_ABI, "mintByClient", [123456n]);
     const intent = decodeEvm(tx(ACCOUNT, data), SIGNER);
     expect(intent.summary).toBe("contract-call");
     expect(intent.verifiability).toBe("partial");
     expect(intent.outflows).toStrictEqual([]);
-    expect(intent.fiat24).toStrictEqual({ kind: "open-account", account: "123456" });
-    expect(intent.warnings).toStrictEqual([{ kind: "fiat24-account-link", message: "" }]);
+    /* The burn amount is issuer storage — the intent names the token and the warning bounds
+       the cost by the caller's allowance. */
+    expect(intent.fiat24).toStrictEqual({
+      kind: "open-account",
+      account: "123456",
+      burn: F24,
+    });
+    expect(intent.warnings).toStrictEqual([
+      { kind: "fiat24-account-link", message: "" },
+      { kind: "fiat24-account-burn", message: "" },
+    ]);
   });
 
   it("mintByClientWithETH pays the fee in ETH to the account contract", () => {
@@ -896,15 +926,16 @@ describe("evm.fiat24-session", () => {
     deadline: deadline as number,
   });
 
-  /* Independent of the wallet's own builder: the cast-generated vector in @qntx/fiat24
-     vectors/api/session.json (SPEC §9.2 — label, preimage = label + deadline, keccak digest). */
+  /* Independent of the wallet's own builder: the cast-generated vectors in @qntx/fiat24
+     vectors/api/session.json (SPEC §9.2 — the label ends in `;`, preimage = label + deadline,
+     keccak digest). */
   const VECTOR_MESSAGE =
-    "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+    "I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd";
 
   it("builds the grant message byte-for-byte as the cast vector", () => {
     expect(fiat24SessionMessage(42161, "123456", 1795278000)).toBe(VECTOR_MESSAGE);
     expect(fiat24SessionMessage(42161, "1", 1795305600)).toBe(
-      "I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+      "I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
     );
   });
 
@@ -948,4 +979,47 @@ describe("evm.fiat24-session", () => {
       deadline: 1795278000,
     });
   });
+});
+
+describe("the session grant deadline cannot be re-split", () => {
+  /* The Fiat24 API rebuilds the digest as keccak256(hash ‖ deadline) from two client-chosen
+     headers and never parses `hash`, so every all-digit tail of the preimage is a deadline a
+     re-split could move the grant to. The label's `;` terminator bounds the only such tail to
+     the deadline the user approved — checked over every generated session vector, whose label
+     and digest are the independent @qntx/fiat24 oracle values the signed message is asserted
+     byte-for-byte equal to above. */
+  const sessions = (
+    JSON.parse(
+      readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/fiat24.json"), "utf8"),
+    ) as {
+      cases: ReadonlyArray<{
+        request: { kind: string; tokenId: string; deadline: number };
+        session: { label: string; digest: string };
+      }>;
+    }
+  ).cases.filter((v) => v.request.kind === "evm.fiat24-session");
+
+  /* Every canonical all-digit suffix of the preimage — each is a `deadline` header value a
+     re-split of the same bytes could carry. Proper digit-tails of the deadline itself count
+     too; they can only shorten the grant, so the bound to prove is "none exceeds it". */
+  const digitSuffixes = (preimage: string): ReadonlyArray<bigint> =>
+    Array.from({ length: preimage.length }, (_, i) => preimage.slice(i))
+      .filter((s) => /^[0-9]+$/.test(s) && BigInt(s).toString() === s)
+      .map(BigInt);
+
+  it("the vectors contain session cases", () => {
+    expect(sessions.length).toBeGreaterThan(0);
+  });
+
+  it.each(sessions.map((v) => [v.request.tokenId, v] as const))(
+    "no digit suffix of the preimage exceeds the deadline (account #%s)",
+    (_id, v) => {
+      expect(v.session.label.endsWith(";")).toBe(true);
+      expect(/\d$/.test(v.session.label)).toBe(false);
+      const deadline = BigInt(v.request.deadline);
+      expect(digitSuffixes(v.session.label + v.request.deadline).every((s) => s <= deadline)).toBe(
+        true,
+      );
+    },
+  );
 });

@@ -394,10 +394,11 @@ export function assessRecipients(
 }
 
 /**
- * Every party a decoded intent names as receiving value: the outflow recipients (a burned output's
- * script is nobody — a destroyed amount has no recipient), the recipients swap and bridge terms
- * enforce, the inner calls a batch names, and the destinations a recognized typed-data document
- * signs. Approvals carry no recipient — they have their own assessment.
+ * Every party a decoded intent names as receiving value or authority over the signer's value: the
+ * outflow recipients (a burned output's script is nobody — a destroyed amount has no recipient),
+ * the recipients swap and bridge terms enforce, approval and permission grantees (a revocation
+ * names nobody), the inner calls a batch names, and the destinations a recognized typed-data
+ * document signs.
  */
 export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> => {
   const recipients: string[] = [];
@@ -406,6 +407,24 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
       ...inner.outflows.filter((flow) => flow.burn !== true).map(recipientOf),
       ...(inner.minimumReceived?.map((minimum) => minimum.to) ?? []),
     );
+    for (const approval of inner.approvals ?? []) {
+      /* A grantee takes authority over the signer's value — assessed like a recipient; a
+         revocation (a decrease, or an allowance set to zero) names nobody. */
+      if (approval.kind === "allowance") {
+        if (
+          approval.change !== "decrease" &&
+          !(approval.change === "set" && approval.amount.amount === "0")
+        ) {
+          recipients.push(approval.spender);
+        }
+      } else if (approval.kind === "operator") {
+        if (approval.approved) {
+          recipients.push(approval.spender);
+        }
+      } else {
+        recipients.push(approval.authority);
+      }
+    }
     if (inner.bridge !== undefined) {
       recipients.push(inner.bridge.refundTo);
     }
@@ -422,6 +441,16 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
         recipients.push(action.owner);
       } else if (action.kind === "tron-delegate") {
         recipients.push(action.receiver);
+      }
+    }
+    const { permissionUpdate } = inner.tron ?? {};
+    if (permissionUpdate !== undefined) {
+      for (const permission of [
+        permissionUpdate.owner,
+        ...(permissionUpdate.witness === undefined ? [] : [permissionUpdate.witness]),
+        ...permissionUpdate.actives,
+      ]) {
+        recipients.push(...permission.keys.map((key) => key.address));
       }
     }
     const { message } = inner;
@@ -473,6 +502,17 @@ const messageRecipients = (
   const { authorization } = message;
   if (authorization !== undefined && authorization.kind !== "cancel") {
     recipients.push(authorization.to);
+  }
+  const { authority } = message;
+  /* Authority grants hand the signer's account to the grantee — assessed like recipients;
+     a revocation (morpho grant=false, a zero aave credit line) names nobody, and a
+     snapshot-alias grants no authority over value. */
+  if (authority?.kind === "morpho") {
+    if (authority.grant) {
+      recipients.push(authority.authorized);
+    }
+  } else if (authority?.kind === "aave-credit" && authority.amount.amount !== "0") {
+    recipients.push(authority.delegatee);
   }
   return recipients;
 };

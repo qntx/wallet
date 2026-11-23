@@ -17,8 +17,11 @@ export function describeOutcome(outcome: PolymarketOrderOutcome): string {
     case "delayed":
       return `order ${outcome.orderId} is on the book`;
     case "unmatched":
-    case "canceled":
       return `order ${outcome.orderId} did not rest`;
+    /* `canceled` now carries `making` — the order row's `size_matched`. A value above "0" is a
+       partial fill taken before the cancel; re-place only the unfilled remainder. */
+    case "canceled":
+      return `order ${outcome.orderId} canceled after filling ${outcome.making}`;
     case "rejected":
       return `refused: ${outcome.message}`;
     case "unknown":

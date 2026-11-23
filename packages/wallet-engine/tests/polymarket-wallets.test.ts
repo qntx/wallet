@@ -308,7 +308,7 @@ describe("polymarket locate chain verification", () => {
     await expect(
       locate(
         deployedSet(["WALLET", candidates.beacon]),
-        networksStub(primary, { kind: "available", client: rpcStub(() => "0x") }),
+        networksStub(primary, { kind: "available", source: "host", client: rpcStub(() => "0x") }),
       ),
     ).rejects.toMatchObject({ category: "deployment-mismatch" });
   });
@@ -322,7 +322,7 @@ describe("polymarket locate chain verification", () => {
     ]);
     const { account } = await locate(
       deployedSet(["WALLET", candidates.beacon]),
-      networksStub(primary, { kind: "available", client: rpcStub(upper) }),
+      networksStub(primary, { kind: "available", source: "host", client: rpcStub(upper) }),
     );
     expect(account.wallet).toBe(candidates.beacon);
   });
@@ -341,7 +341,7 @@ describe("polymarket locate chain verification", () => {
     await expect(
       locate(
         deployedSet(["WALLET", candidates.beacon]),
-        networksStub(primary, { kind: "available", client: throwing as never }),
+        networksStub(primary, { kind: "available", source: "host", client: throwing as never }),
       ),
     ).rejects.toMatchObject({ category: "unavailable" });
   });

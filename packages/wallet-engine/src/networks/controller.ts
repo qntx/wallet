@@ -12,7 +12,7 @@ import type { CcipRequestParameters, Hex, PublicClient } from "viem";
 import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
 import { pinnedTronCaller, tronCaller } from "../chains/tron.ts";
-import type { TronApi } from "../chains/tron.ts";
+import type { PinnedTronApi, TronApi } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
@@ -43,15 +43,37 @@ export type SolanaRpc = {
   readonly call: (method: string, params: unknown[]) => Promise<unknown>;
 };
 
+/** A `pinnedSolanaCaller` client plus the endpoint it committed to after its first answer. */
+export type PinnedSolanaRpc = SolanaRpc & {
+  /** The URL every later read goes to; `undefined` until the first call answers. */
+  readonly pinnedUrl: () => string | undefined;
+};
+
 /**
- * A host-endpoint-only client for cross-checking pre-signing reads. `not-needed`: the gateway is
- * not this network's first endpoint, so the primary reads already come from the host.
- * `unavailable`: a cross-check is needed but the network has no host endpoint.
+ * A second-upstream client for cross-checking reads the primary endpoints answered. `not-needed`:
+ * the primary already comes from a host endpoint — trusted configuration — so no other upstream is
+ * involved. `unavailable`: a cross-check is needed but there is no second upstream to run it on.
+ * `available` carries the corroborating client and names which upstream it reads: a `host` endpoint
+ * is trusted configuration; `gateway` is the gateway a custom-endpoint list displaced — a different
+ * upstream than the primary, but not trusted configuration.
  */
 export type Independent<T> =
   | { readonly kind: "not-needed" }
   | { readonly kind: "unavailable" }
-  | { readonly kind: "available"; readonly client: T };
+  | {
+      readonly kind: "available";
+      readonly source: "host" | "gateway";
+      readonly client: T;
+    };
+
+/**
+ * True when the network's reads stay within trusted configuration: nothing but the host answered
+ * (`not-needed`), or the cross-check ran on a host endpoint. A gateway corroborator is a second
+ * upstream, but its reads are not trusted configuration.
+ */
+export const independentTrusted = <T>(independent: Independent<T>): boolean =>
+  independent.kind === "not-needed" ||
+  (independent.kind === "available" && independent.source === "host");
 
 type StoreOrUndefined = EngineStore | undefined;
 
@@ -240,9 +262,10 @@ const solanaCaller = (
 export const pinnedSolanaCaller = (
   urls: ReadonlyArray<string>,
   fetchFn: typeof globalThis.fetch,
-): SolanaRpc => {
+): PinnedSolanaRpc => {
   let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
   return {
+    pinnedUrl: () => pinned?.url,
     call: async (method, params) => {
       if (pinned !== undefined) {
         const { result } = await solanaPost(pinned.url, fetchFn, method, params, pinned.provider);
@@ -372,6 +395,21 @@ export class NetworkController extends Controller<NetworkControllerState> {
     this.engineStore = undefined;
   }
 
+  /** The gateway URL serving `network`'s family RPC, or `undefined` when the gateway cannot. */
+  private gatewayUrl(network: string): string | undefined {
+    if (this.gatewayBase === undefined || !this.gatewayServed.has(network)) {
+      return undefined;
+    }
+    const family = networkById(network)?.family;
+    const path =
+      family === "bitcoin"
+        ? esploraBasePath(network)
+        : family === "tron"
+          ? tronBasePath(network)
+          : rpcPath(network);
+    return `${this.gatewayBase}${path}`;
+  }
+
   /**
    * Ordered endpoints: a network with custom endpoints uses custom → host and never the gateway;
    * otherwise a gateway-served network uses gateway → host; else host only.
@@ -382,17 +420,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (custom.length > 0) {
       return [...custom, ...host];
     }
-    if (this.gatewayBase !== undefined && this.gatewayServed.has(network)) {
-      const family = networkById(network)?.family;
-      const path =
-        family === "bitcoin"
-          ? esploraBasePath(network)
-          : family === "tron"
-            ? tronBasePath(network)
-            : rpcPath(network);
-      return [`${this.gatewayBase}${path}`, ...host];
-    }
-    return host;
+    const gateway = this.gatewayUrl(network);
+    return gateway === undefined ? host : [gateway, ...host];
   }
 
   info(network: string): NetworkInfo {
@@ -419,31 +448,49 @@ export class NetworkController extends Controller<NetworkControllerState> {
   }
 
   /** True when the gateway heads this network's endpoint list (no custom endpoints, gateway-served). */
-  private gatewayFirst(network: string): boolean {
+  gatewayFirst(network: string): boolean {
     return (
       (this.getState().customRpc[network] ?? []).length === 0 &&
-      this.gatewayBase !== undefined &&
-      this.gatewayServed.has(network)
+      this.gatewayUrl(network) !== undefined
     );
   }
 
+  /**
+   * The upstream a network's reads corroborate on. A custom-endpoint network is never its own
+   * proof: the host endpoints corroborate it when there are any, else the gateway it displaced when
+   * the gateway serves the network, else nothing can. A gateway-first network corroborates on the
+   * host endpoints as before; a host-only list needs nothing.
+   */
   private independent<T>(
     network: string,
-    make: (hosts: ReadonlyArray<string>) => T,
+    make: (urls: ReadonlyArray<string>, fetch: typeof globalThis.fetch) => T,
   ): Independent<T> {
+    const hosts = this.options.rpc[network] ?? [];
+    if ((this.getState().customRpc[network] ?? []).length > 0) {
+      if (hosts.length > 0) {
+        return { kind: "available", source: "host", client: make(hosts, this.options.fetch) };
+      }
+      const gateway = this.gatewayUrl(network);
+      return gateway === undefined
+        ? { kind: "unavailable" }
+        : {
+            kind: "available",
+            source: "gateway",
+            client: make([gateway], this.gatewayFetch),
+          };
+    }
     if (!this.gatewayFirst(network)) {
       return { kind: "not-needed" };
     }
-    const hosts = this.options.rpc[network] ?? [];
     return hosts.length === 0
       ? { kind: "unavailable" }
-      : { kind: "available", client: make(hosts) };
+      : { kind: "available", source: "host", client: make(hosts, this.options.fetch) };
   }
 
-  /** Host-endpoint EVM client for cross-checking reads; never sends the install id. */
+  /** Second-upstream EVM client for cross-checking reads; a host never gets the install id. */
   independentClient(network: string): Independent<PublicClient> {
-    return this.independent(network, (hosts) =>
-      makeClient(this.info(network), hosts, this.options.fetch, false),
+    return this.independent(network, (urls, fetchFn) =>
+      makeClient(this.info(network), urls, fetchFn, false),
     );
   }
 
@@ -466,41 +513,54 @@ export class NetworkController extends Controller<NetworkControllerState> {
     return client;
   }
 
-  /** Host-endpoint ENS client for cross-checking resolutions. */
+  /** Second-upstream ENS client for cross-checking resolutions. */
   independentEnsClient(network: string): Independent<PublicClient> {
-    return this.independent(network, (hosts) =>
-      makeEnsClient(this.info(network), hosts, this.options.fetch, this.options.fetch),
+    return this.independent(network, (urls, fetchFn) =>
+      makeEnsClient(this.info(network), urls, fetchFn, this.options.fetch),
     );
   }
 
   independentSolanaRpc(network: string): Independent<SolanaRpc> {
-    return this.independent(network, (hosts) => solanaCaller(hosts, this.options.fetch));
+    return this.independent(network, (urls, fetchFn) => solanaCaller(urls, fetchFn));
   }
 
   /**
-   * Fresh pinned host-endpoint Solana client — for proofs whose reads must all come from one
-   * upstream.
+   * Fresh pinned second-upstream Solana client — for proofs whose reads must all come from one
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin already
+   * landed on a host endpoint, the host-only continuity rule applies instead of a second read of
+   * the same upstream.
    */
-  independentPinnedSolanaRpc(network: string): Independent<SolanaRpc> {
-    return this.independent(network, (hosts) => pinnedSolanaCaller(hosts, this.options.fetch));
+  independentPinnedSolanaRpc(
+    network: string,
+    primaryUrl: string | undefined,
+  ): Independent<SolanaRpc> {
+    if (primaryUrl === undefined || (this.options.rpc[network] ?? []).includes(primaryUrl)) {
+      return { kind: "not-needed" };
+    }
+    return this.independent(network, (urls, fetchFn) => pinnedSolanaCaller(urls, fetchFn));
   }
 
-  /** Host-endpoint TRON client for cross-checking pre-signing reads; never sends the install id. */
+  /** Second-upstream TRON client for cross-checking reads; a host never gets the install id. */
   independentTronApi(network: string): Independent<TronApi> {
-    return this.independent(network, (hosts) => tronCaller(hosts, this.options.fetch));
+    return this.independent(network, (urls, fetchFn) => tronCaller(urls, fetchFn));
   }
 
   /**
-   * Fresh pinned host-endpoint TRON client — for proofs whose reads must all come from one
-   * upstream.
+   * Fresh pinned second-upstream TRON client — for proofs whose reads must all come from one
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin already
+   * landed on a host endpoint, the host-only continuity rule applies instead of a second read of
+   * the same upstream.
    */
-  independentPinnedTronApi(network: string): Independent<TronApi> {
-    return this.independent(network, (hosts) => pinnedTronCaller(hosts, this.options.fetch));
+  independentPinnedTronApi(network: string, primaryUrl: string | undefined): Independent<TronApi> {
+    if (primaryUrl === undefined || (this.options.rpc[network] ?? []).includes(primaryUrl)) {
+      return { kind: "not-needed" };
+    }
+    return this.independent(network, (urls, fetchFn) => pinnedTronCaller(urls, fetchFn));
   }
 
   independentEsplora(network: string): Independent<Esplora> {
-    return this.independent(network, (hosts) =>
-      esploraClient(hosts, this.options.fetch, {
+    return this.independent(network, (urls, fetchFn) =>
+      esploraClient(urls, fetchFn, {
         setTimer: this.options.setTimer,
         random: this.options.random,
       }),
@@ -533,7 +593,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
    * Fresh one-upstream Solana client: failover on the first call, then pinned — for a sequence of
    * reads that must agree with each other.
    */
-  pinnedSolanaRpc(network: string): SolanaRpc {
+  pinnedSolanaRpc(network: string): PinnedSolanaRpc {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
@@ -555,7 +615,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
    * reads that must agree with each other. `until` bounds throttled-read retries to the
    * transaction's validity window; absent, a 429/503 propagates like every other failure.
    */
-  pinnedTronApi(network: string, until?: () => number): TronApi {
+  pinnedTronApi(network: string, until?: () => number): PinnedTronApi {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);

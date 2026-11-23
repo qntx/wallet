@@ -30,7 +30,11 @@ const stubNetworks = (options: {
 }): Networks => {
   const independent = () => {
     if (options.independent === "available") {
-      return { kind: "available" as const, client: { tag: "independent" } };
+      return {
+        kind: "available" as const,
+        source: "host" as const,
+        client: { tag: "independent" },
+      };
     }
     return options.independent === "unavailable"
       ? { kind: "unavailable" as const }

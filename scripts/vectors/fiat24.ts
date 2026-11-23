@@ -60,7 +60,8 @@ const CLIENT_PAYOUT_REF_SELECTOR = "0xeb6d2d71";
 
 /* The independent @qntx/fiat24 session oracle rows, embedded verbatim so generation does not
    depend on a developer checkout — @qntx/fiat24 vectors/api/session.json, generated with
-   cast 1.10.0 (SDK repo qntx/fiat24, commit b7c2f0f). */
+   cast 1.10.0 (SDK repo qntx/fiat24, branch fix/session-label, commit 13b2d73). Its three
+   `error` rows are client-side refusals the normaliser's own tests cover. */
 const SESSION_ROWS: ReadonlyArray<{
   args: { chainId: string; tokenId: string; deadline: string };
   label: string;
@@ -72,32 +73,32 @@ const SESSION_ROWS: ReadonlyArray<{
 }> = [
   {
     args: { chainId: "42161", tokenId: "123456", deadline: "1795278000" },
-    label: "fiat24-session-v1:42161:123456:1795278000",
-    preimage: "fiat24-session-v1:42161:123456:17952780001795278000",
-    digest: "0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
+    label: "fiat24-session-v1:42161:123456:1795278000;",
+    preimage: "fiat24-session-v1:42161:123456:1795278000;1795278000",
+    digest: "0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
     message:
-      "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
-    eip191Hash: "0x42e71571afdd4e74672f74c8bddc84e45a6f637fae50032640edb54588efcdfa",
+      "I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
+    eip191Hash: "0xe7f34100a9d827d0d8f9468a9b7145a9df9b735c52212ac547edf45a045e629e",
     signature:
-      "0x09410c3f5d15d8022f6baa8e556eeeee446164f864e33c9e6ff30fc63d7c45996719e723721bef79e3daebade7979538306b14039290d25338f19b74fe8cb0031c",
+      "0x1fed1f861a97bc875df8aa61b79dd054a614d0934b42a5750b8b873410afee1625cf19bb748e61fabef563fda4711dd9f92f84ae7275e6fdb1258bdca6c876c81c",
   },
   {
     args: { chainId: "42161", tokenId: "1", deadline: "1795305600" },
-    label: "fiat24-session-v1:42161:1:1795305600",
-    preimage: "fiat24-session-v1:42161:1:17953056001795305600",
-    digest: "0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+    label: "fiat24-session-v1:42161:1:1795305600;",
+    preimage: "fiat24-session-v1:42161:1:1795305600;1795305600",
+    digest: "0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
     message:
-      "I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
-    eip191Hash: "0x385c99758dfbd01204bcd980b990c73dd91e5bd25ff07cad5c6a8e5d43eaab64",
+      "I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
+    eip191Hash: "0xa3b400459402c66bfe82a63c438a405932a4f594f8aebd3ed7df5fc56cb2bf8f",
   },
   {
     args: { chainId: "42161", tokenId: "9007199254740993", deadline: "4102444800" },
-    label: "fiat24-session-v1:42161:9007199254740993:4102444800",
-    preimage: "fiat24-session-v1:42161:9007199254740993:41024448004102444800",
-    digest: "0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
+    label: "fiat24-session-v1:42161:9007199254740993:4102444800;",
+    preimage: "fiat24-session-v1:42161:9007199254740993:4102444800;4102444800",
+    digest: "0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
     message:
-      "I agree to access my profile. 0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
-    eip191Hash: "0xe66787ac443bd91d65cc73499568ad74cba295b0790b11315333c8a75b26bc2e",
+      "I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
+    eip191Hash: "0x2e347769f6dcabf28c3aa3875b0b37407ece9e804e30d4522b3d4043124db393",
   },
 ];
 
@@ -320,13 +321,13 @@ const grantPrompt = (text: string): Prompt2 => ({
 });
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
-const sessionPrompt = (tokenId: string, deadline: string, message: string): Prompt2 => {
+const sessionPrompt = (deadline: string, message: string): Prompt2 => {
   const d = new Date(Number(deadline) * 1000);
   const pad = pad2;
   const stamp = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
   return {
-    en: `Allow Fiat24 account access\n${NET_EN}\nFiat24 account #${tokenId}\nExpires ${stamp} (UTC)\n${SES_POWER_EN}\nSigns: ${message}`,
-    "zh-Hans": `授权访问 Fiat24 账户\n${NET_ZH}\nFiat24 账户 #${tokenId}\n${stamp}（UTC）过期\n${SES_POWER_ZH}\n签名消息：${message}`,
+    en: `Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until ${stamp} (UTC)\n${SES_POWER_EN}\nSigns: ${message}`,
+    "zh-Hans": `授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 ${stamp}（UTC）\n${SES_POWER_ZH}\n签名消息：${message}`,
   };
 };
 
@@ -365,9 +366,9 @@ const sendPrompt = (amt: string, sym: string, id: string, warn?: [string, string
     warn === undefined ? [] : [warn[1]],
   );
 const INTERNAL_EN = (id: string) =>
-  `Fiat24 account #${id} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`;
+  `Fiat24 account #${id} is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`;
 const INTERNAL_ZH = (id: string) =>
-  `Fiat24 账户 #${id} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`;
+  `Fiat24 账户 #${id} 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`;
 
 const UNLIM_EN = (role: string) =>
   `Danger: an unlimited allowance lets the Fiat24 ${role} contract take your entire balance of this token`;
@@ -426,12 +427,12 @@ const main = async () => {
     cases.push(c);
   };
 
-  /* transferByAccountId on all four cash tokens; the EUR24 case addresses an issuer-internal
-     account and carries the internal-account warning. */
+  /* transferByAccountId on all four cash tokens; the EUR24 and CNH24 cases address
+     issuer-internal accounts — every id whose first decimal digit is 9, at any width — and
+     carry the internal-account warning. */
   for (const [name, token, abi, sym, id, amount, pretty] of [
     ["transferByAccountId-usd24", USD24, USD24_ABI, "USD24", "10365", 20000n, "200"],
     ["transferByAccountId-chf24", CHF24, CHF24_ABI, "CHF24", "2050", 50050n, "500.5"],
-    ["transferByAccountId-cnh24", CNH24, CNH24_ABI, "CNH24", "999999", 88n, "0.88"],
   ] as const) {
     add({
       name,
@@ -466,6 +467,23 @@ const main = async () => {
       verifiability: "partial",
       warnings: ["fiat24-internal-account"],
       prompt: sendPrompt("1", "EUR24", "9102", [INTERNAL_EN("9102"), INTERNAL_ZH("9102")]),
+    },
+  });
+  add({
+    name: "transferByAccountId-cnh24-internal",
+    signer: SIGNER,
+    request: evmTx(
+      CNH24,
+      await call(CNH24_ABI, "transferByAccountId(uint256,uint256)", "transferByAccountId", [
+        999999n,
+        88n,
+      ]),
+    ),
+    expect: {
+      summary: "transfer",
+      verifiability: "partial",
+      warnings: ["fiat24-internal-account"],
+      prompt: sendPrompt("0.88", "CNH24", "999999", [INTERNAL_EN("999999"), INTERNAL_ZH("999999")]),
     },
   });
 
@@ -712,6 +730,10 @@ const main = async () => {
   const LINK_EN =
     "Opening the account permanently links this address to the identity you verify with Fiat24";
   const LINK_ZH = "开通账户会将此地址与你向 Fiat24 验证的身份永久关联";
+  const BURN_EN =
+    "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract";
+  const BURN_ZH =
+    "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度";
   add({
     name: "mintByClient",
     signer: SIGNER,
@@ -722,14 +744,14 @@ const main = async () => {
     expect: {
       summary: "contract-call",
       verifiability: "partial",
-      warnings: ["fiat24-account-link"],
+      warnings: ["fiat24-account-link", "fiat24-account-burn"],
       prompt: txPrompt(
         "Confirm contract call",
         "确认合约调用",
         ["Open Fiat24 account #123456 for this address"],
         ["为此地址开通 Fiat24 账户 #123456"],
-        [LINK_EN],
-        [LINK_ZH],
+        [LINK_EN, BURN_EN],
+        [LINK_ZH, BURN_ZH],
       ),
     },
   });
@@ -1075,6 +1097,31 @@ const main = async () => {
       prompt: blindPrompt(DEPOSIT, byWallet.slice(0, 10)),
     },
   });
+  /* ERC-20 selectors aimed at a non-token Fiat24 contract are still Fiat24 calls — claimed, not
+     decoded as a generic transfer/approval of a token the contract is not. */
+  const ercTransfer = await call(USD24_ABI, "transfer(address,uint256)", "transfer", [
+    OTHER,
+    12345n,
+  ]);
+  const ercApprove = await call(USD24_ABI, "approve(address,uint256)", "approve", [OTHER, 777n]);
+  for (const [name, to, data] of [
+    ["card-erc20-transfer", CARD, ercTransfer],
+    ["card-erc20-approve", CARD, ercApprove],
+    ["deposit-erc20-approve", DEPOSIT, ercApprove],
+  ] as const) {
+    add({
+      name,
+      signer: SIGNER,
+      request: evmTx(to, data),
+      expect: {
+        summary: "contract-call",
+        verifiability: "opaque",
+        blind: "fiat24-function",
+        warnings: [],
+        prompt: blindPrompt(to, data.slice(0, 10)),
+      },
+    });
+  }
 
   /* The two raw grant texts — blind under the Fiat24 session-grant reason. */
   const GRANT_TEXT_1 =
@@ -1146,7 +1193,7 @@ const main = async () => {
         summary: "message",
         verifiability: "partial",
         warnings: [],
-        prompt: sessionPrompt(args.tokenId, args.deadline, row.message),
+        prompt: sessionPrompt(args.deadline, row.message),
       },
     });
     await sleep(50);

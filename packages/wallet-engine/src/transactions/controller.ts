@@ -11,6 +11,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
+import type { RequestCheckCode } from "../requests/checks.ts";
 import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -38,6 +39,7 @@ import type {
 } from "./route.ts";
 import { accountAddressOf, awaitingFinality, newId } from "./route.ts";
 import {
+  bindDappSolana,
   pollSolana,
   prepareSolana,
   prepareSolanaCoreSend,
@@ -711,6 +713,22 @@ export class TransactionController extends Controller<TransactionControllerState
       lastValidBlockHeight,
       intent,
     });
+  }
+
+  /**
+   * Internal entry for the dApp `solana-sign` path: proves every message's lifetime — recent
+   * blockhash or durable nonce — belongs to the session's cluster before anything is prompted or
+   * signed. Throws `SolanaClusterBindingError` on an unbound message; the returned checks join the
+   * request's when a mainnet build could only be gateway-bound.
+   */
+  async bindDappSolana(
+    network: string,
+    messages: ReadonlyArray<Uint8Array>,
+  ): Promise<ReadonlyArray<RequestCheckCode>> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return bindDappSolana(this.routeCtx(), network, messages);
   }
 
   /** Records that a Spark deposit was credited; persisted with the transaction. */

@@ -7,7 +7,8 @@ import { randomBytes } from "node:crypto";
  * transaction over a fake JSON-RPC endpoint.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { base58 } from "@scure/base";
+import { base58, base64 } from "@scure/base";
+import { getNonceEncoder, NonceState, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import {
   AccountRole,
   address,
@@ -23,14 +24,16 @@ import {
   partiallySignTransaction,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
+  setTransactionMessageLifetimeUsingDurableNonce,
 } from "@solana/kit";
-import type { Instruction } from "@solana/kit";
+import type { Instruction, Nonce } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
 import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
+import { ProviderError } from "../src/connect/errors.ts";
 import type { SolanaWalletAccount } from "../src/connect/solana.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
@@ -54,6 +57,11 @@ const sentWires: Uint8Array[] = [];
 const persistedAtSend: Array<Array<Record<string, unknown>>> = [];
 /** Signature → the status entry getSignatureStatuses reports; absent means unknown. */
 const statuses = new Map<string, unknown>();
+/** The blockhashes this cluster knows; the fixture wires' hash is always among them. */
+const KNOWN_BLOCKHASH = "11111111111111111111111111111111";
+const validBlockhashes = new Set([KNOWN_BLOCKHASH]);
+/** Nonce account → the value it stores; absent means the account does not exist. */
+const nonceAccounts = new Map<string, string>();
 /** The height getBlockHeight reports. */
 let height = 500;
 /** What getBlockHeight answers at processed commitment; undefined answers `height`. */
@@ -71,6 +79,9 @@ const resetMock = (): void => {
   sentWires.length = 0;
   persistedAtSend.length = 0;
   statuses.clear();
+  validBlockhashes.clear();
+  validBlockhashes.add(KNOWN_BLOCKHASH);
+  nonceAccounts.clear();
   height = 500;
   processedHeight = undefined;
   send502 = false;
@@ -99,6 +110,22 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
     return {
       context: { slot: 1 },
       value: sigs.map((s) => statuses.get(String(s)) ?? null),
+    };
+  }
+  if (method === "isBlockhashValid") {
+    return { context: { slot: 1 }, value: validBlockhashes.has(String(params[0])) };
+  }
+  if (method === "getAccountInfo") {
+    const nonce = nonceAccounts.get(String(params[0]));
+    return {
+      context: { slot: 1 },
+      value:
+        nonce === undefined
+          ? null
+          : {
+              owner: SYSTEM_PROGRAM_ADDRESS,
+              data: [nonceAccountValue(nonce), "base64"],
+            },
     };
   }
   if (method === "sendTransaction") {
@@ -286,9 +313,13 @@ const wire = async (options: {
   ixs: ReadonlyArray<Instruction>;
   version?: "legacy" | 0;
   presign?: TestKeyPair[];
+  lifetime?: string;
 }): Promise<Uint8Array> => {
   let message = setTransactionMessageLifetimeUsingBlockhash(
-    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    {
+      blockhash: blockhash(options.lifetime ?? KNOWN_BLOCKHASH),
+      lastValidBlockHeight: 1000n,
+    },
     setTransactionMessageFeePayer(
       address(options.feePayer),
       createTransactionMessage({ version: options.version ?? "legacy" }),
@@ -303,6 +334,44 @@ const wire = async (options: {
       ? compiled
       : await partiallySignTransaction(options.presign, compiled);
   return new Uint8Array(getTransactionEncoder().encode(tx));
+};
+
+/** `getNonceEncoder` is the oracle for what the endpoint's base64 account data carries. */
+const NONCE_VALUE = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+const nonceAccountValue = (value: string): string =>
+  base64.encode(
+    new Uint8Array(
+      getNonceEncoder().encode({
+        version: 1,
+        state: NonceState.Initialized,
+        authority: address(DEST),
+        blockhash: address(value),
+        lamportsPerSignature: 5000n,
+      }),
+    ),
+  );
+
+/** A dApp wire bound by a durable nonce instead of a recent blockhash. */
+const durableWire = (options: {
+  feePayer: string;
+  nonceAccount: string;
+  nonce?: string;
+}): Uint8Array => {
+  const message = setTransactionMessageLifetimeUsingDurableNonce(
+    {
+      nonce: (options.nonce ?? NONCE_VALUE) as Nonce,
+      nonceAccountAddress: address(options.nonceAccount),
+      nonceAuthorityAddress: address(options.feePayer),
+    },
+    appendTransactionMessageInstruction(
+      transfer(options.feePayer, 1000n),
+      setTransactionMessageFeePayer(
+        address(options.feePayer),
+        createTransactionMessage({ version: 0 }),
+      ),
+    ),
+  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
 };
 
 const signedMessage = (wireBytes: Uint8Array): Uint8Array =>
@@ -755,6 +824,166 @@ describe("solana provider over a real kernel", () => {
       expect(slotSignature(signed, SPONSOR)).toStrictEqual(slotSignature(input, SPONSOR));
       expect(verifySlot(signed, account.address)).toBe(true);
     } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+});
+
+/**
+ * A `solana-sign` lifetime the page chose — blockhash or durable nonce — binds to the session's
+ * cluster before the prompt exists: an unbound message ends the request at build, never reaching a
+ * kernel sign call or the wire.
+ */
+describe("a dApp lifetime that is not on this cluster is refused", () => {
+  /** A handle() promise for a refused build: settles with invalidParams before the prompt. */
+  const refused = async (call: Promise<unknown>, match: RegExp): Promise<void> => {
+    const outcome = await call.then(
+      (v) => ({ value: v }),
+      (error: unknown) => ({ error }),
+    );
+    if (!("error" in outcome)) {
+      throw new Error("the unbound transaction was signed");
+    }
+    expect(outcome.error).toBeInstanceOf(ProviderError);
+    expect((outcome.error as ProviderError).code).toBe(-32_602);
+    expect((outcome.error as ProviderError).message).toMatch(match);
+  };
+
+  it("refuses a blockhash the endpoint does not know before any sign call", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      const input = await wire({
+        feePayer: account.address,
+        ixs: [transfer(account.address, 1000n)],
+        lifetime: DEST,
+      });
+      await refused(
+        r.engine.solanaWallet.handle(SITE, {
+          method: "solana:signTransaction",
+          params: { transactions: [input] },
+        }),
+        /blockhash/,
+      );
+      // The request never reached awaiting-approval — nothing was signed.
+      expect(requestStage(r)).toBeUndefined();
+      expect(sentWires).toHaveLength(0);
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("refuses a batch where one message's blockhash is unknown", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      const bound = await wire({
+        feePayer: account.address,
+        ixs: [transfer(account.address, 1000n)],
+      });
+      const unbound = await wire({
+        feePayer: account.address,
+        ixs: [transfer(account.address, 2000n)],
+        lifetime: DEST,
+      });
+      // The Wallet Standard batch surface is signTransaction's transactions array.
+      await refused(
+        r.engine.solanaWallet.handle(SITE, {
+          method: "solana:signTransaction",
+          params: { transactions: [bound, unbound] },
+        }),
+        /blockhash/,
+      );
+      expect(requestStage(r)).toBeUndefined();
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("refuses a sign-and-send before anything is signed or broadcast", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      const input = await wire({
+        feePayer: account.address,
+        ixs: [transfer(account.address, 1000n)],
+        lifetime: DEST,
+      });
+      await refused(
+        r.engine.solanaWallet.handle(SITE, {
+          method: "solana:signAndSendTransaction",
+          params: { transactions: [input], chains: ["solana:mainnet"] },
+        }),
+        /blockhash/,
+      );
+      expect(requestStage(r)).toBeUndefined();
+      expect(sentWires).toHaveLength(0);
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("refuses a durable nonce the account no longer holds", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      nonceAccounts.set(DEST, "6vN9k1dQ3bBqM2qKf8k8tF4Hh8K5vN9k1dQ3bBqM2qKM");
+      const input = durableWire({ feePayer: account.address, nonceAccount: DEST });
+      await refused(
+        r.engine.solanaWallet.handle(SITE, {
+          method: "solana:signTransaction",
+          params: { transactions: [input] },
+        }),
+        /nonce/,
+      );
+      expect(requestStage(r)).toBeUndefined();
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("signs a transaction bound by a blockhash the cluster knows", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      const input = await wire({
+        feePayer: account.address,
+        ixs: [transfer(account.address, 1000n)],
+      });
+      const { settled, approve } = await call(r, "solana:signTransaction", {
+        transactions: [input],
+      });
+      await approve();
+      expect(verifySlot(signedAt(await settled, 0), account.address)).toBe(true);
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("signs a transaction bound by a durable nonce the account still holds", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      nonceAccounts.set(DEST, NONCE_VALUE);
+      const input = durableWire({ feePayer: account.address, nonceAccount: DEST });
+      const { settled, approve } = await call(r, "solana:signTransaction", {
+        transactions: [input],
+      });
+      await approve();
+      expect(verifySlot(signedAt(await settled, 0), account.address)).toBe(true);
+    } finally {
+      resetMock();
       r.engine.unsubscribe();
       await r.wallet.destroy();
     }

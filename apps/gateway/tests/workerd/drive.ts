@@ -63,6 +63,9 @@ const stats = async (base: string): Promise<Stats> => {
   return isStats(body) ? body : { leases: {}, upstream: {} };
 };
 
+const upstreamCalls = (s: Stats): number =>
+  Object.values(s.upstream).reduce((sum, u) => sum + u.calls, 0);
+
 const reset = async (base: string): Promise<void> => {
   await fetch(`${base}/__reset`, { method: "POST" });
 };
@@ -601,6 +604,20 @@ const pin = async (base: string): Promise<void> => {
   await unknown.text();
   console.log(`PIN: unknown pin → ${String(unknown.status)}`);
   expect(unknown.status === 400, `pin: unknown pin got ${String(unknown.status)}`);
+
+  // A pin on a TRON indexer path selects nothing — the indexer provider set is fixed — so it is
+  // refused 400 before any upstream call.
+  const beforeIndexer = upstreamCalls(await stats(base));
+  const indexerPinned = await fetch(`${base}/v1/tron/tron:728126428/v1/accounts/account`, {
+    method: "POST",
+    headers: { ...headers(ip), "x-gateway-provider": "tatum" },
+    body: JSON.stringify({ address: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" }),
+  });
+  await indexerPinned.text();
+  const indexerDelta = upstreamCalls(await stats(base)) - beforeIndexer;
+  console.log(`PIN: tatum pin on indexer /v1/accounts/account → ${String(indexerPinned.status)}`);
+  expect(indexerPinned.status === 400, `pin: indexer pin got ${String(indexerPinned.status)}`);
+  expect(indexerDelta === 0, `pin: indexer pin reached upstream ${String(indexerDelta)} times`);
 };
 
 const storm = async (a: string, b: string): Promise<void> => {

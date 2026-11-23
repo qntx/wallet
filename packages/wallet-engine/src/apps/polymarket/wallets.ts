@@ -4,9 +4,9 @@
  * the legacy Safe — are deterministic CREATE2 addresses. `locate` gathers two evidence channels in
  * parallel: the unauthenticated relayer's `GET /deployed` answers (hints only — nothing is trusted
  * from them alone) and `eth_getCode` on all three candidates via the Polygon RPC, cross-checked
- * against the host endpoint when one is configured. Chain facts decide: an empty read means not
+ * against the independent endpoint when there is one. Chain facts decide: an empty read means not
  * deployed; a deployed deposit wallet's code must equal the template's expected runtime exactly;
- * any disagreement — relayer vs chain, primary vs host endpoint, or code that is not the template —
+ * any disagreement — relayer vs chain, primary vs corroborator, or code that is not the template —
  * throws `deployment-mismatch` and nothing is chosen. Only then does the settled priority pick: a
  * deployed UUPS (it can only be an old account), else a deployed beacon, else a deployed Safe
  * (read-only until migrated — the enable flow surfaces `needs-migration`), else the undeployed
@@ -193,7 +193,7 @@ export function createPolymarketWallets(
       const chainCode = async (address: `0x${string}`) => codeAt(networks.client(NETWORK), address);
       const independent = networks.independentClient(NETWORK);
       /* Relayer hints and chain reads in parallel — the hints decide nothing until the chain
-         agrees. A host endpoint that cannot answer fails closed (`unavailable`): a missing
+         agrees. A corroborator that cannot answer fails closed (`unavailable`): a missing
          cross-check is not permission to trust the primary alone. */
       const [uupsHint, beaconHint, safeHint, codes, other] = await Promise.all([
         deployed(candidates.uups, "WALLET"),

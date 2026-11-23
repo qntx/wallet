@@ -45,6 +45,12 @@ export type TronApi = {
   readonly post: (path: TronNodePath | TronIndexerPath, body: unknown) => Promise<unknown>;
 };
 
+/** A `pinnedTronCaller` client plus the endpoint it committed to after its first answer. */
+export type PinnedTronApi = TronApi & {
+  /** The URL every later read goes to; `undefined` until the first call answers. */
+  readonly pinnedUrl: () => string | undefined;
+};
+
 /** A non-2xx answer from a TRON node API; `retryAfterMs` is the `retry-after` delta in ms. */
 class TronHttpError extends Error {
   readonly status: number;
@@ -158,9 +164,10 @@ export const pinnedTronCaller = (
     readonly now: () => number;
     readonly sleep: (ms: number) => Promise<void>;
   },
-): TronApi => {
+): PinnedTronApi => {
   let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
   return {
+    pinnedUrl: () => pinned?.url,
     post: async (path, body) => {
       for (;;) {
         try {

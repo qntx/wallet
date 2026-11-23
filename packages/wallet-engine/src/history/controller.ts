@@ -7,6 +7,7 @@ import { isTombstone } from "../addresses/record.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import { independentTrusted } from "../networks/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -51,6 +52,7 @@ export type HistoryControllerOptions = {
     NetworkController,
     | "enabled"
     | "client"
+    | "gatewayFirst"
     | "independentClient"
     | "independentSolanaRpc"
     | "independentEsplora"
@@ -418,7 +420,8 @@ export class HistoryController extends Controller<HistoryState> {
     const streams: Array<Stream<HistoryEntry>> = [];
     if (gateway !== undefined && own.evm !== undefined) {
       for (const network of networks.enabled("evm")) {
-        if (networks.independentClient(network).kind === "not-needed") {
+        // The indexer feed is gateway-only; a network the gateway doesn't head is skipped.
+        if (!networks.gatewayFirst(network)) {
           continue;
         }
         const address = own.evm;
@@ -448,7 +451,7 @@ export class HistoryController extends Controller<HistoryState> {
                 independent.kind === "available" ? independent.client : networks.solanaRpc(network),
               network,
               owner: own.solana,
-              trusted: independent.kind !== "unavailable",
+              trusted: independentTrusted(independent),
             },
             (id, error) => {
               runtime.errors[id] = errorMessage(error);
@@ -459,8 +462,8 @@ export class HistoryController extends Controller<HistoryState> {
     }
     if (gateway !== undefined && own.tron !== undefined) {
       for (const network of networks.enabled("tron")) {
-        // The indexer feeds are gateway-only; a custom-endpoint network is skipped like EVM.
-        if (networks.independentTronApi(network).kind === "not-needed") {
+        // The indexer feed is gateway-only; a network the gateway doesn't head is skipped.
+        if (!networks.gatewayFirst(network)) {
           continue;
         }
         const address = own.tron;
@@ -487,7 +490,7 @@ export class HistoryController extends Controller<HistoryState> {
                 ? () => independent.client
                 : (n) => networks.esplora(n),
             account: async (params) => this.options.chains.account(params),
-            trusted: independent.kind !== "unavailable",
+            trusted: independentTrusted(independent),
           },
           network,
           group,

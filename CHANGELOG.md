@@ -504,8 +504,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   (2 decimals) are in the built-in token table, and the EVM decoder now reads Fiat24 calls
   straight from the calldata, without reading the chain:
   - `transferByAccountId` is a transfer to "Fiat24 account #id". The recipient is whoever holds
-    that account when the transaction runs. Ids 9100–9299 are the issuer's internal accounts and
-    raise `fiat24-internal-account`.
+    that account when the transaction runs. Every id whose first digit is 9 is an issuer-only
+    account a client can never mint (`Fiat24Account.sol` `hasFirstDigit(INTERNALDIGIT)`) and
+    raises `fiat24-internal-account`.
   - `clientPayout` / `clientPayoutRef` use the new `payout` summary. The amount and currency are
     shown, and so are the payee id, purpose and reference, each as requester text. The bank account
     that receives the money is chosen by Fiat24 off-chain, and `fiat24-payee-offchain` says so.
@@ -514,7 +515,10 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
     (`fiat24-exact-out-unbounded`).
   - `depositTokenViaUsdc`, `depositETH` and `depositTokenViaEth` are top-up swaps at the issuer's
     rate. When the input is swapped to USDC inside the transaction, `fiat24-swap-quote` is raised.
-  - `mintByClient` / `mintByClientWithETH` open an account (`fiat24-account-link`). Moving the
+  - `mintByClient` / `mintByClientWithETH` open an account (`fiat24-account-link`).
+    `mintByClient` also burns F24 at the price the issuer sets for the account number, bounded
+    only by the address's F24 allowance for the account contract: `Fiat24Action` `open-account`
+    carries `burn` (the F24 token, no amount) and `fiat24-account-burn` is raised. Moving the
     account NFT with `transferFrom` or `safeTransferFrom` raises the danger-level
     `fiat24-account-move`.
   - Approvals whose spender is the card or the deposit contract carry
@@ -527,17 +531,21 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-chains`: new types `Fiat24Action` and `Fiat24Token`, plus new optional fields
   `DisplayIntent.fiat24`, `AssetFlow.fiat24` (`{ account } | { payee }`), `IntentWarning.level`
   (`"danger"`) and `ApprovalChange.fiat24Spender`. `IntentSummary` gains `"payout"`.
-  `IntentWarningKind` gains nine `fiat24-*` kinds. `./evm` exports `FIAT24_CHAIN` and
+  `IntentWarningKind` gains ten `fiat24-*` kinds. `./evm` exports `FIAT24_CHAIN` and
   `fiat24SessionMessage`.
 - Fiat24 API session grants. A new sign request,
   `{ kind: "evm.fiat24-session", network: "eip155:42161", account, tokenId, deadline }`, works
   like this:
   - The kernel builds the `personal_sign` text itself:
     `"I agree to access my profile. " + keccak256(label ‖ deadline)`, where
-    `label = fiat24-session-v1:<chainId>:<tokenId>:<deadline>`.
+    `label = fiat24-session-v1:<chainId>:<tokenId>:<deadline>;`. The server verifies
+    `keccak256(hash ‖ deadline)` from two client headers and parses nothing in `hash`; the `;`
+    terminator keeps the signed text from re-splitting into a later deadline. The label binds no
+    chain or account on the server.
   - It refuses with `invalid-input` unless `0 < deadline − now ≤ 1200` s. It checks this when
     preparing and again when signing.
-  - The prompt shows the account, the expiry and everything the grant allows.
+  - The prompt describes a bearer grant for the signing address's Fiat24 account until the
+    expiry, and everything the grant allows.
   - The result is `{ kind: "evm.fiat24-session", signature }`, and `@qntx/wallet` checks the
     signer.
   - `@qntx/wallet/protocol` mirrors the new request and result kinds.
@@ -1371,6 +1379,44 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-kernel`: the `hyperliquid-l1-agent` 60 s signing window is measured on the device
   clock (the kernel has no trusted time). `assertClock()` is the mitigation; against a compromised
   main runtime the residual is the device's clock error plus 60 s (SECURITY.md).
+- `@qntx/wallet-engine`: a dApp `solana-sign` transaction is bound to the session's cluster before
+  the prompt — Wallet Standard `solana:signTransaction` (one or many) and
+  `solana:signAndSendTransaction`, WalletConnect `solana_signTransaction`,
+  `solana_signAllTransactions` and `solana_signAndSendTransaction`. A recent blockhash must be
+  valid on the selected cluster under the same corroboration rule a wallet send uses; a
+  durable-nonce transaction's nonce account must exist on that cluster holding exactly the
+  message's nonce (a nonce account loaded from a lookup table cannot be checked and is refused).
+  Anything else fails with the new `SolanaClusterBindingError` (`ChainError` `invalid-request`,
+  `reason: SolanaBindingReason`); a gateway-only mainnet binding adds `reads-unverified`. A devnet
+  session previously signed transactions that were valid on mainnet.
+- `@qntx/wallet-engine`: a user-set custom RPC is the primary endpoint, never its own corroborator.
+  The host endpoints of the network cross-check it, or the gateway when there are none; with
+  neither, the network is treated like a gateway-only one (TRON and Solana testnet sends are
+  refused, mainnet reads are `reads-unverified`). `Independent` (the `NetworkController`
+  cross-check client) gains `source: "host" | "gateway"`; history marks entries verified only when
+  a host endpoint answered.
+- `@qntx/wallet-engine`: a Solana blockhash transaction ends `dropped` only when the answering
+  node's history provably reaches back before the submission (`getFirstAvailableBlock` and its
+  `getBlockTime`, which cover the blockstore and BigTable that the status lookup searches). A node
+  without that history leaves the transaction `submitted`; it no longer reads a landed transaction
+  as dropped after a long time offline.
+- `@qntx/wallet-engine`: a Solana or TRON drop or reorg is never corroborated by the upstream the
+  poll is pinned to. When the gateway failed over to a host endpoint, the host-only rule applies
+  (repeated observations spanning the network's bound) instead of the host confirming itself.
+- `@qntx/wallet-engine/apps/polymarket`: a `canceled` outcome and correction carry `making`, the
+  order's `size_matched`. A defensive cancel that hit a partially filled order no longer reports a
+  plain cancel that invites a full re-post.
+- `@qntx/wallet-engine`: a Spark cooperative exit is assessed against known bitcoin addresses
+  (`first-recipient`, `address-poisoning`). Approval and permission grantees — token and operator
+  spenders, Solana stake authorities, TRON permission keys, Morpho `authorized` and Aave
+  `delegatee` — are assessed like recipients; revocations name nobody.
+- `@qntx/wallet-chains`: hidden or reordering characters in a typed-data type name, field name,
+  field type or `primaryType` make the document blind (`message-bytes`), like the same characters
+  in a value.
+- gateway: a request carrying `x-gateway-provider` on a TRON indexer path or the Esplora route,
+  which serve no pinned provider, is refused with `400 invalid-request` before any upstream call
+  instead of having the pin silently ignored. The Solana JSON-RPC allow-list gains
+  `getFirstAvailableBlock`.
 
 ## [0.13.0] - 2026-11-09
 

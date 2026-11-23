@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  PROVIDER_PIN_HEADER,
   PROVIDERS_HEADER,
   gatewayError,
   health,
@@ -769,6 +770,18 @@ describe("broadcasts", () => {
 
 describe("esplora forwarding", () => {
   const base = `/v1/esplora/${SIGNET}`;
+
+  it("400s a provider pin — the esplora provider set is not selectable", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () => new Response("1", { status: 200 }),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`${base}/block-height/0`, {
+      headers: headers({ [PROVIDER_PIN_HEADER]: "a" }),
+    });
+    expect(res.status).toBe(400);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
 
   it("passes allow-listed GET paths through with body and content-type intact", async () => {
     const up = fakeFetch({

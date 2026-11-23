@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 
-import { PROVIDERS_HEADER, esploraPathAllowed } from "@qntx/wallet-engine/gateway/contract";
+import {
+  PROVIDER_PIN_HEADER,
+  PROVIDERS_HEADER,
+  esploraPathAllowed,
+} from "@qntx/wallet-engine/gateway/contract";
 
 import { requestCost } from "../budget/costs.ts";
 import { limitBody } from "../middleware/body-limit.ts";
@@ -40,6 +44,11 @@ export function esploraRoutes({
       const network = c.get("network");
       const path = `/${new URL(c.req.url).pathname.split("/").slice(PREFIX_SEGMENTS).join("/")}`;
       if (!esploraPathAllowed(c.req.method, path)) {
+        throw new GatewayHttpError(400, "invalid-request");
+      }
+      // Esplora forwards to the network's own provider set, which the pin cannot select — a pin
+      // here would be silently ignored, so it is refused before any upstream call.
+      if (c.req.header(PROVIDER_PIN_HEADER) !== undefined) {
         throw new GatewayHttpError(400, "invalid-request");
       }
       // Every allow-listed path is one bounded upstream call, billed one request credit.

@@ -147,7 +147,7 @@ const nonceAccountValue = (value: string): string =>
     ),
   );
 
-type MockRpc = SolanaRpc & { calls: string[] };
+type MockRpc = SolanaRpc & { calls: string[]; pinnedUrl: () => string };
 
 const mockRpc = (
   signature: string,
@@ -162,6 +162,7 @@ const mockRpc = (
   const calls: string[] = [];
   return {
     calls,
+    pinnedUrl: () => "https://rpc.test",
     call: async (method, _params) => {
       calls.push(method);
       switch (method) {
@@ -215,7 +216,7 @@ const fakeCtx = (rpc: MockRpc) => {
         solanaRpc: () => rpc,
         pinnedSolanaRpc: () => rpc,
         // The same scripted answers serve as the host endpoint — a drop it also proves drops.
-        independentPinnedSolanaRpc: () => ({ kind: "available", client: rpc }),
+        independentPinnedSolanaRpc: () => ({ kind: "available", source: "host", client: rpc }),
       } as unknown as RouteContext["options"]["networks"],
       openStore: async () => {
         await Promise.resolve();

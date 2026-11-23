@@ -314,7 +314,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
 
   it("answers the same refusal when a rebuild would be gateway-only", async () => {
     const wv = world();
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     const c = ctx(wv).ctx;
     const prepared = await prepareTron(c, params());
     // The reference block falls out of the node's view → staleReason goes through rebuild.
@@ -327,7 +327,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
 
   it("builds when a host endpoint confirms the reference block", async () => {
     const wv = world();
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     const { ctx: c } = ctx(wv);
     const prepared = await prepareTron(c, params());
     expect(prepared.checks).toStrictEqual([]);
@@ -340,6 +340,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
     const wv = world();
     wv.independent = {
       kind: "available",
+      source: "host",
       client: hostApi(wv, ["/wallet/getblockbynum", "/walletsolidity/getblockbynum"]),
     };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
@@ -351,7 +352,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
     const wv = world();
     /* The host answers the genesis check but cannot read block 100 — a failed read is not a
        confirmation, and flagging the build unverifiable must not let it sign. */
-    wv.independent = { kind: "available", client: hostApiFailingNum(wv, 100) };
+    wv.independent = { kind: "available", source: "host", client: hostApiFailingNum(wv, 100) };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
       /could not confirm the reference block/,
     );
@@ -361,7 +362,7 @@ describe("the reference block must be confirmed by a host endpoint", () => {
     const wv = world();
     const hv = world();
     hv.blockIds.set(100, "ff".repeat(32)); // the host proves a different block 100
-    wv.independent = { kind: "available", client: hostApi(hv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(hv) };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
       /disagree on the reference block/,
     );
@@ -369,12 +370,13 @@ describe("the reference block must be confirmed by a host endpoint", () => {
 
   it("answers the same refusal when a rebuild's host read fails", async () => {
     const wv = world();
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     const c = ctx(wv).ctx;
     const prepared = await prepareTron(c, params());
     wv.blockIds.delete(100);
     wv.independent = {
       kind: "available",
+      source: "host",
       client: hostApi(wv, ["/wallet/getblockbynum", "/walletsolidity/getblockbynum"]),
     };
     await expect(prepared.staleReason()).resolves.toBe(
@@ -387,7 +389,7 @@ describe("the answering node must report the configured chain", () => {
   it("refuses a primary whose block 0 is another chain's genesis", async () => {
     const wv = world();
     wv.blockIds.set(0, MAINNET_GENESIS); // the gateway's provider answers for mainnet on Nile
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(
       /serves another chain than tron:3448148188/,
     );
@@ -398,7 +400,7 @@ describe("the answering node must report the configured chain", () => {
     const wv = world();
     const hv = world();
     hv.blockIds.set(0, MAINNET_GENESIS); // the host node is on mainnet, not Nile
-    wv.independent = { kind: "available", client: hostApi(hv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(hv) };
     await expect(prepareTron(ctx(wv).ctx, params())).rejects.toThrow(/serves another chain/);
   });
 
@@ -414,7 +416,7 @@ describe("the answering node must report the configured chain", () => {
 
   it("anchors the dApp prepare path: genesis checked once, then the reference block", async () => {
     const wv = world();
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     const { ctx: c } = ctx(wv);
     const prepared = await prepareDappTron(c, ACCOUNT, NET, dappRaw());
     expect(prepared.checks).toStrictEqual([]);
@@ -488,7 +490,7 @@ describe("a gateway-only mainnet build goes ahead flagged reads-unverified", () 
 
   it("rebuilds a stale mainnet transaction without a host endpoint", async () => {
     const wv = mainWorld();
-    wv.independent = { kind: "available", client: hostApi(wv) };
+    wv.independent = { kind: "available", source: "host", client: hostApi(wv) };
     const c = mainCtx(wv).ctx;
     const prepared = await prepareTron(c, params({ network: MAINNET }));
     // The reference block falls out of the node's view → staleReason goes through rebuild.

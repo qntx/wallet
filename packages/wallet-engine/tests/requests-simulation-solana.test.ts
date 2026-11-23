@@ -50,6 +50,7 @@ function rig(
     },
     transactions: {
       getState: () => ({ txs: {} }),
+      bindDappSolana: async () => Promise.resolve([]),
     } as unknown as TransactionController,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),

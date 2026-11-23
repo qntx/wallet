@@ -232,7 +232,8 @@ const stream = (options: {
       gateway: { url: "https://gateway.test", fetch },
       networks: {
         tronApi: () => options.api,
-        independentTronApi: () => options.independent ?? { kind: "available", client: options.api },
+        independentTronApi: () =>
+          options.independent ?? { kind: "available", source: "host", client: options.api },
       },
       setTimer: () => () => {},
     } as never,

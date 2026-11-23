@@ -272,8 +272,7 @@ type Catalog = {
   readonly fiat24OpenAccount: (account: string) => string;
   readonly fiat24Grant: string;
   readonly fiat24SessionTitle: string;
-  readonly fiat24SessionAccount: (tokenId: string) => string;
-  readonly fiat24SessionExpires: (date: string) => string;
+  readonly fiat24SessionBearer: (date: string) => string;
   readonly fiat24SessionPower: string;
   readonly fiat24SessionSigns: (message: string) => string;
 };
@@ -389,7 +388,7 @@ const zh: Catalog = {
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
     "fiat24-internal-account": (message) =>
-      `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+      `Fiat24 账户 #${message} 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`,
     "fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
     "fiat24-unlimited-approval": (role) =>
       `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
@@ -401,6 +400,8 @@ const zh: Catalog = {
     "fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
     "fiat24-account-move": (message) =>
       `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
+    "fiat24-account-burn": () =>
+      "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -577,8 +578,7 @@ const zh: Catalog = {
   fiat24Grant:
     "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
   fiat24SessionTitle: "授权访问 Fiat24 账户",
-  fiat24SessionAccount: (tokenId) => `Fiat24 账户 #${tokenId}`,
-  fiat24SessionExpires: (date) => `${date}（UTC）过期`,
+  fiat24SessionBearer: (date) => `对签名地址的 Fiat24 账户的持有人授权，有效期至 ${date}（UTC）`,
   fiat24SessionPower:
     "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
   fiat24SessionSigns: (message) => `签名消息：${message}`,
@@ -702,7 +702,7 @@ const en: Catalog = {
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
     "fiat24-internal-account": (message) =>
-      `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+      `Fiat24 account #${message} is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`,
     "fiat24-card-pull": () =>
       "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
     "fiat24-unlimited-approval": (role) =>
@@ -719,6 +719,8 @@ const en: Catalog = {
       "Opening the account permanently links this address to the identity you verify with Fiat24",
     "fiat24-account-move": (message) =>
       `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
+    "fiat24-account-burn": () =>
+      "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -909,8 +911,8 @@ const en: Catalog = {
   fiat24Grant:
     "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
   fiat24SessionTitle: "Allow Fiat24 account access",
-  fiat24SessionAccount: (tokenId) => `Fiat24 account #${tokenId}`,
-  fiat24SessionExpires: (date) => `Expires ${date} (UTC)`,
+  fiat24SessionBearer: (date) =>
+    `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
   fiat24SessionPower:
     "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
   fiat24SessionSigns: (message) => `Signs: ${message}`,
@@ -1752,14 +1754,14 @@ function messagePrompt(
   }
   if (message.kind === "text" && intent.fiat24?.kind === "session-grant") {
     /* The wallet built this grant from structured fields, so the prompt describes the session
-       it opens — network, account, expiry and the powers it hands to the signature's holder. */
+       it opens — a bearer grant until the expiry and the powers it hands to the signature's
+       holder. The Fiat24 server binds nothing in the signed label, so the prompt never claims
+       chain or account pinning. */
     const grant = intent.fiat24;
     return {
       title: catalog.fiat24SessionTitle,
       description: joinLines([
-        catalog.networkLine(networkLabel(catalog, intent.network ?? "")),
-        catalog.fiat24SessionAccount(grant.account),
-        catalog.fiat24SessionExpires(utcDateTime(grant.deadline)),
+        catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
         catalog.fiat24SessionPower,
         catalog.fiat24SessionSigns(message.text),
       ]),

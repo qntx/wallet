@@ -527,10 +527,10 @@ export const world = (
           independentEsplora: () =>
             typeof options.independent === "function"
               ? options.independent() === "available"
-                ? { kind: "available", client: independentStub }
+                ? { kind: "available", source: "host", client: independentStub }
                 : { kind: "unavailable" }
               : options.independent === true
-                ? { kind: "available", client: independentStub }
+                ? { kind: "available", source: "host", client: independentStub }
                 : { kind: "not-needed" },
         },
         isNetworks,

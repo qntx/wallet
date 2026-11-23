@@ -3,7 +3,13 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import * as AbiFunction from "ox/AbiFunction";
 
 import { ChainError } from "../index.ts";
-import type { Fiat24Action, IntentSummary, AssetFlow, IntentWarning } from "../index.ts";
+import type {
+  Fiat24Action,
+  Fiat24Token,
+  IntentSummary,
+  AssetFlow,
+  IntentWarning,
+} from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { lookupEvmToken } from "./tokens.ts";
@@ -35,6 +41,18 @@ export const FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
 export const FIAT24_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
 /**
+ * The F24 utility token `mintByClient` burns at the issuer-set account price (Fiat24Account.sol:96
+ * `f24.burnFrom(msg.sender, fiat24PriceList.getPrice(_tokenId))`; the deposit contract's `f24()`
+ * getter returns this address on chain; Sourcify exact match —
+ * https://sourcify.dev/server/v2/contract/42161/0x22043fDdF353308B4F2e7dA2e5284E4D087449e1).
+ */
+const F24_BURN: Fiat24Token = {
+  asset: "0x22043fDdF353308B4F2e7dA2e5284E4D087449e1",
+  symbol: "F24",
+  decimals: 2,
+};
+
+/**
  * The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
  * share the one Fiat24Token.sol source and `decimals()` is the constant 2 (Fiat24Token.sol:256-258;
  * issuer list above).
@@ -60,10 +78,12 @@ export const FIAT24_TOKENS: Readonly<
   },
 };
 
-/* The issuer's internal accounts — the contract itself bounds the range
-   (Fiat24Account.sol:299,318): ids 9100–9299 are treasury/payout desks, not clients. */
-const INTERNAL_ACCOUNT_MIN = 9100n;
-const INTERNAL_ACCOUNT_MAX = 9299n;
+/* The issuer's internal accounts — the contract itself bounds them: Fiat24Account.sol:119
+   `require(!_tokenId.hasFirstDigit(INTERNALDIGIT))` with INTERNALDIGIT = 9 (line 34), and
+   DigitsOfUint.hasFirstDigit reads the most significant decimal digit
+   (libraries/DigitsOfUint.sol). Clients can never mint those, so paying one is never a payment
+   to a person. */
+const isInternalAccount = (account: bigint): boolean => account.toString(10).startsWith("9");
 
 const TRANSFER_BY_ACCOUNT_ID = AbiFunction.from(
   "function transferByAccountId(uint256 accountId, uint256 amount)",
@@ -401,11 +421,22 @@ const topUpToken = (
 };
 
 /** Minting an account permanently links the address to the identity Fiat24 verifies. */
-const openAccount = (id: bigint, outflows: ReadonlyArray<AssetFlow>): Fiat24Decode => ({
+const openAccount = (
+  id: bigint,
+  outflows: ReadonlyArray<AssetFlow>,
+  burn?: Fiat24Token,
+): Fiat24Decode => ({
   summary: "contract-call",
   outflows,
-  warnings: [{ kind: "fiat24-account-link", message: "" }],
-  fiat24: { kind: "open-account", account: id.toString(10) },
+  warnings: [
+    { kind: "fiat24-account-link", message: "" },
+    ...(burn === undefined ? [] : [{ kind: "fiat24-account-burn" as const, message: "" }]),
+  ],
+  fiat24: {
+    kind: "open-account",
+    account: id.toString(10),
+    ...(burn === undefined ? {} : { burn }),
+  },
 });
 
 /* Moving the account NFT moves control of the account — its balance and the identity verified
@@ -450,10 +481,9 @@ const decodeFiat24Token = (
                 account: account.toString(10),
               }),
             ],
-            warnings:
-              account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX
-                ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
-                : [],
+            warnings: isInternalAccount(account)
+              ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
+              : [],
           };
         },
       },
@@ -533,7 +563,10 @@ const decodeFiat24Deposit = (
 const decodeFiat24Account = (call: ValueCall): DecodeResult =>
   runCases(
     [
-      { fn: MINT_BY_CLIENT, run: (args) => openAccount(argUint(args, 0), []) },
+      /* `mintByClient` burns the account price in F24 from the caller — bounded only by the
+         caller's F24 allowance; `mintByClientWithETH` buys that F24 with the ETH value, which is
+         already an outflow (Fiat24Account.sol:92-96). */
+      { fn: MINT_BY_CLIENT, run: (args) => openAccount(argUint(args, 0), [], F24_BURN) },
       {
         fn: MINT_BY_CLIENT_WITH_ETH,
         payable: true,
@@ -578,11 +611,14 @@ export const decodeFiat24 = (
 };
 
 /* The grant message the Fiat24 API verifies: "I agree to access my profile. " followed by the
-   deadline hash (integration guide part-2-api-reference, Secured APIs). The label the wallet
-   hashes is its own convention — it pins the session to the chain, account token and deadline
-   so a grant cannot be replayed under different terms. */
+   deadline hash (integration guide part-2-api-reference, Secured APIs). The server rebuilds the
+   digest as keccak256(hash ‖ deadline) from two client-chosen header values and never parses
+   `hash`, so the label the wallet hashes must not end in digits: with a `;` terminator the only
+   all-digit suffix of the preimage is the deadline the user saw, and no (hash, deadline)
+   re-split can move the grant to a later expiry. The label is the wallet's own convention —
+   the server binds nothing inside it. */
 const sessionLabel = (chainId: number, tokenId: string, deadline: number): string =>
-  `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+  `fiat24-session-v1:${chainId}:${tokenId}:${deadline};`;
 
 /** The exact personal-message text a `evm.fiat24-session` request signs. */
 export const fiat24SessionMessage = (

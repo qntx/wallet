@@ -536,7 +536,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     let stuck = false;
     if (now - watch.since >= STUCK_AFTER_MS) {
       /* `stuck` needs every endpoint that can answer to not know the transaction: a copy on the
-         host endpoint — or its read failing — is not "the network never saw it". */
+         independent endpoint — or its read failing — is not "the network never saw it". */
       const independent = ctx.options.networks.independentEsplora(tx.network);
       const elsewhere =
         independent.kind === "available" &&

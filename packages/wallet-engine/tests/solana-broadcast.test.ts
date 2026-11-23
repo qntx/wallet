@@ -138,6 +138,12 @@ const world = () => {
           value: sigs.map((s) => statuses.get(String(s)) ?? null),
         };
       }
+      /* The node's ledger reaches back to second 300 — before every submission the rig tracks
+         (clock 1_000_000 ms, skew margin ten minutes), so coverage holds. */
+      case "getFirstAvailableBlock":
+        return 300;
+      case "getBlockTime":
+        return 300;
       default:
         throw new Error(`unmocked ${method}`);
     }

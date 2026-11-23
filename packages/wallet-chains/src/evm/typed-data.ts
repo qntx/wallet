@@ -299,9 +299,12 @@ export const typedDataFields = (
 /**
  * Whether any `string` leaf of the document carries characters the text rule hides — domain fields
  * under `types.EIP712Domain` (or the fields ox derives when it is not declared) and message fields
- * under `primaryType`, walked through structs and arrays. A key the type does not declare is not
- * signed and is ignored. Never throws: a branch it cannot walk counts as no hidden text — malformed
- * documents are refused by the validator.
+ * under `primaryType`, walked through structs and arrays — or the type encoding's own strings do:
+ * `primaryType`, every key of `types`, and every field's `name` and `type` are hashed into the
+ * signature, so a deceptive code point there is blind for the same reason as hidden message bytes.
+ * All declared types are scanned, not only the ones the primary type reaches. A key the type does
+ * not declare is not signed and is ignored. Never throws: a branch it cannot walk counts as no
+ * hidden text — malformed documents are refused by the validator.
  */
 export const typedDataHasHiddenText = (json: TypedDataInput): boolean => {
   const hidden = (type: string, value: unknown, depth: number): boolean => {
@@ -322,7 +325,18 @@ export const typedDataHasHiddenText = (json: TypedDataInput): boolean => {
   };
   const domainFields =
     json.types["EIP712Domain"] ?? TypedData.extractEip712DomainTypes(json.domain);
+  const namesHidden =
+    hasHiddenCharacters(json.primaryType) ||
+    Object.entries(json.types).some(
+      ([name, struct]) =>
+        hasHiddenCharacters(name) ||
+        struct.some((field) => hasHiddenCharacters(field.name) || hasHiddenCharacters(field.type)),
+    ) ||
+    domainFields.some(
+      (field) => hasHiddenCharacters(field.name) || hasHiddenCharacters(field.type),
+    );
   return (
+    namesHidden ||
     domainFields.some((field) => hidden(field.type, json.domain[field.name], 0)) ||
     hidden(json.primaryType, json.message, 0)
   );

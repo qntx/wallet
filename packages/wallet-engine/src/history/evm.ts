@@ -12,6 +12,7 @@ import {
 } from "../gateway/contract/index.ts";
 import type { HistoryItem, HistoryTransfer } from "../gateway/contract/index.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import { independentTrusted } from "../networks/controller.ts";
 import { networkById } from "../networks/registry.ts";
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
@@ -635,7 +636,7 @@ export const evmHistoryStream = (
   const independent = options.networks.independentClient(network);
   const client =
     independent.kind === "available" ? independent.client : options.networks.client(network);
-  const trusted = independent.kind !== "unavailable";
+  const trusted = independentTrusted(independent);
   const gatewayBase = options.gateway.url.replace(/\/+$/, "");
   let cursor: string | undefined;
   let done = false;

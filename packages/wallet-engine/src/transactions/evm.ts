@@ -2241,8 +2241,8 @@ export const createEvmRoute = (): EvmRoute => {
         return undefined;
       }
       /* The nonce passed without our receipt — a pool eviction is only the likelier story, not
-         proof. Before ending, the host endpoint gets to hold the receipt instead: a copy found
-         there keeps the row live, and a failing read proves nothing. */
+         proof. Before ending, the independent endpoint gets to hold the receipt instead: a copy
+         found there keeps the row live, and a failing read proves nothing. */
       const independent = ctx.options.networks.independentClient(tx.network);
       if (independent.kind === "available") {
         let receipt: Awaited<ReturnType<typeof evm.receipt>>;
@@ -2308,7 +2308,7 @@ export const createEvmRoute = (): EvmRoute => {
     let stuck = false;
     if (now - watch.unknownSince >= STUCK_AFTER_MS) {
       /* `stuck` needs every endpoint that can answer to not know the transaction: a copy on the
-         host endpoint — or its read failing — is not "the network never saw it". */
+         independent endpoint — or its read failing — is not "the network never saw it". */
       const independent = ctx.options.networks.independentClient(tx.network);
       const elsewhere =
         independent.kind === "available" &&

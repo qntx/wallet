@@ -117,41 +117,6 @@
       }
     },
     {
-      "name": "transferByAccountId-cnh24",
-      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      "request": {
-        "kind": "evm.transaction",
-        "network": "eip155:42161",
-        "account": {
-          "kind": "hd",
-          "walletId": "w",
-          "groupIndex": 0,
-          "template": "evm.bip44"
-        },
-        "tx": {
-          "type": "eip1559",
-          "chainId": 42161,
-          "nonce": 0,
-          "gas": "0x30000",
-          "to": "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
-          "value": "0x0",
-          "data": "0xe89082b300000000000000000000000000000000000000000000000000000000000f423f0000000000000000000000000000000000000000000000000000000000000058",
-          "accessList": [],
-          "maxFeePerGas": "0x3b9aca00",
-          "maxPriorityFeePerGas": "0x1"
-        }
-      },
-      "expect": {
-        "summary": "transfer",
-        "verifiability": "partial",
-        "warnings": [],
-        "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
-        }
-      }
-    },
-    {
       "name": "transferByAccountId-eur24-internal",
       "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
       "request": {
@@ -183,8 +148,45 @@
           "fiat24-internal-account"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #9102 is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #9102 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款"
+          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
+          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
+        }
+      }
+    },
+    {
+      "name": "transferByAccountId-cnh24-internal",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
+          "value": "0x0",
+          "data": "0xe89082b300000000000000000000000000000000000000000000000000000000000f423f0000000000000000000000000000000000000000000000000000000000000058",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "transfer",
+        "verifiability": "partial",
+        "warnings": [
+          "fiat24-internal-account"
+        ],
+        "prompt": {
+          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #999999 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
+          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #999999 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
         }
       }
     },
@@ -516,11 +518,12 @@
         "summary": "contract-call",
         "verifiability": "partial",
         "warnings": [
-          "fiat24-account-link"
+          "fiat24-account-link",
+          "fiat24-account-burn"
         ],
         "prompt": {
-          "en": "Confirm contract call\nNetwork: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24",
-          "zh-Hans": "确认合约调用\n网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联"
+          "en": "Confirm contract call\nNetwork: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
+          "zh-Hans": "确认合约调用\n网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度"
         }
       }
     },
@@ -1395,6 +1398,114 @@
       }
     },
     {
+      "name": "card-erc20-transfer",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14",
+          "value": "0x0",
+          "data": "0xa9059cbb00000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000003039",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14, function 0xa9059cbb\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14，函数 0xa9059cbb\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "card-erc20-approve",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14",
+          "value": "0x0",
+          "data": "0x095ea7b300000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000000309",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14, function 0x095ea7b3\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14，函数 0x095ea7b3\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "deposit-erc20-approve",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F",
+          "value": "0x0",
+          "data": "0x095ea7b300000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000000309",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F, function 0x095ea7b3\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F，函数 0x095ea7b3\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "grant-text",
       "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
       "request": {
@@ -1464,18 +1575,18 @@
         "deadline": 1795278000
       },
       "session": {
-        "label": "fiat24-session-v1:42161:123456:1795278000",
-        "digest": "0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
-        "eip191Hash": "0x42e71571afdd4e74672f74c8bddc84e45a6f637fae50032640edb54588efcdfa",
-        "signature": "0x09410c3f5d15d8022f6baa8e556eeeee446164f864e33c9e6ff30fc63d7c45996719e723721bef79e3daebade7979538306b14039290d25338f19b74fe8cb0031c"
+        "label": "fiat24-session-v1:42161:123456:1795278000;",
+        "digest": "0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
+        "eip191Hash": "0xe7f34100a9d827d0d8f9468a9b7145a9df9b735c52212ac547edf45a045e629e",
+        "signature": "0x1fed1f861a97bc875df8aa61b79dd054a614d0934b42a5750b8b873410afee1625cf19bb748e61fabef563fda4711dd9f92f84ae7275e6fdb1258bdca6c876c81c"
       },
       "expect": {
         "summary": "message",
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nNetwork: Arbitrum One\nFiat24 account #123456\nExpires 2026-11-21 16:20 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025",
-          "zh-Hans": "授权访问 Fiat24 账户\n网络：Arbitrum One\nFiat24 账户 #123456\n2026-11-21 16:20（UTC）过期\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025"
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-21 16:20 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
+          "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2026-11-21 16:20（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd"
         }
       }
     },
@@ -1495,17 +1606,17 @@
         "deadline": 1795305600
       },
       "session": {
-        "label": "fiat24-session-v1:42161:1:1795305600",
-        "digest": "0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
-        "eip191Hash": "0x385c99758dfbd01204bcd980b990c73dd91e5bd25ff07cad5c6a8e5d43eaab64"
+        "label": "fiat24-session-v1:42161:1:1795305600;",
+        "digest": "0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
+        "eip191Hash": "0xa3b400459402c66bfe82a63c438a405932a4f594f8aebd3ed7df5fc56cb2bf8f"
       },
       "expect": {
         "summary": "message",
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nNetwork: Arbitrum One\nFiat24 account #1\nExpires 2026-11-22 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
-          "zh-Hans": "授权访问 Fiat24 账户\n网络：Arbitrum One\nFiat24 账户 #1\n2026-11-22 00:00（UTC）过期\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202"
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-22 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
+          "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2026-11-22 00:00（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440"
         }
       }
     },
@@ -1525,17 +1636,17 @@
         "deadline": 4102444800
       },
       "session": {
-        "label": "fiat24-session-v1:42161:9007199254740993:4102444800",
-        "digest": "0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
-        "eip191Hash": "0xe66787ac443bd91d65cc73499568ad74cba295b0790b11315333c8a75b26bc2e"
+        "label": "fiat24-session-v1:42161:9007199254740993:4102444800;",
+        "digest": "0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
+        "eip191Hash": "0x2e347769f6dcabf28c3aa3875b0b37407ece9e804e30d4522b3d4043124db393"
       },
       "expect": {
         "summary": "message",
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nNetwork: Arbitrum One\nFiat24 account #9007199254740993\nExpires 2100-01-01 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b",
-          "zh-Hans": "授权访问 Fiat24 账户\n网络：Arbitrum One\nFiat24 账户 #9007199254740993\n2100-01-01 00:00（UTC）过期\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0x2357270ce0d4f3fa5a9a51eafbf0580ebb8dad931e4008b30ba274e83dacdb2b"
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2100-01-01 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
+          "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2100-01-01 00:00（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5"
         }
       }
     }

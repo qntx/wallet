@@ -65,6 +65,8 @@ export function describeWarning(warning: IntentWarning): string {
       return "the address is permanently linked to a verified identity";
     case "fiat24-account-move":
       return "the account NFT hands over control";
+    case "fiat24-account-burn":
+      return "opening the account burns F24 at the issuer-set price";
     // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
     default: {
       const exhaustive: never = kind;

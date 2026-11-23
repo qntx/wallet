@@ -37,6 +37,7 @@ import type {
   TronLog,
 } from "../gateway/contract/index.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import { independentTrusted } from "../networks/controller.ts";
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 import { tronTokenFlags } from "./flags.ts";
@@ -573,7 +574,7 @@ export const tronHistoryStream = (
   const independent = options.networks.independentTronApi(network);
   const api =
     independent.kind === "available" ? independent.client : options.networks.tronApi(network);
-  const trusted = independent.kind !== "unavailable";
+  const trusted = independentTrusted(independent);
   const groups = new Map<string, Group>();
   const feeds: Feed[] = [
     {

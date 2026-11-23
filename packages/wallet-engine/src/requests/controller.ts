@@ -65,6 +65,7 @@ import {
   assessSignIn,
   assessRecipients,
   assessIntentRecipients,
+  comparable,
   assessSimulation,
   impersonatesBuiltIn,
   impersonatesTronToken,
@@ -1025,13 +1026,13 @@ export class RequestController extends Controller<RequestControllerState> {
     return network;
   }
 
-  private sparkBuilt(account: SparkAccountRef, action: PreparedSparkAction): Built {
+  private sparkBuilt(account: SparkAccountRef, action: PreparedSparkAction, self?: string): Built {
     return {
       account,
       network: action.display.network,
       display: action.display,
       checks: collectChecks(action.checks),
-      risk: this.sparkRisk(action.display),
+      risk: this.sparkRisk(action.display, self),
       run: {
         factor: "required",
         staleReason: () => action.staleReason(this.options.now()),
@@ -1122,7 +1123,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...(input.speed === undefined ? {} : { speed: input.speed }),
         },
       );
-      return this.sparkBuilt(input.account, action);
+      return this.sparkBuilt(input.account, action, address);
     }
     if (input.method === "evm-sign") {
       if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
@@ -1221,6 +1222,12 @@ export class RequestController extends Controller<RequestControllerState> {
               (wire) => decodeSolanaTransaction(wire, input.account.address).message,
             )
           : [];
+      /* Every lifetime the dApp chose binds to this session's cluster before the Built — and
+         with it the prompt — exists. A message that cannot be proven ends the request here. */
+      const binding =
+        input.request.kind === "transactions"
+          ? await this.options.transactions.bindDappSolana(input.network, txs)
+          : [];
       const [only] = txs;
       const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
       const [decoded] = intents;
@@ -1251,6 +1258,7 @@ export class RequestController extends Controller<RequestControllerState> {
             ? "decode-partial"
             : undefined,
           ...(intents.some(feeExceedsLamports) ? (["fee-exceeds-amount"] as const) : []),
+          ...binding,
         ]),
         risk: mergeRisk(
           mergeRisk(
@@ -1935,12 +1943,20 @@ export class RequestController extends Controller<RequestControllerState> {
     );
   }
 
-  /** Only sats and token transfers have a recipient to check; Lightning and exits are not assessed. */
-  private sparkRisk(display: SparkDisplay): ReadonlyArray<RiskFinding> {
-    if (display.kind !== "transfer" && display.kind !== "token") {
+  /**
+   * Sats/token transfers name a Spark receiver and exits a bitcoin one — both assessed. Lightning
+   * names a payee public key, which no address book holds, so it is not assessed.
+   */
+  private sparkRisk(display: SparkDisplay, self?: string): ReadonlyArray<RiskFinding> {
+    if (display.kind === "lightning") {
       return [];
     }
-    const receiver = normalizeAddress("spark", display.receiver) ?? display.receiver;
-    return assessRecipients("spark", [receiver], this.knownAddresses("spark"));
+    const family = display.kind === "exit" ? "bitcoin" : "spark";
+    const receiver = normalizeAddress(family, display.receiver) ?? display.receiver;
+    // A spark-exit pays the wallet's own fresh receive address — self is never a recipient.
+    if (self !== undefined && comparable(family, receiver) === comparable(family, self)) {
+      return [];
+    }
+    return assessRecipients(family, [receiver], this.knownAddresses(family));
   }
 }

@@ -240,7 +240,7 @@ const otherEstimate = (w: World & { api: TronApi }, used: number): TronApi => ({
 
 it("cross-checks the energy estimate against the independent endpoint", async () => {
   const w = world();
-  w.independent = { kind: "available", client: otherEstimate(w, 40_000) };
+  w.independent = { kind: "available", source: "host", client: otherEstimate(w, 40_000) };
   const prepared = await prepareTronApprove(ctx(w).ctx, input(1_000_000n));
   // The larger estimate wins and the >25% difference is flagged.
   expect(prepared.tronFee?.energy).toMatchObject({ used: 40_000 });
