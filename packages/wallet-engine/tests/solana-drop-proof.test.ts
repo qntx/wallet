@@ -818,9 +818,7 @@ describe("the corroborator is never the pinned upstream", () => {
          so the host-only continuity rule decides instead of a second look at itself. */
       independentPinnedSolanaRpc: (_net: string, primaryUrl: string | undefined) => {
         pins.push(primaryUrl);
-        return primaryUrl === HOST
-          ? NOT_NEEDED
-          : { kind: "available", source: "host", client: hostApi(dropNode()).api };
+        return NOT_NEEDED;
       },
     });
     const evidence = ev();
