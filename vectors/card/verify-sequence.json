@@ -14,7 +14,7 @@
   "sequences": [
     {
       "name": "wrong-to-limit",
-      "description": "Wrong codes from f = 0 to L: three free attempts, then 6985 until W WAITs complete in the session (a refused VERIFY keeps waited), then one attempt per W WAITs; the L-th failure erases. Afterwards VERIFY and WAIT are refused in BLANK.",
+      "description": "Wrong codes from f = 0 to L: three free attempts, then 6986 until W WAITs complete in the session (a refused VERIFY keeps waited), then one attempt per W WAITs; the L-th failure erases. Afterwards VERIFY and WAIT are refused in BLANK.",
       "setup": "create",
       "steps": [
         {
@@ -38,7 +38,7 @@
         {
           "command": "VERIFY",
           "code": "wrong",
-          "sw": "6985",
+          "sw": "6986",
           "status": "0207"
         },
         {
@@ -50,7 +50,7 @@
         {
           "command": "VERIFY",
           "code": "wrong",
-          "sw": "6985",
+          "sw": "6986",
           "status": "0207"
         },
         {
@@ -805,7 +805,7 @@
         {
           "command": "VERIFY",
           "code": "right",
-          "sw": "6985",
+          "sw": "6986",
           "status": "0207"
         },
         {
@@ -859,7 +859,7 @@
         {
           "command": "VERIFY",
           "code": "wrong",
-          "sw": "6985",
+          "sw": "6986",
           "status": "0207"
         },
         {
@@ -914,7 +914,7 @@
         {
           "command": "VERIFY",
           "code": "wrong",
-          "sw": "6985",
+          "sw": "6986",
           "status": "0206"
         }
       ]

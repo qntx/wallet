@@ -88,7 +88,13 @@ while IFS= read -r line; do
 done <<<"$GRADLE_OUT"
 CP="$(printf '%s' "$CP" | tr ':' '\n' | sed '/^$/d' | sort -u | paste -sd: -)"
 
-AGENT="$SRC/sim/build/libs/sim-agent.jar"
+# The agentJar archive name carries the project version when gradle.properties sets one
+# (sim-agent.jar vs sim-agent-<version>.jar) — take whatever the task produced.
+AGENT="$(find "$SRC/sim/build/libs" -name 'sim-agent*.jar' -print -quit)"
+if [ -z "$AGENT" ]; then
+  echo "card-sim: sim agent jar missing after :sim:agentJar" >&2
+  exit 1
+fi
 CLASSES="$DIR/bridge/$BRIDGE_HASH/classes"
 mkdir -p "$CLASSES"
 "$JAVA_HOME/bin/javac" -cp "$AGENT:$CP" -d "$CLASSES" "$BRIDGE_SRC"

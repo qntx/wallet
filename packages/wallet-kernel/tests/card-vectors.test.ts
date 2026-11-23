@@ -679,10 +679,12 @@ const stepRows = allSteps
         : sw.startsWith("63c")
           ? "wrong-access-code"
           : (
-              { "6983": "wallet-erased", "6985": "wrong-state", "6a80": "invalid-data" } as Record<
-                string,
-                CardErrorCode
-              >
+              {
+                "6983": "wallet-erased",
+                "6985": "wrong-state",
+                "6986": "wait-required",
+                "6a80": "invalid-data",
+              } as Record<string, CardErrorCode>
             )[sw];
     if (sw !== "9000" && code === undefined) {
       throw new Error(`no expected mapping for ${command} ${sw}`);
@@ -708,9 +710,8 @@ describe("verify-sequence.json", () => {
     expect(result(row.inner, { data, sw: row.sw })).toStrictEqual(data);
   });
 
-  // Amendment B1 (owner-approved, spec update pending) makes the VERIFY wait gate answer 6986 →
-  // wait-required; the applet at the pinned commit still answers 6985, which the client maps to
-  // wrong-state for every command — this test asserts the pinned mapping, not B1's.
+  // Every failure status word the vectors pin maps to its CardError — including the VERIFY wait
+  // gate's `6986` → `wait-required` (spec §9.5 step 3 at the pinned commit).
   it.each(stepRows.filter((row) => row.code !== undefined))(
     "$name maps to its CardError",
     (row) => {

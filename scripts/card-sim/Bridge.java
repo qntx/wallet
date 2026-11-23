@@ -142,7 +142,12 @@ public final class Bridge {
         check(card.transmit(SELECT), "SELECT");
 
         // FACTORY: the card generates its own identity; GET_IDENTITY returns A (33 B).
+        // §4.3: install only allocates — each GET_IDENTITY performs the next of the bounded
+        // resumable init steps and answers 6283 until the completing call returns A + 9000.
         byte[] idr = card.transmit(GET_IDENTITY);
+        while (sw(idr) == 0x6283) {
+            idr = card.transmit(GET_IDENTITY);
+        }
         check(idr, "GET_IDENTITY");
         byte[] a = Arrays.copyOf(idr, 33);
 
@@ -168,9 +173,13 @@ public final class Bridge {
         }
     }
 
-    private static void check(byte[] rapdu, String what) {
+    private static int sw(byte[] rapdu) {
         int n = rapdu.length;
-        int sw = ((rapdu[n - 2] & 0xFF) << 8) | (rapdu[n - 1] & 0xFF);
+        return ((rapdu[n - 2] & 0xFF) << 8) | (rapdu[n - 1] & 0xFF);
+    }
+
+    private static void check(byte[] rapdu, String what) {
+        int sw = sw(rapdu);
         if (sw != 0x9000) {
             throw new IllegalStateException(what + " failed: " + Integer.toHexString(sw));
         }

@@ -54,7 +54,8 @@
     "exportPayload.any": "response only, 176 bytes: ct(160) \u2016 tag(16) that {peer} accepts: IMPORT P1 = 00 with {cert} \u2016 the E \u2016 sig_S of the session's EXPORT P1 = 00, then IMPORT P1 = 01 with these 176 bytes, both on {peer} in one session, return 9000 and WalletInfo {seed.masterPublicKey} 02 03 {id.self} {peer.id} {id.badPoint}"
   },
   "states": {
-    "FACTORY": "a freshly installed card",
+    "UNINIT": "a freshly installed card before any GET_IDENTITY: initialisation has not started (\u00a74.3)",
+    "FACTORY": "a freshly installed card after GET_IDENTITY was repeated until it returned 9000 (initialisation complete, \u00a74.3)",
     "BLANK": "FACTORY, then PERSONALIZE with {cert} and {caKey}",
     "LOADED": "BLANK, then OPEN and CREATE P1 = 01 with {accessHash} \u2016 {seed} (no other members), then a new OPEN",
     "session none": "no OPEN after the setup",
@@ -88,6 +89,68 @@
           "apdu": "807f000000",
           "inner": false,
           "sw": "6d00"
+        }
+      ]
+    },
+    {
+      "name": "INIT",
+      "section": "4.3",
+      "cases": [
+        {
+          "name": "wrong-cla",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "00e0000000",
+          "inner": false,
+          "sw": "6e00"
+        },
+        {
+          "name": "get-identity-step",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "80e0000000",
+          "inner": false,
+          "sw": "6283"
+        },
+        {
+          "name": "get-identity-p1p2-step",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "80e001000100",
+          "inner": false,
+          "sw": "6283"
+        },
+        {
+          "name": "personalize",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "80e20000a2{cert}{caKey}",
+          "inner": false,
+          "sw": "6283"
+        },
+        {
+          "name": "open",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "8010000041{hostEph}00",
+          "inner": false,
+          "sw": "6283"
+        },
+        {
+          "name": "session",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "8012000020000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": false,
+          "sw": "6283"
+        },
+        {
+          "name": "unknown-ins",
+          "life": "UNINIT",
+          "session": "none",
+          "apdu": "807f000000",
+          "inner": false,
+          "sw": "6283"
         }
       ]
     },
@@ -1037,6 +1100,14 @@
           "sw": "6700"
         },
         {
+          "name": "finish-length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330200",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
           "name": "begin-unverified",
           "life": "LOADED",
           "session": "open",
@@ -1056,7 +1127,7 @@
           "name": "finish-unverified",
           "life": "LOADED",
           "session": "open",
-          "apdu": "330200",
+          "apdu": "330200aa",
           "inner": true,
           "sw": "6982"
         },
@@ -1072,7 +1143,7 @@
           "name": "finish-no-stream",
           "life": "LOADED",
           "session": "verified",
-          "apdu": "330200",
+          "apdu": "330200aa",
           "inner": true,
           "sw": "6985"
         },
