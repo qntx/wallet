@@ -51,7 +51,10 @@ export type VaultWalletInfo = {
 export type HardwareWalletInfo = {
   readonly custody: "hardware";
   readonly walletId: string;
-  readonly device: HardwareDevice;
+  /** The paired device kind — possibly one this build does not know (see `supported`). */
+  readonly device: string;
+  /** Whether this build ships a driver for `device`; unknown kinds stay inert. */
+  readonly supported: boolean;
   /** The device master fingerprint as 8 lowercase hex chars. */
   readonly fingerprint: string;
   readonly model?: string;
@@ -121,10 +124,8 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
-  | "card-required"
   | "card-not-genuine"
   | "card-id-mismatch"
-  | "wrong-card"
   | "card-erased"
   | "card-locked"
   | "card-tampered"

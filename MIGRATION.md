@@ -1074,9 +1074,9 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
 /**
  * Exhaustive maps: adding or removing a code fails this file, so the list in MIGRATION.md stays
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
- * (`no-device-credential` is gone), the nine `card-*` / `wrong-card` codes; `weak-password`;
- * `auth-required`; `quota`; `unknown`; `EngineErrorCode` lost `integrity`; `device-required`,
- * `device-locked`, `device-app-closed`, `device-rejected`, `wrong-device`.
+ * (`no-device-credential` is gone), the seven `card-*` codes; `weak-password`; `auth-required`;
+ * `quota`; `unknown`; `EngineErrorCode` lost `integrity`; `device-required`, `device-locked`,
+ * `device-app-closed`, `device-rejected`, `wrong-device`.
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -1097,10 +1097,8 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   integrity: false,
   "blind-signing-disabled": true,
   "approval-required": false,
-  "card-required": true,
   "card-not-genuine": true,
   "card-id-mismatch": true,
-  "wrong-card": true,
   "card-erased": true,
   "card-locked": true,
   "card-tampered": true,
@@ -2080,7 +2078,7 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    Show a card wallet's receive addresses only after its `create` task has resolved: a `pending`
    member has not imported the seed yet.
 2. **Card wallets sign through `@qntx/wallet/card`.** `chains(wallet).sign` on a card wallet
-   answers `card-required`, and `wallet.accounts` does too for any account whose public key no
+   answers `device-required`, and `wallet.accounts` does too for any account whose public key no
    earlier tap cached; run `card(wallet).start({ kind: "sign", request }, verify)` (or
    `{ kind: "accounts", … }`) instead. `start` returns a `CardTask`: `observe` reports every
    `CardStep` (an `input` step means mount `SecureInput`, a `tap` step means show the
@@ -2106,10 +2104,10 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    card is `card-not-genuine` until a release ships the production anchor.
 6. **New error codes** (§14): `card-not-genuine` (the certificate does not chain to a pinned
    anchor — never offer to continue), `card-id-mismatch` (another card than the step asked for;
-   nothing was sent), `wrong-card` (a card of another wallet), `card-erased`, `card-locked`,
+   nothing was sent), `wrong-device` (a card of another wallet), `card-erased`, `card-locked`,
    `card-tampered` (the card's failure counter moved without this wallet — offer `reseal` from
    another member), `card-fault` (the card answered outside the protocol), `card-unsupported` (the
-   request does not fit the card's limits; split it) and `card-required`. A wrong access code is
+   request does not fit the card's limits; split it) and `device-required`. A wrong access code is
    not an error: the next `input` step carries `remaining`.
 7. **Android: the library manifest is empty.** `@qntx/wallet-native` merges no permissions.
    A host that offers card wallets declares `android.permission.NFC`,

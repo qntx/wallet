@@ -19,7 +19,10 @@ export function walletBadge(info: WalletInfo): string {
         ? `mnemonic wallet ${info.walletId}`
         : `passkey wallet ${info.walletId}`;
     case "hardware":
-      return `${info.device} ${info.model ?? "device"} (${info.fingerprint})`;
+      // `device` may name a kind this build does not know — `supported` gates every operation.
+      return info.supported
+        ? `${info.device} ${info.model ?? "device"} (${info.fingerprint})`
+        : `unsupported device ${info.device} (${info.fingerprint})`;
     case "card":
       return `card wallet ${info.walletId} (${String(info.members)} cards)`;
   }

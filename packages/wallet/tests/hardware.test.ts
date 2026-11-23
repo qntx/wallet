@@ -23,6 +23,7 @@ const WALLET: WalletInfo = {
   device: "keystone",
   fingerprint: "73c5da0a",
   model: "Keystone 3 Pro",
+  supported: true,
   createdAt: 1735689600000,
 };
 

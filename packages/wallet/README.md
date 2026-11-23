@@ -74,7 +74,7 @@ prompts. `@qntx/ur` is an optional peer required only by this subpath.
 
 `@qntx/wallet/card` drives qntx card wallets (React Native only; Web and Node answer
 `unsupported`). A card wallet's seed lives only on its one to three cards — `WalletInfo.custody`
-is `"card"` — so `chains(wallet).sign` answers `card-required` and the host runs the request as a
+is `"card"` — so `chains(wallet).sign` answers `device-required` and the host runs the request as a
 card task instead:
 
 ```ts

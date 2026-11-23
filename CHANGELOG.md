@@ -874,8 +874,8 @@ Gateway (operators):
   counter that moved without this kernel is `card-tampered`, and every exit path wipes the code,
   the hashes, the session keys and any generated entropy or imported seed. An operation without
   progress for 120 s, a lock or `card.cancel` discards it.
-- `@qntx/wallet`: `CardWalletInfo`, `VaultWalletInfo`, `CardInfo`; error codes `card-required`,
-  `card-not-genuine`, `card-id-mismatch`, `wrong-card`, `card-erased`, `card-locked`,
+- `@qntx/wallet`: `CardWalletInfo`, `VaultWalletInfo`, `CardInfo`; error codes
+  `card-not-genuine`, `card-id-mismatch`, `card-erased`, `card-locked`,
   `card-tampered`, `card-fault`, `card-unsupported`. `@qntx/wallet/protocol`: `CARD_METHODS`, the
   `cardId` validator and the `Card*` wire types.
 - `scripts/card-sim/` and `bun run card:sim`: the real qntx applet at the commit

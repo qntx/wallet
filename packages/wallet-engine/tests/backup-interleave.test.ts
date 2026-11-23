@@ -344,6 +344,7 @@ function addHardwareWallet(d: Device, walletId: string): void {
     walletId,
     custody: "hardware",
     device: "keystone",
+    supported: true,
     fingerprint: "0123abcd",
     createdAt: 1,
   };

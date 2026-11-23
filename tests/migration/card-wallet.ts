@@ -1,7 +1,7 @@
 /**
  * §30 Card wallets: `WalletInfo` is a union discriminated by `custody`, so `words`, `passphrase`
  * and the vault `backup` values exist only on a vault wallet. A card wallet signs through
- * `card(wallet).start`, not `chains(wallet).sign` (which answers `card-required`); the host only
+ * `card(wallet).start`, not `chains(wallet).sign` (which answers `device-required`); the host only
  * renders the steps the kernel reports and can cancel. Compiled only.
  */
 import { WalletError } from "@qntx/wallet";
@@ -44,7 +44,7 @@ export function stepText(step: CardStep): string {
   }
 }
 
-/** Sign on a vault wallet as before; a card wallet answers `card-required` and runs a card task. */
+/** Sign on a vault wallet as before; a card wallet answers `device-required` and runs a card task. */
 export async function signAnyWallet(
   wallet: Wallet,
   request: ChainSignRequest,
@@ -54,7 +54,7 @@ export async function signAnyWallet(
   try {
     return await chains(wallet).sign({ request, verify });
   } catch (error) {
-    if (!(error instanceof WalletError) || error.code !== "card-required") {
+    if (!(error instanceof WalletError) || error.code !== "device-required") {
       throw error;
     }
   }
