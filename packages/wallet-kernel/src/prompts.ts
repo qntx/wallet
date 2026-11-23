@@ -25,7 +25,8 @@ export type CorePromptKind =
   | "app-lock"
   | "enable-blind-signing"
   | "disable-blind-signing"
-  | "reset";
+  | "reset"
+  | "export-account";
 
 const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, KeystorePrompt>>>> = {
   "zh-Hans": {
@@ -50,6 +51,10 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     reset: {
       title: "重置钱包",
       description: "验证设备所有者身份以删除本设备上的全部钱包数据",
+    },
+    "export-account": {
+      title: "连接观察钱包",
+      description: "验证身份以共享公开账户密钥——扩展公钥会暴露该账户的全部地址，但不会泄露任何私钥",
     },
   },
   en: {
@@ -102,6 +107,11 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     reset: {
       title: "Reset wallet",
       description: "Verify you own this device to erase all wallet data on it",
+    },
+    "export-account": {
+      title: "Connect watch-only wallet",
+      description:
+        "Verify your identity to share public account keys — extended keys reveal every address of the account, never a private key",
     },
   },
 };

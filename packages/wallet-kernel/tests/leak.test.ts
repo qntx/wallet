@@ -142,6 +142,32 @@ describe("leak check", () => {
         session,
       ),
     );
+    // chain.exportAccount is verified too but carries only public material — nothing to exempt.
+    ok(
+      await h.call(
+        "chain.exportAccount",
+        {
+          walletId: passkeyVector.vector.walletId,
+          groupIndex: 0,
+          nodes: [
+            { kind: "evm.account" },
+            { kind: "leaf", template: "evm.bip44" },
+            { kind: "leaf", template: "solana.bip44-change" },
+            {
+              kind: "btc.account",
+              template: "btc.bip84",
+              network: "bip122:000000000019d6689c085ae165831e93",
+            },
+          ],
+          verify: {
+            kind: "passkey",
+            credentialId: CREDENTIAL_ID,
+            prf: new Uint8Array(PRF_VAULT),
+          },
+        },
+        session,
+      ),
+    );
     // Exercise the S7 paths: a password addFactor rotates the DEK (fresh keyId, resealed
     // records, rewrapped factors); a passkey addFactor wraps the live DEK only.
     ok(

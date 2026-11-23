@@ -10,10 +10,10 @@
 
 import { isBlindIntent } from "@qntx/wallet-chains";
 import type { KeyPath } from "@qntx/wallet-chains";
-import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
-import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
-import { TRON_NETWORKS, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
+import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
+import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type {
   ChainAccount,
   ChainTemplate,
@@ -30,18 +30,19 @@ import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
-import type { StoredRecord, VaultImage } from "../../vault/store.ts";
+import type { StoredRecord } from "../../vault/store.ts";
 import { findWalletRecord, openRecord, verifyFactor } from "../../vault/vault.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
+import { exportAccount } from "./export.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
-import type { KeySource, PublicMaterial } from "./keys.ts";
+import type { KeySource } from "./keys.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
-import type { Prepared, SignRequest } from "./shared.ts";
-import { BTC_PURPOSE } from "./shared.ts";
+import type { ExternalMaterial, Prepared, SignRequest } from "./shared.ts";
+import { BTC_PURPOSE, checkNetwork, HARDENED, leafPath } from "./shared.ts";
 import { prepareSolana } from "./solana.ts";
 import { prepareTron } from "./tron.ts";
 
@@ -50,37 +51,14 @@ export type ChainsModule = {
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
 
-const HARDENED = 0x80000000;
-
-/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
-export const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
-  if (family === "solana") {
-    return [44 + HARDENED, 501 + HARDENED, groupIndex + HARDENED, HARDENED];
-  }
-  const coin = family === "tron" ? 195 : 60;
-  return [44 + HARDENED, coin + HARDENED, HARDENED, 0, groupIndex];
-};
-
 /** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 export const requestPath = (
   family: "evm" | "tron" | "solana",
   account: SignRequest["account"],
 ): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
-export const checkNetwork = (template: string, network: string): void => {
-  if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
-    throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
-  }
-  if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) {
-    throw new KernelError("invalid-input", `unknown solana network ${network}`);
-  }
-  if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) {
-    throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
-  }
-  if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) {
-    throw new KernelError("invalid-input", `unknown tron network ${network}`);
-  }
-};
+export { checkNetwork, leafPath } from "./shared.ts";
+export type { ExternalMaterial } from "./shared.ts";
 
 export const accountFor = async (
   material: KeySource["material"],
@@ -123,12 +101,6 @@ export const accountFor = async (
  * (any commit, a removed wallet, a rotated vault) starts empty; lock drops it all.
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
-
-/**
- * The signers module's `pinnedMaterial`, injected so chains never imports its owner: returns the
- * public material pinned to an external-signer record or throws `device-required`.
- */
-export type ExternalMaterial = (image: VaultImage, record: StoredRecord) => PublicMaterial;
 
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
@@ -411,6 +383,7 @@ export function createChainsModule(external: ExternalMaterial): ChainsModule {
     "wallet.accounts": async (ctx, params, session) =>
       walletAccounts(ctx, params, session, accounts, external),
     "chain.sign": chainSign,
+    "chain.exportAccount": exportAccount(external),
   };
 
   return { vault, handlers };
