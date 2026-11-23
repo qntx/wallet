@@ -61,6 +61,15 @@ export type SignContext = {
   readonly pin: HardwarePin;
 };
 
+/**
+ * The device's answer to an address check. `matched: false` is the user reporting the device
+ * shows a different address — the module, not the driver, decides that means `wrong-device`.
+ */
+export type VerifyVerdict = {
+  readonly method: "device" | "compare";
+  readonly matched: boolean;
+};
+
 export type Driver = {
   /** The pairing ceremony: claims the identity and publishes the initial pinned keys. */
   readonly pair: (link: DeviceLink) => Promise<PairingResult>;
@@ -90,5 +99,5 @@ export type Driver = {
       readonly network: string;
     },
     pin: HardwarePin,
-  ) => Promise<"device" | "compare">;
+  ) => Promise<VerifyVerdict>;
 };

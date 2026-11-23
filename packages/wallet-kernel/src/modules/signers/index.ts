@@ -359,12 +359,16 @@ export function createSignersModule(
         address = bitcoinAddressFromXpub(xpub, op.template, op.network, 0, op.index);
         path = [...account, 0, op.index];
       }
-      const method = await driver.verifyAddress(
+      const verdict = await driver.verifyAddress(
         link,
         { path, address, template: op.template, network: op.network },
         pin,
       );
-      return { kind: "verify-address", address, method };
+      // The user saying the device shows a different address is a wrong-device, by module rule.
+      if (!verdict.matched) {
+        throw new KernelError("wrong-device", "the device did not show this address");
+      }
+      return { kind: "verify-address", address, method: verdict.method };
     };
   };
 
