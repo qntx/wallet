@@ -1525,6 +1525,11 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
   API on EVM, DAS on Solana); `404 unsupported` on uncovered networks, floor EVM-only.
   `GatewayOptions.nfts.cache` is required (`PriceCache` / `priceCacheOf` are the shared
   `EdgeCache` / `edgeCacheOf(origin, open)`).
+- Push notifications (§27): the deploy adds Durable Object migration `v2` (`PushObject`), the
+  `PUSH` binding and the `PUSH_LIMITER` rate limit — non-rollbackable (`deploy-check
+  rollback-plan`). Push stays off until `PUSH_SEAL_KEY`, at least one sender (`APNS_*` or
+  `FCM_SERVICE_ACCOUNT`) and the Alchemy webhook secrets (`ALCHEMY_NOTIFY_TOKEN`,
+  `ALCHEMY_WEBHOOKS`) are set (`apps/gateway/README.md` "Push notifications").
 - A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` set it); in-process
   embeddings pass `clientAddress: "optional"` to `createGateway`. `GatewayOptions` requires `auth`
   and `prices: { cache, coingecko? }`.
@@ -1553,6 +1558,7 @@ nothing new. Each has a compiled example and a README section.
 | Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
 | `engine.approvals`                                                  | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`. |
 | `engine.nfts`                                                       | [`nfts.ts`](tests/migration/nfts.ts)                                                                                                                                                                                                                 | NFT inventory and transfers (§26): display-only gateway data, `evm-nft-send` `items` and `solana-nft-send` through requests. Gateway operators deploy the four `/v1/nfts/*` routes. |
+| `engine.notifications`, `@qntx/wallet-engine/push`                  | [`push-notifications.ts`](tests/migration/push-notifications.ts)                                                                                                                                                                                     | Push notifications (§27): per-wallet subscriptions, `openPush` for the notification extension; gateway PushObject deploy is non-rollbackable. |
 | `@qntx/wallet-engine/apps/fiat24`                                 | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS). |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
@@ -1712,6 +1718,34 @@ export async function sendOrExplain(
   }
 }
 ```
+## 27. Push notifications
+
+Compiled snippet: [`tests/migration/push-notifications.ts`](tests/migration/push-notifications.ts). Additive: nothing changes for a host
+that does not opt in. Gateway operators deploy a new Durable Object class.
+
+1. **Wire the key store.** Pass `pushKeys` (`PushKeyStore`) to `createWalletEngine`: `put(id, key)`
+   and `delete(id)` keep each subscription's 32-byte payload key where the notification extension
+   can read it while the app is closed (iOS: an App Group keychain item; Android: app-private
+   storage read by the `FirebaseMessagingService`). Without it, deliveries on a closed app show
+   only the fallback text.
+2. **Register and opt in.** After unlock call `engine.notifications.setToken("apns" | "fcm",
+   token)` whenever the platform hands you a token, then `enable(walletId)` for each wallet the user
+   turns notifications on for. `disable(walletId)` and removing a wallet delete its subscriptions.
+   `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` / `failed`.
+3. **Handle deliveries.** iOS: ship a Notification Service Extension; the alert carries
+   `mutable-content: 1` and the message under `userInfo.qntx`. Open it with `openPush` from
+   `@qntx/wallet-engine/push` (or a native AES-256-GCM port checked against `vectors/push.json`)
+   using the keys from the key store, and replace the text; on failure leave the alert, whose
+   `title-loc-key` / `loc-key` are `QNTX_PUSH_TITLE` / `QNTX_PUSH_BODY` — add both to
+   `Localizable.strings`. Android: FCM sends a data-only message (`v`, `e`, `c`); build the
+   notification yourself the same way. In the running app pass the message to
+   `engine.notifications.receive(message)`: it returns the display hint and reloads history and
+   balances; never insert the hint into an activity list.
+4. **Gateway operators.** The deploy adds migration `v2` (`PushObject`), the `PUSH` binding and the
+   `PUSH_LIMITER` rate limit; a Durable Object class change makes that deploy non-rollbackable
+   (`deploy-check rollback-plan`). Push stays off until `PUSH_SEAL_KEY`, at least one sender
+   (`APNS_*` or `FCM_SERVICE_ACCOUNT`) and the Alchemy webhook secrets are set
+   (`apps/gateway/README.md` "Push notifications").
 ## 29. Fiat24 app
 
 Compiled snippet: [`tests/migration/fiat24-app.ts`](tests/migration/fiat24-app.ts).

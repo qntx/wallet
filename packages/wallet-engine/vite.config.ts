@@ -14,6 +14,7 @@ const config: UserConfig = defineConfig({
         "apps-hyperliquid": "src/apps/hyperliquid/index.ts",
         "apps-polymarket": "src/apps/polymarket/index.ts",
         walletconnect: "src/walletconnect/index.ts",
+        push: "src/push/index.ts",
       },
       tsconfig: "tsconfig.src.json",
       // Keep dependencies external in declarations too — the walletconnect entry's

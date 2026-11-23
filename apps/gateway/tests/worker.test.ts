@@ -6,8 +6,8 @@ import { createGateway } from "../src/app.ts";
 import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
-import { gatewayFor, edgeCacheOf, riskStoreOf } from "../src/worker.ts";
-import type { WorkerEnv } from "../src/worker.ts";
+import type { WorkerEnv } from "../src/env.ts";
+import { edgeCacheOf, gatewayFor, riskStoreOf } from "../src/worker.ts";
 import { allowAll } from "./helpers.ts";
 
 const rpcMethods = (model: CostModel): Readonly<Record<string, CostRow>> =>

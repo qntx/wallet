@@ -552,7 +552,7 @@ export const historyTransfer: z.ZodMiniObject<{
 }, z.core.$strict>;
 
 // @public (undocumented)
-export type HttpMethod = "GET" | "POST" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 // @public (undocumented)
 const indexerAccountResponse: z.ZodMiniObject<{
@@ -624,6 +624,12 @@ export const NETWORKS: ReadonlyArray<NetworkInfo>;
 
 // @public (undocumented)
 export const networksPath: string;
+
+// @public
+export function parsePushMessage(value: unknown): PushMessage | undefined;
+
+// @public
+export function parsePushPlaintext(text: string): PushPlaintext | undefined;
 
 // @public (undocumented)
 export const parseTronJson: (text: string) => unknown;
@@ -837,6 +843,177 @@ export const PROVIDER_PIN_HEADER = "x-gateway-provider";
 // @public (undocumented)
 export const PROVIDERS_HEADER = "x-gateway-providers";
 
+// @public
+export const PUSH_AAD_PREFIX = "qntx-push/1/";
+
+// @public (undocumented)
+export const PUSH_ADDRESSES_MAX = 64;
+
+// @public (undocumented)
+export const PUSH_APNS_BODY_KEY = "QNTX_PUSH_BODY";
+
+// @public
+export const PUSH_APNS_TITLE_KEY = "QNTX_PUSH_TITLE";
+
+// @public
+export const PUSH_AUTH_SCHEME = "Bearer";
+
+// @public
+export const PUSH_BLOB_MAX = 2048;
+
+// @public
+export const PUSH_EVENT_DOMAIN = "qntx-push-event/1";
+
+// @public (undocumented)
+export const PUSH_EVENT_KINDS: readonly ["received", "sent", "failed", "reverted"];
+
+// @public (undocumented)
+export const PUSH_FAMILIES: readonly ["evm", "solana", "bitcoin", "tron"];
+
+// @public
+export const PUSH_ID_DOMAIN = "qntx-push-id/1";
+
+// @public
+export const PUSH_KEYS_MAX = 64;
+
+// @public (undocumented)
+export const PUSH_NETWORKS_MAX = 64;
+
+// @public
+export const PUSH_PLAINTEXT_MAX = 1024;
+
+// @public (undocumented)
+export const PUSH_PLATFORMS: readonly ["apns", "fcm"];
+
+// @public
+export const PUSH_TTL_MS: number;
+
+// @public
+export const PUSH_VERSION = 1;
+
+// @public
+export const pushAad: (eventId: string) => string;
+
+// @public (undocumented)
+export const pushCapabilities: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
+    platforms: z.ZodMiniArray<z.ZodMiniEnum<{
+        apns: "apns";
+        fcm: "fcm";
+    }>>;
+    families: z.ZodMiniArray<z.ZodMiniEnum<{
+        bitcoin: "bitcoin";
+        evm: "evm";
+        solana: "solana";
+        tron: "tron";
+    }>>;
+}, z.core.$strict>>;
+
+// @public
+export function pushEventInput(network: string, hash: string, kind: PushEventKind, generation: number): string;
+
+// @public (undocumented)
+export type PushEventKind = (typeof PUSH_EVENT_KINDS)[number];
+
+// @public (undocumented)
+export type PushFamily = (typeof PUSH_FAMILIES)[number];
+
+// @public
+export type PushMessage = {
+    readonly v: "1";
+    readonly e: string;
+    readonly c: string;
+};
+
+// @public
+export const pushPath: (template: string, family: PushFamily) => string;
+
+// @public
+export type PushPlaintext = {
+    readonly v: 1;
+    readonly k: PushEventKind;
+    readonly n: string;
+    readonly h: string;
+    readonly a: string;
+    readonly t: number;
+    readonly x?: PushTransfer;
+};
+
+// @public (undocumented)
+export type PushPlatform = (typeof PUSH_PLATFORMS)[number];
+
+// @public
+export const pushSecret: z.ZodMiniString<string>;
+
+// @public (undocumented)
+export const pushSubscribe: Endpoint<z.ZodMiniObject<{
+    platform: z.ZodMiniEnum<{
+        apns: "apns";
+        fcm: "fcm";
+    }>;
+    token: z.ZodMiniString<string>;
+    key: z.ZodMiniString<string>;
+    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
+    addresses: z.ZodMiniArray<z.ZodMiniString<string>>;
+}, z.core.$strict>, z.ZodMiniObject<{
+    id: z.ZodMiniString<string>;
+    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
+    expiresAt: z.ZodMiniInt;
+}, z.core.$strict>>;
+
+// @public (undocumented)
+export const pushSubscriptionId: RegExp;
+
+// @public (undocumented)
+export type PushSubscriptionRequest = z.infer<typeof pushSubscriptionRequest>;
+
+// @public (undocumented)
+export const pushSubscriptionRequest: z.ZodMiniObject<{
+    platform: z.ZodMiniEnum<{
+        apns: "apns";
+        fcm: "fcm";
+    }>;
+    token: z.ZodMiniString<string>;
+    key: z.ZodMiniString<string>;
+    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
+    addresses: z.ZodMiniArray<z.ZodMiniString<string>>;
+}, z.core.$strict>;
+
+// @public (undocumented)
+export type PushSubscriptionResponse = z.infer<typeof pushSubscriptionResponse>;
+
+// @public (undocumented)
+export const pushSubscriptionResponse: z.ZodMiniObject<{
+    id: z.ZodMiniString<string>;
+    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
+    expiresAt: z.ZodMiniInt;
+}, z.core.$strict>;
+
+// @public (undocumented)
+export type PushTransactionRequest = z.infer<typeof pushTransactionRequest>;
+
+// @public
+export const pushTransactionRequest: z.ZodMiniObject<{
+    network: z.ZodMiniString<string>;
+    hash: z.ZodMiniString<string>;
+}, z.core.$strict>;
+
+// @public
+export type PushTransfer = {
+    readonly q: string;
+    readonly d?: number;
+    readonly s?: string;
+    readonly c?: string;
+};
+
+// @public (undocumented)
+export const pushUnsubscribe: Endpoint<z.ZodMiniUndefined, z.ZodMiniUndefined>;
+
+// @public (undocumented)
+export const pushWatch: Endpoint<z.ZodMiniObject<{
+    network: z.ZodMiniString<string>;
+    hash: z.ZodMiniString<string>;
+}, z.core.$strict>, z.ZodMiniObject<{}, z.core.$strict>>;
+
 // @public (undocumented)
 export const rpc: Endpoint<z.ZodMiniUnion<readonly [z.ZodMiniObject<{
     jsonrpc: z.ZodMiniLiteral<"2.0">;
@@ -931,6 +1108,9 @@ export const rpcResponse: z.ZodMiniUnion<readonly [z.ZodMiniUnion<readonly [z.Zo
         data: z.ZodMiniOptional<z.ZodMiniUnknown>;
     }, z.core.$strip>;
 }, z.core.$strip>]>>]>;
+
+// @public
+export function serializePushPlaintext(p: PushPlaintext): string;
 
 // @public (undocumented)
 export const servedNetworks: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{

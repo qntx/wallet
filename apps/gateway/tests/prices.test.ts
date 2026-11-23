@@ -18,6 +18,7 @@ import {
 import type { PricesResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
+import type { RateLimiter } from "../src/limits.ts";
 import { GatewayHttpError } from "../src/middleware/errors.ts";
 import type { Forwarder, Meter } from "../src/providers/forward.ts";
 import { NATIVE_COINS, TOKEN_PLATFORMS, priceTarget } from "../src/providers/prices-assets.ts";
@@ -25,7 +26,6 @@ import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
 import { normalizeQuote, plainDecimal, quotePrices } from "../src/providers/prices.ts";
 import type { PriceDeps, PriceSource, RawQuote } from "../src/providers/prices.ts";
-import type { RateLimiter } from "../src/types.ts";
 import cgRateLimited from "./fixtures/prices/coingecko-rate-limited-429.json" with { type: "json" };
 import cgEur from "./fixtures/prices/coingecko-simple-price-eur.json" with { type: "json" };
 import cgTron from "./fixtures/prices/coingecko-simple-price-tron.json" with { type: "json" };

@@ -25,9 +25,11 @@ import { eligibilityRoutes } from "./routes/eligibility.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { historyRoutes } from "./routes/history.ts";
+import { hooksRoutes } from "./routes/hooks.ts";
 import { networksRoutes } from "./routes/networks.ts";
 import { nftRoutes } from "./routes/nfts.ts";
 import { pricesRoutes } from "./routes/prices.ts";
+import { pushRoutes } from "./routes/push.ts";
 import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
 import { rpcRoutes } from "./routes/rpc.ts";
@@ -80,8 +82,14 @@ export function createGateway(
   app.use(
     cors({
       origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
-      allowHeaders: ["content-type", "if-none-match", CLIENT_ID_HEADER, PROVIDER_PIN_HEADER],
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowHeaders: [
+        "authorization",
+        "content-type",
+        "if-none-match",
+        CLIENT_ID_HEADER,
+        PROVIDER_PIN_HEADER,
+      ],
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       exposeHeaders: [PROVIDERS_HEADER, "etag", "retry-after"],
       maxAge: 600,
     }),
@@ -111,6 +119,8 @@ export function createGateway(
     }),
   );
   app.route("/", riskRoutes(options.risk));
+  app.route("/", pushRoutes(options.push));
+  app.route("/", hooksRoutes(options.push, log));
   app.route(
     "/",
     tokensRoutes({ served, store: options.tokens, tokenNetworks: options.tokenNetworks }),

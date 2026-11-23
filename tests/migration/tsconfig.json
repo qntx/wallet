@@ -11,6 +11,7 @@
       "@qntx/wallet-chains": ["../../packages/wallet-chains/src/index.ts"],
       "@qntx/wallet-chains/*": ["../../packages/wallet-chains/src/*/index.ts"],
       "@qntx/wallet-engine": ["../../packages/wallet-engine/src/index.ts"],
+      "@qntx/wallet-engine/push": ["../../packages/wallet-engine/src/push/index.ts"],
       "@qntx/wallet-engine/connect": ["../../packages/wallet-engine/src/connect/index.ts"],
       "@qntx/wallet-engine/walletconnect": [
         "../../packages/wallet-engine/src/walletconnect/index.ts"

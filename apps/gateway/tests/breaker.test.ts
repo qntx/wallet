@@ -24,10 +24,11 @@ import {
   swapQuoteSolana,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import type { RateLimiter } from "../src/limits.ts";
 import { UPSTREAM_TIMEOUT_MS } from "../src/providers/forward.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
-import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
+import type { GatewayNetwork } from "../src/types.ts";
 import {
   SEPOLIA,
   SIGNET,
@@ -165,6 +166,11 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     ),
     upstreams: ["https://app.across.to"],
   },
+  "GET /v1/push": null,
+  "PUT /v1/push/:family/subscription": null,
+  "DELETE /v1/push/:family/subscription": null,
+  "POST /v1/push/:family/transactions": null,
+  "POST /hooks/alchemy": null,
   [`POST ${prices.path}`]: {
     request: [pricesPath("evm"), post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
     upstreams: [COINGECKO_API, DEFILLAMA_API],

@@ -5,9 +5,9 @@ import { PROVIDERS_HEADER, networkById } from "@qntx/wallet-engine/gateway/contr
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
+import type { WorkerEnv } from "../src/env.ts";
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
 import { gatewayFor } from "../src/worker.ts";
-import type { WorkerEnv } from "../src/worker.ts";
 import {
   allowAll,
   call,
@@ -61,6 +61,11 @@ const productionEnv = (): WorkerEnv => ({
     idFromName: (name: string) => name,
     get: () => ({ lease: async () => Promise.resolve({ ok: true as const, granted: 1000 }) }),
   } as unknown as WorkerEnv["PROVIDER_BUDGET"],
+  PUSH_LIMITER: allowAll,
+  PUSH: {
+    idFromName: (name: string) => name,
+    get: () => ({}),
+  } as unknown as WorkerEnv["PUSH"],
   CORS_ORIGINS: "",
   NETWORKS: "production",
   ZEROX_API_KEY: "z",

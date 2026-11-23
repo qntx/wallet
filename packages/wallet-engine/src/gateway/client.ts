@@ -1,6 +1,7 @@
 import {
   CLIENT_ID_HEADER,
   PRICE_FAMILIES,
+  PUSH_FAMILIES,
   approvals,
   bridgeQuote,
   esploraGet,
@@ -13,13 +14,14 @@ import {
   parseWith,
   priceFamily,
   prices,
+  pushSubscribe,
   rpc,
   swapQuote,
   swapQuoteSolana,
   tokenList,
   tron,
 } from "./contract/index.ts";
-import type { PriceFamily } from "./contract/index.ts";
+import type { PriceFamily, PushFamily } from "./contract/index.ts";
 import type { GatewayConfig, GatewayScope } from "./session.ts";
 
 export { gatewaySession } from "./session.ts";
@@ -34,10 +36,14 @@ const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
 const PRICES_PREFIX = `${routePrefix(prices.path)}/`;
 const APPROVALS_PREFIX = `${routePrefix(approvals.path)}/`;
+const PUSH_PREFIX = `${routePrefix(pushSubscribe.path)}/`;
 /** Every `/v1/nfts/*` route puts the network last, so one lookup covers all four. */
 const NFTS_PREFIXES: ReadonlyArray<string> = [nftItems, nftItem, nftCollection, nftFloor].map(
   (route) => `${routePrefix(route.path)}/`,
 );
+
+const isPushFamily = (value: string): value is PushFamily =>
+  (PUSH_FAMILIES as ReadonlyArray<string>).includes(value);
 
 /**
  * The contract's price families must be exactly the session's non-service scopes — each scope has
@@ -87,6 +93,10 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   const nftsPrefix = NFTS_PREFIXES.find((prefix) => pathname.startsWith(prefix));
   if (nftsPrefix !== undefined) {
     return networkById(pathname.slice(nftsPrefix.length))?.family ?? "service";
+  }
+  if (pathname.startsWith(PUSH_PREFIX)) {
+    const family = pathname.slice(PUSH_PREFIX.length).split("/")[0] ?? "";
+    return isPushFamily(family) ? family : "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

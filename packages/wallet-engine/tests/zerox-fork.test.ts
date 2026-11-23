@@ -19,8 +19,9 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 
 import { createGateway } from "../../../apps/gateway/src/app.ts";
+import type { Limiters } from "../../../apps/gateway/src/limits.ts";
 import type { RiskStore } from "../../../apps/gateway/src/risk/phishing.ts";
-import type { EdgeCache, Limiters } from "../../../apps/gateway/src/types.ts";
+import type { EdgeCache } from "../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { ZeroExSwapQuote } from "../src/swaps/index.ts";

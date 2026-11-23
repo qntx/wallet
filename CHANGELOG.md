@@ -949,6 +949,38 @@ Gateway (operators):
 - Gateway: the four NFT routes over the existing Alchemy account (NFT API v3 for EVM, DAS for
   Solana), metered per call, cached at the edge without client identity (items 60 s, item and
   collection 1 h, floor 10 min). Floors are served on Ethereum, Arbitrum and Base.
+- `@qntx/wallet-engine`: push notifications. `engine.notifications` (`NotificationsController`)
+  keeps one gateway subscription per opted-in wallet and served chain family:
+  `setToken(platform, token)` registers the APNs or FCM device token, `enable(walletId)` /
+  `disable(walletId)` opt a wallet in or out, and `receive(message)` opens a delivered message into
+  a display-only `NotificationEvent` (`received`, `sent`, `failed` or `reverted`) and reloads that
+  wallet's history and balances — the activity list changes only through that reload, never from
+  the push. Subscriptions follow the wallet tree, the enabled networks and token rotation, refresh
+  weekly, are deleted when a wallet is disabled or removed, and stay active while the vault is
+  locked. A submitted outgoing transaction of an opted-in wallet is registered so the gateway can
+  report its settlement or on-chain failure. New `EngineOptions.pushKeys` (`PushKeyStore`) hands the
+  per-subscription payload keys to the host for its notification extension.
+- `@qntx/wallet-engine/push`: `openPush(message, keys)`, the dependency-light opener (only
+  `@noble/ciphers` and `@scure/base`, no runtime globals) a notification extension or headless task
+  bundles to decrypt a delivery; `vectors/push.json` (generated with WebCrypto by
+  `scripts/vectors/push.ts`) fixes the format for native implementations.
+- `@qntx/wallet-engine/gateway/contract`: the push wire format (`PushMessage`, `PushPlaintext`,
+  `parsePushMessage`, `parsePushPlaintext`, `serializePushPlaintext`, `pushEventInput`, `pushAad`,
+  the `PUSH_*` constants) and routes `GET /v1/push`, `PUT`/`DELETE /v1/push/:family/subscription`,
+  `POST /v1/push/:family/transactions`; `HttpMethod` gains `PUT`. Push routes carry the family's
+  client id (`gatewayScope`).
+- `apps/gateway`: push notifications. One SQLite `PushObject` Durable Object per chain family holds
+  subscriptions (the device token and payload key sealed under `PUSH_SEAL_KEY`, ids derived one-way
+  from the subscription secret, 30-day retention), a dedup/re-org state machine that notifies only
+  on receipt evidence and follows a vanished transaction with `reverted`, and a delivery queue with
+  retries and a one-hour expiry. APNs (ES256 provider token) and FCM HTTP v1 (service-account
+  OAuth) senders deliver only an event id and an AES-256-GCM blob, with localisable fallback text.
+  EVM addresses are watched through Alchemy Address Activity webhooks (`POST /hooks/alchemy`,
+  HMAC-verified, address set reconciled through the webhook API) and verified by receipt through
+  the shared forwarder. Configured by the optional secrets `PUSH_SEAL_KEY`, `APNS_KEY`,
+  `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`, `FCM_SERVICE_ACCOUNT`, `ALCHEMY_NOTIFY_TOKEN` and
+  `ALCHEMY_WEBHOOKS`; without them `GET /v1/push` advertises nothing. Solana, Bitcoin and TRON
+  answer `unsupported`.
 
 ### Changed
 

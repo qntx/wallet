@@ -271,4 +271,12 @@ export type {
 export { HistoryController } from "./history/controller.ts";
 export type { GroupHistory, HistoryControllerOptions, HistoryState } from "./history/controller.ts";
 export type { HistoryGroup } from "./history/local.ts";
+export { NotificationsController } from "./notifications/controller.ts";
+export type {
+  NotificationEvent,
+  NotificationsControllerOptions,
+  NotificationsState,
+  NotificationStatus,
+  PushKeyStore,
+} from "./notifications/controller.ts";
 export type { HistoryChange, HistoryEntry, HistoryFlag, HistoryStatus } from "./history/types.ts";

@@ -3,8 +3,8 @@ import type { MiddlewareHandler } from "hono";
 import { health } from "@qntx/wallet-engine/gateway/contract";
 
 import type { Account } from "../config/accounts.ts";
+import type { Limiters, RateLimiter } from "../limits.ts";
 import type { Meter } from "../providers/forward.ts";
-import type { Limiters, RateLimiter } from "../types.ts";
 import type { ClientIdVariables } from "./client-id.ts";
 import { GatewayHttpError } from "./errors.ts";
 

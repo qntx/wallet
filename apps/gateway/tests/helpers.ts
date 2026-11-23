@@ -7,14 +7,13 @@ import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { Account } from "../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
+import type { Limiters, RateLimiter } from "../src/limits.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { TokenListStore } from "../src/tokens/build.ts";
 import type {
   GatewayNetwork,
-  Limiters,
   EdgeCache,
   ProviderBudget,
-  RateLimiter,
   ResolvedProvider,
   UpstreamAuthId,
 } from "../src/types.ts";
@@ -95,7 +94,7 @@ export type UpstreamCall = {
   readonly url: string;
   readonly method: string;
   readonly body: string;
-  readonly headers: HeadersInit | undefined;
+  readonly headers: RequestInit["headers"];
 };
 export type Upstream = (call: UpstreamCall, signal: AbortSignal) => Response | Promise<Response>;
 
@@ -264,6 +263,7 @@ export function gateway(options: {
   readonly log?: (line: string) => void;
   readonly prices?: Parameters<typeof createGateway>[0]["prices"];
   readonly nfts?: Parameters<typeof createGateway>[0]["nfts"];
+  readonly push?: Parameters<typeof createGateway>[0]["push"];
   readonly now?: () => number;
 }): ReturnType<typeof createGateway> {
   return createGateway({
@@ -289,6 +289,7 @@ export function gateway(options: {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
+    ...(options.push === undefined ? {} : { push: options.push }),
     log: options.log ?? (() => undefined),
   });
 }

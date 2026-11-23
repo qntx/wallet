@@ -209,6 +209,49 @@ The list is derived data: entries are normalized and truncated to 8-byte hashes,
 lists are not redistributed. Attribution: phishing data from MetaMask eth-phishing-detect and
 polkadot-js/phishing.
 
+## Push notifications
+
+The gateway delivers transaction-state pushes (`received`, `sent`, `failed`, `reverted`) built so
+the push providers see nothing about the user: the APNs/FCM payload is only an opaque event id and
+an AES-256-GCM blob the wallet opens with a key the gateway never stores in clear. What the
+providers do see — a device token inside their own protocol envelope — is unavoidable; everything
+else (address, hash, network, amount, symbol) stays out of provider requests and log lines.
+
+Routes: `GET /v1/push` (capabilities), `PUT|DELETE /v1/push/:family/subscription` (Bearer is the
+32-byte push secret, base64url — the subscription id is its derived hash), and
+`POST /v1/push/:family/transactions` (register an outgoing hash to watch). The Alchemy watcher
+calls `POST /hooks/alchemy` — outside `/v1`, so no client id or client limiter; the
+`X-Alchemy-Signature` HMAC over the raw body authenticates it.
+
+Storage lives in a SQLite Durable Object per family (`PUSH`): sealed subscription targets (device
+token + payload key under `PUSH_SEAL_KEY`), watched (network, address) pairs, transaction records
+and an outbox. Subscriptions expire after `PUSH_TTL_MS` of no renewal, records after 24 h, outbox
+deliveries after 1 h; the alarm — re-derived from the store after every mutation — sweeps
+expirations, checks pending records against receipts in one JSON-RPC batch per network (billed to
+the provider account budget, never a client share), delivers due outbox rows, and reconciles the
+watcher's address set against the `synced` table. Only EVM is watched (Alchemy Address Activity
+webhooks); Solana, Bitcoin and TRON answer `404 unsupported`.
+
+Environment (all optional — an incomplete set disables push rather than failing the deploy):
+`PUSH_SEAL_KEY` (32 bytes base64); `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` (the
+`.p8` provider key, staging builds target `api.sandbox.push.apple.com`);
+`FCM_SERVICE_ACCOUNT` (the service-account JSON); `ALCHEMY_NOTIFY_TOKEN` and `ALCHEMY_WEBHOOKS`
+(`{"<caip2>": {"id": "<webhook id>", "signingKey": "<key>"}}`, one entry per watched EVM network —
+both vars must be set together).
+
+Operations:
+
+- Create one Alchemy Address Activity webhook per watched EVM network pointed at
+  `https://<host>/hooks/alchemy`, then set `ALCHEMY_WEBHOOKS` to each network's webhook id and
+  signing key and `ALCHEMY_NOTIFY_TOKEN` to the dashboard auth token. The object keeps the
+  webhook's address list in sync — it PATCHes `update-webhook-addresses` in ≤ 500-address batches
+  as subscriptions change.
+- APNs needs the deployed Worker's HTTP/2 egress: local `wrangler dev` cannot reach Apple
+  (cloudflare/workerd#4841), so end-to-end APNs verification happens post-deploy — e.g. subscribe
+  an all-zero device token and expect a `BadDeviceToken` in Workers Logs.
+- Adding the `PushObject` migration makes a deploy non-rollbackable — check `deploy-check` output
+  before shipping it.
+
 ## Observability
 
 All log lines are JSON. Besides the per-request line, the forwarder logs

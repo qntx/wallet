@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import { localBudget } from "../src/budget/local.ts";
 import type { Account } from "../src/config/accounts.ts";
-import type { RateLimiter } from "../src/types.ts";
+import type { RateLimiter } from "../src/limits.ts";
 import type { UpstreamCall } from "./helpers.ts";
 import { TEST_ACCOUNTS, call, gateway, post } from "./helpers.ts";
 
