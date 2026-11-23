@@ -4,6 +4,7 @@ import { gatewayFetch, gatewayScope, gatewaySession } from "../src/gateway/clien
 import {
   CLIENT_ID_HEADER,
   accepts,
+  approvalsPath,
   bridgeQuote,
   clientId,
   esploraBasePath,
@@ -426,6 +427,8 @@ describe("gatewayScope", () => {
     ["/v1/rpc/nope:0", "service"],
     [historyPath(SEPOLIA), "evm"],
     ["/v1/history/nope:0", "service"],
+    [approvalsPath(SEPOLIA), "evm"],
+    ["/v1/approvals/nope:0", "service"],
     [tokenListPath(SEPOLIA), "evm"],
     [tokenListPath(DEVNET), "solana"],
     [tokenListPath(SIGNET), "bitcoin"],

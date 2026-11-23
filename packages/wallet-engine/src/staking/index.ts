@@ -15,6 +15,9 @@ export type StakePosition = {
    * "active" account can still be partially activating and a "deactivating" one partly liquid.
    */
   readonly state: "initialized" | "activating" | "active" | "deactivating" | "inactive";
+  /** Stake/withdraw authorities — absent when the account's parse carried none. */
+  readonly staker?: string;
+  readonly withdrawer?: string;
   readonly validator?: string;
   readonly activationEpoch?: bigint;
   readonly deactivationEpoch?: bigint;
@@ -94,6 +97,8 @@ export const stakePositions = async (
         address: String(stakeAddress),
         seed,
         lamports: big(obj(value)?.["lamports"]),
+        ...(parsed.staker === undefined ? {} : { staker: parsed.staker }),
+        ...(parsed.withdrawer === undefined ? {} : { withdrawer: parsed.withdrawer }),
       };
       if (delegation === undefined) {
         positions.push({ ...base, state: "initialized" });

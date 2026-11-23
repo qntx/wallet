@@ -69,9 +69,9 @@ import {
   assessSimulation,
   impersonatesBuiltIn,
   impersonatesTronToken,
+  knownAddresses,
   mergeRisk,
   originRisk,
-  recipientOf,
   verifyRisk,
 } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
@@ -1881,20 +1881,11 @@ export class RequestController extends Controller<RequestControllerState> {
    * sends (Spark payments are not tracked).
    */
   private knownAddresses(family: string): ReadonlyArray<string> {
-    const contacts = Object.values(this.options.addressBook.getState().entries)
-      .filter((e) => e.family === family)
-      .map((e) => e.address);
-    if (family === "spark") {
-      return contacts;
-    }
-    const paid = Object.values(this.options.transactions.getState().txs)
-      .filter(
-        (tx) =>
-          tx.family === family &&
-          (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
-      )
-      .flatMap((tx) => tx.intent?.outflows.map(recipientOf) ?? []);
-    return [...contacts, ...paid];
+    return knownAddresses(
+      Object.values(this.options.addressBook.getState().entries),
+      family === "spark" ? [] : Object.values(this.options.transactions.getState().txs),
+      family,
+    );
   }
 
   /**

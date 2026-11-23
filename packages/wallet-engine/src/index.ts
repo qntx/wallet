@@ -45,6 +45,19 @@ export { AssetsController } from "./assets/controller.ts";
 export type { AccountBalances, AssetsControllerState, TokenBalance } from "./assets/controller.ts";
 export type { SpamReason } from "./assets/spam.ts";
 export type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./assets/bitcoin.ts";
+export { APPROVALS_POLL_MS, ApprovalsController } from "./approvals/controller.ts";
+export type { ApprovalsControllerOptions } from "./approvals/controller.ts";
+export type {
+  ApprovalKind,
+  ApprovalRisk,
+  ApprovalRow,
+  ApprovalSource,
+  ApprovalSourceState,
+  ApprovalsState,
+  ApprovalsView,
+  SessionLink,
+  TokenRef,
+} from "./approvals/types.ts";
 export { PRICES_POLL_MS, PricesController } from "./prices/controller.ts";
 export type {
   PriceQuoteState,

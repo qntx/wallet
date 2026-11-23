@@ -351,6 +351,33 @@ export const comparable = (family: string, address: string): string =>
  * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
  * the cash-token contract all of them share — so the account or payee is the recipient compared.
  */
+/**
+ * Addresses the wallet already knows for a family: contacts, plus recipients of tracked chain sends
+ * (Spark payments are not tracked — for spark the contacts list is the whole answer).
+ */
+export const knownAddresses = (
+  entries: ReadonlyArray<{ readonly family: string; readonly address: string }>,
+  txs: ReadonlyArray<{
+    readonly family: string;
+    readonly state: string;
+    readonly intent?: DisplayIntent | undefined;
+  }>,
+  family: string,
+): ReadonlyArray<string> => {
+  const contacts = entries.filter((e) => e.family === family).map((e) => e.address);
+  if (family === "spark") {
+    return contacts;
+  }
+  const paid = txs
+    .filter(
+      (tx) =>
+        tx.family === family &&
+        (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
+    )
+    .flatMap((tx) => tx.intent?.outflows.map(recipientOf) ?? []);
+  return [...contacts, ...paid];
+};
+
 export const recipientOf = (flow: Pick<AssetFlow, "to" | "fiat24">): string =>
   flow.fiat24 === undefined
     ? flow.to

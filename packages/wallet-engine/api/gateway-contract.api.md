@@ -1371,6 +1371,36 @@ export const TRON_NODE_PATHS: {
             }, z.core.$loose>>;
             delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            owner_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>;
+            witness_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>;
+            active_permission: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>>;
         }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
     };
     readonly "/wallet/getavailableunfreezecount": {
@@ -1613,6 +1643,36 @@ export const tronAccount: z.ZodMiniObject<{
     }, z.core.$loose>>;
     delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
     acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+    owner_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>;
+    witness_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>;
+    active_permission: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>>;
 }, z.core.$loose>;
 
 // @public (undocumented)
@@ -1659,6 +1719,36 @@ export const tronAccountResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
     }, z.core.$loose>>;
     delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
     acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+    owner_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>;
+    witness_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>;
+    active_permission: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+        id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+        threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+            weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+        }, z.core.$loose>>>;
+    }, z.core.$loose>>>;
 }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
 
 // @public (undocumented)

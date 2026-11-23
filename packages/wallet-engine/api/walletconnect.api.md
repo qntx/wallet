@@ -27,6 +27,7 @@ import { NetworkMeta } from '@qntx/wallet-chains/networks';
 import { NostrKeyRef } from '@qntx/wallet';
 import { NostrSigner } from '@qntx/nostr';
 import { PublicClient } from 'viem';
+import { SessionInfo } from '@qntx/wallet/protocol';
 import { SignRequest } from '@qntx/wallet-chains';
 import { SparkAccountRef } from '@qntx/wallet/protocol';
 import { SparkApproveIntent } from '@qntx/wallet/protocol';
@@ -262,6 +263,157 @@ type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 type AppOrigin = {
     readonly kind: "app";
     readonly id: string;
+};
+
+// @public
+type ApprovalKind = "erc20" | "permit2" | "operator" | "nft" | "delegation" | "spl-delegate" | "spl-close-authority" | "spl-mint-authority" | "stake-authority" | "trc20" | "tron-permission";
+
+// @public
+type ApprovalRisk =
+/** The grantee may take the full balance, now and as it grows. */
+"unlimited" |
+/** The spender key is an externally owned account, not a contract. */
+"eoa-spender" |
+/** The spender address holds no code and has never transacted — a dead or unborn grantee. */
+"spender-no-code" |
+/** The grantee shares its first and last characters with a known address — a lookalike. */
+"address-poisoning" |
+/** The account's 7702 delegation points at a contract that is not this wallet's delegator. */
+"foreign-delegation";
+
+// @public
+type ApprovalRow = RowBase & ({
+    readonly kind: "erc20" | "trc20";
+    readonly token: TokenRef;
+    readonly spender: string;
+    readonly amount: string;
+    readonly unlimited: boolean;
+    readonly exposure?: string;
+} | {
+    readonly kind: "permit2";
+    readonly token: TokenRef;
+    readonly spender: string;
+    readonly amount: string;
+    readonly expiration: number;
+    readonly unlimited: boolean;
+    readonly exposure?: string;
+} | {
+    readonly kind: "operator";
+    readonly contract: string;
+    readonly operator: string;
+} | {
+    readonly kind: "nft";
+    readonly contract: string;
+    readonly tokenId: string;
+    readonly spender: string;
+} | {
+    readonly kind: "delegation";
+    readonly address: string;
+    readonly ours: boolean;
+} | {
+    readonly kind: "spl-delegate";
+    readonly tokenAccount: string;
+    readonly token: TokenRef;
+    readonly delegate: string;
+    readonly amount: string;
+    readonly exposure?: string;
+    readonly program: "token" | "token-2022";
+} | {
+    readonly kind: "spl-close-authority";
+    readonly tokenAccount: string;
+    readonly mint: string;
+    readonly authority: string;
+} | {
+    readonly kind: "spl-mint-authority";
+    readonly mint: string;
+    readonly role: "freeze" | "permanent-delegate";
+    readonly authority: string;
+} | {
+    readonly kind: "stake-authority";
+    readonly stakeAccount: string;
+    readonly role: "staker" | "withdrawer";
+    readonly authority: string;
+} | {
+    readonly kind: "tron-permission";
+    readonly permission: "owner" | "active" | "witness";
+    readonly name: string;
+    readonly threshold: string;
+    readonly keys: ReadonlyArray<{
+        readonly address: string;
+        readonly weight: string;
+    }>;
+});
+
+// @public (undocumented)
+class ApprovalsController extends Controller<ApprovalsState> {
+    constructor(options: ApprovalsControllerOptions);
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    load(account: AccountRef, network: string): Promise<string>;
+    // (undocumented)
+    lock(): void;
+    refresh(key: string): Promise<void>;
+    setVisible(visible: boolean): void;
+    unload(key: string): void;
+}
+
+// @public (undocumented)
+type ApprovalsControllerOptions = {
+    readonly networks: Pick<NetworkController, "client" | "independentClient" | "solanaRpc" | "independentSolanaRpc" | "tronApi" | "independentTronApi" | "gatewayFirst">;
+    readonly transactions: Pick<TransactionController, "getState" | "store">;
+    readonly gateway: GatewayConfig | undefined;
+    readonly fetch: typeof globalThis.fetch;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly setTimer: SetTimer;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+    readonly addressOf: (account: AccountRef, network: string) => Promise<string>;
+    readonly known: (family: "evm" | "solana" | "tron") => ReadonlyArray<string>;
+    readonly tokenMetadata: (network: string, address: string) => Promise<{
+        readonly symbol: string;
+        readonly decimals: number;
+    }>;
+    readonly sessions: (owner: string) => Promise<ReadonlyArray<SessionLink>>;
+};
+
+// @public
+type ApprovalSource = "gateway" | "local" | "chain";
+
+// @public
+type ApprovalSourceState = {
+    readonly source: "gateway" | "local";
+    readonly status: "ok" | "truncated" | "failed" | "unsupported" | "unavailable";
+    readonly at?: number;
+    readonly toBlock?: string;
+};
+
+// @public (undocumented)
+type ApprovalsState = {
+    readonly views: Readonly<Record<string, ApprovalsView>>;
+};
+
+// @public
+type ApprovalsView = {
+    readonly key: string;
+    readonly network: string;
+    readonly owner: string;
+    readonly status: "loading" | "ready" | "failed";
+    readonly at?: {
+        readonly height: string;
+        readonly time?: number;
+    };
+    readonly rows: ReadonlyArray<ApprovalRow>;
+    readonly exhaustive: ReadonlyArray<ApprovalKind>;
+    readonly sources: ReadonlyArray<ApprovalSourceState>;
+    readonly dropped: number;
+    readonly disputed: number;
+    readonly unread: number;
+    readonly unverified: number;
+    readonly sessions: ReadonlyArray<SessionLink>;
+    readonly updatedAt?: number;
+    readonly error?: string;
 };
 
 // @public (undocumented)
@@ -1854,6 +2006,16 @@ type RiskFinding = {
 };
 
 // @public (undocumented)
+type RowBase = {
+    readonly id: string;
+    readonly network: string;
+    readonly risk: ReadonlyArray<ApprovalRisk>;
+    readonly verified: boolean;
+    readonly sources: ReadonlyArray<ApprovalSource>;
+    readonly revoke: "single" | "batchable" | "none";
+};
+
+// @public (undocumented)
 type SendParams = {
     readonly account: AccountRef;
     readonly network: string;
@@ -1872,6 +2034,9 @@ type SessionAccounts = {
     readonly group: AccountGroup;
     readonly addresses: ReadonlyArray<string>;
 };
+
+// @public
+type SessionLink = Pick<SessionInfo, "address" | "scheme" | "name" | "validUntil" | "supported">;
 
 // @public
 type SetTimer = (ms: number, fn: () => unknown) => () => void;
@@ -2301,6 +2466,8 @@ type StakePosition = {
     readonly seed: string;
     readonly lamports: bigint;
     readonly state: "initialized" | "activating" | "active" | "deactivating" | "inactive";
+    readonly staker?: string;
+    readonly withdrawer?: string;
     readonly validator?: string;
     readonly activationEpoch?: bigint;
     readonly deactivationEpoch?: bigint;
@@ -2328,6 +2495,13 @@ type TokenBalance = {
     readonly verified: boolean;
     readonly spam: ReadonlyArray<SpamReason>;
     readonly hidden: boolean;
+};
+
+// @public
+type TokenRef = {
+    readonly address: string;
+    readonly symbol?: string;
+    readonly decimals?: number;
 };
 
 // @public
@@ -2403,6 +2577,7 @@ type TrackedTransaction = {
 // @public (undocumented)
 class TransactionController extends Controller<TransactionControllerState> {
     constructor(options: Options_2);
+    addressOf(account: AccountRef, network: string): Promise<string>;
     batchById(origin: string, id: string): BatchRecord | undefined;
     bindDappSolana(network: string, messages: ReadonlyArray<Uint8Array>): Promise<ReadonlyArray<RequestCheckCode>>;
     delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
@@ -2591,6 +2766,36 @@ const TRON_NODE_PATHS: {
             }, z.core.$loose>>;
             delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
             acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
+            owner_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>;
+            witness_permission: z.ZodMiniOptional<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>;
+            active_permission: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
+                id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                permission_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                threshold: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                keys: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
+                    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
+                    weight: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
+                }, z.core.$loose>>>;
+            }, z.core.$loose>>>;
         }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
     };
     readonly "/wallet/getavailableunfreezecount": {
@@ -3079,6 +3284,9 @@ type WalletEngine = {
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
+    readonly approvals: HostController<ApprovalsController, "load" | "unload" | "refresh" | "setVisible"> & {
+        readonly exposure: (key: string) => Valuation;
+    };
     readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "previewAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "setTronNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy" | "establishWalletConnect" | "authorize" | "touch">;
     readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
     readonly nip07: Pick<Nip07Handler, "handle">;

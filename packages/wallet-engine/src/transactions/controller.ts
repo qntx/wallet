@@ -984,6 +984,26 @@ export class TransactionController extends Controller<TransactionControllerState
     );
   }
 
+  /**
+   * The address `account` resolves to on `network` — HD through the chains proxy, imported from the
+   * vault's key list; the ref's family must match the network's.
+   */
+  async addressOf(account: AccountRef, network: string): Promise<string> {
+    const { family } = this.options.networks.info(network);
+    const template =
+      family === "evm"
+        ? ("evm.bip44" as const)
+        : family === "solana"
+          ? ("solana.bip44-change" as const)
+          : family === "tron"
+            ? ("tron.bip44" as const)
+            : undefined;
+    if (template === undefined) {
+      throw new Error(`no account template for the ${family} family`);
+    }
+    return accountAddressOf(this.routeCtx(), account, template, network);
+  }
+
   private track(id: string, hash: string): void {
     if (this.locked) {
       this.options.logger.warn(

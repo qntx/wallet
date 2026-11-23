@@ -1,5 +1,6 @@
 import {
   CLIENT_ID_HEADER,
+  approvals,
   bridgeQuote,
   esploraGet,
   history,
@@ -22,6 +23,7 @@ const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
+const APPROVALS_PREFIX = `${routePrefix(approvals.path)}/`;
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -47,6 +49,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(TOKENS_PREFIX)) {
     return networkById(pathname.slice(TOKENS_PREFIX.length))?.family ?? "service";
+  }
+  if (pathname.startsWith(APPROVALS_PREFIX)) {
+    return networkById(pathname.slice(APPROVALS_PREFIX.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";
