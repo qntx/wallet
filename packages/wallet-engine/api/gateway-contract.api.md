@@ -727,6 +727,12 @@ export const PUSH_AAD_PREFIX = "qntx-push/1/";
 // @public (undocumented)
 export const PUSH_ADDRESSES_MAX = 64;
 
+// @public (undocumented)
+export const PUSH_APNS_BODY_KEY = "QNTX_PUSH_BODY";
+
+// @public
+export const PUSH_APNS_TITLE_KEY = "QNTX_PUSH_TITLE";
+
 // @public
 export const PUSH_AUTH_SCHEME = "Bearer";
 

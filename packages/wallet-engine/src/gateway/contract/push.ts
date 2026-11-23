@@ -17,6 +17,13 @@ export const PUSH_TTL_MS = 30 * 86_400_000;
 export const PUSH_AUTH_SCHEME = "Bearer";
 
 /**
+ * `title-loc-key` / `loc-key` values the gateway puts in the APNs alert: hosts ship these keys in
+ * `Localizable.strings` as the fallback copy for a notification the extension cannot open.
+ */
+export const PUSH_APNS_TITLE_KEY = "QNTX_PUSH_TITLE";
+export const PUSH_APNS_BODY_KEY = "QNTX_PUSH_BODY";
+
+/**
  * 32 bytes as unpadded base64url: 42 body characters, then a final character whose low two bits are
  * zero — 43 arbitrary characters would decode to more than 32 bytes.
  */
