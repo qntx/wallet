@@ -936,6 +936,7 @@ export async function prepareExit(
 | gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                         | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                           |
 | `ChainErrorCode` `fee-payer-mismatch`                                                                                  | nothing — any required signer may sign                                               |
 | `SafeTransaction.gasToken`, `refundReceiver`                                                                           | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                           |
+| `CloudStore.available()`                                                                                               | `CloudStoreError` from `list()`                                                      |
 
 ## 14. New error codes
 
@@ -944,6 +945,7 @@ export async function prepareExit(
 | `WalletError.code`               | `verification-unavailable`                                                                             | React Native: no factor can verify (no lock screen). No prompt was shown.         |
 | `WalletError.code`               | `blind-signing-disabled`                                                                               | A blind request while the vault setting is off. No prompt was shown.              |
 | `BackupControllerError.category` | `weak-password`                                                                                        | The backup password is too easy to guess.                                         |
+| `BackupControllerError.category` | `auth-required`, `quota`                                                                               | The cloud needs an interactive consent; the cloud storage is full (section 40).   |
 | `SparkControllerError.category`  | `unknown`                                                                                              | The payment may have committed; it settles under `transferId` / `inputOutputIds`. |
 | engine request errors            | `AcknowledgementRequiredError`, `BlindSigningDisabledError` (now on every blind request, at `approve`) | See sections 4 and 5.                                                             |
 | `RiskFinding.code`               | `bitcoin-frozen-input` (danger)                                                                        | A dApp PSBT spends a user-frozen outpoint.                                        |
@@ -2017,3 +2019,147 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Cloud backup transports and versioned backup files
+
+Compiled snippet: `tests/migration/cloud-store.ts`. Changes affect `@qntx/wallet-engine` hosts that
+inject a `CloudStore`, and React Native hosts that turn cloud backup on. Nothing changes in the
+vault, the kernel protocol or the envelope format.
+
+1. **`CloudStore` has no `available()`; failures are typed.** Throw `CloudStoreError` with
+   `unavailable` (offline, rate-limited, account signed out or disabled), `auth-required` (an
+   interactive consent is needed), `quota` (cloud storage full), `invalid` (a name or text outside
+   the port rules) or `failed`. Validate with `checkCloudName` / `checkCloudText`. The semantics are
+   written on the `CloudStore` type; a host implementation should pass the same conformance suite
+   as the built-in ones (`packages/wallet-engine/tests/cloud/conformance.ts`).
+2. **Use the official transports on React Native.** `@qntx/wallet-native/cloud` provides
+   `createICloudStore({ container })` (CloudKit private database) and `createGoogleDriveStore()`
+   (Drive `appDataFolder`, Google Identity `AuthorizationClient`). Both need owner setup: the
+   iCloud container entitlement and a CloudKit schema deployed to production; a Google Cloud
+   project with the Drive API, a consent screen with the `drive.appdata` scope and an Android
+   OAuth client per signing certificate (see the package README). `@qntx/wallet-engine` is a peer
+   dependency of this entry. Re-run `engine.backup.sync()` from `onAccountChange` on iOS. On the
+   Web, feed a Google Identity Services token to `createGoogleDriveCloudStore`.
+3. **New backup states.** `BackupErrorCategory` adds `auth-required` and `quota`, both with
+   status `error`: for `auth-required` call `store.authorize()` from a user action and sync again;
+   for `quota` ask the user to free cloud storage.
+4. **Backup files are versioned.** Each upload writes `qntx-wallet-backup-<id>-<sha256>.json`;
+   `qntx-wallet-backup-<id>.json` files are ignored and the engine's backup record is rebuilt on
+   the first sync. `engine.backup.list()` returns every version with its backup `id`: several
+   versions of one id mean two devices updated the backup at the same time. `conflict` now means
+   "another version holds wallets this device lacks" — this device's own wallets are still
+   uploaded. Resolve it by restoring each such version into the vault (`backup.restore`), which
+   merges it; the device then adopts or supersedes the merged version.
+
+[`tests/migration/cloud-store.ts`](tests/migration/cloud-store.ts):
+
+```ts
+import type { CloudStore, WalletEngine } from "@qntx/wallet-engine";
+import {
+  checkCloudName,
+  checkCloudText,
+  CloudStoreError,
+  createGoogleDriveCloudStore,
+} from "@qntx/wallet-engine";
+import { createGoogleDriveStore, createICloudStore } from "@qntx/wallet-native/cloud";
+
+/**
+ * A host-written `CloudStore` drops `available()` and throws `CloudStoreError` — every
+ * implementation must also pass the conformance suite (name and text rules, atomic writes,
+ * delete-missing succeeds).
+ */
+export function hostStore(files: Map<string, string>, online: () => boolean): CloudStore {
+  const reachable = (): void => {
+    if (!online()) {
+      throw new CloudStoreError("unavailable", "offline");
+    }
+  };
+  return {
+    // @ts-expect-error -- CloudStore no longer has available()
+    available: async () => online(),
+    list: async () => {
+      reachable();
+      return [...files.keys()];
+    },
+    read: async (name) => {
+      checkCloudName(name);
+      reachable();
+      return files.get(name);
+    },
+    write: async (name, text) => {
+      checkCloudName(name);
+      checkCloudText(text);
+      reachable();
+      files.set(name, text);
+    },
+    delete: async (name) => {
+      checkCloudName(name);
+      reachable();
+      files.delete(name);
+    },
+  };
+}
+
+/** React Native: the official transports. iOS takes the CloudKit container id from owner setup. */
+export function nativeStore(platform: "ios" | "android"): CloudStore {
+  return platform === "ios"
+    ? createICloudStore({ container: "iCloud.org.example.wallet" })
+    : createGoogleDriveStore();
+}
+
+/** ICloud account switches re-run the sync so the new account gets a copy. */
+export function watchICloudAccount(engine: WalletEngine): () => void {
+  const store = createICloudStore({ container: "iCloud.org.example.wallet" });
+  return store.onAccountChange(() => {
+    void engine.backup.sync();
+  });
+}
+
+/** `auth-required` (Android/Web): run the consent from a user action, then sync again. */
+export async function reauthorizeDrive(engine: WalletEngine): Promise<void> {
+  const store = createGoogleDriveStore();
+  const { status, error } = engine.backup.getState();
+  if (status === "error" && error === "auth-required") {
+    await store.authorize();
+    await engine.backup.sync();
+  }
+}
+
+/** Web: Google Drive appDataFolder with a Google Identity Services token client. */
+export function webDriveStore(requestToken: () => Promise<string>): CloudStore {
+  let cached: string | undefined;
+  return createGoogleDriveCloudStore({
+    fetch: async (input, init) => globalThis.fetch(input, init),
+    setTimer: (ms, fn) => {
+      const id = setTimeout(fn, ms);
+      return () => {
+        clearTimeout(id);
+      };
+    },
+    token: async () => {
+      cached ??= await requestToken();
+      return cached;
+    },
+    invalidateToken: async (token) => {
+      if (cached === token) {
+        cached = undefined;
+      }
+      await Promise.resolve();
+    },
+  });
+}
+
+/**
+ * `list()` returns every version, grouped here by backup id: several versions of one id mean two
+ * devices updated it concurrently — restore each into the same vault to merge them.
+ */
+export async function backupsById(
+  engine: WalletEngine,
+): Promise<ReadonlyMap<string, ReadonlyArray<string>>> {
+  const byId = new Map<string, string[]>();
+  for (const { id, name } of await engine.backup.list()) {
+    byId.set(id, [...(byId.get(id) ?? []), name]);
+  }
+  return byId;
+}
+```
