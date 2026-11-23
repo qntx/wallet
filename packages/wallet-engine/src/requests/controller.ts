@@ -105,6 +105,7 @@ import type {
 
 export {
   InvalidTokenError,
+  NonceConflictError,
   OriginBusyError,
   RequestEndedError,
   SignInOriginError,
@@ -150,6 +151,13 @@ export type EvmSignInput = {
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
+  /**
+   * App requests with an `evm.transaction` only: the nonce the transaction must carry. `prepare`
+   * refuses with a `NonceConflictError` before anything is shown when the sender's next free nonce
+   * differs, and rejects with a plain validation error when `nonce` is set on any other request
+   * kind, on a request with a dApp or no app origin, or is not a safe non-negative integer.
+   */
+  readonly nonce?: number;
 };
 
 /**
@@ -894,6 +902,20 @@ export class RequestController extends Controller<RequestControllerState> {
     if (app !== undefined && origin !== undefined) {
       throw new Error("an app request cannot carry a dApp origin");
     }
+    /* A pinned nonce only makes sense on an app's transaction: it pins what its signer must
+       broadcast — refusing before any claim keeps a dApp or internal caller from pinning one. */
+    if ("nonce" in input && input.nonce !== undefined) {
+      if (!Number.isSafeInteger(input.nonce) || input.nonce < 0) {
+        throw new Error("a request nonce is a safe non-negative integer");
+      }
+      if (
+        app === undefined ||
+        input.method !== "evm-sign" ||
+        input.request.kind !== "evm.transaction"
+      ) {
+        throw new Error("a pinned nonce is only valid on an app request for an EVM transaction");
+      }
+    }
     const originStatus =
       origin === undefined ? "clear" : this.options.phishing.check(dappUrl(origin));
     if (originStatus === "blocked") {
@@ -916,7 +938,7 @@ export class RequestController extends Controller<RequestControllerState> {
     this.preparing.set(id, preparing);
     let built: Built;
     try {
-      built = await this.build(input, id);
+      built = await this.build(input, id, app);
     } catch (error) {
       this.unclaim(id);
       throw error;
@@ -929,6 +951,7 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new RequestEndedError(
         "invalidated",
         "the request was invalidated while it was being prepared",
+        false,
       );
     }
     const { checks } = built;
@@ -1054,7 +1077,7 @@ export class RequestController extends Controller<RequestControllerState> {
     }
   }
 
-  private async build(input: RequestInput, id: string): Promise<Built> {
+  private async build(input: RequestInput, id: string, app?: AppOrigin): Promise<Built> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
         input.method === "pay"
@@ -1126,10 +1149,26 @@ export class RequestController extends Controller<RequestControllerState> {
       return this.sparkBuilt(input.account, action, address);
     }
     if (input.method === "evm-sign") {
-      if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
+      const { kind } = input.request;
+      if (input.origin !== undefined && kind === "evm.fiat24-session") {
+        throw new Error("a dApp cannot sign a fiat24 session");
+      }
+      if (app !== undefined) {
+        if (
+          kind !== "evm.transaction" &&
+          kind !== "evm.typed-data" &&
+          kind !== "evm.fiat24-session"
+        ) {
+          throw new Error("an app request cannot sign that kind");
+        }
+      } else if (input.origin === undefined && kind !== "evm.typed-data") {
         throw new Error("an internal request can only sign typed data");
       }
-      const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
+      const prepared = await this.options.transactions.prepareDapp(
+        input.account,
+        input.request,
+        input.nonce === undefined ? undefined : { nonce: input.nonce },
+      );
       const isTransaction = input.request.kind === "evm.transaction";
       const signInRisk =
         input.origin !== undefined &&
@@ -1754,7 +1793,14 @@ export class RequestController extends Controller<RequestControllerState> {
     };
     this.put(ended);
     this.record(ended, END_OUTCOMES[event], error);
-    this.settle(id, new RequestEndedError(END_OUTCOMES[event], error));
+    this.settle(
+      id,
+      new RequestEndedError(
+        END_OUTCOMES[event],
+        error,
+        request.stage === "signed" || request.stage === "submitted",
+      ),
+    );
     return true;
   }
 
@@ -1780,6 +1826,7 @@ export class RequestController extends Controller<RequestControllerState> {
     throw new RequestEndedError(
       endedStage(request),
       `request ${id} is ${request?.stage ?? "gone"}`,
+      request?.stage === "signed" || request?.stage === "submitted",
     );
   }
 
@@ -1793,6 +1840,7 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new RequestEndedError(
         endedStage(request),
         `request ${id} is ${request?.stage ?? "gone"}`,
+        request?.stage === "signed" || request?.stage === "submitted",
       );
     }
   }

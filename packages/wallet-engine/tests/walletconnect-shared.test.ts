@@ -317,7 +317,7 @@ describe("SolanaWalletHandler over a WalletConnect session", () => {
   it("a rejected pipeline request reaches the caller as 4001", async () => {
     const r = solanaRig({
       session: wcSession,
-      outcome: async () => Promise.reject(new RequestEndedError("rejected", undefined)),
+      outcome: async () => Promise.reject(new RequestEndedError("rejected", undefined, false)),
     });
     await expect(
       codeOf(
@@ -424,7 +424,7 @@ describe("BitcoinWalletHandler over a WalletConnect session", () => {
   it("a rejected pipeline request reaches the caller as 4001", async () => {
     const r = bitcoinRig({
       session: wcSession,
-      outcome: async () => Promise.reject(new RequestEndedError("rejected", undefined)),
+      outcome: async () => Promise.reject(new RequestEndedError("rejected", undefined, false)),
     });
     await expect(
       codeOf(

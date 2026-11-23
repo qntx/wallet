@@ -493,6 +493,13 @@ type WorldGroups = {
 /** A JSON-RPC answer source for `eip155:42161` — the fiat24 lane's chain reads replay through it. */
 export type Arb1Rpc = (body: { readonly method: string; readonly params?: unknown }) => unknown;
 
+/** A JSON-RPC error answer — `arb1Error(…)` makes the endpoint refuse the call instead of answering. */
+export const arb1Error = (code: number, message: string) =>
+  ({ rpcError: { code, message } }) as const;
+
+const isArb1Error = (answer: unknown): answer is ReturnType<typeof arb1Error> =>
+  typeof answer === "object" && answer !== null && "rpcError" in answer;
+
 export type World = {
   wallet: Wallet;
   provider: HyperliquidProvider;
@@ -587,10 +594,11 @@ export const world = async (
           throw new Error("no arb1 rpc answers configured");
         }
         const method = typeof body["method"] === "string" ? body["method"] : "";
+        const answer = await options.arb1({ method, params: body["params"] });
         return Response.json({
           jsonrpc: "2.0",
           id: 1,
-          result: await options.arb1({ method, params: body["params"] }),
+          ...(isArb1Error(answer) ? { error: answer.rpcError } : { result: answer }),
         });
       }
       return url === "https://polygon.test/rpc" ? polyRpc(init, poly) : fetch(input, init);

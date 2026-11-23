@@ -748,19 +748,28 @@ export class TransactionController extends Controller<TransactionControllerState
   async prepareDapp(
     account: AccountRef,
     request: SignRequest,
+    options?: { readonly nonce?: number },
   ): Promise<PreparedRequest | PreparedMessage> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
     const normalized = normalizeEvm(request);
     if (normalized.kind === "evm.transaction") {
-      return this.evmRoute.prepareCall(this.routeCtx(), {
-        account,
-        network: normalized.network,
-        tx: normalized.tx,
-      });
+      return this.evmRoute.prepareCall(
+        this.routeCtx(),
+        {
+          account,
+          network: normalized.network,
+          tx: normalized.tx,
+        },
+        options?.nonce,
+      );
     }
-    if (normalized.kind !== "evm.personal-message" && normalized.kind !== "evm.typed-data") {
+    if (
+      normalized.kind !== "evm.personal-message" &&
+      normalized.kind !== "evm.typed-data" &&
+      normalized.kind !== "evm.fiat24-session"
+    ) {
       throw new Error(`unsupported dApp request ${normalized.kind}`);
     }
     const { kind, network } = normalized;
@@ -779,7 +788,15 @@ export class TransactionController extends Controller<TransactionControllerState
           request:
             normalized.kind === "evm.personal-message"
               ? { kind: normalized.kind, network, account, message: normalized.message }
-              : { kind: normalized.kind, network, account, typedData: normalized.typedData },
+              : normalized.kind === "evm.fiat24-session"
+                ? {
+                    kind: normalized.kind,
+                    network,
+                    account,
+                    tokenId: normalized.tokenId,
+                    deadline: normalized.deadline,
+                  }
+                : { kind: normalized.kind, network, account, typedData: normalized.typedData },
           verify,
         });
         if (result.kind !== kind || !("signature" in result)) {

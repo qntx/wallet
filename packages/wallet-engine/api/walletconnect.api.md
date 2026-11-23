@@ -961,6 +961,7 @@ type EvmSignInput = {
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
+    readonly nonce?: number;
 };
 
 // @public
@@ -1878,7 +1879,7 @@ type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 type SignatureResult = {
-    readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+    readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
@@ -2418,7 +2419,9 @@ class TransactionController extends Controller<TransactionControllerState> {
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
-    prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDapp(account: AccountRef, request: SignRequest, options?: {
+        readonly nonce?: number;
+    }): Promise<PreparedRequest | PreparedMessage>;
     prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";

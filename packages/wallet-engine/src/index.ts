@@ -69,6 +69,7 @@ export {
   AcknowledgementRequiredError,
   BlindSigningDisabledError,
   InvalidTokenError,
+  NonceConflictError,
   OriginBusyError,
   REQUEST_TTL_MS,
   RESIMULATE_AFTER_MS,

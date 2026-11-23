@@ -1086,6 +1086,7 @@ export type EvmSignInput = {
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
+    readonly nonce?: number;
 };
 
 // @public
@@ -1493,6 +1494,13 @@ export type Nip07Request = {
     readonly method: string;
     readonly params?: unknown;
 };
+
+// @public
+export class NonceConflictError extends Error {
+    constructor(expected: number, next: number);
+    readonly expected: number;
+    readonly next: number;
+}
 
 // @public
 export type NostrDisplay = {
@@ -2049,7 +2057,8 @@ export type RequestControllerState = {
 
 // @public
 export class RequestEndedError extends Error {
-    constructor(stage: RequestEndedError["stage"], message: string | undefined);
+    constructor(stage: RequestEndedError["stage"], message: string | undefined, signed: boolean);
+    readonly signed: boolean;
     // (undocumented)
     readonly stage: "rejected" | "failed" | "expired" | "invalidated";
 }
@@ -2116,7 +2125,7 @@ export type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 export type SignatureResult = {
-    readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+    readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
@@ -2698,7 +2707,9 @@ export class TransactionController extends Controller<TransactionControllerState
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
-    prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDapp(account: AccountRef, request: SignRequest, options?: {
+        readonly nonce?: number;
+    }): Promise<PreparedRequest | PreparedMessage>;
     prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";

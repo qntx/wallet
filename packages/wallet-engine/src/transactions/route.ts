@@ -437,7 +437,12 @@ export type PreparedRequest = {
 };
 
 export type SignatureResult = {
-  readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+  readonly kind:
+    | "evm.personal-message"
+    | "evm.fiat24-session"
+    | "evm.typed-data"
+    | "tron.message"
+    | "tron.typed-data";
   readonly signature: Uint8Array;
 };
 

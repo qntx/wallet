@@ -1474,13 +1474,13 @@ describe("Fiat24 session grant text", () => {
     },
   );
 
-  /* Apps may only sign typed data, like the internal origin — the raw grant text is refused
-     before it can ride that rule to approval. */
+  /* Apps may sign transactions, typed data and fiat24 sessions — a raw personal-message grant
+     fits none of them and is refused before it can ride any rule to approval. */
   it.each(GRANT_VARIANTS)("a raw grant from an app origin is refused: %s", async (_name, text) => {
     const r = await rig();
     await expect(
       r.requests.prepare(grantRequest(r, text), { kind: "app", id: "fiat24-test" }),
-    ).rejects.toThrow("an internal request can only sign typed data");
+    ).rejects.toThrow("an app request cannot sign that kind");
     await r.destroy();
   });
 
@@ -1514,17 +1514,23 @@ describe("Fiat24 session grant text", () => {
     async (_name, origin) => {
       const r = await rig();
       await expect(r.requests.prepare({ ...sessionRequest(r), origin })).rejects.toThrow(
-        "unsupported dApp request evm.fiat24-session",
+        "a dApp cannot sign a fiat24 session",
       );
       await r.destroy();
     },
   );
 
-  it("a structured evm.fiat24-session request is refused on the app path", async () => {
+  it("a structured evm.fiat24-session request prepares on the app path", async () => {
     const r = await rig();
-    await expect(
-      r.requests.prepare(sessionRequest(r), { kind: "app", id: "fiat24-test" }),
-    ).rejects.toThrow("an internal request can only sign typed data");
+    const request = await r.requests.prepare(sessionRequest(r), {
+      kind: "app",
+      id: "fiat24-test",
+    });
+    expect(request).toMatchObject({
+      origin: { kind: "app", id: "fiat24-test" },
+      stage: "awaiting-approval",
+      display: { fiat24: { kind: "session-grant", account: "123456" } },
+    });
     await r.destroy();
   });
 });
