@@ -28,7 +28,7 @@ import { chains } from "@qntx/wallet/chains";
 import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
 import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
-import type { SolanaRpc, Independent } from "../networks/controller.ts";
+import type { Independent, PinnedSolanaRpc, SolanaRpc } from "../networks/controller.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -1025,18 +1025,23 @@ const proveBlockhashDrop = async (
   return { poll: undefined, rebroadcast: validity.valid };
 };
 
-/* A `dropped` claim from one upstream is only a claim. A configured host endpoint re-runs the
-   whole proof on its own pinned client: agreement ends the row `dropped`, an entry it surfaces
-   settles the inclusion, an unfinished proof or a failed read keeps tracking. With no host
-   endpoint — none configured, or the host endpoint already is the primary — the same picture
-   must hold for a streak of consecutive polls spanning more than one processing age. */
+/* A `dropped` claim from one upstream is only a claim. A second upstream re-runs the whole proof
+   on its own pinned client: agreement ends the row `dropped`, an entry it surfaces settles the
+   inclusion, an unfinished proof or a failed read keeps tracking. The corroborator has to be a
+   different upstream than `primary` — when the poll's pin already landed on a host endpoint, the
+   same picture must hold for a streak of consecutive polls spanning more than one processing
+   age instead. */
 const settleSolanaDrop = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
   evidence: DropEvidence,
   prove: (rpc: SolanaRpc) => Promise<SolanaPollProof>,
+  primary: PinnedSolanaRpc,
 ): Promise<TxPoll | undefined> => {
-  const independent = ctx.options.networks.independentPinnedSolanaRpc(tx.network);
+  const independent = ctx.options.networks.independentPinnedSolanaRpc(
+    tx.network,
+    primary.pinnedUrl(),
+  );
   if (independent.kind === "available") {
     const theirs = await prove(independent.client).catch(() => undefined);
     evidence.delete(tx.id);
@@ -1091,7 +1096,7 @@ export const pollSolana = async (
     const proof = await prove(rpc);
     if (proof.poll !== undefined) {
       if (proof.poll.kind === "ended" && proof.poll.state === "dropped") {
-        return await settleSolanaDrop(ctx, tx, evidence, prove);
+        return await settleSolanaDrop(ctx, tx, evidence, prove, rpc);
       }
       evidence.delete(tx.id);
       return proof.poll;

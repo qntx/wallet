@@ -478,4 +478,56 @@ describe("a custom endpoint is never its own corroborator", () => {
     const hostless = await rig({ served: [DEVNET] });
     expect(hostless.networks.independentSolanaRpc(DEVNET).kind).toBe("unavailable");
   });
+
+  it("a poll pinned to the host endpoint gets no second read of the same upstream", async () => {
+    const { networks } = await rig({
+      served: [DEVNET],
+      rpc: { [DEVNET]: [SOL_HOST] },
+    });
+    // The pin landed on the host: another host read proves nothing, the streak applies.
+    expect(networks.independentPinnedSolanaRpc(DEVNET, SOL_HOST)).toStrictEqual({
+      kind: "not-needed",
+    });
+    expect(networks.independentPinnedSolanaRpc(DEVNET, undefined)).toStrictEqual({
+      kind: "not-needed",
+    });
+    // Pinned on the gateway: the host is a different upstream and corroborates.
+    expect(
+      networks.independentPinnedSolanaRpc(DEVNET, `${GATEWAY}/v1/rpc/${DEVNET}`),
+    ).toMatchObject({ kind: "available", source: "host" });
+    // Pinned on the custom endpoint: same — the host corroborates it.
+    await networks.addRpc(DEVNET, SOL_CUSTOM);
+    expect(networks.independentPinnedSolanaRpc(DEVNET, SOL_CUSTOM)).toMatchObject({
+      kind: "available",
+      source: "host",
+    });
+    expect(networks.independentPinnedSolanaRpc(DEVNET, SOL_HOST)).toStrictEqual({
+      kind: "not-needed",
+    });
+  });
+
+  it("a TRON poll pinned to the host endpoint gets no second read either", async () => {
+    const TRON_HOST = "https://tron-host.example";
+    const { networks } = await rig({
+      served: [NILE],
+      rpc: { [NILE]: [TRON_HOST] },
+    });
+    expect(networks.independentPinnedTronApi(NILE, TRON_HOST)).toStrictEqual({
+      kind: "not-needed",
+    });
+    expect(networks.independentPinnedTronApi(NILE, undefined)).toStrictEqual({
+      kind: "not-needed",
+    });
+    expect(
+      networks.independentPinnedTronApi(NILE, `${GATEWAY}/v1/tron/${NILE}`),
+    ).toMatchObject({ kind: "available", source: "host" });
+    await networks.addRpc(NILE, TRON_CUSTOM);
+    expect(networks.independentPinnedTronApi(NILE, TRON_CUSTOM)).toMatchObject({
+      kind: "available",
+      source: "host",
+    });
+    expect(networks.independentPinnedTronApi(NILE, TRON_HOST)).toStrictEqual({
+      kind: "not-needed",
+    });
+  });
 });

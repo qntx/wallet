@@ -147,7 +147,7 @@ const nonceAccountValue = (value: string): string =>
     ),
   );
 
-type MockRpc = SolanaRpc & { calls: string[] };
+type MockRpc = SolanaRpc & { calls: string[]; pinnedUrl: () => string };
 
 const mockRpc = (
   signature: string,
@@ -162,6 +162,7 @@ const mockRpc = (
   const calls: string[] = [];
   return {
     calls,
+    pinnedUrl: () => "https://rpc.test",
     call: async (method, _params) => {
       calls.push(method);
       switch (method) {

@@ -36,6 +36,7 @@ import type { RouteContext, TrackedTransaction } from "../src/transactions/route
 import { pollSolana } from "../src/transactions/solana.ts";
 
 const GATEWAY = "https://gateway.test";
+const HOST = "https://host.test";
 const NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const HASH = "3o9gXxKm2wQn5rYbP7sTdUfVhJkLzNcEaWqRtYuIpAsD";
 const NONCE_VALUE = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
@@ -241,6 +242,7 @@ const ctx = (
   w: World,
   independent: unknown = NOT_NEEDED,
   now: () => number = () => 1_000_000,
+  networks: Record<string, unknown> = {},
 ): RouteContext => ({
   options: {
     networks: {
@@ -248,6 +250,7 @@ const ctx = (
       pinnedSolanaRpc: w.api,
       independentSolanaRpc: () => independent,
       independentPinnedSolanaRpc: () => independent,
+      ...networks,
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
@@ -672,5 +675,75 @@ describe("pinnedSolanaCaller", () => {
     await api.call("getEpochInfo", []); // pins to GATEWAY
     await expect(api.call("getSignatureStatuses", [[HASH]])).rejects.toThrow("node behind");
     expect(other.calls).toBe(0);
+  });
+
+  it("names the answering endpoint in pinnedUrl once it commits", async () => {
+    const w = world();
+    const api = pinnedSolanaCaller([GATEWAY], w.fetchFn);
+    expect(api.pinnedUrl()).toBeUndefined();
+    await api.call("getEpochInfo", []);
+    expect(api.pinnedUrl()).toBe(GATEWAY);
+    /* Failover names the endpoint that answered, not the dead first one — the pin, not the
+       list order, is what makes a corroborator "the same upstream". */
+    const dead = { url: GATEWAY, calls: 0 };
+    const failedOver = pinnedSolanaCaller([GATEWAY, HOST], deadEndpoint(dead, w.fetchFn));
+    await failedOver.call("getEpochInfo", []);
+    expect(dead.calls).toBe(1);
+    expect(failedOver.pinnedUrl()).toBe(HOST);
+  });
+});
+
+describe("the corroborator is never the pinned upstream", () => {
+  it("a poll pinned onto the host endpoint keeps the row for the streak", async () => {
+    const clock = { t: 1_000_000 };
+    const w = world();
+    const dead = { url: GATEWAY, calls: 0 };
+    /* The real failover client: the gateway dies on the poll's first read and the pin lands on
+       the host URL — the same URL a host corroborator would read. */
+    const api = () => pinnedSolanaCaller([GATEWAY, HOST], deadEndpoint(dead, w.fetchFn));
+    const pins: Array<string | undefined> = [];
+    const c = ctx(w, NOT_NEEDED, () => clock.t, {
+      pinnedSolanaRpc: api,
+      /* The controller contract: a corroborator identical to the pinned primary is not-needed,
+         so the host-only continuity rule decides instead of a second look at itself. */
+      independentPinnedSolanaRpc: (_net: string, primaryUrl: string | undefined) => {
+        pins.push(primaryUrl);
+        return primaryUrl === HOST
+          ? NOT_NEEDED
+          : { kind: "available", source: "host", client: hostApi(dropNode()).api };
+      },
+    });
+    const evidence = ev();
+    const t = tx();
+    await expect(pollSolana(c, t, evidence)).resolves.toBeUndefined();
+    expect(pins).toStrictEqual([HOST]);
+    /* The identical claim now earns the streak a host-only configuration needs: three polls
+       spanning more than one processing age. */
+    clock.t += PROCESSING_AGE_MS;
+    await expect(pollSolana(c, t, evidence)).resolves.toBeUndefined();
+    clock.t += 1;
+    await expect(pollSolana(c, t, evidence)).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
+    expect(pins).toStrictEqual([HOST, HOST, HOST]);
+  });
+
+  it("a poll pinned on the gateway still corroborates on the host in one poll", async () => {
+    const w = world();
+    const host = hostApi(dropNode());
+    const pins: Array<string | undefined> = [];
+    const c = ctx(w, NOT_NEEDED, () => 1_000_000, {
+      independentPinnedSolanaRpc: (_net: string, primaryUrl: string | undefined) => {
+        pins.push(primaryUrl);
+        return { kind: "available", source: "host", client: host.api };
+      },
+    });
+    await expect(pollSolana(c, tx(), ev())).resolves.toStrictEqual({
+      kind: "ended",
+      state: "dropped",
+    });
+    expect(pins).toStrictEqual([GATEWAY]);
+    expect(host.calls).toStrictEqual(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
   });
 });

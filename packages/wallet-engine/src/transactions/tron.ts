@@ -1573,9 +1573,13 @@ export const pollTron = async (
         return undefined;
       }
       /* Neither node view knows a transaction whose block the head has passed. One upstream can
-         only claim a reorg, never prove it: a configured host endpoint must agree, else the
-         observation has to repeat for a whole solidification period. */
-      const independent = ctx.options.networks.independentPinnedTronApi(tx.network);
+         only claim a reorg, never prove it: a different upstream must agree — never the one the
+         poll is pinned to — else the observation has to repeat for a whole solidification
+         period. */
+      const independent = ctx.options.networks.independentPinnedTronApi(
+        tx.network,
+        api.pinnedUrl(),
+      );
       if (independent.kind === "available") {
         evidence.delete(tx.id);
         return (await independentlyReorged(independent.client, tx.hash, tx.block.height))
@@ -1613,10 +1617,13 @@ export const pollTron = async (
     }
     /* A transaction neither node knows is dropped only once the solidified head is past its
        expiration — until then it may still land, so the signed bytes are rebroadcast. One
-       upstream can only claim that; the independent endpoint must agree, else the observation
-       has to repeat for a whole solidification period. */
+       upstream can only claim that; a different upstream must agree — never the one the poll is
+       pinned to — else the observation has to repeat for a whole solidification period. */
     if (expiration !== undefined && head.timestamp > expiration) {
-      const independent = ctx.options.networks.independentPinnedTronApi(tx.network);
+      const independent = ctx.options.networks.independentPinnedTronApi(
+        tx.network,
+        api.pinnedUrl(),
+      );
       if (independent.kind === "available") {
         if (await independentlyDropped(independent.client, tx.hash, expiration)) {
           evidence.delete(tx.id);

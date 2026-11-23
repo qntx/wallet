@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { tronAddressFromPublicKey, tronAddressToHex } from "@qntx/wallet-chains/tron";
 
-import type { TronApi } from "../src/chains/tron.ts";
+import type { PinnedTronApi, TronApi } from "../src/chains/tron.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import type {
   AccountRef,
@@ -68,7 +68,7 @@ type World = {
   signCalls: Uint8Array[];
 };
 
-const world = (over: Partial<World> = {}): World & { api: TronApi } => {
+const world = (over: Partial<World> = {}): World & { api: PinnedTronApi } => {
   const w: World = {
     account: { address: FROM, balance: 200_000_000 },
     accounts: new Map([[RECEIVER, { address: RECEIVER, balance: 0 }]]),
@@ -92,7 +92,8 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     signCalls: [],
     ...over,
   };
-  const api: TronApi = {
+  const api: PinnedTronApi = {
+    pinnedUrl: () => "https://node.test",
     post: async (path, body) => {
       await Promise.resolve();
       const b = body as Record<string, unknown>;

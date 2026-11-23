@@ -19,7 +19,7 @@ import {
   tronRawDataFromJson,
 } from "@qntx/wallet-chains/tron";
 
-import type { TronApi } from "../src/chains/tron.ts";
+import type { PinnedTronApi, TronApi } from "../src/chains/tron.ts";
 import type { TronLog } from "../src/gateway/contract/index.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import type {
@@ -161,7 +161,7 @@ type World = {
   lastSignature: Uint8Array | undefined;
 };
 
-const world = (over: Partial<World> = {}): World & { api: TronApi } => {
+const world = (over: Partial<World> = {}): World & { api: PinnedTronApi } => {
   const w: World = {
     accounts: new Map([
       [FROM, { address: FROM, balance: 100_000_000 }],
@@ -188,7 +188,8 @@ const world = (over: Partial<World> = {}): World & { api: TronApi } => {
     lastSignature: undefined,
     ...over,
   };
-  const api: TronApi = {
+  const api: PinnedTronApi = {
+    pinnedUrl: () => "https://node.test",
     post: async (path, body) => {
       await Promise.resolve();
       w.posts.push({ path, body });

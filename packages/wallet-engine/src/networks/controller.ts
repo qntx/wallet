@@ -12,7 +12,7 @@ import type { CcipRequestParameters, Hex, PublicClient } from "viem";
 import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
 import { pinnedTronCaller, tronCaller } from "../chains/tron.ts";
-import type { TronApi } from "../chains/tron.ts";
+import type { PinnedTronApi, TronApi } from "../chains/tron.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
@@ -41,6 +41,12 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 export type SolanaRpc = {
   readonly call: (method: string, params: unknown[]) => Promise<unknown>;
+};
+
+/** A `pinnedSolanaCaller` client plus the endpoint it committed to after its first answer. */
+export type PinnedSolanaRpc = SolanaRpc & {
+  /** The URL every later read goes to; `undefined` until the first call answers. */
+  readonly pinnedUrl: () => string | undefined;
 };
 
 /**
@@ -256,9 +262,10 @@ const solanaCaller = (
 export const pinnedSolanaCaller = (
   urls: ReadonlyArray<string>,
   fetchFn: typeof globalThis.fetch,
-): SolanaRpc => {
+): PinnedSolanaRpc => {
   let pinned: { readonly url: string; readonly provider: string | undefined } | undefined;
   return {
+    pinnedUrl: () => pinned?.url,
     call: async (method, params) => {
       if (pinned !== undefined) {
         const { result } = await solanaPost(pinned.url, fetchFn, method, params, pinned.provider);
@@ -519,9 +526,17 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh pinned second-upstream Solana client — for proofs whose reads must all come from one
-   * upstream.
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin
+   * already landed on a host endpoint, the host-only continuity rule applies instead of a second
+   * read of the same upstream.
    */
-  independentPinnedSolanaRpc(network: string): Independent<SolanaRpc> {
+  independentPinnedSolanaRpc(
+    network: string,
+    primaryUrl: string | undefined,
+  ): Independent<SolanaRpc> {
+    if (primaryUrl === undefined || (this.options.rpc[network] ?? []).includes(primaryUrl)) {
+      return { kind: "not-needed" };
+    }
     return this.independent(network, (urls, fetchFn) => pinnedSolanaCaller(urls, fetchFn));
   }
 
@@ -532,9 +547,17 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh pinned second-upstream TRON client — for proofs whose reads must all come from one
-   * upstream.
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin
+   * already landed on a host endpoint, the host-only continuity rule applies instead of a second
+   * read of the same upstream.
    */
-  independentPinnedTronApi(network: string): Independent<TronApi> {
+  independentPinnedTronApi(
+    network: string,
+    primaryUrl: string | undefined,
+  ): Independent<TronApi> {
+    if (primaryUrl === undefined || (this.options.rpc[network] ?? []).includes(primaryUrl)) {
+      return { kind: "not-needed" };
+    }
     return this.independent(network, (urls, fetchFn) => pinnedTronCaller(urls, fetchFn));
   }
 
@@ -573,7 +596,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
    * Fresh one-upstream Solana client: failover on the first call, then pinned — for a sequence of
    * reads that must agree with each other.
    */
-  pinnedSolanaRpc(network: string): SolanaRpc {
+  pinnedSolanaRpc(network: string): PinnedSolanaRpc {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
@@ -595,7 +618,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
    * reads that must agree with each other. `until` bounds throttled-read retries to the
    * transaction's validity window; absent, a 429/503 propagates like every other failure.
    */
-  pinnedTronApi(network: string, until?: () => number): TronApi {
+  pinnedTronApi(network: string, until?: () => number): PinnedTronApi {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);

@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import type { TronApi } from "../src/chains/tron.ts";
+import type { PinnedTronApi, TronApi } from "../src/chains/tron.ts";
 import type { RouteContext, TrackedTransaction } from "../src/transactions/route.ts";
 import { pollTron } from "../src/transactions/tron.ts";
 
@@ -36,7 +36,8 @@ const env = (over: Partial<Env> = {}): Env => ({
   ...over,
 });
 
-const apiOf = (e: Env): TronApi => ({
+const apiOf = (e: Env): PinnedTronApi => ({
+  pinnedUrl: () => "https://node.test",
   post: async (path, body) => {
     await Promise.resolve();
     const b = body as Record<string, unknown>;
@@ -68,9 +69,10 @@ const apiOf = (e: Env): TronApi => ({
  * Each info round-trip takes long enough for the solidified head to cross expiration. The head read
  * at poll start bounds the drop proof — a later head must not retroactively drop.
  */
-const agingApi = (e: Env): TronApi => {
+const agingApi = (e: Env): PinnedTronApi => {
   const base = apiOf(e);
   return {
+    pinnedUrl: () => "https://node.test",
     post: async (path, body) => {
       await Promise.resolve();
       const answer = await base.post(path, body);
@@ -83,10 +85,11 @@ const agingApi = (e: Env): TronApi => {
 };
 
 /** Answers `{}` for the first solidified info read, then "lands" the transaction mid-poll. */
-const landingApi = (e: Env): TronApi => {
+const landingApi = (e: Env): PinnedTronApi => {
   const base = apiOf(e);
   let solidInfoCalls = 0;
   return {
+    pinnedUrl: () => "https://node.test",
     post: async (path, body) => {
       await Promise.resolve();
       if (path === "/walletsolidity/gettransactioninfobyid") {
