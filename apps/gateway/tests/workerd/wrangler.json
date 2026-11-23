@@ -11,7 +11,14 @@
   ],
   "vars": {
     "SCALE": "production",
-    "UPSTREAM_DELAY_MS": "0"
+    "UPSTREAM_DELAY_MS": "0",
+    "PUSH_SEAL_KEY": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "APNS_KEY": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgagZ5+A1MFIYCNXi4zwC8ORi734LO4r0PbT4pz1gP5nWhRANCAARlJUXmfn/zk1CisgjAMKqGQmslkUkUScgE80nnf4yxEv31Sba0IL6Nl+8QR0agZ8nTmmY476AEuY8YoSENPVrh\n-----END PRIVATE KEY-----",
+    "APNS_KEY_ID": "HARNESSTST",
+    "APNS_TEAM_ID": "TEAMHARNES",
+    "APNS_TOPIC": "sh.qntx.wallet.harness",
+    "ALCHEMY_NOTIFY_TOKEN": "harness-notify-token",
+    "ALCHEMY_WEBHOOKS": "{\"eip155:11155111\": {\"id\": \"wh_harness\", \"signingKey\": \"harness-signing-key\"}}"
   },
   "durable_objects": {
     "bindings": [

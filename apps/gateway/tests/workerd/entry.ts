@@ -19,26 +19,65 @@ import { durableBudget } from "../../src/budget/leased.ts";
 import type { Account } from "../../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../../src/config/networks.ts";
+import { PushObject as PushObjectBase } from "../../src/push/object.ts";
+import { pushRuntimeFor } from "../../src/push/runtime.ts";
 import type { UpstreamAuthId } from "../../src/types.ts";
+import type { WorkerEnv } from "../../src/worker.ts";
+import { pushServiceFor } from "../../src/worker.ts";
 import { upstreamAnswer } from "../upstream-stub.ts";
 
 export { ProviderBudgetObject } from "../../src/budget/durable.ts";
-export { PushObject } from "../../src/push/object.ts";
 
 type HarnessEnv = {
   readonly PROVIDER_BUDGET: DurableObjectNamespace<ProviderBudgetObject>;
+  readonly PUSH: DurableObjectNamespace<PushObject>;
+  readonly PUSH_LIMITER: RateLimit;
   readonly IP_LIMITER: RateLimit;
   readonly RPC_LIMITER: RateLimit;
   readonly DEFAULT_LIMITER: RateLimit;
   readonly SHARE_LIMITER: RateLimit;
   readonly SCALE?: string;
   readonly UPSTREAM_DELAY_MS?: string;
+  readonly PUSH_SEAL_KEY?: string;
+  readonly APNS_KEY?: string;
+  readonly APNS_KEY_ID?: string;
+  readonly APNS_TEAM_ID?: string;
+  readonly APNS_TOPIC?: string;
+  readonly ALCHEMY_NOTIFY_TOKEN?: string;
+  readonly ALCHEMY_WEBHOOKS?: string;
 };
+
+/**
+ * The real `PushObject` — its only change is that every outbound call (provider RPC, APNs, the
+ * Alchemy dashboard) goes to the in-worker stub instead of the network. The protected
+ * `upstreamFetch` seam exists precisely for this override; production code carries no test switch.
+ */
+export class PushObject extends PushObjectBase {
+  #stub: typeof globalThis.fetch | undefined;
+
+  protected override async upstreamFetch(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the harness env is WorkerEnv plus test-only vars
+    const delayMs = Number((this.env as unknown as HarnessEnv).UPSTREAM_DELAY_MS ?? "0");
+    this.#stub ??= upstream(delayMs);
+    return this.#stub(input, init);
+  }
+}
 
 type LeaseStats = { calls: number; granted: number; refused: number };
 const leaseStats = new Map<string, LeaseStats>();
 type UpstreamStats = { calls: number; units: number };
 const upstreamStats = new Map<string, UpstreamStats>();
+/** Push-provider and watcher-management requests the driver asserts on via `/__stats`. */
+type SeenRequest = {
+  readonly host: string;
+  readonly method: string;
+  readonly path: string;
+  readonly body: string;
+};
+const seenRequests: SeenRequest[] = [];
 
 const leaseStat = (account: string): LeaseStats => {
   const existing = leaseStats.get(account);
@@ -62,6 +101,7 @@ const upstreamStat = (account: string): UpstreamStats => {
 const resetStats = (): void => {
   leaseStats.clear();
   upstreamStats.clear();
+  seenRequests.length = 0;
 };
 
 /** Wraps the real DO namespace, counting lease RPCs, granted units and refusals per account. */
@@ -124,7 +164,32 @@ const oneReply = (call: unknown): unknown => ({
 
 /** JSON-RPC POST → `{"jsonrpc":"2.0","id":<same>,"result":"0x1"}` (batch → array). */
 const rpcReply = (parsed: unknown): Response =>
-  json(Array.isArray(parsed) ? parsed.map(oneReply) : oneReply(parsed));
+  json(Array.isArray(parsed) ? parsed.map(batchReply) : oneReply(parsed));
+
+/**
+ * The batch shape the push receipt verifier sends: `eth_getBlockByNumber` gets a head just below
+ * the receipt's block (non-final, so the record keeps checking), `eth_getTransactionReceipt` a
+ * synthesized success receipt echoing the requested hash — everything else keeps the echo "0x1".
+ */
+const batchReply = (call: unknown): unknown => {
+  const entry =
+    typeof call === "object" && call !== null
+      ? (call as { id?: unknown; method?: string; params?: unknown[] })
+      : {};
+  const result =
+    entry.method === "eth_getTransactionReceipt"
+      ? {
+          transactionHash: entry.params?.[0],
+          status: "0x1",
+          blockNumber: "0x64",
+          from: "0x2222222222222222222222222222222222222222",
+          to: "0x1111111111111111111111111111111111111111",
+        }
+      : entry.method === "eth_getBlockByNumber"
+        ? { number: "0x63", hash: `0x${"f".repeat(64)}` }
+        : "0x1";
+  return { jsonrpc: "2.0", id: entry.id ?? null, result };
+};
 
 const TRON_BLOCK = {
   blockID: "a".repeat(64),
@@ -157,10 +222,24 @@ const accountOf = (host: string): string | undefined => {
       return "across";
     case "api.0x.org":
       return "0x";
+    // Staging EVM providers (request-priced): the push verifier's batches reach them.
+    case "ethereum-sepolia-rpc.publicnode.com":
+      return "publicnode";
+    case "1rpc.io":
+      return "1rpc";
     default:
       return undefined;
   }
 };
+
+/** Hosts the push service calls directly (no billing account): APNs, FCM, the Alchemy dashboard. */
+const PUSH_HOSTS = new Set([
+  "api.push.apple.com",
+  "api.sandbox.push.apple.com",
+  "fcm.googleapis.com",
+  "oauth2.googleapis.com",
+  "dashboard.alchemy.com",
+]);
 
 const sleep = async (ms: number): Promise<void> => {
   await new Promise<void>((resolve) => {
@@ -175,17 +254,34 @@ const upstream = (delayMs: number): typeof globalThis.fetch => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw);
     const host = url.hostname;
+    const body = typeof init?.body === "string" ? init.body : "";
+    if (PUSH_HOSTS.has(host)) {
+      // APNs/FCM token endpoints and the dashboard PATCH: a 200 the senders/sync treat as success.
+      seenRequests.push({ host, method: init?.method ?? "GET", path: url.pathname, body });
+      if (seenRequests.length > 1000) {
+        seenRequests.shift();
+      }
+      if (host === "oauth2.googleapis.com") {
+        return json({ access_token: "harness-token", expires_in: 3600 });
+      }
+      return json({});
+    }
     const account = accountOf(host);
     if (account === undefined) {
       throw new TypeError(`harness stub: no upstream for ${raw}`);
     }
-    const body = typeof init?.body === "string" ? init.body : "";
     if (delayMs > 0) {
       await sleep(delayMs);
     }
 
     // JSON-RPC providers: the stub computes the same per-call cost the route billed.
-    if (account === "alchemy" || account === "drpc" || account === "ankr") {
+    if (
+      account === "alchemy" ||
+      account === "drpc" ||
+      account === "ankr" ||
+      account === "publicnode" ||
+      account === "1rpc"
+    ) {
       let parsed: unknown;
       try {
         parsed = JSON.parse(body);
@@ -274,12 +370,19 @@ const AUTH_IDS: ReadonlyArray<UpstreamAuthId> = [
 
 let gateway: Gateway | undefined;
 
-const gatewayFor = (env: HarnessEnv): Gateway => {
+const gatewayFor = async (env: HarnessEnv): Promise<Gateway> => {
   if (gateway === undefined) {
     const accounts = env.SCALE === "small" ? scaledAccounts() : PRODUCTION_ACCOUNTS;
     const priceCache = new Map<string, { value: string; expiresAt: number }>();
+    const stubFetch = upstream(Number(env.UPSTREAM_DELAY_MS ?? "0"));
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the harness env is WorkerEnv plus test-only vars
+    const workerEnv = env as unknown as WorkerEnv;
+    const push = await pushServiceFor(
+      workerEnv,
+      await pushRuntimeFor(workerEnv, stubFetch, console.log),
+    );
     gateway = createGateway({
-      fetch: upstream(Number(env.UPSTREAM_DELAY_MS ?? "0")),
+      fetch: stubFetch,
       networks: PRODUCTION_NETWORKS,
       limiters: {
         ip: env.IP_LIMITER,
@@ -342,6 +445,8 @@ const gatewayFor = (env: HarnessEnv): Gateway => {
       },
       jupiter: { apiKey: "harness-stub" },
       clientAddress: "required",
+      // Same service the production worker builds; `undefined` when the push vars are absent.
+      ...(push === undefined ? {} : { push }),
       log: (line) => {
         console.log(line);
       },
@@ -357,6 +462,7 @@ export default {
       return json({
         leases: Object.fromEntries(leaseStats),
         upstream: Object.fromEntries(upstreamStats),
+        seen: seenRequests,
       });
     }
     if (url.pathname === "/__reset") {
@@ -373,6 +479,7 @@ export default {
       headers.set("cf-connecting-ip", testIp);
     }
     const forwarded = new Request(request, { headers });
-    return gatewayFor(env).fetch(forwarded);
+    const app = await gatewayFor(env);
+    return app.fetch(forwarded);
   },
 } satisfies ExportedHandler<HarnessEnv>;

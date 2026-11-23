@@ -70,6 +70,136 @@ const reset = async (base: string): Promise<void> => {
   await fetch(`${base}/__reset`, { method: "POST" });
 };
 
+/**
+ * `push` — the real gateway + real PushObject end to end inside workerd: PUT a subscription, POST a
+ * signed Alchemy Address Activity webhook for Sepolia (`eip155:11155111`, the network the harness
+ * `ALCHEMY_WEBHOOKS` var configures), then poll `/__stats` until the in-worker stub saw the APNs
+ * delivery and the dashboard address-sync PATCH. The APNs body must carry only the opaque `qntx`
+ * envelope — no address, hash, network id or amount.
+ */
+const push = async (base: string): Promise<void> => {
+  const SECRET_B64URL = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+  const KEY_B64URL = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+  const DEVICE_TOKEN = "ab".repeat(32);
+  const ADDRESS = "0x1111111111111111111111111111111111111111";
+  const HASH = `0x${"a".repeat(64)}`;
+  const NETWORK = "eip155:11155111";
+  const SIGNING_KEY = "harness-signing-key";
+
+  const sub = await fetch(`${base}/v1/push/evm/subscription`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-client-id": CLIENT_ID,
+      "x-test-ip": "203.0.113.60",
+      authorization: `Bearer ${SECRET_B64URL}`,
+    },
+    body: JSON.stringify({
+      platform: "apns",
+      token: DEVICE_TOKEN,
+      key: KEY_B64URL,
+      networks: [NETWORK],
+      addresses: [ADDRESS],
+    }),
+  });
+  const subBody = await sub.text();
+  expect(sub.status === 200, `push subscribe status ${String(sub.status)}: ${subBody}`);
+
+  const webhookBody = JSON.stringify({
+    webhookId: "wh_harness",
+    id: "evt-harness-1",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    type: "ADDRESS_ACTIVITY",
+    event: {
+      network: "ETH_SEPOLIA",
+      activity: [
+        {
+          blockNum: "0x64",
+          hash: HASH,
+          fromAddress: "0x9999999999999999999999999999999999999999",
+          toAddress: ADDRESS,
+          value: 1.5,
+          asset: "ETH",
+          category: "external",
+          rawContract: { rawValue: "0x14d1120d7b160000" },
+        },
+      ],
+    },
+  });
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SIGNING_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(webhookBody));
+  const signature = [...new Uint8Array(mac)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const hook = await fetch(`${base}/hooks/alchemy`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-alchemy-signature": signature },
+    body: webhookBody,
+  });
+  const hookBody = await hook.text();
+  expect(hook.status === 200, `push webhook status ${String(hook.status)}: ${hookBody}`);
+
+  // The DO alarm fires once the ingest schedules it; the APNs delivery and the dashboard sync
+  // PATCH should both land within the bounded wait.
+  let seen: SeenRequest[] = [];
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- bounded poll for the alarm to fire
+    const res = await fetch(`${base}/__stats`);
+    // oxlint-disable-next-line eslint/no-await-in-loop -- same bounded poll
+    const parsed: unknown = await res.json();
+    const list = recordOf(parsed)?.["seen"];
+    seen = Array.isArray(list) ? list.filter(isSeenRequest) : [];
+    if (
+      seen.some((request) => request.host === "api.sandbox.push.apple.com") &&
+      seen.some((request) => request.host === "dashboard.alchemy.com")
+    ) {
+      break;
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- bounded poll interval
+    await sleep(500);
+  }
+
+  const apns = seen.find(
+    (request) =>
+      request.host === "api.sandbox.push.apple.com" &&
+      request.method === "POST" &&
+      request.path === `/3/device/${DEVICE_TOKEN}`,
+  );
+  expect(apns !== undefined, `push: stub never saw the APNs delivery (seen ${seen.length})`);
+  if (apns !== undefined) {
+    const qntx = recordOf(recordOf(JSON.parse(apns.body))?.["qntx"]);
+    expect(
+      qntx?.["v"] === "1" && typeof qntx["e"] === "string" && typeof qntx["c"] === "string",
+      `push: APNs body is not the opaque envelope: ${apns.body}`,
+    );
+    for (const leaked of [ADDRESS, HASH, NETWORK, "1500000000000000000", DEVICE_TOKEN]) {
+      expect(!apns.body.includes(leaked), `push: APNs body leaked ${leaked}`);
+    }
+  }
+  const patch = seen.find(
+    (request) => request.host === "dashboard.alchemy.com" && request.method === "PATCH",
+  );
+  expect(patch !== undefined, "push: stub never saw the Alchemy address-sync PATCH");
+  if (patch !== undefined) {
+    const patchBody = recordOf(JSON.parse(patch.body));
+    const adds = patchBody?.["addresses_to_add"];
+    expect(
+      patchBody?.["webhook_id"] === "wh_harness" && Array.isArray(adds) && adds.includes(ADDRESS),
+      `push: PATCH body misses the subscribed address: ${patch.body}`,
+    );
+  }
+  console.log(
+    `PUSH: seen=${String(seen.length)} apns=${String(apns !== undefined)} patch=${String(patch !== undefined)}`,
+  );
+};
+
 const ethCall = async (base: string, ip: string): Promise<Response> =>
   fetch(`${base}/v1/rpc/eip155:1`, {
     method: "POST",
@@ -96,6 +226,25 @@ const sleep = async (ms: number): Promise<void> => {
     }, ms);
   });
 };
+
+type SeenRequest = { host: string; method: string; path: string; body: string };
+
+const isSeenRequest = (value: unknown): value is SeenRequest => {
+  const row = recordOf(value);
+  return (
+    row !== undefined &&
+    typeof row["host"] === "string" &&
+    typeof row["method"] === "string" &&
+    typeof row["path"] === "string" &&
+    typeof row["body"] === "string"
+  );
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const recordOf = (value: unknown): Record<string, unknown> | undefined =>
+  isRecord(value) ? value : undefined;
 
 const failed: string[] = [];
 const expect = (condition: boolean, label: string): void => {
@@ -691,6 +840,9 @@ const main = async (): Promise<void> => {
       break;
     case "pin":
       await pin(a);
+      break;
+    case "push":
+      await push(a);
       break;
     case "storm":
       await storm(a, b ?? a);
