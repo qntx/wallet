@@ -230,6 +230,7 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-native": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
+        "@qntx/wallet-engine": "0.13.0",
         "@scure/base": "2.4.0",
         "nitrogen": "0.37.1",
         "publint": "0.3.25",
@@ -239,9 +240,13 @@
         "@qntx/nostr-native": "0.15.4",
         "@qntx/spark-native": "0.5.2",
         "@qntx/wallet": "0.13.0",
+        "@qntx/wallet-engine": "0.13.0",
         "react-native": "~0.88.0",
         "react-native-nitro-modules": "~0.37.1",
       },
+      "optionalPeers": [
+        "@qntx/wallet-engine",
+      ],
     },
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",

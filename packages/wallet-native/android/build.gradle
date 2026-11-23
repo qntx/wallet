@@ -148,6 +148,10 @@ dependencies {
   // backs Google Password Manager.
   implementation "androidx.credentials:credentials:1.6.0"
   implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
+
+  // Google Identity authorization for drive.appdata tokens — the Google Drive
+  // cloud backup transport needs silent + interactive OAuth on Android.
+  implementation "com.google.android.gms:play-services-auth:22.0.0"
 }
 
 repositories {

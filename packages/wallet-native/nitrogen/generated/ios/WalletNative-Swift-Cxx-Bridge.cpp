@@ -8,12 +8,61 @@
 #include "WalletNative-Swift-Cxx-Bridge.hpp"
 
 // Include C++ implementation defined types
+#include "HybridCloudKitStoreSpecSwift.hpp"
 #include "HybridSecureInputViewSpecSwift.hpp"
 #include "WalletNative-Swift-Cxx-Umbrella.hpp"
 #include <NitroModules/NitroDefines.hpp>
 
 namespace margelo::nitro::qntxwallet::bridge::swift {
 
+  // pragma MARK: std::function<void(const std::vector<std::string>& /* result */)>
+  Func_void_std__vector_std__string_ create_Func_void_std__vector_std__string_(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = WalletNative::Func_void_std__vector_std__string_::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const std::vector<std::string>& result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
+  // pragma MARK: std::function<void(const std::exception_ptr& /* error */)>
+  Func_void_std__exception_ptr create_Func_void_std__exception_ptr(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = WalletNative::Func_void_std__exception_ptr::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const std::exception_ptr& error) mutable -> void {
+      swiftClosure.call(error);
+    };
+  }
+  
+  // pragma MARK: std::function<void(const std::optional<std::string>& /* result */)>
+  Func_void_std__optional_std__string_ create_Func_void_std__optional_std__string_(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = WalletNative::Func_void_std__optional_std__string_::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const std::optional<std::string>& result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
+  // pragma MARK: std::function<void()>
+  Func_void create_Func_void(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = WalletNative::Func_void::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)]() mutable -> void {
+      swiftClosure.call();
+    };
+  }
+  
+  // pragma MARK: std::shared_ptr<HybridCloudKitStoreSpec>
+  std::shared_ptr<HybridCloudKitStoreSpec> create_std__shared_ptr_HybridCloudKitStoreSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
+    WalletNative::HybridCloudKitStoreSpec_cxx swiftPart = WalletNative::HybridCloudKitStoreSpec_cxx::fromUnsafe(swiftUnsafePointer);
+    return std::make_shared<margelo::nitro::qntxwallet::HybridCloudKitStoreSpecSwift>(swiftPart);
+  }
+  void* NON_NULL get_std__shared_ptr_HybridCloudKitStoreSpec_(std__shared_ptr_HybridCloudKitStoreSpec_ cppType) {
+    std::shared_ptr<margelo::nitro::qntxwallet::HybridCloudKitStoreSpecSwift> swiftWrapper = std::dynamic_pointer_cast<margelo::nitro::qntxwallet::HybridCloudKitStoreSpecSwift>(cppType);
+    #ifdef NITRO_DEBUG
+    if (swiftWrapper == nullptr) [[unlikely]] {
+      throw std::runtime_error("Class \"HybridCloudKitStoreSpec\" is not implemented in Swift!");
+    }
+    #endif
+    WalletNative::HybridCloudKitStoreSpec_cxx& swiftPart = swiftWrapper->getSwiftPart();
+    return swiftPart.toUnsafe();
+  }
+  
   // pragma MARK: std::function<void(SecureInputState /* state */)>
   Func_void_SecureInputState create_Func_void_SecureInputState(void* NON_NULL swiftClosureWrapper) noexcept {
     auto swiftClosure = WalletNative::Func_void_SecureInputState::fromUnsafe(swiftClosureWrapper);

@@ -35,3 +35,7 @@ packages/wallet-kernel/.hermes-card.iife.js
 # Wrangler local state
 .wrangler/
 packages/wallet-engine/tests/browser/getwallets.js
+
+# SwiftPM build output (packages/wallet-native Package.swift is a test harness)
+.build/
+.swiftpm/

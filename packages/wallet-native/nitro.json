@@ -24,6 +24,18 @@
         "language": "kotlin",
         "implementationClassName": "HybridSecureInputView"
       }
+    },
+    "CloudKitStore": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridCloudKitStore"
+      }
+    },
+    "GoogleDriveAuth": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridGoogleDriveAuth"
+      }
     }
   }
 }

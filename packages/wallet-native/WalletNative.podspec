@@ -65,7 +65,7 @@ Pod::Spec.new do |s|
 
   # The kernel's backends.spark binds the qs_* C ABI; the prebuilt
   # QntxSpark.xcframework ships inside the SparkNative pod.
-  s.frameworks = "LocalAuthentication", "Security", "AuthenticationServices", "UIKit"
+  s.frameworks = "LocalAuthentication", "Security", "AuthenticationServices", "UIKit", "CloudKit"
   # CoreNFC is absent on the simulator and pre-NFC devices; weak-linking keeps
   # those builds loading — `readingAvailable` reports no hardware instead.
   s.weak_frameworks = "CoreNFC"
