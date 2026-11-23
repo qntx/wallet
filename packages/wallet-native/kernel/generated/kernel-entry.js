@@ -978,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-B_olgDm6.mjs
+	// packages/wallet/dist/protocol-DC18CY4v.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1787,6 +1787,20 @@
 			result: approvalSummary
 		}
 	};
+	/**
+	* Param field names whose bytes are secrets: the kernel consumes and wipes them, so each must own
+	* its memory.
+	*/
+	var SECRET_FIELDS = [
+		"password",
+		"prf",
+		"prfWallet",
+		"prfBackup",
+		"mnemonic",
+		"passphrase",
+		"secret",
+		"answers"
+	];
 	/**
 	* Upper-bound byte weight of a protocol value: a string costs `length * 3` (worst-case UTF-8), a
 	* Uint8Array its `byteLength`, every scalar and every array element 8, and every object key
@@ -52644,6 +52658,64 @@ zoo`.split("\n"));
 			}
 		};
 	}
+	// packages/wallet-kernel/src/secret/ownership.ts
+	var SECRET_KEYS = new Set(SECRET_FIELDS);
+	/**
+	* A request's secret byte fields must own their memory: the kernel consumes and wipes each of them,
+	* so a secret sharing memory with another field — the same object or an overlapping view of one
+	* buffer, both preserved by structured clone — would zero that field between the prompt and the
+	* sign pass. `respond` runs this before any decode: a leaf is secret when the nearest key that
+	* holds it is in `SECRET_FIELDS` (array elements inherit the array's key). Within one buffer, a
+	* secret leaf's byte range may not intersect any other leaf's; disjoint views and sharing between
+	* public fields are allowed.
+	*/
+	function assertExclusiveSecrets(params) {
+		const groups = /* @__PURE__ */ new Map();
+		const stack = [{
+			value: params,
+			key: void 0
+		}];
+		while (stack.length > 0) {
+			const frame = stack.pop();
+			if (frame === void 0) continue;
+			const { value, key } = frame;
+			if (value instanceof Uint8Array) {
+				const leaf = {
+					buffer: value.buffer,
+					start: value.byteOffset,
+					end: value.byteOffset + value.byteLength,
+					secret: key !== void 0 && SECRET_KEYS.has(key)
+				};
+				const group = groups.get(leaf.buffer);
+				if (group === void 0) groups.set(leaf.buffer, [leaf]);
+				else group.push(leaf);
+				continue;
+			}
+			if (Array.isArray(value)) {
+				const elements = value;
+				for (const element of elements) stack.push({
+					value: element,
+					key
+				});
+				continue;
+			}
+			if (value !== null && typeof value === "object") for (const [childKey, child] of Object.entries(value)) stack.push({
+				value: child,
+				key: childKey
+			});
+		}
+		for (const group of groups.values()) {
+			if (!group.some((leaf) => leaf.secret)) continue;
+			let maxEndAll = 0;
+			let maxEndSecret = 0;
+			for (const leaf of [...group].sort((a, b) => a.start - b.start)) {
+				if (leaf.end <= leaf.start) continue;
+				if (leaf.secret && leaf.start < maxEndAll || !leaf.secret && leaf.start < maxEndSecret) throw new KernelError("invalid-input", "a secret field shares memory with another field");
+				if (leaf.end > maxEndAll) maxEndAll = leaf.end;
+				if (leaf.secret && leaf.end > maxEndSecret) maxEndSecret = leaf.end;
+			}
+		}
+	}
 	// packages/wallet-kernel/src/status.ts
 	init_objectSpread2();
 	function metaHealth(image) {
@@ -53034,6 +53106,7 @@ zoo`.split("\n"));
 				if (!isProtocolValue(candidate)) throw new KernelError("integrity", "malformed params");
 				const params = candidate;
 				if (requestBytes(request) > 1048576) throw new KernelError("invalid-input", "request exceeds the size limit");
+				assertExclusiveSecrets(params);
 				if (ctx.health !== "ok" && method !== "status" && method !== "vault.reset") {
 					if (ctx.health === "unavailable") await reload();
 					if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");

@@ -12,6 +12,7 @@ import type {
   MethodName,
   ParamsOf,
   ProtocolValue,
+  SECRET_FIELDS,
   VerifyFactor as WireVerifyFactor,
 } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
@@ -249,15 +250,7 @@ export class SecretWire {
  * Param field names whose bytes are secrets. Everything else on the wire — credential ids, public
  * keys, unsigned payloads, ciphertexts — is public material.
  */
-export type SecretField =
-  | "password"
-  | "prf"
-  | "prfWallet"
-  | "prfBackup"
-  | "mnemonic"
-  | "passphrase"
-  | "secret"
-  | "answers";
+export type SecretField = (typeof SECRET_FIELDS)[number];
 
 /* True when any field reachable through T's objects, arrays or union members is a SecretField. The
    `ProtocolValue extends T` stop keeps the walk out of the recursive wire type — a pass-through

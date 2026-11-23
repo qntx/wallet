@@ -28,6 +28,7 @@ import { createSessionsModule } from "./modules/sessions/index.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
 import { serializeCeremonies } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
+import { assertExclusiveSecrets } from "./secret/ownership.ts";
 import { wipe } from "./secret/secret.ts";
 import type { Secret } from "./secret/secret.ts";
 import { Session } from "./session/session.ts";
@@ -459,6 +460,9 @@ export function startKernel(host: KernelPlatform, port: Port): void {
       if (requestBytes(request as ProtocolValue) > MAX_REQUEST_BYTES) {
         throw new KernelError("invalid-input", "request exceeds the size limit");
       }
+      // Secrets are consumed and wiped in place: one that shares memory with another field
+      // would zero the bytes the prompt showed before the consuming pass reads them.
+      assertExclusiveSecrets(params);
       // A vault that is not healthy cannot serve requests honestly: only status (answers from
       // the image in memory) and vault.reset (the recovery path) get through. A transient
       // failure retries one load before answering — a successful reload clears it.
