@@ -1,21 +1,11 @@
 import type { IntentWarning, IntentWarningKind, MessageTextHazard } from "@qntx/wallet-chains";
 import { messageTextHazard } from "@qntx/wallet-chains";
 
-/** 0.13.0 callers decided text vs bytes with two helpers; `messageTextHazard` is the call now. */
-export function messageIsTextBefore(message: Uint8Array): boolean {
-  // oxlint-disable typescript/no-unsafe-call -- demonstrates the removed 0.13.0 helpers
-  // @ts-expect-error -- isReadableText is removed
-  if (isReadableText(message) !== true) {
-    return false;
-  }
-  const text = new TextDecoder().decode(message);
-  // @ts-expect-error -- isHexRendering is removed
-  return isHexRendering(text) !== true;
-  // oxlint-enable typescript/no-unsafe-call
-}
-
-/** Hazardous text still displays — the hazard classifies it blind, it does not hide it. */
-export function messageTextAfter(
+/**
+ * Text messages still decode as `text`; `messageTextHazard` says whether one is blind and why.
+ * Hazardous text still displays — the hazard classifies it blind, it does not hide it.
+ */
+export function messageText(
   message: Uint8Array,
 ): { readonly text: string; readonly hazard: MessageTextHazard | undefined } | undefined {
   let text: string;
