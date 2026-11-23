@@ -25,6 +25,16 @@ export {
   tronSignTypedDataHash,
 } from "./tron.ts";
 export {
+  btcExtendedPublicKey,
+  btcMasterFingerprint,
+  btcSignMessage,
+  btcSignPsbt,
+  btcWalletAddress,
+} from "./bitcoin/index.ts";
+export type { BitcoinYield } from "./bitcoin/index.ts";
+export { defaultPolicy, policyId, serializePolicy } from "./bitcoin/policy.ts";
+export type { BitcoinDescriptorTemplate, BitcoinPolicy } from "./bitcoin/policy.ts";
+export {
   bleAssembler,
   bleFrames,
   bleMtu,

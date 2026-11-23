@@ -7,11 +7,29 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { p2pkh, p2sh, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
+import { equalBytes } from "@scure/btc-signer/utils.js";
 import { serializeTransaction } from "viem";
 
+import type { BitcoinTemplate } from "@qntx/wallet-chains";
+import { verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains/bitcoin";
 import type { TypedDataInput } from "@qntx/wallet-chains/evm";
 
+import {
+  btcExtendedPublicKey,
+  btcMasterFingerprint,
+  btcSignMessage,
+  btcSignPsbt,
+  btcWalletAddress,
+} from "../../src/modules/ledger/protocol/bitcoin/index.ts";
+import { defaultPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
+import type { BitcoinPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
+import { varint } from "../../src/modules/ledger/protocol/bytes.ts";
 import { appAndVersion, requireApp } from "../../src/modules/ledger/protocol/device.ts";
 import {
   ethAddress,
@@ -33,7 +51,7 @@ import {
   tronSignTransaction,
   tronSignTypedDataHash,
 } from "../../src/modules/ledger/protocol/tron.ts";
-import { hex, unhex } from "./record.ts";
+import { appsJson, hex, unhex } from "./record.ts";
 import type { CaseDef } from "./record.ts";
 
 export const ETH_PATH: ReadonlyArray<number> = [0x80_00_00_2c, 0x80_00_00_3c, 0x80_00_00_00, 0, 0];
@@ -864,6 +882,239 @@ export const TRON_CASES: CaseDef[] = [
   },
 ];
 
+const H32 = 0x80_00_00_00;
+const BTC_SEED = mnemonicToSeedSync(appsJson().seed);
+const BTC_ROOT = HDKey.fromMasterSeed(BTC_SEED);
+
+/** `m/p'/0'/0'` — the account paths the default policies bind to. */
+const btcAcct = (purpose: number): ReadonlyArray<number> => [H32 + purpose, H32, H32];
+const pathStr = (path: ReadonlyArray<number>): string =>
+  `m/${path.map((s) => (s >= H32 ? `${String(s - H32)}'` : String(s))).join("/")}`;
+const btcNode = (path: ReadonlyArray<number>): HDKey => BTC_ROOT.derive(pathStr(path));
+const pubOf = (path: ReadonlyArray<number>): Uint8Array => {
+  const pub = btcNode(path).publicKey;
+  if (!(pub instanceof Uint8Array)) {
+    throw new TypeError("derive failed");
+  }
+  return pub;
+};
+const fprNum = (fpr: Uint8Array): number => new DataView(fpr.buffer, fpr.byteOffset).getUint32(0);
+
+const TEMPLATE_PURPOSE = {
+  pkh: { purpose: 44, template: "btc.bip44" },
+  "sh-wpkh": { purpose: 49, template: "btc.bip49" },
+  wpkh: { purpose: 84, template: "btc.bip84" },
+  tr: { purpose: 86, template: "btc.bip86" },
+} as const satisfies Record<string, { purpose: number; template: BitcoinTemplate }>;
+
+const btcPolicy = (kind: keyof typeof TEMPLATE_PURPOSE, fpr: Uint8Array): BitcoinPolicy => {
+  const spec = TEMPLATE_PURPOSE[kind];
+  const acct = btcAcct(spec.purpose);
+  return defaultPolicy(spec.template, fpr, acct, btcNode(acct).publicExtendedKey);
+};
+
+const BTC_MAINNET = "bip122:000000000019d6689c085ae165831e93"; // genesis-hash CAIP-2 (networks.ts)
+const TXID = "11".repeat(32); // arbitrary prevout — only the P2PKH case needs a real prev tx
+const EXT_ADDR = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"; // BIP-173 example (valid)
+
+type InSpec = { kind: keyof typeof TEMPLATE_PURPOSE; change: 0 | 1; index: number };
+
+/** One input owned by the `kind` policy at `change`/`index`, with full derivation info. */
+const inputFor = (spec: InSpec, amount: bigint, fpr: Uint8Array): Record<string, unknown> => {
+  const { purpose } = TEMPLATE_PURPOSE[spec.kind];
+  const path = [...btcAcct(purpose), spec.change, spec.index];
+  const pub = pubOf(path);
+  const fp = fprNum(fpr);
+  if (spec.kind === "tr") {
+    const xonly = pub.slice(1);
+    return {
+      txid: TXID,
+      index: 0,
+      witnessUtxo: { script: p2tr(xonly).script, amount },
+      tapInternalKey: xonly,
+      tapBip32Derivation: [[xonly, { hashes: [], der: { fingerprint: fp, path } }]],
+    };
+  }
+  const inner = p2wpkh(pub);
+  if (spec.kind === "sh-wpkh") {
+    return {
+      txid: TXID,
+      index: 0,
+      witnessUtxo: { script: p2sh(inner).script, amount },
+      redeemScript: inner.script,
+      bip32Derivation: [[pub, { fingerprint: fp, path }]],
+    };
+  }
+  if (spec.kind === "wpkh") {
+    return {
+      txid: TXID,
+      index: 0,
+      witnessUtxo: { script: inner.script, amount },
+      bip32Derivation: [[pub, { fingerprint: fp, path }]],
+    };
+  }
+  const fund = new Transaction({ allowUnknownInputs: true, disableScriptCheck: true });
+  fund.addInput({ txid: TXID, index: 0 });
+  fund.addOutput({ script: p2pkh(pub).script, amount });
+  return {
+    txid: fund.id,
+    index: 0,
+    nonWitnessUtxo: fund.toBytes(),
+    bip32Derivation: [[pub, { fingerprint: fp, path }]],
+  };
+};
+
+/** The change output of `kind` at 1/`index`, carrying derivation info the wallet recognizes. */
+const changeOut = (
+  kind: keyof typeof TEMPLATE_PURPOSE,
+  index: number,
+  amount: bigint,
+  fpr: Uint8Array,
+): Record<string, unknown> => {
+  const { purpose } = TEMPLATE_PURPOSE[kind];
+  const path = [...btcAcct(purpose), 1, index];
+  const pub = pubOf(path);
+  const fp = fprNum(fpr);
+  if (kind === "tr") {
+    const xonly = pub.slice(1);
+    return {
+      script: p2tr(xonly).script,
+      amount,
+      tapInternalKey: xonly,
+      tapBip32Derivation: [[xonly, { hashes: [], der: { fingerprint: fp, path } }]],
+    };
+  }
+  const script =
+    kind === "pkh"
+      ? p2pkh(pub).script
+      : kind === "sh-wpkh"
+        ? p2sh(p2wpkh(pub)).script
+        : p2wpkh(pub).script;
+  return { script, amount, bip32Derivation: [[pub, { fingerprint: fp, path }]] };
+};
+
+/** `inputs` spend to EXT_ADDR with an optional owned change output; returns PSBTv2 bytes. */
+const btcPsbt = (
+  kind: keyof typeof TEMPLATE_PURPOSE,
+  inputs: InSpec[],
+  amount: bigint,
+  fpr: Uint8Array,
+  withChange: boolean,
+): Uint8Array => {
+  const tx = new Transaction({
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+    disableScriptCheck: true,
+  });
+  const total = BigInt(inputs.length) * amount;
+  const spend = (total * 2n) / 3n;
+  for (const spec of inputs) {
+    tx.addInput(inputFor(spec, amount, fpr));
+  }
+  tx.addOutputAddress(EXT_ADDR, spend);
+  if (withChange) {
+    tx.addOutput(changeOut(kind, 0, total - spend, fpr));
+  }
+  return tx.toPSBT(2);
+};
+
+/** Sign-psbt shared body: fetch fpr, build policy+psbt, record both on def.call, sign (with UI). */
+const signPsbt = async (
+  ex: Parameters<CaseDef["run"]>[0],
+  screen: Parameters<CaseDef["run"]>[1],
+  def: CaseDef,
+  kind: keyof typeof TEMPLATE_PURPOSE,
+  inputs: InSpec[],
+  withChange: boolean,
+): Promise<unknown> => {
+  const fpr = await btcMasterFingerprint(ex);
+  const policy = btcPolicy(kind, fpr);
+  const psbt = btcPsbt(kind, inputs, 100_000n, fpr, withChange);
+  def.call["policy"] = policy;
+  def.call["psbt"] = hex(psbt);
+  const out = await drive(
+    btcSignPsbt(ex, psbt, policy),
+    screen.approve(/^sign transaction$/i, {
+      maxSteps: 80,
+      through: /continue anyway/i,
+      leave: MENU,
+    }),
+  );
+  if (out.length !== inputs.length) {
+    throw new Error("the device did not yield a signature for every input");
+  }
+  // Signature oracle: place each yield into the PSBT — ECDSA yields are the derivation pubkey
+  // with a partialSig, taproot key-path yields go to the keyless tapKeySig — then verify against
+  // the account xpub (BIP-143/legacy/taproot sighashes via verifyBitcoinPsbtSignatures) and make
+  // sure the PSBT finalizes and extracts.
+  const signed = Transaction.fromPSBT(psbt, {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+    disableScriptCheck: true,
+  });
+  for (const y of out) {
+    if (y.publicKey.length === 32) {
+      signed.updateInput(y.input, { tapKeySig: y.signature });
+    } else {
+      signed.updateInput(y.input, { partialSig: [[y.publicKey, y.signature]] });
+    }
+  }
+  if (
+    !verifyBitcoinPsbtSignatures(
+      signed.toPSBT(2),
+      out.map((y) => y.input),
+      btcNode(btcAcct(TEMPLATE_PURPOSE[kind].purpose)).publicExtendedKey,
+      TEMPLATE_PURPOSE[kind].template,
+      BTC_MAINNET,
+    )
+  ) {
+    throw new Error("a yielded signature does not verify");
+  }
+  signed.finalize();
+  signed.extract();
+  return out.map((y) => ({
+    input: y.input,
+    publicKey: hex(y.publicKey),
+    signature: hex(y.signature),
+  }));
+};
+
+/**
+ * BIP-137 (bitcoin/bitcoin src/util/message.cpp MessageHash): the device signs the double-SHA256 of
+ * `"\x18Bitcoin Signed Message:\n" ‖ varint(len) ‖ message` — 0x18 is the compactsize length of the
+ * prefix string — and returns `header ‖ compact r‖s` with header = 27 + recid (+4 for a compressed
+ * key, the range 31..34 the pinned app produces).
+ */
+const MSG_PREFIX = new TextEncoder().encode("\u0018Bitcoin Signed Message:\n");
+const btcMessageHash = (message: Uint8Array): Uint8Array => {
+  const len = varint(message.length);
+  const preimage = new Uint8Array(MSG_PREFIX.length + len.length + message.length);
+  preimage.set(MSG_PREFIX);
+  preimage.set(len, MSG_PREFIX.length);
+  preimage.set(message, MSG_PREFIX.length + len.length);
+  return sha256(sha256(preimage));
+};
+
+/** Recover the signing key from the compact signature and compare it to the seed key at `path`. */
+const checkMessageSignature = (
+  header: number,
+  signature: Uint8Array,
+  message: Uint8Array,
+  path: ReadonlyArray<number>,
+): void => {
+  const recovered = secp256k1.recoverPublicKey(
+    Uint8Array.of((header - 27) % 4, ...signature),
+    btcMessageHash(message),
+    { prehash: false },
+  );
+  const pub = secp256k1.Point.fromBytes(recovered).toBytes(true);
+  if (!equalBytes(pub, pubOf(path))) {
+    throw new Error("the message signature recovers a different key");
+  }
+};
+
+const MSG_PATH: ReadonlyArray<number> = [...btcAcct(44), 0, 0];
+
 export const BITCOIN_CASES: CaseDef[] = [
   {
     name: "app-and-version",
@@ -872,6 +1123,173 @@ export const BITCOIN_CASES: CaseDef[] = [
       const info = await appAndVersion(ex);
       requireApp(info, "bitcoin");
       return { name: info.name, version: info.version, flags: hex(info.flags) };
+    },
+  },
+  {
+    name: "fingerprint",
+    call: { fn: "btcMasterFingerprint" },
+    run: async (ex) => {
+      const fpr = await btcMasterFingerprint(ex);
+      if (fprNum(fpr) !== BTC_ROOT.fingerprint) {
+        throw new Error("device fingerprint differs from the seed");
+      }
+      return hex(fpr);
+    },
+  },
+  {
+    name: "xpub",
+    call: { fn: "btcExtendedPublicKey", path: btcAcct(84), display: false },
+    run: async (ex) => {
+      const xpub = await btcExtendedPublicKey(ex, btcAcct(84), false);
+      if (xpub !== btcNode(btcAcct(84)).publicExtendedKey) {
+        throw new Error("xpub mismatch");
+      }
+      return xpub;
+    },
+  },
+  {
+    name: "xpub-display",
+    call: { fn: "btcExtendedPublicKey", path: btcAcct(84), display: true },
+    run: async (ex, screen) => {
+      const xpub = await drive(
+        btcExtendedPublicKey(ex, btcAcct(84), true),
+        screen.approve(/approve/i, { maxSteps: 30, leave: MENU }),
+      );
+      if (xpub !== btcNode(btcAcct(84)).publicExtendedKey) {
+        throw new Error("xpub mismatch");
+      }
+      return xpub;
+    },
+  },
+  {
+    // m/0' fails is_path_safe_for_pubkey_export (get_extended_pubkey.c) → SW_NOT_SUPPORTED, no UI.
+    name: "xpub-nonstandard",
+    call: { fn: "btcExtendedPublicKey", path: [H32], display: false },
+    run: async (ex) => btcExtendedPublicKey(ex, [H32], false),
+  },
+  ...(["pkh", "sh-wpkh", "wpkh", "tr"] as const).map((kind): CaseDef => {
+    const index = kind === "wpkh" ? 5 : 3;
+    const change = kind === "tr" ? 1 : 0;
+    return {
+      name: `addr-${kind}`,
+      call: { fn: "btcWalletAddress", kind, change, index, display: false },
+      run: async (ex, _screen, def) => {
+        const fpr = await btcMasterFingerprint(ex);
+        const policy = btcPolicy(kind, fpr);
+        def.call["policy"] = policy;
+        return btcWalletAddress(ex, policy, change, index, false);
+      },
+    };
+  }),
+  {
+    name: "addr-display",
+    call: { fn: "btcWalletAddress", kind: "wpkh", change: 0, index: 2, display: true },
+    run: async (ex, screen, def) => {
+      const fpr = await btcMasterFingerprint(ex);
+      const policy = btcPolicy("wpkh", fpr);
+      def.call["policy"] = policy;
+      return drive(
+        btcWalletAddress(ex, policy, 0, 2, true),
+        screen.approve(/approve|confirm/i, { maxSteps: 30, leave: MENU }),
+      );
+    },
+  },
+  {
+    name: "sign-psbt-wpkh",
+    call: { fn: "btcSignPsbt", kind: "wpkh" },
+    run: async (ex, screen, def) =>
+      signPsbt(ex, screen, def, "wpkh", [{ kind: "wpkh", change: 0, index: 0 }], true),
+  },
+  {
+    name: "sign-psbt-tr",
+    call: { fn: "btcSignPsbt", kind: "tr" },
+    volatileSignature: true,
+    run: async (ex, screen, def) =>
+      signPsbt(ex, screen, def, "tr", [{ kind: "tr", change: 0, index: 0 }], true),
+  },
+  {
+    name: "sign-psbt-sh-wpkh",
+    call: { fn: "btcSignPsbt", kind: "sh-wpkh" },
+    run: async (ex, screen, def) =>
+      signPsbt(ex, screen, def, "sh-wpkh", [{ kind: "sh-wpkh", change: 0, index: 0 }], true),
+  },
+  {
+    name: "sign-psbt-pkh",
+    call: { fn: "btcSignPsbt", kind: "pkh" },
+    run: async (ex, screen, def) =>
+      signPsbt(ex, screen, def, "pkh", [{ kind: "pkh", change: 0, index: 0 }], true),
+  },
+  {
+    name: "sign-psbt-wpkh-2in",
+    call: { fn: "btcSignPsbt", kind: "wpkh" },
+    run: async (ex, screen, def) =>
+      signPsbt(
+        ex,
+        screen,
+        def,
+        "wpkh",
+        [
+          { kind: "wpkh", change: 0, index: 0 },
+          { kind: "wpkh", change: 0, index: 1 },
+        ],
+        true,
+      ),
+  },
+  {
+    name: "sign-psbt-8in",
+    call: { fn: "btcSignPsbt", kind: "wpkh" },
+    run: async (ex, screen, def) =>
+      signPsbt(
+        ex,
+        screen,
+        def,
+        "wpkh",
+        Array.from({ length: 8 }, (_, i) => ({ kind: "wpkh", change: 0, index: i })),
+        true,
+      ),
+  },
+  {
+    name: "sign-psbt-rejected",
+    call: { fn: "btcSignPsbt", kind: "wpkh" },
+    run: async (ex, screen, def) => {
+      const fpr = await btcMasterFingerprint(ex);
+      const policy = btcPolicy("wpkh", fpr);
+      const psbt = btcPsbt("wpkh", [{ kind: "wpkh", change: 0, index: 0 }], 100_000n, fpr, true);
+      def.call["policy"] = policy;
+      def.call["psbt"] = hex(psbt);
+      const job = btcSignPsbt(ex, psbt, policy);
+      // oxlint-disable-next-line promise/prefer-await-to-then -- the rejection lands on the returned promise below
+      void job.catch(() => undefined);
+      await screen.reject(/back to safety|reject/i, { maxSteps: 80, leave: MENU });
+      return job;
+    },
+  },
+  {
+    name: "sign-message",
+    call: { fn: "btcSignMessage", path: MSG_PATH },
+    run: async (ex, screen, def) => {
+      const msg = new TextEncoder().encode("Hello Ledger Bitcoin!");
+      def.call["message"] = hex(msg);
+      const out = await drive(
+        btcSignMessage(ex, MSG_PATH, msg),
+        screen.approve(/^sign message/i, { maxSteps: 30, leave: MENU }),
+      );
+      checkMessageSignature(out.header, out.signature, msg, MSG_PATH);
+      return { header: out.header, signature: hex(out.signature) };
+    },
+  },
+  {
+    name: "sign-message-binary",
+    call: { fn: "btcSignMessage", path: MSG_PATH },
+    run: async (ex, screen, def) => {
+      const msg = Uint8Array.from({ length: 200 }, (_, i) => (i * 37 + 11) & 0xff);
+      def.call["message"] = hex(msg);
+      const out = await drive(
+        btcSignMessage(ex, MSG_PATH, msg),
+        screen.approve(/^sign message/i, { maxSteps: 40, leave: MENU }),
+      );
+      checkMessageSignature(out.header, out.signature, msg, MSG_PATH);
+      return { header: out.header, signature: hex(out.signature) };
     },
   },
 ];

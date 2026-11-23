@@ -135,6 +135,43 @@ export type CaseDef = {
    * message built from the device key) so they land in the recorded vector.
    */
   run: (exchange: Exchange, screen: Screen, def: CaseDef) => Promise<unknown>;
+  /**
+   * The device adds per-run entropy to the yielded signature (Schnorr aux randomness). APDUs are
+   * still compared byte-for-byte, but signature bytes in YIELD responses and in the result are
+   * masked — the case's own oracle proves each live signature valid.
+   */
+  volatileSignature?: boolean;
+};
+
+/**
+ * Zero the signature tail of a `10` (YIELD) response — `10 ‖ varint input ‖ u8 pubkeyLen ‖ pubkey ‖
+ * signature ‖ e000` (doc/bitcoin.md) — so a randomized signature cannot drift the transcript.
+ */
+const maskYield = (step: Step): Step => {
+  const r = unhex(step.response);
+  if (r.length < 4 || r[0] !== 0x10 || r.at(-2) !== 0xe0 || r.at(-1) !== 0x00) {
+    return step;
+  }
+  const first = r[1] ?? 0;
+  const varintLen = first < 0xfd ? 1 : first === 0xfd ? 3 : first === 0xfe ? 5 : 9;
+  const start = 1 + varintLen + 1 + (r[1 + varintLen] ?? 0);
+  if (start >= r.length - 2) {
+    return step;
+  }
+  r.fill(0, start, r.length - 2);
+  return { apdu: step.apdu, response: hex(r) };
+};
+
+const maskSig = (result: unknown): unknown => {
+  if (!Array.isArray(result)) {
+    return result;
+  }
+  return result.map((item: unknown) => {
+    if (typeof item !== "object" || item === null || !("signature" in item)) {
+      return item;
+    }
+    return { ...item, signature: "masked" };
+  });
 };
 
 const recorder = (
@@ -236,7 +273,7 @@ const TRANSIENT = /rejected|signed|verified|denied/i;
 // must be paged through, not confirmed.
 const REJECT = /^reject|^deny|^cancel/i;
 // the settings submenu's last item — pressing both exits to the home menu
-const BACK = /^back$/i;
+const BACK = /^back\b/i;
 // blocking notices ("Blind signing must be enabled in settings") have one page — press both
 const NOTICE = /must be enabled|cannot be displayed|denied/i;
 
@@ -306,7 +343,10 @@ export async function checkCase(
   if (RECORD || recorded === undefined) {
     return outcome;
   }
-  if (!same(outcome.steps, recorded.commands)) {
+  const steps = def.volatileSignature === true ? outcome.steps.map(maskYield) : outcome.steps;
+  const recordedSteps =
+    def.volatileSignature === true ? recorded.commands.map(maskYield) : recorded.commands;
+  if (!same(steps, recordedSteps)) {
     throw new Error(
       `case "${def.name}" transcript drifted\nexpected: ${JSON.stringify(recorded.commands)}\ngot:      ${JSON.stringify(outcome.steps)}`,
     );
@@ -317,7 +357,13 @@ export async function checkCase(
         `case "${def.name}" error drifted: expected ${JSON.stringify(recorded.error)}, got ${JSON.stringify(outcome.error)}`,
       );
     }
-  } else if (outcome.error !== undefined || !same(outcome.result, recorded.result)) {
+  } else if (
+    outcome.error !== undefined ||
+    !same(
+      def.volatileSignature === true ? maskSig(outcome.result) : outcome.result,
+      def.volatileSignature === true ? maskSig(recorded.result) : recorded.result,
+    )
+  ) {
     throw new Error(
       `case "${def.name}" result drifted: expected ${JSON.stringify(recorded.result)}, got ${JSON.stringify(outcome.result ?? outcome.error)}`,
     );

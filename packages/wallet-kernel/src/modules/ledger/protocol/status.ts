@@ -5,7 +5,9 @@
  *
  * Sources: DMK `api/command/utils/GlobalCommandError.js` (OS words 5515/5501/6E00/6D00/6807),
  * ledger-app-solana `src/apdu.h` (6982/6808), ledger-app-tron `docs/APDU.md` + `src/app_errors.h`
- * (6A8B/6A8C/6A8D/6A8E), ledger-app-ethereum `src/apdu_constants.h` (6985 refusal).
+ * (6A8B/6A8C/6A8D/6A8E), ledger-app-ethereum `src/apdu_constants.h` (6985 refusal), app-bitcoin-new
+ * `src/boilerplate/sw.h` (6985 SW_DENY, 6A82 SW_NOT_SUPPORTED — e.g. get_extended_pubkey.c for an
+ * unusual path without display).
  */
 import type { LedgerApp } from "./device.ts";
 import type { LedgerErrorCode } from "./errors.ts";
@@ -53,11 +55,21 @@ function mapped(app: AppScope, sw: number): LedgerErrorCode | undefined {
         return "unsupported";
       }
       break;
+    case "bitcoin":
+      // SW_NOT_SUPPORTED — the request needs something this build will not do, e.g. a
+      // non-standard xpub path without display (get_extended_pubkey.c).
+      if (sw === 0x6a82) {
+        return "unsupported";
+      }
+      break;
     default:
       break;
   }
-  // ApduReplyUserRefusal / SWO_CONDITIONS_NOT_SATISFIED — user rejection in these three apps.
-  if ((app === "ethereum" || app === "solana" || app === "tron") && sw === 0x6985) {
+  // ApduReplyUserRefusal / SWO_CONDITIONS_NOT_SATISFIED / SW_DENY — user rejection.
+  if (
+    (app === "ethereum" || app === "solana" || app === "tron" || app === "bitcoin") &&
+    sw === 0x6985
+  ) {
     return "user-rejected";
   }
   return undefined;

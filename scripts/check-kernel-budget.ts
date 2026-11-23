@@ -58,8 +58,8 @@ const SIGNERS_BUDGET = 66_560;
 const LEDGER_ENTRY = "qntx-budget-ledger.ts";
 const LEDGER_ENTRY_ID = "\0qntx-budget-ledger";
 const LEDGER_PROTOCOL = "packages/wallet-kernel/src/modules/ledger/protocol/";
-// measured 44126 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
-const LEDGER_BUDGET = 46_333;
+// measured 74466 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
+const LEDGER_BUDGET = 78_190;
 
 type Unit = {
   readonly name: string;

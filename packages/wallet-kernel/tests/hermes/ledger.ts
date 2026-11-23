@@ -7,13 +7,31 @@
 
 import { hexToBytes, bytesToHex } from "@noble/hashes/utils.js";
 
+import btc from "../../../../vectors/ledger/bitcoin.json" with { type: "json" };
 import eth from "../../../../vectors/ledger/ethereum.json" with { type: "json" };
 import sol from "../../../../vectors/ledger/solana.json" with { type: "json" };
 import trx from "../../../../vectors/ledger/tron.json" with { type: "json" };
 import type { Exchange } from "../../src/modules/ledger/protocol/apdu.ts";
+import {
+  btcMasterFingerprint,
+  btcSignPsbt,
+} from "../../src/modules/ledger/protocol/bitcoin/index.ts";
+import type { BitcoinPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
 import { ethAddress, ethSignTransaction } from "../../src/modules/ledger/protocol/ethereum.ts";
 import { solanaAddress, solanaSignTransaction } from "../../src/modules/ledger/protocol/solana.ts";
 import { tronAddress, tronSignTransaction } from "../../src/modules/ledger/protocol/tron.ts";
+
+const isPolicy = (value: unknown): value is BitcoinPolicy =>
+  typeof value === "object" && value !== null && "template" in value && "key" in value;
+
+const isYield = (
+  value: unknown,
+): value is { input: number; publicKey: string; signature: string } =>
+  typeof value === "object" &&
+  value !== null &&
+  "input" in value &&
+  "publicKey" in value &&
+  "signature" in value;
 
 declare function print(msg: string): void;
 declare function quit(code: number): void;
@@ -118,6 +136,31 @@ const main = async (): Promise<void> => {
     const out = await tronSignTransaction(replay(tx), TRX_PATH, callHex(tx, "rawData"));
     if (bytesToHex(out) !== sig(tx.result)) {
       throw new Error("tron signature mismatch");
+    }
+  }
+  // bitcoin: fingerprint + a P2WPKH sign-psbt — exercises the whole interactive interpreter
+  // (preimages, merkle proofs, yields) inside Hermes
+  {
+    const tx = named(btc.cases, "sign-psbt-wpkh");
+    const ex = replay(tx);
+    await btcMasterFingerprint(ex);
+    if (!isPolicy(tx.call["policy"])) {
+      throw new Error("bitcoin policy missing");
+    }
+    const out = await btcSignPsbt(ex, callHex(tx, "psbt"), tx.call["policy"]);
+    const want = tx.result;
+    if (
+      !Array.isArray(want) ||
+      !want.every(isYield) ||
+      out.length !== want.length ||
+      out.some(
+        (y, i) =>
+          y.input !== want[i]?.input ||
+          bytesToHex(y.publicKey) !== want[i]?.publicKey ||
+          bytesToHex(y.signature) !== want[i]?.signature,
+      )
+    ) {
+      throw new Error("bitcoin yields mismatch");
     }
   }
 
