@@ -190,6 +190,10 @@ std::string keystoreLocale() {
   return method(keystoreClass())->toStdString();
 }
 
+std::string keystorePlatform() {
+  return "android";
+}
+
 } // namespace qntx
 
 // Kotlin's Keystore.nativeComplete: resolves the parked call. The byte array

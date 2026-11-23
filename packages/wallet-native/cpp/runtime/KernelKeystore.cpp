@@ -173,6 +173,7 @@ void installKernelKeystore(
 
   auto keystore = jsi::Object(rt);
   keystore.setProperty(rt, "locale", jsi::String::createFromUtf8(rt, keystoreLocale()));
+  keystore.setProperty(rt, "platform", jsi::String::createFromUtf8(rt, keystorePlatform()));
   keystore.setProperty(
       rt,
       "seal",

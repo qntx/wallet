@@ -148,6 +148,8 @@ export type KeyUse =
  */
 export type Keystore = {
   readonly locale: string; // host-preferred BCP 47 language tag
+  /** The OS the system prompt renders on; picks the kernel's prompt text bound. */
+  readonly platform: "ios" | "android";
   readonly seal: (id: string, secret: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   readonly open: (id: string, sealed: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   /**
@@ -243,6 +245,7 @@ export function serializeCeremonies(
         ? undefined
         : {
             locale: keystore.locale,
+            platform: keystore.platform,
             seal: async (id, secret, use) =>
               use.protection === "presence"
                 ? queue(async () => keystore.seal(id, secret, use))

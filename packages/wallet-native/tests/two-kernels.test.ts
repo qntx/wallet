@@ -47,6 +47,7 @@ function fakeNativeKeystore() {
   const seal = (bytes: Uint8Array) => bytes.toReversed();
   const native: KernelKeystoreNative = {
     locale: "en-US",
+    platform: "ios",
     seal: (id, secret, _title, _description, done) => {
       const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
       const sealed = seal(secret);

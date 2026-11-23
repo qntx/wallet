@@ -825,7 +825,7 @@ int keystoreBinding() {
   Mailbox box;
   const std::string js = std::string(kSendHelper) + R"JS(
 var ks = __qntx.keystore;
-var r = ["locale=" + ks.locale, "frozen=" + Object.isFrozen(ks)];
+var r = ["locale=" + ks.locale, "platform=" + ks.platform, "frozen=" + Object.isFrozen(ks)];
 r.push("names=" + Object.getOwnPropertyNames(ks).sort().join(","));
 var id = "0123456789abcdef0123456789abcdef";
 var kek = new Uint8Array(32);
@@ -906,8 +906,8 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "locale=zh-Hans-CN frozen=true "
-                "names=authenticate,clear,locale,open,openDevice,probe,remove,seal,sealDevice "
+                "locale=zh-Hans-CN platform=ios frozen=true "
+                "names=authenticate,clear,locale,open,openDevice,platform,probe,remove,seal,sealDevice "
                 "badId=ok shortSecret=ok emptyTitle=ok longDescription=ok emptySealed=ok "
                 "noCallback=ok deviceBadId=ok deviceShortSecret=ok deviceEmptySealed=ok "
                 "badProtection=ok removeNoCallback=ok sealed=true opened=true dsealed=true "
