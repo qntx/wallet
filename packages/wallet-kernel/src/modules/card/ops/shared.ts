@@ -303,10 +303,24 @@ export const fetchNodes = async (
 ): Promise<void> => {
   const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
   const batch = paths.slice(0, Math.max(0, room));
+  if (batch.length === 0) {
+    return;
+  }
   const staged = {
     nodes: {} as Record<string, CardWalletNode>,
     ed25519: {} as Record<string, string>,
   };
+  // One stage for the whole batch: the commit lands every node fetched before the tap ended,
+  // so a torn tap keeps the partial work it already did on the card.
+  tap.update((d) => {
+    if (d.body !== undefined) {
+      d.body = {
+        ...d.body,
+        nodes: { ...d.body.nodes, ...staged.nodes },
+        ed25519: { ...d.body.ed25519, ...staged.ed25519 },
+      };
+    }
+  });
   for (const needed of batch) {
     const key = pathString(needed.path);
     // oxlint-disable-next-line eslint/no-await-in-loop -- PUBLIC_KEYs are strictly sequential
@@ -318,19 +332,6 @@ export const fetchNodes = async (
       staged.ed25519[key] = bytesToHex(decode.weiPoint(data));
     }
   }
-  // One stage for the whole batch: the commit lands every node this tap fetched.
-  if (batch.length === 0) {
-    return;
-  }
-  tap.update((d) => {
-    if (d.body !== undefined) {
-      d.body = {
-        ...d.body,
-        nodes: { ...d.body.nodes, ...staged.nodes },
-        ed25519: { ...d.body.ed25519, ...staged.ed25519 },
-      };
-    }
-  });
 };
 
 /** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */

@@ -42545,10 +42545,17 @@ zoo`.split("\n"));
 	var fetchNodes = async (tap, paths, plan = PLAN_MS) => {
 		const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
 		const batch = paths.slice(0, Math.max(0, room));
+		if (batch.length === 0) return;
 		const staged = {
 			nodes: {},
 			ed25519: {}
 		};
+		tap.update((d) => {
+			if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, {
+				nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), staged.nodes),
+				ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), staged.ed25519)
+			});
+		});
 		for (const needed of batch) {
 			const key = pathString(needed.path);
 			const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
@@ -42560,13 +42567,6 @@ zoo`.split("\n"));
 				};
 			} else staged.ed25519[key] = bytesToHex$4(decode$2.weiPoint(data));
 		}
-		if (batch.length === 0) return;
-		tap.update((d) => {
-			if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, {
-				nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), staged.nodes),
-				ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), staged.ed25519)
-			});
-		});
 	};
 	/** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */
 	var recordFrom = (env, cardId, info, access) => ({
