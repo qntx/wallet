@@ -228,6 +228,11 @@ Gateway (operators):
   (`exportMnemonic`, Nostr key derivation and sync, Spark, `sessions.create`), `chain.sign`
   answers `device-required`, and `wallet.accounts` answers `device-required` for a group the
   device has not exported yet. (MIGRATION §24)
+- `@qntx/wallet-engine/walletconnect`: the WalletConnect SDK packages
+  (`@reown/walletkit`, `@walletconnect/core`, `@walletconnect/types`, `@walletconnect/utils`)
+  moved from `dependencies` to optional peer dependencies — a host using WalletConnect installs
+  them itself (they stay bundled for development). Nothing else changes; every other entry works
+  without them. (MIGRATION §21)
 
 ### Added
 

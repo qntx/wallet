@@ -806,8 +806,24 @@ the full list.
 ## WalletConnect
 
 `@qntx/wallet-engine/walletconnect` is a separate entry point: the wallet side of WalletConnect
-v2 (Reown WalletKit + the sign client). A host that never pairs pays nothing — the SDK and its
-relay transport live only in this entry's bundle. WalletConnect peers are ordinary dApp origins
+v2 (Reown WalletKit + the sign client). It needs four optional peer dependencies — install them
+yourself: `@reown/walletkit`, `@walletconnect/core`, `@walletconnect/types`,
+`@walletconnect/utils` (exact pins in `peerDependencies`). No other entry imports them, so a
+host that never pairs pays nothing — the SDK and its relay transport live only in this entry's
+bundle.
+
+All four packages are under the **WalletConnect Community License Agreement** (Reown, Inc.,
+release date 20 August 2025 — see `LICENSE.md` in each installed package). Reading the license:
+downloading, installing, integrating or using the packages makes you a Licensee bound by it.
+Use for education/non-commercial research and for developing your own apps and wallets is
+royalty-free, subject to the limited-commercial-use rule: above **500 monthly active users or
+2,500,000 monthly RPC calls** you must pay for a commercial licence. Modifications are allowed
+but every modification or derivative work is assigned to Reown (you keep a licence to use it
+only in conjunction with the packages while the licence is in effect, must mark changed files,
+and must hand Reown the source/binary on request); your own app stays yours. Distribution
+requires the notice "Portions © 2025 Reown, Inc. All Rights Reserved" and a copy of the
+licence, and as a material condition all use must connect to the proprietary Reown gateway
+infrastructure and the WalletConnect messaging protocol. WalletConnect peers are ordinary dApp origins
 keyed `walletconnect:<session topic>`: their sessions live in `engine.connections` alongside
 browser sessions, and every `session_request` runs through the same handlers and request pipeline
 the in-app browser uses, so the approval UI and risk checks are unchanged.

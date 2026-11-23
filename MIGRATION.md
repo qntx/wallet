@@ -1496,6 +1496,10 @@ Related changes:
   wallet's own and only `evm.typed-data` is accepted.
 - `engine.payments.parse` returns `{ kind: "walletconnect", uri }` for a `wc:` pairing URI. Route
   it to `walletConnect.pair(uri)` (§23).
+- `@qntx/wallet-engine/walletconnect` moved its SDK packages to optional peers: a host using
+  WalletConnect now installs `@reown/walletkit`, `@walletconnect/core`, `@walletconnect/types`
+  and `@walletconnect/utils` itself (exact pins in `peerDependencies`; the WalletConnect Community
+  License terms are summarised in the package README — read them before shipping).
 - The injected Solana and Bitcoin providers reject a refused, expired or invalidated request with
   `4001` (a sign-in for another domain with `-32602`) instead of `-32603 internal error`. Code that
   treated `-32603` as "the user said no" must use `4001`.
