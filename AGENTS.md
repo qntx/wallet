@@ -83,11 +83,12 @@ Local gate before a pull request:
 bun run lint && bun run typecheck && bun run test
 ```
 
-`vp` caches lint/typecheck/test results, so a green run can mask findings a
-fresh file edit introduced. To run the gate uncached before a PR:
-`bunx vp cache clean && bunx vp check && bun run lint && bun run typecheck && bun run test`
-(`bunx vp check` checks every file directly; `vp cache clean` clears the
-task cache so the subsequent `bun run` scripts re-evaluate).
+`vp` replays cached results, so a green run can mask findings a fresh file
+edit introduced. To run the gate uncached before a PR:
+`bunx vp cache clean && bun run lint && bun run typecheck && bun run test`
+(`bun run lint` builds the consumed packages before `vp check`; a bare
+`vp check` on a cold tree fails with TS2307). Any re-run meant to detect
+flakes must begin with `bunx vp cache clean`.
 
 The native kernel bundle is committed (`packages/wallet-native/kernel/generated/`). Any
 change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, kernel

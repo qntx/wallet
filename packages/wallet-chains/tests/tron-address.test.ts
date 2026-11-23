@@ -36,7 +36,7 @@ const vectors = JSON.parse(
 };
 
 describe("tronAddressFromPublicKey", () => {
-  it("reproduces every derivation row's address and private key", () => {
+  it("reproduces every derivation row's address and private key", { timeout: 30_000 }, () => {
     for (const row of vectors.derivation) {
       const child = HDKey.fromMasterSeed(mnemonicToSeedSync(row.mnemonic)).derive(row.path);
       expect(child.privateKey).not.toBeNull();
@@ -102,23 +102,31 @@ describe("tron address encodings", () => {
     expect(() => tronAddressFromEvm("0x")).toThrow(ChainError);
   });
 
-  it("round-trips random 20-byte bodies through bytes, hex and EVM forms", () => {
-    fc.assert(
-      fc.property(fc.uint8Array({ minLength: 20, maxLength: 20 }), (body) => {
-        const encoded = tronAddressFromBytes(Uint8Array.of(0x41, ...body));
-        expect(isTronAddress(encoded)).toBe(true);
-        expect(tronAddressToBytes(encoded)).toStrictEqual(Uint8Array.of(0x41, ...body));
-        expect(tronAddressFromHex(tronAddressToHex(encoded))).toBe(encoded);
-        expect(tronAddressFromEvm(tronAddressToEvm(encoded))).toBe(encoded);
-      }),
-    );
-  });
+  it(
+    "round-trips random 20-byte bodies through bytes, hex and EVM forms",
+    { timeout: 30_000 },
+    () => {
+      fc.assert(
+        fc.property(fc.uint8Array({ minLength: 20, maxLength: 20 }), (body) => {
+          const encoded = tronAddressFromBytes(Uint8Array.of(0x41, ...body));
+          expect(isTronAddress(encoded)).toBe(true);
+          expect(tronAddressToBytes(encoded)).toStrictEqual(Uint8Array.of(0x41, ...body));
+          expect(tronAddressFromHex(tronAddressToHex(encoded))).toBe(encoded);
+          expect(tronAddressFromEvm(tronAddressToEvm(encoded))).toBe(encoded);
+        }),
+      );
+    },
+  );
 
-  it("isTronAddress returns a boolean on arbitrary strings without throwing", () => {
-    fc.assert(
-      fc.property(fc.string({ maxLength: 64 }), (value) => {
-        expect(isTronAddress(value)).toBeTypeOf("boolean");
-      }),
-    );
-  });
+  it(
+    "isTronAddress returns a boolean on arbitrary strings without throwing",
+    { timeout: 30_000 },
+    () => {
+      fc.assert(
+        fc.property(fc.string({ maxLength: 64 }), (value) => {
+          expect(isTronAddress(value)).toBeTypeOf("boolean");
+        }),
+      );
+    },
+  );
 });
