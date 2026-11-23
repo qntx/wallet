@@ -54,10 +54,15 @@ export const broadcastOutcome = async (attempt: BroadcastAttempt): Promise<Broad
       return { kind: "unknown", error };
     }
     // A retried or failed-over send is refused (nonce too low, inputs spent) when an earlier copy
-    // of the same bytes already landed.
-    return (await attempt.known().catch(() => false))
-      ? { kind: "accepted" }
-      : { kind: "refused", error };
+    // of the same bytes already landed. A failed lookup cannot tell the two apart, so the outcome
+    // is ambiguous — never a definite refusal: the bytes may have landed.
+    let known: boolean;
+    try {
+      known = await attempt.known();
+    } catch {
+      return { kind: "unknown", error };
+    }
+    return known ? { kind: "accepted" } : { kind: "refused", error };
   }
   return reported === attempt.id
     ? { kind: "accepted" }

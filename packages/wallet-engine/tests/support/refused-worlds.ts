@@ -77,6 +77,8 @@ export type RefusedRig = {
   /** The next broadcasts are refused for good until `accept`. */
   readonly refuse: () => void;
   readonly accept: () => void;
+  /** While on, the does-the-network-know-this-id lookup fails (transport error). */
+  readonly failLookups: (on: boolean) => void;
   readonly bomb: Bomb;
 };
 
@@ -130,6 +132,8 @@ export type EvmNode = {
   refuse: { code: number; message: string } | undefined;
   /** Armed per test: every sendRawTransaction fetch fails like a dropped connection. */
   drop: boolean;
+  /** Armed per test: every eth_getTransactionByHash read fails like a dropped connection. */
+  dropLookups: boolean;
 };
 
 /** The independent host endpoint's own view of the chain — reachable only via `HOST2`. */
@@ -170,6 +174,8 @@ export type EvmWorld = {
   readonly releaseSignGate: () => void;
   /** The next sendRawTransaction gets a permanent JSON-RPC refusal. */
   readonly refuse: () => void;
+  /** While on, eth_getTransactionByHash reads fail like a dropped connection. */
+  readonly failLookups: (on: boolean) => void;
 };
 
 export const evmWorld = (): EvmWorld => {
@@ -182,6 +188,7 @@ export const evmWorld = (): EvmWorld => {
     attempts: [],
     refuse: undefined,
     drop: false,
+    dropLookups: false,
   };
   const host: EvmHost = { known: new Set(), receipts: new Map(), fail: false };
   const clock = { t: 1_000_000 };
@@ -294,6 +301,9 @@ export const evmWorld = (): EvmWorld => {
             return { result: hash };
           }
           case "eth_getTransactionByHash":
+            if (node.dropLookups) {
+              throw new TypeError("fetch failed");
+            }
             return { result: node.known.has(String(params[0])) ? { hash: params[0] } : null };
           case "eth_getTransactionReceipt":
             return { result: node.receipts.get(String(params[0])) ?? null };
@@ -405,6 +415,9 @@ export const evmWorld = (): EvmWorld => {
     refuse: () => {
       node.refuse = EVM_REFUSAL;
     },
+    failLookups: (on: boolean) => {
+      node.dropLookups = on;
+    },
   };
 };
 
@@ -435,7 +448,7 @@ export type SolanaWorld = {
   readonly wires: string[];
   /** Every sendTransaction fetch, including ones still waiting at the gate. */
   readonly attempts: string[];
-  readonly env: { blockHeight: number; slot: number; statusSlot: number };
+  readonly env: { blockHeight: number; slot: number; statusSlot: number; statusFail: boolean };
   /** The same durable map every `boot` opens — a restart over it is one call. */
   readonly backing: Backing;
   /** Every message the engine's logger warned about, in order. */
@@ -446,6 +459,8 @@ export type SolanaWorld = {
   readonly setSendMode: (
     mode: { kind: "ok" } | { kind: "rpc-error"; message: string } | { kind: "drop" },
   ) => void;
+  /** While on, getSignatureStatuses answers an RPC error like a failed lookup. */
+  readonly failLookups: (on: boolean) => void;
   /** Every sendTransaction waits on the armed gate. */
   readonly armSendGate: () => void;
   readonly releaseSendGate: () => void;
@@ -458,7 +473,7 @@ export const solanaWorld = (): SolanaWorld => {
   const wires: string[] = [];
   /** Every sendTransaction fetch, including ones still waiting at the gate. */
   const attempts: string[] = [];
-  const env = { blockHeight: 1, slot: 500, statusSlot: 500 };
+  const env = { blockHeight: 1, slot: 500, statusSlot: 500, statusFail: false };
   const backing = newBacking();
   const bomb: Bomb = { fail: undefined };
   const warnings: string[] = [];
@@ -504,6 +519,9 @@ export const solanaWorld = (): SolanaWorld => {
       case "isBlockhashValid":
         return { context: { slot: env.slot }, value: false };
       case "getSignatureStatuses": {
+        if (env.statusFail) {
+          throw new TypeError("fetch failed");
+        }
         const sigs = Array.isArray(params[0]) ? params[0] : [];
         return {
           context: { slot: env.statusSlot },
@@ -607,6 +625,9 @@ export const solanaWorld = (): SolanaWorld => {
     setSendMode: (mode: typeof sendMode) => {
       sendMode = mode;
     },
+    failLookups: (on: boolean) => {
+      env.statusFail = on;
+    },
     armSendGate: () => {
       let open!: () => void;
       sendGate = {
@@ -668,6 +689,7 @@ export type TronWorld = {
     fullInfo: Map<string, Record<string, unknown>>;
     known: Set<string>;
     blockIds: Map<number, string>;
+    dropLookups: boolean;
   };
   /** The same durable map every `boot` opens — a restart over it is one call. */
   readonly backing: Backing;
@@ -679,6 +701,8 @@ export type TronWorld = {
   readonly setBroadcastMode: (
     mode: { kind: "ok" } | { kind: "refuse"; code: string; message?: string } | { kind: "drop" },
   ) => void;
+  /** While on, gettransactionbyid reads fail like a dropped connection. */
+  readonly failLookups: (on: boolean) => void;
   /** Every broadcasthex fetch waits on the armed gate. */
   readonly armSendGate: () => void;
   readonly releaseSendGate: () => void;
@@ -699,6 +723,7 @@ export const tronWorld = (): TronWorld => {
     fullInfo: new Map<string, Record<string, unknown>>(),
     known: new Set<string>(),
     blockIds: new Map<number, string>([[100, TRON_SOLID_ID]]),
+    dropLookups: false,
   };
   let broadcastMode:
     | { kind: "ok" }
@@ -752,6 +777,9 @@ export const tronWorld = (): TronWorld => {
         return { result: true, txid: "ee".repeat(32) };
       }
       case "/wallet/gettransactionbyid":
+        if (env.dropLookups) {
+          throw new TypeError("fetch failed");
+        }
         return env.known.has(String(body["value"])) ? { txID: String(body["value"]) } : {};
       case "/wallet/gettransactioninfobyid":
         return env.fullInfo.get(String(body["value"])) ?? {};
@@ -846,6 +874,9 @@ export const tronWorld = (): TronWorld => {
     setBroadcastMode: (mode: typeof broadcastMode) => {
       broadcastMode = mode;
     },
+    failLookups: (on: boolean) => {
+      env.dropLookups = on;
+    },
     armSendGate: () => {
       let open!: () => void;
       sendGate = {
@@ -881,6 +912,7 @@ export const refusedRigs: Record<"evm" | "bitcoin" | "solana" | "tron", () => Re
       accept: () => {
         w.node.refuse = undefined;
       },
+      failLookups: w.failLookups,
       bomb: w.bomb,
     };
   },
@@ -947,6 +979,7 @@ export const refusedRigs: Record<"evm" | "bitcoin" | "solana" | "tron", () => Re
       accept: () => {
         w.setPost({ kind: "ok" });
       },
+      failLookups: w.failLookups,
       bomb: w.bomb,
     };
   },
@@ -966,6 +999,7 @@ export const refusedRigs: Record<"evm" | "bitcoin" | "solana" | "tron", () => Re
       accept: () => {
         w.setSendMode({ kind: "ok" });
       },
+      failLookups: w.failLookups,
       bomb: w.bomb,
     };
   },
@@ -985,6 +1019,7 @@ export const refusedRigs: Record<"evm" | "bitcoin" | "solana" | "tron", () => Re
       accept: () => {
         w.setBroadcastMode({ kind: "ok" });
       },
+      failLookups: w.failLookups,
       bomb: w.bomb,
     };
   },
