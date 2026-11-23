@@ -121,6 +121,35 @@ export function corePrompt(locale: PromptLocale, kind: CorePromptKind): Keystore
   return CORE[locale][kind];
 }
 
+export type BackupPasswordLabel = "choose" | "again" | "mismatch" | "short" | "enter";
+
+/**
+ * The secure-input labels for the kernel's backup-password ceremony: enable asks for the new
+ * password, then a repeat; a mismatch or a too-short entry is re-asked with the reason in the
+ * title; restore asks once.
+ */
+const BACKUP_PASSWORD_LABELS: Readonly<Record<PromptLocale, Record<BackupPasswordLabel, string>>> =
+  {
+    "zh-Hans": {
+      choose: "选择云备份密码",
+      again: "再次输入密码",
+      mismatch: "两次输入的密码不一致——选择云备份密码",
+      short: "密码至少 12 个字符——选择云备份密码",
+      enter: "输入云备份密码",
+    },
+    en: {
+      choose: "Choose a cloud backup password",
+      again: "Enter the password again",
+      mismatch: "The passwords did not match — choose a cloud backup password",
+      short: "Use at least 12 characters — choose a cloud backup password",
+      enter: "Enter the cloud backup password",
+    },
+  };
+
+export function backupPasswordLabel(locale: PromptLocale, kind: BackupPasswordLabel): string {
+  return BACKUP_PASSWORD_LABELS[locale][kind];
+}
+
 /**
  * The display name of a backup protection credential, chosen by the kernel so password managers
  * list it apart from the user's wallet passkeys (the RP and app name are shown next to it).

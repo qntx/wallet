@@ -8,6 +8,7 @@
 // `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)` — sealed under the BEK with the
 // vault envelope v1 format; each sealedBek rides the same seal under the factor's KEK.
 
+import { equalBytes } from "@noble/ciphers/utils.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -34,8 +35,14 @@ import { KEY_FAMILY_BYTE, keyIdOf } from "../derive/key-id.ts";
 import type { KeyFamily } from "../derive/key-id.ts";
 import { KernelError } from "../errors.ts";
 import { requirePasskey } from "../platform.ts";
-import type { KernelPlatform, PasskeyResult } from "../platform.ts";
-import { backupCredentialName, corePromptFor, promptLocale } from "../prompts.ts";
+import type { KernelPlatform, PasskeyResult, SecureInput } from "../platform.ts";
+import {
+  backupCredentialName,
+  backupPasswordLabel,
+  corePromptFor,
+  promptLocale,
+} from "../prompts.ts";
+import type { BackupPasswordLabel } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
@@ -43,6 +50,7 @@ import {
   BACKUP_PASSWORD_COST,
   assertBackupPasswordPolicy,
   backupPasswordKek,
+  backupPasswordTooShort,
 } from "../vault/factors.ts";
 import {
   encodeHeader,
@@ -319,7 +327,11 @@ function wipeContents(contents: BackupContents): void {
  * the runtime whose ceremony produced it.
  */
 type BackupMaterial =
-  | { readonly kind: "password"; readonly password: Uint8Array }
+  | {
+      readonly kind: "password";
+      readonly ceremony: "kernel" | "host";
+      readonly password: Uint8Array;
+    }
   | {
       readonly kind: "passkey";
       readonly ceremony: "kernel" | "host";
@@ -357,9 +369,35 @@ async function backupMaterial(
   ctx: KernelContext,
   factor: BackupFactor | BackupUnlockFactor,
   allowCredentials: ReadonlyArray<Uint8Array>,
+  purpose: "enable" | "restore",
 ): Promise<BackupMaterial> {
   if (factor.kind === "password") {
-    return factor;
+    if ("password" in factor) {
+      // Wire password — only a host without a keystore may carry it; on React Native the main
+      // runtime must never hold it.
+      if (ctx.platform.keystore !== undefined) {
+        throw new KernelError(
+          "unsupported",
+          "on this platform the kernel collects the backup password itself",
+        );
+      }
+      return { kind: "password", ceremony: "host", password: factor.password };
+    }
+    if (ctx.platform.keystore === undefined) {
+      throw new KernelError(
+        "unsupported",
+        "this platform supplies the backup password over the wire",
+      );
+    }
+    const { secureInput } = ctx.platform;
+    if (secureInput === undefined) {
+      throw new KernelError("unsupported", "this platform has no secure input");
+    }
+    return {
+      kind: "password",
+      ceremony: "kernel",
+      password: await kernelBackupPassword(ctx, secureInput, purpose),
+    };
   }
   if ((ctx.platform.passkey !== undefined) !== (factor.ceremony === "kernel")) {
     throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
@@ -395,12 +433,65 @@ async function backupMaterial(
 }
 
 /**
+ * The kernel's backup-password ceremony: the bytes arrive through the secure input, never the wire.
+ * Enable asks for the new password and a repeat — a mismatch or an entry under the 12-code- point
+ * policy is re-asked with the reason in the label, three rounds at most. Restore asks once; a wrong
+ * entry fails later at the envelope unwrap (`wrong-password`). Every buffer the input did not
+ * return is wiped on every path.
+ */
+async function kernelBackupPassword(
+  ctx: KernelContext,
+  secureInput: SecureInput,
+  purpose: "enable" | "restore",
+): Promise<Uint8Array> {
+  const locale = promptLocale(ctx.platform.keystore?.locale ?? "en");
+  const ask = async (label: BackupPasswordLabel): Promise<Uint8Array> => {
+    const result = await secureInput.request("backup-password", backupPasswordLabel(locale, label));
+    if (!result.ok) {
+      throw new KernelError(result.failure, `backup password input: ${result.failure}`);
+    }
+    return result.value;
+  };
+  if (purpose === "restore") {
+    return ask("enter");
+  }
+  let complaint: BackupPasswordLabel = "choose";
+  for (let round = 0; round < 3; round++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- one entry at a time; each round depends on the last
+    const first = await ask(complaint);
+    let accepted = false;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- confirmation follows the first entry
+      const second = await ask("again");
+      let matched: boolean;
+      try {
+        matched = equalBytes(first, second);
+      } finally {
+        second.fill(0);
+      }
+      accepted = matched && !backupPasswordTooShort(first);
+      complaint = matched ? "short" : "mismatch";
+    } finally {
+      if (!accepted) {
+        first.fill(0);
+      }
+    }
+    if (accepted) {
+      return first;
+    }
+  }
+  throw new KernelError("invalid-input", "backup password was not settled in three rounds");
+}
+
+/**
  * Zeroes the secret bytes a backup factor carries — the password or a host ceremony's PRF output. A
  * kernel-ceremony factor has no wire secret; its material's `prfBackup` is still covered.
  */
 function wipeBackupSecret(factor: BackupMaterial | BackupFactor | BackupUnlockFactor): void {
   if (factor.kind === "password") {
-    factor.password.fill(0);
+    if ("password" in factor) {
+      factor.password.fill(0);
+    }
   } else if ("prfBackup" in factor) {
     factor.prfBackup.fill(0);
   }
@@ -529,7 +620,7 @@ export async function enableBackup(
     }
     for (const factor of params.factors) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one system ceremony at a time
-      materials.push(await backupMaterial(ctx, factor, []));
+      materials.push(await backupMaterial(ctx, factor, [], "enable"));
     }
     const factors = await sealBackupFactors(ctx.platform, bek, materials);
     const record = backupKeyRecord(ctx, dek, bek, factors);
@@ -621,13 +712,14 @@ export async function disableBackup(
 /**
  * Whether an establishing restore may keep the envelope's BEK. Adopting it turns backup on, so it
  * needs what `backup.enable` needs: a user verification the main runtime cannot stand in for, by
- * the owner of a factor of this very envelope. Only a kernel passkey ceremony is both — a
- * user-verified assertion whose PRF never leaves the kernel runtime. A password and a host
- * ceremony's PRF arrive over the wire: the main runtime may have minted the envelope around them,
- * and adopting its BEK would hand it every secret a later `backup.update` seals.
+ * the owner of a factor of this very envelope. A kernel ceremony is both — a user-verified
+ * assertion or an entered password whose secret never leaves the kernel runtime. A wire password
+ * and a host ceremony's PRF arrive over the wire: the main runtime may have minted the envelope
+ * around them, and adopting its BEK would hand it every secret a later `backup.update` seals. A
+ * kernel-entered password widens nothing — a main runtime that cannot read it unwraps nothing with
+ * it, and one that can read it could have unwrapped the real envelope anyway.
  */
-const adoptsBackupKey = (material: BackupMaterial): boolean =>
-  material.kind === "passkey" && material.ceremony === "kernel";
+const adoptsBackupKey = (material: BackupMaterial): boolean => material.ceremony === "kernel";
 
 /** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 async function bekFromFactor(
@@ -733,7 +825,7 @@ async function restoreWithPassphrases(
     const credentials = envelope.factors.flatMap((f) =>
       f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
     );
-    const material = await backupMaterial(ctx, params.backupFactor, credentials);
+    const material = await backupMaterial(ctx, params.backupFactor, credentials, "restore");
     try {
       const bek = await bekFromFactor(ctx.platform, envelope, material);
       try {
