@@ -108,7 +108,7 @@ export type TapSession = {
 };
 
 /** The reader prompt may carry at most this many UTF-8 bytes (§10 — never truncated). */
-const PROMPT_LIMIT = 1024;
+export const PROMPT_LIMIT = 1024;
 
 const ERROR_CODE: Readonly<Record<CardErrorCode, KernelError["code"]>> = {
   "card-not-genuine": "card-not-genuine",

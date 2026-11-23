@@ -15,7 +15,8 @@ export type CardOpName =
   | "health"
   | "change-access"
   | "erase"
-  | "create";
+  | "create"
+  | "sign";
 
 const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>>>> = {
   "zh-Hans": {
@@ -26,6 +27,7 @@ const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>
     "change-access": "修改访问码",
     erase: "抹掉卡片",
     create: "创建卡钱包",
+    sign: "签名",
   },
   en: {
     status: "Card status",
@@ -35,6 +37,7 @@ const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>
     "change-access": "Change access code",
     erase: "Erase card",
     create: "Create card wallet",
+    sign: "Sign",
   },
 };
 
@@ -118,4 +121,16 @@ export function confirmAccessCodeLabel(
 /** Secure-input label for the short ID printed on a card. */
 export function shortIdLabel(locale: PromptLocale): string {
   return locale === "zh-Hans" ? "输入卡片上印的短 ID" : "Enter the short ID printed on the card";
+}
+
+/**
+ * The card line under a rendered signing intent on the reader (design §8): the pinned member's
+ * short ID when the wallet has one, else an untargeted tap ask.
+ */
+export function signCardLine(locale: PromptLocale, cards: ReadonlyArray<string>): string {
+  const [card] = cards;
+  if (card === undefined) {
+    return locale === "zh-Hans" ? "贴一张 qntx 卡以签名" : "Tap a qntx card to sign";
+  }
+  return locale === "zh-Hans" ? `贴卡片 ${card} 以签名` : `Tap card ${card} to sign`;
 }

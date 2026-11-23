@@ -269,6 +269,7 @@ export function serializeCeremonies(
                 queue(async () => card.secureInput.request(kind, label)),
               cancel: () => card.secureInput.cancel(),
             },
+            ...(card.planMs === undefined ? {} : { planMs: card.planMs }),
           },
     keystore:
       keystore === undefined
@@ -413,4 +414,6 @@ export type CardPlatform = {
   readonly reader: CardReader;
   readonly secureInput: SecureInput;
   readonly anchors: ReadonlyArray<Anchor>;
+  /** Per-tap command budget in ms — tests only; production leaves it at the protocol default. */
+  readonly planMs?: number;
 };

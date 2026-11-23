@@ -19,10 +19,14 @@ import { forgetAccessOp } from "./forget-access.ts";
 import { healthOp } from "./health.ts";
 import type { OpEnv } from "./shared.ts";
 import { pinnedShortId } from "./shared.ts";
+import { signOp } from "./sign.ts";
+import type { SignPrepared } from "./sign.ts";
 import { statusOp } from "./status.ts";
 
 export type { OpEnv } from "./shared.ts";
 export { registrationPaths } from "./shared.ts";
+export { prepareSign } from "./sign.ts";
+export type { SignPrepared } from "./sign.ts";
 
 /** Preconditions that end `card.begin` before any step: wallets exist, gates, unsupported ops. */
 export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
@@ -37,6 +41,20 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
         throw new KernelError("not-found", "no such card wallet");
       }
       return;
+    case "sign": {
+      const { account } = op.request;
+      if (account.kind !== "hd") {
+        throw new KernelError("invalid-input", "only an hd account signs on a card");
+      }
+      if (cardRecord(account.walletId) === undefined) {
+        // A walletId may name a vault record and a card wallet at once — only a missing card
+        // record with no other wallet of that id is `not-found`; a non-card wallet is input.
+        throw ctx.image.records.some((r) => r.id === account.walletId)
+          ? new KernelError("invalid-input", "the account's wallet is not a card wallet")
+          : new KernelError("not-found", "no such card wallet");
+      }
+      return;
+    }
     case "erase": {
       const record = cardRecord(op.walletId);
       if (record === undefined) {
@@ -88,6 +106,7 @@ export const verifyGate = (op: CardOperation): "required" | "forbidden" | "unsup
     case "erase":
     case "create":
     case "forget-access":
+    case "sign":
       return "required";
     default:
       return "unsupported";
@@ -112,7 +131,9 @@ export const promptKind = (
 
 /** `remember` needs app lock on and a hardware verify — else `unsupported` at begin. */
 export const rememberGated = (ctx: KernelContext, op: CardOperation, verifyKind: string): void => {
-  const wants = (op.kind === "change-access" || op.kind === "create") && op.remember === true;
+  const wants =
+    (op.kind === "change-access" || op.kind === "create" || op.kind === "sign") &&
+    op.remember === true;
   if (!wants) {
     return;
   }
@@ -145,7 +166,7 @@ export const promptCards = (ctx: KernelContext, op: CardOperation): ReadonlyArra
 };
 
 /** Builds the op's generator — thrown precondition failures happen before any yield. */
-export const makeOp = (env: OpEnv, op: CardOperation): CardOp => {
+export const makeOp = (env: OpEnv, op: CardOperation, prepared?: SignPrepared): CardOp => {
   switch (op.kind) {
     case "status":
       return statusOp(env);
@@ -163,6 +184,11 @@ export const makeOp = (env: OpEnv, op: CardOperation): CardOp => {
       return createOp(env, op);
     case "forget-access":
       return forgetAccessOp(env, op);
+    case "sign":
+      if (prepared === undefined) {
+        throw new KernelError("integrity", "the sign operation was not prepared");
+      }
+      return signOp(env, op, prepared);
     default:
       throw new KernelError("unsupported", "card operations arrive in a later build");
   }

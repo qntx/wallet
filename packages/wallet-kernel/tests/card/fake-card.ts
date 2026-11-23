@@ -10,7 +10,8 @@
 import { cbc, cmac, ecb } from "@noble/ciphers/aes.js";
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
+import { bytesToNumberBE, bytesToNumberLE, numberToBytesBE } from "@noble/curves/utils.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { concatBytes, hexToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -87,6 +88,26 @@ const be32 = (value: bigint): Uint8Array => {
   return bytes;
 };
 
+/** Little-endian u256 — the `le32(S)` wire format of SIGN_ED25519 finish. */
+const le32 = (value: bigint): Uint8Array => {
+  const bytes = new Uint8Array(32);
+  let rest = value;
+  for (let i = 0; i < 32; i += 1) {
+    bytes[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+  return bytes;
+};
+
+/** An honest r‖s ECDSA signature over `digest` under `priv`, but with the given nonce `k`. */
+const ecdsaWithNonce = (digest: Uint8Array, priv: Uint8Array, nonce: Uint8Array): Uint8Array => {
+  const { Fn } = secp256k1.Point;
+  const k = Fn.create(bytesToNumberBE(nonce));
+  const r = Fn.create(secp256k1.Point.BASE.multiply(k).toAffine().x);
+  const s = Fn.mul(Fn.inv(k), Fn.add(bytesToNumberBE(digest), Fn.mul(r, Fn.fromBytes(priv))));
+  return concatBytes(numberToBytesBE(r, 32), numberToBytesBE(s, 32));
+};
+
 export type FakeKnobs = {
   /** STATUS reports this instead of the real state (a lying card). */
   statusLife?: number;
@@ -113,6 +134,20 @@ export type FakeKnobs = {
   replayFrom?: number;
   /** The response at this counter is MACed with the next counter instead. */
   skipCtrAt?: number;
+  /** SIGN_ECDSA signs with this nonce — every answer carries the same r. */
+  ecdsaNonce?: Uint8Array;
+  /** SIGN_ECDSA signs sha256(digest) instead of the digest. */
+  ecdsaMutateDigest?: boolean;
+  /** SIGN_ECDSA signs under a key derived from a different seed. */
+  ecdsaWrongKey?: boolean;
+  /** SIGN_BIP340 signs with `tweak + 1` instead of the requested tweak. */
+  bip340WrongTweak?: boolean;
+  /** SIGN_ED25519 begin returns `W` of a point that is not the stored nonce's. */
+  ed25519WrongR?: boolean;
+  /** SIGN_ED25519 finish returns a scalar at the group order (S ≥ ℓ). */
+  ed25519BadS?: boolean;
+  /** SIGN_ED25519 begin returns 64 bytes that are not a Wei25519 point. */
+  ed25519BadWei?: boolean;
 };
 
 export type FakeCard = {
@@ -164,6 +199,7 @@ export function createFakeCard(opts?: {
   let waited = 0;
   let torn = false;
   let tearAt: number | undefined;
+  let edStream: { r: bigint; a: bigint; stream: Uint8Array } | undefined;
 
   const write = (): boolean => {
     // A persistent write consumed an armed tear.
@@ -392,6 +428,137 @@ export function createFakeCard(opts?: {
         const point = ed25519.Point.fromBytes(ed25519.getPublicKey(node.privateKey));
         return concatBytes(weiEncode(point), sw(0x9000));
       }
+      case 0x31: {
+        // SIGN_ECDSA — verified only, `digest(32) ‖ path` → `r‖s`.
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length < 33 || (data.length - 33) % 4 !== 0) {
+          return sw(0x6700);
+        }
+        const parsed = parsePath(data.subarray(32));
+        if (parsed === "error") {
+          return sw(0x6a80);
+        }
+        if (!verified) {
+          return sw(0x6982);
+        }
+        const { seed } = live;
+        if (seed === undefined) {
+          return sw(0x6f00);
+        }
+        const privateKey = secpPrivate(parsed, knobs.ecdsaWrongKey === true ? sha256(seed) : seed);
+        if (privateKey === undefined) {
+          return sw(0x6a80);
+        }
+        const digest =
+          knobs.ecdsaMutateDigest === true ? sha256(data.subarray(0, 32)) : data.subarray(0, 32);
+        const signature =
+          knobs.ecdsaNonce === undefined
+            ? secp256k1.sign(digest, privateKey, { prehash: false, lowS: false })
+            : ecdsaWithNonce(digest, privateKey, knobs.ecdsaNonce);
+        return concatBytes(signature, sw(0x9000));
+      }
+      case 0x32: {
+        // SIGN_BIP340 — verified only, `message(32) ‖ tweak(32) ‖ path` → `R_x‖s`.
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length < 65 || (data.length - 65) % 4 !== 0) {
+          return sw(0x6700);
+        }
+        const parsed = parsePath(data.subarray(64));
+        if (parsed === "error") {
+          return sw(0x6a80);
+        }
+        if (!verified) {
+          return sw(0x6982);
+        }
+        const { seed } = live;
+        if (seed === undefined) {
+          return sw(0x6f00);
+        }
+        const privateKey = secpPrivate(parsed, seed);
+        if (privateKey === undefined) {
+          return sw(0x6a80);
+        }
+        const { Fn } = secp256k1.Point;
+        const d0 = Fn.fromBytes(privateKey);
+        const internal =
+          secp256k1.Point.BASE.multiply(d0).toAffine().y % 2n === 0n ? d0 : Fn.neg(d0);
+        let tweak = bytesToNumberBE(data.subarray(32, 64));
+        if (knobs.bip340WrongTweak === true) {
+          tweak += 1n;
+        }
+        if (tweak >= Fn.ORDER) {
+          return sw(0x6a80);
+        }
+        const tweaked = Fn.create(internal + tweak);
+        if (tweaked === 0n) {
+          return sw(0x6a80);
+        }
+        const signature = schnorr.sign(
+          data.subarray(0, 32),
+          numberToBytesBE(tweaked, 32),
+          random(32),
+        );
+        return concatBytes(signature, sw(0x9000));
+      }
+      case 0x33: {
+        // SIGN_ED25519 — verified only; begin(path) → W(R), update/finish stream → le32(S).
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p2 !== 0 || p1 > 2) {
+          return sw(0x6a86);
+        }
+        if (!verified) {
+          return sw(0x6982);
+        }
+        if (p1 === 0x00) {
+          const parsed = parsePath(data);
+          if (parsed === "error" || parsed.some((index) => index < 0x80000000)) {
+            return sw(0x6a80);
+          }
+          const { seed } = live;
+          if (seed === undefined) {
+            return sw(0x6f00);
+          }
+          let node = Slip10.fromMasterSeed(seed);
+          for (const index of parsed) {
+            node = node.deriveChild(index);
+          }
+          const { scalar } = ed25519.utils.getExtendedPublicKey(node.privateKey);
+          const { Fn } = ed25519.Point;
+          const r = Fn.create(bytesToNumberBE(random(32)));
+          edStream = { r, a: scalar, stream: new Uint8Array(0) };
+          const nonce = knobs.ed25519WrongR === true ? Fn.create(r + 1n) : r;
+          const wei =
+            knobs.ed25519BadWei === true
+              ? random(64)
+              : weiEncode(ed25519.Point.BASE.multiply(nonce));
+          return concatBytes(wei, sw(0x9000));
+        }
+        if (edStream === undefined) {
+          return sw(0x6985);
+        }
+        edStream.stream = concatBytes(edStream.stream, data);
+        if (p1 === 0x01) {
+          return sw(0x9000);
+        }
+        const { Fn } = ed25519.Point;
+        const challenge = Fn.create(bytesToNumberLE(sha512(edStream.stream)));
+        const s =
+          knobs.ed25519BadS === true ? Fn.ORDER : Fn.create(edStream.r + challenge * edStream.a);
+        edStream = undefined;
+        return concatBytes(le32(s), sw(0x9000));
+      }
       default:
         return sw(0x6d00);
     }
@@ -497,6 +664,7 @@ export function createFakeCard(opts?: {
     reset: () => {
       torn = false;
       session = undefined;
+      edStream = undefined;
       waited = 0;
     },
     state,
@@ -517,6 +685,7 @@ export function createFakeCard(opts?: {
       }
       if (equalBytes(apdu, hexToBytes(SELECT_APDU))) {
         session = undefined;
+        edStream = undefined;
         waited = 0;
         return u16(0x9000);
       }
@@ -541,6 +710,18 @@ export function createFakeCard(opts?: {
     },
   };
 }
+
+/** The BIP-32 private key of `seed` at `path`, or `undefined` when a child is invalid. */
+const secpPrivate = (path: ReadonlyArray<number>, seed: Uint8Array): Uint8Array | undefined => {
+  let node = HDKey.fromMasterSeed(seed);
+  for (const index of path) {
+    node = node.deriveChild(index);
+    if (node.privateKey === undefined || node.privateKey === null) {
+      return undefined;
+    }
+  }
+  return node.privateKey ?? undefined;
+};
 
 /** `path = depth(1) ‖ u32(index)…` — §9.2. */
 const parsePath = (data: Uint8Array): number[] | "error" => {

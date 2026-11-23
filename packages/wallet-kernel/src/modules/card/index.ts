@@ -17,11 +17,13 @@ import { cardPromptFor, promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import { verifyFactor } from "../../vault/vault.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
+import { PLAN_MS } from "./budget.ts";
 import { cardMaterial } from "./material.ts";
-import type { OpEnv } from "./ops/index.ts";
+import type { OpEnv, SignPrepared } from "./ops/index.ts";
 import {
   checkOperation,
   makeOp,
+  prepareSign,
   promptCards,
   promptKind,
   rememberGated,
@@ -170,32 +172,33 @@ export function createCardModule(platform: KernelPlatform): CardModule {
       if (gate === "forbidden" && params.verify !== undefined) {
         throw new KernelError("invalid-input", "this card operation takes no verify");
       }
+      const env: OpEnv = {
+        ctx,
+        bodies: live,
+        locale: promptLocale(platform.keystore?.locale ?? "en"),
+        planMs: card.planMs ?? PLAN_MS,
+      };
+      let prepared: SignPrepared | undefined;
       if (gate === "required") {
         if (params.verify === undefined) {
           throw new KernelError("invalid-input", "this card operation needs a verify");
         }
         rememberGated(ctx, params.op, params.verify.kind);
-        await verifyFactor(
-          platform,
-          ctx.image,
-          params.verify,
-          dek,
-          ctx.commit,
-          cardPromptFor(platform.keystore, promptKind(params.op), () =>
-            promptCards(ctx, params.op),
-          ),
-        );
+        // The sign op's verify prompt is the rendered signing intent, prepared before the
+        // factor runs so it is exactly what the host shows (design §8).
+        const prompt =
+          params.op.kind === "sign"
+            ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt
+            : cardPromptFor(platform.keystore, promptKind(params.op), () =>
+                promptCards(ctx, params.op),
+              );
+        await verifyFactor(platform, ctx.image, params.verify, dek, ctx.commit, prompt);
       }
       // One active operation at a time — the prior one's finally wipes its secrets.
       if (current !== undefined) {
         await discard(current);
       }
-      const env: OpEnv = {
-        ctx,
-        bodies: live,
-        locale: promptLocale(platform.keystore?.locale ?? "en"),
-      };
-      const gen = makeOp(env, params.op);
+      const gen = makeOp(env, params.op, prepared);
       const opId = bytesToHex(platform.random(16));
       const first = await gen.next(undefined);
       if (first.done === true) {

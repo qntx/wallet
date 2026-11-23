@@ -6,11 +6,16 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
  * tap gates (ephemeral replay, cert trust, status lies, wrong codes, tag loss), and the operation
  * lifecycle (cancel, timeout, lock, secret wiping).
  */
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
+import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
+import { normalizeBitcoin, verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains/bitcoin";
+import { evmAddressFromPublicKey, normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { walletIdOf } from "../src/derive/wallet-id.ts";
@@ -73,11 +78,16 @@ type Rig = {
   input: ReturnType<typeof testSecureInput>;
 };
 
-const rig = async (): Promise<Rig> => {
+const rig = async (planMs?: number): Promise<Rig> => {
   const reader = testCardReader();
   const input = testSecureInput();
   const h = createHarness({
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    card: {
+      reader: reader.reader,
+      secureInput: input.secureInput,
+      anchors: [CA1_ANCHOR],
+      ...(planMs === undefined ? {} : { planMs }),
+    },
   });
   const res = ok(
     await h.call("wallet.createWithPasskey", {
@@ -381,7 +391,7 @@ describe("card operations (fake card)", () => {
     expect(field(first.step, "result")).toMatchObject({ kind: "forget-access" });
   });
 
-  it("transfer, reseal and sign are unsupported", async () => {
+  it("transfer and reseal are unsupported", async () => {
     const r = await rig();
     await expect(
       errCode(
@@ -597,9 +607,9 @@ describe("card operations (fake card)", () => {
       }
       await r.h.settle(); // let the idle-op gen.return() run the op's finally
       expect(code.every((b) => b === 0)).toBe(true);
-      await expect(
-        errCode(r.h.call("card.step", { opId: first.opId }, r.session)),
-      ).resolves.toBe(how === "lock" ? "locked" : "not-found");
+      await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+        how === "lock" ? "locked" : "not-found",
+      );
     }
   });
 
@@ -1374,6 +1384,21 @@ describe("card op secrecy (fake card)", () => {
         { kind: "health", walletId },
         { codes: [utf8ToBytes("leak code one")], cards: taps(card, 4) },
       );
+      const signed = await drive(
+        r,
+        {
+          kind: "sign",
+          request: normalizeEvm({
+            kind: "evm.personal-message",
+            network: "eip155:1",
+            account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+            message: utf8ToBytes("leak check"),
+          }),
+        },
+        { codes: [utf8ToBytes("leak code one")], cards: taps(card, 4) },
+        verifyPasskey(),
+      );
+      expect(signed["kind"]).toBe("sign");
       const new1 = utf8ToBytes("leak code two");
       const new2 = utf8ToBytes("leak code two");
       await drive(
@@ -1539,5 +1564,603 @@ describe("card genuineness and life gates (fake card)", () => {
       { codes: [freshCode()], cards: [card] },
     );
     expect(healthy["kind"]).toBe("health");
+  });
+});
+
+describe("card sign (fake card)", () => {
+  const EVM_ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+  const SOL_ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
+  const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
+  /** Master fingerprint of `seed` — the vector mnemonic's, checked by the psbt host parser. */
+  const MASTER_FP = 0x73c5da0a;
+  const HARDENED = 0x80000000;
+
+  const signAccount = (walletId: string, template: string) => ({
+    kind: "hd",
+    walletId,
+    groupIndex: 0,
+    template,
+  });
+
+  const addWallet = async (r: Rig, card: FakeCard): Promise<string> =>
+    strField(
+      await drive(r, { kind: "add", groups: 1 }, { codes: [freshCode()], cards: taps(card) }),
+      "walletId",
+    );
+
+  const evmMsg = (walletId: string) =>
+    normalizeEvm({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: signAccount(walletId, "evm.bip44"),
+      message: utf8ToBytes("hello card"),
+    });
+
+  const solMsg = (walletId: string, message: Uint8Array) =>
+    normalizeSolana(
+      {
+        kind: "solana.message",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        account: signAccount(walletId, "solana.bip44-change"),
+        message,
+        format: "raw",
+      },
+      SOL_ADDRESS,
+    );
+
+  const btcLeaf = (purpose: number, index: number): HDKey =>
+    HDKey.fromMasterSeed(seed).derive(`m/${purpose}'/0'/0'/0/${index}`);
+
+  const hex = (s: string): Uint8Array => hexToBytes(s);
+
+  /** An `inputs`-count P2WPKH psbt spending the wallet's bip84 receive leaves 0..inputs-1. */
+  const bip84Psbt = (inputs: number): Uint8Array => {
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    for (let index = 0; index < inputs; index += 1) {
+      const child = btcLeaf(84, index);
+      const pub = child.publicKey;
+      if (pub === null) {
+        throw new Error("no public key");
+      }
+      const spend = p2wpkh(pub);
+      const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+      prev.addInput({
+        txid: hex(`${index === 0 ? "aa" : "bb"}${"11".repeat(31)}`),
+        index: 0,
+        sequence: 0xffffffff,
+      });
+      prev.addOutput({ script: spend.script, amount: 100000n });
+      tx.addInput({
+        txid: hex(prev.id),
+        index: 0,
+        sequence: 0xfffffffd,
+        witnessUtxo: { script: spend.script, amount: 100000n },
+        nonWitnessUtxo: prev.toBytes(true, false),
+        bip32Derivation: [
+          [
+            pub,
+            {
+              fingerprint: MASTER_FP,
+              path: [84 + HARDENED, HARDENED, HARDENED, 0, index],
+            },
+          ],
+        ],
+      });
+    }
+    tx.addOutput({ script: p2wpkh(btcLeaf(84, 9).publicKey!).script, amount: 5000n });
+    return tx.toPSBT(0);
+  };
+
+  /** A one-input P2TR psbt spending the wallet's bip86 receive leaf 0 — the bip340 task. */
+  const bip86Psbt = (): Uint8Array => {
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    const pub = btcLeaf(86, 0).publicKey;
+    if (pub === null) {
+      throw new Error("no public key");
+    }
+    const xonly = pub.slice(1);
+    tx.addInput({
+      txid: hex("0909".repeat(16)),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2tr(xonly).script, amount: 100000n },
+      tapInternalKey: xonly,
+      tapBip32Derivation: [
+        [
+          xonly,
+          {
+            hashes: [],
+            der: { fingerprint: MASTER_FP, path: [86 + HARDENED, HARDENED, HARDENED, 0, 0] },
+          },
+        ],
+      ],
+    });
+    tx.addOutput({ script: p2wpkh(btcLeaf(84, 9).publicKey!).script, amount: 90000n });
+    return tx.toPSBT(0);
+  };
+
+  const psbtReq = (walletId: string, psbt: Uint8Array, templates: string[]) =>
+    normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId, groupIndex: 0 },
+      psbt,
+      sign: templates.map((template, index) => ({ index, template })),
+    });
+
+  const signResult = (result: Record<string, unknown>): Record<string, unknown> => {
+    expect(field(result, "kind")).toBe("sign");
+    return field(result, "result") as Record<string, unknown>;
+  };
+
+  it("sign requires a verify factor and a card wallet account", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    await expect(
+      errCode(
+        r.h.call("card.begin", { op: { kind: "sign", request: evmMsg(walletId) } }, r.session),
+      ),
+    ).resolves.toBe("invalid-input");
+    const vault = await vaultWalletId(r);
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: evmMsg(vault) }, verify: verifyPasskey() },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("invalid-input");
+    const unknown = normalizeEvm({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: signAccount("12".repeat(8), "evm.bip44"),
+      message: utf8ToBytes("x"),
+    });
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: unknown }, verify: verifyPasskey() },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("not-found");
+    const imported = normalizeEvm({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: { kind: "imported", keyId: "0123456789abcdef", family: "evm" },
+      message: utf8ToBytes("x"),
+    });
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: imported }, verify: verifyPasskey() },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("invalid-input");
+  });
+
+  it("signs an evm personal message end to end on the member card", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const request = evmMsg(walletId);
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request },
+        { codes: [freshCode()], cards: taps(card) },
+        verifyPasskey(),
+      ),
+    );
+    const signature = field(result, "signature") as Uint8Array;
+    expect(recoverEvmSigner(request, { signature })).toBe(EVM_ADDRESS.toLowerCase());
+    // Byte-exact against an independent secp256k1 signature of the personal-message digest.
+    const leaf = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
+    const digest = keccak_256(
+      new Uint8Array([0x19, ...utf8ToBytes("Ethereum Signed Message:\n10hello card")]),
+    );
+    const expected = secp256k1.sign(digest, new Uint8Array(leaf.privateKey!), {
+      prehash: false,
+    });
+    expect(signature.subarray(0, 64)).toStrictEqual(expected);
+    expect(card.received).toStrictEqual([0x20, 0x22, 0x31]);
+  });
+
+  it("the tap text is the chain prompt plus the card line", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    r.reader.prompts.length = 0;
+    await drive(
+      r,
+      { kind: "sign", request: evmMsg(walletId) },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    const [text] = r.reader.prompts;
+    expect(text?.endsWith(`\nTap card ${shortId(card.identity)} to sign`)).toBe(true);
+    // Title, description and the card line are separate lines and there is content ahead of them.
+    expect((text ?? "").split("\n").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("signs a solana message through the ed25519 command stream", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const message = utf8ToBytes("hello solana card");
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: solMsg(walletId, message) },
+        { codes: [freshCode()], cards: taps(card) },
+        verifyPasskey(),
+      ),
+    );
+    expect(
+      verifySolanaSignature(message, field(result, "signature") as Uint8Array, SOL_ADDRESS),
+    ).toBe(true);
+    // 0x33 begin + finish for a short message (64-byte prefix + short M fits one finish chunk).
+    expect(card.received).toStrictEqual([0x20, 0x22, 0x33, 0x33]);
+  });
+
+  it("packs two psbt inputs into one tap and verifies against the account xpub", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const psbt = bip84Psbt(2);
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: psbtReq(walletId, psbt, ["btc.bip84", "btc.bip84"]) },
+        { codes: [freshCode()], cards: taps(card) },
+        verifyPasskey(),
+      ),
+    );
+    const xpub = HDKey.fromMasterSeed(seed).derive("m/84'/0'/0'").publicExtendedKey;
+    expect(
+      verifyBitcoinPsbtSignatures(
+        field(result, "signedPsbt") as Uint8Array,
+        [0, 1],
+        xpub,
+        "btc.bip84",
+        BTC_NETWORK,
+      ),
+    ).toBe(true);
+    expect(card.received).toStrictEqual([0x20, 0x22, 0x31, 0x31]);
+  });
+
+  it("signs a taproot input through the bip340 command", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const psbt = bip86Psbt();
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: psbtReq(walletId, psbt, ["btc.bip86"]) },
+        { codes: [freshCode()], cards: taps(card) },
+        verifyPasskey(),
+      ),
+    );
+    const xpub = HDKey.fromMasterSeed(seed).derive("m/86'/0'/0'").publicExtendedKey;
+    expect(
+      verifyBitcoinPsbtSignatures(
+        field(result, "signedPsbt") as Uint8Array,
+        [0],
+        xpub,
+        "btc.bip86",
+        BTC_NETWORK,
+      ),
+    ).toBe(true);
+    expect(card.received).toStrictEqual([0x20, 0x22, 0x32]);
+  });
+
+  it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {
+    // OPEN(300) + VERIFY(400) + margin(1000) leaves 550 ms — one ECDSA task (451) per tap.
+    const r = await rig(2250);
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const psbt = bip84Psbt(2);
+    card.received.length = 0;
+    r.reader.sessionLengths.length = 0;
+    // Lose the answer to tap 2's SIGN (global transmit 10) after the card did the work.
+    r.reader.loseGlobal(10);
+    const result = await drive(
+      r,
+      { kind: "sign", request: psbtReq(walletId, psbt, ["btc.bip84", "btc.bip84"]) },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(signResult(result)["signedPsbt"]).toBeInstanceOf(Uint8Array);
+    expect(r.reader.sessionLengths).toStrictEqual([5, 5, 5]);
+    // Task 1's signature survived the lost tap — the card saw it exactly once.
+    expect(card.received.filter((i) => i === 0x31)).toStrictEqual([0x31, 0x31, 0x31]);
+  });
+
+  it("rejects a non-member genuine card before any SIGN is sent", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    const other = await loadedCard(CODE, seed2);
+    card.received.length = 0;
+    const error = await driveErr(
+      r,
+      { kind: "sign", request: evmMsg(walletId) },
+      { codes: [freshCode()], cards: [other] },
+      verifyPasskey(),
+    );
+    expect(error).toBe("card-id-mismatch");
+    expect(card.received).toStrictEqual([]);
+    expect(other.received).toStrictEqual([]);
+  });
+
+  it("a wrong code re-asks and the right code then signs", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.received.length = 0;
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId) },
+        { codes: [utf8ToBytes("wrong code"), freshCode()], cards: taps(card, 3) },
+        verifyPasskey(),
+      ),
+    );
+    expect(field(result, "signature")).toBeInstanceOf(Uint8Array);
+    expect(card.received).toStrictEqual([0x20, 0x22, 0x20, 0x22, 0x31]);
+  });
+
+  it("deviations are card-fault: bad ecdsa work, wrong bip340 tweak, bad ed25519 output", async () => {
+    const cases: Array<{
+      readonly name: string;
+      readonly arm: (card: FakeCard) => void;
+      readonly request: (walletId: string) => unknown;
+      // The sign commands (INS 0x31/0x32/0x33) that reach the card before the fault ends the op.
+      readonly commands: ReadonlyArray<number>;
+    }> = [
+      {
+        name: "ecdsaMutateDigest",
+        arm: (c) => {
+          c.knobs.ecdsaMutateDigest = true;
+        },
+        request: evmMsg,
+        commands: [0x31],
+      },
+      {
+        name: "ecdsaWrongKey",
+        arm: (c) => {
+          c.knobs.ecdsaWrongKey = true;
+        },
+        request: evmMsg,
+        commands: [0x31],
+      },
+      {
+        name: "bip340WrongTweak",
+        arm: (c) => {
+          c.knobs.bip340WrongTweak = true;
+        },
+        request: (walletId) => psbtReq(walletId, bip86Psbt(), ["btc.bip86"]),
+        commands: [0x32],
+      },
+      {
+        name: "ed25519BadS",
+        arm: (c) => {
+          c.knobs.ed25519BadS = true;
+        },
+        request: (walletId) => solMsg(walletId, utf8ToBytes("hello")),
+        commands: [0x33, 0x33],
+      },
+      {
+        name: "ed25519WrongR",
+        arm: (c) => {
+          c.knobs.ed25519WrongR = true;
+        },
+        request: (walletId) => solMsg(walletId, utf8ToBytes("hello")),
+        commands: [0x33, 0x33],
+      },
+      {
+        name: "ed25519BadWei",
+        arm: (c) => {
+          c.knobs.ed25519BadWei = true;
+        },
+        request: (walletId) => solMsg(walletId, utf8ToBytes("hello")),
+        commands: [0x33],
+      },
+    ];
+    for (const kase of cases) {
+      const r = await rig();
+      const card = await loadedCard();
+      const walletId = await addWallet(r, card);
+      kase.arm(card);
+      card.received.length = 0;
+      const error = await driveErr(
+        r,
+        { kind: "sign", request: kase.request(walletId) },
+        { codes: [freshCode()], cards: taps(card) },
+        verifyPasskey(),
+      );
+      expect(error).toBe("card-fault");
+      // The op ended at the deviation — nothing further was sent.
+      expect(
+        card.received.filter((ins) => ins === 0x31 || ins === 0x32 || ins === 0x33),
+      ).toStrictEqual([...kase.commands]);
+    }
+  });
+
+  it("a solana message over 16 KiB is card-unsupported before any tap", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    const before = r.reader.sent.length;
+    const error = await driveErr(
+      r,
+      { kind: "sign", request: solMsg(walletId, new Uint8Array(16_385)) },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(error).toBe("card-unsupported");
+    expect(r.reader.sent).toHaveLength(before);
+  });
+
+  it("a psbt input under an uncached account answers card-required before any tap", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    // m/84'/0'/3'/0/0: the group-3 account is not in this card's cached registration set, so the
+    // ownership probe reaches a hardened cache miss — `card-required`, never "not ours".
+    const child = HDKey.fromMasterSeed(seed).derive("m/84'/0'/3'/0/0");
+    const pub = child.publicKey;
+    if (pub === null) {
+      throw new Error("no public key");
+    }
+    const spend = p2wpkh(pub);
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex(`dd${"22".repeat(31)}`), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: spend.script, amount: 100000n });
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: hex(prev.id),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: spend.script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [
+        [pub, { fingerprint: MASTER_FP, path: [84 + HARDENED, HARDENED, 3 + HARDENED, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: p2wpkh(btcLeaf(84, 9).publicKey!).script, amount: 5000n });
+    const request = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId, groupIndex: 3 },
+      psbt: tx.toPSBT(0),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    });
+    const before = r.reader.sent.length;
+    const error = await driveErr(
+      r,
+      { kind: "sign", request },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(error).toBe("card-required");
+    expect(r.reader.sent).toHaveLength(before);
+  });
+
+  it("a card replaying the same ECDSA nonce over two inputs is card-fault", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    card.knobs.ecdsaNonce = new Uint8Array(32).fill(7);
+    card.received.length = 0;
+    const error = await driveErr(
+      r,
+      { kind: "sign", request: psbtReq(walletId, bip84Psbt(2), ["btc.bip84", "btc.bip84"]) },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(error).toBe("card-fault");
+    // The first signature was signed and recorded; the second r matched it.
+    expect(card.received.filter((i) => i === 0x31)).toStrictEqual([0x31, 0x31]);
+  });
+
+  it("over-budget plans and tasks that never fit are card-unsupported before any tap", async () => {
+    // No room for even the session commands plus one task under 1700 ms.
+    const tight = await rig(1500);
+    const card = await loadedCard();
+    const walletId = await addWallet(tight, card);
+    await expect(
+      errCode(
+        tight.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: evmMsg(walletId) }, verify: verifyPasskey() },
+          tight.session,
+        ),
+      ),
+    ).resolves.toBe("card-unsupported");
+    // Three inputs at one-task-per-tap would need three taps — over the two-tap limit.
+    const small = await rig(2250);
+    const smallCard = await loadedCard();
+    const smallWallet = await addWallet(small, smallCard);
+    await expect(
+      errCode(
+        small.h.call(
+          "card.begin",
+          {
+            op: {
+              kind: "sign",
+              request: psbtReq(smallWallet, bip84Psbt(3), ["btc.bip84", "btc.bip84", "btc.bip84"]),
+            },
+            verify: verifyPasskey(),
+          },
+          small.session,
+        ),
+      ),
+    ).resolves.toBe("card-unsupported");
+    // A solana message too large for one ed25519 stream is refused up front.
+    const wide = await rig();
+    const wideCard = await loadedCard();
+    const wideWallet = await addWallet(wide, wideCard);
+    await expect(
+      errCode(
+        wide.h.call(
+          "card.begin",
+          {
+            op: {
+              kind: "sign",
+              request: solMsg(wideWallet, new Uint8Array(16385).fill(0x78)),
+            },
+            verify: verifyPasskey(),
+          },
+          wide.session,
+        ),
+      ),
+    ).resolves.toBe("card-unsupported");
+  });
+
+  it("remembered access hashes sign without a code input", async () => {
+    const r = await keystoreRig();
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const card = await loadedCard(CODE, seed2);
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card, 8) },
+    );
+    const walletId = strField(added, "walletId");
+    card.received.length = 0;
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId), remember: true },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    expect(field(result, "signature")).toBeInstanceOf(Uint8Array);
+    // The second sign consumes the remembered hash: no input step at all.
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "sign", request: evmMsg(walletId) }, verify: HARDWARE },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("tap");
+    r.reader.present(card);
+    const second = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(second.kind).toBe("done");
+    expect(card.received.filter((i) => i === 0x31)).toStrictEqual([0x31, 0x31]);
   });
 });

@@ -23,7 +23,7 @@ import type {
   SessionSchemeId,
 } from "@qntx/wallet/protocol";
 
-import type { Handler, VaultHooks } from "../../commands/context.ts";
+import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
@@ -43,6 +43,7 @@ import type { KeySource } from "./keys.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
+import type { ChainPlan } from "./run.ts";
 import type { Prepared, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { prepareSolana } from "./solana.ts";
@@ -200,15 +201,11 @@ const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
   bitcoin: ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"],
 };
 
-/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-const hdSource = (
-  ctx: Parameters<Handler<"chain.sign">>[0],
-  request: SignRequest,
-  dek: Secret,
-): OpenKeys => {
+/** The account-template checks both sign paths share (hd only — imported keys have no template). */
+const checkTemplate = (request: SignRequest): void => {
   const { account } = request;
-  if (account.kind === "imported") {
-    throw new KernelError("integrity", "unreachable: hd path with an imported account");
+  if (account.kind !== "hd") {
+    return;
   }
   if (request.kind === "bitcoin.psbt") {
     if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
@@ -220,6 +217,18 @@ const hdSource = (
     if (!("template" in account) || !expected.includes(account.template)) {
       throw new KernelError("invalid-input", "account template does not match the request family");
     }
+  }
+};
+
+/** The HD source: the wallet's entropy record, and the seed via `withWalletSeed`. */
+const hdSource = (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  request: SignRequest,
+  dek: Secret,
+): OpenKeys => {
+  const { account } = request;
+  if (account.kind === "imported") {
+    throw new KernelError("integrity", "unreachable: hd path with an imported account");
   }
   if (isCardWallet(ctx.image, account.walletId)) {
     // Card wallets sign through card.begin's sign operation, never through this pipeline.
@@ -359,6 +368,29 @@ const bindAgent = (
   return { ...prompt, agentHeld: true };
 };
 
+/**
+ * Everything `chain.sign` prepares before the factor verify — shared with the card sign op (design
+ * §8), which hands it the card's public material instead of the seed source.
+ */
+export type PreparedApproval = {
+  readonly request: SignRequest;
+  readonly prompt: PromptIntent;
+  readonly plan: ChainPlan;
+};
+
+export const prepareApproval = async (
+  ctx: KernelContext,
+  request: SignRequest,
+  material: PublicMaterial,
+  dek: Secret,
+): Promise<PreparedApproval> => {
+  checkTemplate(request);
+  const prepared = await prepareFor(request, material, ctx.platform.now());
+  const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+  assertSignable(ctx, dek, prompt);
+  return { request, prompt, plan: prepared.plan };
+};
+
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const { dek } = ctx.session.require(session);
   const { request, verify } = params;
@@ -370,12 +402,10 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   // secret and every node are wiped before the (possibly long) system verification prompt; the
   // sign pass re-opens it and executes the prepared plan unchanged.
   const prepared = await openKeys(async (keys) =>
-    prepareFor(request, keys.material, ctx.platform.now()),
+    prepareApproval(ctx, request, keys.material, dek),
   );
-  const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-  assertSignable(ctx, dek, prompt);
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
-    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prompt),
+    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   // The session may have ended while the prompt was up; the fiat24 window re-checks too, as the
   // old sign pass did.

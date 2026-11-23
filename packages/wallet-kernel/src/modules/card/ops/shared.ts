@@ -46,6 +46,8 @@ export type OpEnv = {
   /** The card module's live bodies — re-read fresh after every committed tap. */
   readonly bodies: ReadonlyMap<string, CardWalletBody>;
   readonly locale: PromptLocale;
+  /** The per-tap command budget — `PLAN_MS` on every host, injectable for tests. */
+  readonly planMs: number;
 };
 
 export type Needed = { readonly curve: "secp256k1" | "ed25519"; readonly path: CardPath };

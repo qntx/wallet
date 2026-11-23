@@ -100,6 +100,28 @@ export function taprootTweak(internalKey: Uint8Array, merkleRoot: Uint8Array): U
 }
 
 /**
+ * The BIP-341 output key `x(lift_x(x(P)) + t·G)` a SIGN_BIP340 signature verifies under — `lift_x`
+ * picks the even-y lift so an odd internal key is negated first (§12.2). `card-fault` when the
+ * lifted point is off the curve; `invalid-data` when the tweak is out of range.
+ */
+export function bip340OutputX(internalKey: Uint8Array, tweak: Uint8Array): Uint8Array {
+  checkIdentityKey(internalKey, "internalKey");
+  exact(tweak, 32, "tweak");
+  const t = bytesToNumberBE(tweak);
+  if (t >= N) {
+    input("tweak is not below the curve order");
+  }
+  try {
+    const internal = schnorr.utils.lift_x(bytesToNumberBE(internalKey.subarray(1, 33)));
+    // BASE.multiply(0) throws in noble; t = 0 means Q = P′ directly (§12.2)
+    const output = t === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(t));
+    return schnorr.utils.pointToBytes(output);
+  } catch {
+    return fault("tweaked output key is not on the curve");
+  }
+}
+
+/**
  * §12.2: verifies `R_x ‖ s` under the tweaked output key `Q = lift_x(x(P)) + t·G` (BIP-341,
  * `lift_x` picks the even-y lift so an odd internal key is negated first). Returns the signature on
  * success.
@@ -111,26 +133,10 @@ export function bip340(
   tweak: Uint8Array,
 ): Uint8Array {
   exact(message, 32, "message");
-  checkIdentityKey(internalKey, "internalKey");
-  exact(tweak, 32, "tweak");
-  const t = bytesToNumberBE(tweak);
-  if (t >= N) {
-    input("tweak is not below the curve order");
-  }
   if (data.length !== 64) {
     fault("SIGN_BIP340 response is not 64 bytes");
   }
-  const x = bytesToNumberBE(internalKey.subarray(1, 33));
-  let outputX: Uint8Array;
-  try {
-    const internal = schnorr.utils.lift_x(x);
-    // BASE.multiply(0) throws in noble; t = 0 means Q = P′ directly (§12.2)
-    const output = t === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(t));
-    outputX = schnorr.utils.pointToBytes(output);
-  } catch {
-    return fault("tweaked output key is not on the curve");
-  }
-  if (!schnorr.verify(data, message, outputX)) {
+  if (!schnorr.verify(data, message, bip340OutputX(internalKey, tweak))) {
     fault("BIP-340 signature does not verify under the tweaked key");
   }
   return new Uint8Array(data);
