@@ -292,10 +292,10 @@ export type ChainRequestInput =
       readonly fee: PrepareParams["fee"];
     }
   | {
-      readonly method: "solana-core-send";
+      readonly method: "solana-nft-send";
       readonly account: AccountRef;
       readonly network: string;
-      /** The Core asset account. */
+      /** The SPL mint or Core asset account. */
       readonly asset: string;
       readonly to: string;
       readonly fee: PrepareParams["fee"];

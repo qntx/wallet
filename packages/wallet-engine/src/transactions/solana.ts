@@ -18,6 +18,7 @@ import {
   MPL_CORE_PROGRAM,
   netAfterTransferFee,
   parseCompiledMessage,
+  associatedTokenAddress,
   parseMintExtensions,
   PROGRAM_IDS,
 } from "@qntx/wallet-chains/solana";
@@ -25,7 +26,19 @@ import type { MintExtensionSummary, ParsedSolanaMessage } from "@qntx/wallet-cha
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
 import { chains } from "@qntx/wallet/chains";
 
-import { CORE_KEY_ASSET_V1, CORE_UPDATE_AUTHORITY_COLLECTION } from "../chains/nfts.ts";
+import {
+  CORE_KEY_ASSET_V1,
+  CORE_UPDATE_AUTHORITY_COLLECTION,
+  METAPLEX_METADATA_PROGRAM,
+  metaplexMetadataAddress,
+  metaplexTokenStandard,
+  parseMint,
+  parseTokenAccount,
+  solanaAccountBytes,
+} from "../chains/nfts.ts";
+import { NftTransferError } from "../errors.ts";
+import { mergeRisk } from "../requests/risk.ts";
+import type { RiskFinding } from "../requests/risk.ts";
 import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
 import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
@@ -273,6 +286,29 @@ const lifetimeTokenOf = (raw: string): string | undefined => {
   }
 };
 
+/** The mint's Token-2022 extensions when it carries any — non-transferable and confidential
+   mints refuse outright, here and in the NFT send path. */
+const usableMintExtensions = async (
+  rpc: SolanaRpc,
+  raw: Uint8Array,
+): Promise<MintExtensionSummary | undefined> => {
+  if (raw.length <= 166) {
+    return undefined;
+  }
+  const epoch = u64(obj(await rpc.call("getEpochInfo", []))?.["epoch"]);
+  if (epoch === undefined) {
+    throw new TypeError("getEpochInfo: malformed epoch");
+  }
+  const ext = parseMintExtensions(raw, epoch);
+  if (ext.nonTransferable === true) {
+    throw new Error("token is non-transferable");
+  }
+  if (ext.confidential === true) {
+    throw new Error("confidential transfer extensions are not supported");
+  }
+  return ext;
+};
+
 export const prepareSolana = async (
   ctx: RouteContext,
   params: PrepareParams,
@@ -296,18 +332,8 @@ export const prepareSolana = async (
       tokenProgram = PROGRAM_IDS.token2022;
       const mintBytes = arr(obj(owner)?.["data"])?.[0];
       const raw = typeof mintBytes === "string" ? base64.decode(mintBytes) : undefined;
-      if (raw !== undefined && raw.length > 166) {
-        const epoch = u64(obj(await rpc.call("getEpochInfo", []))?.["epoch"]);
-        if (epoch === undefined) {
-          throw new TypeError("getEpochInfo: malformed epoch");
-        }
-        ext = parseMintExtensions(raw, epoch);
-        if (ext.nonTransferable === true) {
-          throw new Error("token is non-transferable");
-        }
-        if (ext.confidential === true) {
-          throw new Error("confidential transfer extensions are not supported");
-        }
+      if (raw !== undefined) {
+        ext = await usableMintExtensions(rpc, raw);
       }
     }
   }
@@ -788,39 +814,28 @@ export const prepareSolanaStake = async (
 };
 
 /** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */
-/** A `getAccountInfo` response value for a Core asset — owner + raw account bytes. */
-const coreAssetAccount = async (rpc: SolanaRpc, asset: string): Promise<Uint8Array> => {
-  const info = await rpc.call("getAccountInfo", [
-    asset,
-    { encoding: "base64", commitment: "confirmed" },
-  ]);
-  const value = obj(info)?.["value"];
-  if (value === null || value === undefined || obj(value)?.["owner"] !== MPL_CORE_PROGRAM) {
-    throw new ChainError("invalid-request", "the asset is not a Metaplex Core account");
-  }
-  const raw = arr(obj(value)?.["data"])?.[0];
-  if (typeof raw !== "string") {
-    throw new ChainError("invalid-request", "the asset account has no data");
-  }
-  return base64.decode(raw);
-};
-
-export const prepareSolanaCoreSend = async (
-  ctx: RouteContext,
-  input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
-): Promise<PreparedRequest> => {
-  const { account, network, asset, to, fee } = input;
-  const rpc = ctx.options.networks.solanaRpc(network);
-  const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
-  const flags: Array<RequestCheckCode | undefined> = [];
-  const data = await coreAssetAccount(rpc, asset);
+/** An account read answered identically by both endpoints — bytes and owner compared
+   byte-for-byte; a failed independent read degrades to `reads-unverified`. */
+const nftAccount = async (
+  rpc: SolanaRpc,
+  independent: Independent<SolanaRpc>,
+  at: string,
+  what: string,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<{ readonly owner: string; readonly data: Uint8Array } | undefined> => {
+  const primary = await solanaAccountBytes(rpc, at);
   if (independent.kind === "available") {
     try {
-      const other = await coreAssetAccount(independent.client, asset);
-      if (data.length !== other.length || !data.every((b, i) => b === other[i])) {
-        throw new ChainError("invalid-request", "the endpoints disagree on the asset account");
+      const other = await solanaAccountBytes(independent.client, at);
+      const same =
+        (primary === undefined && other === undefined) ||
+        (primary !== undefined &&
+          other !== undefined &&
+          primary.owner === other.owner &&
+          primary.data.length === other.data.length &&
+          primary.data.every((b, i) => b === (other.data[i] ?? -1)));
+      if (!same) {
+        throw new ChainError("invalid-request", `the endpoints disagree on the ${what}`);
       }
     } catch (error) {
       if (error instanceof ChainError) {
@@ -829,12 +844,41 @@ export const prepareSolanaCoreSend = async (
       flags.push("reads-unverified");
     }
   }
+  return primary;
+};
+
+export const prepareSolanaNftSend = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "solana-nft-send" }>,
+): Promise<PreparedRequest> => {
+  const { account, network, asset, to, fee } = input;
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const independent = ctx.options.networks.independentSolanaRpc(network);
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
+  const flags: Array<RequestCheckCode | undefined> = [];
+  const risk: RiskFinding[] = [];
+  if (to === asset) {
+    risk.push({ code: "token-contract-recipient", level: "danger" });
+  }
+  const found = await nftAccount(rpc, independent, asset, "asset account", flags);
+  if (found === undefined) {
+    throw new NftTransferError(
+      "not-found",
+      "the asset has no account — compressed NFTs keep no account and cannot be transferred here",
+    );
+  }
+  if (found.owner !== MPL_CORE_PROGRAM) {
+    const prepared = await prepareSplNft(ctx, input, from, found, rpc, independent, apis, flags);
+    return { ...prepared, risk: mergeRisk(prepared.risk ?? [], risk) };
+  }
+  const { data } = found;
   /* AssetV1 layout: key u8 at 0, owner pubkey at 1-32, updateAuthority enum at 33. */
   if (data.length < 66 || data[0] !== CORE_KEY_ASSET_V1) {
-    throw new ChainError("invalid-request", "the account is not an mpl-core asset");
+    throw new NftTransferError("not-nft", "the account is not an mpl-core asset");
   }
   if (base58.encode(data.slice(1, 33)) !== from) {
-    throw new ChainError("invalid-request", "the account does not own the asset");
+    throw new NftTransferError("not-owned", "the account does not own the asset");
   }
   const collection =
     data[33] === CORE_UPDATE_AUTHORITY_COLLECTION
@@ -860,8 +904,8 @@ export const prepareSolanaCoreSend = async (
     ],
     lookupTables: [],
   });
-  return finishPrepared(ctx, {
-    account,
+  const prepared = await finishPrepared(ctx, {
+    account: input.account,
     network,
     from,
     fee,
@@ -877,6 +921,102 @@ export const prepareSolanaCoreSend = async (
         intent.outflows.length !== 1 ||
         outflow === undefined ||
         outflow.to !== to ||
+        outflow.amount.asset !== asset ||
+        outflow.amount.amount !== "1"
+      ) {
+        throw new ChainError("invalid-request", "the built transfer does not decode to the send");
+      }
+      return intent;
+    },
+    flags,
+  });
+  return { ...prepared, risk: mergeRisk(prepared.risk ?? [], risk) };
+};
+
+/** The SPL/Token-2022 branch of `solana-nft-send` once the asset account is verified. */
+const prepareSplNft = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "solana-nft-send" }>,
+  from: string,
+  mint: { readonly owner: string; readonly data: Uint8Array },
+  rpc: SolanaRpc,
+  independent: Independent<SolanaRpc>,
+  apis: Pick<ReturnType<typeof chains>, "sign">,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<PreparedRequest> => {
+  const { account, network, asset, to, fee } = input;
+  if (mint.owner !== PROGRAM_IDS.token && mint.owner !== PROGRAM_IDS.token2022) {
+    throw new NftTransferError("not-nft", "the account is not a token mint");
+  }
+  /* Token-2022 mints carry extensions past the shared 82-byte base layout; the Token
+     program's must be exactly 82. */
+  const parsed = parseMint(
+    mint.owner === PROGRAM_IDS.token ? mint.data : mint.data.slice(0, 82),
+  );
+  if (parsed === undefined || !parsed.initialized || parsed.decimals !== 0 || parsed.supply !== 1n) {
+    throw new NftTransferError("not-nft", "the mint does not look like an NFT (decimals 0, supply 1)");
+  }
+  const ext =
+    mint.owner === PROGRAM_IDS.token2022
+      ? await usableMintExtensions(rpc, mint.data)
+      : undefined;
+  /* A Metaplex metadata PDA only speaks when the program owns it; a readable account that does
+     not parse is as good a "this is not an NFT" signal as a fungible mint. */
+  const pda = await metaplexMetadataAddress(asset);
+  const meta = await nftAccount(rpc, independent, pda, "metadata account", flags);
+  if (meta !== undefined && meta.owner === METAPLEX_METADATA_PROGRAM) {
+    const standard = metaplexTokenStandard(meta.data, asset);
+    if (standard === undefined) {
+      throw new NftTransferError("not-nft", "the metadata account does not parse");
+    }
+    if (standard === 4 || standard === 5) {
+      throw new NftTransferError(
+        "programmable",
+        "programmable NFTs need their rule set and token record and are not supported",
+      );
+    }
+  }
+  const ata = associatedTokenAddress(from, asset, mint.owner);
+  const holding = await nftAccount(rpc, independent, ata, "token account", flags);
+  const held =
+    holding !== undefined && holding.owner === mint.owner
+      ? parseTokenAccount(holding.data, holding.owner)
+      : undefined;
+  if (held === undefined || held.mint !== asset || held.owner !== from || held.amount !== 1n) {
+    throw new NftTransferError("not-owned", "the account does not hold the NFT");
+  }
+  if (held.state === "frozen") {
+    throw new NftTransferError("frozen", "the token account is frozen");
+  }
+  const unsigned = await solana.build(rpc, network, from, {
+    kind: "spl",
+    mint: asset,
+    to,
+    amount: 1n,
+    decimals: 0,
+    tokenProgram: mint.owner,
+  });
+  return finishPrepared(ctx, {
+    account,
+    network,
+    from,
+    fee,
+    unsigned,
+    rpc,
+    independent,
+    apis,
+    intentOf: (request) => {
+      const intent =
+        ext === undefined
+          ? decodeSolana(request, from)
+          : token2022Intent(decodeSolana(request, from), ext, asset, 1n);
+      const [outflow] = intent.outflows;
+      /* `transferChecked` names the destination token account — the recipient's ATA. */
+      if (
+        intent.summary !== "transfer" ||
+        intent.outflows.length !== 1 ||
+        outflow === undefined ||
+        outflow.to !== associatedTokenAddress(to, asset, mint.owner) ||
         outflow.amount.asset !== asset ||
         outflow.amount.amount !== "1"
       ) {
