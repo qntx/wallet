@@ -11,6 +11,7 @@ import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
 import type {
+  AppAuthority,
   AppFlow,
   AppGroup,
   AppProvider,
@@ -23,6 +24,7 @@ import type { HyperliquidErrorCategory } from "./errors.ts";
 import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";
 import type { HyperliquidDetail, HyperliquidFlow, HyperliquidHints } from "./state.ts";
 import type { HyperliquidUserSigned } from "./user-signed.ts";
+import { HYPERLIQUID_CHAIN } from "./user-signed.ts";
 
 /** Hyperliquid's own bound is 180 days; 179 keeps a day of slack inside it (research §Agents). */
 const AGENT_VALID_MS = 179 * 24 * 60 * 60 * 1000;
@@ -645,6 +647,29 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
         renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,
         error: undefined,
       });
+    },
+    authorities: async (group): Promise<ReadonlyArray<AppAuthority>> => {
+      const { builder } = options;
+      if (builder === undefined) {
+        return [];
+      }
+      const owner = await provider.agents.owner(group);
+      const approved = await provider.account.maxBuilderFee(owner, builder.address.toLowerCase());
+      if (approved <= 0) {
+        return [];
+      }
+      /* `disable({ revoke: true })` only clears the agent — the builder-fee approval stays on
+         HyperCore until an `approveBuilderFee` to zero, which no engine surface reaches. */
+      return [
+        {
+          kind: "builder-fee",
+          network: HYPERLIQUID_CHAIN[options.network].caip,
+          account: owner,
+          holder: builder.address,
+          limit: approved.toString(),
+          revoke: "none",
+        },
+      ];
     },
   };
   return {

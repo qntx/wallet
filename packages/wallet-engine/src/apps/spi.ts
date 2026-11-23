@@ -7,6 +7,7 @@
  * carries.
  */
 export type {
+  AppAuthority,
   AppContext,
   AppDefinition,
   AppDetail,

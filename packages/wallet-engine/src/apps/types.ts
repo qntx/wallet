@@ -115,6 +115,36 @@ export type AppGroup = {
   readonly groupIndex: number;
 };
 
+/**
+ * A standing authority an app's venue holds over the group's funds, outside the kernel's session
+ * keys — display-only: nothing that builds or signs reads it.
+ */
+export type AppAuthority = {
+  readonly kind: "builder-fee" | "token-allowance" | "operator";
+  /**
+   * CAIP-2 network the authority lives on; HyperCore authorities use the network id the engine
+   * signs HyperCore actions under.
+   */
+  readonly network: string;
+  /** The account it acts on: the owner, or a venue account (Polymarket deposit wallet). */
+  readonly account: string;
+  /** Who holds it: the builder, the spender, the operator. */
+  readonly holder: string;
+  /** Token or contract covered (allowance / operator kinds). */
+  readonly asset?: string;
+  /**
+   * Upper bound as a decimal integer string in the asset's (or venue fee's) base unit; absent =
+   * unlimited.
+   */
+  readonly limit?: string;
+  /**
+   * How the user removes it: `disable` = the app's `disable({ revoke: true })` removes it;
+   * `approvals` = an owner-held on-chain allowance the approvals inventory revokes; `none` = not
+   * removable from this wallet.
+   */
+  readonly revoke: "disable" | "approvals" | "none";
+};
+
 /** What the controller asks a per-app provider for. */
 export type AppProvider<D extends AppDetail = Record<never, never>> = {
   /**
@@ -145,6 +175,11 @@ export type AppProvider<D extends AppDetail = Record<never, never>> = {
   ) => Promise<void>;
   /** Abandon an in-flight flow: reject its request, clean orphans, back to `disabled`. */
   readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+  /**
+   * The venue-held authorities the group has granted, read live from the app — display-only. An app
+   * without the member reports none.
+   */
+  readonly authorities?: (group: AppGroup) => Promise<ReadonlyArray<AppAuthority>>;
 };
 
 /** The chain clients an app's deposit path reads allowance/burn limits through. */

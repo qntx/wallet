@@ -334,7 +334,9 @@ several `spl-delegate` rows (up to 10). Rows with `revoke: "none"` — a foreign
 mint authority, a stake authority, a TRON permission key — cannot be removed from this wallet.
 Prepare one revocation request at a time: nonces are reserved at commit, so a second prepared
 request would go stale. A row is never removed optimistically; it disappears when the chain read
-after inclusion no longer shows it.
+after inclusion no longer shows it. Authorities an app's venue holds outside the approvals
+inventory — the Hyperliquid builder-fee approval on HyperCore — are listed by
+`AppsController.authorities` (see [Writing an app provider](#writing-an-app-provider)).
 
 ## Writing an app provider
 
@@ -404,6 +406,11 @@ included. Every runtime value the SPI re-exports is also a public export of
 `@qntx/wallet-engine` or `@qntx/wallet-engine/apps`, so an external provider loses nothing;
 `createAppSocketCore` is the one exception and stays in-tree until the providers leave the
 package.
+
+A provider may also expose `authorities(group)`: the standing authorities its venue holds over
+the group's funds outside the kernel's session keys (the Hyperliquid builder-fee approval on
+HyperCore). `AppsController.authorities(group)` collects every app's rows — display-only, one
+`{ app, error }` row per failed read.
 
 ## Hyperliquid
 
