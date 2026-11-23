@@ -939,17 +939,18 @@ export async function prepareExit(
 
 ## 14. New error codes
 
-| Where                            | Code                                                                                                   | Meaning                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `WalletError.code`               | `verification-unavailable`                                                                             | React Native: no factor can verify (no lock screen). No prompt was shown.         |
-| `WalletError.code`               | `blind-signing-disabled`                                                                               | A blind request while the vault setting is off. No prompt was shown.              |
-| `BackupControllerError.category` | `weak-password`                                                                                        | The backup password is too easy to guess.                                         |
-| `SparkControllerError.category`  | `unknown`                                                                                              | The payment may have committed; it settles under `transferId` / `inputOutputIds`. |
-| engine request errors            | `AcknowledgementRequiredError`, `BlindSigningDisabledError` (now on every blind request, at `approve`) | See sections 4 and 5.                                                             |
-| `RiskFinding.code`               | `bitcoin-frozen-input` (danger)                                                                        | A dApp PSBT spends a user-frozen outpoint.                                        |
-| `RequestStage`                   | `signed`                                                                                               | Signed, not yet submitted: no longer invalidated.                                 |
-| EIP-1193 provider                | `-32005`                                                                                               | An `eth_getLogs` filter over the bounds.                                          |
-| gateway                          | `outcome-unknown` (`502`)                                                                              | A broadcast whose outcome is unknown; never retried on another provider.          |
+| Where                            | Code                                                                                                                                                   | Meaning                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `WalletError.code`               | `verification-unavailable`                                                                                                                             | React Native: no factor can verify (no lock screen). No prompt was shown.         |
+| `WalletError.code`               | `blind-signing-disabled`                                                                                                                               | A blind request while the vault setting is off. No prompt was shown.              |
+| `WalletError.code`               | `card-required`, `card-not-genuine`, `card-id-mismatch`, `wrong-card`, `card-erased`, `card-locked`, `card-tampered`, `card-fault`, `card-unsupported` | Card wallets; see section 40.                                                     |
+| `BackupControllerError.category` | `weak-password`                                                                                                                                        | The backup password is too easy to guess.                                         |
+| `SparkControllerError.category`  | `unknown`                                                                                                                                              | The payment may have committed; it settles under `transferId` / `inputOutputIds`. |
+| engine request errors            | `AcknowledgementRequiredError`, `BlindSigningDisabledError` (now on every blind request, at `approve`)                                                 | See sections 4 and 5.                                                             |
+| `RiskFinding.code`               | `bitcoin-frozen-input` (danger)                                                                                                                        | A dApp PSBT spends a user-frozen outpoint.                                        |
+| `RequestStage`                   | `signed`                                                                                                                                               | Signed, not yet submitted: no longer invalidated.                                 |
+| EIP-1193 provider                | `-32005`                                                                                                                                               | An `eth_getLogs` filter over the bounds.                                          |
+| gateway                          | `outcome-unknown` (`502`)                                                                                                                              | A broadcast whose outcome is unknown; never retried on another provider.          |
 
 [`tests/migration/error-codes.ts`](tests/migration/error-codes.ts):
 
@@ -960,8 +961,8 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
 /**
  * Exhaustive maps: adding or removing a code fails this file, so the list in MIGRATION.md stays
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
- * (`no-device-credential` is gone); `weak-password`; `unknown`; `EngineErrorCode` lost
- * `integrity`.
+ * (`no-device-credential` is gone), the nine `card-*` / `wrong-card` codes; `weak-password`;
+ * `unknown`; `EngineErrorCode` lost `integrity`.
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -982,6 +983,15 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   integrity: false,
   "blind-signing-disabled": true,
   "approval-required": false,
+  "card-required": true,
+  "card-not-genuine": true,
+  "card-id-mismatch": true,
+  "wrong-card": true,
+  "card-erased": true,
+  "card-locked": true,
+  "card-tampered": true,
+  "card-fault": true,
+  "card-unsupported": true,
   crashed: false,
 };
 
@@ -1987,8 +1997,8 @@ are unchanged. Additions a host app may need to act on:
    `idle | empty | filled | submitted`. The field becomes editable, takes focus and raises the
    keyboard only when the kernel requests input.
 4. **Card reader transport.** APDUs flow between the kernel runtime and the native reader
-   directly. A host app neither opens NFC sessions for the card nor relays APDUs; it only drives
-   the tap cadence once the card module is wired in.
+   directly. A host app neither opens NFC sessions for the card nor relays APDUs; it starts,
+   observes and cancels card operations through `@qntx/wallet/card` (section 40).
 
 ## 39. Solana dApp cluster binding, custom RPC corroboration, Polymarket partial cancels
 
@@ -2017,3 +2027,47 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Card wallets
+
+Compiled snippet: `tests/migration/card-wallet.ts`. Changes affect every `@qntx/wallet` host that
+reads `WalletInfo`, and React Native hosts that offer qntx card wallets. The vault gains a
+`card-wallet` record kind; existing vault wallets are unchanged.
+
+1. **`WalletInfo` is a union on `custody`.** `VaultWalletInfo` (`custody: "vault"`) is the 0.13.0
+   shape; `CardWalletInfo` (`custody: "card"`) has `origin` `card-generated | card-imported`,
+   `backup: "cards"`, `members` (k = 1–3) and `cards` (`CardInfo`: `cardId`, `shortId`, `state`
+   `ready | unknown | pending`, `tries`, `verifiedAt`). Narrow on `custody` before reading
+   `words` or `passphrase`. Show a card wallet's receive addresses only after its `create` task
+   has resolved: a `pending` member has not imported the seed yet.
+2. **Card wallets sign through `@qntx/wallet/card`.** `chains(wallet).sign` on a card wallet
+   answers `card-required`, and `wallet.accounts` does too for any account whose public key no
+   earlier tap cached; run `card(wallet).start({ kind: "sign", request }, verify)` (or
+   `{ kind: "accounts", … }`) instead. `start` returns a `CardTask`: `observe` reports every
+   `CardStep` (an `input` step means mount `SecureInput`, a `tap` step means show the
+   hold-the-card instruction), `cancel` ends the operation, and `result` resolves with the
+   operation's `CardOpResult`. A `sign` result is verified exactly like `chains.sign`'s before
+   `done` is reported. There is no call that answers a step: the kernel collects the code from
+   `SecureInput` and talks to the card itself, and it sets the NFC sheet's text from the decoded
+   request. Starting a second task cancels the first.
+3. **Operations.** `status`, `add` (register a card that already holds a wallet in this vault), `accounts`, `health`,
+   `change-access`, `erase` (`last: true` for the last card of a card-generated wallet),
+   `create` (1–3 cards; `source: { kind: "generate" }` or `{ kind: "wallet", walletId }`, which
+   moves a vault wallet onto the cards and deletes its sealed seed in the same commit), `transfer`
+   (finish a pending member), `reseal` (a new code for a member that forgot it, from another
+   member), `sign` and `forget-access`. `change-access`, `erase`, `create`, `transfer`, `reseal`
+   and `sign` require a `verify` factor. `remember: true` (save the access code's hash in the
+   vault) needs the app lock and a `hardware` factor, else `unsupported`.
+4. **Capabilities a card wallet lacks.** Nostr, Spark, session keys (`sessions.create`) and
+   `wallets.exportMnemonic` answer `unsupported` for a card wallet. Hide them for
+   `custody: "card"`.
+5. **Platforms.** Only `@qntx/wallet-native` has a card platform. Web and Node answer every
+   `card.*` call `unsupported`. Production builds pin no card certificate anchor yet, so every
+   card is `card-not-genuine` until a release ships the production anchor.
+6. **New error codes** (section 14): `card-not-genuine` (the certificate does not chain to a
+   pinned anchor — never offer to continue), `card-id-mismatch` (another card than the step asked
+   for; nothing was sent), `wrong-card` (a card of another wallet), `card-erased`, `card-locked`,
+   `card-tampered` (the card's failure counter moved without this wallet — offer `reseal` from
+   another member), `card-fault` (the card answered outside the protocol), `card-unsupported` (the
+   request does not fit the card's limits; split it) and `card-required`. A wrong access code is
+   not an error: the next `input` step carries `remaining`.

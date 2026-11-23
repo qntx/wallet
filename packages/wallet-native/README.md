@@ -73,6 +73,11 @@ Its `onStateChange` callback (and every Nitro view callback) must be wrapped wit
 the main runtime only observes `idle | empty | filled | submitted`. The component lives on a
 subpath so importing the package root does not eagerly load the Nitro view machinery.
 
+Card operations themselves run through `card(wallet)` from `@qntx/wallet/card`: the kernel opens
+the NFC session, sets its text, exchanges the APDUs and closes it; the host never touches the
+reader. Production builds pin no card certificate anchor yet, so every card answers
+`card-not-genuine` until a release ships the production anchor.
+
 ## Usage
 
 ```ts
