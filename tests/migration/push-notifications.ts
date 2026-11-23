@@ -17,10 +17,12 @@ type SharedKeychain = {
 export const pushKeysOf = (keychain: SharedKeychain): PushKeyStore => ({
   put: async (id, key) => keychain.set(`qntx-push.${id}`, key),
   delete: async (id) => keychain.remove(`qntx-push.${id}`),
-  ids: async () =>
-    (await keychain.keys())
+  ids: async () => {
+    const names = await keychain.keys();
+    return names
       .filter((name) => name.startsWith("qntx-push."))
-      .map((name) => name.slice("qntx-push.".length)),
+      .map((name) => name.slice("qntx-push.".length));
+  },
 });
 
 export const withPush = (options: EngineOptions, keychain: SharedKeychain): EngineOptions => ({

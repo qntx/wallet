@@ -793,7 +793,7 @@ describe("vault lifecycle", () => {
     const walletIds = arrField(status, "wallets").map((w) => strField(w, "walletId"));
     expect(walletIds).toStrictEqual([walletId, hwId]);
     const image = await h.store.load();
-    expect(image.records.map((r) => r.kind)).toEqual(
+    expect(image.records.map((r) => r.kind)).toStrictEqual(
       expect.arrayContaining(["entropy", "hardware-wallet"]),
     );
   });
