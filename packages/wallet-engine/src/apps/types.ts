@@ -123,8 +123,7 @@ export type AppAuthority = {
   readonly kind: "builder-fee" | "token-allowance" | "operator";
   /**
    * Where the authority lives: a CAIP-2 network for an on-chain authority, or, for a venue's own
-   * ledger, the venue network name its kernel sessions use as `scope` (Hyperliquid: `Mainnet` |
-   * `Testnet`).
+   * ledger, the venue network name its kernel sessions use as `scope`.
    */
   readonly network: string;
   /** The account it acts on: the owner, or a venue account (a deposit wallet). */
