@@ -47,7 +47,10 @@ async function main(): Promise<number> {
     return 1;
   }
   await Bun.write(outfile, bundle);
-  const run = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  const run = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
   console.log(out);
   if (!out.includes("HERMES_CHAINS_OK")) {

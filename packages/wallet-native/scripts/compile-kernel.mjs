@@ -80,9 +80,13 @@ const hermesc = resolve(
 mkdirSync(outDir, { recursive: true });
 const tmpHbc = resolve(outDir, ".kernel.hbc");
 try {
-  execFileSync(hermesc, ["-O", "-emit-async-break-check", "-emit-binary", "-out", tmpHbc, entry], {
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+  execFileSync(
+    hermesc,
+    ["-O", "-Xes6-block-scoping", "-emit-async-break-check", "-emit-binary", "-out", tmpHbc, entry],
+    {
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
 } catch (error) {
   console.error(
     `hermesc failed on ${entry}: ${error instanceof Error ? error.message : String(error)}`,

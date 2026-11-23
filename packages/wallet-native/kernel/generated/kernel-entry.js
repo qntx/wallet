@@ -42545,25 +42545,28 @@ zoo`.split("\n"));
 	var fetchNodes = async (tap, paths, plan = PLAN_MS) => {
 		const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
 		const batch = paths.slice(0, Math.max(0, room));
+		const staged = {
+			nodes: {},
+			ed25519: {}
+		};
 		for (const needed of batch) {
 			const key = pathString(needed.path);
 			const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
 			if (needed.curve === "secp256k1") {
 				const { publicKey, chainCode } = decode$2.publicKey(data);
-				const node = {
+				staged.nodes[key] = {
 					key: bytesToHex$4(publicKey),
 					chainCode: bytesToHex$4(chainCode)
 				};
-				tap.update((d) => {
-					if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), {}, { [key]: node }) });
-				});
-			} else {
-				const encoded = bytesToHex$4(decode$2.weiPoint(data));
-				tap.update((d) => {
-					if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), {}, { [key]: encoded }) });
-				});
-			}
+			} else staged.ed25519[key] = bytesToHex$4(decode$2.weiPoint(data));
 		}
+		if (batch.length === 0) return;
+		tap.update((d) => {
+			if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, {
+				nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), staged.nodes),
+				ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), staged.ed25519)
+			});
+		});
 	};
 	/** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */
 	var recordFrom = (env, cardId, info, access) => ({
@@ -57629,6 +57632,10 @@ zoo`.split("\n"));
 		return "unavailable";
 	}
 	function startKernel(host, port) {
+		var _captures$;
+		const captures = [];
+		for (const each of [0, 1]) captures.push(() => each);
+		if (((_captures$ = captures[0]) === null || _captures$ === void 0 ? void 0 : _captures$.call(captures)) !== 0) throw new Error("kernel requires Hermes compiled with -Xes6-block-scoping");
 		const platform = serializeCeremonies(host, (active) => {
 			post({
 				v: 3,

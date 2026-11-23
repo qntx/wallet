@@ -146,7 +146,15 @@ const compileBytecode = (source: string, workDir: string): Uint8Array => {
   // via IHermes::asyncTriggerTimeout; without it bytecode busy-loops cannot be
   // stopped (supported since hermesc 250829098).
   const proc = Bun.spawnSync(
-    [hermesc, "-emit-binary", "-emit-async-break-check", "-out", hbcPath, jsPath],
+    [
+      hermesc,
+      "-Xes6-block-scoping",
+      "-emit-binary",
+      "-emit-async-break-check",
+      "-out",
+      hbcPath,
+      jsPath,
+    ],
     {
       stdout: "pipe",
       stderr: "pipe",

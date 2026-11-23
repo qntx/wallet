@@ -125,6 +125,16 @@ function classifyLoadFailure(error: unknown): "corrupted" | "unsupported" | "una
 }
 
 export function startKernel(host: KernelPlatform, port: Port): void {
+  // Fail closed if this bundle was compiled without -Xes6-block-scoping (the hermesc default is
+  // off): loop-scoped let/const would share one binding across iterations and closures would
+  // capture the last iteration's value.
+  const captures: Array<() => number> = [];
+  for (const each of [0, 1]) {
+    captures.push(() => each);
+  }
+  if (captures[0]?.() !== 0) {
+    throw new Error("kernel requires Hermes compiled with -Xes6-block-scoping");
+  }
   // Every system-UI ceremony goes through one queue: the platform shows one prompt at a time.
   // The callback posts lazily — ceremonies only run inside requests, after `post` exists.
   const platform = serializeCeremonies(host, (active) => {

@@ -225,7 +225,15 @@ writeFileSync(
 );
 {
   const proc = Bun.spawnSync(
-    [hermesc, "-emit-binary", "-emit-async-break-check", "-out", busyloopHbc, busyloopJs],
+    [
+      hermesc,
+      "-Xes6-block-scoping",
+      "-emit-binary",
+      "-emit-async-break-check",
+      "-out",
+      busyloopHbc,
+      busyloopJs,
+    ],
     { stdout: "pipe", stderr: "pipe" },
   );
   if (proc.exitCode !== 0) {

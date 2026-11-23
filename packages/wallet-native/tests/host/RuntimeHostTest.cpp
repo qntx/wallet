@@ -196,6 +196,7 @@ uint64_t physicalFootprint() {
   return builder.withMicrotaskQueue(true)
       .withEnableEval(false)
       .withAsyncBreakCheckInEval(true)
+      .withES6BlockScoping(true)
       .build();
 }
 
