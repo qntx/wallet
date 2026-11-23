@@ -14,6 +14,9 @@
  * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
  *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
  *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
+ * - `push`: the `@qntx/wallet-engine/push` opener with nothing external — notification extensions
+ *   ship the bundle standalone, so the number includes @noble/@scure. It must stay free of zod,
+ *   which the wire-format module deliberately avoids.
  */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -116,6 +119,15 @@ const ENTRIES: ReadonlyArray<Entry> = [
     budget: 40 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
+  },
+  {
+    name: "push",
+    source: "src/push/index.ts",
+    /* Measured 5828 B: the opener plus its full dependency closure — @noble/ciphers AES-GCM and
+       @scure/base bundled so the number is what a notification extension pays. */
+    budget: 7 * 1024,
+    external: [],
+    forbidden: ["zod"],
   },
   {
     name: "walletconnect",

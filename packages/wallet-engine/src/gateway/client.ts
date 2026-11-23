@@ -1,15 +1,18 @@
 import {
   CLIENT_ID_HEADER,
+  PUSH_FAMILIES,
   bridgeQuote,
   esploraGet,
   history,
   networkById,
+  pushSubscribe,
   rpc,
   swapQuote,
   swapQuoteSolana,
   tokenList,
   tron,
 } from "./contract/index.ts";
+import type { PushFamily } from "./contract/index.ts";
 import type { GatewayConfig, GatewayScope } from "./session.ts";
 
 export { gatewaySession } from "./session.ts";
@@ -22,6 +25,10 @@ const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
+const PUSH_PREFIX = `${routePrefix(pushSubscribe.path)}/`;
+
+const isPushFamily = (value: string): value is PushFamily =>
+  (PUSH_FAMILIES as ReadonlyArray<string>).includes(value);
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -47,6 +54,10 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(TOKENS_PREFIX)) {
     return networkById(pathname.slice(TOKENS_PREFIX.length))?.family ?? "service";
+  }
+  if (pathname.startsWith(PUSH_PREFIX)) {
+    const family = pathname.slice(PUSH_PREFIX.length).split("/")[0] ?? "";
+    return isPushFamily(family) ? family : "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

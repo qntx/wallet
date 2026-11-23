@@ -57,6 +57,11 @@
       "types": "./dist/apps-polymarket.d.mts",
       "import": "./dist/apps-polymarket.mjs",
       "default": "./dist/apps-polymarket.mjs"
+    },
+    "./push": {
+      "types": "./dist/push.d.mts",
+      "import": "./dist/push.mjs",
+      "default": "./dist/push.mjs"
     }
   },
   "publishConfig": {
