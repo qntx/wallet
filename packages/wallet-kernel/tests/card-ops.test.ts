@@ -475,6 +475,22 @@ describe("card operations (fake card)", () => {
     expect(done.kind).toBe("done");
   });
 
+  it("an uninitialised card is card-not-genuine and the wallet never initialises it", async () => {
+    const r = await rig();
+    // §4.3: a factory-state card answers every command but SELECT/GET_IDENTITY with 6283.
+    const card = createFakeCard({ knobs: { uninitialised: true } });
+    const first = ok(await r.h.call("card.begin", { op: { kind: "status" } }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    r.reader.present(card);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "card-not-genuine",
+    );
+    // The wallet never drives the 7-step init: no GET_IDENTITY (0xe0) APDU was transmitted.
+    expect(r.reader.sent.every((apdu) => apdu[1] !== 0xe0)).toBe(true);
+  });
+
   it("a cert chaining to no anchor is card-not-genuine", async () => {
     const r = await rig();
     const rogueCa = new Uint8Array(32).fill(7);

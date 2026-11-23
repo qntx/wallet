@@ -42421,6 +42421,7 @@ zoo`.split("\n"));
 		const { sw, data } = response;
 		if (sw === 36864) return data;
 		if (sw === 28416) throw new CardError("card-fault", "card reported an internal fault", sw);
+		if (sw === 25219) throw new CardError("card-not-genuine", "the card is not initialised", sw);
 		if (data.length > 0) throw new CardError("card-fault", "a failed command returned data", sw);
 		const { name } = command;
 		if (name === "verify" && sw >= 25537 && sw <= 25545) throw new CardError("wrong-access-code", "access code rejected", sw, sw - 25536);
@@ -45246,6 +45247,7 @@ zoo`.split("\n"));
 				0,
 				65
 			]), hostEph, new Uint8Array([0])))) throw new CardError("invalid-input", "request does not carry the host ephemeral");
+			if (response.length >= 2 && readSw(response) === 25219) throw new CardError("card-not-genuine", "the card is not initialised", 25219);
 			if (response.length !== 228 || response.at(-2) !== 144 || response.at(-1) !== 0) throw new CardError("card-not-genuine", "OPEN response is not 226 bytes + 9000", response.length >= 2 ? readSw(response) : void 0);
 			const cardEph = response.subarray(0, 65);
 			const signature = response.subarray(65, 129);

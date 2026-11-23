@@ -157,6 +157,11 @@ export type FakeKnobs = {
   ed25519BadWei?: boolean;
   /** OFFER signs garbage instead of the link key — the host must refuse to export to it. */
   offerBadSignature?: boolean;
+  /**
+   * §4.3 uninitialised: SELECT still answers 9000, `GET_IDENTITY` performs the next of seven
+   * resumable init steps (`6283` until the last, then `A`), every other command answers `6283`.
+   */
+  uninitialised?: boolean;
   /** EXPORT head signs garbage instead of the transcript — the host must refuse the import. */
   exportBadSignature?: boolean;
   /** The next persistent write commits and the card loses power before it can respond. */
@@ -246,6 +251,7 @@ export function createFakeCard(opts?: {
   let pendingImport: { kte: Uint8Array; ktm: Uint8Array; sender: Uint8Array } | undefined;
   let waited = 0;
   let torn = false;
+  let initSteps = 7;
   let tearAt: number | undefined;
   let edStream: { r: bigint; a: bigint; stream: Uint8Array } | undefined;
 
@@ -997,6 +1003,17 @@ export function createFakeCard(opts?: {
         pendingImport = undefined;
         waited = 0;
         return u16(0x9000);
+      }
+      if (knobs.uninitialised === true) {
+        // §4.3: GET_IDENTITY steps the resumable init; the completing call answers A(33).
+        if (apdu.length >= 2 && apdu[0] === 0x80 && apdu[1] === 0xe0) {
+          initSteps -= 1;
+          if (initSteps <= 0) {
+            knobs.uninitialised = false;
+            return concatBytes(identity, u16(0x9000));
+          }
+        }
+        return u16(0x6283);
       }
       if (apdu.length < 4 || apdu[0] !== 0x80) {
         return u16(0x6e00);

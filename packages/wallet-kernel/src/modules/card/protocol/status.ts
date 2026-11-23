@@ -4,11 +4,9 @@
  * command can never produce — including `6700`, `6A86`, `6D00` — and any data carried by a failure
  * are `card-fault`.
  *
- * Two owner-approved behavioural amendments to protocol.md @ 1d97c60e (spec proposals B1, B2) are
- * followed ahead of the spec text: the `VERIFY` wait gate answers `6986` (`wait-required`), so
- * `6985` is a wrong card state for every command; and `finish` carries 1–236 bytes, so the host
- * never sends an empty one (`cmd.ed25519Stream`). Their spec vectors arrive with the applet's next
- * vector drop; until then the tests here transcribe the amended mapping by hand.
+ * `6283` — a card that never finished personalisation init (§4.3) — is `card-not-genuine`: it is
+ * not a usable wallet card and the wallet never initialises one (that is the provisioning tool's
+ * job), so the word is a typed refusal, never a retry.
  */
 import type { CommandName, Inner } from "./commands.ts";
 import { CardError } from "./errors.ts";
@@ -47,6 +45,9 @@ export function result(command: Inner, response: InnerResponse): Uint8Array {
   }
   if (sw === 0x6f00) {
     throw new CardError("card-fault", "card reported an internal fault", sw);
+  }
+  if (sw === 0x6283) {
+    throw new CardError("card-not-genuine", "the card is not initialised", sw);
   }
   if (data.length > 0) {
     throw new CardError("card-fault", "a failed command returned data", sw);
