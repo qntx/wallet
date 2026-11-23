@@ -2069,6 +2069,7 @@ import { createGoogleDriveStore, createICloudStore } from "@qntx/wallet-native/c
  * delete-missing succeeds).
  */
 export function hostStore(files: Map<string, string>, online: () => boolean): CloudStore {
+  const tick = Promise.resolve();
   const reachable = (): void => {
     if (!online()) {
       throw new CloudStoreError("unavailable", "offline");
@@ -2076,25 +2077,32 @@ export function hostStore(files: Map<string, string>, online: () => boolean): Cl
   };
   return {
     // @ts-expect-error -- CloudStore no longer has available()
-    available: async () => online(),
+    available: async () => {
+      await tick;
+      return online();
+    },
     list: async () => {
       reachable();
+      await tick;
       return [...files.keys()];
     },
     read: async (name) => {
       checkCloudName(name);
       reachable();
+      await tick;
       return files.get(name);
     },
     write: async (name, text) => {
       checkCloudName(name);
       checkCloudText(text);
       reachable();
+      await tick;
       files.set(name, text);
     },
     delete: async (name) => {
       checkCloudName(name);
       reachable();
+      await tick;
       files.delete(name);
     },
   };
@@ -2131,7 +2139,9 @@ export function webDriveStore(requestToken: () => Promise<string>): CloudStore {
   return createGoogleDriveCloudStore({
     fetch: async (input, init) => globalThis.fetch(input, init),
     setTimer: (ms, fn) => {
-      const id = setTimeout(fn, ms);
+      const id = setTimeout(() => {
+        fn();
+      }, ms);
       return () => {
         clearTimeout(id);
       };
