@@ -101,7 +101,9 @@ function world() {
       await Promise.resolve();
       throw new Error("solana-sign is not wired in this test");
     },
-    transactions: {} as TransactionController,
+    transactions: {
+      getState: () => ({ txs: {} }),
+    } as unknown as TransactionController,
     ...bookDeps(),
     spark,
     fetch: fetchImpl,
