@@ -1,8 +1,9 @@
 /// <reference types="node" />
 /**
- * Bundle tests/hermes/card.ts into a single classic script and run it on the Hermes CLI (`HERMES`
- * env var). Pass = stdout contains `HERMES_CARD_OK`; Hermes exits 0 on unhandled async rejections,
- * so the marker is the only contract. The full Hermes output is printed either way.
+ * Bundle each tests/hermes entry into a single classic script and run it on the Hermes CLI
+ * (`HERMES` env var). Pass = stdout contains the entry's marker (`HERMES_CARD_OK`,
+ * `HERMES_ONEKEY_OK`); Hermes exits 0 on unhandled async rejections, so the marker is the only
+ * contract. The full Hermes output is printed either way.
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +24,11 @@ declare const Bun: {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const outfile = resolve(root, ".hermes-card.iife.js");
+
+const ENTRIES = [
+  { entry: "card", marker: "HERMES_CARD_OK" },
+  { entry: "onekey", marker: "HERMES_ONEKEY_OK" },
+] as const;
 
 async function main(): Promise<number> {
   const hermes = process.env.HERMES;
@@ -32,34 +37,42 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // Same pipeline as scripts/build-kernel.ts: the es2017 target lowers class static blocks
-  // (ox emits them) that bare Hermes cannot parse.
-  await build({
-    configFile: false,
-    logLevel: "warn",
-    build: {
-      lib: {
-        entry: resolve(root, "tests/hermes/card.ts"),
-        formats: ["iife"],
-        name: "qntxHermesCard",
-        fileName: () => ".hermes-card.iife.js",
-      },
-      outDir: root,
-      emptyOutDir: false,
-      minify: false,
-      target: "es2017",
-      rolldownOptions: { external: [] },
-    },
-  });
+  const results = await Promise.all(
+    ENTRIES.map(async ({ entry, marker }) => {
+      // Same pipeline as scripts/build-kernel.ts: the es2017 target lowers class static blocks
+      // (ox emits them) that bare Hermes cannot parse.
+      await build({
+        configFile: false,
+        logLevel: "warn",
+        build: {
+          lib: {
+            entry: resolve(root, `tests/hermes/${entry}.ts`),
+            formats: ["iife"],
+            name: `qntxHermes${entry}`,
+            fileName: () => `.hermes-${entry}.iife.js`,
+          },
+          outDir: root,
+          emptyOutDir: false,
+          minify: false,
+          target: "es2017",
+          rolldownOptions: { external: [] },
+        },
+      });
 
-  const proc = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
-  const out = proc.stdout.toString() + proc.stderr.toString();
-  process.stdout.write(out);
-  if (proc.exitCode !== 0 || !out.includes("HERMES_CARD_OK")) {
-    console.error(`hermes card smoke failed (exit ${proc.exitCode}): no HERMES_CARD_OK`);
-    return 1;
-  }
-  return 0;
+      const proc = Bun.spawnSync([hermes, resolve(root, `.hermes-${entry}.iife.js`)], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const out = proc.stdout.toString() + proc.stderr.toString();
+      process.stdout.write(out);
+      if (proc.exitCode !== 0 || !out.includes(marker)) {
+        console.error(`hermes ${entry} smoke failed (exit ${proc.exitCode}): no ${marker}`);
+        return false;
+      }
+      return true;
+    }),
+  );
+  return results.every(Boolean) ? 0 : 1;
 }
 
 process.exitCode = await main();
