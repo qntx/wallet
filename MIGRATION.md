@@ -2017,3 +2017,25 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Approvals inventory and revocation
+
+Compiled snippet: `tests/migration/approvals.ts`. Additive for `@qntx/wallet-engine` hosts; gateway
+operators deploy the new route. Nothing changes in the vault or the kernel protocol.
+
+1. **Show the inventory per account and network.** `engine.approvals.load(account, network)`
+   returns the view key; render `state.views[key]` and call `setVisible(true)` only while the
+   screen is shown (see `showApprovals`). Label EVM and TRON lists "known approvals": indexers can
+   miss spenders. Show `sources` (status and `at`) and the counters — `disputed` rows were hidden
+   because the two endpoints disagreed, `unread` candidates could not be read.
+2. **Revoke one request at a time.** `engine.approvals.revoke(key, rowId)` prepares an ordinary
+   request; approve it through your existing approval UI. Do not prepare several revocations at
+   once — nonces are reserved at commit, so every request after the first would go stale. Use
+   `revokeBatch` only for EVM rows on an account delegated to the wallet's delegator, or for
+   Solana token accounts. Never remove a row yourself: it disappears after the next chain read.
+3. **Rows with `revoke: "none"`** (a foreign close authority, a mint authority, a stake authority,
+   a TRON permission key) cannot be removed from this wallet — show them read-only with the
+   reason. Session keys under `view.sessions` are revoked through the app that owns them
+   (`AppsController` `disable` with `revoke: true`).
+4. **Kernel prompt lines.** `ApprovalChange` has two more variants (`approval-cleared`,
+   `delegate-revoked`). A host that switches over `ApprovalChange.kind` must handle them.
