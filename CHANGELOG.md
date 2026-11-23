@@ -463,6 +463,9 @@ Gateway (operators):
   checks the modules it actually loads against the package boundaries.
 - `scripts/check-migration.ts`: compares the last release's API reports (from the registry) with
   `api/` and fails when a removed export is missing from MIGRATION.md §13; run before a release.
+- `scripts/check-migration-guide.ts` (part of `bun run lint`): every MIGRATION.md snippet block equals
+  its compiled file under `tests/migration/`, every snippet file is referenced, and every `§n` in the
+  guide, the snippets and the entry being released names a section.
 - Built-in EVM mainnets Ink, Fraxtal, Ronin, Scroll, BOB, opBNB, Arbitrum Nova, Taiko, Flare and Zora, and testnets Ink Sepolia, Fraxtal Hoodi, opBNB Testnet and Zora Sepolia. Each chain id is checked against the chain's documentation (or the OP superchain registry) and live endpoints; signing chain ids still come only from the built-in table.
 - Scroll fee model: the L1 data fee is read from the L1GasPriceOracle on the transaction serialized under a maximal signature and shown with the model's safety margin.
 - `GasPricing` (`"eip1559" | "legacy"`) on every EVM fee model: chains with no base fee or whose primary upstream lacks `eth_feeHistory` (opBNB, Fraxtal) build legacy transactions at `eth_gasPrice`.
