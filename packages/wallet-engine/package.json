@@ -139,16 +139,6 @@
     "@walletconnect/types": "2.25.0",
     "@walletconnect/utils": "2.25.0"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "bun",
-      "version": "1.4.0",
-      "onFail": "ignore"
-    }
-  },
-  "engines": {
-    "node": ">=20.19.0"
-  },
   "peerDependenciesMeta": {
     "@reown/walletkit": {
       "optional": true
@@ -162,5 +152,15 @@
     "@walletconnect/utils": {
       "optional": true
     }
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.0",
+      "onFail": "ignore"
+    }
+  },
+  "engines": {
+    "node": ">=20.19.0"
   }
 }

@@ -10,10 +10,7 @@ import {
   parseSyncKeyHeader,
 } from "../src/modules/nostr/record.ts";
 import { encodeSessionHeader, parseSessionHeader } from "../src/modules/sessions/record.ts";
-import {
-  encodeHardwareHeader,
-  parseHardwareHeader,
-} from "../src/modules/signers/record.ts";
+import { encodeHardwareHeader, parseHardwareHeader } from "../src/modules/signers/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import { createMemoryAnchor } from "../src/vault/anchor.ts";
 import {
@@ -68,9 +65,7 @@ describe("record and factor header vectors", () => {
   it.each(byKind("hardware-wallet"))("$name encodes and parses byte-for-byte", (vector) => {
     const parsed = parseHardwareHeader(vector.text);
     // The header stores the fingerprint as hex; the parsed shape carries the bytes.
-    expect({ ...parsed, fingerprint: bytesToHex(parsed.fingerprint) }).toStrictEqual(
-      vector.input,
-    );
+    expect({ ...parsed, fingerprint: bytesToHex(parsed.fingerprint) }).toStrictEqual(vector.input);
     expect(encodeHardwareHeader(parsed)).toBe(vector.text);
   });
 

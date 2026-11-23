@@ -47,9 +47,9 @@ export type PushKeyStore = {
   readonly put: (id: string, key: Uint8Array) => Promise<void>;
   readonly delete: (id: string) => Promise<void>;
   /**
-   * Every stored key id. The controller sweeps ids with no live subscription row at init —
-   * after a vault reset or a crash between the subscription row write and the key export, an
-   * orphaned key would let the extension keep opening an erased wallet's activity.
+   * Every stored key id. The controller sweeps ids with no live subscription row at init — after a
+   * vault reset or a crash between the subscription row write and the key export, an orphaned key
+   * would let the extension keep opening an erased wallet's activity.
    */
   readonly ids: () => Promise<ReadonlyArray<string>>;
 };

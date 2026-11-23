@@ -372,9 +372,7 @@ function cloudFiles(files: Map<string, string>): ReadonlyArray<CloudFile> {
 
 function deviceCoverage(d: Device): { wallets: Set<string>; keys: Set<string> } {
   return {
-    wallets: new Set(
-      d.state.wallets.filter((w) => w.custody === "vault").map((w) => w.walletId),
-    ),
+    wallets: new Set(d.state.wallets.filter((w) => w.custody === "vault").map((w) => w.walletId)),
     keys: new Set(d.state.importedKeys.map((k) => k.keyId)),
   };
 }

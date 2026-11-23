@@ -1,9 +1,9 @@
 /**
  * Engine-store rows live in the one session EngineStore and are keyed to live accounts:
  * notification rows under `wallet:<walletId>`/`sub:<walletId>:<family>`, approvals and NFT rows
- * under account keys, app rows in their own `apps.<id>` collections. Across a lock/unlock cycle
- * the reopened store reads every row back; after `vault.reset()` a new vault's wallets leave the
- * old rows unreachable — the engine's state only ever surfaces live walletIds and account keys.
+ * under account keys, app rows in their own `apps.<id>` collections. Across a lock/unlock cycle the
+ * reopened store reads every row back; after `vault.reset()` a new vault's wallets leave the old
+ * rows unreachable — the engine's state only ever surfaces live walletIds and account keys.
  */
 import { randomBytes } from "node:crypto";
 
@@ -36,28 +36,28 @@ function persistentStore(backing: Map<string, Map<string, Uint8Array>>): EngineS
           if (closed) {
             throw new Error("closed");
           }
-          const value = table!.get(key);
+          const value = table.get(key);
           return Promise.resolve(value === undefined ? undefined : new Uint8Array(value));
         },
         put: async (key, bytes) => {
           if (closed) {
             throw new Error("closed");
           }
-          table!.set(key, new Uint8Array(bytes));
+          table.set(key, new Uint8Array(bytes));
           return Promise.resolve();
         },
         delete: async (key) => {
           if (closed) {
             throw new Error("closed");
           }
-          table!.delete(key);
+          table.delete(key);
           return Promise.resolve();
         },
         list: async () => {
           if (closed) {
             throw new Error("closed");
           }
-          return Promise.resolve([...table!.keys()]);
+          return Promise.resolve([...table.keys()]);
         },
       };
     },
@@ -72,8 +72,7 @@ const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.met
 const PASSWORD = "correct horse battery staple";
 const MNEMONIC_A =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-const MNEMONIC_B =
-  "legal winner thank year wave sausage worth useful legal winner thank yellow";
+const MNEMONIC_B = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 const until = async (read: () => boolean, ms = 10_000): Promise<void> => {
@@ -133,8 +132,7 @@ describe("engine collections across lock, unlock and reset", () => {
       const walletA = wallet.getSnapshot().wallets[0]!.walletId;
 
       // The rows the approvals, NFTs, notifications and app controllers write for vault A.
-      const json = (value: unknown): Uint8Array =>
-        new TextEncoder().encode(JSON.stringify(value));
+      const json = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
       const bytes = json({ row: true });
       const subRow = json({
         secret: "s".repeat(64),
@@ -142,7 +140,7 @@ describe("engine collections across lock, unlock and reset", () => {
         id: "ab".repeat(16),
         networks: ["evm:eip155:1"],
         requested: ["evm:eip155:1"],
-        addresses: ["0x" + "aa".repeat(20)],
+        addresses: [`0x${  "aa".repeat(20)}`],
         token: "tok",
         refreshedAt: 1,
         expiresAt: Number.MAX_SAFE_INTEGER,
@@ -158,15 +156,15 @@ describe("engine collections across lock, unlock and reset", () => {
       await wallet.vault.lock();
       await wallet.vault.unlock({ kind: "password", password: PASSWORD });
       await until(() => opens === 2);
-      expect(await opened!.collection("approvals").get("eip155:1:0xaaaa")).toStrictEqual(bytes);
-      expect(await opened!.collection("nfts").get("visibility")).toStrictEqual(bytes);
-      expect(
-        await opened!.collection("notifications").get(`wallet:${walletA}`),
-      ).toStrictEqual(optInRow);
-      expect(
-        await opened!.collection("notifications").get(`sub:${walletA}:evm`),
-      ).toStrictEqual(subRow);
-      expect(await opened!.collection("apps.hyperliquid").get("terms")).toStrictEqual(bytes);
+      await expect(opened!.collection("approvals").get("eip155:1:0xaaaa")).resolves.toStrictEqual(bytes);
+      await expect(opened!.collection("nfts").get("visibility")).resolves.toStrictEqual(bytes);
+      await expect(opened!.collection("notifications").get(`wallet:${walletA}`)).resolves.toStrictEqual(
+        optInRow,
+      );
+      await expect(opened!.collection("notifications").get(`sub:${walletA}:evm`)).resolves.toStrictEqual(
+        subRow,
+      );
+      await expect(opened!.collection("apps.hyperliquid").get("terms")).resolves.toStrictEqual(bytes);
 
       // Reset erases the vault; a new vault's wallet has a different id, so none of the rows
       // keyed to vault A's wallets and accounts is reachable through engine state. The reset
@@ -183,10 +181,7 @@ describe("engine collections across lock, unlock and reset", () => {
           });
           break;
         } catch (error) {
-          if (
-            !(error instanceof WalletError && error.code === "locked") ||
-            Date.now() > deadline
-          ) {
+          if (!(error instanceof WalletError && error.code === "locked") || Date.now() > deadline) {
             throw error;
           }
           // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
@@ -200,11 +195,9 @@ describe("engine collections across lock, unlock and reset", () => {
       // store rows still sit in the host backing under their dead keys.
       const live = engine.notifications.getState().wallets;
       expect(Object.keys(live)).not.toContain(walletA);
-      expect(await opened!.collection("notifications").get(`wallet:${walletB}`)).toBeUndefined();
-      expect(
-        await opened!.collection("notifications").get(`sub:${walletB}:evm`),
-      ).toBeUndefined();
-      expect(await opened!.collection("approvals").get("eip155:1:0xbbbb")).toBeUndefined();
+      await expect(opened!.collection("notifications").get(`wallet:${walletB}`)).resolves.toBeUndefined();
+      await expect(opened!.collection("notifications").get(`sub:${walletB}:evm`)).resolves.toBeUndefined();
+      await expect(opened!.collection("approvals").get("eip155:1:0xbbbb")).resolves.toBeUndefined();
     } finally {
       engine.unsubscribe();
       await wallet.destroy();
