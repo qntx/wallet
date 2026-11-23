@@ -85,6 +85,10 @@ export function pushObjectState(): FakeState {
         await Promise.resolve();
         alarm = at;
       },
+      deleteAlarm: async (): Promise<void> => {
+        await Promise.resolve();
+        alarm = null;
+      },
     },
     waitUntil: (promise: Promise<unknown>): void => {
       waits.push(promise);

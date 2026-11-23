@@ -1,8 +1,13 @@
 /**
  * `PushObject` — one SQLite Durable Object per family (`idFromName(family)`), a thin wrapper over
  * `PushCore`: it binds `ctx.storage.sql`/`transactionSync` to the store's `Sql`, draws nonces from
- * `crypto.getRandomValues` and schedules the alarm to the earliest due moment. The family arrives
- * with the first RPC and persists in `meta`, so `alarm` can rebuild the core on a cold object.
+ * `crypto.getRandomValues` and derives the alarm from `store.nextWake()` — the store knows every
+ * due moment, so a synchronous re-derivation can never under-wake the way a read-modify-write of
+ * `getAlarm`/`setAlarm` could. The family arrives with the first RPC and persists in `meta`, so
+ * `alarm` can rebuild the core on a cold object.
+ *
+ * `upstreamFetch`/`pushRuntime` are the only seams the workerd harness needs: a subclass points
+ * provider, push-service and watcher-management calls at its in-worker stub.
  *
  * `GatewayHttpError` cannot cross the RPC boundary as a class — methods return the `PushResult`
  * union and the route rethrows it.
@@ -17,17 +22,32 @@ import { pushFamilyOf } from "./backend.ts";
 import type { PushResult } from "./backend.ts";
 import { PushCore, UNSERVED_FAMILY, sweepExpired } from "./core.ts";
 import type { IngestItem, SubscribeRequest, WatchRequest } from "./core.ts";
-import { pushFamilies, pushMaterials } from "./runtime.ts";
+import { pushRuntimeFor } from "./runtime.ts";
+import type { PushRuntime } from "./runtime.ts";
 import { pushStore } from "./store.ts";
 import type { PushStore, Sql } from "./store.ts";
 
 export class PushObject extends DurableObject<WorkerEnv> {
   #store: PushStore | undefined;
   #core: Promise<PushCore | undefined> | undefined;
+  #runtime: Promise<PushRuntime> | undefined;
+  #alarmWrite: Promise<void> = Promise.resolve();
 
   readonly #log = (line: string): void => {
     console.log(line);
   };
+
+  /** Every outbound call — provider RPC, APNs/FCM, the watcher's management API. */
+  protected async upstreamFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    return fetch(input, init);
+  }
+
+  /** The object's secrets, watcher config and family map from the environment. */
+  protected async pushRuntime(): Promise<PushRuntime> {
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) =>
+      this.upstreamFetch(input, init);
+    return pushRuntimeFor(this.env, fetchImpl, this.#log);
+  }
 
   #sql(): Sql {
     const { storage } = this.ctx;
@@ -42,16 +62,38 @@ export class PushObject extends DurableObject<WorkerEnv> {
     return this.#store;
   }
 
-  /** Asks for a wake no later than `at`; a later alarm only over-wakes, never under-wakes. */
-  #schedule(at: number): void {
-    this.ctx.waitUntil(
-      (async () => {
-        const current = await this.ctx.storage.getAlarm();
-        if (current === null || at < current) {
-          await this.ctx.storage.setAlarm(at);
-        }
-      })(),
-    );
+  async #runtimeFor(): Promise<PushRuntime> {
+    this.#runtime ??= this.pushRuntime();
+    return this.#runtime;
+  }
+
+  /**
+   * Re-derives the alarm from the store (`0`/past = fire now, `undefined` = disarm) and serializes
+   * the write: every wake publishes the whole current schedule, so the last write is always the
+   * correct minimum and a stale read can never postpone it.
+   */
+  #wake(): void {
+    const next = this.#storage().nextWake();
+    const write = async (): Promise<void> => {
+      try {
+        await this.#alarmWrite;
+        // workerd rejects times ≤ 0; the sync-dirty sentinel is `0` = "due now" — a past or
+        // clamped time still fires immediately.
+        await (next === undefined
+          ? this.ctx.storage.deleteAlarm()
+          : this.ctx.storage.setAlarm(Math.max(1, next)));
+      } catch (error) {
+        this.#log(
+          JSON.stringify({
+            event: "push-alarm-write-error",
+            name: error instanceof Error ? error.name : typeof error,
+            reason: String(error),
+          }),
+        );
+      }
+    };
+    this.#alarmWrite = write();
+    this.ctx.waitUntil(this.#alarmWrite);
   }
 
   /** The core for this object's family, built once; `undefined` when push is not materialized. */
@@ -64,24 +106,20 @@ export class PushObject extends DurableObject<WorkerEnv> {
         this.#log(JSON.stringify({ event: "push-family-mismatch" }));
         return undefined;
       }
-      const materials = await pushMaterials(
-        this.env,
-        async (input, init) => fetch(input, init),
-        () => Date.now(),
-      );
-      if (materials === undefined) {
+      const runtime = await this.#runtimeFor();
+      if (runtime.materials === undefined) {
         return undefined;
       }
       return new PushCore({
         sql: this.#sql(),
         family,
-        config: pushFamilies[family] ?? UNSERVED_FAMILY,
-        sealKey: materials.sealKey,
-        senders: materials.senders,
+        config: runtime.families[family] ?? UNSERVED_FAMILY,
+        sealKey: runtime.materials.sealKey,
+        senders: runtime.materials.senders,
         now: () => Date.now(),
         random: (n) => crypto.getRandomValues(new Uint8Array(n)),
-        schedule: (at) => {
-          this.#schedule(at);
+        wake: () => {
+          this.#wake();
         },
         log: this.#log,
       });
@@ -143,7 +181,7 @@ export class PushObject extends DurableObject<WorkerEnv> {
     }
   }
 
-  /** Webhook observations — fed by the Layer 3 hook route; nothing to return. */
+  /** Webhook observations — fed by the hook route; nothing to return. */
   async ingest(family: PushFamily, observations: IngestItem[]): Promise<PushResult<undefined>> {
     const core = await this.#coreFor(family);
     if (core === undefined) {
@@ -159,7 +197,8 @@ export class PushObject extends DurableObject<WorkerEnv> {
 
   /**
    * The alarm: rebuild the family's core and run the pass. Without materials the crypto cannot
-   * unseal anything, but the TTL sweep still runs so storage decays on schedule.
+   * unseal anything, but the TTL sweep still runs so storage decays on schedule. Either way the
+   * wake is re-derived from the store once, at the end.
    */
   override async alarm(): Promise<void> {
     const store = this.#storage();
@@ -170,11 +209,14 @@ export class PushObject extends DurableObject<WorkerEnv> {
     }
     const core = await this.#coreFor(family);
     if (core === undefined) {
-      sweepExpired(store, Date.now());
-      const wake = store.nextWake();
-      if (wake !== undefined) {
-        this.#schedule(wake);
-      }
+      const runtime = await this.#runtimeFor();
+      sweepExpired(
+        store,
+        this.#sql(),
+        Date.now(),
+        runtime.families[family]?.syncAddresses !== undefined,
+      );
+      this.#wake();
       return;
     }
     try {

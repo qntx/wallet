@@ -11,6 +11,7 @@ import type { PushCoreDeps, PushFamilyConfig, SubscribeRequest } from "../../src
 import type { CheckResult } from "../../src/push/rules.ts";
 import { importSealKey } from "../../src/push/seal.ts";
 import type { PushDelivery, PushSender, SendOutcome } from "../../src/push/senders.ts";
+import { pushStore } from "../../src/push/store.ts";
 import type { Sql } from "../../src/push/store.ts";
 import { nodeSql } from "./sql.ts";
 
@@ -97,7 +98,8 @@ export type CoreHarness = {
   readonly sql: Sql;
   readonly database: DatabaseSync;
   readonly sender: PushSender & { readonly deliveries: PushDelivery[] };
-  readonly alarms: number[];
+  /** Every `wake()` the core raised, recorded as the store's `nextWake()` at that moment. */
+  readonly wakes: Array<number | undefined>;
   readonly logs: string[];
   readonly verify: { readonly calls: Array<ReadonlyArray<{ network: string; hash: string }>> };
   readonly clock: { get: () => number; set: (ms: number) => void };
@@ -109,20 +111,25 @@ export async function coreHarness(
     readonly sender?: PushSender & { readonly deliveries: PushDelivery[] };
     readonly script?: ReadonlyArray<ReadonlyArray<CheckResult>>;
     readonly start?: number;
+    readonly syncAddresses?: PushFamilyConfig["syncAddresses"];
   } = {},
 ): Promise<CoreHarness> {
   const database = new DatabaseSync(":memory:");
   const sql = nodeSql(database);
+  const store = pushStore(sql);
   const verify = scriptVerify(options.script);
   const sender = options.sender ?? fakeSender();
-  const alarms: number[] = [];
+  const wakes: Array<number | undefined> = [];
   const logs: string[] = [];
   let clock = options.start ?? 1_700_000_000_000;
   let nonce = 0;
   const deps: PushCoreDeps = {
     sql,
     family: "evm",
-    config: evmFamily(verify.verify),
+    config: {
+      ...evmFamily(verify.verify),
+      ...(options.syncAddresses === undefined ? {} : { syncAddresses: options.syncAddresses }),
+    },
     sealKey: await importSealKey(SEAL_KEY_B64),
     senders: { apns: sender },
     now: () => clock,
@@ -133,8 +140,8 @@ export async function coreHarness(
       out[0] = nonce & 0xff;
       return out;
     },
-    schedule: (at) => {
-      alarms.push(at);
+    wake: () => {
+      wakes.push(store.nextWake());
     },
     log: (line) => {
       logs.push(line);
@@ -145,7 +152,7 @@ export async function coreHarness(
     sql,
     database,
     sender,
-    alarms,
+    wakes,
     logs,
     verify,
     clock: {

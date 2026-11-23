@@ -64,6 +64,9 @@ const SCHEMA = [
     id integer primary key, subscription text not null, event text not null, c text not null,
     attempts integer not null, next_at integer not null, expires integer not null)`,
   `create index if not exists outbox_due on outbox (next_at)`,
+  /* The (network, address) pairs the watcher was last told about — the reconciliation baseline. */
+  `create table if not exists synced (
+    network text not null, address text not null, primary key (network, address))`,
 ];
 
 /* SQLite integers may surface as bigint on some drivers — both coerce to a plain number. */
@@ -284,6 +287,68 @@ export function pushStore(sql: Sql) {
       );
     },
 
+    /** The desired watcher address set — every distinct (network, address) pair. */
+    watchedPairs(): Array<{ network: string; address: string }> {
+      return rows(`select distinct network, address from addresses`)
+        .map((row) => ({ network: str(row["network"]), address: str(row["address"]) }))
+        .filter(
+          (pair): pair is { network: string; address: string } =>
+            pair.network !== undefined && pair.address !== undefined,
+        );
+    },
+
+    /**
+     * The address-sync due time in `meta` (`0` = now). Set by every addresses mutation for a
+     * syncing family, deferred past a failed sync call, cleared once desired equals synced.
+     */
+    markSyncDirty(): void {
+      sql.exec(`insert or replace into meta (k, v) values ('sync', '0')`);
+    },
+
+    deferSync(atMs: number): void {
+      sql.exec(`insert or replace into meta (k, v) values ('sync', ?)`, String(atMs));
+    },
+
+    clearSync(): void {
+      sql.exec(`delete from meta where k = 'sync'`);
+    },
+
+    syncDue(): number | undefined {
+      const [row] = rows(`select v from meta where k = 'sync'`);
+      if (row === undefined) {
+        return undefined;
+      }
+      const value = Number(str(row["v"]) ?? "");
+      if (!Number.isFinite(value)) {
+        sql.exec(`delete from meta where k = 'sync'`);
+        return undefined;
+      }
+      return value;
+    },
+
+    /** The pairs the watcher was last told about — the reconciliation baseline. */
+    syncedPairs(): Array<{ network: string; address: string }> {
+      return rows(`select network, address from synced`)
+        .map((row) => ({ network: str(row["network"]), address: str(row["address"]) }))
+        .filter(
+          (pair): pair is { network: string; address: string } =>
+            pair.network !== undefined && pair.address !== undefined,
+        );
+    },
+
+    /** One confirmed sync batch: the add list joins `synced`, the remove list leaves it. */
+    markSynced(
+      add: ReadonlyArray<{ network: string; address: string }>,
+      remove: ReadonlyArray<{ network: string; address: string }>,
+    ): void {
+      for (const { network, address } of add) {
+        sql.exec(`insert or ignore into synced (network, address) values (?, ?)`, network, address);
+      }
+      for (const { network, address } of remove) {
+        sql.exec(`delete from synced where network = ? and address = ?`, network, address);
+      }
+    },
+
     pairWatched(network: string, address: string): boolean {
       return (
         rows(
@@ -461,7 +526,7 @@ export function pushStore(sql: Sql) {
       const subscription = num(rows(`select min(expires) as n from subscriptions`)[0]?.["n"]);
       const oldest = num(rows(`select min(created) as n from records`)[0]?.["n"]);
       const retention = oldest === undefined ? undefined : oldest + RECORD_TTL_MS;
-      const times = [recordCheck, delivery, subscription, retention].filter(
+      const times = [recordCheck, delivery, subscription, retention, this.syncDue()].filter(
         (value): value is number => value !== undefined,
       );
       return times.length === 0 ? undefined : Math.min(...times);

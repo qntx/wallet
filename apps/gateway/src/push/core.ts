@@ -36,6 +36,11 @@ export const OUTBOX_TTL_MS = 3_600_000;
 const RETRY_MS = [30_000, 120_000, 600_000, 1_800_000] as const;
 const RETRY_AFTER_CAP_S = 3600;
 const RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
+/** The watcher's management API caps each list at 500 entries — one call carries both lists. */
+const SYNC_BATCH = 500;
+/** The alarm stays well under its CPU budget: at most this many sync calls per pass. */
+const SYNC_CALLS_PER_RUN = 20;
+const SYNC_RETRY_MS = 60_000;
 
 export type PushFamilyConfig = {
   /** Networks of this family the gateway watches — others answer `unsupported`. */
@@ -49,6 +54,15 @@ export type PushFamilyConfig = {
   readonly verify: (
     targets: ReadonlyArray<{ network: string; hash: string }>,
   ) => Promise<ReadonlyArray<CheckResult>>;
+  /**
+   * Reconciles the watcher's address set for one network — `add`/`remove` ≤ 500 each per call. A
+   * throw retries the batch on the next alarm. Absent, the family never marks sync dirty.
+   */
+  readonly syncAddresses?: (
+    network: string,
+    add: ReadonlyArray<string>,
+    remove: ReadonlyArray<string>,
+  ) => Promise<void>;
 };
 
 export type PushCoreDeps = {
@@ -60,8 +74,8 @@ export type PushCoreDeps = {
   readonly now: () => number;
   /** Nonce source — `crypto.getRandomValues` in the Worker, pinned bytes in tests. */
   readonly random: (n: number) => Uint8Array;
-  /** Asks for an alarm at `atMs`; the owner schedules `min(existing, atMs)`. */
-  readonly schedule: (atMs: number) => void;
+  /** The store's schedule changed — the owner re-derives the alarm from `store.nextWake()`. */
+  readonly wake: () => void;
   readonly log: (line: string) => void;
 };
 
@@ -77,13 +91,24 @@ export type IngestItem = {
   readonly removed: boolean;
 };
 
+/**
+ * Deletes expired subscriptions, records and deliveries. Each subscription cascade runs in a
+ * transaction so a syncing family marks its dirty flag atomically with the address removal.
+ */
 export const sweepExpired = (
   store: PushStore,
+  sql: Sql,
   now: number,
+  syncDirty: boolean,
 ): { readonly subscriptions: number; readonly records: number; readonly deliveries: number } => {
   let subscriptions = 0;
   for (const id of store.expiredSubscriptions(now)) {
-    store.deleteSubscriptionCascade(id);
+    sql.transaction(() => {
+      store.deleteSubscriptionCascade(id);
+      if (syncDirty) {
+        store.markSyncDirty();
+      }
+    });
     subscriptions += 1;
   }
   let records = 0;
@@ -157,8 +182,9 @@ export class PushCore {
     this.#deps.sql.transaction(() => {
       this.#store.putSubscription({ id: request.id, sealed, networks, expires });
       this.#store.replaceAddresses(request.id, pairs);
+      this.#markSyncDirty();
     });
-    this.#deps.schedule(expires);
+    this.#deps.wake();
     log(
       JSON.stringify({
         event: "push-subscribe",
@@ -173,11 +199,9 @@ export class PushCore {
   async unsubscribe(id: string): Promise<undefined> {
     this.#deps.sql.transaction(() => {
       this.#store.deleteSubscriptionCascade(id);
+      this.#markSyncDirty();
     });
-    const wake = this.#store.nextWake();
-    if (wake !== undefined) {
-      this.#deps.schedule(wake);
-    }
+    this.#deps.wake();
     return undefined;
   }
 
@@ -200,7 +224,7 @@ export class PushCore {
     }
     const at = now();
     this.#store.putRecord(request.id, newWatchRecord(request.network, request.hash, at));
-    this.#deps.schedule(at);
+    this.#deps.wake();
     return undefined;
   }
 
@@ -242,26 +266,116 @@ export class PushCore {
       }
     }
     if (due) {
-      this.#deps.schedule(at);
+      this.#deps.wake();
     }
     return undefined;
   }
 
   /**
    * The alarm pass: sweep expired rows, run the due receipt checks as one `verify` call, queue the
-   * emitted events, drive the due outbox rows, then ask for the next wake.
+   * emitted events, drive the due outbox rows, reconcile the watcher's address set, then leave the
+   * store-derived wake for the owner.
    */
   async alarm(): Promise<void> {
     const at = this.#deps.now();
-    const swept = sweepExpired(this.#store, at);
+    const swept = sweepExpired(
+      this.#store,
+      this.#deps.sql,
+      at,
+      this.#deps.config.syncAddresses !== undefined,
+    );
     if (swept.subscriptions + swept.records + swept.deliveries > 0) {
       this.#deps.log(JSON.stringify({ event: "push-sweep", ...swept }));
     }
     await this.#checks(at);
     await this.#deliver(at);
-    const wake = this.#store.nextWake();
-    if (wake !== undefined) {
-      this.#deps.schedule(wake);
+    await this.#sync(at);
+    this.#deps.wake();
+  }
+
+  /** Marks the address sync due — only a family with a `syncAddresses` ever consumes it. */
+  #markSyncDirty(): void {
+    if (this.#deps.config.syncAddresses !== undefined) {
+      this.#store.markSyncDirty();
+    }
+  }
+
+  /**
+   * Reconciles the watcher's address set: `desired − synced` joins, `synced − desired` leaves, in
+   * per-network batches of `SYNC_BATCH` (a call may carry one add and one remove batch). Each
+   * confirmed batch lands in `synced` transactionally, so a crashed or throttled pass resumes
+   * exactly where it stopped. Any throw defers the remainder `SYNC_RETRY_MS`; a pass that consumes
+   * the whole diff clears the dirty flag.
+   */
+  async #sync(at: number): Promise<void> {
+    const { config, log } = this.#deps;
+    const sync = config.syncAddresses;
+    const due = this.#store.syncDue();
+    if (sync === undefined || due === undefined || due > at) {
+      return;
+    }
+    const desired = new Map<string, Set<string>>();
+    for (const { network, address } of this.#store.watchedPairs()) {
+      if (config.networks.has(network)) {
+        const set = desired.get(network) ?? new Set<string>();
+        set.add(address);
+        desired.set(network, set);
+      }
+    }
+    const synced = new Map<string, Set<string>>();
+    const orphans: Array<{ network: string; address: string }> = [];
+    for (const pair of this.#store.syncedPairs()) {
+      if (config.networks.has(pair.network)) {
+        const set = synced.get(pair.network) ?? new Set<string>();
+        set.add(pair.address);
+        synced.set(pair.network, set);
+      } else {
+        // A network the watcher no longer serves cannot be reconciled remotely — drop the marker.
+        orphans.push(pair);
+      }
+    }
+    if (orphans.length > 0) {
+      this.#deps.sql.transaction(() => {
+        this.#store.markSynced([], orphans);
+      });
+    }
+    let calls = 0;
+    for (const network of new Set([...desired.keys(), ...synced.keys()])) {
+      const want = desired.get(network) ?? new Set<string>();
+      const have = synced.get(network) ?? new Set<string>();
+      const adds = [...want].filter((address) => !have.has(address));
+      const removes = [...have].filter((address) => !want.has(address));
+      const batches = Math.max(
+        Math.ceil(adds.length / SYNC_BATCH),
+        Math.ceil(removes.length / SYNC_BATCH),
+      );
+      for (let index = 0; index < batches; index += 1) {
+        if (calls >= SYNC_CALLS_PER_RUN) {
+          // The dirty flag stays — `nextWake` fires the next pass right away.
+          return;
+        }
+        const add = adds.slice(index * SYNC_BATCH, (index + 1) * SYNC_BATCH);
+        const remove = removes.slice(index * SYNC_BATCH, (index + 1) * SYNC_BATCH);
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- batches must confirm in order
+          await sync(network, add, remove);
+        } catch {
+          log(JSON.stringify({ event: "push-sync", outcome: "failed" }));
+          this.#store.deferSync(at + SYNC_RETRY_MS);
+          return;
+        }
+        calls += 1;
+        this.#deps.sql.transaction(() => {
+          this.#store.markSynced(
+            add.map((address) => ({ network, address })),
+            remove.map((address) => ({ network, address })),
+          );
+        });
+      }
+    }
+    this.#store.clearSync();
+    if (calls > 0) {
+      log(JSON.stringify({ event: "push-sync", outcome: "done", calls }));
     }
   }
 
@@ -331,6 +445,7 @@ export class PushCore {
       // A blob that no longer unseals (key rotation, corruption) cannot ever deliver.
       this.#deps.sql.transaction(() => {
         this.#store.deleteSubscriptionCascade(subscription);
+        this.#markSyncDirty();
       });
       log(JSON.stringify({ event: "push-unseal-failed" }));
       return false;
@@ -376,6 +491,7 @@ export class PushCore {
       if (target === undefined) {
         this.#deps.sql.transaction(() => {
           this.#store.deleteSubscriptionCascade(row.subscription);
+          this.#markSyncDirty();
         });
         log(JSON.stringify({ event: "push-unseal-failed" }));
         stats.dropped += 1;
@@ -401,6 +517,7 @@ export class PushCore {
         // The provider killed the device token — the subscription is dead weight.
         this.#deps.sql.transaction(() => {
           this.#store.deleteSubscriptionCascade(row.subscription);
+          this.#markSyncDirty();
         });
         stats.gone += 1;
       } else if (outcome.kind === "drop") {

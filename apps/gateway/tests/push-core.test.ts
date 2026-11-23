@@ -76,14 +76,14 @@ const expectGatewayError = async (
 
 describe("PushCore subscribe", () => {
   it("stores a sealed subscription and answers its served networks", async () => {
-    const { core, alarms } = await coreHarness();
+    const { core, wakes } = await coreHarness();
     const response = await core.subscribe(subscribeRequest());
     expect(response).toStrictEqual({
       id: SUBSCRIPTION_ID,
       networks: [EVM],
       expiresAt: 1_700_000_000_000 + PUSH_TTL_MS,
     });
-    expect(alarms).toContain(1_700_000_000_000 + PUSH_TTL_MS);
+    expect(wakes).toContain(1_700_000_000_000 + PUSH_TTL_MS);
   });
 
   // oxlint-disable-next-line vitest/expect-expect -- asserts through expectGatewayError
@@ -305,12 +305,12 @@ describe("PushCore delivery", () => {
 
   it("honours a sender Retry-After hint", async () => {
     const sender = fakeSender([{ kind: "retry", afterSeconds: 5 }]);
-    const { core, alarms } = await coreHarness({ sender, script: [[included()]] });
+    const { core, wakes } = await coreHarness({ sender, script: [[included()]] });
     const at = 1_700_000_000_000;
     await core.subscribe(subscribeRequest());
     await core.ingest([observation()]);
     await core.alarm();
-    expect(alarms).toContain(at + 5000);
+    expect(wakes).toContain(at + 5000);
   });
 
   it("cascades the subscription when the provider reports the token gone", async () => {
@@ -375,5 +375,106 @@ describe("PushCore privacy", () => {
       expect(joined).not.toContain(secret);
       expect(joined).not.toContain(ADDRESS.toUpperCase());
     }
+  });
+});
+
+describe("PushCore address sync", () => {
+  const countSynced = (sql: {
+    exec: (q: string) => { toArray: () => Array<Record<string, unknown>> };
+  }) => sql.exec(`select count(*) as n from synced`).toArray()[0]?.["n"];
+
+  const bulkAddresses = (sql: { exec: (q: string) => unknown }, count: number): void => {
+    sql.exec(
+      `with recursive n(i) as (select 0 union all select i + 1 from n where i < ${count - 1})` +
+        ` insert into addresses (network, address, subscription)` +
+        ` select '${EVM}', printf('0x%040x', i + 1000), 'bulk' from n`,
+    );
+  };
+
+  it("reconciles desired addresses in 500-strong batches after subscribe", async () => {
+    const calls: Array<{ network: string; add: string[]; remove: string[] }> = [];
+    const { core, sql } = await coreHarness({
+      syncAddresses: async (network, add, remove) => {
+        await Promise.resolve();
+        calls.push({ network, add: [...add], remove: [...remove] });
+      },
+    });
+    await core.subscribe(subscribeRequest());
+    bulkAddresses(sql, 1200);
+    await core.alarm();
+    expect(calls.map((call) => call.add.length)).toStrictEqual([500, 500, 201]);
+    expect(calls.every((call) => call.network === EVM && call.remove.length === 0)).toBe(true);
+    expect(countSynced(sql)).toBe(1201);
+  });
+
+  it("defers a failed batch and retries on the next alarm", async () => {
+    const calls: string[][] = [];
+    let fail = true;
+    const { core, sql, clock, wakes } = await coreHarness({
+      syncAddresses: async (_network, add) => {
+        await Promise.resolve();
+        if (fail) {
+          throw new Error("upstream down");
+        }
+        calls.push([...add]);
+      },
+    });
+    await core.subscribe(subscribeRequest());
+    const at = clock.get();
+    await core.alarm();
+    expect(calls).toHaveLength(0);
+    expect(countSynced(sql)).toBe(0);
+    expect(wakes.at(-1)).toBe(at + 60_000);
+    fail = false;
+    clock.set(at + 60_000);
+    await core.alarm();
+    expect(calls).toStrictEqual([[ADDRESS]]);
+    expect(countSynced(sql)).toBe(1);
+  });
+
+  it("removes synced rows the subscription no longer watches and stays idle when clean", async () => {
+    const calls: Array<{ add: string[]; remove: string[] }> = [];
+    const { core, sql } = await coreHarness({
+      syncAddresses: async (_network, add, remove) => {
+        await Promise.resolve();
+        calls.push({ add: [...add], remove: [...remove] });
+      },
+    });
+    await core.subscribe(subscribeRequest());
+    await core.alarm();
+    expect(calls).toStrictEqual([{ add: [ADDRESS], remove: [] }]);
+    await core.alarm();
+    expect(calls).toHaveLength(1); // clean — nothing to reconcile
+    await core.unsubscribe(SUBSCRIPTION_ID);
+    await core.alarm();
+    expect(calls).toStrictEqual([
+      { add: [ADDRESS], remove: [] },
+      { add: [], remove: [ADDRESS] },
+    ]);
+    expect(countSynced(sql)).toBe(0);
+  });
+
+  it("confirms a batch before the next so a thrown pass resumes mid-way", async () => {
+    const calls: number[] = [];
+    let armed = true;
+    const { core, sql, clock } = await coreHarness({
+      syncAddresses: async (_network, add) => {
+        await Promise.resolve();
+        calls.push(add.length);
+        if (armed && calls.length === 1) {
+          throw new Error("dropped mid-pass");
+        }
+      },
+    });
+    await core.subscribe(subscribeRequest());
+    bulkAddresses(sql, 1100);
+    await core.alarm();
+    expect(calls).toStrictEqual([500]);
+    expect(countSynced(sql)).toBe(0); // the thrown batch is not confirmed
+    armed = false;
+    clock.set(clock.get() + 60_000);
+    await core.alarm();
+    expect(calls).toStrictEqual([500, 500, 500, 101]);
+    expect(countSynced(sql)).toBe(1101);
   });
 });
