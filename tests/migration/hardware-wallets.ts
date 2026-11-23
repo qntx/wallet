@@ -1,16 +1,16 @@
 import { WalletError } from "@qntx/wallet";
-import type { ChainSignRequest } from "@qntx/wallet/protocol";
 import type { HardwareWalletInfo, Wallet, WalletErrorCode, WalletInfo } from "@qntx/wallet";
 import { hardware, qrParts, qrReader } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
+import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
 
 /**
- * `WalletInfo` is now a `custody` union. The shape a 0.13.0 host knew —
- * `{ walletId, origin, words, backup, passphrase, createdAt }` — is `VaultWalletInfo`; a paired
- * hardware wallet is `HardwareWalletInfo` and carries no `origin`/`words`/`backup`/`passphrase`
- * at all. Any read of a vault-only field must narrow on `custody` first; the compiler flags every
- * site that did not.
+ * `WalletInfo` is now a `custody` union. The shape a 0.13.0 host knew — `{ walletId, origin, words,
+ * backup, passphrase, createdAt }` — is `VaultWalletInfo`; a paired hardware wallet is
+ * `HardwareWalletInfo` and carries no `origin`/`words`/`backup`/`passphrase` at all. Any read of a
+ * vault-only field must narrow on `custody` first; the compiler flags every site that did not.
  */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
 export function walletBadge(info: WalletInfo): string {
   switch (info.custody) {
     case "vault":
@@ -52,9 +52,9 @@ export function deviceErrorHint(code: WalletErrorCode): string | undefined {
 
 /**
  * A Keystone 3 Pro talks UR over QR. `exchange` gets the kernel's request: `show` is what the
- * wallet displays (animate `qrParts(request.show)` on a timer), `scan` is the list of UR types
- * the kernel accepts back — feed scanned frames into `qrReader(request.scan)` until `payload`
- * appears. `compare` asks the user to confirm the address on the device screen itself.
+ * wallet displays (animate `qrParts(request.show)` on a timer), `scan` is the list of UR types the
+ * kernel accepts back — feed scanned frames into `qrReader(request.scan)` until `payload` appears.
+ * `compare` asks the user to confirm the address on the device screen itself.
  */
 export function keystoneQrIo(ui: {
   /** Shows an animated QR from the cyclic part generator until `stop` settles. */
@@ -65,16 +65,16 @@ export function keystoneQrIo(ui: {
   readonly confirmAddress: (address: string, path: string) => Promise<boolean>;
 }): DeviceIo {
   return {
+    // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
     exchange: async (request) => {
       switch (request.kind) {
         case "qr": {
           const animation =
-            request.show === undefined
-              ? undefined
-              : ui.animateQr(qrParts(request.show));
+            request.show === undefined ? undefined : ui.animateQr(qrParts(request.show));
           try {
             const reader = qrReader(request.scan);
             for (;;) {
+              // oxlint-disable-next-line no-await-in-loop -- frames arrive one camera read at a time
               const { payload } = reader.receive(await ui.scanFrame());
               if (payload !== undefined) {
                 return { kind: "qr", ur: payload };
@@ -97,10 +97,7 @@ export function keystoneQrIo(ui: {
 }
 
 /** Pair the device: scans its sync QR, resolves with the new `HardwareWalletInfo`. */
-export async function pairKeystone(
-  wallet: Wallet,
-  io: DeviceIo,
-): Promise<HardwareWalletInfo> {
+export async function pairKeystone(wallet: Wallet, io: DeviceIo): Promise<HardwareWalletInfo> {
   const info = await hardware(wallet).pair("keystone", io);
   if (info.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
@@ -109,14 +106,14 @@ export async function pairKeystone(
 }
 
 /**
- * Sign on the device: the same `verify` factor and the same result checks as `chains().sign`.
- * The wallet shows the request QR, the device signs and shows the signature QR back.
+ * Sign on the device: the same `verify` factor and the same result checks as `chains().sign`. The
+ * wallet shows the request QR, the device signs and shows the signature QR back.
  */
 export async function signOnDevice(
   wallet: Wallet,
   request: ChainSignRequest,
   verify: Parameters<ReturnType<typeof hardware>["sign"]>[0]["verify"],
   io: DeviceIo,
-) {
+): Promise<ChainSignResult> {
   return hardware(wallet).sign({ request, verify }, io);
 }

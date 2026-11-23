@@ -14,10 +14,10 @@
  *   Nothing imports it yet, so an ablation cannot measure it; an `export *` build keeps every
  *   export and measures the upper bound of what wiring the client in can add. It is not part of the
  *   application share — it has its own budget.
- * - Signers: a fourth build the same way — namespace re-exports of every file under
- *   modules/signers/ keep every export of the hardware signer module live (already wired, so the
- *   delta is only tree-shaken extras). Kernel infrastructure, not an application unit: it is out
- *   of the share and has its own budget.
+ * - Signers: a fourth build the same way — namespace re-exports of every file under modules/signers/
+ *   keep every export of the hardware signer module live (already wired, so the delta is only
+ *   tree-shaken extras). Kernel infrastructure, not an application unit: it is out of the share and
+ *   has its own budget.
  */
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";

@@ -116,7 +116,7 @@ const run = async (
     if (aborted(io)) {
       throw cancelled();
     }
-    const beginCall = (): Promise<ResultOf<"hardware.begin">> =>
+    const beginCall = async (): Promise<ResultOf<"hardware.begin">> =>
       internals.secretCall("hardware.begin", async (wire) => ({
         op,
         ...(verify === undefined
@@ -124,7 +124,8 @@ const run = async (
           : { verify: await internals.resolveVerifyFactor(verify, wire) }),
       }));
     // The user verification lives inside begin; the QR exchange that follows is not part of it.
-    const begin = verify === undefined ? await beginCall() : await internals.withVerifying(beginCall);
+    const begin =
+      verify === undefined ? await beginCall() : await internals.withVerifying(beginCall);
     ({ opId } = begin);
     let { step } = begin;
     while (step.kind === "exchange") {

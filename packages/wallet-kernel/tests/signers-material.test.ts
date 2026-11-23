@@ -88,9 +88,9 @@ describe("pinnedMaterial", () => {
     await expect(code(async () => material.ed25519([44 + HARDENED, 501 + HARDENED]))).resolves.toBe(
       "device-required",
     );
-    await expect(
-      code(async () => material.ed25519([...SOLANA_LEAF, HARDENED])),
-    ).resolves.toBe("device-required");
+    await expect(code(async () => material.ed25519([...SOLANA_LEAF, HARDENED]))).resolves.toBe(
+      "device-required",
+    );
   });
 
   it("serves the account xpub under the network's version bytes", async () => {
