@@ -310,6 +310,20 @@ describe("tron indexer", () => {
     expect(res.status).toBe(200);
   });
 
+  it("400s an indexer path naming a provider pin — before any upstream call", async () => {
+    const up = fakeFetch({
+      "https://a.test/tron": () => Response.json(page),
+      "https://b.test/tron": () => Response.json(page),
+    });
+    const res = await app(up).request(`${BASE}/v1/accounts/account`, {
+      ...post({ address: HOLDER }),
+      headers: headers({ "content-type": "application/json", [PROVIDER_PIN_HEADER]: "b" }),
+    });
+    expect(res.status).toBe(400);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
+
   it("never sends indexer paths to a node-only provider", async () => {
     const up = fakeFetch({
       "https://a.test/tron": () => new Response("down", { status: 502 }),

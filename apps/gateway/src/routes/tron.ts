@@ -91,7 +91,13 @@ export function tronRoutes({
     // Every allow-listed path is one bounded upstream call, billed one request credit.
     const meter = c.get("meter");
 
+    const pin = c.req.header(PROVIDER_PIN_HEADER);
     if (isTronIndexerPath(path)) {
+      // Indexer paths forward to the indexer provider set, which the pin cannot select — a pin
+      // here would be silently ignored, so it is refused before any upstream call.
+      if (pin !== undefined) {
+        throw new GatewayHttpError(400, "invalid-request");
+      }
       // The body already satisfied this same schema; re-parsing narrows it for the URL build.
       const request = parseWith(TRON_INDEXER_PATHS[path].request, body);
       if (request === undefined) {
@@ -121,7 +127,6 @@ export function tronRoutes({
     }
 
     const payload = JSON.stringify(body);
-    const pin = c.req.header(PROVIDER_PIN_HEADER);
     const providers =
       pin === undefined
         ? network.providers
