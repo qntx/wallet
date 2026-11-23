@@ -472,6 +472,17 @@ describe("keystone sign stage/request consistency", () => {
 });
 
 describe("keystone psbt answer binding", () => {
+  it("refuses a crypto-psbt answer that is not a PSBT", async () => {
+    const hostile: DeviceLink = {
+      exchange: async () =>
+        Promise.resolve({
+          kind: "qr",
+          ur: { type: "crypto-psbt", cbor: encodeCbor(cbor(new Uint8Array(42))) },
+        }),
+    };
+    await expect(code(async () => sign(hostile, psbt84Context()))).resolves.toBe("integrity");
+  });
+
   it("refuses a signed PSBT whose transaction content differs", async () => {
     await expect(code(async () => sign(link(tamperedPayee), psbt84Context()))).resolves.toBe(
       "integrity",

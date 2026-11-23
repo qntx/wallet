@@ -392,7 +392,9 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
           origin: signVectors.origin,
         });
       case "crypto-psbt":
-        return cryptoPsbt(signData);
+        // The payload is the PSBT inside the recorded answer — re-encoding it must
+        // reproduce the vendor bytes.
+        return cryptoPsbt(decodeRegistry(hexToBytes(c.cbor), cryptoPsbtCodec).bytes);
       case "qr-hardware-call": {
         const [secp, ed] = c.paths ?? [];
         return hardwareCall({

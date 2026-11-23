@@ -17,6 +17,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import type { UrCodec } from "@qntx/ur/interop";
 import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/ur/interop";
+import { cryptoPsbtCodec } from "@qntx/ur/registry";
 import { legacyMessageHash, samePsbtContent } from "@qntx/wallet-chains/bitcoin";
 import {
   evmSigningPreimage,
@@ -34,7 +35,6 @@ import {
   btcSignRequest,
   btcSignatureCodec,
   cryptoPsbt,
-  cryptoPsbtCodec,
   decodeRegistry,
   ethSignRequest,
   solSignRequest,

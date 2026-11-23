@@ -48,7 +48,7 @@ import type {
   TronDataType,
   UrCodec,
 } from "@qntx/ur/interop";
-import { cryptoKeypathCodec } from "@qntx/ur/registry";
+import { cryptoKeypathCodec, cryptoPsbtCodec } from "@qntx/ur/registry";
 import type { KeyPath } from "@qntx/wallet-chains";
 
 import { KernelError } from "../../../errors.ts";
@@ -238,27 +238,6 @@ export type { MultiAccounts } from "@qntx/ur/interop";
 
 export const multiAccounts = (bytes: Uint8Array): MultiAccounts =>
   decodeRegistry(bytes, cryptoMultiAccountsCodec);
-
-// `crypto-psbt` also stays local: the library codec validates the PSBT magic
-// (`psbt\xff`), but BCR-2020-007 types it as a plain byte string and the vendor
-// encoders emit arbitrary bytes, so the check would break byte-identity.
-const TAG_CRYPTO_PSBT = Tag.from(310, "crypto-psbt");
-
-export type CryptoPsbt = {
-  readonly bytes: Uint8Array;
-};
-
-export const cryptoPsbtCodec: UrCodec<CryptoPsbt> = {
-  tags: [TAG_CRYPTO_PSBT],
-  encode: ({ bytes }) => cbor(bytes),
-  decode: (value) => {
-    const bytes = expectBytes(value);
-    if (bytes.length === 0) {
-      throw CborError.outOfRange();
-    }
-    return { bytes };
-  },
-};
 
 /** A `crypto-psbt` payload is the PSBT byte string — the UR type carries tag 310. */
 export const cryptoPsbt = (psbt: Uint8Array): Uint8Array =>

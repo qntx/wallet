@@ -51812,7 +51812,15 @@ zoo`.split("\n"));
 			return Object.freeze({ bytes: copyPsbt(copyBytes(value)) });
 		}
 	};
-	TAGS["crypto-psbt"], TAGS.psbt, psbtCodec.encode, psbtCodec.decode;
+	/**
+	* Deprecated v1 writer (`ur:crypto-psbt`, tag 310). The body is identical to v2; only the tag
+	* differs.
+	*/
+	var cryptoPsbtCodec = {
+		tags: [TAGS["crypto-psbt"], TAGS.psbt],
+		encode: psbtCodec.encode,
+		decode: psbtCodec.decode
+	};
 	var KEYPATH_KEYS = /* @__PURE__ */ new Set([
 		1,
 		2,
@@ -52771,15 +52779,6 @@ zoo`.split("\n"));
 	var optionalRequestId = (map) => {
 		const value = map.get(1);
 		return value === void 0 ? void 0 : requestIdOf(value);
-	};
-	var cryptoPsbtCodec = {
-		tags: [Tag.from(310, "crypto-psbt")],
-		encode: ({ bytes }) => cbor(bytes),
-		decode: (value) => {
-			const bytes = expectBytes$1(value);
-			if (bytes.length === 0) throw CborError$1.outOfRange();
-			return { bytes };
-		}
 	};
 	/** A `crypto-psbt` payload is the PSBT byte string — the UR type carries tag 310. */
 	var cryptoPsbt = (psbt) => encodeRegistry({ bytes: psbt }, cryptoPsbtCodec);
