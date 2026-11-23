@@ -55,15 +55,16 @@ Card wallets are not available in this release: the kernel's card protocol clien
 any command or API. `SecureInput` and the native NFC reader are groundwork whose API may change in
 any release without a major bump.
 
-The library's Android manifest merges `android.permission.NFC`,
-`android.permission.HIDE_OVERLAY_WINDOWS` and an optional `android.hardware.nfc` feature into
-every host app; nothing in this release needs them. An app that does not want them removes them in
-its own `AndroidManifest.xml` with `tools:node="remove"`:
+The library's Android manifest declares nothing: the NFC and overlay entries stay in the host
+app until card wallets ship. To build a host that exercises the card surfaces, declare them
+yourself — with Expo (`android.permissions` plus a `uses-feature` manifest mod) or in
+`android/app/src/main/AndroidManifest.xml`:
 
 ```xml
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-  <uses-permission android:name="android.permission.NFC" tools:node="remove" />
-  <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" tools:node="remove" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.NFC" />
+  <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
+  <uses-feature android:name="android.hardware.nfc" android:required="false" />
 </manifest>
 ```
 

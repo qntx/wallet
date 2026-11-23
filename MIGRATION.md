@@ -2031,11 +2031,11 @@ kernel and no kernel command, `@qntx/wallet` API or engine API reaches it. What 
 native groundwork, which a host app may still notice. Compiled snippet:
 [`tests/migration/secure-input.ts`](tests/migration/secure-input.ts).
 
-1. **Android permissions merged from the library manifest.** `@qntx/wallet-native` declares
-   `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` (both normal, install-time
-   permissions) and `<uses-feature android:name="android.hardware.nfc" android:required="false"/>`.
-   They appear in every host app's merged manifest and store listing. Apps that do not want them
-   remove them with `tools:node="remove"`; nothing in this release needs them.
+1. **Android: the library manifest is empty.** `@qntx/wallet-native` merges no permissions.
+   A host that exercises the card surfaces declares `android.permission.NFC`,
+   `android.permission.HIDE_OVERLAY_WINDOWS` and
+   `<uses-feature android:name="android.hardware.nfc" android:required="false"/>` itself —
+   the exact entries are in the package README (the harness declares them in its Expo config).
 2. **iOS**: CoreNFC is weak-linked, so apps without NFC keep loading. The NFC entitlement and
    `Info.plist` keys in the package README are needed only once card wallets ship.
 3. **`@qntx/wallet-native/secure-input`** (`SecureInput`) is experimental: its props and states may

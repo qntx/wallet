@@ -1201,12 +1201,13 @@ Gateway (operators):
   undecodable typed data) are refused before the prompt with `invalid-input`. A taproot input
   carrying `tapLeafScript` or `tapMerkleRoot` is refused instead of also receiving a script-path
   signature.
-- `@qntx/wallet-native` (experimental card groundwork): the Android manifest now declares `android.permission.NFC`,
-  `android.permission.HIDE_OVERLAY_WINDOWS` and an optional `android.hardware.nfc` feature; the iOS
-  pod weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
+- `@qntx/wallet-native` (experimental card groundwork): the library's Android manifest declares
+  nothing — `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` and the optional
+  `android.hardware.nfc` feature are the host app's to opt into until card wallets ship (the
+  package README lists the exact entries; the harness declares them itself). The iOS pod
+  weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
   entitlement, `NFCReaderUsageDescription` and the ISO 7816 select identifiers
-  `F0716E74780101`, `D2760000850101` (see the package README). Apps that do not want the
-  permissions remove them with `tools:node="remove"` (MIGRATION §30).
+  `F0716E74780101`, `D2760000850101` (see the package README). (MIGRATION §30)
 - **gateway:** client addresses are parsed strictly: IPv4-mapped IPv6 addresses are keyed by their embedded IPv4 /24, and a deployed gateway answers `400 invalid-request` to a request without a usable `cf-connecting-ip`.
 - **engine:** a Bitcoin balance read follows BIP-44 account discovery (an unused template's change chain is not walked, except `btc.bip84`, which receives every legacy-template send's change), derives UTXOs from the `/scripthash/:h/txs` page when it is complete, and remembers unused templates for the discovery interval: a fresh account's cold start costs 200 Esplora calls instead of 480 and a foreground refresh 81 instead of 380.
 - **build:** `bunfig.toml` exempts `@qntx/fiat24` from the 7-day release cooldown until

@@ -43,9 +43,15 @@ const config = (): ExpoConfig => ({
   },
   android: {
     package: "org.qntx.wallet.harness",
+    // The card reader surface needs NFC; the library manifest declares nothing
+    // so host apps opt in with the same entries.
+    permissions: [
+      "android.permission.NFC",
+      "android.permission.HIDE_OVERLAY_WINDOWS",
+    ],
   },
   // WD-024: the hardware vault factor needs API 30.
-  plugins: [["expo-build-properties", { android: { minSdkVersion: 30 } }]],
+  plugins: [["expo-build-properties", { android: { minSdkVersion: 30 } }], "./plugins/android-card.ts"],
 });
 
 export default config;
