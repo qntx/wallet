@@ -68,7 +68,7 @@ export const requestPath = (
 ): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
 export const checkNetwork = (template: string, network: string): void => {
-  if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
+  if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) {
     throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
   }
   if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) {

@@ -6061,5 +6061,86 @@
         }
       }
     }
+  ],
+  "rejected": [
+    {
+      "name": "eip7702 chainId 0 (chain-universal authorization)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip7702",
+          "chainId": 0,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x2222222222222222222222222222222222222222",
+          "authorization": {
+            "address": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B"
+          }
+        }
+      },
+      "error": "invalid-request"
+    },
+    {
+      "name": "eip155:0 network",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:0",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 0,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "error": "chain-id-mismatch"
+    },
+    {
+      "name": "eip155:01 network (non-canonical chain id)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:01",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "error": "chain-id-mismatch"
+    }
   ]
 }

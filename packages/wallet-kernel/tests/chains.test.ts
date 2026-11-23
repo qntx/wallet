@@ -816,6 +816,50 @@ describe("chain.sign", () => {
     ).toBe(true);
   });
 
+  it("refuses a chain-universal eip7702 authorization before verification", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "evm.bip44");
+    const tx = {
+      type: "eip7702",
+      chainId: 0,
+      nonce: 0,
+      gas: "0x61a8",
+      value: "0x0",
+      data: "0x",
+      to: EVM_ADDRESS,
+      accessList: [],
+      maxFeePerGas: "0x4a817c800",
+      maxPriorityFeePerGas: "0x3b9aca00",
+      authorization: { address: EVM_DELEGATOR.address },
+    };
+    /* chainId 0 is the "any chain" authorization of EIP-7702 — replayable everywhere, so it is
+       refused before any prompt: even a wrong factor must not reach verification. */
+    const wrongFactor = {
+      kind: "passkey",
+      credentialId: utf8ToBytes("other-credential"),
+      prf: new Uint8Array(32),
+    };
+    for (const verify of [wrongFactor, PASSKEY()]) {
+      for (const network of ["eip155:0", "eip155:1"]) {
+        const res = await callSign(
+          h,
+          session,
+          { kind: "evm.transaction", network, account, tx },
+          verify,
+        );
+        expect(res).toMatchObject({ err: { code: "invalid-input" } });
+      }
+    }
+    /* No eip155:0 account may be derived either: the network check refuses it independently of
+       the transaction shape. */
+    const accounts = await h.call(
+      "wallet.accounts",
+      { walletId, groupIndex: 0, template: "evm.bip44", network: "eip155:0" },
+      session,
+    );
+    expect(accounts).toMatchObject({ err: { code: "invalid-input" } });
+  });
+
   it("signs a solana transaction and a raw message", async () => {
     const { h, session, walletId } = await setup();
     const account = hd(walletId, "solana.bip44-change");

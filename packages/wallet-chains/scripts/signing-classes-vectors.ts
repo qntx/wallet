@@ -5,7 +5,9 @@
  * miss), synthetic Solana legacy messages (SPL Transfer/Burn, Stake Split, an unknown program
  * taking the signer, program-authority blind), every TRON transaction vector from
  * vectors/chains/tron.json, three TRON messages, and the blind reason codes with their expected
- * `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans. Calldata is built with
+ * `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans. `rejected` rows are
+ * requests `normalizeEvm` must refuse with the pinned ChainError code (a chainId-0 EIP-7702
+ * authorization, non-canonical eip155 ids). Calldata is built with
  * viem; Solana messages are compiled with @solana/kit like the tests; TRON raw bytes are read from
  * tron.json; the expected class and prompt text are literals written by hand.
  *
@@ -2995,8 +2997,58 @@ function utf8(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+/* Requests `normalizeEvm` must refuse outright: an EIP-7702 transaction on chain 0 is a
+   chain-universal authorization — replayable on every chain — and `eip155:0`/`eip155:01` are not
+   canonical chain ids. */
+const rejected: ReadonlyArray<{ name: string; request: unknown; error: string }> = [
+  {
+    name: "eip7702 chainId 0 (chain-universal authorization)",
+    request: {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account,
+      tx: {
+        type: "eip7702",
+        chainId: 0,
+        nonce: 0,
+        gas: "0x30000",
+        value: "0x0",
+        data: "0x",
+        accessList: [],
+        maxFeePerGas: "0x3b9aca00",
+        maxPriorityFeePerGas: "0x1",
+        to: SIGNER,
+        authorization: { address: getAddress("0x63c0c19a282a1b52b07dd5a65b58948a07dae32b") },
+      },
+    },
+    error: "invalid-request",
+  },
+  {
+    name: "eip155:0 network",
+    request: {
+      ...tx({}),
+      network: "eip155:0",
+      tx: { ...tx({}).tx, chainId: 0 },
+    },
+    error: "chain-id-mismatch",
+  },
+  {
+    name: "eip155:01 network (non-canonical chain id)",
+    request: { ...tx({}), network: "eip155:01" },
+    error: "chain-id-mismatch",
+  },
+];
+
 writeFileSync(
   resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
-  `${JSON.stringify({ signers: { evm: SIGNER, tron: TRON_SIGNER, solana: SOL_SIGNER }, cases }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      signers: { evm: SIGNER, tron: TRON_SIGNER, solana: SOL_SIGNER },
+      cases,
+      rejected,
+    },
+    null,
+    2,
+  )}\n`,
 );
-console.log(`wrote ${cases.length} cases`);
+console.log(`wrote ${cases.length} cases, ${rejected.length} rejected`);
