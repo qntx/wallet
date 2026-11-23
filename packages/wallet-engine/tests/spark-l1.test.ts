@@ -223,7 +223,9 @@ describe("spark exit request", () => {
       maxFeeSats: 500,
       receiver: RECEIVE_ADDRESS,
     });
-    expect(request.risk).toStrictEqual([]);
+    // The exit receiver is assessed like any bitcoin recipient; the group's fresh receive
+    // address is not in the book, so it is a first recipient.
+    expect(request.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
     expect(request.checks).toStrictEqual([]);
     await r.requests.approve(request.id, "spark-exit", approval(request, VERIFY));
     expect(r.calls).toContain(`withdraw ${RECEIVE_ADDRESS}`);
