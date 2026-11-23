@@ -1776,7 +1776,10 @@ that does not opt in. Gateway operators deploy a new Durable Object class.
 1. **Wire the key store.** Pass `pushKeys` (`PushKeyStore`) to `createWalletEngine`: `put(id, key)`
    and `delete(id)` keep each subscription's 32-byte payload key where the notification extension
    can read it while the app is closed (iOS: an App Group keychain item; Android: app-private
-   storage read by the `FirebaseMessagingService`). Without it, deliveries on a closed app show
+   storage read by the `FirebaseMessagingService`), and `ids()` lists the stored ids so the engine
+   sweeps keys whose subscription row is gone — after a `vault.reset()` the erased wallets' rows
+   die with the vault while the gateway keeps delivering within its 30-day retention; swept
+   deliveries show only the fallback text. Without it, deliveries on a closed app show
    only the fallback text.
 2. **Register and opt in.** After unlock call `engine.notifications.setToken("apns" | "fcm",
    token)` whenever the platform hands you a token, then `enable(walletId)` for each wallet the user

@@ -273,6 +273,7 @@ describe("push engine end to end", () => {
           keys.delete(id);
           await Promise.resolve();
         },
+        ids: async () => Promise.resolve([...keys.keys()]),
       },
       accounts: { getState: accountsStore.getState, store: accountsStore },
       networks: { enabled: (f) => (f === "evm" ? [EVM] : []), store: networksStore },

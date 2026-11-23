@@ -222,6 +222,10 @@ Gateway (operators):
   backup keep both versions, and a version that holds wallets this device lacks reports `conflict`
   without blocking this device's upload. `BackupController.list()` items carry the backup `id`;
   `BackupErrorCategory` gains `quota` and `auth-required` (status `error`). (MIGRATION §28)
+- `PushKeyStore` gains `ids()`: at `init` the notifications controller deletes every host-stored
+  key whose subscription row is gone — after `vault.reset()` the erased wallets' gateway
+  subscriptions keep delivering within the 30-day retention and an orphaned key would let the
+  notification extension keep opening that activity. (MIGRATION §27)
 - `WalletInfo` is a `custody` union — `wallet.custody === "vault"` narrows to the shape
   0.13.0 returned; `custody: "hardware"` wallets carry `device`, `fingerprint` and optional
   `model`/`firmware`. Seed-bound commands answer `unsupported` for a hardware wallet

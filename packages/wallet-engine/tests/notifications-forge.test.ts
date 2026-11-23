@@ -104,6 +104,8 @@ describe("createWalletEngine notifications forge", () => {
       delete: async (id) => {
         exported.delete(id);
       },
+      // oxlint-disable-next-line typescript/require-await -- the port returns a promise
+      ids: async () => [...exported.keys()],
     };
 
     // oxlint-disable-next-line typescript/require-await -- the fetch signature requires a promise

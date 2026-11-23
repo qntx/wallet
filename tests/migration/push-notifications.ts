@@ -10,12 +10,17 @@ import { openPush } from "@qntx/wallet-engine/push";
 type SharedKeychain = {
   readonly set: (name: string, value: Uint8Array) => Promise<void>;
   readonly remove: (name: string) => Promise<void>;
+  readonly keys: () => Promise<ReadonlyArray<string>>;
 };
 
-/** The `pushKeys` option: one item per subscription id. */
+/** The `pushKeys` option: one item per subscription id; `ids` lets the engine drop orphans. */
 export const pushKeysOf = (keychain: SharedKeychain): PushKeyStore => ({
   put: async (id, key) => keychain.set(`qntx-push.${id}`, key),
   delete: async (id) => keychain.remove(`qntx-push.${id}`),
+  ids: async () =>
+    (await keychain.keys())
+      .filter((name) => name.startsWith("qntx-push."))
+      .map((name) => name.slice("qntx-push.".length)),
 });
 
 export const withPush = (options: EngineOptions, keychain: SharedKeychain): EngineOptions => ({

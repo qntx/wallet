@@ -94,6 +94,7 @@ type Options = {
 const harness = (options: Options = {}) => {
   const requests: Request[] = [];
   const keyCalls: Array<{ kind: "put" | "delete"; id: string }> = [];
+  const keyStore = new Map<string, Uint8Array>();
   const reconciled: NotificationEvent[] = [];
   const timers: Array<() => void> = [];
   let now = options.now?.() ?? NOW0;
@@ -187,14 +188,17 @@ const harness = (options: Options = {}) => {
     },
     logger: { warn: () => undefined },
     keys: options.keys ?? {
-      put: async (id) => {
+      put: async (id, key) => {
         keyCalls.push({ kind: "put", id });
+        keyStore.set(id, key);
         await Promise.resolve();
       },
       delete: async (id) => {
         keyCalls.push({ kind: "delete", id });
+        keyStore.delete(id);
         await Promise.resolve();
       },
+      ids: async () => Promise.resolve([...keyStore.keys()]),
     },
     accounts: { getState: accountsStore.getState, store: accountsStore },
     networks: {
@@ -223,6 +227,7 @@ const harness = (options: Options = {}) => {
     controller,
     requests,
     keyCalls,
+    keyStore,
     reconciled,
     timers,
     flush,
@@ -272,6 +277,26 @@ describe("NotificationsController", () => {
       { kind: "put", id: subscriptionIdOf(base64urlnopad.decode((put?.auth ?? "").slice(7))) },
     ]);
     expect(h.controller.getState().wallets["w1"]?.families["evm"]).toBe("active");
+  });
+
+  it("init sweeps host keys whose subscription row is gone", async () => {
+    const h = harness();
+    await h.controller.init();
+    await h.controller.setToken("apns", TOKEN);
+    await h.controller.enable("w1");
+    await h.flush();
+    const [liveId] = [...h.keyStore.keys()];
+    expect(liveId).toBeDefined();
+    // Orphans an erased vault or a crash between the row write and the key export leaves:
+    // the gateway keeps delivering for them within retention and the extension can no longer
+    // be allowed to open them.
+    h.keyStore.set("0".repeat(32), new Uint8Array(32));
+    h.keyStore.set("1".repeat(32), new Uint8Array(32));
+    h.controller.lock();
+    await h.controller.init();
+    expect(h.keyStore.has("0".repeat(32))).toBe(false);
+    expect(h.keyStore.has("1".repeat(32))).toBe(false);
+    expect(h.keyStore.has(liveId)).toBe(true);
   });
 
   it("GET /v1/push carries the service client id, PUT the family id", async () => {
