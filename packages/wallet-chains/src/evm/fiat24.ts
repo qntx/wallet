@@ -578,11 +578,14 @@ export const decodeFiat24 = (
 };
 
 /* The grant message the Fiat24 API verifies: "I agree to access my profile. " followed by the
-   deadline hash (integration guide part-2-api-reference, Secured APIs). The label the wallet
-   hashes is its own convention — it pins the session to the chain, account token and deadline
-   so a grant cannot be replayed under different terms. */
+   deadline hash (integration guide part-2-api-reference, Secured APIs). The server rebuilds the
+   digest as keccak256(hash ‖ deadline) from two client-chosen header values and never parses
+   `hash`, so the label the wallet hashes must not end in digits: with a `;` terminator the only
+   all-digit suffix of the preimage is the deadline the user saw, and no (hash, deadline)
+   re-split can move the grant to a later expiry. The label is the wallet's own convention —
+   the server binds nothing inside it. */
 const sessionLabel = (chainId: number, tokenId: string, deadline: number): string =>
-  `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+  `fiat24-session-v1:${chainId}:${tokenId}:${deadline};`;
 
 /** The exact personal-message text a `evm.fiat24-session` request signs. */
 export const fiat24SessionMessage = (

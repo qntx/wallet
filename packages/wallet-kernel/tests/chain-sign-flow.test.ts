@@ -315,9 +315,9 @@ const FIAT24_ANVIL_KEY = hexToBytes(
 const FIAT24_ANVIL_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const FIAT24_DEADLINE = 1795278000;
 const FIAT24_MESSAGE =
-  "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+  "I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd";
 const FIAT24_SIGNATURE =
-  "09410c3f5d15d8022f6baa8e556eeeee446164f864e33c9e6ff30fc63d7c45996719e723721bef79e3daebade7979538306b14039290d25338f19b74fe8cb0031c";
+  "1fed1f861a97bc875df8aa61b79dd054a614d0934b42a5750b8b873410afee1625cf19bb748e61fabef563fda4711dd9f92f84ae7275e6fdb1258bdca6c876c81c";
 
 const fiat24Request = (account: AccountRef) =>
   normalizeEvm({
@@ -363,9 +363,8 @@ describe("chain.sign evm.fiat24-session", () => {
     expect(opens(fake.calls).at(-1)).toStrictEqual({
       title: "Allow Fiat24 account access",
       description:
-        `Network: Arbitrum One\n` +
-        `Fiat24 account #123456\n` +
-        `Expires 2026-11-21 16:20 (UTC)\n` +
+        "A bearer grant for the Fiat24 account of the signing address, " +
+        "valid until 2026-11-21 16:20 (UTC)\n" +
         "Until then, anyone holding this signature can read your Fiat24 profile and contact data, " +
         "view your card details, create and change cards and payees, and change your email — " +
         "the channel for card one-time passwords\n" +

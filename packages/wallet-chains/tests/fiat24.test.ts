@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import * as fc from "fast-check";
 import { encodeFunctionData, getAddress, maxUint256, parseAbi } from "viem";
 import { describe, expect, it } from "vite-plus/test";
@@ -896,15 +899,16 @@ describe("evm.fiat24-session", () => {
     deadline: deadline as number,
   });
 
-  /* Independent of the wallet's own builder: the cast-generated vector in @qntx/fiat24
-     vectors/api/session.json (SPEC §9.2 — label, preimage = label + deadline, keccak digest). */
+  /* Independent of the wallet's own builder: the cast-generated vectors in @qntx/fiat24
+     vectors/api/session.json (SPEC §9.2 — the label ends in `;`, preimage = label + deadline,
+     keccak digest). */
   const VECTOR_MESSAGE =
-    "I agree to access my profile. 0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+    "I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd";
 
   it("builds the grant message byte-for-byte as the cast vector", () => {
     expect(fiat24SessionMessage(42161, "123456", 1795278000)).toBe(VECTOR_MESSAGE);
     expect(fiat24SessionMessage(42161, "1", 1795305600)).toBe(
-      "I agree to access my profile. 0x5d7df61b38b749bb4f56ed475606a771754b12494427b00c7e1df9a200ac2202",
+      "I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
     );
   });
 
@@ -948,4 +952,47 @@ describe("evm.fiat24-session", () => {
       deadline: 1795278000,
     });
   });
+});
+
+describe("the session grant deadline cannot be re-split", () => {
+  /* The Fiat24 API rebuilds the digest as keccak256(hash ‖ deadline) from two client-chosen
+     headers and never parses `hash`, so every all-digit tail of the preimage is a deadline a
+     re-split could move the grant to. The label's `;` terminator bounds the only such tail to
+     the deadline the user approved — checked over every generated session vector, whose label
+     and digest are the independent @qntx/fiat24 oracle values the signed message is asserted
+     byte-for-byte equal to above. */
+  const sessions = (
+    JSON.parse(
+      readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/fiat24.json"), "utf8"),
+    ) as {
+      cases: ReadonlyArray<{
+        request: { kind: string; tokenId: string; deadline: number };
+        session: { label: string; digest: string };
+      }>;
+    }
+  ).cases.filter((v) => v.request.kind === "evm.fiat24-session");
+
+  /* Every canonical all-digit suffix of the preimage — each is a `deadline` header value a
+     re-split of the same bytes could carry. Proper digit-tails of the deadline itself count
+     too; they can only shorten the grant, so the bound to prove is "none exceeds it". */
+  const digitSuffixes = (preimage: string): ReadonlyArray<bigint> =>
+    Array.from({ length: preimage.length }, (_, i) => preimage.slice(i))
+      .filter((s) => /^[0-9]+$/.test(s) && BigInt(s).toString() === s)
+      .map(BigInt);
+
+  it("the vectors contain session cases", () => {
+    expect(sessions.length).toBeGreaterThan(0);
+  });
+
+  it.each(sessions.map((v) => [v.request.tokenId, v] as const))(
+    "no digit suffix of the preimage exceeds the deadline (account #%s)",
+    (_id, v) => {
+      expect(v.session.label.endsWith(";")).toBe(true);
+      expect(/\d$/.test(v.session.label)).toBe(false);
+      const deadline = BigInt(v.request.deadline);
+      expect(digitSuffixes(v.session.label + v.request.deadline).every((s) => s <= deadline)).toBe(
+        true,
+      );
+    },
+  );
 });

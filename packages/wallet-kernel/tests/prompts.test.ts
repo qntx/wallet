@@ -2811,7 +2811,7 @@ describe("blind text prompts", () => {
   it("a wallet-built Fiat24 access grant names the session it opens, in both locales", () => {
     const message =
       "I agree to access my profile. " +
-      "0x7aa5d53d52ac69271847fc6b9385c9080a249f9d3c2aff9f721ca821a8109025";
+      "0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd";
     const intent = decodeEvm(
       {
         kind: "evm.fiat24-session",
@@ -2826,7 +2826,8 @@ describe("blind text prompts", () => {
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Allow Fiat24 account access",
       description:
-        `Network: Arbitrum One\nFiat24 account #123456\nExpires 2026-11-21 16:20 (UTC)\n` +
+        "A bearer grant for the Fiat24 account of the signing address, valid until " +
+        "2026-11-21 16:20 (UTC)\n" +
         "Until then, anyone holding this signature can read your Fiat24 profile and contact " +
         "data, view your card details, create and change cards and payees, and change your " +
         `email — the channel for card one-time passwords\nSigns: ${message}`,
@@ -2834,7 +2835,7 @@ describe("blind text prompts", () => {
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "授权访问 Fiat24 账户",
       description:
-        `网络：Arbitrum One\nFiat24 账户 #123456\n2026-11-21 16:20（UTC）过期\n` +
+        "对签名地址的 Fiat24 账户的持有人授权，有效期至 2026-11-21 16:20（UTC）\n" +
         "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、" +
         "创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n" +
         `签名消息：${message}`,
@@ -3894,8 +3895,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     fiat24PayoutPayee: ["payee"],
     fiat24Grant: [],
     fiat24SessionTitle: [],
-    fiat24SessionAccount: ["123456"],
-    fiat24SessionExpires: ["2026-10-13 12:00"],
+    fiat24SessionBearer: ["2026-10-13 12:00"],
     fiat24SessionPower: [],
     fiat24SessionSigns: ["I agree to access my profile. 0x00"],
     fiat24PayoutPurpose: ["42"],

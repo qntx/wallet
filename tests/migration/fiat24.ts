@@ -192,5 +192,5 @@ export async function grantFiat24Session(
     throw new Error(`unexpected chain.sign result kind: ${result.kind}`);
   }
   const sign = `0x${[...result.signature].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
-  return { hash: `fiat24-session-v1:42161:${tokenId}:${deadline}`, sign };
+  return { hash: `fiat24-session-v1:42161:${tokenId}:${deadline};`, sign };
 }

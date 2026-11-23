@@ -272,8 +272,7 @@ type Catalog = {
   readonly fiat24OpenAccount: (account: string) => string;
   readonly fiat24Grant: string;
   readonly fiat24SessionTitle: string;
-  readonly fiat24SessionAccount: (tokenId: string) => string;
-  readonly fiat24SessionExpires: (date: string) => string;
+  readonly fiat24SessionBearer: (date: string) => string;
   readonly fiat24SessionPower: string;
   readonly fiat24SessionSigns: (message: string) => string;
 };
@@ -577,8 +576,7 @@ const zh: Catalog = {
   fiat24Grant:
     "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
   fiat24SessionTitle: "授权访问 Fiat24 账户",
-  fiat24SessionAccount: (tokenId) => `Fiat24 账户 #${tokenId}`,
-  fiat24SessionExpires: (date) => `${date}（UTC）过期`,
+  fiat24SessionBearer: (date) => `对签名地址的 Fiat24 账户的持有人授权，有效期至 ${date}（UTC）`,
   fiat24SessionPower:
     "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
   fiat24SessionSigns: (message) => `签名消息：${message}`,
@@ -909,8 +907,8 @@ const en: Catalog = {
   fiat24Grant:
     "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
   fiat24SessionTitle: "Allow Fiat24 account access",
-  fiat24SessionAccount: (tokenId) => `Fiat24 account #${tokenId}`,
-  fiat24SessionExpires: (date) => `Expires ${date} (UTC)`,
+  fiat24SessionBearer: (date) =>
+    `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
   fiat24SessionPower:
     "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
   fiat24SessionSigns: (message) => `Signs: ${message}`,
@@ -1752,14 +1750,14 @@ function messagePrompt(
   }
   if (message.kind === "text" && intent.fiat24?.kind === "session-grant") {
     /* The wallet built this grant from structured fields, so the prompt describes the session
-       it opens — network, account, expiry and the powers it hands to the signature's holder. */
+       it opens — a bearer grant until the expiry and the powers it hands to the signature's
+       holder. The Fiat24 server binds nothing in the signed label, so the prompt never claims
+       chain or account pinning. */
     const grant = intent.fiat24;
     return {
       title: catalog.fiat24SessionTitle,
       description: joinLines([
-        catalog.networkLine(networkLabel(catalog, intent.network ?? "")),
-        catalog.fiat24SessionAccount(grant.account),
-        catalog.fiat24SessionExpires(utcDateTime(grant.deadline)),
+        catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
         catalog.fiat24SessionPower,
         catalog.fiat24SessionSigns(message.text),
       ]),
