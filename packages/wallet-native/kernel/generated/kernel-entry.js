@@ -18667,7 +18667,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-DIVzugKo.mjs
+	// packages/wallet-chains/dist/typed-data-BCPg0mMw.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_objectSpread2();
@@ -19058,9 +19058,12 @@
 	/**
 	* Whether any `string` leaf of the document carries characters the text rule hides — domain fields
 	* under `types.EIP712Domain` (or the fields ox derives when it is not declared) and message fields
-	* under `primaryType`, walked through structs and arrays. A key the type does not declare is not
-	* signed and is ignored. Never throws: a branch it cannot walk counts as no hidden text — malformed
-	* documents are refused by the validator.
+	* under `primaryType`, walked through structs and arrays — or the type encoding's own strings do:
+	* `primaryType`, every key of `types`, and every field's `name` and `type` are hashed into the
+	* signature, so a deceptive code point there is blind for the same reason as hidden message bytes.
+	* All declared types are scanned, not only the ones the primary type reaches. A key the type does
+	* not declare is not signed and is ignored. Never throws: a branch it cannot walk counts as no
+	* hidden text — malformed documents are refused by the validator.
 	*/
 	var typedDataHasHiddenText = (json) => {
 		var _json$types$EIP712Dom2;
@@ -19075,7 +19078,8 @@
 			if (struct !== void 0) return isRecord$3(value) && struct.some((field) => hidden(field.type, value[field.name], depth + 1));
 			return type === "string" && typeof value === "string" && hasHiddenCharacters(value);
 		};
-		return ((_json$types$EIP712Dom2 = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom2 !== void 0 ? _json$types$EIP712Dom2 : extractEip712DomainTypes(json.domain)).some((field) => hidden(field.type, json.domain[field.name], 0)) || hidden(json.primaryType, json.message, 0);
+		const domainFields = (_json$types$EIP712Dom2 = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom2 !== void 0 ? _json$types$EIP712Dom2 : extractEip712DomainTypes(json.domain);
+		return hasHiddenCharacters(json.primaryType) || Object.entries(json.types).some(([name, struct]) => hasHiddenCharacters(name) || struct.some((field) => hasHiddenCharacters(field.name) || hasHiddenCharacters(field.type))) || domainFields.some((field) => hasHiddenCharacters(field.name) || hasHiddenCharacters(field.type)) || domainFields.some((field) => hidden(field.type, json.domain[field.name], 0)) || hidden(json.primaryType, json.message, 0);
 	};
 	/**
 	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
@@ -19088,7 +19092,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-Dab29nkr.mjs
+	// packages/wallet-chains/dist/token-call-DJ9zpcH8.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var MAX_UINT256 = 2n ** 256n - 1n;
@@ -21960,7 +21964,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/assemble-ENAYlC7Y.mjs
+	// packages/wallet-chains/dist/assemble-DbR9RP90.mjs
 	init_utils$2();
 	init_objectSpread2();
 	/**
@@ -21977,6 +21981,17 @@
 	var FIAT24_DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
 	/** The card-authorisation contract (Fiat24CardAuthorizationMarqeta). */
 	var FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
+	/**
+	* The F24 utility token `mintByClient` burns at the issuer-set account price (Fiat24Account.sol:96
+	* `f24.burnFrom(msg.sender, fiat24PriceList.getPrice(_tokenId))`; the deposit contract's `f24()`
+	* getter returns this address on chain; Sourcify exact match —
+	* https://sourcify.dev/server/v2/contract/42161/0x22043fDdF353308B4F2e7dA2e5284E4D087449e1).
+	*/
+	var F24_BURN = {
+		asset: "0x22043fDdF353308B4F2e7dA2e5284E4D087449e1",
+		symbol: "F24",
+		decimals: 2
+	};
 	/**
 	* The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
 	* share the one Fiat24Token.sol source and `decimals()` is the constant 2 (Fiat24Token.sol:256-258;
@@ -22000,8 +22015,7 @@
 			symbol: "CNH24"
 		}
 	};
-	var INTERNAL_ACCOUNT_MIN = 9100n;
-	var INTERNAL_ACCOUNT_MAX = 9299n;
+	var isInternalAccount = (account) => account.toString(10).startsWith("9");
 	var TRANSFER_BY_ACCOUNT_ID = from$2("function transferByAccountId(uint256 accountId, uint256 amount)");
 	var CLIENT_PAYOUT = from$2("function clientPayout(uint256 amount, string contactId)");
 	var CLIENT_PAYOUT_REF = from$2("function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)");
@@ -22211,17 +22225,20 @@
 		return topUp([topUpFlow(input, argUint$3(args, 2), chainId, table)], output, swapsInTx(input));
 	};
 	/** Minting an account permanently links the address to the identity Fiat24 verifies. */
-	var openAccount = (id, outflows) => ({
+	var openAccount = (id, outflows, burn) => ({
 		summary: "contract-call",
 		outflows,
 		warnings: [{
 			kind: "fiat24-account-link",
 			message: ""
-		}],
-		fiat24: {
+		}, ...burn === void 0 ? [] : [{
+			kind: "fiat24-account-burn",
+			message: ""
+		}]],
+		fiat24: _objectSpread2({
 			kind: "open-account",
 			account: id.toString(10)
-		}
+		}, burn === void 0 ? {} : { burn })
 	});
 	var moveAccount = (args) => {
 		const to = argAddress$3(args, 1);
@@ -22253,7 +22270,7 @@
 					return {
 						summary: "transfer",
 						outflows: [cashFlow(token, argUint$3(args, 1), chainId, table, { account: account.toString(10) })],
-						warnings: account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX ? [{
+						warnings: isInternalAccount(account) ? [{
 							kind: "fiat24-internal-account",
 							message: account.toString(10)
 						}] : []
@@ -22315,7 +22332,7 @@
 		return (_runCases2 = runCases([
 			{
 				fn: MINT_BY_CLIENT,
-				run: (args) => openAccount(argUint$3(args, 0), [])
+				run: (args) => openAccount(argUint$3(args, 0), [], F24_BURN)
 			},
 			{
 				fn: MINT_BY_CLIENT_WITH_ETH,
@@ -22354,7 +22371,7 @@
 		if (to === "0x133CAEecA096cA54889db71956c7f75862Ead7A0".toLowerCase()) return decodeFiat24Account(call);
 		return FIAT24_CONTRACTS.has(to) ? "claimed" : void 0;
 	};
-	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline};`;
 	/** The exact personal-message text a `evm.fiat24-session` request signs. */
 	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
 		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
@@ -31140,7 +31157,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/plan-BI4xz1vZ.mjs
+	// packages/wallet-chains/dist/plan-D_EI4CuP.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -39131,7 +39148,7 @@ zoo`.split("\n"));
 			"delegation-replaced": (message) => message,
 			"token-2022-transfer-fee": (message) => message,
 			"token-2022-extension": (message) => message,
-			"fiat24-internal-account": (message) => `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+			"fiat24-internal-account": (message) => `Fiat24 账户 #${message} 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`,
 			"fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
 			"fiat24-unlimited-approval": (role) => `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
 			"fiat24-issuer-rate": () => "交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度",
@@ -39139,7 +39156,8 @@ zoo`.split("\n"));
 			"fiat24-payee-offchain": () => "Fiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金",
 			"fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
 			"fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
-			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`
+			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
+			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -39261,8 +39279,7 @@ zoo`.split("\n"));
 		fiat24OpenAccount: (account) => `为此地址开通 Fiat24 账户 #${account}`,
 		fiat24Grant: "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。",
 		fiat24SessionTitle: "授权访问 Fiat24 账户",
-		fiat24SessionAccount: (tokenId) => `Fiat24 账户 #${tokenId}`,
-		fiat24SessionExpires: (date) => `${date}（UTC）过期`,
+		fiat24SessionBearer: (date) => `对签名地址的 Fiat24 账户的持有人授权，有效期至 ${date}（UTC）`,
 		fiat24SessionPower: "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
 		fiat24SessionSigns: (message) => `签名消息：${message}`
 	};
@@ -39366,7 +39383,7 @@ zoo`.split("\n"));
 			"delegation-replaced": (message) => message,
 			"token-2022-transfer-fee": (message) => message,
 			"token-2022-extension": (message) => message,
-			"fiat24-internal-account": (message) => `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+			"fiat24-internal-account": (message) => `Fiat24 account #${message} is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`,
 			"fiat24-card-pull": () => "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
 			"fiat24-unlimited-approval": (role) => `Danger: an unlimited allowance lets the Fiat24 ${role === "card" ? "card" : "top-up and exchange"} contract take your entire balance of this token`,
 			"fiat24-issuer-rate": () => "Fiat24 sets the rate when the transaction runs; there is no minimum you will receive",
@@ -39374,7 +39391,8 @@ zoo`.split("\n"));
 			"fiat24-payee-offchain": () => "Fiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
 			"fiat24-swap-quote": () => "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
 			"fiat24-account-link": () => "Opening the account permanently links this address to the identity you verify with Fiat24",
-			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`
+			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
+			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
@@ -39496,8 +39514,7 @@ zoo`.split("\n"));
 		fiat24OpenAccount: (account) => `Open Fiat24 account #${account} for this address`,
 		fiat24Grant: "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
 		fiat24SessionTitle: "Allow Fiat24 account access",
-		fiat24SessionAccount: (tokenId) => `Fiat24 account #${tokenId}`,
-		fiat24SessionExpires: (date) => `Expires ${date} (UTC)`,
+		fiat24SessionBearer: (date) => `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
 		fiat24SessionPower: "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
 		fiat24SessionSigns: (message) => `Signs: ${message}`
 	};
@@ -39930,14 +39947,11 @@ zoo`.split("\n"));
 			};
 		}
 		if (message.kind === "text" && ((_intent$fiat = intent.fiat24) === null || _intent$fiat === void 0 ? void 0 : _intent$fiat.kind) === "session-grant") {
-			var _intent$network2;
 			const grant = intent.fiat24;
 			return {
 				title: catalog.fiat24SessionTitle,
 				description: joinLines([
-					catalog.networkLine(networkLabel(catalog, (_intent$network2 = intent.network) !== null && _intent$network2 !== void 0 ? _intent$network2 : "")),
-					catalog.fiat24SessionAccount(grant.account),
-					catalog.fiat24SessionExpires(utcDateTime(grant.deadline)),
+					catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
 					catalog.fiat24SessionPower,
 					catalog.fiat24SessionSigns(message.text)
 				])
