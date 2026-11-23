@@ -48,6 +48,7 @@ const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
 const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
 const CRYPTO_KITTIES = getAddress("0x06012c8cf97BEaD5deAe237070F9587f8E7A266d");
+const OS_1155 = getAddress("0x495f947276749Ce646f68AC8c248420045cb7b5e");
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
@@ -689,6 +690,44 @@ const cases: VectorCase[] = [
       "确认授权",
       `${net}\nThere may be other outflows\nRevoke ${TO}'s allowance for USDC via Permit2\n${fee}`,
       `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 USDC 的授权 经 Permit2\n${feeZh}`,
+    ),
+  },
+  {
+    /* What `evm-nft-send` builds for one ERC-1155 item — pinned so the builder's output always
+       has a kernel decode vector (the 721 form is covered by vectors/chains/fiat24.json). */
+    name: "ERC-1155 safeTransferFrom moves one token",
+    request: tx({
+      to: OS_1155,
+      data: encodeFunctionData({
+        abi: parseAbi(["function safeTransferFrom(address,address,uint256,uint256,bytes)"]),
+        args: [SIGNER, TO, 42n, 1n, "0x"],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `${net}\nThere may be other outflows\nSend  #42 to ${TO}\n${fee}`,
+      `${netZh}\n可能还有其他转出\n发送  #42 到 ${TO}\n${feeZh}`,
+    ),
+  },
+  {
+    name: "ERC-1155 safeBatchTransferFrom moves two tokens",
+    request: tx({
+      to: OS_1155,
+      data: encodeFunctionData({
+        abi: parseAbi(["function safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)"]),
+        args: [SIGNER, TO, [42n, 7n], [1n, 2n], "0x"],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `${net}\nThere may be other outflows\nSend  #42 to ${TO}\nSend  #7 ×2 to ${TO}\n${fee}`,
+      `${netZh}\n可能还有其他转出\n发送  #42 到 ${TO}\n发送  #7 ×2 到 ${TO}\n${feeZh}`,
     ),
   },
   {

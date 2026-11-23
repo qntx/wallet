@@ -494,6 +494,80 @@
       }
     },
     {
+      "name": "ERC-1155 safeTransferFrom moves one token",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xf242432a000000000000000000000000222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000000000deadbeef000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x495f947276749Ce646f68AC8c248420045cb7b5e"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Ethereum\nThere may be other outflows\nSend  #42 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Ethereum\n可能还有其他转出\n发送  #42 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "ERC-1155 safeBatchTransferFrom moves two tokens",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x2eb2c2d6000000000000000000000000222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000070000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x495f947276749Ce646f68AC8c248420045cb7b5e"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Ethereum\nThere may be other outflows\nSend  #42 to 0x00000000000000000000000000000000DeaDBeef\nSend  #7 ×2 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Ethereum\n可能还有其他转出\n发送  #42 到 0x00000000000000000000000000000000DeaDBeef\n发送  #7 ×2 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "calldata to the signing account",
       "request": {
         "kind": "evm.transaction",
