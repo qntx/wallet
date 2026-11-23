@@ -233,6 +233,7 @@ const hexBytes = (value: string): Uint8Array => {
   return bytes;
 };
 
+// `ignoreBOM` is required by some TextDecoderConstructorOptions typings; false keeps the default.
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
 const printable = /^[\u0020-\u007E]*$/;
 
