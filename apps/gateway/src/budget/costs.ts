@@ -8,11 +8,21 @@ import type { EvmRpcMethod, SolanaRpcMethod } from "@qntx/wallet-engine/gateway/
  */
 export type CostRow = { readonly units: number; readonly source: string };
 
+/** The NFT API and DAS methods the NFT routes call upstream. */
+export type NftMethod =
+  | "getNFTsForOwner"
+  | "getNFTMetadata"
+  | "getContractMetadata"
+  | "getFloorPrice"
+  | "getAssetsByOwner"
+  | "getAsset";
+
 export type CostModel =
   | {
       readonly kind: "rpc";
       readonly methods: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, CostRow>>;
       readonly transfers?: CostRow;
+      readonly nfts?: Readonly<Record<NftMethod, CostRow>>;
     }
   | { readonly kind: "request"; readonly request: CostRow };
 
@@ -69,6 +79,15 @@ export function transfersCost(model: CostModel): number {
     throw new Error("transfersCost on an account without a transfers row");
   }
   return model.transfers.units;
+}
+
+/** The account units one NFT API or DAS call costs. */
+export function nftCost(model: CostModel, method: NftMethod): number {
+  const row = model.kind === "rpc" ? model.nfts?.[method] : undefined;
+  if (row === undefined) {
+    throw new Error(`nftCost on an account without a ${method} row`);
+  }
+  return row.units;
 }
 
 const alchemy = (units: number): CostRow => ({
@@ -138,4 +157,12 @@ export const ALCHEMY_COSTS: CostModel = {
     simulateTransaction: alchemy(20),
   },
   transfers: { units: 120, source: "https://www.alchemy.com/docs/reference/compute-unit-costs" },
+  nfts: {
+    getNFTsForOwner: alchemy(100),
+    getNFTMetadata: alchemy(10),
+    getContractMetadata: alchemy(10),
+    getFloorPrice: alchemy(10),
+    getAssetsByOwner: alchemy(200),
+    getAsset: alchemy(200),
+  },
 };

@@ -1532,7 +1532,7 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "solana-stake" ||
       input.method === "solana-revoke" ||
       input.method === "solana-swap" ||
-      input.method === "solana-core-send" ||
+      input.method === "solana-nft-send" ||
       input.method === "tron-stake" ||
       input.method === "tron-approve";
     const prepared =
@@ -1548,8 +1548,8 @@ export class RequestController extends Controller<RequestControllerState> {
                 ? await this.options.transactions.prepareTronApprove(input, id)
                 : input.method === "solana-swap"
                   ? await this.options.transactions.prepareSolanaSwap(input, id)
-                  : input.method === "solana-core-send"
-                    ? await this.options.transactions.prepareSolanaCoreSend(input, id)
+                  : input.method === "solana-nft-send"
+                    ? await this.options.transactions.prepareSolanaNftSend(input, id)
                     : internal
                       ? await this.options.transactions.prepareEvmInternal(input, id)
                       : await this.options.transactions.prepareReplacement(input, id);

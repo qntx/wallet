@@ -45,7 +45,7 @@ import {
   fakeFetch,
   gateway,
   headers,
-  memoryPriceCache,
+  memoryEdgeCache,
   post,
   recordingLimiter,
   allowAll,
@@ -137,7 +137,7 @@ const app = (
   upstream: ReturnType<typeof fakeFetch>,
   extra: {
     readonly coingecko?: boolean;
-    readonly cache?: ReturnType<typeof memoryPriceCache>;
+    readonly cache?: ReturnType<typeof memoryEdgeCache>;
   } = {},
   now: () => number = () => NOW,
 ) =>
@@ -145,7 +145,7 @@ const app = (
     fetch: upstream.fetch,
     now,
     prices: {
-      cache: extra.cache ?? memoryPriceCache(),
+      cache: extra.cache ?? memoryEdgeCache(),
       ...(extra.coingecko === false ? {} : { coingecko: { apiKey: "cg-key" } }),
     },
   });
@@ -242,7 +242,7 @@ describe("POST /v1/prices/:family request validation", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: limiter, share },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     });
     const res = await app.request(...request(assets));
     expect(res.status).toBe(200);
@@ -300,7 +300,7 @@ describe("POST /v1/prices/:family fan-out accounting", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: limiter },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     });
     for (const [seed, currency] of [
       [0, "usd"],
@@ -328,7 +328,7 @@ describe("POST /v1/prices/:family fan-out accounting", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     });
     for (const assets of [evmSpread(0), solSpread(0)]) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- requests in order on purpose
@@ -363,7 +363,7 @@ describe("POST /v1/prices/:family refused charges", () => {
 
   it("keeps an earlier source's paid answer when the next charge is refused", async () => {
     const upstream = upstreams();
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     // CoinGecko's two calls are paid; every DefiLlama share charge is refused.
     const llamaDenied: RateLimiter = {
       limit: async ({ key }) => Promise.resolve({ success: !key.startsWith("defillama:") }),
@@ -402,7 +402,7 @@ describe("POST /v1/prices/:family refused charges", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     }).request(...request([ETH_NATIVE]));
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("60");
@@ -790,7 +790,7 @@ describe("POST /v1/prices/:family attempt cancellation", () => {
 
 describe("POST /v1/prices/:family cache", () => {
   it("serves a cached asset for 30 s, then asks the provider again", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const upstream = fakeFetch(primary());
     let now = NOW;
     const served = app(upstream, { cache }, () => now);
@@ -811,7 +811,7 @@ describe("POST /v1/prices/:family cache", () => {
   });
 
   it("caches per currency and asset, never per client", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: replay(cgEur) }));
     const served = app(upstream, { cache });
     await served.request(pricesPath("bitcoin"), {
@@ -824,7 +824,7 @@ describe("POST /v1/prices/:family cache", () => {
   });
 
   it("caches an unpriced asset only when every provider answered", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const answered = fakeFetch(
       primary({
         [cgToken("ethereum")]: replay(cgUnknown),
@@ -839,7 +839,7 @@ describe("POST /v1/prices/:family cache", () => {
     await app(answered, { cache }).request(...request([DEAD]));
     expect(answered.calls).toHaveLength(3);
 
-    const partial = memoryPriceCache();
+    const partial = memoryEdgeCache();
     const failing = fakeFetch(primary({ [cgToken("ethereum")]: replay(cgRateLimited) }));
     const served = app(failing, { cache: partial });
     await served.request(...request([BTC_NATIVE]));
@@ -869,7 +869,7 @@ describe("POST /v1/prices/:family cache", () => {
       JSON.stringify({ event: "price-cache-failure", op: "put" }),
     ]);
 
-    const corrupt = memoryPriceCache();
+    const corrupt = memoryEdgeCache();
     corrupt.data.set(
       `usd/${BTC_NATIVE}`,
       JSON.stringify({
@@ -997,7 +997,7 @@ describe("quotePrices", () => {
     forwarder: Forwarder = meteringForwarder,
   ): PriceDeps => ({
     forwarder,
-    cache: memoryPriceCache(),
+    cache: memoryEdgeCache(),
     sources,
     now: () => NOW,
     log: () => {},

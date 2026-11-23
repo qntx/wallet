@@ -43,7 +43,7 @@ import {
   bindDappSolana,
   pollSolana,
   prepareSolana,
-  prepareSolanaCoreSend,
+  prepareSolanaNftSend,
   prepareSolanaStake,
   prepareSolanaSwap,
   submitDappSolana,
@@ -994,14 +994,14 @@ export class TransactionController extends Controller<TransactionControllerState
     return prepareSolanaSwap(this.routeCtx(), input);
   }
 
-  async prepareSolanaCoreSend(
-    input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
+  async prepareSolanaNftSend(
+    input: Extract<ChainRequestInput, { method: "solana-nft-send" }>,
     _requestId: string,
   ): Promise<PreparedRequest> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    return prepareSolanaCoreSend(this.routeCtx(), input);
+    return prepareSolanaNftSend(this.routeCtx(), input);
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */

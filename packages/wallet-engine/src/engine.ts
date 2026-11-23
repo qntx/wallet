@@ -53,6 +53,7 @@ import type { MetaSyncConfig } from "./meta/controller.ts";
 import { resolveEns } from "./names/ens.ts";
 import type { EnsResolution } from "./names/ens.ts";
 import { NetworkController } from "./networks/controller.ts";
+import { NftController } from "./nfts/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { withdrawLnurl } from "./payments/pay.ts";
@@ -249,6 +250,19 @@ export type WalletEngine = {
     ApprovalsController,
     "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"
   > & { readonly exposure: (key: string) => Valuation };
+  /** NFT inventory — display-only gateway data; transfers go through requests. */
+  readonly nfts: HostController<
+    NftController,
+    | "setVisible"
+    | "load"
+    | "loadMore"
+    | "refresh"
+    | "detail"
+    | "collection"
+    | "floor"
+    | "setHidden"
+    | "inscriptions"
+  >;
   /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
   readonly connections: HostController<
     ConnectionController,
@@ -577,6 +591,37 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         return [];
       }
     },
+  });
+
+  const nfts = new NftController({
+    networks,
+    gateway,
+    fetch: options.fetch,
+    openStore: sessionStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    balances: () => assets.getState().balances,
+    activity: () => ({
+      entries: Object.values(history.getState().groups).flatMap((group) => group.entries),
+      txs: Object.values(transactions.getState().txs),
+    }),
+    onActivityChange: (listener) => {
+      const offHistory = history.store.subscribe(listener);
+      const offTxs = transactions.store.subscribe(listener);
+      return () => {
+        offHistory();
+        offTxs();
+      };
+    },
+    onConfirmed: (listener) =>
+      transactions.store.subscribe((state, previous) => {
+        for (const tx of Object.values(state.txs)) {
+          if (tx.state === "confirmed" && previous.txs[tx.id]?.state !== "confirmed") {
+            listener(tx);
+          }
+        }
+      }),
   });
 
   const accounts = new AccountTreeController({
@@ -1069,6 +1114,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     transactions.lock();
     history.lock();
     approvals.lock();
+    nfts.lock();
     prices.lock();
     assets.lock();
     networks.lock();
@@ -1120,6 +1166,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await transactions.init();
         await history.init();
         await approvals.init();
+        await nfts.init();
         await requests.init();
         await connections.init();
         depositClaimer.start();
@@ -1224,6 +1271,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         return valueHoldings(holdings, prices.getState(), options.now());
       },
     },
+    nfts,
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),

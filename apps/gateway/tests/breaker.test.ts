@@ -7,6 +7,14 @@ import {
   bridgeQuote,
   health,
   historyPath,
+  nftCollection,
+  nftCollectionPath,
+  nftFloor,
+  nftFloorPath,
+  nftItem,
+  nftItemPath,
+  nftItems,
+  nftItemsPath,
   phishingListPath,
   prices,
   pricesPath,
@@ -112,6 +120,22 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     request: [approvalsPath(ETH), post({ address: OWNER })],
     upstreams: [ALCHEMY],
   },
+  [`POST ${nftItems.path}`]: {
+    request: [nftItemsPath(ETH), post({ owner: OWNER })],
+    upstreams: [`${ALCHEMY}/getNFTsForOwner`],
+  },
+  [`POST ${nftItem.path}`]: {
+    request: [nftItemPath(ETH), post({ contract: USDC, tokenId: "1" })],
+    upstreams: [`${ALCHEMY}/getNFTMetadata`],
+  },
+  [`POST ${nftCollection.path}`]: {
+    request: [nftCollectionPath(ETH), post({ collection: USDC })],
+    upstreams: [`${ALCHEMY}/getContractMetadata`],
+  },
+  [`POST ${nftFloor.path}`]: {
+    request: [nftFloorPath(ETH), post({ collection: USDC })],
+    upstreams: [`${ALCHEMY}/getFloorPrice`],
+  },
   "GET /v1/esplora/:caip2/*": {
     request: get(`/v1/esplora/${SIGNET}/fee-estimates`),
     upstreams: ["https://a.test/btc", "https://b.test/btc"],
@@ -171,6 +195,7 @@ const appWith = (answer: Upstream, now: () => number = Date.now) => {
       cache: noCache,
       coingecko: { apiKey: "k" },
     },
+    nfts: { cache: noCache },
   });
   return { app, up };
 };
@@ -241,6 +266,10 @@ const PROBED = new Set([
   "POST /v1/rpc/:caip2",
   "POST /v1/history/:caip2",
   "POST /v1/approvals/:caip2",
+  `POST ${nftItems.path}`,
+  `POST ${nftItem.path}`,
+  `POST ${nftCollection.path}`,
+  `POST ${nftFloor.path}`,
   "GET /v1/esplora/:caip2/*",
   "POST /v1/esplora/:caip2/*",
   "POST /v1/tron/:caip2/*",
@@ -470,6 +499,7 @@ describe("upstream cost metering", () => {
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share },
       zeroEx: { apiKey: "k" },
       prices: { cache: noCache, coingecko: { apiKey: "k" } },
+      nfts: { cache: noCache },
     });
     await metered.request(...request);
     // One share charge per upstream call, keyed by that call's account and the client's prefix.

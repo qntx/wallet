@@ -13,7 +13,7 @@ import {
   call,
   fakeFetch,
   headers,
-  memoryPriceCache,
+  memoryEdgeCache,
   memoryRiskStore,
   openBudget,
   post,
@@ -24,7 +24,8 @@ import {
 const IP = "203.0.113.9";
 const limiters = { ip: allowAll, rpc: allowAll, default: allowAll, share: allowAll };
 const risk = memoryRiskStore();
-const prices = { cache: memoryPriceCache() };
+const prices = { cache: memoryEdgeCache() };
+const nfts = { cache: memoryEdgeCache() };
 
 const NET = {
   id: "eip155:11155111",
@@ -91,6 +92,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
@@ -127,6 +129,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: {
         alchemy: async () => {
@@ -176,6 +179,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: { alchemy: authDown, blockstream: authDown },
     });
@@ -218,6 +222,7 @@ describe("upstream auth", () => {
         risk,
         tokens: memoryRiskStore(),
         tokenNetworks: new Set(),
+        nfts,
         prices,
         auth: { alchemy: bearer("k1"), drpc: header("Drpc-Key", "d") },
       }),

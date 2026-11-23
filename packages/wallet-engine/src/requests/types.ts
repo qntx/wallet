@@ -21,7 +21,7 @@ export type ChainRequestMethod =
   | "evm-swap"
   | "evm-bridge"
   | "evm-nft-send"
-  | "solana-core-send"
+  | "solana-nft-send"
   | "evm-lido"
   | "solana-stake"
   | "solana-revoke"

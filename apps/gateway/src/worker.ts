@@ -6,7 +6,7 @@ import { zeroExConfig } from "./providers/zerox.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import { tokenListSources } from "./tokens/sources.ts";
 import type { TokenListUpstream } from "./tokens/sources.ts";
-import type { GatewayOptions, PriceCache } from "./types.ts";
+import type { EdgeCache, GatewayOptions } from "./types.ts";
 
 /**
  * Optional values no environment requires: the 0x integrator fee, and staging's Jupiter and
@@ -33,21 +33,22 @@ export const riskStoreOf = (kv: KVNamespace): RiskStore => ({
   put: async (key, value) => kv.put(key, value),
 });
 
-/** Price cache keys live under this synthetic origin; nothing is ever fetched from it. */
+/** Cache keys live under a per-route synthetic origin; nothing is ever fetched from them. */
 const PRICE_CACHE_ORIGIN = "https://prices.cache.invalid";
+const NFT_CACHE_ORIGIN = "https://nfts.cache.invalid";
 
 /**
- * The price cache on the Workers Cache API: free and per data centre, each entry expiring by its
+ * A read-path cache on the Workers Cache API: free and per data centre, each entry expiring by its
  * `cache-control: max-age`. `open` is called per operation — `caches` exists only in the runtime.
  */
-export const priceCacheOf = (open: () => Cache): PriceCache => ({
+export const edgeCacheOf = (origin: string, open: () => Cache): EdgeCache => ({
   get: async (key) => {
-    const hit = await open().match(`${PRICE_CACHE_ORIGIN}/${key}`);
+    const hit = await open().match(`${origin}/${key}`);
     return hit === undefined ? undefined : hit.text();
   },
   put: async (key, value, ttlSeconds) =>
     open().put(
-      `${PRICE_CACHE_ORIGIN}/${key}`,
+      `${origin}/${key}`,
       new Response(value, {
         headers: { "content-type": "application/json", "cache-control": `max-age=${ttlSeconds}` },
       }),
@@ -73,7 +74,10 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     tokenNetworks: new Set(tokenSourcesFor(env).flatMap((source) => source.networks)),
     ...(zeroEx === undefined ? {} : { zeroEx }),
   };
-  const cache = priceCacheOf(() => caches.default);
+  const cache = {
+    prices: edgeCacheOf(PRICE_CACHE_ORIGIN, () => caches.default),
+    nfts: edgeCacheOf(NFT_CACHE_ORIGIN, () => caches.default),
+  };
   const accounts = env.NETWORKS === "production" ? PRODUCTION_ACCOUNTS : STAGING_ACCOUNTS;
   const budget = durableBudget(
     env.PROVIDER_BUDGET,
@@ -103,7 +107,8 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
         tatum: header("x-api-key", env.TATUM_API_KEY),
       },
       jupiter: { apiKey: env.JUPITER_API_KEY },
-      prices: { cache, coingecko: { apiKey: env.COINGECKO_API_KEY } },
+      prices: { cache: cache.prices, coingecko: { apiKey: env.COINGECKO_API_KEY } },
+      nfts: { cache: cache.nfts },
     };
   }
   return {
@@ -115,11 +120,12 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     clientAddress: "required",
     auth: {},
     prices: {
-      cache,
+      cache: cache.prices,
       ...(env.COINGECKO_API_KEY === undefined
         ? {}
         : { coingecko: { apiKey: env.COINGECKO_API_KEY } }),
     },
+    nfts: { cache: cache.nfts },
     ...(env.JUPITER_API_KEY === undefined ? {} : { jupiter: { apiKey: env.JUPITER_API_KEY } }),
   };
 }

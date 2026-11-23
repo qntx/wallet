@@ -75,9 +75,10 @@ const ACROSS: Account = {
  */
 export const PRODUCTION_ACCOUNTS: Readonly<Record<string, Account>> = {
   // PAYG 10,000 throughput CU/s; budget is 80 % = 8,000/s. Shared by every network's RPC, by
-  // history's alchemy_getAssetTransfers and by approvals' eth_getLogs scans. clientShare 0.1 =
-  // 48,000 CU/min per prefix ≥ 3 × the measured 7,150-CU fresh cold start incl. per-call
-  // rounding; a used-wallet cold start (34,750 CU) still fits once.
+  // history's alchemy_getAssetTransfers, by approvals' eth_getLogs scans and by the NFT routes'
+  // NFT API and DAS calls (nftCost rows). clientShare 0.1 = 48,000 CU/min per prefix ≥ 3 × the
+  // measured 7,150-CU fresh cold start incl. per-call rounding; a used-wallet cold start
+  // (34,750 CU) still fits once.
   alchemy: {
     costs: ALCHEMY_COSTS,
     budget: [{ units: 40_000, seconds: 5 }],

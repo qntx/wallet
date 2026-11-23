@@ -402,6 +402,30 @@ describe("AssetsController solana token holdings", () => {
     expect(token.decimals).toBe(2);
   });
 
+  it("omits an unknown held mint that inspects as a one-of-one, leaving it to the NFT inventory", async () => {
+    const calls: Call[] = [];
+    const oneOfOne = "FCk24cq1pYhQo5MQYKHf5N9VnY8tdrToF7u6gvvsnGrn";
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: oneOfOne,
+            owner: OWNER,
+            amount: "1",
+            decimals: 0,
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+      { [oneOfOne]: mintAccount({ decimals: 0, supply: "1" }) },
+    );
+    await assets.init();
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(balances.tokens.find((t) => t.address === oneOfOne)).toBeUndefined();
+  });
+
   it("a custom mint whose mint account cannot be read is omitted, not shown at 9", async () => {
     const calls: Call[] = [];
     const weird = "8opHzTAnfzRpPEx21XtnrVTX28YQuCpAjcn1PczScKh";

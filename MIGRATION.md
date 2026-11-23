@@ -1050,6 +1050,7 @@ export function sparkStateLabel(state: SparkPaymentState): string {
 | gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                         | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                           |
 | `ChainErrorCode` `fee-payer-mismatch`                                                                                  | nothing — any required signer may sign                                               |
 | `SafeTransaction.gasToken`, `refundReceiver`                                                                           | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                           |
+| `solana-core-send` request method                                                                                    | `solana-nft-send`                                                                    |
 
 ## 14. New error codes
 
@@ -1520,6 +1521,10 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
   confirms every row on chain. Served only where Alchemy allows an unbounded `eth_getLogs` range;
   `404 unsupported` elsewhere. One `eth_blockNumber` plus four `eth_getLogs` per call, metered on
   the `alchemy` account.
+- `POST /v1/nfts/{items,item,collection,floor}/:caip2` serve display-only NFT data (Alchemy NFT
+  API on EVM, DAS on Solana); `404 unsupported` on uncovered networks, floor EVM-only.
+  `GatewayOptions.nfts.cache` is required (`PriceCache` / `priceCacheOf` are the shared
+  `EdgeCache` / `edgeCacheOf(origin, open)`).
 - A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` set it); in-process
   embeddings pass `clientAddress: "optional"` to `createGateway`. `GatewayOptions` requires `auth`
   and `prices: { cache, coingecko? }`.
@@ -1547,6 +1552,7 @@ nothing new. Each has a compiled example and a README section.
 | `@qntx/wallet/sessions`                                             | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
 | Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
 | `engine.approvals`                                                  | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`. |
+| `engine.nfts`                                                       | [`nfts.ts`](tests/migration/nfts.ts)                                                                                                                                                                                                                 | NFT inventory and transfers (§26): display-only gateway data, `evm-nft-send` `items` and `solana-nft-send` through requests. Gateway operators deploy the four `/v1/nfts/*` routes. |
 | `@qntx/wallet-engine/apps/fiat24`                                 | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS). |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
@@ -1571,6 +1577,141 @@ operators deploy the new route. Nothing changes in the vault or the kernel proto
    (`AppsController` `disable` with `revoke: true`).
 4. **Kernel prompt lines.** `ApprovalChange` has two more variants (`approval-cleared`,
    `delegate-revoked`). A host that switches over `ApprovalChange.kind` must handle them.
+## 26. NFT inventory and transfers
+
+`engine.nfts` lists an owner's NFTs on one network from the gateway. The inventory is
+display-only: show it, never build anything from it — a transfer re-reads ownership from chain and
+refuses what the chain does not back. Flagged items (`spam` non-empty) are `hidden` by default;
+`setHidden(network, id, "shown")` pins one visible, `"hidden"` hides it, `undefined` clears the
+override. Media are descriptors: render `https`, `ipfs` (rewrite to your IPFS gateway), `ar` and
+`data:` URLs in an image element or a sandbox that runs no script — never as a document when
+`active` is true. Names and descriptions are plain text.
+
+`evm-nft-send` now takes `items` (one entry for ERC-721; up to 10 distinct ERC-1155 ids, sent as
+one batch). `solana-core-send` is gone: `solana-nft-send` takes a Core asset or an SPL NFT mint.
+A refused transfer throws `NftTransferError` with a `reason`.
+
+[`tests/migration/nfts.ts`](tests/migration/nfts.ts):
+
+```ts
+import { NftTransferError } from "@qntx/wallet-engine";
+import type {
+  AccountRef,
+  NftInventory,
+  NftMedia,
+  PendingRequest,
+  WalletEngine,
+} from "@qntx/wallet-engine";
+
+/** Pages one owner's inventory; `cursor === null` ends it, `truncated` means show a gap notice. */
+export async function loadInventory(
+  engine: WalletEngine,
+  owner: string,
+  network: string,
+): Promise<NftInventory> {
+  const first = await engine.nfts.load(owner, network);
+  let inventory = first;
+  while (inventory.cursor !== null && inventory.failure === null) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- pages are fetched in cursor order
+    inventory = await engine.nfts.loadMore(owner, network);
+  }
+  return inventory;
+}
+
+/** Flagged items are hidden by default: list what is visible now. */
+export function visibleItems(
+  inventory: NftInventory,
+): ReadonlyArray<NftInventory["items"][number]> {
+  return inventory.items.filter((item) => !item.hidden);
+}
+
+/** The user pins a flagged item visible; the verdict persists and the item's `hidden` turns false. */
+export async function showAnyway(engine: WalletEngine, network: string, id: string): Promise<void> {
+  await engine.nfts.setHidden(network, id, "shown");
+}
+
+/**
+ * A media URL the host may render: `active` media (SVG, HTML, unknown animation) needs a sandbox
+ * that runs no script — pass `sandboxed` only when that is true. IPFS goes through the host's own
+ * gateway, never a hard-coded one.
+ */
+export function mediaUrl(
+  media: NftMedia | undefined,
+  ipfsGateway: (ipfsUrl: string) => string,
+  sandboxed = false,
+): string | undefined {
+  if (media === undefined || (media.active && !sandboxed)) {
+    return undefined;
+  }
+  if (media.scheme === "ipfs") {
+    return ipfsGateway(media.url);
+  }
+  return media.url;
+}
+
+/** An ERC-1155 batch is one request: several ids of one contract to one recipient. */
+export async function prepareBatch(
+  engine: WalletEngine,
+  account: AccountRef,
+  contract: string,
+  to: string,
+  items: ReadonlyArray<{ readonly tokenId: bigint; readonly amount: bigint }>,
+): Promise<PendingRequest> {
+  return engine.requests.prepare({
+    method: "evm-nft-send",
+    account,
+    network: "eip155:1",
+    contract,
+    items,
+    to,
+    fee: "normal",
+  });
+}
+
+/** Solana takes the SPL mint or the Core asset account — the route verifies which on chain. */
+export async function prepareSolana(
+  engine: WalletEngine,
+  account: AccountRef,
+  asset: string,
+  to: string,
+): Promise<PendingRequest> {
+  return engine.requests.prepare({
+    method: "solana-nft-send",
+    account,
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    asset,
+    to,
+    fee: "normal",
+  });
+}
+
+/** A refused NFT send throws `NftTransferError`; branch on `reason`, never on the message. */
+export async function sendOrExplain(
+  prepare: () => Promise<PendingRequest>,
+): Promise<PendingRequest | string> {
+  try {
+    return await prepare();
+  } catch (error) {
+    if (error instanceof NftTransferError) {
+      switch (error.reason) {
+        case "not-nft":
+          return "not an NFT";
+        case "not-owned":
+          return "the wallet does not hold it";
+        case "insufficient-balance":
+          return "not enough units";
+        case "programmable":
+          return "programmable NFTs cannot be sent";
+        case "frozen":
+          return "the token is frozen";
+        case "not-found":
+          return "the asset was not found on chain";
+      }
+    }
+    throw error;
+  }
+}
+```
 ## 29. Fiat24 app
 
 Compiled snippet: [`tests/migration/fiat24-app.ts`](tests/migration/fiat24-app.ts).

@@ -6,6 +6,10 @@ import {
   esploraGet,
   history,
   networkById,
+  nftCollection,
+  nftFloor,
+  nftItem,
+  nftItems,
   parseWith,
   priceFamily,
   prices,
@@ -30,6 +34,10 @@ const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
 const PRICES_PREFIX = `${routePrefix(prices.path)}/`;
 const APPROVALS_PREFIX = `${routePrefix(approvals.path)}/`;
+/** Every `/v1/nfts/*` route puts the network last, so one lookup covers all four. */
+const NFTS_PREFIXES: ReadonlyArray<string> = [nftItems, nftItem, nftCollection, nftFloor].map(
+  (route) => `${routePrefix(route.path)}/`,
+);
 
 /**
  * The contract's price families must be exactly the session's non-service scopes — each scope has
@@ -75,6 +83,10 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(APPROVALS_PREFIX)) {
     return networkById(pathname.slice(APPROVALS_PREFIX.length))?.family ?? "service";
+  }
+  const nftsPrefix = NFTS_PREFIXES.find((prefix) => pathname.startsWith(prefix));
+  if (nftsPrefix !== undefined) {
+    return networkById(pathname.slice(nftsPrefix.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

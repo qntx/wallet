@@ -15,7 +15,7 @@ import type {
 } from "@qntx/wallet-engine/gateway/contract";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
-import type { PriceCache, ResolvedProvider } from "../types.ts";
+import type { EdgeCache, ResolvedProvider } from "../types.ts";
 import type { Forwarder, Meter, Send, UpstreamResponse } from "./forward.ts";
 import { ProviderFailure, REFUSED_STATUSES, UNAVAILABLE_RETRY_AFTER_SECONDS } from "./forward.ts";
 import { priceTarget } from "./prices-assets.ts";
@@ -70,7 +70,7 @@ export type PriceSource = {
 
 export type PriceDeps = {
   readonly forwarder: Forwarder;
-  readonly cache: PriceCache;
+  readonly cache: EdgeCache;
   /** Tried in order: each one is asked only for the assets every earlier one left unpriced. */
   readonly sources: ReadonlyArray<PriceSource>;
   readonly now: () => number;

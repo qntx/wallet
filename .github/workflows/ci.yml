@@ -58,6 +58,7 @@ jobs:
       - run: |
           set -euo pipefail
           ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/approvals-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/nft-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
 

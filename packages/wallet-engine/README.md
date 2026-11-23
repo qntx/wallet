@@ -101,6 +101,19 @@ the package root.
 - `engine.approvals` — the standing-authority inventory (`load`, `unload`, `refresh`,
   `setVisible`, `exposure`) and revocations (`revoke`, `revokeBatch`); see
   [Approvals](#approvals).
+- `engine.nfts` — an owner's NFT inventory on one network from the gateway (`load`/`loadMore`
+  page it, `refresh` re-reads the loaded pages, `detail`/`collection`/`floor` answer one item,
+  collection or its marketplace floors). Inventory data is display-only — a send never builds
+  from it. Media are `NftMedia` descriptors with an `active` flag: render them as images or in a
+  sandbox that runs no script, never as documents. Flagged items (`spam` non-empty) are `hidden`
+  by default; `setHidden(network, id, "hidden" | "shown" | undefined)` persists the override.
+  `inscriptions(group, network)` lists the Bitcoin UTXOs the spend path already protects as
+  possible inscription carriers — read-only. NFT sends go through `requests`: `evm-nft-send`
+  takes `{ contract, items: [{ tokenId, amount? }], to }` — one entry for ERC-721, up to
+  `EVM_BATCH_LIMIT` distinct ids for one ERC-1155 batch — and `solana-nft-send` takes
+  `{ asset, to }` where `asset` is a Metaplex Core asset or an SPL NFT mint. Preparation
+  re-reads ownership from chain and a refusal throws `NftTransferError` with a `reason`
+  (`not-nft`, `not-owned`, `insufficient-balance`, `programmable`, `frozen`, `not-found`).
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).

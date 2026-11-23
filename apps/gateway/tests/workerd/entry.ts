@@ -19,7 +19,7 @@ import { durableBudget } from "../../src/budget/leased.ts";
 import type { Account } from "../../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../../src/config/networks.ts";
-import type { UpstreamAuthId } from "../../src/types.ts";
+import type { EdgeCache, UpstreamAuthId } from "../../src/types.ts";
 import { upstreamAnswer } from "../upstream-stub.ts";
 
 export { ProviderBudgetObject } from "../../src/budget/durable.ts";
@@ -271,12 +271,27 @@ const AUTH_IDS: ReadonlyArray<UpstreamAuthId> = [
   "tatum",
 ];
 
+/** An EdgeCache on a plain Map, honouring each entry's TTL. */
+const mapCache = (): EdgeCache => {
+  const entries = new Map<string, { value: string; expiresAt: number }>();
+  return {
+    get: async (key) => {
+      const entry = entries.get(key);
+      await Promise.resolve();
+      return entry !== undefined && entry.expiresAt > Date.now() ? entry.value : undefined;
+    },
+    put: async (key, value, ttlSeconds) => {
+      entries.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+      await Promise.resolve();
+    },
+  };
+};
+
 let gateway: Gateway | undefined;
 
 const gatewayFor = (env: HarnessEnv): Gateway => {
   if (gateway === undefined) {
     const accounts = env.SCALE === "small" ? scaledAccounts() : PRODUCTION_ACCOUNTS;
-    const priceCache = new Map<string, { value: string; expiresAt: number }>();
     gateway = createGateway({
       fetch: upstream(Number(env.UPSTREAM_DELAY_MS ?? "0")),
       networks: PRODUCTION_NETWORKS,
@@ -325,20 +340,11 @@ const gatewayFor = (env: HarnessEnv): Gateway => {
         },
       ),
       prices: {
-        cache: {
-          get: async (key) => {
-            const entry = priceCache.get(key);
-            await Promise.resolve();
-            return entry !== undefined && entry.expiresAt > Date.now() ? entry.value : undefined;
-          },
-          put: async (key, value, ttlSeconds) => {
-            priceCache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
-            await Promise.resolve();
-          },
-        },
+        cache: mapCache(),
         // Enables the CoinGecko source so the eur/413 share math runs; the key is fake.
         coingecko: { apiKey: "harness-stub" },
       },
+      nfts: { cache: mapCache() },
       jupiter: { apiKey: "harness-stub" },
       clientAddress: "required",
       log: (line) => {

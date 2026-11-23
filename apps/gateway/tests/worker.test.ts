@@ -6,7 +6,7 @@ import { createGateway } from "../src/app.ts";
 import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { CostModel, CostRow } from "../src/budget/costs.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
-import { gatewayFor, priceCacheOf, riskStoreOf } from "../src/worker.ts";
+import { gatewayFor, edgeCacheOf, riskStoreOf } from "../src/worker.ts";
 import type { WorkerEnv } from "../src/worker.ts";
 import { allowAll } from "./helpers.ts";
 
@@ -130,7 +130,7 @@ describe("riskStoreOf", () => {
   });
 });
 
-describe("priceCacheOf", () => {
+describe("edgeCacheOf", () => {
   it("stores each entry under a synthetic URL with its TTL as max-age", async () => {
     const stored = new Map<string, Response>();
     const cache = {
@@ -141,7 +141,7 @@ describe("priceCacheOf", () => {
       },
     };
     // The fake implements only the two Cache methods the adapter calls.
-    const prices = priceCacheOf(() => cache as unknown as Cache);
+    const prices = edgeCacheOf("https://prices.cache.invalid", () => cache as unknown as Cache);
     await expect(prices.get("usd/x")).resolves.toBeUndefined();
     await prices.put("usd/eip155:1/slip44:60", '{"v":1}', 30);
     const [[key, response] = ["", new Response()]] = [...stored];
