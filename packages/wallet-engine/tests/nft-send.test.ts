@@ -1,11 +1,25 @@
+import { readFileSync } from "node:fs";
+
 import { base64 } from "@scure/base";
 import { getAddressEncoder, address } from "@solana/kit";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeFunctionData,
+  parseAbiParameters,
+} from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
-import { MPL_CORE_PROGRAM } from "@qntx/wallet-chains/solana";
+import {
+  associatedTokenAddress,
+  MPL_CORE_PROGRAM,
+  parseCompiledMessage,
+} from "@qntx/wallet-chains/solana";
 import type { chains } from "@qntx/wallet/chains";
 
+import { metaplexMetadataAddress } from "../src/chains/nfts.ts";
+import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
@@ -13,6 +27,20 @@ import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { AccountRef } from "../src/transactions/route.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+
+const ACCOUNTS = JSON.parse(
+  readFileSync(new URL("fixtures/nfts/solana-mainnet-accounts.json", import.meta.url), "utf8"),
+) as {
+  readonly owner: string;
+  readonly plain: Section;
+  readonly programmable: Section;
+  readonly frozen: Section;
+};
+type Section = {
+  readonly mint: { readonly address: string; readonly response: unknown };
+  readonly metadata: { readonly address: string; readonly response: unknown };
+  readonly ata: { readonly address: string; readonly response: unknown };
+};
 
 const logger = {
   debug: () => undefined,
@@ -22,6 +50,7 @@ const logger = {
 };
 const GW = "https://gw.test";
 const HOST = "https://host.test";
+const HOST2 = "https://host2.test";
 const ADDR = "0xcfae4ade5ae06d1730520809c8c3db9f6c7fe7e1";
 const TO = "0x1234567890abcdef1234567890abcdef12345678";
 const CONTRACT = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
@@ -30,11 +59,28 @@ const word = (v: bigint | string): string =>
   `0x${(typeof v === "bigint" ? v : BigInt(v)).toString(16).padStart(64, "0")}`;
 const addrWord = (a: string): string => `0x${"0".repeat(24)}${a.slice(2).toLowerCase()}`;
 
+const CALL_ABI = [
+  {
+    type: "function",
+    name: "balanceOfBatch",
+    stateMutability: "view",
+    inputs: [
+      { name: "accounts", type: "address[]" },
+      { name: "ids", type: "uint256[]" },
+    ],
+    outputs: [{ name: "", type: "uint256[]" }],
+  },
+] as const;
+
 const evmWorld = (o: {
   readonly supports721?: boolean;
   readonly supports1155?: boolean;
   readonly owner?: string;
-  readonly balance?: bigint;
+  readonly balances?: ReadonlyArray<bigint>;
+  readonly hostBalances?: ReadonlyArray<bigint>;
+  readonly hostOwner?: string;
+  readonly hostFails?: boolean;
+  readonly ensResult?: string;
   readonly sim?: unknown;
 }) => {
   const net = "eip155:1";
@@ -69,11 +115,27 @@ const evmWorld = (o: {
           ),
         );
       }
-      if (data.startsWith("0x6352211e")) {
-        return reply(addrWord(o.owner ?? ADDR));
+      const to = ((body.params?.[0] as { to?: string } | undefined)?.to ?? "").toLowerCase();
+      if (to === UNIVERSAL_RESOLVER && o.ensResult !== undefined) {
+        return reply(o.ensResult);
       }
-      if (data.startsWith("0x00fdd58e")) {
-        return reply(word(o.balance ?? 5n));
+      const host = url.startsWith(HOST2);
+      if (host && o.hostFails === true) {
+        return Promise.reject(new Error("socket reset"));
+      }
+      if (data.startsWith("0x6352211e")) {
+        const owner = host ? (o.hostOwner ?? o.owner ?? ADDR) : (o.owner ?? ADDR);
+        return reply(addrWord(owner));
+      }
+      if (data.startsWith("0x4e1273f4")) {
+        const decoded = decodeFunctionData({ abi: CALL_ABI, data: data as `0x${string}` });
+        const ids = decoded.args[1];
+        const balances = (host ? (o.hostBalances ?? o.balances) : o.balances) ?? [3n];
+        return reply(
+          `0x${word(32n).slice(2)}${word(BigInt(ids.length)).slice(2)}${ids
+            .map((_id, i) => word(balances[i] ?? 0n).slice(2))
+            .join("")}`,
+        );
       }
       return reply(word(0n));
     }
@@ -117,7 +179,7 @@ const evmWorld = (o: {
   const networks = new NetworkController({
     ...idleNetworkDeps,
     fetch: fetchImpl,
-    rpc: { [net]: [HOST] },
+    rpc: { [net]: [HOST2] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
     gateway: {
@@ -131,10 +193,13 @@ const evmWorld = (o: {
       },
     },
   });
+  const signedRequests: Array<{ tx: { data: string; to: string } }> = [];
   const apis = {
     account: async () => Promise.resolve({ template: "evm.bip44", network: net, address: ADDR }),
-    sign: async () =>
-      Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array(1) }),
+    sign: async (params: { request: { tx: { data: string; to: string } } }) => {
+      signedRequests.push(params.request);
+      return Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array(1) });
+    },
   } as unknown as ReturnType<typeof chains>;
   const transactions = new TransactionController({
     wallet: {} as Wallet,
@@ -170,6 +235,7 @@ const evmWorld = (o: {
     requests,
     transactions,
     calls,
+    signedRequests,
     start: async () => {
       await networks.init();
       await transactions.init();
@@ -180,18 +246,26 @@ const evmWorld = (o: {
 
 const prepareNft = async (
   w: ReturnType<typeof evmWorld>,
-  i: { contract?: string; tokenId?: bigint; to?: string; amount?: bigint } = {},
+  i: {
+    contract?: string;
+    items?: ReadonlyArray<{ readonly tokenId: bigint; readonly amount?: bigint }>;
+    to?: string;
+  } = {},
 ) =>
   w.requests.prepare({
     method: "evm-nft-send",
     account: ACCOUNT,
     network: "eip155:1",
     contract: i.contract ?? CONTRACT,
-    tokenId: i.tokenId ?? 7n,
+    items: i.items ?? [{ tokenId: 7n }],
     to: i.to ?? TO,
-    ...(i.amount === undefined ? {} : { amount: i.amount }),
     fee: "normal",
   });
+
+const item = (tokenId: bigint, amount?: bigint): { tokenId: bigint; amount?: bigint } => ({
+  tokenId,
+  ...(amount === undefined ? {} : { amount }),
+});
 
 describe("evm-nft-send", () => {
   it("ERC-721: owner-of passes → safeTransferFrom(from,to,id)", async () => {
@@ -206,10 +280,10 @@ describe("evm-nft-send", () => {
     expect(display.outflows[0]?.to.toLowerCase()).toBe(TO);
   });
 
-  it("ERC-1155: balance covers amount → safeTransferFrom(from,to,id,amount,0x)", async () => {
-    const w = evmWorld({ supports1155: true, balance: 5n });
+  it("ERC-1155 single: balance covers amount → safeTransferFrom(from,to,id,amount,0x)", async () => {
+    const w = evmWorld({ supports1155: true, balances: [5n] });
     await w.start();
-    const p = await prepareNft(w, { amount: 3n });
+    const p = await prepareNft(w, { items: [item(7n, 3n)] });
     const display = p.display as {
       summary: string;
       outflows: ReadonlyArray<{ amount: { amount: string; tokenId?: string } }>;
@@ -218,30 +292,189 @@ describe("evm-nft-send", () => {
     expect(display.outflows[0]?.amount).toMatchObject({ tokenId: "7", amount: "3" });
   });
 
-  it("a contract that is neither ERC-721 nor ERC-1155 refuses", async () => {
-    const w = evmWorld({});
+  it("ERC-1155 batch: one outflow per id, calldata matches viem's encoding", async () => {
+    const w = evmWorld({ supports1155: true, balances: [3n, 4n, 5n] });
     await w.start();
-    await expect(prepareNft(w)).rejects.toThrow("neither ERC-721 nor ERC-1155");
+    const items = [item(7n), item(9n, 2n), item(11n, 5n)];
+    const p = await w.requests.prepare({
+      method: "evm-nft-send",
+      account: ACCOUNT,
+      network: "eip155:1",
+      contract: CONTRACT,
+      items,
+      to: TO,
+      fee: "normal",
+    });
+    const display = p.display as {
+      summary: string;
+      outflows: ReadonlyArray<{
+        to: string;
+        amount: { asset: string; amount: string; tokenId?: string };
+      }>;
+    };
+    expect(display.summary).toBe("transfer");
+    expect(display.outflows.length).toBe(items.length);
+    for (const [i, it] of items.entries()) {
+      const outflow = display.outflows[i];
+      expect(outflow?.to.toLowerCase()).toBe(TO);
+      expect(outflow?.amount.tokenId).toBe(it.tokenId.toString(10));
+      expect(outflow?.amount.amount).toBe((it.amount ?? 1n).toString(10));
+    }
   });
 
-  it("a token the account does not own refuses", async () => {
-    const w = evmWorld({ supports721: true, owner: "0x9999999999999999999999999999999999999999" });
+  it("calldata equals viem's safeBatchTransferFrom encoding", async () => {
+    const w = evmWorld({ supports1155: true, balances: [3n, 4n] });
     await w.start();
-    await expect(prepareNft(w)).rejects.toThrow("does not own the token");
+    const prepared = await w.transactions.prepareEvmInternal({
+      method: "evm-nft-send",
+      account: ACCOUNT,
+      network: "eip155:1",
+      contract: CONTRACT,
+      items: [item(7n), item(9n, 2n)],
+      to: TO,
+      fee: "normal",
+    }, "req-calldata");
+    const VERIFY = { kind: "password" as const, password: "pw" };
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    expect(tx.state).toBe("submitted");
+    const request = w.signedRequests[0];
+    expect(request?.tx.data).toBe(
+      encodeFunctionData({
+        abi: BATCH_ABI,
+        functionName: "safeBatchTransferFrom",
+        args: [ADDR as `0x${string}`, TO as `0x${string}`, [7n, 9n], [1n, 2n], "0x"],
+      }),
+    );
   });
 
-  it("an ERC-1155 balance below the amount refuses", async () => {
-    const w = evmWorld({ supports1155: true, balance: 2n });
-    await w.start();
-    await expect(prepareNft(w, { amount: 3n })).rejects.toThrow("does not hold enough units");
-  });
-
-  it("an ERC-1155 amount below one refuses", async () => {
+  it("duplicate ids refuse as an input error", async () => {
     const w = evmWorld({ supports1155: true });
     await w.start();
-    await expect(prepareNft(w, { amount: 0n })).rejects.toThrow("at least one unit");
+    await expect(prepareNft(w, { items: [item(7n), item(7n)] })).rejects.toThrow(
+      "cannot list an id twice",
+    );
+  });
+
+  it("eleven items refuse as an input error", async () => {
+    const w = evmWorld({ supports1155: true });
+    await w.start();
+    await expect(
+      prepareNft(w, { items: Array.from({ length: 11 }, (_, i) => item(BigInt(i))) }),
+    ).rejects.toThrow("at most");
+  });
+
+  it("an ERC-721 send with two items refuses as an input error", async () => {
+    const w = evmWorld({ supports721: true });
+    await w.start();
+    await expect(prepareNft(w, { items: [item(7n), item(9n)] })).rejects.toThrow(
+      "exactly one token once",
+    );
+  });
+
+  it("an ERC-721 send with amount two refuses as an input error", async () => {
+    const w = evmWorld({ supports721: true });
+    await w.start();
+    await expect(prepareNft(w, { items: [item(7n, 2n)] })).rejects.toThrow(
+      "exactly one token once",
+    );
+  });
+
+  it("a contract that is neither ERC-721 nor ERC-1155 refuses not-nft", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(prepareNft(w)).rejects.toMatchObject({ reason: "not-nft" });
+  });
+
+  it("a token the account does not own refuses not-owned", async () => {
+    const w = evmWorld({
+      supports721: true,
+      owner: "0x9999999999999999999999999999999999999999",
+    });
+    await w.start();
+    await expect(prepareNft(w)).rejects.toMatchObject({ reason: "not-owned" });
+  });
+
+  it("a zero ERC-1155 balance refuses not-owned", async () => {
+    const w = evmWorld({ supports1155: true, balances: [0n] });
+    await w.start();
+    await expect(prepareNft(w)).rejects.toMatchObject({ reason: "not-owned" });
+  });
+
+  it("an ERC-1155 balance below the amount refuses insufficient-balance", async () => {
+    const w = evmWorld({ supports1155: true, balances: [2n] });
+    await w.start();
+    await expect(prepareNft(w, { items: [item(7n, 3n)] })).rejects.toMatchObject({
+      reason: "insufficient-balance",
+    });
+  });
+
+  it("an ERC-1155 amount below one refuses as an input error", async () => {
+    const w = evmWorld({ supports1155: true });
+    await w.start();
+    await expect(prepareNft(w, { items: [item(7n, 0n)] })).rejects.toThrow("at least one unit");
+  });
+
+  it("endpoints disagreeing on the owner refuse", async () => {
+    const w = evmWorld({
+      supports721: true,
+      hostOwner: "0x9999999999999999999999999999999999999999",
+    });
+    await w.start();
+    await expect(prepareNft(w)).rejects.toThrow("disagree");
+  });
+
+  it("endpoints disagreeing on balanceOfBatch refuse", async () => {
+    const w = evmWorld({ supports1155: true, balances: [3n], hostBalances: [9n] });
+    await w.start();
+    await expect(prepareNft(w)).rejects.toThrow("disagree");
+  });
+
+  it("a failing independent endpoint leaves the read unverified", async () => {
+    const w = evmWorld({ supports721: true, hostFails: true });
+    await w.start();
+    const p = await prepareNft(w);
+    expect(p.checks).toContain("reads-unverified");
+  });
+
+  it("sending to the contract itself flags token-contract-recipient", async () => {
+    const w = evmWorld({ supports721: true });
+    await w.start();
+    const p = await prepareNft(w, { to: CONTRACT });
+    expect(p.risk).toContainEqual({ code: "token-contract-recipient", level: "danger" });
+  });
+
+  it("an ENS recipient lands its name on the outflows", async () => {
+    const w = evmWorld({ supports721: true, ensResult: ensResult(TO) });
+    await w.start();
+    const p = await prepareNft(w, { to: "name.eth" });
+    expect(p.display).toMatchObject({ outflows: [{ name: "name.eth" }] });
+    const flow = "outflows" in p.display ? p.display.outflows[0] : undefined;
+    expect(flow?.to.toLowerCase()).toBe(TO);
   });
 });
+
+const BATCH_ABI = [
+  {
+    type: "function",
+    name: "safeBatchTransferFrom",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "ids", type: "uint256[]" },
+      { name: "amounts", type: "uint256[]" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+/** A `resolveWithGateways` result whose inner `addr` decodes to `address` for any coin type. */
+const ensResult = (ensAddress: string): string =>
+  encodeAbiParameters(parseAbiParameters("bytes, bytes"), [
+    encodeAbiParameters(parseAbiParameters("bytes"), [ensAddress as `0x${string}`]),
+    "0x",
+  ]);
 
 const PAYER = "HAgk14Jp9U1Y6YV7Qe8rJx9c4kXvF4w7Yf5tP2nY5K1n";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -278,7 +511,11 @@ const solanaWorld = (o: {
   readonly asset?: { owner?: string; data?: string } | null;
   readonly ownerTag?: number;
   readonly mint?: { supply: bigint; decimals: number } | null;
+  readonly payer?: string;
+  readonly accounts?: Readonly<Record<string, unknown>>;
+  readonly hostAccounts?: Readonly<Record<string, unknown>>;
 }) => {
+  const payer = o.payer ?? PAYER;
   const calls: string[] = [];
   const fetchImpl: typeof globalThis.fetch = async (input, init) => {
     await Promise.resolve();
@@ -295,7 +532,13 @@ const solanaWorld = (o: {
     const err = (m: string) =>
       Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32_000, message: m } });
     switch (body.method) {
-      case "getAccountInfo":
+      case "getAccountInfo": {
+        const asked = String(body.params?.[0] ?? "");
+        const host = url.startsWith(HOST);
+        const table = host ? (o.hostAccounts ?? o.accounts) : o.accounts;
+        if (table !== undefined) {
+          return reply(asked in table ? table[asked] : { value: null });
+        }
         if (body.params?.[0] === ASSET) {
           if (o.asset === null) {
             return reply({ value: null });
@@ -324,6 +567,7 @@ const solanaWorld = (o: {
           });
         }
         return reply({ value: null });
+      }
 
       case "getMultipleAccounts": {
         const addrs = (body.params?.[0] as ReadonlyArray<string>) ?? [];
@@ -357,6 +601,8 @@ const solanaWorld = (o: {
         return reply({ value: [{ confirmationStatus: "finalized", err: null }] });
       case "getBlockHeight":
         return reply(1);
+      case "getEpochInfo":
+        return reply({ epoch: 1 });
       default:
         return err(`unexpected ${body.method ?? ""}`);
     }
@@ -378,11 +624,14 @@ const solanaWorld = (o: {
       },
     },
   });
+  const signedRequests: Array<{ message: Uint8Array }> = [];
   const apis = {
     account: async () =>
-      Promise.resolve({ template: "solana.bip44-change", network: SOL_NET, address: PAYER }),
-    sign: async () =>
-      Promise.resolve({ kind: "solana.transaction", signature: new Uint8Array(64) }),
+      Promise.resolve({ template: "solana.bip44-change", network: SOL_NET, address: payer }),
+    sign: async (params: { request: { message: Uint8Array } }) => {
+      signedRequests.push(params.request);
+      return Promise.resolve({ kind: "solana.transaction", signature: new Uint8Array(64) });
+    },
   } as unknown as ReturnType<typeof chains>;
   const transactions = new TransactionController({
     wallet: {} as Wallet,
@@ -418,6 +667,7 @@ const solanaWorld = (o: {
     requests,
     transactions,
     calls,
+    signedRequests,
     start: async () => {
       await networks.init();
       await transactions.init();
@@ -431,7 +681,7 @@ const prepareCore = async (
   i: { asset?: string; to?: string } = {},
 ) =>
   w.requests.prepare({
-    method: "solana-core-send",
+    method: "solana-nft-send",
     account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
     network: SOL_NET,
     asset: i.asset ?? ASSET,
@@ -439,25 +689,202 @@ const prepareCore = async (
     fee: "normal",
   });
 
-describe("solana-nft-send via SPL", () => {
-  it("a supply-1 decimals-0 SPL mint sends like any other token", async () => {
-    const w = solanaWorld({ mint: { supply: 1n, decimals: 0 } });
-    await w.start();
-    const p = await w.requests.prepare({
-      method: "send",
-      account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
-      network: SOL_NET,
-      to: NEW_OWNER,
-      amount: 1n,
-      token: NFT_MINT,
-      decimals: 0,
-      fee: "normal",
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
+const solValue = (owner: string, data: string): unknown => ({
+  context: { slot: 1 },
+  value: { owner, data: [data, "base64"], lamports: 1_500_000, executable: false },
+});
+
+const tokenAccountBytes = (mint: string, owner: string, amount: bigint, state: number): string => {
+  const b = new Uint8Array(165);
+  b.set(toBytes(mint), 0);
+  b.set(toBytes(owner), 32);
+  new DataView(b.buffer).setBigUint64(64, amount, true);
+  b[108] = state;
+  return base64.encode(b);
+};
+
+/** The real captured accounts for one fixture NFT, keyed the way `getAccountInfo` asks. */
+const splAccounts = async (
+  name: "plain" | "programmable" | "frozen",
+): Promise<Record<string, unknown>> => {
+  const section = ACCOUNTS[name];
+  return {
+    [section.mint.address]: section.mint.response,
+    [await metaplexMetadataAddress(section.mint.address)]: section.metadata.response,
+    [section.ata.address]: section.ata.response,
+  };
+};
+
+const prepareSpl = async (
+  w: ReturnType<typeof solanaWorld>,
+  asset: string,
+): ReturnType<typeof w.requests.prepare> =>
+  w.requests.prepare({
+    method: "solana-nft-send",
+    account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+    network: SOL_NET,
+    asset,
+    to: NEW_OWNER,
+    fee: "normal",
+  });
+
+describe("solana-nft-send (SPL)", () => {
+  it("a plain V1 NFT builds an idempotent-ATA + transferChecked(1,0) send", async () => {
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: await splAccounts("plain"),
     });
-    expect((p.display as { summary: string }).summary).toBe("transfer");
+    await w.start();
+    const prepared = await w.transactions.prepareSolanaNftSend(
+      {
+        method: "solana-nft-send",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+        network: SOL_NET,
+        asset: ACCOUNTS.plain.mint.address,
+        to: NEW_OWNER,
+        fee: "normal",
+      },
+      "req-spl",
+    );
+    const tx = await prepared.submit({ kind: "password", password: "pw" }, () => undefined);
+    expect(tx.state).toBe("submitted");
+    expect(prepared.intent.outflows).toStrictEqual([
+      {
+        to: associatedTokenAddress(NEW_OWNER, ACCOUNTS.plain.mint.address, TOKEN_PROGRAM),
+        amount: { asset: ACCOUNTS.plain.mint.address, amount: "1" },
+        verified: false,
+      },
+    ]);
+    const request = w.signedRequests[0];
+    const compiled = parseCompiledMessage(request?.message ?? new Uint8Array());
+    const programs = compiled.instructions.map(
+      (ix) => compiled.staticAccounts[ix.programAddressIndex],
+    );
+    expect(programs).toContain(ATA_PROGRAM);
+    const transfer = compiled.instructions.find(
+      (ix) => compiled.staticAccounts[ix.programAddressIndex] === TOKEN_PROGRAM,
+    );
+    const data = transfer?.data ?? new Uint8Array();
+    expect(data[0]).toBe(12);
+    expect(Number(new DataView(data.buffer, data.byteOffset + 1, 8).getBigUint64(0, true))).toBe(1);
+    expect(data[9]).toBe(0);
+  });
+
+  it("a programmable Mad Lads NFT refuses programmable", async () => {
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: await splAccounts("programmable"),
+    });
+    await w.start();
+    await expect(prepareSpl(w, ACCOUNTS.programmable.mint.address)).rejects.toMatchObject({
+      reason: "programmable",
+    });
+  });
+
+  it("a frozen token account refuses frozen", async () => {
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: await splAccounts("frozen"),
+    });
+    await w.start();
+    await expect(prepareSpl(w, ACCOUNTS.frozen.mint.address)).rejects.toMatchObject({
+      reason: "frozen",
+    });
+  });
+
+  it("a missing asset account refuses not-found", async () => {
+    const w = solanaWorld({ payer: ACCOUNTS.owner, accounts: {} });
+    await w.start();
+    await expect(prepareSpl(w, ACCOUNTS.plain.mint.address)).rejects.toMatchObject({
+      reason: "not-found",
+    });
+    await expect(prepareSpl(w, ACCOUNTS.plain.mint.address)).rejects.toThrow("compressed NFTs");
+  });
+
+  it("a fungible mint refuses not-nft", async () => {
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: {
+        [ACCOUNTS.plain.mint.address]: solValue(
+          TOKEN_PROGRAM,
+          splMintBytes(1_000_000n, 6),
+        ),
+      },
+    });
+    await w.start();
+    await expect(prepareSpl(w, ACCOUNTS.plain.mint.address)).rejects.toMatchObject({
+      reason: "not-nft",
+    });
+  });
+
+  it("an ATA owned by someone else refuses not-owned", async () => {
+    const section = ACCOUNTS.plain;
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: {
+        [section.mint.address]: section.mint.response,
+        [await metaplexMetadataAddress(section.mint.address)]: section.metadata.response,
+        [section.ata.address]: solValue(
+          TOKEN_PROGRAM,
+          tokenAccountBytes(section.mint.address, NEW_OWNER, 1n, 1),
+        ),
+      },
+    });
+    await w.start();
+    await expect(prepareSpl(w, section.mint.address)).rejects.toMatchObject({
+      reason: "not-owned",
+    });
+  });
+
+  it("corrupted metadata bytes refuse not-nft", async () => {
+    const section = ACCOUNTS.plain;
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: {
+        [section.mint.address]: section.mint.response,
+        [await metaplexMetadataAddress(section.mint.address)]: solValue(
+          "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+          base64.encode(new Uint8Array(607).fill(9)),
+        ),
+        [section.ata.address]: section.ata.response,
+      },
+    });
+    await w.start();
+    await expect(prepareSpl(w, section.mint.address)).rejects.toMatchObject({
+      reason: "not-nft",
+    });
+  });
+
+  it("a mint without a metadata account sends as a plain SPL NFT", async () => {
+    const section = ACCOUNTS.plain;
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts: {
+        [section.mint.address]: section.mint.response,
+        [section.ata.address]: section.ata.response,
+      },
+    });
+    await w.start();
+    const p = await prepareSpl(w, section.mint.address);
+    expect(p.display).toMatchObject({ summary: "transfer" });
+  });
+
+  it("endpoints disagreeing on the asset account refuse", async () => {
+    const accounts = await splAccounts("plain");
+    const mint = ACCOUNTS.plain.mint.address;
+    const w = solanaWorld({
+      payer: ACCOUNTS.owner,
+      accounts,
+      hostAccounts: { ...accounts, [mint]: solValue(TOKEN_PROGRAM, splMintBytes(1n, 0)) },
+    });
+    await w.start();
+    await expect(prepareSpl(w, mint)).rejects.toThrow("disagree");
   });
 });
 
-describe("solana-core-send", () => {
+describe("solana-nft-send (Core)", () => {
   it("an owned asset with a Collection authority → TransferV1", async () => {
     const w = solanaWorld({});
     await w.start();
@@ -478,7 +905,7 @@ describe("solana-core-send", () => {
       asset: { owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", data: "" },
     });
     await w.start();
-    await expect(prepareCore(w)).rejects.toThrow("not a Metaplex Core account");
+    await expect(prepareCore(w)).rejects.toMatchObject({ reason: "not-nft" });
   });
 
   it("an asset the account does not own refuses", async () => {
@@ -486,7 +913,7 @@ describe("solana-core-send", () => {
       asset: { owner: MPL_CORE_PROGRAM, data: coreAssetBytes(NEW_OWNER, 2) },
     });
     await w.start();
-    await expect(prepareCore(w)).rejects.toThrow("does not own the asset");
+    await expect(prepareCore(w)).rejects.toMatchObject({ reason: "not-owned" });
   });
 
   it("a non-AssetV1 key refuses", async () => {
@@ -495,7 +922,7 @@ describe("solana-core-send", () => {
     bad.set(toBytes(PAYER), 1);
     const w = solanaWorld({ asset: { owner: MPL_CORE_PROGRAM, data: base64.encode(bad) } });
     await w.start();
-    await expect(prepareCore(w)).rejects.toThrow("not an mpl-core asset");
+    await expect(prepareCore(w)).rejects.toMatchObject({ reason: "not-nft" });
   });
 });
 

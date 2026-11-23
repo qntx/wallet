@@ -529,12 +529,15 @@ const floorAnswer: Responder = (path) =>
     : Response.json({ error: "unsupported" }, { status: 404 });
 
 const deadEvmClient = {
-  readContract: async (params: { functionName: string }) =>
-    Promise.resolve(
-      params.functionName === "supportsInterface"
-        ? true
-        : "0x000000000000000000000000000000000000dead",
-    ),
+  request: async (args: { method: string; params?: ReadonlyArray<unknown> }) => {
+    const data =
+      (args.params?.[0] as { data?: string } | undefined)?.data?.toLowerCase() ?? "";
+    return Promise.resolve(
+      data.startsWith("0x01ffc9a7")
+        ? `0x${"0".repeat(63)}1`
+        : `0x${"0".repeat(24)}000000000000000000000000000000000000dead`,
+    );
+  },
 };
 
 describe("visibility", () => {
