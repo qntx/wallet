@@ -19,6 +19,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { encodeSparkAddress } from "@qntx/spark";
 import type {
   AccountAuthority,
+  ApprovalChange,
   AssetFlow,
   Fiat24Action,
   HyperliquidAction,
@@ -29,6 +30,7 @@ import type {
   SeaportOrder,
   StakeAction,
   TokenAuthorization,
+  TronPermission,
 } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -807,7 +809,7 @@ const INTENT_SLOTS = {
   network: "none",
   summary: "none",
   outflows: "recipient",
-  approvals: "none",
+  approvals: "recipient",
   minimumReceived: "recipient",
   fee: "none",
   staking: "recipient",
@@ -822,9 +824,16 @@ const INTENT_SLOTS = {
   contract: "none",
   programs: "none",
   programAuthority: "none",
-  tron: "none",
+  tron: "recipient",
   blind: "none",
 } satisfies Record<keyof DisplayIntent, Slot>;
+
+/* A grantee receives authority over the signer's value — a revocation names nobody. */
+const APPROVAL_SLOTS = {
+  allowance: "recipient",
+  operator: "recipient",
+  "stake-authority": "recipient",
+} satisfies Record<ApprovalChange["kind"], Slot>;
 
 const MESSAGE_SLOTS = {
   kind: "none",
@@ -837,7 +846,7 @@ const MESSAGE_SLOTS = {
   hyperliquid: "recipient",
   polymarket: "recipient",
   authorization: "recipient",
-  authority: "none",
+  authority: "recipient",
   farcaster: "none",
   fields: "none",
 } satisfies Record<keyof Extract<MessageContent, { kind: "typed-data" }>, Slot>;
@@ -895,8 +904,8 @@ const FIAT24_SLOTS = {
 } satisfies Record<Fiat24Action["kind"], Slot>;
 
 const AUTHORITY_SLOTS = {
-  morpho: "none",
-  "aave-credit": "none",
+  morpho: "recipient",
+  "aave-credit": "recipient",
   "snapshot-alias": "none",
 } satisfies Record<AccountAuthority["kind"], Slot>;
 
@@ -999,6 +1008,15 @@ const SPARK_SLOTS = {
 
 const AMT = { asset: "0xasset", amount: "1" };
 
+const tronPermission = (address: string): TronPermission => ({
+  type: "active",
+  id: 2,
+  name: "active",
+  threshold: "1",
+  parentId: 0,
+  keys: [{ address, weight: "1" }],
+});
+
 const typedSlot = (slot: Record<string, unknown>): DisplayIntent => ({
   ...baseIntent("evm", SEPOLIA),
   summary: "message",
@@ -1061,6 +1079,35 @@ const safeTx = (over: Partial<SafeTransaction>): SafeTransaction => ({
 
 const INTENT_FIXTURES: Record<RecipientSlots<typeof INTENT_SLOTS>, SlotFixture> = {
   outflows: { build: (to) => evmIntentTo(to) },
+  approvals: {
+    build: (to) => ({
+      ...baseIntent("evm", SEPOLIA),
+      approvals: [
+        {
+          kind: "allowance",
+          spender: to,
+          amount: AMT,
+          change: "set",
+          unlimited: false,
+          verified: false,
+        },
+      ],
+    }),
+  },
+  tron: {
+    build: (to) => ({
+      ...baseIntent("tron", TRON_NET),
+      tron: {
+        contractType: "AccountPermissionUpdateContract",
+        expiration: 1,
+        permissionUpdate: {
+          owner: tronPermission(to),
+          witness: tronPermission(to),
+          actives: [tronPermission(to)],
+        },
+      },
+    }),
+  },
   minimumReceived: {
     build: (to) => ({
       ...baseIntent("evm", SEPOLIA),
@@ -1109,6 +1156,86 @@ const MESSAGE_FIXTURES: Record<RecipientSlots<typeof MESSAGE_SLOTS>, SlotFixture
   },
   authorization: {
     build: (to) => authorizationSlot({ kind: "transfer", to, amount: AMT, validAfter: 0 }),
+  },
+  authority: {
+    build: (to) =>
+      typedSlot({
+        authority: {
+          kind: "morpho",
+          contract: "0xc",
+          verified: false,
+          authorized: to,
+          grant: true,
+        },
+      }),
+  },
+};
+
+const APPROVAL_FIXTURES: Record<RecipientSlots<typeof APPROVAL_SLOTS>, SlotFixture> = {
+  allowance: {
+    build: (to) => ({
+      ...baseIntent("evm", SEPOLIA),
+      approvals: [
+        {
+          kind: "allowance",
+          spender: to,
+          amount: AMT,
+          change: "set",
+          unlimited: false,
+          verified: false,
+        },
+      ],
+    }),
+  },
+  operator: {
+    build: (to) => ({
+      ...baseIntent("evm", SEPOLIA),
+      approvals: [
+        { kind: "operator", asset: "0xnft", spender: to, approved: true, verified: false },
+      ],
+    }),
+  },
+  "stake-authority": {
+    build: (to) => ({
+      ...baseIntent("solana", SOLANA_NET),
+      approvals: [
+        {
+          kind: "stake-authority",
+          account: "a",
+          role: "withdrawer",
+          authority: to,
+          verified: false,
+        },
+      ],
+    }),
+  },
+};
+
+const AUTHORITY_FIXTURES: Record<RecipientSlots<typeof AUTHORITY_SLOTS>, SlotFixture> = {
+  morpho: {
+    build: (to) =>
+      typedSlot({
+        authority: {
+          kind: "morpho",
+          contract: "0xc",
+          verified: false,
+          authorized: to,
+          grant: true,
+        },
+      }),
+  },
+  "aave-credit": {
+    build: (to) =>
+      typedSlot({
+        authority: {
+          kind: "aave-credit",
+          contract: "0xc",
+          verified: false,
+          delegatee: to,
+          amount: AMT,
+          unlimited: false,
+        },
+      }),
   },
 };
 
@@ -1217,6 +1344,8 @@ const FLOW_FIXTURES: Record<RecipientSlots<typeof FLOW_SLOTS>, SlotFixture> = {
 
 const ALL_FIXTURES: ReadonlyArray<readonly [string, Record<string, SlotFixture>]> = [
   ["intent", INTENT_FIXTURES],
+  ["approvals", APPROVAL_FIXTURES],
+  ["authority", AUTHORITY_FIXTURES],
   ["message", MESSAGE_FIXTURES],
   ["staking", STAKE_FIXTURES],
   ["hyperliquid", HYPERLIQUID_FIXTURES],
@@ -1291,9 +1420,72 @@ describe("every recipient slot is assessed", () => {
     expect(assessIntentRecipients(intent, EVM_SIGNER, ["fiat24:account:42"])).toStrictEqual([]);
   });
 
-  it("fiat24 actions and authority grants name no value recipient", () => {
+  it("fiat24 actions and snapshot aliases name no recipient", () => {
     expect(Object.values(FIAT24_SLOTS)).toStrictEqual(["none", "none", "none", "none", "none"]);
-    expect(Object.values(AUTHORITY_SLOTS)).toStrictEqual(["none", "none", "none"]);
+    expect(AUTHORITY_SLOTS["snapshot-alias"]).toBe("none");
+  });
+
+  it("revocations name no recipient — decreases, zeroed allowances, revoked operators and credit", () => {
+    const approvals: ApprovalChange[] = [
+      {
+        kind: "allowance",
+        spender: EVM_LOOKALIKE,
+        amount: { asset: "0xt", amount: "0" },
+        change: "set",
+        unlimited: false,
+        verified: false,
+      },
+      {
+        kind: "allowance",
+        spender: EVM_LOOKALIKE,
+        amount: { asset: "0xt", amount: "5" },
+        change: "decrease",
+        unlimited: false,
+        verified: false,
+      },
+      {
+        kind: "operator",
+        asset: "0xnft",
+        spender: EVM_LOOKALIKE,
+        approved: false,
+        verified: false,
+      },
+    ];
+    const intent = {
+      ...baseIntent("evm", SEPOLIA),
+      approvals,
+      message: {
+        kind: "typed-data",
+        primaryType: "Doc",
+        domain: {},
+        data: {},
+        authority: {
+          kind: "aave-credit",
+          contract: "0xc",
+          verified: false,
+          delegatee: EVM_LOOKALIKE,
+          amount: { asset: "0xa", amount: "0" },
+          unlimited: false,
+        },
+      },
+    } as DisplayIntent;
+    expect(intentRecipients(intent)).toStrictEqual([]);
+    expect(
+      intentRecipients(
+        typedSlot({
+          authority: {
+            kind: "morpho",
+            contract: "0xc",
+            verified: false,
+            authorized: EVM_LOOKALIKE,
+            grant: false,
+          },
+        }),
+      ),
+    ).toStrictEqual([]);
+    expect(
+      intentRecipients(typedSlot({ authority: { kind: "snapshot-alias", alias: EVM_LOOKALIKE } })),
+    ).toStrictEqual([]);
   });
 
   it("an outflow flagged burn names no recipient", () => {
@@ -1498,10 +1690,12 @@ describe("a real off-chain order decode is assessed", () => {
     expect(codes(request)).toContain("first-recipient");
   });
 
-  it("the same MetaTxn naming the signer is not flagged", async () => {
+  it("the same MetaTxn names the signer as recipient but warns on its grantee", async () => {
     const { requests } = rigWithBook();
     await requests.init();
     const request = await requests.prepare(signTyped("eip155:8453", zeroxDoc(EVM_SIGNER)));
-    expect(recipientFindings(request)).toStrictEqual([]);
+    /* The order's recipient slot is the signer (filtered), but the decoded approval hands a
+       spender authority — grantees are assessed like recipients now, so first-seen fires. */
+    expect(recipientFindings(request)).toStrictEqual(["first-recipient"]);
   });
 });

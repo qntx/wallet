@@ -244,7 +244,7 @@ describe("recipient risk", () => {
     expect(unknown.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
   });
 
-  it("Lightning and cooperative exits are not assessed", async () => {
+  it("a Lightning payee is not assessed; an exit's bitcoin receiver is", async () => {
     const w = world();
     await w.start();
     const exit = await w.requests.prepare({
@@ -254,7 +254,7 @@ describe("recipient risk", () => {
       amountSats: 1000,
       maxFeeSats: 10,
     });
-    expect(exit.risk).toStrictEqual([]);
+    expect(exit.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
   });
 });
 
