@@ -7,6 +7,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
+import {
+  decodeSolana,
+  namedTableAccounts,
+  parseCompiledMessage,
+} from "@qntx/wallet-chains/solana";
 import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
@@ -345,6 +350,23 @@ describe("solana-swap through requests.prepare", () => {
     expect(approved.state).toBe("submitted");
     const request = w.signed[0] as Extract<SignRequest, { kind: "solana.transaction" }>;
     expect(request.lookupTables?.length).toBe(4);
+  });
+
+  it("pins quote-named accounts static: the built message decodes without the table blind", async () => {
+    const w = world();
+    await w.start();
+    const pending = await prepare(w, solQuote());
+    await w.requests.approve(pending.id, "solana-swap", approval(pending, VERIFY));
+    const request = w.signed[0] as Extract<SignRequest, { kind: "solana.transaction" }>;
+    /* The fixture's mints and destination ATA are inside the declared tables — compression would
+       load them, so the build must have pinned them back to static keys. */
+    const parsed = parseCompiledMessage(request.message);
+    expect(parsed.staticAccounts).toEqual(expect.arrayContaining([USDC, USDC_ATA]));
+    expect(namedTableAccounts(parsed, request.lookupTables)).toStrictEqual([]);
+    const intent = decodeSolana(request, PAYER);
+    expect(intent.blind).toBeUndefined();
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.minimumReceived?.[0]?.to).toBe(PAYER);
   });
 
   it("refuses a stale quote", async () => {

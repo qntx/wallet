@@ -53,6 +53,7 @@ import type { Instruction } from "@solana/kit";
 import {
   PROGRAM_IDS,
   SOLANA_NATIVE_ASSET,
+  namedTableAccounts,
   parseCompiledMessage,
   solanaTokenTable,
 } from "@qntx/wallet-chains/solana";
@@ -421,6 +422,14 @@ export class SolanaChainAdapter {
     return typeof units === "number" && units > 0 ? units : CU_SIMULATE_LIMIT;
   }
 
+  private compileAndEncode(
+    compilable: Parameters<typeof compileTransactionMessage>[0],
+  ): Uint8Array {
+    return new Uint8Array(
+      getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(compilable)),
+    );
+  }
+
   private compile(
     from: string,
     instructions: ReadonlyArray<Instruction>,
@@ -444,8 +453,33 @@ export class SolanaChainAdapter {
               lookupTables.map((t) => [address(t.address), t.addresses.map(address)]),
             ),
           );
-    const compiled = compileTransactionMessage(compilable);
-    const messageBytes = new Uint8Array(getCompiledTransactionMessageEncoder().encode(compiled));
+    /* The signer cannot verify caller-supplied table contents, so every account the decoded
+       intent names — recipients, mints, authorities — is pinned back to a static meta (same
+       role); other loaded accounts keep their table indexes. */
+    let messageBytes = this.compileAndEncode(compilable);
+    const named =
+      messageBytes.length <= MAX_MESSAGE_BYTES
+        ? new Set(namedTableAccounts(parseCompiledMessage(messageBytes), lookupTables))
+        : new Set<string>();
+    if (named.size > 0) {
+      const pinned = {
+        ...compilable,
+        instructions: compilable.instructions.map((ix) => ({
+          ...ix,
+          accounts: (ix.accounts ?? []).map((meta) =>
+            "lookupTableAddress" in meta && named.has(meta.address)
+              ? { address: meta.address, role: meta.role }
+              : meta,
+          ),
+        })),
+      };
+      messageBytes = this.compileAndEncode(pinned as typeof compilable);
+      if (
+        namedTableAccounts(parseCompiledMessage(messageBytes), lookupTables).length !== 0
+      ) {
+        throw new Error("a named account still resolves through a lookup table");
+      }
+    }
     if (messageBytes.length > MAX_MESSAGE_BYTES) {
       throw new Error(
         `compiled message is ${messageBytes.length} bytes (max ${MAX_MESSAGE_BYTES})`,
