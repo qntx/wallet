@@ -16,6 +16,7 @@ export type ChainRequestMethod =
   | "evm-delegation"
   | "evm-batch"
   | "evm-approve"
+  | "evm-revoke"
   | "evm-cctp"
   | "evm-swap"
   | "evm-bridge"
@@ -23,6 +24,7 @@ export type ChainRequestMethod =
   | "solana-core-send"
   | "evm-lido"
   | "solana-stake"
+  | "solana-revoke"
   | "solana-swap"
   | "tron-stake"
   | "tron-approve";

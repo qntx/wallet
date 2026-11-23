@@ -373,6 +373,30 @@ await triggerData(
   }),
 );
 
+/* TRC-721's single-token clear: approve(address(0), tokenId) names no spender. */
+await triggerData(
+  "trc721-approve-clear",
+  CAROL,
+  "approve(address,uint256)",
+  { feeLimit: 30_000_000 },
+  [
+    { type: "address", value: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb" },
+    { type: "uint256", value: "42" },
+  ],
+  (data) => ({
+    header: { ...HEADER, feeLimit: "30000000" },
+    contract: {
+      type: "TriggerSmartContract",
+      owner: OWNER,
+      contract: CAROL,
+      callValue: "0",
+      data,
+      callTokenValue: "0",
+      tokenId: "0",
+    },
+  }),
+);
+
 await record(
   "trc10-transfer",
   {

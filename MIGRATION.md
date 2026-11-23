@@ -1515,6 +1515,11 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
   `prices`, `missing` and `unsupported`.
 - `/v1/eligibility` answers the `fiat24` row: `blocked` in the sanctioned set, `close-only` where
   Fiat24's `/countries` bans the nationality (US and territories, RU).
+- `POST /v1/approvals/:caip2` returns display-only EVM approval candidates (token, spender or
+  operator, block) from the owner's Approval/ApprovalForAll and Permit2 events — the engine
+  confirms every row on chain. Served only where Alchemy allows an unbounded `eth_getLogs` range;
+  `404 unsupported` elsewhere. One `eth_blockNumber` plus four `eth_getLogs` per call, metered on
+  the `alchemy` account.
 - A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` set it); in-process
   embeddings pass `clientAddress: "optional"` to `createGateway`. `GatewayOptions` requires `auth`
   and `prices: { cache, coingecko? }`.
@@ -1541,9 +1546,31 @@ nothing new. Each has a compiled example and a README section.
 | App providers (`AppDefinition`)                                     | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                        |
 | `@qntx/wallet/sessions`                                             | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
 | Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
+| `engine.approvals`                                                  | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`. |
 | `@qntx/wallet-engine/apps/fiat24`                                 | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS). |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
+## 25. Approvals inventory and revocation
+
+Compiled snippet: [`tests/migration/approvals.ts`](tests/migration/approvals.ts). Additive for `@qntx/wallet-engine` hosts; gateway
+operators deploy the new route. Nothing changes in the vault or the kernel protocol.
+
+1. **Show the inventory per account and network.** `engine.approvals.load(account, network)`
+   returns the view key; render `state.views[key]` and call `setVisible(true)` only while the
+   screen is shown (see `showApprovals`). Label EVM and TRON lists "known approvals": indexers can
+   miss spenders. Show `sources` (status and `at`) and the counters — `disputed` rows were hidden
+   because the two endpoints disagreed, `unread` candidates could not be read.
+2. **Revoke one request at a time.** `engine.approvals.revoke(key, rowId)` prepares an ordinary
+   request; approve it through your existing approval UI. Do not prepare several revocations at
+   once — nonces are reserved at commit, so every request after the first would go stale. Use
+   `revokeBatch` only for EVM rows on an account delegated to the wallet's delegator, or for
+   Solana token accounts. Never remove a row yourself: it disappears after the next chain read.
+3. **Rows with `revoke: "none"`** (a foreign close authority, a mint authority, a stake authority,
+   a TRON permission key) cannot be removed from this wallet — show them read-only with the
+   reason. Session keys under `view.sessions` are revoked through the app that owns them
+   (`AppsController` `disable` with `revoke: true`).
+4. **Kernel prompt lines.** `ApprovalChange` has two more variants (`approval-cleared`,
+   `delegate-revoked`). A host that switches over `ApprovalChange.kind` must handle them.
 ## 29. Fiat24 app
 
 Compiled snippet: [`tests/migration/fiat24-app.ts`](tests/migration/fiat24-app.ts).

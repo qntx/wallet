@@ -20,12 +20,14 @@ import {
 } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
+import { sessions } from "@qntx/wallet/sessions";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
 import { WatchController } from "./accounts/watch.ts";
 import type { WatchAccount } from "./accounts/watch.ts";
 import { AddressBookController } from "./addresses/controller.ts";
+import { ApprovalsController } from "./approvals/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
@@ -42,6 +44,7 @@ import { WeblnHandler } from "./connect/webln.ts";
 import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
 import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
+import { tokenAssetId } from "./gateway/contract/index.ts";
 import { HistoryController } from "./history/controller.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
@@ -60,9 +63,11 @@ import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { PhishingController } from "./phishing/controller.ts";
 import { PricesController } from "./prices/controller.ts";
 import { groupHoldings, heldAssets } from "./prices/holdings.ts";
+import type { Holding } from "./prices/holdings.ts";
 import { valueHoldings } from "./prices/valuation.ts";
 import type { Valuation } from "./prices/valuation.ts";
 import { RequestController } from "./requests/controller.ts";
+import { knownAddresses } from "./requests/risk.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
@@ -236,6 +241,14 @@ export type WalletEngine = {
     "add" | "rename" | "setNote" | "remove"
   >;
   readonly history: HostController<HistoryController, "load" | "loadMore">;
+  /**
+   * The approvals inventory: loaded per account+network, every row corroborated on chain.
+   * `exposure(key)` values the rows' exposure at current quotes — display-only.
+   */
+  readonly approvals: HostController<
+    ApprovalsController,
+    "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"
+  > & { readonly exposure: (key: string) => Valuation };
   /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
   readonly connections: HostController<
     ConnectionController,
@@ -526,6 +539,44 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     setTimer,
     now: options.now,
     logger: options.logger,
+  });
+
+  const approvals = new ApprovalsController({
+    networks,
+    transactions,
+    gateway,
+    fetch: options.fetch,
+    openStore: sessionStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    addressOf: async (account, network) => transactions.addressOf(account, network),
+    known: (family) =>
+      knownAddresses(
+        Object.values(addressBook.getState().entries),
+        Object.values(transactions.getState().txs),
+        family,
+      ),
+    tokenMetadata: async (network, address) => assets.tokenMetadata(network, address),
+    /* Internal requests — `requests` is constructed below; the thunk only runs at call time. */
+    prepare: async (input) => requests.prepare(input),
+    sessions: async (owner) => {
+      try {
+        const list = await sessions(options.wallet).list();
+        return list
+          .filter((session) => session.owner.toLowerCase() === owner.toLowerCase())
+          .map((session) => ({
+            address: session.address,
+            scheme: session.scheme,
+            name: session.name,
+            validUntil: session.validUntil,
+            supported: session.supported,
+          }));
+      } catch (error) {
+        options.logger.warn("listing session keys for approvals failed", error);
+        return [];
+      }
+    },
   });
 
   const accounts = new AccountTreeController({
@@ -1017,6 +1068,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     watch.lock();
     transactions.lock();
     history.lock();
+    approvals.lock();
     prices.lock();
     assets.lock();
     networks.lock();
@@ -1067,6 +1119,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await prices.init();
         await transactions.init();
         await history.init();
+        await approvals.init();
         await requests.init();
         await connections.init();
         depositClaimer.start();
@@ -1134,6 +1187,43 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     transactions,
     requests,
     history,
+    approvals: {
+      getState: () => approvals.getState(),
+      store: approvals.store,
+      load: async (account, network) => approvals.load(account, network),
+      unload: (key) => approvals.unload(key),
+      refresh: async (key) => approvals.refresh(key),
+      setVisible: (visible) => approvals.setVisible(visible),
+      revoke: async (key, rowId, fee) => approvals.revoke(key, rowId, fee),
+      revokeBatch: async (key, rowIds, fee) => approvals.revokeBatch(key, rowIds, fee),
+      /* The rows' fiat exposure at current quotes — display-only, like every valuation. */
+      exposure: (key: string): Valuation => {
+        const rows = approvals.getState().views[key]?.rows ?? [];
+        const holdings: Holding[] = rows.flatMap((row) => {
+          if (
+            (row.kind === "erc20" ||
+              row.kind === "trc20" ||
+              row.kind === "permit2" ||
+              row.kind === "spl-delegate") &&
+            row.exposure !== undefined &&
+            row.token.decimals !== undefined
+          ) {
+            return [
+              {
+                key: row.id,
+                network: row.network,
+                asset: tokenAssetId(row.network, row.token.address),
+                symbol: row.token.symbol ?? "?",
+                decimals: row.token.decimals,
+                amount: BigInt(row.exposure),
+              },
+            ];
+          }
+          return [];
+        });
+        return valueHoldings(holdings, prices.getState(), options.now());
+      },
+    },
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),

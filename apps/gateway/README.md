@@ -14,6 +14,7 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 | `GET /v1/networks`               | The served network ids, in configured order                                                                                                                                                                                            |
 | `GET /v1/eligibility`            | Per-app availability for the caller's edge-resolved jurisdiction (`{ country, region, apps: { hyperliquid, polymarket } }` — `available`/`close-only`/`blocked`); `private, no-store`                                                  |
 | `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it           |
+| `POST /v1/approvals/:caip2`      | EVM approval candidates for `{address}` (body): token, spender and block keys from the owner's Approval/ApprovalForAll and Permit2 events — display-only, the engine confirms each on chain; Alchemy `eth_getLogs`; `404 unsupported` on chains with a bounded log range |
 | `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                                 |
 | `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                                      |
 | `POST /v1/prices/:family`        | Spot price and 24 h change of up to 100 CAIP-19 assets of one chain family in one fiat currency; display-only (see "Prices")                                                                                                           |
@@ -26,8 +27,8 @@ Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Res
 `400 invalid-request`, `404 unknown-network`/`not-found`/`unsupported`, `429 rate-limited` and
 `503 unavailable` (both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
 `unsupported` is permanent — the gateway has no coverage for that resource on the network or
-asset named, so a client must not retry: a served EVM network no history provider covers,
-a network no configured token-list source builds for, and (in the prices body) assets no
+asset named, so a client must not retry: a served EVM network no history or approvals provider
+covers, a network no configured token-list source builds for, and (in the prices body) assets no
 price provider maps.
 
 Providers are tried in the order of `src/config/networks.ts`. Every route reaches its upstreams
@@ -56,6 +57,14 @@ an open breaker, a 401/403/429 refusal, or a rejected auth lookup. Any other fai
 transport error, 5xx, malformed body) is ambiguous: the provider may have relayed the transaction,
 so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
 double-broadcast it.
+
+`POST /v1/approvals/:caip2` reports approval _candidates_ — the keys of every approval-shaped
+event `{address}` emitted (`Approval` on ERC-20/721, `ApprovalForAll`, and Permit2's `Approval`
+and `Permit` on the canonical deployment), deduped to the latest block per key and capped at 500.
+It never reports an amount or a live flag: the engine confirms each candidate on chain. One
+request costs one `eth_blockNumber` plus four `eth_getLogs` at 60 CU each, served only on chains
+where Alchemy accepts an unbounded log range (`src/providers/approvals-alchemy.ts`); anywhere else
+the scan could silently truncate, so the route answers `404 unsupported` without an upstream call.
 
 ## Rate limiting
 

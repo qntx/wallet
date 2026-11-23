@@ -869,6 +869,42 @@ Gateway (operators):
   `level: "danger"` is always a `danger` finding.
 - **gateway:** `/v1/eligibility` answers `fiat24`: blocked in the sanctioned set, close-only where
   Fiat24's `/countries` bans the nationality (US and territories, RU).
+- `@qntx/wallet-engine`: approvals inventory — `engine.approvals.load(account, network)` returns a
+  view key; `ApprovalsState.views[key]` lists every standing authority over the account: EVM ERC-20
+  allowances, Permit2 allowances (amount, expiration), ERC-721/1155 operators, ERC-721 single-token
+  approvals and the account's EIP-7702 delegation; Solana SPL delegates, foreign close authorities,
+  mint freeze authorities and Token-2022 permanent delegates, stake authorities; TRON TRC-20
+  allowances and account permission keys. Kernel session keys signing for the owner are linked
+  (`sessions`), not duplicated. Every row is read on chain at the view's `at.height` and cross-checked
+  on the independent endpoint: a candidate the chain does not confirm is dropped, a disagreement
+  hides the row (`disputed`), a single-upstream read is `verified: false`. Discovery sources and
+  their freshness are listed (`sources`); kinds the chain enumerates are in `exhaustive`, the rest
+  are known approvals only. Rows carry risk flags (`unlimited`, `eoa-spender`, `spender-no-code`,
+  `address-poisoning`, `foreign-delegation`) and an `exposure` (what the spender can take now);
+  `engine.approvals.exposure(key)` values it at current quotes (display-only). Views poll every
+  `APPROVALS_POLL_MS` while `setVisible(true)` and re-read after an approval-bearing transaction on
+  the network confirms. Discovered candidate keys persist in the session store (collection
+  `approvals`).
+- `@qntx/wallet-engine`: `engine.approvals.revoke(key, rowId, fee?)` and
+  `revokeBatch(key, rowIds, fee?)` open an ordinary request per revocation: request methods
+  `evm-revoke` (`approve(spender, 0)`, Permit2 `lockdown`, `setApprovalForAll(false)`,
+  `approve(address(0), tokenId)`; several targets only as one self-call batch on an account already
+  delegated to the wallet's delegator) and `solana-revoke` (SPL `Revoke`, up to 10 token accounts);
+  the 7702 delegation revokes through `evm-delegation` and TRC-20 through `tron-approve` amount 0.
+  Builders re-read the chain before building and refuse when nothing is left to revoke; the built
+  call must decode back to exactly the revocation. Type `EvmRevokeTarget`.
+- `@qntx/wallet-chains`: `ApprovalChange` variants `approval-cleared` (`approve(address(0), id)` —
+  clears an ERC-721/TRC-721 token approval, grants nothing) and `delegate-revoked` (SPL `Revoke`).
+  The kernel prompt describes both as revocations instead of an allowance to the zero address or no
+  line at all.
+- Gateway: `POST /v1/approvals/:caip2` — display-only approval candidates (token, spender or
+  operator, block) from Alchemy `eth_getLogs` over the owner's `Approval`, `ApprovalForAll` and
+  Permit2 `Approval`/`Permit` events, on chains where Alchemy allows an unbounded log range;
+  `404 unsupported` elsewhere. One `eth_blockNumber` plus four `eth_getLogs` per call, metered on
+  the existing `alchemy` account.
+- `@qntx/wallet-engine`: `StakePosition` gains `staker` and `withdrawer`; the TRON account schema
+  carries `owner_permission`, `active_permission` and `witness_permission`;
+  `TransactionController.addressOf` and `prepareSolanaRevoke`.
 
 ### Changed
 

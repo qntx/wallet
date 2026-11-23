@@ -38,6 +38,7 @@ import type {
   DelegationStatus,
 } from "./route.ts";
 import { accountAddressOf, awaitingFinality, newId } from "./route.ts";
+import { prepareSolanaRevoke } from "./solana-revoke.ts";
 import {
   bindDappSolana,
   pollSolana,
@@ -914,6 +915,7 @@ export class TransactionController extends Controller<TransactionControllerState
           | "evm-delegation"
           | "evm-batch"
           | "evm-approve"
+          | "evm-revoke"
           | "evm-cctp"
           | "evm-swap"
           | "evm-bridge"
@@ -941,6 +943,20 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return prepareSolanaStake(this.routeCtx(), input);
+  }
+
+  /**
+   * Internal `solana-revoke` requests: every token account is re-read on both endpoints before a
+   * program-matched `Revoke` goes through the same fee/simulation tail as a send.
+   */
+  async prepareSolanaRevoke(
+    input: Extract<ChainRequestInput, { method: "solana-revoke" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareSolanaRevoke(this.routeCtx(), input);
   }
 
   /**
@@ -999,6 +1015,26 @@ export class TransactionController extends Controller<TransactionControllerState
       network,
       await accountAddressOf(ctx, account, "evm.bip44", network),
     );
+  }
+
+  /**
+   * The address `account` resolves to on `network` — HD through the chains proxy, imported from the
+   * vault's key list; the ref's family must match the network's.
+   */
+  async addressOf(account: AccountRef, network: string): Promise<string> {
+    const { family } = this.options.networks.info(network);
+    const template =
+      family === "evm"
+        ? ("evm.bip44" as const)
+        : family === "solana"
+          ? ("solana.bip44-change" as const)
+          : family === "tron"
+            ? ("tron.bip44" as const)
+            : undefined;
+    if (template === undefined) {
+      throw new Error(`no account template for the ${family} family`);
+    }
+    return accountAddressOf(this.routeCtx(), account, template, network);
   }
 
   private track(id: string, hash: string): void {

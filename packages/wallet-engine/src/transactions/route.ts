@@ -221,6 +221,13 @@ export type PrepareParams = Omit<SendParams, "verify">;
 
 export type { ChainRequestMethod } from "../requests/types.ts";
 
+/** One standing EVM approval to remove. */
+export type EvmRevokeTarget =
+  | { readonly kind: "erc20"; readonly token: string; readonly spender: string }
+  | { readonly kind: "permit2"; readonly token: string; readonly spender: string }
+  | { readonly kind: "operator"; readonly contract: string; readonly operator: string }
+  | { readonly kind: "nft"; readonly contract: string; readonly tokenId: bigint };
+
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
   | ({ readonly method: "send"; readonly origin?: DappOrigin } & PrepareParams)
@@ -253,6 +260,17 @@ export type ChainRequestInput =
       readonly token: string;
       readonly spender: string;
       readonly amount: bigint;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-revoke";
+      readonly account: AccountRef;
+      readonly network: string;
+      /**
+       * 1..EVM_BATCH_LIMIT distinct targets; more than one needs the account delegated to the
+       * wallet's delegator.
+       */
+      readonly targets: ReadonlyArray<EvmRevokeTarget>;
       readonly fee: PrepareParams["fee"];
     }
   | {
@@ -316,6 +334,14 @@ export type ChainRequestInput =
         | { readonly kind: "stake"; readonly amount: bigint }
         | { readonly kind: "request"; readonly amount: bigint }
         | { readonly kind: "claim"; readonly requestIds: ReadonlyArray<bigint> };
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "solana-revoke";
+      readonly account: AccountRef;
+      readonly network: string;
+      /** 1..10 distinct token accounts the signer owns whose delegate is removed — one Revoke each. */
+      readonly tokenAccounts: ReadonlyArray<string>;
       readonly fee: PrepareParams["fee"];
     }
   | {

@@ -346,6 +346,154 @@
       }
     },
     {
+      "name": "ERC-721 approve(0, 42) clears the token approval",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x095ea7b30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002a",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x06012c8cf97BEaD5deAe237070F9587f8E7A266d"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Network: Ethereum\nThere may be other outflows\nClear the approval on 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "网络：Ethereum\n可能还有其他转出\n清除 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42 的单个授权\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "USDC approve(spender, 0) revokes the allowance",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x095ea7b300000000000000000000000000000000000000000000000000000000deadbeef0000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "ERC-721 setApprovalForAll(operator, false) revokes the operator",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xa22cb46500000000000000000000000000000000000000000000000000000000deadbeef0000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x06012c8cf97BEaD5deAe237070F9587f8E7A266d"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's access to all tokens of 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d 全部代币的授权\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "Permit2 lockdown revokes a token+spender pair",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xcc53287f00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000deadbeef",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC via Permit2\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权 经 Permit2\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "calldata to the signing account",
       "request": {
         "kind": "evm.transaction",
@@ -4649,6 +4797,62 @@
       }
     },
     {
+      "name": "solana SPL Token Revoke",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "010001030000000000000000000000000000000000000000000000000000000000000001069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9000000000000000000000000000000000000000000000000000000000000000001020201000105"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Solana\nRevoke the delegate of token account So11111111111111111111111111111111111111112\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Solana\n撤销代币账户 So11111111111111111111111111111111111111112 的代理授权\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
+      "name": "solana Token + Token-2022 Revokes",
+      "request": {
+        "kind": "solana.transaction",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "solana"
+        },
+        "message": {
+          "$bytes": "0100020500000000000000000000000000000000000000000000000000000000000000010202020202020202020202020202020202020202020202020202020202020202069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a906ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc000000000000000000000000000000000000000000000000000000000000000002030202000105040201000105"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Solana\nRevoke the delegate of token account So11111111111111111111111111111111111111112\nRevoke the delegate of token account 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Solana\n撤销代币账户 So11111111111111111111111111111111111111112 的代理授权\n撤销代币账户 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR 的代理授权\n最高手续费 0.000005 SOL"
+        }
+      }
+    },
+    {
       "name": "solana Stake Split",
       "request": {
         "kind": "solana.transaction",
@@ -5086,6 +5290,34 @@
         "zh-Hans": {
           "title": "确认授权",
           "description": "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
+        }
+      }
+    },
+    {
+      "name": "tron trc721-approve-clear",
+      "request": {
+        "kind": "tron.transaction",
+        "network": "tron:728126428",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "tron.bip44"
+        },
+        "rawData": {
+          "$bytes": "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541f39fd6e51aad88f6f4ce6ab8827279cfffb92266121541e2e1a54926527fbb4e4420de4c6bab82beaee24d2244095ea7b30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002a7080d0eab6b73390018087a70e"
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Network: TRON\nThere may be other outflows\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "网络：TRON\n可能还有其他转出\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
         }
       }
     },

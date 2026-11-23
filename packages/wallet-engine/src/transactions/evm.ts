@@ -74,6 +74,7 @@ import {
 } from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
+import { prepareRevokeIntent } from "./evm-revoke.ts";
 import {
   accountAddressOf,
   awaitingFinality,
@@ -180,6 +181,7 @@ export type EvmInternalInput = Extract<
       | "evm-delegation"
       | "evm-batch"
       | "evm-approve"
+      | "evm-revoke"
       | "evm-cctp"
       | "evm-swap"
       | "evm-bridge"
@@ -1836,6 +1838,12 @@ export const createEvmRoute = (): EvmRoute => {
       };
     } else if (input.method === "evm-approve") {
       intent = await prepareApproveIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-revoke") {
+      intent = await prepareRevokeIntent(input, from, {
+        crossRead: async <T>(read: (client: ViemClient) => Promise<T>) =>
+          nftRead(ctx, input.network, read, flags),
+        delegationState: async () => delegationState(ctx, network, from, flags),
+      });
     } else if (input.method === "evm-cctp") {
       intent = prepareCctpIntent(input, from);
     } else if (input.method === "evm-swap") {

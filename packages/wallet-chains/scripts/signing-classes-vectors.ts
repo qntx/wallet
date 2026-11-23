@@ -17,6 +17,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { getRevokeInstruction } from "@solana-program/token";
+import { getRevokeInstruction as getRevokeInstruction2022 } from "@solana-program/token-2022";
 import { address } from "@solana/addresses";
 import { AccountRole, createNoopSigner } from "@solana/kit";
 import {
@@ -45,6 +47,8 @@ const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
 const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
 const TO = "0x00000000000000000000000000000000DeaDBeef";
+const CRYPTO_KITTIES = getAddress("0x06012c8cf97BEaD5deAe237070F9587f8E7A266d");
+const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const CCTP_MESSENGER = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 const ARB_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -198,7 +202,7 @@ const solCat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
   return out;
 };
 
-const solMessage = (instructions: ReadonlyArray<ReturnType<typeof solIx>>): string => {
+const solMessage = (instructions: ReadonlyArray<unknown>): string => {
   let message = setTransactionMessageLifetimeUsingBlockhash(
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the kit lifetime param is branded
     { blockhash: address(SOL_BLOCKHASH), lastValidBlockHeight: 1000n } as never,
@@ -613,6 +617,78 @@ const cases: VectorCase[] = [
       "确认转账",
       `${net}\nSend 1 USDC to ${TO}\n${fee}`,
       `${netZh}\n发送 1 USDC 到 ${TO}\n${feeZh}`,
+    ),
+  },
+  {
+    name: "ERC-721 approve(0, 42) clears the token approval",
+    request: tx({
+      to: CRYPTO_KITTIES,
+      data: encodeFunctionData({
+        abi: parseAbi(["function approve(address spender, uint256 tokenId)"]),
+        args: ["0x0000000000000000000000000000000000000000", 42n],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm approval",
+      "确认授权",
+      `${net}\nThere may be other outflows\nClear the approval on ${CRYPTO_KITTIES} #42\n${fee}`,
+      `${netZh}\n可能还有其他转出\n清除 ${CRYPTO_KITTIES} #42 的单个授权\n${feeZh}`,
+    ),
+  },
+  {
+    name: "USDC approve(spender, 0) revokes the allowance",
+    request: tx({
+      to: USDC,
+      data: encodeFunctionData({
+        abi: parseAbi(["function approve(address spender, uint256 amount)"]),
+        args: [TO, 0n],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm approval",
+      "确认授权",
+      `${net}\nThere may be other outflows\nRevoke ${TO}'s allowance for USDC\n${fee}`,
+      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 USDC 的授权\n${feeZh}`,
+    ),
+  },
+  {
+    name: "ERC-721 setApprovalForAll(operator, false) revokes the operator",
+    request: tx({
+      to: CRYPTO_KITTIES,
+      data: encodeFunctionData({
+        abi: parseAbi(["function setApprovalForAll(address operator, bool approved)"]),
+        args: [TO, false],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm approval",
+      "确认授权",
+      `${net}\nThere may be other outflows\nRevoke ${TO}'s access to all tokens of ${CRYPTO_KITTIES}\n${fee}`,
+      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 ${CRYPTO_KITTIES} 全部代币的授权\n${feeZh}`,
+    ),
+  },
+  {
+    name: "Permit2 lockdown revokes a token+spender pair",
+    request: tx({
+      to: PERMIT2,
+      data: encodeFunctionData({
+        abi: parseAbi(["function lockdown((address token, address spender)[] approvals)"]),
+        args: [[{ token: USDC, spender: TO }]],
+      }),
+    }),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm approval",
+      "确认授权",
+      `${net}\nThere may be other outflows\nRevoke ${TO}'s allowance for USDC via Permit2\n${fee}`,
+      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 USDC 的授权 经 Permit2\n${feeZh}`,
     ),
   },
   {
@@ -2052,6 +2128,48 @@ const cases: VectorCase[] = [
     ),
   },
   {
+    name: "solana SPL Token Revoke",
+    request: solanaTx(
+      solMessage([
+        getRevokeInstruction({
+          source: address(SOL_SRC),
+          owner: createNoopSigner(address(SOL_SIGNER)),
+        }),
+      ]),
+    ),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm contract call",
+      "确认合约调用",
+      `Network: Solana\nRevoke the delegate of token account ${SOL_SRC}\nMax fee 0.000005 SOL`,
+      `网络：Solana\n撤销代币账户 ${SOL_SRC} 的代理授权\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
+    name: "solana Token + Token-2022 Revokes",
+    request: solanaTx(
+      solMessage([
+        getRevokeInstruction({
+          source: address(SOL_SRC),
+          owner: createNoopSigner(address(SOL_SIGNER)),
+        }),
+        getRevokeInstruction2022({
+          source: address(SOL_DEST),
+          owner: createNoopSigner(address(SOL_SIGNER)),
+        }),
+      ]),
+    ),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm contract call",
+      "确认合约调用",
+      `Network: Solana\nRevoke the delegate of token account ${SOL_SRC}\nRevoke the delegate of token account ${SOL_DEST}\nMax fee 0.000005 SOL`,
+      `网络：Solana\n撤销代币账户 ${SOL_SRC} 的代理授权\n撤销代币账户 ${SOL_DEST} 的代理授权\n最高手续费 0.000005 SOL`,
+    ),
+  },
+  {
     name: "solana Stake Split",
     request: solanaTx(
       solMessage([
@@ -2334,6 +2452,22 @@ const TRON_TX_EXPECTED: Readonly<
         title: "确认授权",
         description:
           "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+      },
+    },
+  },
+  "trc721-approve-clear": {
+    verifiability: "partial",
+    blind: null,
+    prompt: {
+      en: {
+        title: "Confirm approval",
+        description:
+          "Network: TRON\nThere may be other outflows\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+      },
+      "zh-Hans": {
+        title: "确认授权",
+        description:
+          "网络：TRON\n可能还有其他转出\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
       },
     },
   },

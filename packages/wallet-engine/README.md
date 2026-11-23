@@ -98,6 +98,9 @@ the package root.
   (state keyed `${walletId}:${groupIndex}`). `load`/`loadMore` page backwards while `hasMore`;
   entries carry `verified`, `origin` and `flags`; `truncated` lists the networks whose provider
   left unpagable gaps.
+- `engine.approvals` — the standing-authority inventory (`load`, `unload`, `refresh`,
+  `setVisible`, `exposure`) and revocations (`revoke`, `revokeBatch`); see
+  [Approvals](#approvals).
 - `engine.addressBook` — contacts, synced through `metaSync`.
 - `engine.connections` — dApp sessions and trusted origins; pass it to `createBrowserBridge`
   (`checkOrigin`, `invalidateOrigin`).
@@ -268,6 +271,57 @@ the node (the raw data hash must equal the txid and every claimed leg must decod
 unverified.
 
 Not offered: `AccountPermissionUpdate` (multi-sig/permission changes).
+
+## Approvals
+
+`engine.approvals.load(account, network)` returns a view key; `ApprovalsState.views[key]` is one
+`ApprovalsView` — every standing authority the account holds over that network, as rows:
+
+- EVM: ERC-20 allowances, Permit2 allowances (amount and expiration), ERC-721 and ERC-1155
+  operators, ERC-721 single-token approvals, and the account's own EIP-7702 delegation.
+- Solana: SPL delegates, foreign close authorities, mint freeze authorities and Token-2022
+  permanent delegates, and stake account authorities.
+- TRON: TRC-20 allowances and the account's permission keys.
+
+Kernel session keys that may sign for the owner are linked in `view.sessions`, not listed as
+rows — a session key is revoked through the app that owns it, not through `revoke`.
+
+**Trust.** A row is never shown on a discovery source's word. Sources — the gateway's
+`POST /v1/approvals/:caip2` (an EVM `eth_getLogs` scan; a TRON indexer where one exists) and the
+engine's own recorded transactions — yield candidate keys only. Every candidate is then read on
+chain at `view.at.height` on the primary endpoint and cross-checked on the independent one: a
+candidate the chain does not confirm is `dropped`, a disagreement between the endpoints hides the
+row and counts it in `disputed`, a candidate that could not be read is `unread`, and a row
+confirmed on only one upstream carries `verified: false`. `view.sources` lists each source's
+status and the height it answered at. `view.exhaustive` names the kinds the chain itself
+enumerates (the EVM delegation, Solana token-account delegates, close and mint authorities, TRON
+permissions); every other kind is a _known_ approval — indexers can miss a spender, so label those
+lists accordingly. Discovered candidate keys persist in the session store (collection
+`approvals`), so an approval outlives the source that found it; keys no longer confirmed on chain
+are pruned.
+
+**Risk and exposure.** Rows carry `risk` flags — `unlimited`, `eoa-spender`, `spender-no-code`,
+`address-poisoning`, `foreign-delegation` — and an `exposure` naming what the spender can take
+right now. `engine.approvals.exposure(key)` values the view's exposures at current quotes. Both
+are display-only; nothing about them changes what a request may do.
+
+**Freshness.** A loaded view re-reads every `APPROVALS_POLL_MS` while `setVisible(true)` — gate it
+on the approvals screen being shown — on `refresh(key)`, and after a transaction carrying an
+approval intent confirms on the network; that re-read answers at the confirming block or later,
+never from before it.
+
+**Revoking.** `engine.approvals.revoke(key, rowId, fee?)` prepares an ordinary request through the
+request pipeline — approve it like any other. The request's display intent describes a revocation
+(an allowance set to 0, a Permit2 lockdown, an operator cleared, a delegation removed), never a
+grant, and the builder re-reads the chain before building: when nothing is left to revoke the
+prepare is refused. `revokeBatch(key, rowIds, fee?)` puts several rows in one transaction — EVM
+rows (`erc20`, `permit2`, `operator`, `nft`; up to `EVM_BATCH_LIMIT`) only on an account already
+delegated to the wallet's delegator, the batch a single self-call with no authorization, or
+several `spl-delegate` rows (up to 10). Rows with `revoke: "none"` — a foreign close authority, a
+mint authority, a stake authority, a TRON permission key — cannot be removed from this wallet.
+Prepare one revocation request at a time: nonces are reserved at commit, so a second prepared
+request would go stale. A row is never removed optimistically; it disappears when the chain read
+after inclusion no longer shows it.
 
 ## Writing an app provider
 

@@ -1,6 +1,7 @@
 import {
   CLIENT_ID_HEADER,
   PRICE_FAMILIES,
+  approvals,
   bridgeQuote,
   esploraGet,
   history,
@@ -28,6 +29,7 @@ const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
 const PRICES_PREFIX = `${routePrefix(prices.path)}/`;
+const APPROVALS_PREFIX = `${routePrefix(approvals.path)}/`;
 
 /**
  * The contract's price families must be exactly the session's non-service scopes — each scope has
@@ -70,6 +72,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(PRICES_PREFIX)) {
     return parseWith(priceFamily, pathname.slice(PRICES_PREFIX.length)) ?? "service";
+  }
+  if (pathname.startsWith(APPROVALS_PREFIX)) {
+    return networkById(pathname.slice(APPROVALS_PREFIX.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

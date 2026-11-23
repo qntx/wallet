@@ -137,6 +137,15 @@ describe("generated vectors", () => {
     expect(i.approvals[0]).toMatchObject({ kind: "allowance", spender: BOB, unlimited: true });
   });
 
+  it("trc721-approve-clear: approve(0, id) clears the token approval", () => {
+    const i = intent("trc721-approve-clear");
+    expect(i.summary).toBe("approve");
+    expect(i.verifiability).toBe("partial");
+    expect(i.approvals).toStrictEqual([
+      { kind: "approval-cleared", asset: CAROL, value: "42", verified: false },
+    ]);
+  });
+
   it("trc10-transfer: unverified asset, partial", () => {
     const i = intent("trc10-transfer");
     expect(i.summary).toBe("transfer");
