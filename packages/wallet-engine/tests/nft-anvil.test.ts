@@ -369,7 +369,7 @@ describe.runIf(RUN)("anvil e2e: NFT sends through the request pipeline", () => {
           to: contract721,
           fee: "slow",
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/revert/i);
     } finally {
       proc.kill();
     }

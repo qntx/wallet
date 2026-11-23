@@ -78,7 +78,7 @@ describe("nft items page", () => {
     const res = await app.request(nftItemsPath(ETH), post({ owner: OWNER }));
     expect(res.status).toBe(200);
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("alchemy-nfts");
-    const page = (await res.json()) as NftPage;
+    const page: NftPage = await res.json();
     expect(page.cursor).toBe("c864816d-9b0e-4c8d-ab0b-77ca3676254b");
     // Two rows dropped: an erc721 whose balance is not "1", and an unknown tokenType.
     expect(page.items).toHaveLength(3);
@@ -122,7 +122,8 @@ describe("nft items page", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemsPath(ETH), post({ owner: OWNER }));
     expect(res.status).toBe(200);
-    expect((await res.json()).items).toHaveLength(2);
+    const evmPage: NftPage = await res.json();
+    expect(evmPage.items).toHaveLength(2);
   });
 
   it("keeps the good DAS assets when one row fails its shape", async () => {
@@ -132,7 +133,8 @@ describe("nft items page", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
     expect(res.status).toBe(200);
-    expect((await res.json()).items).toHaveLength(2);
+    const dasPage: NftPage = await res.json();
+    expect(dasPage.items).toHaveLength(2);
   });
 
   it("maps a DAS owner page: compressed/programmable/plain metaplex, Custom skipped", async () => {
@@ -140,7 +142,7 @@ describe("nft items page", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
     expect(res.status).toBe(200);
-    const page = (await res.json()) as NftPage;
+    const page: NftPage = await res.json();
     expect(page.cursor).toBeNull();
     const standards = items(page).map((item) => item.standard);
     expect(standards).toStrictEqual(["metaplex-compressed", "metaplex", "metaplex-programmable"]);
@@ -180,7 +182,7 @@ describe("nft items page", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
     expect(res.status).toBe(200);
-    const page = (await res.json()) as NftPage;
+    const page: NftPage = await res.json();
     expect(page.items.map((item) => item.standard)).toStrictEqual([
       "metaplex-compressed",
       "metaplex",
@@ -205,7 +207,7 @@ describe("nft items page", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
     expect(res.status).toBe(200);
-    const page = (await res.json()) as NftPage;
+    const page: NftPage = await res.json();
     expect(page.items).toHaveLength(100);
     expect(page.cursor).toBe("2");
     // The next page request carries the cursor as the DAS page number.
@@ -235,7 +237,7 @@ describe("nft item detail", () => {
       post({ contract: WOW.toUpperCase().replace("X", "x"), tokenId: "44" }),
     );
     expect(res.status).toBe(200);
-    const detail = (await res.json()) as NftDetail;
+    const detail: NftDetail = await res.json();
     expect(detail.item.contract).toBe(WOW);
     expect(detail.item.tokenId).toBe("44");
     expect(detail.item.standard).toBe("erc721");
@@ -258,7 +260,7 @@ describe("nft item detail", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftItemPath(SOLANA), post({ contract: MADLAD }));
     expect(res.status).toBe(200);
-    const detail = (await res.json()) as NftDetail;
+    const detail: NftDetail = await res.json();
     expect(detail.item.contract).toBe(MADLAD);
     expect(detail.item.tokenId).toBeNull();
     expect(detail.item.standard).toBe("metaplex-programmable");
@@ -290,7 +292,7 @@ describe("nft collection", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftCollectionPath(ETH), post({ collection: WOW }));
     expect(res.status).toBe(200);
-    const collection = (await res.json()) as NftCollection;
+    const collection: NftCollection = await res.json();
     expect(collection).toStrictEqual({
       id: WOW,
       name: "World of Women",
@@ -316,7 +318,7 @@ describe("nft collection", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftCollectionPath(SOLANA), post({ collection: MADLAD }));
     expect(res.status).toBe(200);
-    const collection = (await res.json()) as NftCollection;
+    const collection: NftCollection = await res.json();
     expect(collection.id).toBe(MADLAD);
     expect(collection.name).toBe("Mad Lads");
     expect(collection.symbol).toBe("MAD");
@@ -335,7 +337,7 @@ describe("nft floor", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftFloorPath(ETH), post({ collection: BAYC }));
     expect(res.status).toBe(200);
-    const floor = (await res.json()) as NftFloor;
+    const floor: NftFloor = await res.json();
     expect(floor.floors).toStrictEqual([
       {
         marketplace: "opensea",
@@ -358,7 +360,7 @@ describe("nft floor", () => {
     const app = gateway({ fetch: up.fetch, networks: NETWORKS });
     const res = await app.request(nftFloorPath(ETH), post({ collection: BAYC }));
     expect(res.status).toBe(200);
-    const floor = (await res.json()) as NftFloor;
+    const floor: NftFloor = await res.json();
     expect(floor.floors).toStrictEqual([
       { marketplace: "opensea", amount: "0.000055", currency: "ETH", retrievedAt: null },
     ]);

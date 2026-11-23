@@ -608,6 +608,46 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   through a real kernel runtime with a fake card reader, and a leak check proving the typed code
   never appears in any main-runtime message, log, event payload or React state.
 
+- `@qntx/wallet-engine`: `engine.nfts` (`NftController`) — NFT inventory per owner and network
+  from the gateway: ERC-721 and ERC-1155 on the 22 built-in EVM mainnets the gateway's NFT
+  provider covers, and Solana (Metaplex Token Metadata, programmable, Core and compressed NFTs).
+  `load` / `loadMore` page the inventory (100 items a page, at most 20 pages), `refresh` re-reads
+  the loaded pages, `setVisible` polls every 5 minutes while visible, `detail`, `collection` and
+  `floor` answer one item, one collection and its marketplace floors without storing them.
+  Inventory data is display-only: nothing that builds or signs a transaction reads it
+  (lint-enforced: only the composition root may import `src/nfts`).
+- `@qntx/wallet-engine`: NFT metadata is hostile input. Media come out as `NftMedia` descriptors
+  (`https`, `ipfs`, `ar` or `data:image/*` up to 64 KiB; everything else dropped) with an `active`
+  flag for SVG, HTML and animations of unknown type; the engine never fetches media and leaves
+  IPFS gateway rewriting to the host. Names that carry hidden characters or markup are dropped,
+  descriptions are plain-text excerpts (20 lines, 2,000 code points), attributes are capped at 50.
+- `@qntx/wallet-engine`: NFT spam reasons — `gateway`, `airdrop` (the wallet's own verified
+  history shows the item only arriving, never touched), `lookalike` (a collection name that folds
+  to a trusted held collection's), `link-in-name` and `deceptive-text`. Flagged items are hidden by
+  default; `nfts.setHidden(network, id, "hidden" | "shown" | undefined)` persists the user's
+  override in the engine store (collection `nfts`).
+- `@qntx/wallet-engine`: after an NFT transfer is included, the controller re-reads the items it
+  moved from chain (`ownerOf` / `balanceOfBatch` / the Solana token account or Core asset) and
+  updates or drops them — the gateway is not consulted.
+- `@qntx/wallet-engine`: `nfts.inscriptions(group, network)` lists the Bitcoin UTXOs the spend
+  path already protects as possible inscription carriers — read-only, no new read.
+- `@qntx/wallet-engine`: ERC-1155 batch transfers: `evm-nft-send` with several `items` builds one
+  `safeBatchTransferFrom`, balances checked with a corroborated `balanceOfBatch`.
+- `@qntx/wallet-engine`: `solana-nft-send` sends plain SPL NFTs (Metaplex Token Metadata,
+  Token or Token-2022) with an associated-token-account transfer, and Metaplex Core assets.
+  Programmable NFTs are refused with `NftTransferError` reason `programmable`; compressed NFTs
+  stay read-only.
+- `@qntx/wallet-engine`: `NftTransferError` (a `ChainError` with code `invalid-request`) carries
+  `reason`: `not-nft`, `not-owned`, `insufficient-balance`, `programmable`, `frozen` or
+  `not-found` — every one decided from corroborated chain reads.
+- `@qntx/wallet-engine/gateway/contract`: the NFT routes `POST /v1/nfts/items/:caip2`,
+  `/v1/nfts/item/:caip2`, `/v1/nfts/collection/:caip2` and `/v1/nfts/floor/:caip2` with bounded
+  schemas and the network-fit helpers `nftAddressFits`, `nftItemFits`, `nftPageFits`,
+  `nftCollectionFits`.
+- Gateway: the four NFT routes over the existing Alchemy account (NFT API v3 for EVM, DAS for
+  Solana), metered per call, cached at the edge without client identity (items 60 s, item and
+  collection 1 h, floor 10 min). Floors are served on Ethereum, Arbitrum and Base.
+
 ### Changed
 
 - **BREAKING:** vault format 5 and protocol version 3. A `manifest/default` record, rewritten in
@@ -1080,6 +1120,16 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   pod weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
   entitlement, `NFCReaderUsageDescription` and the ISO 7816 select identifiers
   `F0716E74780101`, `D2760000850101` (see the package README).
+
+- **BREAKING** `@qntx/wallet-engine`: `evm-nft-send` takes `items: [{ tokenId, amount? }]`
+  instead of `tokenId` / `amount`. Sending to the NFT contract itself raises the danger-level
+  `token-contract-recipient` finding, and an ENS recipient's name is shown on the outflows.
+- **BREAKING** `@qntx/wallet-engine`: `solana-core-send` is replaced by `solana-nft-send`
+  (`asset` is a Core asset or an SPL NFT mint).
+- `@qntx/wallet-engine`: a held Solana mint with 0 decimals and a supply of 1 is an NFT and no
+  longer appears in the token list (custom tokens excepted).
+- Gateway: `PriceCache` / `priceCacheOf` become the shared `EdgeCache` / `edgeCacheOf(origin, open)`;
+  `GatewayOptions.nfts.cache` is required.
 
 ### Removed
 

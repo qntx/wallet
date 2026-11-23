@@ -112,6 +112,7 @@ describe("solana chain reads over real mainnet accounts", () => {
   it("reads the holder's balance through mint + ATA, 0 for another owner", async () => {
     const rpc = rpcFor([fixture.plain, fixture.programmable, fixture.frozen]);
     for (const section of [fixture.plain, fixture.programmable, fixture.frozen]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each section's calls are asserted before the next read
       await expect(solanaNftBalance(rpc, section.mint.address, OWNER)).resolves.toBe(1n);
       // mint read + ATA read — nothing else.
       expect(rpc.calls.splice(-2).every((c) => c.startsWith("getAccountInfo"))).toBe(true);

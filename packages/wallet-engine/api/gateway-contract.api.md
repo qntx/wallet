@@ -5,10 +5,10 @@
 ```ts
 
 import { NetworkMeta } from '@qntx/wallet-chains/networks';
-import * as z from 'zod/mini';
+import * as z$1 from 'zod/mini';
 
 // @public
-export function accepts(schema: z.ZodMiniType, value: unknown): boolean;
+export function accepts(schema: z$1.ZodMiniType, value: unknown): boolean;
 
 // @public
 export const APP_ID: RegExp;
@@ -17,7 +17,7 @@ export const APP_ID: RegExp;
 export type AppAvailability = "available" | "close-only" | "blocked";
 
 // @public (undocumented)
-export const appAvailability: z.ZodMiniEnum<{
+export const appAvailability: z$1.ZodMiniEnum<{
     available: "available";
     blocked: "blocked";
     "close-only": "close-only";
@@ -30,92 +30,92 @@ export const applyDiff: (list: HashList, add: HashList, remove: HashList) => Has
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo>;
 
 // @public (undocumented)
-export const bridgeQuote: Endpoint<z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    destinationNetwork: z.ZodMiniString<string>;
-    inputToken: z.ZodMiniString<string>;
-    outputToken: z.ZodMiniString<string>;
-    amount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-}, z.core.$strip>, z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"across">;
-    inputToken: z.ZodMiniString<string>;
-    outputToken: z.ZodMiniString<string>;
-    inputAmount: z.ZodMiniString<string>;
-    outputAmount: z.ZodMiniString<string>;
-    destinationNetwork: z.ZodMiniString<string>;
-    quoteTimestamp: z.ZodMiniNumber<unknown>;
-    fillDeadline: z.ZodMiniNumber<unknown>;
-    exclusiveRelayer: z.ZodMiniString<string>;
-    exclusivityParameter: z.ZodMiniNumber<unknown>;
-    spokePool: z.ZodMiniString<string>;
-    limits: z.ZodMiniObject<{
-        minDeposit: z.ZodMiniString<string>;
-        maxDeposit: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>>;
+export const bridgeQuote: Endpoint<z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    destinationNetwork: z$1.ZodMiniString<string>;
+    inputToken: z$1.ZodMiniString<string>;
+    outputToken: z$1.ZodMiniString<string>;
+    amount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>, z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"across">;
+    inputToken: z$1.ZodMiniString<string>;
+    outputToken: z$1.ZodMiniString<string>;
+    inputAmount: z$1.ZodMiniString<string>;
+    outputAmount: z$1.ZodMiniString<string>;
+    destinationNetwork: z$1.ZodMiniString<string>;
+    quoteTimestamp: z$1.ZodMiniNumber<unknown>;
+    fillDeadline: z$1.ZodMiniNumber<unknown>;
+    exclusiveRelayer: z$1.ZodMiniString<string>;
+    exclusivityParameter: z$1.ZodMiniNumber<unknown>;
+    spokePool: z$1.ZodMiniString<string>;
+    limits: z$1.ZodMiniObject<{
+        minDeposit: z$1.ZodMiniString<string>;
+        maxDeposit: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>>;
 
 // @public (undocumented)
-export type BridgeQuoteRequest = z.infer<typeof bridgeQuoteRequest>;
+export type BridgeQuoteRequest = z$1.infer<typeof bridgeQuoteRequest>;
 
 // @public
-export const bridgeQuoteRequest: z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    destinationNetwork: z.ZodMiniString<string>;
-    inputToken: z.ZodMiniString<string>;
-    outputToken: z.ZodMiniString<string>;
-    amount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-}, z.core.$strip>;
+export const bridgeQuoteRequest: z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    destinationNetwork: z$1.ZodMiniString<string>;
+    inputToken: z$1.ZodMiniString<string>;
+    outputToken: z$1.ZodMiniString<string>;
+    amount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-export type BridgeQuoteResponse = z.infer<typeof bridgeQuoteResponse>;
+export type BridgeQuoteResponse = z$1.infer<typeof bridgeQuoteResponse>;
 
 // @public (undocumented)
-export const bridgeQuoteResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"across">;
-    inputToken: z.ZodMiniString<string>;
-    outputToken: z.ZodMiniString<string>;
-    inputAmount: z.ZodMiniString<string>;
-    outputAmount: z.ZodMiniString<string>;
-    destinationNetwork: z.ZodMiniString<string>;
-    quoteTimestamp: z.ZodMiniNumber<unknown>;
-    fillDeadline: z.ZodMiniNumber<unknown>;
-    exclusiveRelayer: z.ZodMiniString<string>;
-    exclusivityParameter: z.ZodMiniNumber<unknown>;
-    spokePool: z.ZodMiniString<string>;
-    limits: z.ZodMiniObject<{
-        minDeposit: z.ZodMiniString<string>;
-        maxDeposit: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>;
+export const bridgeQuoteResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"across">;
+    inputToken: z$1.ZodMiniString<string>;
+    outputToken: z$1.ZodMiniString<string>;
+    inputAmount: z$1.ZodMiniString<string>;
+    outputAmount: z$1.ZodMiniString<string>;
+    destinationNetwork: z$1.ZodMiniString<string>;
+    quoteTimestamp: z$1.ZodMiniNumber<unknown>;
+    fillDeadline: z$1.ZodMiniNumber<unknown>;
+    exclusiveRelayer: z$1.ZodMiniString<string>;
+    exclusivityParameter: z$1.ZodMiniNumber<unknown>;
+    spokePool: z$1.ZodMiniString<string>;
+    limits: z$1.ZodMiniObject<{
+        minDeposit: z$1.ZodMiniString<string>;
+        maxDeposit: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>;
 
 // @public (undocumented)
-export type Caip2 = z.infer<typeof caip2>;
+export type Caip2 = z$1.infer<typeof caip2>;
 
 // @public
-export const caip2: z.ZodMiniString<string>;
+export const caip2: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
 export const CLIENT_ID_HEADER = "x-client-id";
 
 // @public (undocumented)
-export type ClientId = z.infer<typeof clientId>;
+export type ClientId = z$1.infer<typeof clientId>;
 
 // @public
-export const clientId: z.ZodMiniString<string>;
+export const clientId: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
 export function contains(list: HashList, hash: Uint8Array): boolean;
 
 // @public
-export function containsBroadcast(body: z.infer<typeof rpcRequest>): boolean;
+export function containsBroadcast(body: z$1.infer<typeof rpcRequest>): boolean;
 
 // @public
 export function decodeHashList(encoded: string): HashList | undefined;
@@ -124,38 +124,38 @@ export function decodeHashList(encoded: string): HashList | undefined;
 export const difference: (a: HashList, b: HashList) => HashList;
 
 // @public
-export const eligibility: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
-    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+export const eligibility: Endpoint<z$1.ZodMiniUndefined, z$1.ZodMiniObject<{
+    country: z$1.ZodMiniNullable<z$1.ZodMiniString<string>>;
+    region: z$1.ZodMiniNullable<z$1.ZodMiniString<string>>;
+    apps: z$1.ZodMiniRecord<z$1.ZodMiniString<string>, z$1.ZodMiniEnum<{
         available: "available";
         blocked: "blocked";
         "close-only": "close-only";
     }>>;
-}, z.core.$strip>>;
+}, z$1.core.$strip>>;
 
 // @public (undocumented)
-export const eligibilityRequest: z.ZodMiniUndefined;
+export const eligibilityRequest: z$1.ZodMiniUndefined;
 
 // @public (undocumented)
-export type EligibilityResponse = z.infer<typeof eligibilityResponse>;
+export type EligibilityResponse = z$1.infer<typeof eligibilityResponse>;
 
 // @public (undocumented)
-export const eligibilityResponse: z.ZodMiniObject<{
-    country: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    region: z.ZodMiniNullable<z.ZodMiniString<string>>;
-    apps: z.ZodMiniRecord<z.ZodMiniString<string>, z.ZodMiniEnum<{
+export const eligibilityResponse: z$1.ZodMiniObject<{
+    country: z$1.ZodMiniNullable<z$1.ZodMiniString<string>>;
+    region: z$1.ZodMiniNullable<z$1.ZodMiniString<string>>;
+    apps: z$1.ZodMiniRecord<z$1.ZodMiniString<string>, z$1.ZodMiniEnum<{
         available: "available";
         blocked: "blocked";
         "close-only": "close-only";
     }>>;
-}, z.core.$strip>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
 export const encodeHashList: (list: HashList) => string;
 
 // @public (undocumented)
-export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
+export type Endpoint<Req extends z$1.ZodMiniType, Res extends z$1.ZodMiniType> = {
     readonly method: HttpMethod;
     readonly path: string;
     readonly request: Req;
@@ -163,7 +163,7 @@ export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
 };
 
 // @public
-export function endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType>(method: HttpMethod, path: `/v1/${string}`, request: Req, response: Res): Endpoint<Req, Res>;
+export function endpoint<Req extends z$1.ZodMiniType, Res extends z$1.ZodMiniType>(method: HttpMethod, path: `/v1/${string}`, request: Req, response: Res): Endpoint<Req, Res>;
 
 // @public
 type EngineFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -175,13 +175,13 @@ export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute>;
 export const esploraBasePath: (caip2: string) => string;
 
 // @public (undocumented)
-export const esploraGet: Endpoint<z.ZodMiniUndefined, z.ZodMiniUnknown>;
+export const esploraGet: Endpoint<z$1.ZodMiniUndefined, z$1.ZodMiniUnknown>;
 
 // @public
 export const esploraPathAllowed: (method: string, path: string) => boolean;
 
 // @public (undocumented)
-export const esploraPost: Endpoint<z.ZodMiniString<string>, z.ZodMiniString<string>>;
+export const esploraPost: Endpoint<z$1.ZodMiniString<string>, z$1.ZodMiniString<string>>;
 
 // @public (undocumented)
 type EsploraRoute = {
@@ -196,17 +196,17 @@ export const EVM_RPC_METHODS: readonly ["eth_blobBaseFee", "eth_blockNumber", "e
 export type EvmRpcMethod = (typeof EVM_RPC_METHODS)[number];
 
 // @public (undocumented)
-export const evmRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"eth_blobBaseFee" | "eth_blockNumber" | "eth_call" | "eth_chainId" | "eth_createAccessList" | "eth_estimateGas" | "eth_feeHistory" | "eth_gasPrice" | "eth_getBalance" | "eth_getBlockByHash" | "eth_getBlockByNumber" | "eth_getBlockReceipts" | "eth_getBlockTransactionCountByHash" | "eth_getBlockTransactionCountByNumber" | "eth_getCode" | "eth_getLogs" | "eth_getProof" | "eth_getStorageAt" | "eth_getTransactionByBlockHashAndIndex" | "eth_getTransactionByBlockNumberAndIndex" | "eth_getTransactionByHash" | "eth_getTransactionCount" | "eth_getTransactionReceipt" | "eth_maxPriorityFeePerGas" | "eth_sendRawTransaction" | "eth_simulateV1" | "net_version" | "web3_clientVersion">;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>[]>, z.ZodMiniArray<z.ZodMiniUnion<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"eth_blobBaseFee" | "eth_blockNumber" | "eth_call" | "eth_chainId" | "eth_createAccessList" | "eth_estimateGas" | "eth_feeHistory" | "eth_gasPrice" | "eth_getBalance" | "eth_getBlockByHash" | "eth_getBlockByNumber" | "eth_getBlockReceipts" | "eth_getBlockTransactionCountByHash" | "eth_getBlockTransactionCountByNumber" | "eth_getCode" | "eth_getLogs" | "eth_getProof" | "eth_getStorageAt" | "eth_getTransactionByBlockHashAndIndex" | "eth_getTransactionByBlockNumberAndIndex" | "eth_getTransactionByHash" | "eth_getTransactionCount" | "eth_getTransactionReceipt" | "eth_maxPriorityFeePerGas" | "eth_sendRawTransaction" | "eth_simulateV1" | "net_version" | "web3_clientVersion">;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>[]>>]>;
+export const evmRpcRequest: z$1.ZodMiniUnion<readonly [z$1.ZodMiniUnion<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniLiteral<"eth_blobBaseFee" | "eth_blockNumber" | "eth_call" | "eth_chainId" | "eth_createAccessList" | "eth_estimateGas" | "eth_feeHistory" | "eth_gasPrice" | "eth_getBalance" | "eth_getBlockByHash" | "eth_getBlockByNumber" | "eth_getBlockReceipts" | "eth_getBlockTransactionCountByHash" | "eth_getBlockTransactionCountByNumber" | "eth_getCode" | "eth_getLogs" | "eth_getProof" | "eth_getStorageAt" | "eth_getTransactionByBlockHashAndIndex" | "eth_getTransactionByBlockNumberAndIndex" | "eth_getTransactionByHash" | "eth_getTransactionCount" | "eth_getTransactionReceipt" | "eth_maxPriorityFeePerGas" | "eth_sendRawTransaction" | "eth_simulateV1" | "net_version" | "web3_clientVersion">;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>[]>, z$1.ZodMiniArray<z$1.ZodMiniUnion<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniLiteral<"eth_blobBaseFee" | "eth_blockNumber" | "eth_call" | "eth_chainId" | "eth_createAccessList" | "eth_estimateGas" | "eth_feeHistory" | "eth_gasPrice" | "eth_getBalance" | "eth_getBlockByHash" | "eth_getBlockByNumber" | "eth_getBlockReceipts" | "eth_getBlockTransactionCountByHash" | "eth_getBlockTransactionCountByNumber" | "eth_getCode" | "eth_getLogs" | "eth_getProof" | "eth_getStorageAt" | "eth_getTransactionByBlockHashAndIndex" | "eth_getTransactionByBlockNumberAndIndex" | "eth_getTransactionByHash" | "eth_getTransactionCount" | "eth_getTransactionReceipt" | "eth_maxPriorityFeePerGas" | "eth_sendRawTransaction" | "eth_simulateV1" | "net_version" | "web3_clientVersion">;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>[]>>]>;
 
 // @public
 export const FEE_HISTORY_BLOCKS_MAX = 1024;
@@ -238,10 +238,10 @@ export type FeeModel =
 export const FIAT_CURRENCIES: readonly ["usd", "eur", "gbp", "jpy", "cny", "krw", "hkd", "sgd", "cad", "aud", "chf"];
 
 // @public (undocumented)
-export type FiatCurrency = z.infer<typeof fiatCurrency>;
+export type FiatCurrency = z$1.infer<typeof fiatCurrency>;
 
 // @public (undocumented)
-export const fiatCurrency: z.ZodMiniEnum<{
+export const fiatCurrency: z$1.ZodMiniEnum<{
     aud: "aud";
     cad: "cad";
     chf: "chf";
@@ -256,7 +256,7 @@ export const fiatCurrency: z.ZodMiniEnum<{
 }>;
 
 // @public
-export const fiatPrice: z.ZodMiniString<string>;
+export const fiatPrice: z$1.ZodMiniString<string>;
 
 // @public
 export type GasPricing =
@@ -272,8 +272,8 @@ export type GasPricing =
 export const GATEWAY_ERRORS: readonly ["invalid-request", "unknown-network", "not-found", "rate-limited", "unavailable", "outcome-unknown", "internal", "too-costly", "unsupported"];
 
 // @public (undocumented)
-export const gatewayError: z.ZodMiniObject<{
-    error: z.ZodMiniEnum<{
+export const gatewayError: z$1.ZodMiniObject<{
+    error: z$1.ZodMiniEnum<{
         internal: "internal";
         "invalid-request": "invalid-request";
         "not-found": "not-found";
@@ -284,7 +284,7 @@ export const gatewayError: z.ZodMiniObject<{
         "unknown-network": "unknown-network";
         unsupported: "unsupported";
     }>;
-}, z.core.$strip>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
 export type GatewayErrorCode = (typeof GATEWAY_ERRORS)[number];
@@ -299,49 +299,49 @@ export type HashList = Uint8Array;
 export function hashList(hashes: Iterable<Uint8Array>): HashList;
 
 // @public (undocumented)
-export const health: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
-    status: z.ZodMiniLiteral<"ok">;
-}, z.core.$strip>>;
+export const health: Endpoint<z$1.ZodMiniUndefined, z$1.ZodMiniObject<{
+    status: z$1.ZodMiniLiteral<"ok">;
+}, z$1.core.$strip>>;
 
 // @public (undocumented)
-export const healthRequest: z.ZodMiniUndefined;
+export const healthRequest: z$1.ZodMiniUndefined;
 
 // @public (undocumented)
-export const healthResponse: z.ZodMiniObject<{
-    status: z.ZodMiniLiteral<"ok">;
-}, z.core.$strip>;
+export const healthResponse: z$1.ZodMiniObject<{
+    status: z$1.ZodMiniLiteral<"ok">;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-const history_2: Endpoint<z.ZodMiniObject<{
-    address: z.ZodMiniString<string>;
-    cursor: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    limit: z.ZodMiniOptional<z.ZodMiniInt>;
-}, z.core.$strict>, z.ZodMiniObject<{
-    items: z.ZodMiniArray<z.ZodMiniObject<{
-        hash: z.ZodMiniString<string>;
-        block: z.ZodMiniString<string>;
-        timestamp: z.ZodMiniInt;
-        transfers: z.ZodMiniArray<z.ZodMiniObject<{
-            kind: z.ZodMiniEnum<{
+const history_2: Endpoint<z$1.ZodMiniObject<{
+    address: z$1.ZodMiniString<string>;
+    cursor: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    limit: z$1.ZodMiniOptional<z$1.ZodMiniInt>;
+}, z$1.core.$strict>, z$1.ZodMiniObject<{
+    items: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        hash: z$1.ZodMiniString<string>;
+        block: z$1.ZodMiniString<string>;
+        timestamp: z$1.ZodMiniInt;
+        transfers: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            kind: z$1.ZodMiniEnum<{
                 erc1155: "erc1155";
                 erc20: "erc20";
                 erc721: "erc721";
                 internal: "internal";
                 native: "native";
             }>;
-            from: z.ZodMiniString<string>;
-            to: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            contract: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            tokenId: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            amount: z.ZodMiniString<string>;
-            decimals: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-            symbol: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            logIndex: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-        }, z.core.$strict>>;
-    }, z.core.$strict>>;
-    cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    truncated: z.ZodMiniBoolean<boolean>;
-}, z.core.$strict>>;
+            from: z$1.ZodMiniString<string>;
+            to: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            contract: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            amount: z$1.ZodMiniString<string>;
+            decimals: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+            symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            logIndex: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>>;
+    }, z$1.core.$strict>>;
+    cursor: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    truncated: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>>;
 export { history_2 as history }
 
 // @public
@@ -357,133 +357,133 @@ export const HISTORY_PAGE_MAX = 50;
 export const HISTORY_TRANSFERS_MAX = 100;
 
 // @public (undocumented)
-export type HistoryItem = z.infer<typeof historyItem>;
+export type HistoryItem = z$1.infer<typeof historyItem>;
 
 // @public (undocumented)
-export const historyItem: z.ZodMiniObject<{
-    hash: z.ZodMiniString<string>;
-    block: z.ZodMiniString<string>;
-    timestamp: z.ZodMiniInt;
-    transfers: z.ZodMiniArray<z.ZodMiniObject<{
-        kind: z.ZodMiniEnum<{
+export const historyItem: z$1.ZodMiniObject<{
+    hash: z$1.ZodMiniString<string>;
+    block: z$1.ZodMiniString<string>;
+    timestamp: z$1.ZodMiniInt;
+    transfers: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        kind: z$1.ZodMiniEnum<{
             erc1155: "erc1155";
             erc20: "erc20";
             erc721: "erc721";
             internal: "internal";
             native: "native";
         }>;
-        from: z.ZodMiniString<string>;
-        to: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        contract: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        tokenId: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        amount: z.ZodMiniString<string>;
-        decimals: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-        symbol: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        logIndex: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-    }, z.core.$strict>>;
-}, z.core.$strict>;
+        from: z$1.ZodMiniString<string>;
+        to: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        contract: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        amount: z$1.ZodMiniString<string>;
+        decimals: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+        symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        logIndex: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>>;
+}, z$1.core.$strict>;
 
 // @public
 export const historyPath: (caip2: string) => string;
 
 // @public (undocumented)
-export type HistoryRequest = z.infer<typeof historyRequest>;
+export type HistoryRequest = z$1.infer<typeof historyRequest>;
 
 // @public (undocumented)
-export const historyRequest: z.ZodMiniObject<{
-    address: z.ZodMiniString<string>;
-    cursor: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    limit: z.ZodMiniOptional<z.ZodMiniInt>;
-}, z.core.$strict>;
+export const historyRequest: z$1.ZodMiniObject<{
+    address: z$1.ZodMiniString<string>;
+    cursor: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    limit: z$1.ZodMiniOptional<z$1.ZodMiniInt>;
+}, z$1.core.$strict>;
 
 // @public (undocumented)
-export type HistoryResponse = z.infer<typeof historyResponse>;
+export type HistoryResponse = z$1.infer<typeof historyResponse>;
 
 // @public (undocumented)
-export const historyResponse: z.ZodMiniObject<{
-    items: z.ZodMiniArray<z.ZodMiniObject<{
-        hash: z.ZodMiniString<string>;
-        block: z.ZodMiniString<string>;
-        timestamp: z.ZodMiniInt;
-        transfers: z.ZodMiniArray<z.ZodMiniObject<{
-            kind: z.ZodMiniEnum<{
+export const historyResponse: z$1.ZodMiniObject<{
+    items: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        hash: z$1.ZodMiniString<string>;
+        block: z$1.ZodMiniString<string>;
+        timestamp: z$1.ZodMiniInt;
+        transfers: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            kind: z$1.ZodMiniEnum<{
                 erc1155: "erc1155";
                 erc20: "erc20";
                 erc721: "erc721";
                 internal: "internal";
                 native: "native";
             }>;
-            from: z.ZodMiniString<string>;
-            to: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            contract: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            tokenId: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            amount: z.ZodMiniString<string>;
-            decimals: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-            symbol: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-            logIndex: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-        }, z.core.$strict>>;
-    }, z.core.$strict>>;
-    cursor: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    truncated: z.ZodMiniBoolean<boolean>;
-}, z.core.$strict>;
+            from: z$1.ZodMiniString<string>;
+            to: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            contract: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            amount: z$1.ZodMiniString<string>;
+            decimals: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+            symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            logIndex: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>>;
+    }, z$1.core.$strict>>;
+    cursor: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    truncated: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>;
 
 // @public (undocumented)
-export type HistoryTransfer = z.infer<typeof historyTransfer>;
+export type HistoryTransfer = z$1.infer<typeof historyTransfer>;
 
 // @public (undocumented)
-export const historyTransfer: z.ZodMiniObject<{
-    kind: z.ZodMiniEnum<{
+export const historyTransfer: z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniEnum<{
         erc1155: "erc1155";
         erc20: "erc20";
         erc721: "erc721";
         internal: "internal";
         native: "native";
     }>;
-    from: z.ZodMiniString<string>;
-    to: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    contract: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    tokenId: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    amount: z.ZodMiniString<string>;
-    decimals: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-    symbol: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    logIndex: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniNull]>;
-}, z.core.$strict>;
+    from: z$1.ZodMiniString<string>;
+    to: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    contract: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    amount: z$1.ZodMiniString<string>;
+    decimals: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+    symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    logIndex: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>;
 
 // @public (undocumented)
 export type HttpMethod = "GET" | "POST" | "DELETE";
 
 // @public (undocumented)
-const indexerAccountResponse: z.ZodMiniObject<{
-    success: z.ZodMiniLiteral<true>;
-    data: z.ZodMiniArray<z.ZodMiniUnknown>;
-    meta: z.ZodMiniObject<{
-        fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>;
-}, z.core.$loose>;
+const indexerAccountResponse: z$1.ZodMiniObject<{
+    success: z$1.ZodMiniLiteral<true>;
+    data: z$1.ZodMiniArray<z$1.ZodMiniUnknown>;
+    meta: z$1.ZodMiniObject<{
+        fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>;
 
 // @public
 export const isTronIndexerPath: (path: string) => path is TronIndexerPath;
 
 // @public
-export const jsonRpcId: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
+export const jsonRpcId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
 
 // @public
-export const jsonRpcRequestId: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
+export const jsonRpcRequestId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
 
 // @public (undocumented)
-export const jsonRpcResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    result: z.ZodMiniUnknown;
-}, z.core.$strip>, z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    error: z.ZodMiniObject<{
-        code: z.ZodMiniInt;
-        message: z.ZodMiniString<string>;
-        data: z.ZodMiniOptional<z.ZodMiniUnknown>;
-    }, z.core.$strip>;
-}, z.core.$strip>]>;
+export const jsonRpcResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    result: z$1.ZodMiniUnknown;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    error: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniInt;
+        message: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniUnknown>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>]>;
 
 // @public (undocumented)
 export const LOGS_ADDRESS_MAX = 20;
@@ -523,14 +523,405 @@ export const NETWORKS: ReadonlyArray<NetworkInfo>;
 // @public (undocumented)
 export const networksPath: string;
 
+// @public
+export const NFT_ATTRIBUTE_TEXT_MAX = 128;
+
+// @public
+export const NFT_ATTRIBUTES_MAX = 50;
+
+// @public
+export const NFT_DATA_URI_MAX = 65536;
+
+// @public
+export const NFT_DESCRIPTION_MAX = 4000;
+
+// @public
+export const NFT_NAME_MAX = 200;
+
+// @public
+export const NFT_PAGE_MAX = 100;
+
+// @public (undocumented)
+export const NFT_STANDARDS: readonly ["erc721", "erc1155", "metaplex", "metaplex-programmable", "metaplex-core", "metaplex-compressed"];
+
+// @public
+export const NFT_URL_MAX = 2048;
+
+// @public
+export function nftAddressFits(network: string, address: string): boolean;
+
+// @public (undocumented)
+export type NftAttribute = z$1.infer<typeof nftAttribute>;
+
+// @public (undocumented)
+export const nftAttribute: z$1.ZodMiniObject<{
+    trait: z$1.ZodMiniString<string>;
+    value: z$1.ZodMiniString<string>;
+}, z$1.core.$strict>;
+
+// @public
+export const nftBalance: z$1.ZodMiniString<string>;
+
+// @public (undocumented)
+export type NftCollection = z$1.infer<typeof nftCollectionResponse>;
+
+// @public (undocumented)
+export const nftCollection: Endpoint<z$1.ZodMiniObject<{
+    collection: z$1.ZodMiniString<string>;
+}, z$1.core.$strict>, z$1.ZodMiniObject<{
+    id: z$1.ZodMiniString<string>;
+    name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    description: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        url: z$1.ZodMiniString<string>;
+        mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+    totalSupply: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    standard: z$1.ZodMiniUnion<readonly [z$1.ZodMiniEnum<{
+        erc1155: "erc1155";
+        erc721: "erc721";
+        metaplex: "metaplex";
+        "metaplex-compressed": "metaplex-compressed";
+        "metaplex-core": "metaplex-core";
+        "metaplex-programmable": "metaplex-programmable";
+    }>, z$1.ZodMiniNull]>;
+    spam: z$1.ZodMiniBoolean<boolean>;
+    verified: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>>;
+
+// @public
+export function nftCollectionFits(network: string, collection: NftCollection): boolean;
+
+// @public
+export const nftCollectionPath: (caip2: string) => string;
+
+// @public (undocumented)
+export type NftCollectionRef = z$1.infer<typeof nftCollectionRef>;
+
+// @public (undocumented)
+export const nftCollectionRef: z$1.ZodMiniObject<{
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    verified: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export type NftCollectionRequest = z$1.infer<typeof nftCollectionRequest>;
+
+// @public (undocumented)
+export const nftCollectionRequest: z$1.ZodMiniObject<{
+    collection: z$1.ZodMiniString<string>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export const nftCollectionResponse: z$1.ZodMiniObject<{
+    id: z$1.ZodMiniString<string>;
+    name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    symbol: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    description: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        url: z$1.ZodMiniString<string>;
+        mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+    totalSupply: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    standard: z$1.ZodMiniUnion<readonly [z$1.ZodMiniEnum<{
+        erc1155: "erc1155";
+        erc721: "erc721";
+        metaplex: "metaplex";
+        "metaplex-compressed": "metaplex-compressed";
+        "metaplex-core": "metaplex-core";
+        "metaplex-programmable": "metaplex-programmable";
+    }>, z$1.ZodMiniNull]>;
+    spam: z$1.ZodMiniBoolean<boolean>;
+    verified: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>;
+
+// @public
+export const nftCursor: z$1.ZodMiniString<string>;
+
+// @public (undocumented)
+export type NftDetail = z$1.infer<typeof nftDetail>;
+
+// @public (undocumented)
+export const nftDetail: z$1.ZodMiniObject<{
+    item: z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniString<string>;
+        tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        standard: z$1.ZodMiniEnum<{
+            erc1155: "erc1155";
+            erc721: "erc721";
+            metaplex: "metaplex";
+            "metaplex-compressed": "metaplex-compressed";
+            "metaplex-core": "metaplex-core";
+            "metaplex-programmable": "metaplex-programmable";
+        }>;
+        balance: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        animation: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        collection: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            verified: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        spam: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strict>;
+    description: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    attributes: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        trait: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniString<string>;
+    }, z$1.core.$strict>>;
+    externalUrl: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export type NftFloor = z$1.infer<typeof nftFloorResponse>;
+
+// @public (undocumented)
+export const nftFloor: Endpoint<z$1.ZodMiniObject<{
+    collection: z$1.ZodMiniString<string>;
+}, z$1.core.$strict>, z$1.ZodMiniObject<{
+    floors: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        marketplace: z$1.ZodMiniEnum<{
+            looksrare: "looksrare";
+            opensea: "opensea";
+        }>;
+        amount: z$1.ZodMiniString<string>;
+        currency: z$1.ZodMiniString<string>;
+        retrievedAt: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>>;
+}, z$1.core.$strict>>;
+
+// @public
+export const nftFloorPath: (caip2: string) => string;
+
+// @public (undocumented)
+export type NftFloorRequest = z$1.infer<typeof nftFloorRequest>;
+
+// @public (undocumented)
+export const nftFloorRequest: z$1.ZodMiniObject<{
+    collection: z$1.ZodMiniString<string>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export const nftFloorResponse: z$1.ZodMiniObject<{
+    floors: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        marketplace: z$1.ZodMiniEnum<{
+            looksrare: "looksrare";
+            opensea: "opensea";
+        }>;
+        amount: z$1.ZodMiniString<string>;
+        currency: z$1.ZodMiniString<string>;
+        retrievedAt: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export type NftItem = z$1.infer<typeof nftItemSchema>;
+
+// @public (undocumented)
+export const nftItem: Endpoint<z$1.ZodMiniObject<{
+    contract: z$1.ZodMiniString<string>;
+    tokenId: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strict>, z$1.ZodMiniObject<{
+    item: z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniString<string>;
+        tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        standard: z$1.ZodMiniEnum<{
+            erc1155: "erc1155";
+            erc721: "erc721";
+            metaplex: "metaplex";
+            "metaplex-compressed": "metaplex-compressed";
+            "metaplex-core": "metaplex-core";
+            "metaplex-programmable": "metaplex-programmable";
+        }>;
+        balance: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        animation: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        collection: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            verified: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        spam: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strict>;
+    description: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    attributes: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        trait: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniString<string>;
+    }, z$1.core.$strict>>;
+    externalUrl: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>>;
+
+// @public
+export function nftItemFits(network: string, item: NftItem): boolean;
+
+// @public
+export const nftItemPath: (caip2: string) => string;
+
+// @public (undocumented)
+export type NftItemRequest = z$1.infer<typeof nftItemRequest>;
+
+// @public (undocumented)
+export const nftItemRequest: z$1.ZodMiniObject<{
+    contract: z$1.ZodMiniString<string>;
+    tokenId: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export const nftItems: Endpoint<z$1.ZodMiniObject<{
+    owner: z$1.ZodMiniString<string>;
+    cursor: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strict>, z$1.ZodMiniObject<{
+    items: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniString<string>;
+        tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        standard: z$1.ZodMiniEnum<{
+            erc1155: "erc1155";
+            erc721: "erc721";
+            metaplex: "metaplex";
+            "metaplex-compressed": "metaplex-compressed";
+            "metaplex-core": "metaplex-core";
+            "metaplex-programmable": "metaplex-programmable";
+        }>;
+        balance: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        animation: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        collection: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            verified: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        spam: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strict>>;
+    cursor: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>>;
+
+// @public (undocumented)
+export const nftItemSchema: z$1.ZodMiniObject<{
+    contract: z$1.ZodMiniString<string>;
+    tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    standard: z$1.ZodMiniEnum<{
+        erc1155: "erc1155";
+        erc721: "erc721";
+        metaplex: "metaplex";
+        "metaplex-compressed": "metaplex-compressed";
+        "metaplex-core": "metaplex-core";
+        "metaplex-programmable": "metaplex-programmable";
+    }>;
+    balance: z$1.ZodMiniString<string>;
+    name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        url: z$1.ZodMiniString<string>;
+        mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+    animation: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        url: z$1.ZodMiniString<string>;
+        mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+    collection: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        verified: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+    spam: z$1.ZodMiniBoolean<boolean>;
+}, z$1.core.$strict>;
+
+// @public
+export const nftItemsPath: (caip2: string) => string;
+
+// @public (undocumented)
+export type NftItemsRequest = z$1.infer<typeof nftItemsRequest>;
+
+// @public (undocumented)
+export const nftItemsRequest: z$1.ZodMiniObject<{
+    owner: z$1.ZodMiniString<string>;
+    cursor: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export type NftMediaRef = z$1.infer<typeof nftMediaRef>;
+
+// @public
+export const nftMediaRef: z$1.ZodMiniObject<{
+    url: z$1.ZodMiniString<string>;
+    mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>;
+
+// @public (undocumented)
+export type NftPage = z$1.infer<typeof nftPage>;
+
+// @public (undocumented)
+export const nftPage: z$1.ZodMiniObject<{
+    items: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniString<string>;
+        tokenId: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        standard: z$1.ZodMiniEnum<{
+            erc1155: "erc1155";
+            erc721: "erc721";
+            metaplex: "metaplex";
+            "metaplex-compressed": "metaplex-compressed";
+            "metaplex-core": "metaplex-core";
+            "metaplex-programmable": "metaplex-programmable";
+        }>;
+        balance: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        image: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        animation: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            url: z$1.ZodMiniString<string>;
+            mime: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        collection: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            name: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+            verified: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strict>, z$1.ZodMiniNull]>;
+        spam: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strict>>;
+    cursor: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+}, z$1.core.$strict>;
+
+// @public
+export function nftPageFits(network: string, page: NftPage): boolean;
+
+// @public (undocumented)
+export type NftStandard = (typeof NFT_STANDARDS)[number];
+
+// @public
+export const nftTokenId: z$1.ZodMiniString<string>;
+
 // @public (undocumented)
 export const parseTronJson: (text: string) => unknown;
 
 // @public
-export function parseWith<S extends z.ZodMiniType>(schema: S, value: unknown): z.output<S> | undefined;
+export function parseWith<S extends z$1.ZodMiniType>(schema: S, value: unknown): z$1.output<S> | undefined;
 
 // @public
-export const percentChange: z.ZodMiniString<string>;
+export const percentChange: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
 export const PHISHING_HASH_BYTES = 8;
@@ -548,81 +939,81 @@ export function phishingHash(key: string): Uint8Array;
 export function phishingKey(entry: string): string | undefined;
 
 // @public (undocumented)
-export const phishingList: Endpoint<z.ZodMiniObject<{
-    since: z.ZodMiniOptional<z.ZodMiniString<string>>;
-}, z.core.$strip>, z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"current">;
-    version: z.ZodMiniNumber<number>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"diff">;
-    from: z.ZodMiniNumber<number>;
-    version: z.ZodMiniNumber<number>;
-    deny: z.ZodMiniObject<{
-        add: z.ZodMiniString<string>;
-        remove: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-    allow: z.ZodMiniObject<{
-        add: z.ZodMiniString<string>;
-        remove: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"snapshot">;
-    version: z.ZodMiniNumber<number>;
-    deny: z.ZodMiniString<string>;
-    allow: z.ZodMiniString<string>;
-}, z.core.$strip>], "kind">>;
+export const phishingList: Endpoint<z$1.ZodMiniObject<{
+    since: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>, z$1.ZodMiniDiscriminatedUnion<[z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"current">;
+    version: z$1.ZodMiniNumber<number>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"diff">;
+    from: z$1.ZodMiniNumber<number>;
+    version: z$1.ZodMiniNumber<number>;
+    deny: z$1.ZodMiniObject<{
+        add: z$1.ZodMiniString<string>;
+        remove: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+    allow: z$1.ZodMiniObject<{
+        add: z$1.ZodMiniString<string>;
+        remove: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"snapshot">;
+    version: z$1.ZodMiniNumber<number>;
+    deny: z$1.ZodMiniString<string>;
+    allow: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>], "kind">>;
 
 // @public (undocumented)
 export const phishingListPath: string;
 
 // @public (undocumented)
-export const phishingListRequest: z.ZodMiniObject<{
-    since: z.ZodMiniOptional<z.ZodMiniString<string>>;
-}, z.core.$strip>;
+export const phishingListRequest: z$1.ZodMiniObject<{
+    since: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-export type PhishingListResponse = z.infer<typeof phishingListResponse>;
+export type PhishingListResponse = z$1.infer<typeof phishingListResponse>;
 
 // @public (undocumented)
-export const phishingListResponse: z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"current">;
-    version: z.ZodMiniNumber<number>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"diff">;
-    from: z.ZodMiniNumber<number>;
-    version: z.ZodMiniNumber<number>;
-    deny: z.ZodMiniObject<{
-        add: z.ZodMiniString<string>;
-        remove: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-    allow: z.ZodMiniObject<{
-        add: z.ZodMiniString<string>;
-        remove: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    kind: z.ZodMiniLiteral<"snapshot">;
-    version: z.ZodMiniNumber<number>;
-    deny: z.ZodMiniString<string>;
-    allow: z.ZodMiniString<string>;
-}, z.core.$strip>], "kind">;
+export const phishingListResponse: z$1.ZodMiniDiscriminatedUnion<[z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"current">;
+    version: z$1.ZodMiniNumber<number>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"diff">;
+    from: z$1.ZodMiniNumber<number>;
+    version: z$1.ZodMiniNumber<number>;
+    deny: z$1.ZodMiniObject<{
+        add: z$1.ZodMiniString<string>;
+        remove: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+    allow: z$1.ZodMiniObject<{
+        add: z$1.ZodMiniString<string>;
+        remove: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    kind: z$1.ZodMiniLiteral<"snapshot">;
+    version: z$1.ZodMiniNumber<number>;
+    deny: z$1.ZodMiniString<string>;
+    allow: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>], "kind">;
 
 // @public
-export const priceAssetId: z.ZodMiniString<string>;
+export const priceAssetId: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
-export type PriceQuote = z.infer<typeof priceQuote>;
+export type PriceQuote = z$1.infer<typeof priceQuote>;
 
 // @public (undocumented)
-export const priceQuote: z.ZodMiniObject<{
-    asset: z.ZodMiniString<string>;
-    price: z.ZodMiniString<string>;
-    change24h: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    updatedAt: z.ZodMiniNumber<number>;
-}, z.core.$strip>;
+export const priceQuote: z$1.ZodMiniObject<{
+    asset: z$1.ZodMiniString<string>;
+    price: z$1.ZodMiniString<string>;
+    change24h: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    updatedAt: z$1.ZodMiniNumber<number>;
+}, z$1.core.$strip>;
 
 // @public
-export const prices: Endpoint<z.ZodMiniObject<{
-    currency: z.ZodMiniEnum<{
+export const prices: Endpoint<z$1.ZodMiniObject<{
+    currency: z$1.ZodMiniEnum<{
         aud: "aud";
         cad: "cad";
         chf: "chf";
@@ -635,9 +1026,9 @@ export const prices: Endpoint<z.ZodMiniObject<{
         sgd: "sgd";
         usd: "usd";
     }>;
-    assets: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    currency: z.ZodMiniEnum<{
+    assets: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    currency: z$1.ZodMiniEnum<{
         aud: "aud";
         cad: "cad";
         chf: "chf";
@@ -650,22 +1041,22 @@ export const prices: Endpoint<z.ZodMiniObject<{
         sgd: "sgd";
         usd: "usd";
     }>;
-    prices: z.ZodMiniArray<z.ZodMiniObject<{
-        asset: z.ZodMiniString<string>;
-        price: z.ZodMiniString<string>;
-        change24h: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        updatedAt: z.ZodMiniNumber<number>;
-    }, z.core.$strip>>;
-    missing: z.ZodMiniArray<z.ZodMiniString<string>>;
-    unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>>;
+    prices: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        asset: z$1.ZodMiniString<string>;
+        price: z$1.ZodMiniString<string>;
+        change24h: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        updatedAt: z$1.ZodMiniNumber<number>;
+    }, z$1.core.$strip>>;
+    missing: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+    unsupported: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>>;
 
 // @public (undocumented)
-export type PricesRequest = z.infer<typeof pricesRequest>;
+export type PricesRequest = z$1.infer<typeof pricesRequest>;
 
 // @public
-export const pricesRequest: z.ZodMiniObject<{
-    currency: z.ZodMiniEnum<{
+export const pricesRequest: z$1.ZodMiniObject<{
+    currency: z$1.ZodMiniEnum<{
         aud: "aud";
         cad: "cad";
         chf: "chf";
@@ -678,15 +1069,15 @@ export const pricesRequest: z.ZodMiniObject<{
         sgd: "sgd";
         usd: "usd";
     }>;
-    assets: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>;
+    assets: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-export type PricesResponse = z.infer<typeof pricesResponse>;
+export type PricesResponse = z$1.infer<typeof pricesResponse>;
 
 // @public
-export const pricesResponse: z.ZodMiniObject<{
-    currency: z.ZodMiniEnum<{
+export const pricesResponse: z$1.ZodMiniObject<{
+    currency: z$1.ZodMiniEnum<{
         aud: "aud";
         cad: "cad";
         chf: "chf";
@@ -699,15 +1090,15 @@ export const pricesResponse: z.ZodMiniObject<{
         sgd: "sgd";
         usd: "usd";
     }>;
-    prices: z.ZodMiniArray<z.ZodMiniObject<{
-        asset: z.ZodMiniString<string>;
-        price: z.ZodMiniString<string>;
-        change24h: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-        updatedAt: z.ZodMiniNumber<number>;
-    }, z.core.$strip>>;
-    missing: z.ZodMiniArray<z.ZodMiniString<string>>;
-    unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>;
+    prices: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        asset: z$1.ZodMiniString<string>;
+        price: z$1.ZodMiniString<string>;
+        change24h: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+        updatedAt: z$1.ZodMiniNumber<number>;
+    }, z$1.core.$strip>>;
+    missing: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+    unsupported: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>;
 
 // @public
 export const PROVIDER_PIN_HEADER = "x-gateway-provider";
@@ -716,41 +1107,41 @@ export const PROVIDER_PIN_HEADER = "x-gateway-provider";
 export const PROVIDERS_HEADER = "x-gateway-providers";
 
 // @public (undocumented)
-export const rpc: Endpoint<z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniString<string>;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>, z.ZodMiniArray<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniString<string>;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>>]>, z.ZodMiniUnion<readonly [z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    result: z.ZodMiniUnknown;
-}, z.core.$strip>, z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    error: z.ZodMiniObject<{
-        code: z.ZodMiniInt;
-        message: z.ZodMiniString<string>;
-        data: z.ZodMiniOptional<z.ZodMiniUnknown>;
-    }, z.core.$strip>;
-}, z.core.$strip>]>, z.ZodMiniArray<z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    result: z.ZodMiniUnknown;
-}, z.core.$strip>, z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    error: z.ZodMiniObject<{
-        code: z.ZodMiniInt;
-        message: z.ZodMiniString<string>;
-        data: z.ZodMiniOptional<z.ZodMiniUnknown>;
-    }, z.core.$strip>;
-}, z.core.$strip>]>>]>>;
+export const rpc: Endpoint<z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniString<string>;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>, z$1.ZodMiniArray<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniString<string>;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>>]>, z$1.ZodMiniUnion<readonly [z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    result: z$1.ZodMiniUnknown;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    error: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniInt;
+        message: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniUnknown>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>]>, z$1.ZodMiniArray<z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    result: z$1.ZodMiniUnknown;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    error: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniInt;
+        message: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniUnknown>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>]>>]>>;
 
 // @public
 export const RPC_BATCH_MAX = 20;
@@ -771,57 +1162,57 @@ export const RPC_SIMULATE_CALLS_MAX = 100;
 export const rpcPath: (caip2: string) => string;
 
 // @public
-export const rpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniString<string>;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>, z.ZodMiniArray<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniString<string>;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>>]>;
+export const rpcRequest: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniString<string>;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>, z$1.ZodMiniArray<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniString<string>;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>>]>;
 
 // @public (undocumented)
-export const rpcResponse: z.ZodMiniUnion<readonly [z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    result: z.ZodMiniUnknown;
-}, z.core.$strip>, z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    error: z.ZodMiniObject<{
-        code: z.ZodMiniInt;
-        message: z.ZodMiniString<string>;
-        data: z.ZodMiniOptional<z.ZodMiniUnknown>;
-    }, z.core.$strip>;
-}, z.core.$strip>]>, z.ZodMiniArray<z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    result: z.ZodMiniUnknown;
-}, z.core.$strip>, z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>, z.ZodMiniNull]>;
-    error: z.ZodMiniObject<{
-        code: z.ZodMiniInt;
-        message: z.ZodMiniString<string>;
-        data: z.ZodMiniOptional<z.ZodMiniUnknown>;
-    }, z.core.$strip>;
-}, z.core.$strip>]>>]>;
+export const rpcResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    result: z$1.ZodMiniUnknown;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    error: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniInt;
+        message: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniUnknown>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>]>, z$1.ZodMiniArray<z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    result: z$1.ZodMiniUnknown;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>, z$1.ZodMiniNull]>;
+    error: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniInt;
+        message: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniUnknown>;
+    }, z$1.core.$strip>;
+}, z$1.core.$strip>]>>]>;
 
 // @public (undocumented)
-export const servedNetworks: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
-    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>>;
+export const servedNetworks: Endpoint<z$1.ZodMiniUndefined, z$1.ZodMiniObject<{
+    networks: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>>;
 
 // @public (undocumented)
-export const servedNetworksRequest: z.ZodMiniUndefined;
+export const servedNetworksRequest: z$1.ZodMiniUndefined;
 
 // @public
-export const servedNetworksResponse: z.ZodMiniObject<{
-    networks: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>;
+export const servedNetworksResponse: z$1.ZodMiniObject<{
+    networks: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
 const size: (list: HashList) => number;
@@ -836,223 +1227,223 @@ export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo>;
 export const SOLANA_RPC_METHODS: readonly ["getAccountInfo", "getBalance", "getBlockHeight", "getBlockTime", "getEpochInfo", "getFeeForMessage", "getFirstAvailableBlock", "getGenesisHash", "getLatestBlockhash", "getMinimumBalanceForRentExemption", "getMultipleAccounts", "getRecentPrioritizationFees", "getSignatureStatuses", "getSignaturesForAddress", "getSlot", "getStakeMinimumDelegation", "getTokenAccountBalance", "getTokenAccountsByOwner", "getTokenSupply", "getTransaction", "getVersion", "getVoteAccounts", "isBlockhashValid", "sendTransaction", "simulateTransaction"];
 
 // @public
-export const solanaInstruction: z.ZodMiniObject<{
-    programId: z.ZodMiniString<string>;
-    accounts: z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniString<string>;
-        signer: z.ZodMiniBoolean<boolean>;
-        writable: z.ZodMiniBoolean<boolean>;
-    }, z.core.$strip>>;
-    data: z.ZodMiniString<string>;
-}, z.core.$strip>;
+export const solanaInstruction: z$1.ZodMiniObject<{
+    programId: z$1.ZodMiniString<string>;
+    accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniString<string>;
+        signer: z$1.ZodMiniBoolean<boolean>;
+        writable: z$1.ZodMiniBoolean<boolean>;
+    }, z$1.core.$strip>>;
+    data: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
 export type SolanaRpcMethod = (typeof SOLANA_RPC_METHODS)[number];
 
 // @public (undocumented)
-export const solanaRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>[]>, z.ZodMiniArray<z.ZodMiniUnion<z.ZodMiniObject<{
-    jsonrpc: z.ZodMiniLiteral<"2.0">;
-    id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
-    params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
-}, z.core.$strip>[]>>]>;
+export const solanaRpcRequest: z$1.ZodMiniUnion<readonly [z$1.ZodMiniUnion<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>[]>, z$1.ZodMiniArray<z$1.ZodMiniUnion<z$1.ZodMiniObject<{
+    jsonrpc: z$1.ZodMiniLiteral<"2.0">;
+    id: z$1.ZodMiniUnion<readonly [z$1.ZodMiniInt, z$1.ZodMiniString<string>]>;
+    method: z$1.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
+    params: z$1.ZodMiniType<unknown, unknown, z$1.core.$ZodTypeInternals<unknown, unknown>>;
+}, z$1.core.$strip>[]>>]>;
 
 // @public (undocumented)
-export const swapQuote: Endpoint<z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    sellToken: z.ZodMiniString<string>;
-    buyToken: z.ZodMiniString<string>;
-    sellAmount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-}, z.core.$strip>, z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"0x">;
-    sellToken: z.ZodMiniString<string>;
-    buyToken: z.ZodMiniString<string>;
-    sellAmount: z.ZodMiniString<string>;
-    buyAmount: z.ZodMiniString<string>;
-    minBuyAmount: z.ZodMiniString<string>;
-    allowanceTarget: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    transaction: z.ZodMiniObject<{
-        to: z.ZodMiniString<string>;
-        data: z.ZodMiniString<string>;
-        value: z.ZodMiniString<string>;
-        gas: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    }, z.core.$strip>;
-    fees: z.ZodMiniObject<{
-        integrator: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            token: z.ZodMiniString<string>;
-            amount: z.ZodMiniString<string>;
-        }, z.core.$strip>, z.ZodMiniNull]>;
-        zeroEx: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            token: z.ZodMiniString<string>;
-            amount: z.ZodMiniString<string>;
-        }, z.core.$strip>, z.ZodMiniNull]>;
-    }, z.core.$strip>;
-    blockNumber: z.ZodMiniString<string>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>>;
+export const swapQuote: Endpoint<z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    sellToken: z$1.ZodMiniString<string>;
+    buyToken: z$1.ZodMiniString<string>;
+    sellAmount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+}, z$1.core.$strip>, z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"0x">;
+    sellToken: z$1.ZodMiniString<string>;
+    buyToken: z$1.ZodMiniString<string>;
+    sellAmount: z$1.ZodMiniString<string>;
+    buyAmount: z$1.ZodMiniString<string>;
+    minBuyAmount: z$1.ZodMiniString<string>;
+    allowanceTarget: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    transaction: z$1.ZodMiniObject<{
+        to: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniString<string>;
+        gas: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strip>;
+    fees: z$1.ZodMiniObject<{
+        integrator: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            token: z$1.ZodMiniString<string>;
+            amount: z$1.ZodMiniString<string>;
+        }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+        zeroEx: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            token: z$1.ZodMiniString<string>;
+            amount: z$1.ZodMiniString<string>;
+        }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strip>;
+    blockNumber: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>>;
 
 // @public (undocumented)
-export type SwapQuoteRequest = z.infer<typeof swapQuoteRequest>;
+export type SwapQuoteRequest = z$1.infer<typeof swapQuoteRequest>;
 
 // @public
-export const swapQuoteRequest: z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    sellToken: z.ZodMiniString<string>;
-    buyToken: z.ZodMiniString<string>;
-    sellAmount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-}, z.core.$strip>;
+export const swapQuoteRequest: z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    sellToken: z$1.ZodMiniString<string>;
+    buyToken: z$1.ZodMiniString<string>;
+    sellAmount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-export type SwapQuoteResponse = z.infer<typeof swapQuoteResponse>;
+export type SwapQuoteResponse = z$1.infer<typeof swapQuoteResponse>;
 
 // @public (undocumented)
-export const swapQuoteResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"0x">;
-    sellToken: z.ZodMiniString<string>;
-    buyToken: z.ZodMiniString<string>;
-    sellAmount: z.ZodMiniString<string>;
-    buyAmount: z.ZodMiniString<string>;
-    minBuyAmount: z.ZodMiniString<string>;
-    allowanceTarget: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    transaction: z.ZodMiniObject<{
-        to: z.ZodMiniString<string>;
-        data: z.ZodMiniString<string>;
-        value: z.ZodMiniString<string>;
-        gas: z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNull]>;
-    }, z.core.$strip>;
-    fees: z.ZodMiniObject<{
-        integrator: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            token: z.ZodMiniString<string>;
-            amount: z.ZodMiniString<string>;
-        }, z.core.$strip>, z.ZodMiniNull]>;
-        zeroEx: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            token: z.ZodMiniString<string>;
-            amount: z.ZodMiniString<string>;
-        }, z.core.$strip>, z.ZodMiniNull]>;
-    }, z.core.$strip>;
-    blockNumber: z.ZodMiniString<string>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>;
+export const swapQuoteResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"0x">;
+    sellToken: z$1.ZodMiniString<string>;
+    buyToken: z$1.ZodMiniString<string>;
+    sellAmount: z$1.ZodMiniString<string>;
+    buyAmount: z$1.ZodMiniString<string>;
+    minBuyAmount: z$1.ZodMiniString<string>;
+    allowanceTarget: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    transaction: z$1.ZodMiniObject<{
+        to: z$1.ZodMiniString<string>;
+        data: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniString<string>;
+        gas: z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strip>;
+    fees: z$1.ZodMiniObject<{
+        integrator: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            token: z$1.ZodMiniString<string>;
+            amount: z$1.ZodMiniString<string>;
+        }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+        zeroEx: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            token: z$1.ZodMiniString<string>;
+            amount: z$1.ZodMiniString<string>;
+        }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+    }, z$1.core.$strip>;
+    blockNumber: z$1.ZodMiniString<string>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>;
 
 // @public (undocumented)
-export const swapQuoteSolana: Endpoint<z.ZodMiniObject<{
-    network: z.ZodMiniLiteral<"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp">;
-    inputMint: z.ZodMiniString<string>;
-    outputMint: z.ZodMiniString<string>;
-    amount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-}, z.core.$strip>, z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"jupiter">;
-    inputMint: z.ZodMiniString<string>;
-    outputMint: z.ZodMiniString<string>;
-    inAmount: z.ZodMiniString<string>;
-    outAmount: z.ZodMiniString<string>;
-    otherAmountThreshold: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-    setup: z.ZodMiniArray<z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>>;
-    swap: z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-    cleanup: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>, z.ZodMiniNull]>;
-    lookupTables: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>>;
+export const swapQuoteSolana: Endpoint<z$1.ZodMiniObject<{
+    network: z$1.ZodMiniLiteral<"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp">;
+    inputMint: z$1.ZodMiniString<string>;
+    outputMint: z$1.ZodMiniString<string>;
+    amount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+}, z$1.core.$strip>, z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"jupiter">;
+    inputMint: z$1.ZodMiniString<string>;
+    outputMint: z$1.ZodMiniString<string>;
+    inAmount: z$1.ZodMiniString<string>;
+    outAmount: z$1.ZodMiniString<string>;
+    otherAmountThreshold: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+    setup: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>>;
+    swap: z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+    cleanup: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+    lookupTables: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>>;
 
 // @public (undocumented)
-export type SwapQuoteSolanaRequest = z.infer<typeof swapQuoteSolanaRequest>;
+export type SwapQuoteSolanaRequest = z$1.infer<typeof swapQuoteSolanaRequest>;
 
 // @public
-export const swapQuoteSolanaRequest: z.ZodMiniObject<{
-    network: z.ZodMiniLiteral<"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp">;
-    inputMint: z.ZodMiniString<string>;
-    outputMint: z.ZodMiniString<string>;
-    amount: z.ZodMiniString<string>;
-    taker: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-}, z.core.$strip>;
+export const swapQuoteSolanaRequest: z$1.ZodMiniObject<{
+    network: z$1.ZodMiniLiteral<"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp">;
+    inputMint: z$1.ZodMiniString<string>;
+    outputMint: z$1.ZodMiniString<string>;
+    amount: z$1.ZodMiniString<string>;
+    taker: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
-export type SwapQuoteSolanaResponse = z.infer<typeof swapQuoteSolanaResponse>;
+export type SwapQuoteSolanaResponse = z$1.infer<typeof swapQuoteSolanaResponse>;
 
 // @public (undocumented)
-export const swapQuoteSolanaResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<true>;
-    provider: z.ZodMiniLiteral<"jupiter">;
-    inputMint: z.ZodMiniString<string>;
-    outputMint: z.ZodMiniString<string>;
-    inAmount: z.ZodMiniString<string>;
-    outAmount: z.ZodMiniString<string>;
-    otherAmountThreshold: z.ZodMiniString<string>;
-    slippageBps: z.ZodMiniNumber<unknown>;
-    setup: z.ZodMiniArray<z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>>;
-    swap: z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>;
-    cleanup: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-        programId: z.ZodMiniString<string>;
-        accounts: z.ZodMiniArray<z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            signer: z.ZodMiniBoolean<boolean>;
-            writable: z.ZodMiniBoolean<boolean>;
-        }, z.core.$strip>>;
-        data: z.ZodMiniString<string>;
-    }, z.core.$strip>, z.ZodMiniNull]>;
-    lookupTables: z.ZodMiniArray<z.ZodMiniString<string>>;
-}, z.core.$strip>, z.ZodMiniObject<{
-    liquidity: z.ZodMiniLiteral<false>;
-}, z.core.$strip>]>;
+export const swapQuoteSolanaResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<true>;
+    provider: z$1.ZodMiniLiteral<"jupiter">;
+    inputMint: z$1.ZodMiniString<string>;
+    outputMint: z$1.ZodMiniString<string>;
+    inAmount: z$1.ZodMiniString<string>;
+    outAmount: z$1.ZodMiniString<string>;
+    otherAmountThreshold: z$1.ZodMiniString<string>;
+    slippageBps: z$1.ZodMiniNumber<unknown>;
+    setup: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>>;
+    swap: z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>;
+    cleanup: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+        programId: z$1.ZodMiniString<string>;
+        accounts: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            signer: z$1.ZodMiniBoolean<boolean>;
+            writable: z$1.ZodMiniBoolean<boolean>;
+        }, z$1.core.$strip>>;
+        data: z$1.ZodMiniString<string>;
+    }, z$1.core.$strip>, z$1.ZodMiniNull]>;
+    lookupTables: z$1.ZodMiniArray<z$1.ZodMiniString<string>>;
+}, z$1.core.$strip>, z$1.ZodMiniObject<{
+    liquidity: z$1.ZodMiniLiteral<false>;
+}, z$1.core.$strip>]>;
 
 // @public
 export const TOKEN_LIST_MAX_ENTRIES: {
@@ -1067,67 +1458,67 @@ export const TOKEN_LIST_SOURCES: readonly ["uniswap", "coingecko", "jupiter"];
 export const tokenAssetId: (network: string, address: string) => string | undefined;
 
 // @public (undocumented)
-export const tokenList: Endpoint<z.ZodMiniUndefined, z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    version: z.ZodMiniInt;
-    sources: z.ZodMiniArray<z.ZodMiniEnum<{
+export const tokenList: Endpoint<z$1.ZodMiniUndefined, z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    version: z$1.ZodMiniInt;
+    sources: z$1.ZodMiniArray<z$1.ZodMiniEnum<{
         coingecko: "coingecko";
         jupiter: "jupiter";
         uniswap: "uniswap";
     }>>;
-    tokens: z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniString<string>;
-        symbol: z.ZodMiniString<string>;
-        name: z.ZodMiniString<string>;
-        decimals: z.ZodMiniInt;
-    }, z.core.$strip>>;
-}, z.core.$strip>>;
+    tokens: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniString<string>;
+        symbol: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniString<string>;
+        decimals: z$1.ZodMiniInt;
+    }, z$1.core.$strip>>;
+}, z$1.core.$strip>>;
 
 // @public (undocumented)
-export type TokenListEntry = z.infer<typeof tokenListEntry>;
+export type TokenListEntry = z$1.infer<typeof tokenListEntry>;
 
 // @public (undocumented)
-export const tokenListEntry: z.ZodMiniObject<{
-    address: z.ZodMiniString<string>;
-    symbol: z.ZodMiniString<string>;
-    name: z.ZodMiniString<string>;
-    decimals: z.ZodMiniInt;
-}, z.core.$strip>;
+export const tokenListEntry: z$1.ZodMiniObject<{
+    address: z$1.ZodMiniString<string>;
+    symbol: z$1.ZodMiniString<string>;
+    name: z$1.ZodMiniString<string>;
+    decimals: z$1.ZodMiniInt;
+}, z$1.core.$strip>;
 
 // @public
 export const tokenListPath: (caip2: string) => string;
 
 // @public (undocumented)
-export type TokenListResponse = z.infer<typeof tokenListResponse>;
+export type TokenListResponse = z$1.infer<typeof tokenListResponse>;
 
 // @public (undocumented)
-export const tokenListResponse: z.ZodMiniObject<{
-    network: z.ZodMiniString<string>;
-    version: z.ZodMiniInt;
-    sources: z.ZodMiniArray<z.ZodMiniEnum<{
+export const tokenListResponse: z$1.ZodMiniObject<{
+    network: z$1.ZodMiniString<string>;
+    version: z$1.ZodMiniInt;
+    sources: z$1.ZodMiniArray<z$1.ZodMiniEnum<{
         coingecko: "coingecko";
         jupiter: "jupiter";
         uniswap: "uniswap";
     }>>;
-    tokens: z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniString<string>;
-        symbol: z.ZodMiniString<string>;
-        name: z.ZodMiniString<string>;
-        decimals: z.ZodMiniInt;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    tokens: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniString<string>;
+        symbol: z$1.ZodMiniString<string>;
+        name: z$1.ZodMiniString<string>;
+        decimals: z$1.ZodMiniInt;
+    }, z$1.core.$strip>>;
+}, z$1.core.$strip>;
 
 // @public (undocumented)
 export type TokenListSource = (typeof TOKEN_LIST_SOURCES)[number];
 
 // @public (undocumented)
-export const tokenName: z.ZodMiniString<string>;
+export const tokenName: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
-export const tokenSymbol: z.ZodMiniString<string>;
+export const tokenSymbol: z$1.ZodMiniString<string>;
 
 // @public (undocumented)
-export const tron: Endpoint<z.ZodMiniUnknown, z.ZodMiniUnknown>;
+export const tron: Endpoint<z$1.ZodMiniUnknown, z$1.ZodMiniUnknown>;
 
 // @public
 export const TRON_BROADCAST_PATH: TronNodePath;
@@ -1138,44 +1529,44 @@ export const TRON_INDEXER_LIMIT_MAX = 50;
 // @public
 export const TRON_INDEXER_PATHS: {
     readonly "/v1/accounts/transactions": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            limit: z.ZodMiniOptional<z.ZodMiniInt>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            success: z.ZodMiniLiteral<true>;
-            data: z.ZodMiniArray<z.ZodMiniUnknown>;
-            meta: z.ZodMiniObject<{
-                fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            limit: z$1.ZodMiniOptional<z$1.ZodMiniInt>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            success: z$1.ZodMiniLiteral<true>;
+            data: z$1.ZodMiniArray<z$1.ZodMiniUnknown>;
+            meta: z$1.ZodMiniObject<{
+                fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>;
     };
     readonly "/v1/accounts/transactions/trc20": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            limit: z.ZodMiniOptional<z.ZodMiniInt>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            success: z.ZodMiniLiteral<true>;
-            data: z.ZodMiniArray<z.ZodMiniUnknown>;
-            meta: z.ZodMiniObject<{
-                fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            limit: z$1.ZodMiniOptional<z$1.ZodMiniInt>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            success: z$1.ZodMiniLiteral<true>;
+            data: z$1.ZodMiniArray<z$1.ZodMiniUnknown>;
+            meta: z$1.ZodMiniObject<{
+                fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>;
     };
     readonly "/v1/accounts/account": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            success: z.ZodMiniLiteral<true>;
-            data: z.ZodMiniArray<z.ZodMiniUnknown>;
-            meta: z.ZodMiniObject<{
-                fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            success: z$1.ZodMiniLiteral<true>;
+            data: z$1.ZodMiniArray<z$1.ZodMiniUnknown>;
+            meta: z$1.ZodMiniObject<{
+                fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>;
     };
 };
 
@@ -1185,541 +1576,541 @@ export const TRON_NETWORKS: ReadonlyArray<NetworkInfo>;
 // @public
 export const TRON_NODE_PATHS: {
     readonly "/wallet/getnowblock": {
-        readonly request: z.ZodMiniObject<{}, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            blockID: z.ZodMiniString<string>;
-            block_header: z.ZodMiniObject<{
-                raw_data: z.ZodMiniObject<{
-                    number: z.ZodMiniInt;
-                    timestamp: z.ZodMiniInt;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{}, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            blockID: z$1.ZodMiniString<string>;
+            block_header: z$1.ZodMiniObject<{
+                raw_data: z$1.ZodMiniObject<{
+                    number: z$1.ZodMiniInt;
+                    timestamp: z$1.ZodMiniInt;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>;
     };
     readonly "/walletsolidity/getnowblock": {
-        readonly request: z.ZodMiniObject<{}, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            blockID: z.ZodMiniString<string>;
-            block_header: z.ZodMiniObject<{
-                raw_data: z.ZodMiniObject<{
-                    number: z.ZodMiniInt;
-                    timestamp: z.ZodMiniInt;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{}, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            blockID: z$1.ZodMiniString<string>;
+            block_header: z$1.ZodMiniObject<{
+                raw_data: z$1.ZodMiniObject<{
+                    number: z$1.ZodMiniInt;
+                    timestamp: z$1.ZodMiniInt;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getblockbynum": {
-        readonly request: z.ZodMiniObject<{
-            num: z.ZodMiniInt;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            blockID: z.ZodMiniString<string>;
-            block_header: z.ZodMiniObject<{
-                raw_data: z.ZodMiniObject<{
-                    number: z.ZodMiniInt;
-                    timestamp: z.ZodMiniInt;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            num: z$1.ZodMiniInt;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            blockID: z$1.ZodMiniString<string>;
+            block_header: z$1.ZodMiniObject<{
+                raw_data: z$1.ZodMiniObject<{
+                    number: z$1.ZodMiniInt;
+                    timestamp: z$1.ZodMiniInt;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
     readonly "/walletsolidity/getblockbynum": {
-        readonly request: z.ZodMiniObject<{
-            num: z.ZodMiniInt;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            blockID: z.ZodMiniString<string>;
-            block_header: z.ZodMiniObject<{
-                raw_data: z.ZodMiniObject<{
-                    number: z.ZodMiniInt;
-                    timestamp: z.ZodMiniInt;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            num: z$1.ZodMiniInt;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            blockID: z$1.ZodMiniString<string>;
+            block_header: z$1.ZodMiniObject<{
+                raw_data: z$1.ZodMiniObject<{
+                    number: z$1.ZodMiniInt;
+                    timestamp: z$1.ZodMiniInt;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
     readonly "/wallet/getaccount": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            balance: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            type: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            assetV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                key: z.ZodMiniString<string>;
-                value: z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>;
-            }, z.core.$loose>>>;
-            frozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            }, z.core.$loose>>>;
-            unfrozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-                unfreeze_amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                unfreeze_expire_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            }, z.core.$loose>>>;
-            votes: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                vote_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                vote_count: z.ZodMiniNumber<number>;
-            }, z.core.$loose>>>;
-            latest_withdraw_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            account_resource: z.ZodMiniOptional<z.ZodMiniObject<{
-                delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            }, z.core.$loose>>;
-            delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            balance: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            type: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            assetV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                key: z$1.ZodMiniString<string>;
+                value: z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>;
+            }, z$1.core.$loose>>>;
+            frozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+                amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            }, z$1.core.$loose>>>;
+            unfrozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+                unfreeze_amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                unfreeze_expire_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            }, z$1.core.$loose>>>;
+            votes: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                vote_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                vote_count: z$1.ZodMiniNumber<number>;
+            }, z$1.core.$loose>>>;
+            latest_withdraw_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            account_resource: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+                delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                acquired_delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            }, z$1.core.$loose>>;
+            delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            acquired_delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
     readonly "/wallet/getavailableunfreezecount": {
-        readonly request: z.ZodMiniObject<{
-            owner_address: z.ZodMiniString<string>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            count: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            owner_address: z$1.ZodMiniString<string>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            count: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getcandelegatedmaxsize": {
-        readonly request: z.ZodMiniObject<{
-            owner_address: z.ZodMiniString<string>;
-            type: z.ZodMiniUnion<readonly [z.ZodMiniLiteral<0>, z.ZodMiniLiteral<1>]>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            max_size: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            owner_address: z$1.ZodMiniString<string>;
+            type: z$1.ZodMiniUnion<readonly [z$1.ZodMiniLiteral<0>, z$1.ZodMiniLiteral<1>]>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            max_size: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getdelegatedresourcev2": {
-        readonly request: z.ZodMiniObject<{
-            fromAddress: z.ZodMiniString<string>;
-            toAddress: z.ZodMiniString<string>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            delegatedResource: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                from: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                to: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                expire_time_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                expire_time_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            }, z.core.$loose>>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            fromAddress: z$1.ZodMiniString<string>;
+            toAddress: z$1.ZodMiniString<string>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            delegatedResource: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                from: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                to: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                frozen_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                frozen_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                expire_time_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                expire_time_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            }, z$1.core.$loose>>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getReward": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            reward: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            reward: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getassetissuebyid": {
-        readonly request: z.ZodMiniObject<{
-            value: z.ZodMiniInt;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            abbr: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            precision: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            value: z$1.ZodMiniInt;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            abbr: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            precision: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/listwitnesses": {
-        readonly request: z.ZodMiniObject<{}, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            witnesses: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{}, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            witnesses: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getaccountresource": {
-        readonly request: z.ZodMiniObject<{
-            address: z.ZodMiniString<string>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            freeNetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            freeNetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            NetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            NetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            EnergyLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            EnergyUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            tronPowerLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            tronPowerUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            address: z$1.ZodMiniString<string>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            freeNetLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            freeNetUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            NetLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            NetUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            EnergyLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            EnergyUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            tronPowerLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            tronPowerUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/getchainparameters": {
-        readonly request: z.ZodMiniObject<{}, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            chainParameter: z.ZodMiniArray<z.ZodMiniObject<{
-                key: z.ZodMiniString<string>;
-                value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-            }, z.core.$loose>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{}, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            chainParameter: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                key: z$1.ZodMiniString<string>;
+                value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+            }, z$1.core.$loose>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/triggerconstantcontract": {
-        readonly request: z.ZodMiniObject<{
-            owner_address: z.ZodMiniString<string>;
-            contract_address: z.ZodMiniString<string>;
-            data: z.ZodMiniString<string>;
-            call_value: z.ZodMiniOptional<z.ZodMiniInt>;
-            visible: z.ZodMiniLiteral<true>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            result: z.ZodMiniObject<{
-                result: z.ZodMiniLiteral<true>;
-            }, z.core.$loose>;
-            energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            constant_result: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-            logs: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-                data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>>;
-        }, z.core.$loose>, z.ZodMiniObject<{
-            result: z.ZodMiniObject<{
-                code: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                message: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>;
-            energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        }, z.core.$loose>]>;
+        readonly request: z$1.ZodMiniObject<{
+            owner_address: z$1.ZodMiniString<string>;
+            contract_address: z$1.ZodMiniString<string>;
+            data: z$1.ZodMiniString<string>;
+            call_value: z$1.ZodMiniOptional<z$1.ZodMiniInt>;
+            visible: z$1.ZodMiniLiteral<true>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            result: z$1.ZodMiniObject<{
+                result: z$1.ZodMiniLiteral<true>;
+            }, z$1.core.$loose>;
+            energy_used: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            energy_penalty: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            constant_result: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+            logs: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+                data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{
+            result: z$1.ZodMiniObject<{
+                code: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                message: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>;
+            energy_used: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            energy_penalty: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        }, z$1.core.$loose>]>;
     };
     readonly "/wallet/broadcasthex": {
-        readonly request: z.ZodMiniObject<{
-            transaction: z.ZodMiniString<string>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniObject<{
-            result: z.ZodMiniBoolean<boolean>;
-            code: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            message: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            txid: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        }, z.core.$loose>;
+        readonly request: z$1.ZodMiniObject<{
+            transaction: z$1.ZodMiniString<string>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniObject<{
+            result: z$1.ZodMiniBoolean<boolean>;
+            code: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            message: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            txid: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        }, z$1.core.$loose>;
     };
     readonly "/wallet/gettransactionbyid": {
-        readonly request: z.ZodMiniObject<{
-            value: z.ZodMiniString<string>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            txID: z.ZodMiniString<string>;
-            block_timestamp: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            raw_data_hex: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            raw_data: z.ZodMiniOptional<z.ZodMiniObject<{
-                contract: z.ZodMiniArray<z.ZodMiniObject<{
-                    type: z.ZodMiniString<string>;
-                    parameter: z.ZodMiniObject<{
-                        value: z.ZodMiniObject<{
-                            owner_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                            asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                            call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                            call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                            token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                        }, z.core.$loose>;
-                    }, z.core.$loose>;
-                }, z.core.$loose>>;
-            }, z.core.$loose>>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            value: z$1.ZodMiniString<string>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            txID: z$1.ZodMiniString<string>;
+            block_timestamp: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            raw_data_hex: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            raw_data: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+                contract: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                    type: z$1.ZodMiniString<string>;
+                    parameter: z$1.ZodMiniObject<{
+                        value: z$1.ZodMiniObject<{
+                            owner_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                            to_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                            amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                            asset_name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                            contract_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                            call_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                            call_token_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                            token_id: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                        }, z$1.core.$loose>;
+                    }, z$1.core.$loose>;
+                }, z$1.core.$loose>>;
+            }, z$1.core.$loose>>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
     readonly "/wallet/gettransactioninfobyid": {
-        readonly request: z.ZodMiniObject<{
-            value: z.ZodMiniString<string>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            blockNumber: z.ZodMiniNumber<number>;
-            blockTimeStamp: z.ZodMiniNumber<number>;
-            fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            receipt: z.ZodMiniOptional<z.ZodMiniObject<{
-                net_usage: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                net_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                energy_usage_total: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                energy_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>;
-            result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            resMessage: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            log: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-                data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            value: z$1.ZodMiniString<string>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            blockNumber: z$1.ZodMiniNumber<number>;
+            blockTimeStamp: z$1.ZodMiniNumber<number>;
+            fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            receipt: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+                net_usage: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                net_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                energy_usage_total: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                energy_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>;
+            result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            resMessage: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            log: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+                data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
     readonly "/walletsolidity/gettransactioninfobyid": {
-        readonly request: z.ZodMiniObject<{
-            value: z.ZodMiniString<string>;
-        }, z.core.$strict>;
-        readonly response: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-            id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            blockNumber: z.ZodMiniNumber<number>;
-            blockTimeStamp: z.ZodMiniNumber<number>;
-            fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-            receipt: z.ZodMiniOptional<z.ZodMiniObject<{
-                net_usage: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                net_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                energy_usage_total: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                energy_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>;
-            result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            resMessage: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            log: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-                address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-                data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-            }, z.core.$loose>>>;
-        }, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+        readonly request: z$1.ZodMiniObject<{
+            value: z$1.ZodMiniString<string>;
+        }, z$1.core.$strict>;
+        readonly response: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+            id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            blockNumber: z$1.ZodMiniNumber<number>;
+            blockTimeStamp: z$1.ZodMiniNumber<number>;
+            fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+            receipt: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+                net_usage: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                net_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                energy_usage_total: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                energy_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>;
+            result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            resMessage: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            log: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+                address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+                data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+            }, z$1.core.$loose>>>;
+        }, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
     };
 };
 
 // @public (undocumented)
-export type TronAccount = z.output<typeof tronAccount>;
+export type TronAccount = z$1.output<typeof tronAccount>;
 
 // @public
-export const tronAccount: z.ZodMiniObject<{
-    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    balance: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    type: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    assetV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        key: z.ZodMiniString<string>;
-        value: z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>;
-    }, z.core.$loose>>>;
-    frozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-        amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    }, z.core.$loose>>>;
-    unfrozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-        unfreeze_amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        unfreeze_expire_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    }, z.core.$loose>>>;
-    votes: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        vote_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        vote_count: z.ZodMiniNumber<number>;
-    }, z.core.$loose>>>;
-    latest_withdraw_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    account_resource: z.ZodMiniOptional<z.ZodMiniObject<{
-        delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    }, z.core.$loose>>;
-    delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-}, z.core.$loose>;
+export const tronAccount: z$1.ZodMiniObject<{
+    address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    balance: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    type: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    assetV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        key: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>;
+    }, z$1.core.$loose>>>;
+    frozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+        amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    }, z$1.core.$loose>>>;
+    unfrozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+        unfreeze_amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        unfreeze_expire_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    }, z$1.core.$loose>>>;
+    votes: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        vote_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        vote_count: z$1.ZodMiniNumber<number>;
+    }, z$1.core.$loose>>>;
+    latest_withdraw_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    account_resource: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+        delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        acquired_delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    }, z$1.core.$loose>>;
+    delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    acquired_delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronAccountResource = z.output<typeof tronAccountResource>;
+export type TronAccountResource = z$1.output<typeof tronAccountResource>;
 
 // @public
-export const tronAccountResource: z.ZodMiniObject<{
-    freeNetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    freeNetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    NetLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    NetUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    EnergyLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    EnergyUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    tronPowerLimit: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    tronPowerUsed: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-}, z.core.$loose>;
+export const tronAccountResource: z$1.ZodMiniObject<{
+    freeNetLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    freeNetUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    NetLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    NetUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    EnergyLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    EnergyUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    tronPowerLimit: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    tronPowerUsed: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export const tronAccountResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    balance: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    type: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    assetV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        key: z.ZodMiniString<string>;
-        value: z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>;
-    }, z.core.$loose>>>;
-    frozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-        amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    }, z.core.$loose>>>;
-    unfrozenV2: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        type: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniString<string>, z.ZodMiniNumber<number>]>>;
-        unfreeze_amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        unfreeze_expire_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    }, z.core.$loose>>>;
-    votes: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        vote_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        vote_count: z.ZodMiniNumber<number>;
-    }, z.core.$loose>>>;
-    latest_withdraw_time: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    account_resource: z.ZodMiniOptional<z.ZodMiniObject<{
-        delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        acquired_delegated_frozenV2_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    }, z.core.$loose>>;
-    delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    acquired_delegated_frozenV2_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-}, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+export const tronAccountResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    balance: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    type: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    assetV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        key: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>;
+    }, z$1.core.$loose>>>;
+    frozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+        amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    }, z$1.core.$loose>>>;
+    unfrozenV2: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        type: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniString<string>, z$1.ZodMiniNumber<number>]>>;
+        unfreeze_amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        unfreeze_expire_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    }, z$1.core.$loose>>>;
+    votes: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        vote_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        vote_count: z$1.ZodMiniNumber<number>;
+    }, z$1.core.$loose>>>;
+    latest_withdraw_time: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    account_resource: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+        delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        acquired_delegated_frozenV2_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    }, z$1.core.$loose>>;
+    delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    acquired_delegated_frozenV2_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+}, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
 
 // @public (undocumented)
-export type TronAssetIssue = z.output<typeof tronAssetIssueResponse>;
+export type TronAssetIssue = z$1.output<typeof tronAssetIssueResponse>;
 
 // @public
-export const tronAssetIssueResponse: z.ZodMiniObject<{
-    id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    abbr: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    precision: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-}, z.core.$loose>;
+export const tronAssetIssueResponse: z$1.ZodMiniObject<{
+    id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    abbr: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    precision: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+}, z$1.core.$loose>;
 
 // @public
 export const tronBasePath: (caip2: string) => string;
 
 // @public (undocumented)
-export type TronBlock = z.output<typeof tronBlockResponse>;
+export type TronBlock = z$1.output<typeof tronBlockResponse>;
 
 // @public
-export const tronBlockResponse: z.ZodMiniObject<{
-    blockID: z.ZodMiniString<string>;
-    block_header: z.ZodMiniObject<{
-        raw_data: z.ZodMiniObject<{
-            number: z.ZodMiniInt;
-            timestamp: z.ZodMiniInt;
-        }, z.core.$loose>;
-    }, z.core.$loose>;
-}, z.core.$loose>;
+export const tronBlockResponse: z$1.ZodMiniObject<{
+    blockID: z$1.ZodMiniString<string>;
+    block_header: z$1.ZodMiniObject<{
+        raw_data: z$1.ZodMiniObject<{
+            number: z$1.ZodMiniInt;
+            timestamp: z$1.ZodMiniInt;
+        }, z$1.core.$loose>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronBroadcast = z.output<typeof tronBroadcastResponse>;
+export type TronBroadcast = z$1.output<typeof tronBroadcastResponse>;
 
 // @public
-export const tronBroadcastResponse: z.ZodMiniObject<{
-    result: z.ZodMiniBoolean<boolean>;
-    code: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    message: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    txid: z.ZodMiniOptional<z.ZodMiniString<string>>;
-}, z.core.$loose>;
+export const tronBroadcastResponse: z$1.ZodMiniObject<{
+    result: z$1.ZodMiniBoolean<boolean>;
+    code: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    message: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    txid: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronCanDelegateMaxSize = z.output<typeof tronCanDelegateMaxSizeResponse>;
+export type TronCanDelegateMaxSize = z$1.output<typeof tronCanDelegateMaxSizeResponse>;
 
 // @public
-export const tronCanDelegateMaxSizeResponse: z.ZodMiniObject<{
-    max_size: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-}, z.core.$loose>;
+export const tronCanDelegateMaxSizeResponse: z$1.ZodMiniObject<{
+    max_size: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronChainParameters = z.output<typeof tronChainParameters>;
+export type TronChainParameters = z$1.output<typeof tronChainParameters>;
 
 // @public (undocumented)
-export const tronChainParameters: z.ZodMiniObject<{
-    chainParameter: z.ZodMiniArray<z.ZodMiniObject<{
-        key: z.ZodMiniString<string>;
-        value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-    }, z.core.$loose>>;
-}, z.core.$loose>;
+export const tronChainParameters: z$1.ZodMiniObject<{
+    chainParameter: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        key: z$1.ZodMiniString<string>;
+        value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+    }, z$1.core.$loose>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronConstantCall = z.output<typeof tronConstantCallResponse>;
+export type TronConstantCall = z$1.output<typeof tronConstantCallResponse>;
 
 // @public
-export const tronConstantCallResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    result: z.ZodMiniObject<{
-        result: z.ZodMiniLiteral<true>;
-    }, z.core.$loose>;
-    energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    constant_result: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-    logs: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-        data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>>;
-}, z.core.$loose>, z.ZodMiniObject<{
-    result: z.ZodMiniObject<{
-        code: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        message: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>;
-    energy_used: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    energy_penalty: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-}, z.core.$loose>]>;
+export const tronConstantCallResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    result: z$1.ZodMiniObject<{
+        result: z$1.ZodMiniLiteral<true>;
+    }, z$1.core.$loose>;
+    energy_used: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    energy_penalty: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    constant_result: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+    logs: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>>;
+}, z$1.core.$loose>, z$1.ZodMiniObject<{
+    result: z$1.ZodMiniObject<{
+        code: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        message: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>;
+    energy_used: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    energy_penalty: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+}, z$1.core.$loose>]>;
 
 // @public (undocumented)
-export type TronDelegatedResource = z.output<typeof tronDelegatedResourceResponse>;
+export type TronDelegatedResource = z$1.output<typeof tronDelegatedResourceResponse>;
 
 // @public
-export const tronDelegatedResourceResponse: z.ZodMiniObject<{
-    delegatedResource: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        from: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        to: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        frozen_balance_for_bandwidth: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        frozen_balance_for_energy: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-        expire_time_for_bandwidth: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        expire_time_for_energy: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    }, z.core.$loose>>>;
-}, z.core.$loose>;
+export const tronDelegatedResourceResponse: z$1.ZodMiniObject<{
+    delegatedResource: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        from: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        to: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        frozen_balance_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        frozen_balance_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+        expire_time_for_bandwidth: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        expire_time_for_energy: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    }, z$1.core.$loose>>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronIndexerAccount = z.output<typeof indexerAccountResponse>;
+export type TronIndexerAccount = z$1.output<typeof indexerAccountResponse>;
 
 // @public (undocumented)
-export type TronIndexerPage = z.output<typeof tronIndexerPageResponse>;
+export type TronIndexerPage = z$1.output<typeof tronIndexerPageResponse>;
 
 // @public (undocumented)
-export const tronIndexerPageResponse: z.ZodMiniObject<{
-    success: z.ZodMiniLiteral<true>;
-    data: z.ZodMiniArray<z.ZodMiniUnknown>;
-    meta: z.ZodMiniObject<{
-        fingerprint: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>;
-}, z.core.$loose>;
+export const tronIndexerPageResponse: z$1.ZodMiniObject<{
+    success: z$1.ZodMiniLiteral<true>;
+    data: z$1.ZodMiniArray<z$1.ZodMiniUnknown>;
+    meta: z$1.ZodMiniObject<{
+        fingerprint: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
 export type TronIndexerPath = keyof typeof TRON_INDEXER_PATHS;
 
 // @public
-export const tronIndexerTransaction: z.ZodMiniObject<{
-    txID: z.ZodMiniString<string>;
-    block_timestamp: z.ZodMiniNumber<number>;
-    blockNumber: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    raw_data: z.ZodMiniObject<{
-        contract: z.ZodMiniArray<z.ZodMiniObject<{
-            type: z.ZodMiniString<string>;
-            parameter: z.ZodMiniObject<{
-                value: z.ZodMiniObject<{
-                    owner_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>>;
-    }, z.core.$loose>;
-}, z.core.$loose>;
+export const tronIndexerTransaction: z$1.ZodMiniObject<{
+    txID: z$1.ZodMiniString<string>;
+    block_timestamp: z$1.ZodMiniNumber<number>;
+    blockNumber: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    raw_data: z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            type: z$1.ZodMiniString<string>;
+            parameter: z$1.ZodMiniObject<{
+                value: z$1.ZodMiniObject<{
+                    owner_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    to_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    asset_name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    contract_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    call_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    call_token_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    token_id: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronIndexerTransactionRow = z.output<typeof tronIndexerTransaction>;
+export type TronIndexerTransactionRow = z$1.output<typeof tronIndexerTransaction>;
 
 // @public
-export const tronIndexerTrc20: z.ZodMiniObject<{
-    transaction_id: z.ZodMiniString<string>;
-    block_timestamp: z.ZodMiniNumber<number>;
-    from: z.ZodMiniString<string>;
-    to: z.ZodMiniString<string>;
-    type: z.ZodMiniString<string>;
-    value: z.ZodMiniString<string>;
-    token_info: z.ZodMiniObject<{
-        address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        symbol: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        decimals: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    }, z.core.$loose>;
-}, z.core.$loose>;
+export const tronIndexerTrc20: z$1.ZodMiniObject<{
+    transaction_id: z$1.ZodMiniString<string>;
+    block_timestamp: z$1.ZodMiniNumber<number>;
+    from: z$1.ZodMiniString<string>;
+    to: z$1.ZodMiniString<string>;
+    type: z$1.ZodMiniString<string>;
+    value: z$1.ZodMiniString<string>;
+    token_info: z$1.ZodMiniObject<{
+        address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        symbol: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        decimals: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronIndexerTrc20Row = z.output<typeof tronIndexerTrc20>;
+export type TronIndexerTrc20Row = z$1.output<typeof tronIndexerTrc20>;
 
 // @public
 export class TronJsonParseError extends Error {
@@ -1728,45 +2119,45 @@ export class TronJsonParseError extends Error {
 }
 
 // @public (undocumented)
-export type TronLog = z.output<typeof tronLog>;
+export type TronLog = z$1.output<typeof tronLog>;
 
 // @public
-export const tronLog: z.ZodMiniObject<{
-    address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-    data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-}, z.core.$loose>;
+export const tronLog: z$1.ZodMiniObject<{
+    address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+    data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronMaybeAccount = z.output<typeof tronAccountResponse>;
+export type TronMaybeAccount = z$1.output<typeof tronAccountResponse>;
 
 // @public (undocumented)
-export type TronMaybeBlock = z.output<typeof tronMaybeBlockResponse>;
+export type TronMaybeBlock = z$1.output<typeof tronMaybeBlockResponse>;
 
 // @public (undocumented)
-export const tronMaybeBlockResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    blockID: z.ZodMiniString<string>;
-    block_header: z.ZodMiniObject<{
-        raw_data: z.ZodMiniObject<{
-            number: z.ZodMiniInt;
-            timestamp: z.ZodMiniInt;
-        }, z.core.$loose>;
-    }, z.core.$loose>;
-}, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+export const tronMaybeBlockResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    blockID: z$1.ZodMiniString<string>;
+    block_header: z$1.ZodMiniObject<{
+        raw_data: z$1.ZodMiniObject<{
+            number: z$1.ZodMiniInt;
+            timestamp: z$1.ZodMiniInt;
+        }, z$1.core.$loose>;
+    }, z$1.core.$loose>;
+}, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
 
 // @public (undocumented)
-export type TronMaybeTransaction = z.output<typeof tronTransactionResponse>;
+export type TronMaybeTransaction = z$1.output<typeof tronTransactionResponse>;
 
 // @public (undocumented)
-export type TronMaybeTransactionInfo = z.output<typeof tronTransactionInfoResponse>;
+export type TronMaybeTransactionInfo = z$1.output<typeof tronTransactionInfoResponse>;
 
 // @public (undocumented)
 export type TronNodePath = keyof typeof TRON_NODE_PATHS;
 
 // @public (undocumented)
 type TronPath = {
-    readonly request: z.ZodMiniType;
-    readonly response: z.ZodMiniType;
+    readonly request: z$1.ZodMiniType;
+    readonly response: z$1.ZodMiniType;
 };
 
 // @public (undocumented)
@@ -1776,98 +2167,98 @@ export const tronPathAllowed: (path: string) => boolean;
 export const tronPathEntry: (path: string) => TronPath | undefined;
 
 // @public (undocumented)
-export type TronReward = z.output<typeof tronRewardResponse>;
+export type TronReward = z$1.output<typeof tronRewardResponse>;
 
 // @public
-export const tronRewardResponse: z.ZodMiniObject<{
-    reward: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-}, z.core.$loose>;
+export const tronRewardResponse: z$1.ZodMiniObject<{
+    reward: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+}, z$1.core.$loose>;
 
 // @public
-export const tronTransactionInfo: z.ZodMiniObject<{
-    id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    blockNumber: z.ZodMiniNumber<number>;
-    blockTimeStamp: z.ZodMiniNumber<number>;
-    fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    receipt: z.ZodMiniOptional<z.ZodMiniObject<{
-        net_usage: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        net_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        energy_usage_total: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        energy_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>;
-    result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    resMessage: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    log: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-        data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>>;
-}, z.core.$loose>;
+export const tronTransactionInfo: z$1.ZodMiniObject<{
+    id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    blockNumber: z$1.ZodMiniNumber<number>;
+    blockTimeStamp: z$1.ZodMiniNumber<number>;
+    fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    receipt: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+        net_usage: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        net_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        energy_usage_total: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        energy_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>;
+    result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    resMessage: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    log: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export const tronTransactionInfoResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    id: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    blockNumber: z.ZodMiniNumber<number>;
-    blockTimeStamp: z.ZodMiniNumber<number>;
-    fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    receipt: z.ZodMiniOptional<z.ZodMiniObject<{
-        net_usage: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        net_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        energy_usage_total: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        energy_fee: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-        result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>;
-    result: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    resMessage: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    log: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-        topics: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniString<string>>>;
-        data: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>>;
-}, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+export const tronTransactionInfoResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    id: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    blockNumber: z$1.ZodMiniNumber<number>;
+    blockTimeStamp: z$1.ZodMiniNumber<number>;
+    fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    receipt: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+        net_usage: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        net_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        energy_usage_total: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        energy_fee: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+        result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>;
+    result: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    resMessage: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    log: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+        topics: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniString<string>>>;
+        data: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>>;
+}, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
 
 // @public
-export const tronTransactionResponse: z.ZodMiniUnion<readonly [z.ZodMiniObject<{
-    txID: z.ZodMiniString<string>;
-    block_timestamp: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-    raw_data_hex: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    raw_data: z.ZodMiniOptional<z.ZodMiniObject<{
-        contract: z.ZodMiniArray<z.ZodMiniObject<{
-            type: z.ZodMiniString<string>;
-            parameter: z.ZodMiniObject<{
-                value: z.ZodMiniObject<{
-                    owner_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    to_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    amount: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    asset_name: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    contract_address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-                    call_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    call_token_value: z.ZodMiniOptional<z.ZodMiniUnion<readonly [z.ZodMiniNumber<number>, z.ZodMiniBigInt<bigint>]>>;
-                    token_id: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-                }, z.core.$loose>;
-            }, z.core.$loose>;
-        }, z.core.$loose>>;
-    }, z.core.$loose>>;
-}, z.core.$loose>, z.ZodMiniObject<{}, z.core.$strict>]>;
+export const tronTransactionResponse: z$1.ZodMiniUnion<readonly [z$1.ZodMiniObject<{
+    txID: z$1.ZodMiniString<string>;
+    block_timestamp: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+    raw_data_hex: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    raw_data: z$1.ZodMiniOptional<z$1.ZodMiniObject<{
+        contract: z$1.ZodMiniArray<z$1.ZodMiniObject<{
+            type: z$1.ZodMiniString<string>;
+            parameter: z$1.ZodMiniObject<{
+                value: z$1.ZodMiniObject<{
+                    owner_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    to_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    amount: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    asset_name: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    contract_address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+                    call_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    call_token_value: z$1.ZodMiniOptional<z$1.ZodMiniUnion<readonly [z$1.ZodMiniNumber<number>, z$1.ZodMiniBigInt<bigint>]>>;
+                    token_id: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+                }, z$1.core.$loose>;
+            }, z$1.core.$loose>;
+        }, z$1.core.$loose>>;
+    }, z$1.core.$loose>>;
+}, z$1.core.$loose>, z$1.ZodMiniObject<{}, z$1.core.$strict>]>;
 
 // @public (undocumented)
-export type TronUnfreezeCount = z.output<typeof tronUnfreezeCountResponse>;
+export type TronUnfreezeCount = z$1.output<typeof tronUnfreezeCountResponse>;
 
 // @public
-export const tronUnfreezeCountResponse: z.ZodMiniObject<{
-    count: z.ZodMiniOptional<z.ZodMiniNumber<number>>;
-}, z.core.$loose>;
+export const tronUnfreezeCountResponse: z$1.ZodMiniObject<{
+    count: z$1.ZodMiniOptional<z$1.ZodMiniNumber<number>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
-export type TronWitnessList = z.output<typeof tronWitnessListResponse>;
+export type TronWitnessList = z$1.output<typeof tronWitnessListResponse>;
 
 // @public (undocumented)
-export const tronWitnessListResponse: z.ZodMiniObject<{
-    witnesses: z.ZodMiniOptional<z.ZodMiniArray<z.ZodMiniObject<{
-        address: z.ZodMiniOptional<z.ZodMiniString<string>>;
-    }, z.core.$loose>>>;
-}, z.core.$loose>;
+export const tronWitnessListResponse: z$1.ZodMiniObject<{
+    witnesses: z$1.ZodMiniOptional<z$1.ZodMiniArray<z$1.ZodMiniObject<{
+        address: z$1.ZodMiniOptional<z$1.ZodMiniString<string>>;
+    }, z$1.core.$loose>>>;
+}, z$1.core.$loose>;
 
 // @public (undocumented)
 export const union: (a: HashList, b: HashList) => HashList;

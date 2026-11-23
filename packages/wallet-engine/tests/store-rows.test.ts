@@ -27,6 +27,10 @@ const recorder = () => {
 
 const random = (n: number) => new Uint8Array(n).fill(7);
 
+const familyInfo = (network: string): { readonly family: string } => ({
+  family: network.startsWith("eip155:") ? "evm" : "solana",
+});
+
 describe("controller init over a non-JSON row", () => {
   it("address book", async () => {
     const store = await seeded("contacts", "torn");
@@ -95,9 +99,7 @@ describe("controller init over a non-JSON row", () => {
       setTimer: () => () => undefined,
       now: () => 0,
       logger,
-      networks: {
-        info: (network: string) => ({ family: network.startsWith("eip155:") ? "evm" : "solana" }),
-      } as never,
+      networks: { info: familyInfo } as never,
       balances: () => ({}),
       activity: () => ({ entries: [], txs: [] }),
       onActivityChange: () => () => undefined,
