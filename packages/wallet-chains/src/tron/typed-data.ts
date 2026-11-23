@@ -485,12 +485,14 @@ export const parseTronTypedData = (typedData: string): ParsedTypedData => {
 };
 
 /**
- * The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
- * hashStruct(primaryType, message))`. The domain is hashed under the fields its non-null keys
- * derive; the message under `json.primaryType`, which must be the unique root of `types` minus
- * `EIP712Domain`.
+ * The domain separator and message hash of a parsed document — `hashStruct(EIP712Domain, domain)`
+ * under the fields its non-null keys derive, `hashStruct(primaryType, message)` under the unique
+ * root type of `types` minus `EIP712Domain`. Returned separately for signers that send the two
+ * hashes to the device rather than one digest (Tron `INS_0C`).
  */
-export const tronTypedDataDigest = (json: TypedDataInput): Uint8Array => {
+export const tronTypedDataHashes = (
+  json: TypedDataInput,
+): { readonly domain: Uint8Array; readonly message: Uint8Array } => {
   const domainFields = domainFieldsOf(json.domain);
   const messageTypes: Types = {};
   for (const [name, fields] of Object.entries(json.types)) {
@@ -507,6 +509,15 @@ export const tronTypedDataDigest = (json: TypedDataInput): Uint8Array => {
     json.domain,
   );
   const message = encoder.hashStruct(json.primaryType, json.message);
+  return { domain, message };
+};
+
+/**
+ * The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
+ * hashStruct(primaryType, message))` — `keccak256(0x1901 ‖ hashes.domain ‖ hashes.message)`.
+ */
+export const tronTypedDataDigest = (json: TypedDataInput): Uint8Array => {
+  const { domain, message } = tronTypedDataHashes(json);
   return keccak_256(concatBytes(Uint8Array.of(0x19, 0x01), domain, message));
 };
 

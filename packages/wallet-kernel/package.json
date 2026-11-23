@@ -16,8 +16,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vp test",
-    "test:coverage": "vp test --coverage",
+    "test": "vp test --project unit",
+    "test:coverage": "vp test --coverage --project unit",
+    "test:speculos": "vp test --project speculos",
     "smoke:hermes": "bun scripts/hermes-smoke.ts",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json"

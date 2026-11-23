@@ -53,8 +53,13 @@ const SIGNERS_FILES = [
   "keystone/sign.ts",
   "keystone/sync.ts",
 ];
-// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 66_560;
+// measured 90004 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 94_505;
+const LEDGER_ENTRY = "qntx-budget-ledger.ts";
+const LEDGER_ENTRY_ID = "\0qntx-budget-ledger";
+const LEDGER_PROTOCOL = "packages/wallet-kernel/src/modules/ledger/protocol/";
+// measured 69217 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
+const LEDGER_BUDGET = 72_678;
 
 type Unit = {
   readonly name: string;
@@ -135,8 +140,15 @@ const plugins = (ablate: boolean) => [
       if (id === resolve(ROOT, SIGNERS_ENTRY)) {
         return SIGNERS_ENTRY_ID;
       }
+      if (id === resolve(ROOT, LEDGER_ENTRY)) {
+        return LEDGER_ENTRY_ID;
+      }
       // The virtual entry only references absolute paths; claim them as real files.
-      if (importer === CARD_ENTRY_ID || importer === SIGNERS_ENTRY_ID) {
+      if (
+        importer === CARD_ENTRY_ID ||
+        importer === SIGNERS_ENTRY_ID ||
+        importer === LEDGER_ENTRY_ID
+      ) {
         return id;
       }
       if (id.startsWith(".") || id.startsWith("/") || id.startsWith("\0")) {
@@ -163,6 +175,9 @@ const plugins = (ablate: boolean) => [
         ).join(" ");
         const names = SIGNERS_FILES.map((_file, i) => `s${i}`).join(", ");
         return `import "${resolve(ROOT, ENTRY)}"; ${imports} export { ${names} };`;
+      }
+      if (id === LEDGER_ENTRY_ID) {
+        return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, LEDGER_PROTOCOL, "index.ts")}";`;
       }
       return ablate ? (STUBS[rel(id)] ?? null) : null;
     },
@@ -216,6 +231,7 @@ const full = await run(false);
 const ablated = await run(true);
 const card = await run(false, CARD_ENTRY);
 const signers = await run(false, SIGNERS_ENTRY);
+const ledger = await run(false, LEDGER_ENTRY);
 
 const delta = full.bytes - ablated.bytes;
 const share = delta / full.bytes;
@@ -284,6 +300,23 @@ if (signersBytes === 0) {
 }
 if (signersBytes > SIGNERS_BUDGET) {
   breaches.push(`signers module: ${signersBytes} B exceeds ${SIGNERS_BUDGET} B`);
+}
+let ledgerBytes = 0;
+for (const [id, renderedLength] of ledger.rendered) {
+  if (id.startsWith(LEDGER_PROTOCOL)) {
+    ledgerBytes += renderedLength;
+  }
+}
+const ledgerDelta = ledger.bytes - full.bytes;
+const ledgerLimit = `${LEDGER_BUDGET} B`;
+console.log(
+  `  ${"ledger protocol client".padEnd(26)} ${String(ledgerBytes).padStart(7)} B / ${ledgerLimit}  ${ledgerBytes > LEDGER_BUDGET ? "BREACH " : ""}— ledger protocol client, all exports retained (bundle delta +${ledgerDelta} B)`,
+);
+if (ledgerBytes === 0) {
+  breaches.push(`ledger protocol client: no rendered modules under ${LEDGER_PROTOCOL}`);
+}
+if (ledgerBytes > LEDGER_BUDGET) {
+  breaches.push(`ledger protocol client: ${ledgerBytes} B exceeds ${LEDGER_BUDGET} B`);
 }
 console.log(
   "note: prompt rows for hyperliquid/polymarket inside modules/chains/prompt.ts share a file with core rows and are not attributed.",

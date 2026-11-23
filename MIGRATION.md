@@ -1573,9 +1573,10 @@ nothing new. Each has a compiled example and a README section.
 | `@qntx/wallet-engine/apps/fiat24`                                                                                                | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS).                                                                                                                                                                      |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)                                                                     | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
-## 24. Hardware signers (Keystone 3 Pro over QR)
+## 24. Hardware signers (Keystone 3 Pro over QR, Ledger over USB/Bluetooth)
 
-Compiled snippet: [`tests/migration/hardware-wallets.ts`](tests/migration/hardware-wallets.ts). Changes affect every host that reads
+Compiled snippets: [`tests/migration/hardware-wallets.ts`](tests/migration/hardware-wallets.ts),
+[`tests/migration/ledger.ts`](tests/migration/ledger.ts). Changes affect every host that reads
 `WalletInfo` or switches on `WalletErrorCode`, and every host that wants hardware wallets.
 Nothing changes in the vault format for software wallets; a `hardware-wallet` record joins the
 vault alongside them.
@@ -1603,6 +1604,27 @@ vault alongside them.
    payload (`keystoneQrIo` in the snippet). `sign` takes the same `verify` factor as
    `chains().sign` and its result passes the same verification. `pairKeystone` and
    `signOnDevice` show the two calls a host makes.
+5. **Ledger.** `HARDWARE_DEVICES` gains `"ledger"`; an exhaustive switch over `HardwareDevice`
+   needs the new arm. The kernel exchanges one APDU per `{ kind: "message", data }` request and
+   the host frames it: `ledgerHidExchange(port, channel)` for USB (WebHID / RN HID — a
+   `LedgerHidPort` that writes and reads 64-byte reports) or `await ledgerBleExchange(port)` for
+   Bluetooth (Nano X, Stax, Flex), then `ledgerIo(apdu, signal)` turns either into the `DeviceIo`
+   every `hardware(wallet)` call takes. Ledger has no secure channel: whatever carries the frames
+   can read them, so prefer a transport the host itself controls and tell the user that the
+   device screen is what they must check.
+6. **Which Ledger app must be open.** `pair` needs the **Bitcoin** app (it is the only one that
+   reveals the master fingerprint). `accounts` serves one chain family per call with that
+   family's app open (Bitcoin, Ethereum, Tron, Solana); `sign` and `verifyAddress` need the
+   request's app. A wrong or closed app is `device-app-closed`; ask the user to open the named
+   app and retry.
+7. **Ledger device settings.** A request the device can only blind-sign (EVM calldata, EIP-712, a
+   Solana instruction the app does not decode, a TRON custom contract call, memo, personal
+   message or TIP-712) fails `blind-signing-disabled` until the user enables the corresponding
+   setting in that Ledger app (Ethereum/Solana "Blind signing"; Tron "Custom contracts", "Allow
+   data", "Sign by hash").
+8. **Unsupported on Ledger:** EIP-7702, raw (non off-chain-format) Solana messages, BIP-322
+   message signing, PSBTs that sign inputs of more than one address type, and Bitcoin test
+   networks — `unsupported` before any prompt.
 
 ## 25. Approvals inventory and revocation
 

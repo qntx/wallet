@@ -564,7 +564,7 @@ describe("keystone key-derivation answer", () => {
 
 describe("hardware-wallet record id binding", () => {
   it("a header that does not name its record id is integrity", () => {
-    const module = createSignersModule({ keystone: KEYSTONE_DRIVER });
+    const module = createSignersModule({ keystone: KEYSTONE_DRIVER, ledger: KEYSTONE_DRIVER });
     const record = {
       kind: "hardware-wallet",
       id: "deadbeefdeadbeef",

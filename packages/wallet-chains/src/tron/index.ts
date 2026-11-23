@@ -48,6 +48,7 @@ export {
   tronTypedDataBase58,
   tronTypedDataDigest,
   tronTypedDataFromArgs,
+  tronTypedDataHashes,
   tronTypedDataLeaf,
   tronTypedDataToEvm,
 } from "./typed-data.ts";

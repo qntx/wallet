@@ -23,9 +23,7 @@ import type {
   ChainSignResult,
 } from "../protocol/chains.ts";
 import type {
-  DeviceDisplay,
-  DeviceRequest,
-  DeviceResponse,
+  DeviceIo,
   HardwareDevice,
   HardwareOperation,
   HardwareResult,
@@ -37,6 +35,7 @@ import type { VerifyFactor, Wallet, WalletInfo } from "../types.ts";
 
 export type {
   DeviceDisplay,
+  DeviceIo,
   DeviceRequest,
   DeviceResponse,
   HardwareDevice,
@@ -46,19 +45,8 @@ export type {
   QrPayload,
 } from "../protocol/hardware.ts";
 
-/** The host transport for one device operation. */
-export type DeviceIo = {
-  /**
-   * Carries one kernel-produced exchange: show `request.show` / send `request.data`, then resolve
-   * with what the device answered. Rejecting aborts the operation.
-   */
-  readonly exchange: (
-    request: DeviceRequest,
-    context: { readonly device: HardwareDevice; readonly display?: DeviceDisplay },
-  ) => Promise<DeviceResponse>;
-  /** Aborted before or while waiting → the operation is cancelled and the call rejects `cancelled`. */
-  readonly signal?: AbortSignal;
-};
+export { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "./ledger.ts";
+export type { LedgerBlePort, LedgerHidPort } from "./ledger.ts";
 
 export type HardwareApi = {
   /** Pair a device from its sync answer; resolves with the new hardware wallet. */

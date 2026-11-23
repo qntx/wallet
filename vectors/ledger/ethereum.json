@@ -1,0 +1,1063 @@
+{
+  "app": "ethereum",
+  "appVersion": "1.24.0",
+  "appCommit": "936b61b0ccb7052fda1b1ac2596e38db6b1b1614",
+  "speculos": "ghcr.io/ledgerhq/speculos@sha256:56c7ec84c903147dac28e68706d3241218a3d9beb9562dd4a8c02947b2a24f47",
+  "seed": "glory promote mansion idle axis finger extra february uncover one trip resource lawn turtle enact monster seven myth punch hobby comfort wild raise skin",
+  "cases": [
+    {
+      "name": "app-and-version",
+      "call": {
+        "fn": "device"
+      },
+      "commands": [
+        {
+          "apdu": "b001000000",
+          "response": "0108457468657265756d06312e32342e3001009000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "name": "Ethereum",
+        "version": "1.24.0",
+        "flags": "00"
+      }
+    },
+    {
+      "name": "address",
+      "call": {
+        "fn": "ethAddress",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "display": false
+      },
+      "commands": [
+        {
+          "apdu": "e002000015058000002c8000003c800000000000000000000000",
+          "response": "4104ef5b152e3f15eb0c50c9916161c2309e54bd87b9adce722d69716bcdef85f547678e15ab40a78919c7284e67a17ee9a96e8b9886b60f767d93023bac8dbc16e428446164373739313044624446644537363466433231464344344537344437316242414341364438449000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "publicKey": "02ef5b152e3f15eb0c50c9916161c2309e54bd87b9adce722d69716bcdef85f547",
+        "address": "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D"
+      }
+    },
+    {
+      "name": "address-display",
+      "call": {
+        "fn": "ethAddress",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "display": true
+      },
+      "commands": [
+        {
+          "apdu": "e002010015058000002c8000003c800000000000000000000000",
+          "response": "4104ef5b152e3f15eb0c50c9916161c2309e54bd87b9adce722d69716bcdef85f547678e15ab40a78919c7284e67a17ee9a96e8b9886b60f767d93023bac8dbc16e428446164373739313044624446644537363466433231464344344537344437316242414341364438449000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Verify Ethereum address",
+        "Address 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Confirm"
+      ],
+      "result": {
+        "publicKey": "02ef5b152e3f15eb0c50c9916161c2309e54bd87b9adce722d69716bcdef85f547",
+        "address": "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D"
+      }
+    },
+    {
+      "name": "tx-legacy",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "eb80847735940082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae880de0b6b3a764000080018080"
+      },
+      "commands": [
+        {
+          "apdu": "e004000041058000002c8000003c800000000000000000000000eb80847735940082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae880de0b6b3a764000080018080",
+          "response": "254a43ce99a92eab062bda5152c7276d599c87340618992f8f9fbdd4e470d25434199ce9385b12058483a51b753692aac138df14884a2c03cd90dc8408ff3e53359000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Review transaction",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Amount 1 ETH",
+        "To 0xde0B295669a9FD93 d5F28D9Ec85E40f4cb 697BAe",
+        "Max fees 0.000042 ETH",
+        "Sign transaction"
+      ],
+      "result": "4a43ce99a92eab062bda5152c7276d599c87340618992f8f9fbdd4e470d25434199ce9385b12058483a51b753692aac138df14884a2c03cd90dc8408ff3e5335"
+    },
+    {
+      "name": "tx-legacy-chunked",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "f9010580847735940082ea6094de0b295669a9fd93d5f28d9ec85e40f4cb697bae01b8e1ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab018080"
+      },
+      "commands": [
+        {
+          "apdu": "e0040000ff058000002c8000003c800000000000000000000000f9010580847735940082ea6094de0b295669a9fd93d5f28d9ec85e40f4cb697bae01b8e1abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+          "response": "9000"
+        },
+        {
+          "apdu": "e00480001eababababababababababababababababababababababababababab018080",
+          "response": "263909d82a54b56be6dd52613fe57f0b3900a4188e016c682433f780a610d443b259d79b9e988780f9c2f532d3a1f1687ceda50bd538281b1f0b982fcc7d2619719000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Blind signing ahead To accept risk, press both buttons",
+        "Review transaction",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Amount 0.00000000000000000 1 ETH",
+        "To 0xde0B295669a9FD93 d5F28D9Ec85E40f4cb 697BAe",
+        "Max fees 0.00012 ETH",
+        "Tx hash (1/2) 0xac392d90cc456635 4dbfa9995ec9566c4e 1911e803cd09ce4e40",
+        "Tx hash (2/2) eb2cbc795f25",
+        "Accept risk and sign transaction"
+      ],
+      "result": "3909d82a54b56be6dd52613fe57f0b3900a4188e016c682433f780a610d443b259d79b9e988780f9c2f532d3a1f1687ceda50bd538281b1f0b982fcc7d261971"
+    },
+    {
+      "name": "tx-eip2930",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "01f85b010184b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0280f838f794de0b295669a9fd93d5f28d9ec85e40f4cb697baee1a00000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "commands": [
+        {
+          "apdu": "e004000073058000002c8000003c80000000000000000000000001f85b010184b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0280f838f794de0b295669a9fd93d5f28d9ec85e40f4cb697baee1a00000000000000000000000000000000000000000000000000000000000000000",
+          "response": "0015facc47d70bc3c48ef5d2ecd6a415bc4c249c718dfcede5a61b5e66cd455e0e122df346377f01d3f84a63b0da841f894550eb6ba1811737b5bf8f2c31b447e19000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Review transaction",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Amount 0.00000000000000000 2 ETH",
+        "To 0xde0B295669a9FD93 d5F28D9Ec85E40f4cb 697BAe",
+        "Max fees 0.000063 ETH",
+        "Sign transaction"
+      ],
+      "result": "15facc47d70bc3c48ef5d2ecd6a415bc4c249c718dfcede5a61b5e66cd455e0e122df346377f01d3f84a63b0da841f894550eb6ba1811737b5bf8f2c31b447e1"
+    },
+    {
+      "name": "tx-eip1559",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "02e70101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0280c0"
+      },
+      "commands": [
+        {
+          "apdu": "e00400003e058000002c8000003c80000000000000000000000002e70101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0280c0",
+          "response": "00892715b074c4a2e565ca4445e8bb5f748b61407fef04c00af4301d61feee062e0a65d4a3bc55fe6fc246cf49ed4a76413bde0064dab155436abd6954adc8706d9000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Review transaction",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Amount 0.00000000000000000 2 ETH",
+        "To 0xde0B295669a9FD93 d5F28D9Ec85E40f4cb 697BAe",
+        "Max fees 0.000063 ETH",
+        "Sign transaction"
+      ],
+      "result": "892715b074c4a2e565ca4445e8bb5f748b61407fef04c00af4301d61feee062e0a65d4a3bc55fe6fc246cf49ed4a76413bde0064dab155436abd6954adc8706d"
+    },
+    {
+      "name": "tx-eip1559-calldata-blind-off",
+      "setting": "Blind signing=off",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "02ed0101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0286600162000760c0"
+      },
+      "commands": [
+        {
+          "apdu": "e004000044058000002c8000003c80000000000000000000000002ed0101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0286600162000760c0",
+          "response": "6a80"
+        }
+      ],
+      "screens": [],
+      "error": {
+        "code": "device-fault",
+        "sw": 27264
+      }
+    },
+    {
+      "name": "tx-eip1559-calldata-blind-on",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "02ed0101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0286600162000760c0"
+      },
+      "commands": [
+        {
+          "apdu": "e004000044058000002c8000003c80000000000000000000000002ed0101843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae0286600162000760c0",
+          "response": "01f753b3f9ae7cba1cfc9dca62f9e0dd25ca4787d520d3c4d2dad75d2383819b9442e5eb56fb23466d57fe29565c5ab90e536c2891012a04531222bc70374bfc709000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Blind signing ahead To accept risk, press both buttons",
+        "Review transaction",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Amount 0.00000000000000000 2 ETH",
+        "To 0xde0B295669a9FD93 d5F28D9Ec85E40f4cb 697BAe",
+        "Max fees 0.000063 ETH",
+        "Tx hash (1/2) 0x1833f9921e7c9b74 0be336f477b30307ef abdfbf032724789822",
+        "Tx hash (2/2) 92f59aa19616",
+        "Accept risk and sign transaction"
+      ],
+      "result": "f753b3f9ae7cba1cfc9dca62f9e0dd25ca4787d520d3c4d2dad75d2383819b9442e5eb56fb23466d57fe29565c5ab90e536c2891012a04531222bc70374bfc70"
+    },
+    {
+      "name": "tx-eip7702",
+      "call": {
+        "fn": "ethSignTransaction",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "unsigned": "04f8850180843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae8080c0f85cf85a01944cd241e8d1510e30b2076397afc7508ae59c66c98080a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "commands": [
+        {
+          "apdu": "e00400009d058000002c8000003c80000000000000000000000004f8850180843b9aca0084b2d05e0082520894de0b295669a9fd93d5f28d9ec85e40f4cb697bae8080c0f85cf85a01944cd241e8d1510e30b2076397afc7508ae59c66c98080a01111111111111111111111111111111111111111111111111111111111111111a02222222222222222222222222222222222222222222222222222222222222222",
+          "response": "6501"
+        }
+      ],
+      "screens": [],
+      "error": {
+        "code": "device-fault",
+        "sw": 25857
+      }
+    },
+    {
+      "name": "personal-short",
+      "call": {
+        "fn": "ethSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "68656c6c6f20776f726c64"
+      },
+      "commands": [
+        {
+          "apdu": "e008000024058000002c8000003c8000000000000000000000000000000b68656c6c6f20776f726c64",
+          "response": "1b4e5e37d0553f6de1ba096f1932a3d66b2af9076a019840b3b83d8675ad42589e4c29d4d1ef8afe6f5d8d61e496fea346a049f7938354e1a98e46ad1d5320825f9000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Review message",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Message hello world",
+        "Sign message"
+      ],
+      "result": "4e5e37d0553f6de1ba096f1932a3d66b2af9076a019840b3b83d8675ad42589e4c29d4d1ef8afe6f5d8d61e496fea346a049f7938354e1a98e46ad1d5320825f"
+    },
+    {
+      "name": "personal-long",
+      "call": {
+        "fn": "ethSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b"
+      },
+      "commands": [
+        {
+          "apdu": "e0080000ff058000002c8000003c8000000000000000000000000000012c000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5",
+          "response": "9000"
+        },
+        {
+          "apdu": "e008800046e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b",
+          "response": "1bae849070211eae76653e32f715f3e7a050098d45c26aca2616cd2369de39450b48d02fc397eb30bfc5c9cc81607b19ec208804e51be208b36154ef71d2cb6dac9000"
+        }
+      ],
+      "screens": [
+        "Ethereum app is ready",
+        "Review message",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Messa...x) (1/12) 0x0001020304050607 08090a0b0c0d0e0f101 112131415161718191",
+        "Messa...x) (2/12) a1b1c1d1e1f20212223 2425262728292a2b2c 2d2e2f303132333435",
+        "Messa...x) (3/12) 363738393a3b3c3d3e 3f40414243444546 4748494a4b4c4d4e",
+        "Messa...x) (4/12) 4f5051525354555657 58595a5b5c5d5e5f606 162636465666768696",
+        "Messa...x) (5/12) a6b6c6d6e6f70717273 7475767778797a7b7c 7d7e7f808182838485",
+        "Messa...x) (6/12) 868788898a8b8c8d8e 8f9091929394959697 98999a9b9c9d9e9fa0a",
+        "Messa...x) (7/12) 1a2a3a4a5a6a7a8a9a aabacadaeafb0b1b2b 3b4b5b6b7b8b9babb",
+        "Messa...x) (8/12) bcbdbebfc0c1c2c3c4c 5c6c7c8c9cacbcccdcec fd0d1d2d3d4d5d6d7",
+        "Messa...x) (9/12) d8d9dadbdcdddedfe 0e1e2e3e4e5e6e7e8e 9eaebecedeeeff0f1f2",
+        "Messa...) (10/12) f3f4f5f6f7f8f9fafbfc fdfeff0001020304050 60708090a0b0c0d0e0f",
+        "Messa...) (11/12) 101112131415161718 191a1b1c1d1e1f20212 2232425262728292a2",
+        "Messa...) (12/12) b",
+        "Sign message"
+      ],
+      "result": "ae849070211eae76653e32f715f3e7a050098d45c26aca2616cd2369de39450b48d02fc397eb30bfc5c9cc81607b19ec208804e51be208b36154ef71d2cb6dac"
+    },
+    {
+      "name": "eip712-mail",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "ethSignTypedData",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Person": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "wallet",
+                "type": "address"
+              }
+            ],
+            "Mail": [
+              {
+                "name": "from",
+                "type": "Person"
+              },
+              {
+                "name": "to",
+                "type": "Person"
+              },
+              {
+                "name": "contents",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Mail",
+          "domain": {
+            "name": "Ether Mail",
+            "version": "1",
+            "chainId": 1,
+            "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+          },
+          "message": {
+            "from": {
+              "name": "Cow",
+              "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+            },
+            "to": {
+              "name": "Bob",
+              "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+            },
+            "contents": "Hello, Bob!"
+          }
+        }
+      },
+      "commands": [
+        {
+          "apdu": "e01a00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e616d65",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff09050776657273696f6e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0a422007636861696e4964",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff130311766572696679696e67436f6e7472616374",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a0000044d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0d0006506572736f6e0466726f6d",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0b0006506572736f6e02746f",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0a0508636f6e74656e7473",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a000006506572736f6e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e616d65",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff08030677616c6c6574",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff0c000a4574686572204d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000131",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000101",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014cccccccccccccccccccccccccccccccccccccccc",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c0000044d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff050003436f77",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014cd2a3d9f938e13cd947ec05abc7fe734df8dd826",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff050003426f62",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff0d000b48656c6c6f2c20426f6221",
+          "response": "9000"
+        },
+        {
+          "apdu": "e00c000115058000002c8000003c800000000000000000000000",
+          "response": "1cc3bd8d724e3b161667f5d0fd367e104bb2358959163dca6ff8f26fab64e1acaa5f69c0357ac1c748d397675a640107415483725faff5bc121e04bafae1439ea99000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Blind signing ahead To accept risk, press both buttons",
+        "Review typed message",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "name Ether Mail",
+        "version 1",
+        "chainId 1",
+        "verifyingContract 0xCcCCccccCCCCcCCC CCCcCcCccCcCCCcCcc cccccC",
+        "Message hash (1/2) 0xC52C0EE5D842644 71806290A3F2C4CECF C5490626BF912D01F2",
+        "Message hash (2/2) 40D7A274B371E",
+        "Sign message"
+      ],
+      "result": "c3bd8d724e3b161667f5d0fd367e104bb2358959163dca6ff8f26fab64e1acaa5f69c0357ac1c748d397675a640107415483725faff5bc121e04bafae1439ea9"
+    },
+    {
+      "name": "eip712-complex",
+      "setting": "Blind signing=on",
+      "call": {
+        "fn": "ethSignTypedData",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Item": [
+              {
+                "name": "id",
+                "type": "uint256"
+              },
+              {
+                "name": "delta",
+                "type": "int256"
+              },
+              {
+                "name": "flag",
+                "type": "bool"
+              },
+              {
+                "name": "key",
+                "type": "bytes32"
+              }
+            ],
+            "Order": [
+              {
+                "name": "items",
+                "type": "Item[]"
+              },
+              {
+                "name": "blob",
+                "type": "bytes"
+              },
+              {
+                "name": "note",
+                "type": "string"
+              },
+              {
+                "name": "owner",
+                "type": "address"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Complex",
+            "version": "1",
+            "chainId": 1,
+            "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+          },
+          "message": {
+            "items": [
+              {
+                "id": "7",
+                "delta": "-42",
+                "flag": true,
+                "key": "0x1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              {
+                "id": "8",
+                "delta": "-1",
+                "flag": false,
+                "key": "0x2222222222222222222222222222222222222222222222222222222222222222"
+              }
+            ],
+            "blob": "0xabababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+            "note": "nested array of structs plus long bytes",
+            "owner": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+          }
+        }
+      },
+      "commands": [
+        {
+          "apdu": "e01a00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e616d65",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff09050776657273696f6e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0a422007636861696e4964",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff130311766572696679696e67436f6e7472616374",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a0000044974656d",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff054220026964",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0841200564656c7461",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff060404666c6167",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff064620036b6579",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a0000054f72646572",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0e80044974656d0100056974656d73",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff060704626c6f62",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e6f7465",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0703056f776e6572",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff090007436f6d706c6578",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000131",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000101",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014cccccccccccccccccccccccccccccccccccccccc",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c0000054f72646572",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c000f0102",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000107",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff220020ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd6",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000101",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff2200201111111111111111111111111111111111111111111111111111111111111111",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000108",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff220020ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000100",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff2200202222222222222222222222222222222222222222222222222222222222222222",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c01ffff012cababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff2fababababababababababababababababababababababababababababababababababababababababababababababab",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff2900276e6573746564206172726179206f66207374727563747320706c7573206c6f6e67206279746573",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "response": "9000"
+        },
+        {
+          "apdu": "e00c000115058000002c8000003c800000000000000000000000",
+          "response": "1cc45a2b8d92525d4b930e3c74195e0a82a771bcd6063f573be129ebc4c268cf397ad73f70163806169316da28ac44fc5354931a1a52ecd72091159d7526af18bb9000"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Blind signing ahead To accept risk, press both buttons",
+        "Review typed message",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "name Complex",
+        "version 1",
+        "chainId 1",
+        "verifyingContract 0xCcCCccccCCCCcCCC CCCcCcCccCcCCCcCcc cccccC",
+        "Message hash (1/2) 0x748E4A30E64D46C F4C9E878458BC51A8 0026C4325AC72A32E2",
+        "Message hash (2/2) D085CA1908EA7C",
+        "Sign message"
+      ],
+      "result": "c45a2b8d92525d4b930e3c74195e0a82a771bcd6063f573be129ebc4c268cf397ad73f70163806169316da28ac44fc5354931a1a52ecd72091159d7526af18bb"
+    },
+    {
+      "name": "eip712-blind-off",
+      "setting": "Blind signing=off",
+      "call": {
+        "fn": "ethSignTypedData",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Person": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "wallet",
+                "type": "address"
+              }
+            ],
+            "Mail": [
+              {
+                "name": "from",
+                "type": "Person"
+              },
+              {
+                "name": "to",
+                "type": "Person"
+              },
+              {
+                "name": "contents",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Mail",
+          "domain": {
+            "name": "Ether Mail",
+            "version": "1",
+            "chainId": 1,
+            "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+          },
+          "message": {
+            "from": {
+              "name": "Cow",
+              "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+            },
+            "to": {
+              "name": "Bob",
+              "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+            },
+            "contents": "Hello, Bob!"
+          }
+        }
+      },
+      "commands": [
+        {
+          "apdu": "e01a00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e616d65",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff09050776657273696f6e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0a422007636861696e4964",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff130311766572696679696e67436f6e7472616374",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a0000044d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0d0006506572736f6e0466726f6d",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0b0006506572736f6e02746f",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0a0508636f6e74656e7473",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a000006506572736f6e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff0605046e616d65",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01a00ff08030677616c6c6574",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00000c454950373132446f6d61696e",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff0c000a4574686572204d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000131",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff03000101",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014cccccccccccccccccccccccccccccccccccccccc",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c0000044d61696c",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff050003436f77",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014cd2a3d9f938e13cd947ec05abc7fe734df8dd826",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff050003426f62",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff160014bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "response": "9000"
+        },
+        {
+          "apdu": "e01c00ff0d000b48656c6c6f2c20426f6221",
+          "response": "9000"
+        },
+        {
+          "apdu": "e00c000115058000002c8000003c800000000000000000000000",
+          "response": "6a80"
+        }
+      ],
+      "screens": [],
+      "error": {
+        "code": "device-fault",
+        "sw": 27264
+      }
+    },
+    {
+      "name": "reject-personal",
+      "setting": "Blind signing=off",
+      "call": {
+        "fn": "ethSignPersonalMessage",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "message": "646f206e6f74207369676e"
+      },
+      "commands": [
+        {
+          "apdu": "e008000024058000002c8000003c8000000000000000000000000000000b646f206e6f74207369676e",
+          "response": "6985"
+        }
+      ],
+      "screens": [
+        "App settings",
+        "Review message",
+        "From 0xDad77910DbDFdE7 64fC21FCD4E74D71b BACA6D8D",
+        "Message do not sign",
+        "Sign message",
+        "Reject message"
+      ],
+      "error": {
+        "code": "user-rejected",
+        "sw": 27013
+      }
+    },
+    {
+      "name": "configuration",
+      "call": {
+        "fn": "ethConfiguration"
+      },
+      "commands": [
+        {
+          "apdu": "e006000000",
+          "response": "020118009000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "version": "1.24.0",
+        "blindSigning": false
+      }
+    },
+    {
+      "name": "public-node",
+      "call": {
+        "fn": "ethPublicNode",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648
+        ]
+      },
+      "commands": [
+        {
+          "apdu": "e00200010d038000002c8000003c80000000",
+          "response": "41042b0d4af3a89c8d1ba39d1d0ce581f5e2279556af494095eeb501105e4eae7dbb54fc9725950e059905eebbf16e4be975903e7a528ca05599fbbdeb6c087037f52837343665333134633165634241336646653535343943643136373438323065423939346133613933c72d8fa85d6bee4f6d5b9d6d4cb53545084af4d425a4ad75e7d1d02db90e0cb09000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "publicKey": "032b0d4af3a89c8d1ba39d1d0ce581f5e2279556af494095eeb501105e4eae7dbb",
+        "chainCode": "c72d8fa85d6bee4f6d5b9d6d4cb53545084af4d425a4ad75e7d1d02db90e0cb0"
+      }
+    }
+  ]
+}

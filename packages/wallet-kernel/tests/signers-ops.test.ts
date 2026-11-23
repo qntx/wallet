@@ -106,7 +106,7 @@ const boot = async (
 ): Promise<Boot> => {
   const device = fakeDevice(SEED, deviceOpts);
   const h = createHarness({
-    drivers: { keystone: device.driver },
+    drivers: { keystone: device.driver, ledger: device.driver },
     ...harnessOpts,
   });
   await h.settle();

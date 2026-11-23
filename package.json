@@ -17,6 +17,8 @@
   "scripts": {
     "connect:provider": "bun scripts/build-provider.ts",
     "lint": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp check && bun scripts/check-version.ts && bun scripts/check-migration-guide.ts && bun scripts/check-cycles.ts && bun scripts/check-boundaries.ts && bun scripts/check-bundles.ts && bun scripts/build-provider.ts --check && bun scripts/check-lint-boundaries.ts && bun scripts/check-kernel-budget.ts",
+    "ledger:apps": "bun scripts/ledger/build-apps.ts",
+    "ledger:speculos": "bun scripts/ledger/speculos.ts",
     "typecheck": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r typecheck && tsc --noEmit && tsc --noEmit -p tests/migration",
     "test": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test",
     "test:coverage": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test:coverage",
