@@ -215,7 +215,8 @@ export function createFakeDrive(options?: { pageSize?: number }): FakeDrive {
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
       );
       const method = init?.method ?? "GET";
-      const headers = new Headers(init?.headers);
+      // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- undici HeadersInit differs in the wallet-native tsconfig
+      const headers = new Headers(init?.headers as ConstructorParameters<typeof Headers>[0]);
       const body = typeof init?.body === "string" ? init.body : undefined;
       requests.push({
         method,
