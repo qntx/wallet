@@ -31,9 +31,13 @@ import {
   getApproveInstruction,
   getCreateAssociatedTokenIdempotentInstruction,
   getCreateAssociatedTokenInstruction,
+  getRevokeInstruction,
   getTransferCheckedInstruction,
 } from "@solana-program/token";
-import { getTransferCheckedInstruction as getTransferCheckedInstruction2022 } from "@solana-program/token-2022";
+import {
+  getRevokeInstruction as getRevokeInstruction2022,
+  getTransferCheckedInstruction as getTransferCheckedInstruction2022,
+} from "@solana-program/token-2022";
 import { address, getAddressDecoder, getAddressEncoder } from "@solana/addresses";
 import {
   AccountRole,
@@ -525,6 +529,47 @@ describe("verifiability + decode", () => {
       change: "set",
       unlimited: false,
     });
+  });
+
+  it.each([
+    ["Token", getRevokeInstruction({ source: SRC_TOKEN, owner: feePayerSigner })],
+    ["Token-2022", getRevokeInstruction2022({ source: SRC_TOKEN, owner: feePayerSigner })],
+  ])("%s Revoke → full, a delegate-revoked naming the token account", (_name, revoke) => {
+    const intent = decodeSolana(req(compile([revoke])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("full");
+    expect(intent.outflows).toStrictEqual([]);
+    expect(intent.approvals).toStrictEqual([
+      { kind: "delegate-revoked", account: SRC_TOKEN, verified: false },
+    ]);
+  });
+
+  it("a Revoke's token account resolves through a lookup table", () => {
+    const revoke = getRevokeInstruction({ source: SRC_TOKEN, owner: feePayerSigner });
+    const message = compile([revoke], 0, { [LOOKUP_TABLE]: [SRC_TOKEN] });
+    const intent = decodeSolana(
+      {
+        ...req(message),
+        lookupTables: [{ address: LOOKUP_TABLE, addresses: [SRC_TOKEN] }],
+      } as never,
+      FEE_PAYER,
+    );
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.approvals).toStrictEqual([
+      { kind: "delegate-revoked", account: SRC_TOKEN, verified: false },
+    ]);
+  });
+
+  it("two Revokes in one transaction each name their token account", () => {
+    const revokes = [
+      getRevokeInstruction({ source: SRC_TOKEN, owner: feePayerSigner }),
+      getRevokeInstruction2022({ source: DST_TOKEN, owner: feePayerSigner }),
+    ];
+    const intent = decodeSolana(req(compile(revokes)) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("full");
+    expect(intent.approvals).toStrictEqual([
+      { kind: "delegate-revoked", account: SRC_TOKEN, verified: false },
+      { kind: "delegate-revoked", account: DST_TOKEN, verified: false },
+    ]);
   });
 
   it("ATA create and createIdempotent → full", () => {

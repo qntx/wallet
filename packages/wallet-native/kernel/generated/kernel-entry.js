@@ -19092,7 +19092,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-DJ9zpcH8.mjs
+	// packages/wallet-chains/dist/token-call-BJAC7Ngb.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var MAX_UINT256 = 2n ** 256n - 1n;
@@ -19411,7 +19411,7 @@
 	var SHIM_INIT_CODE_HASH = "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f";
 	/** The native-token sentinel 0x uses in `exec`, and the bare zero address (same meaning). */
 	var NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-	var ZERO_ADDRESS$3 = "0x0000000000000000000000000000000000000000";
+	var ZERO_ADDRESS$1$2 = "0x0000000000000000000000000000000000000000";
 	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
 	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
 	var last20 = (hex) => `0x${hex.slice(-40)}`;
@@ -19497,7 +19497,7 @@
 			return;
 		}
 	};
-	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$3;
+	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$1$2;
 	var tokenAmount$3 = (token, amount, chainId, table) => {
 		const known = lookupEvmToken(table, chainId, token);
 		return _objectSpread2({
@@ -19853,6 +19853,7 @@
 		},
 		verified: false
 	}];
+	var ZERO_ADDRESS$3 = "0x0000000000000000000000000000000000000000";
 	/**
 	* The token-standard selectors, in the same order the EVM decoder tries them: transfer,
 	* approve/increaseAllowance/decreaseAllowance, setApprovalForAll, transferFrom, the two ERC-721
@@ -19875,12 +19876,27 @@
 			[ERC20_DECREASE, "decrease"]
 		]) {
 			const args = tryCall$6(fn, data);
-			if (args !== void 0) return {
-				summary: "approve",
-				outflows: [],
-				approvals: [allowanceChange(token, argAddress$4(args, 0), argUint$4(args, 1), change, MAX_UINT256, chainId, table)],
-				verifiability: "partial"
-			};
+			if (args !== void 0) {
+				const spender = argAddress$4(args, 0);
+				const amount = argUint$4(args, 1);
+				if (change === "set" && spender === ZERO_ADDRESS$3) return {
+					summary: "approve",
+					outflows: [],
+					approvals: [{
+						kind: "approval-cleared",
+						asset: token,
+						value: amount.toString(10),
+						verified: false
+					}],
+					verifiability: "partial"
+				};
+				return {
+					summary: "approve",
+					outflows: [],
+					approvals: [allowanceChange(token, spender, amount, change, MAX_UINT256, chainId, table)],
+					verifiability: "partial"
+				};
+			}
 		}
 		const operatorArgs = tryCall$6(SET_APPROVAL_FOR_ALL, data);
 		if (operatorArgs !== void 0) return {
@@ -30610,7 +30626,7 @@ zoo`.split("\n"));
 			return { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.token || program === PROGRAM_IDS.token2022) {
-			var _ix$accountIndices$3, _ix$accountIndices$4, _ix$accountIndices$5, _ix$accountIndices$6, _ix$accountIndices$7, _ix$accountIndices$8, _ix$accountIndices$9, _ix$accountIndices$10, _ix$accountIndices$11, _ix$accountIndices$12;
+			var _ix$accountIndices$3, _ix$accountIndices$4, _ix$accountIndices$5, _ix$accountIndices$6, _ix$accountIndices$7, _ix$accountIndices$8, _ix$accountIndices$9, _ix$accountIndices$10, _ix$accountIndices$11, _ix$accountIndices$12, _ix$accountIndices$13;
 			if (data.length === 10 && data[0] === 12) return {
 				kind: "token-transfer-checked",
 				amount: u64le$2(data, 1),
@@ -30638,7 +30654,10 @@ zoo`.split("\n"));
 			if (data.length === 1 && data[0] === 17) return { kind: "token-sync-native" };
 			if (data.length === 1 && data[0] === 9) return resolveAccountIndex(parsed, (_ix$accountIndices$12 = ix.accountIndices[1]) !== null && _ix$accountIndices$12 !== void 0 ? _ix$accountIndices$12 : 0, lookups) === signer ? { kind: "token-close-account" } : { kind: "other" };
 			if (data.length === 1 && data[0] === 1 && ix.accountIndices.length === 4) return { kind: "token-initialize-account" };
-			if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) return { kind: "token-revoke" };
+			if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) return {
+				kind: "token-revoke",
+				tokenAccount: resolveAccountIndex(parsed, (_ix$accountIndices$13 = ix.accountIndices[0]) !== null && _ix$accountIndices$13 !== void 0 ? _ix$accountIndices$13 : 0, lookups)
+			};
 			return { kind: "other" };
 		}
 		if (program === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") {
@@ -30931,6 +30950,11 @@ zoo`.split("\n"));
 					burn: true
 				});
 			}
+			if (call.kind === "token-revoke" && call.tokenAccount !== void 0) approvals.push({
+				kind: "delegate-revoked",
+				account: call.tokenAccount,
+				verified: false
+			});
 			if (call.kind === "token-approve") {
 				var _call$mint6, _call$to4, _call$mint7, _call$amount5;
 				const token = lookupSolanaToken(table, request.network, (_call$mint6 = call.mint) !== null && _call$mint6 !== void 0 ? _call$mint6 : "");
@@ -32973,7 +32997,7 @@ zoo`.split("\n"));
 		approvals: call.approvals.map((a) => a.kind === "allowance" ? _objectSpread2(_objectSpread2({}, a), {}, {
 			spender: tronAddressFromEvm(a.spender),
 			amount: _objectSpread2(_objectSpread2({}, a.amount), {}, { asset: tronAddressFromEvm(a.amount.asset) })
-		}) : _objectSpread2(_objectSpread2({}, a), {}, {
+		}) : a.kind === "approval-cleared" ? _objectSpread2(_objectSpread2({}, a), {}, { asset: tronAddressFromEvm(a.asset) }) : _objectSpread2(_objectSpread2({}, a), {}, {
 			asset: tronAddressFromEvm(a.asset),
 			spender: tronAddressFromEvm(a.spender)
 		}))
@@ -39281,7 +39305,9 @@ zoo`.split("\n"));
 		fiat24SessionTitle: "授权访问 Fiat24 账户",
 		fiat24SessionBearer: (date) => `对签名地址的 Fiat24 账户的持有人授权，有效期至 ${date}（UTC）`,
 		fiat24SessionPower: "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
-		fiat24SessionSigns: (message) => `签名消息：${message}`
+		fiat24SessionSigns: (message) => `签名消息：${message}`,
+		clearApproval: (asset, id) => `清除 ${asset} #${id} 的单个授权`,
+		delegateRevoked: (account) => `撤销代币账户 ${account} 的代理授权`
 	};
 	var en = {
 		titles: {
@@ -39516,7 +39542,9 @@ zoo`.split("\n"));
 		fiat24SessionTitle: "Allow Fiat24 account access",
 		fiat24SessionBearer: (date) => `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
 		fiat24SessionPower: "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
-		fiat24SessionSigns: (message) => `Signs: ${message}`
+		fiat24SessionSigns: (message) => `Signs: ${message}`,
+		clearApproval: (asset, id) => `Clear the approval on ${asset} #${id}`,
+		delegateRevoked: (account) => `Revoke the delegate of token account ${account}`
 	};
 	var CATALOGS$1 = {
 		"zh-Hans": zh,
@@ -39559,6 +39587,8 @@ zoo`.split("\n"));
 	function approvalLine(catalog, change) {
 		var _change$amount$symbol;
 		if (change.kind === "stake-authority") return catalog.stakeAuthority(change.account, catalog.stakeRole[change.role], change.authority);
+		if (change.kind === "approval-cleared") return catalog.clearApproval(change.asset, change.value);
+		if (change.kind === "delegate-revoked") return catalog.delegateRevoked(change.account);
 		if (change.kind === "operator") return change.approved ? catalog.operatorAllow(change.spender, change.asset) : catalog.operatorRevoke(change.spender, change.asset);
 		const name = (_change$amount$symbol = change.amount.symbol) !== null && _change$amount$symbol !== void 0 ? _change$amount$symbol : change.amount.asset;
 		let line;

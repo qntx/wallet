@@ -118,7 +118,7 @@ export function assessApprovals(
     } else if (change.kind === "stake-authority") {
       /* The decoder only emits this for a role handed to a key other than the signer. */
       found.set("stake-authority", { code: "stake-authority", level: "danger" });
-    } else if (change.change !== "decrease" && change.unlimited) {
+    } else if (change.kind === "allowance" && change.change !== "decrease" && change.unlimited) {
       found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
     }
   }
@@ -409,7 +409,8 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
     );
     for (const approval of inner.approvals ?? []) {
       /* A grantee takes authority over the signer's value — assessed like a recipient; a
-         revocation (a decrease, or an allowance set to zero) names nobody. */
+         revocation names nobody: a decrease, a zeroed allowance, a revoked operator or delegate,
+         a cleared approval. */
       if (approval.kind === "allowance") {
         if (
           approval.change !== "decrease" &&
@@ -421,7 +422,7 @@ export const intentRecipients = (intent: DisplayIntent): ReadonlyArray<string> =
         if (approval.approved) {
           recipients.push(approval.spender);
         }
-      } else {
+      } else if (approval.kind === "stake-authority") {
         recipients.push(approval.authority);
       }
     }

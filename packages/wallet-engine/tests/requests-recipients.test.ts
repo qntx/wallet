@@ -833,6 +833,8 @@ const APPROVAL_SLOTS = {
   allowance: "recipient",
   operator: "recipient",
   "stake-authority": "recipient",
+  "approval-cleared": "none",
+  "delegate-revoked": "none",
 } satisfies Record<ApprovalChange["kind"], Slot>;
 
 const MESSAGE_SLOTS = {
@@ -1448,6 +1450,17 @@ describe("every recipient slot is assessed", () => {
         asset: "0xnft",
         spender: EVM_LOOKALIKE,
         approved: false,
+        verified: false,
+      },
+      {
+        kind: "approval-cleared",
+        asset: EVM_LOOKALIKE,
+        value: "42",
+        verified: false,
+      },
+      {
+        kind: "delegate-revoked",
+        account: EVM_LOOKALIKE,
         verified: false,
       },
     ];

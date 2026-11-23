@@ -138,10 +138,12 @@ export type TokenCall = {
   readonly summary: "transfer" | "approve";
   readonly outflows: ReadonlyArray<AssetFlow>;
   readonly approvals: ReadonlyArray<
-    Extract<ApprovalChange, { readonly kind: "allowance" | "operator" }>
+    Extract<ApprovalChange, { readonly kind: "allowance" | "operator" | "approval-cleared" }>
   >;
   readonly verifiability: "full" | "partial";
 };
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /**
  * The token-standard selectors, in the same order the EVM decoder tries them: transfer,
@@ -177,20 +179,31 @@ export const decodeTokenCall = (
   ] as const) {
     const args = tryCall(fn, data);
     if (args !== undefined) {
+      const spender = argAddress(args, 0);
+      const amount = argUint(args, 1);
+      /* approve(0, v) names no spender: on an ERC-721 it clears token v's approval; on an ERC-20 it
+         only touches the zero address's allowance, which no key can spend — a revocation either
+         way. increaseAllowance/decreaseAllowance keep the allowance reading: they move a real
+         allowance and most tokens reject the zero address outright. */
+      if (change === "set" && spender === ZERO_ADDRESS) {
+        return {
+          summary: "approve",
+          outflows: [],
+          approvals: [
+            {
+              kind: "approval-cleared",
+              asset: token,
+              value: amount.toString(10),
+              verified: false,
+            },
+          ],
+          verifiability: "partial",
+        };
+      }
       return {
         summary: "approve",
         outflows: [],
-        approvals: [
-          allowanceChange(
-            token,
-            argAddress(args, 0),
-            argUint(args, 1),
-            change,
-            MAX_UINT256,
-            chainId,
-            table,
-          ),
-        ],
+        approvals: [allowanceChange(token, spender, amount, change, MAX_UINT256, chainId, table)],
         verifiability: "partial",
       };
     }
