@@ -16,7 +16,7 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 | `POST /v1/history/:caip2`        | EVM transfers in and out of `{address}` (body), newest first, `cursor` pages backwards, `truncated` marks a page that dropped transfers it could not fit; Alchemy Transfers; `404 unsupported` on served networks without it           |
 | `GET /v1/tokens/:caip2`          | The published token list for the network, ETag + `if-none-match`; `404 unsupported` when no configured source covers it, `503 unavailable` until the first build lands                                                                 |
 | `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                                                                      |
-| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                                                               |
+| `POST /v1/prices/:family`        | Spot price and 24 h change of up to 100 CAIP-19 assets of one chain family in one fiat currency; display-only (see "Prices")                                                                                                           |
 | `GET /v1/quotes/swap`            | EVM swap quote through 0x; `503 unavailable` without `ZEROX_API_KEY`                                                                                                                                                                   |
 | `GET /v1/quotes/swap/solana`     | Solana swap quote through Jupiter (keyless; `JUPITER_API_KEY` only sets the upstream header)                                                                                                                                           |
 | `GET /v1/quotes/bridge`          | Across bridge quote between two networks (keyless)                                                                                                                                                                                     |
@@ -108,7 +108,8 @@ foreground-refreshing once per minute, plus 10 fresh all-family cold starts per 
 from `packages/wallet-engine/tests/gateway-capacity.test.ts`): Alchemy 20 × 1,570 + 10 × 7,150 =
 102,900 CU/min ≤ the 480,000 CU/min budget; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
 4,000/min budget. CoinGecko and DefiLlama cold starts cost upstream calls only on a cold per-colo
-price cache (≈ 81 calls per colo per cache lifetime, well under the 400/min and 450/min budgets).
+price cache (≈ 85 calls per colo per cache lifetime — the native-coins call now runs once per
+family request, at most four — well under the 400/min and 450/min budgets).
 TRON is the known exception: a fresh wallet costs 3 calls, but a used wallet's history fetches
 `getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh — which exceeds the free-tier
 TronGrid/Tatum POLICY budgets (144/min each); raising them waits on the operator's keyed-QPS
@@ -116,14 +117,24 @@ confirmation and an engine-side history cache (outside this change).
 
 ## Prices
 
-`POST /v1/prices` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their canonical
-spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
+`POST /v1/prices/:family` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their
+canonical spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:0x<lowercase address>`,
 `solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing, unsupported }`: every
 asset is either priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt`
 in Unix ms), `missing` (no provider had a price now — a later request may) or `unsupported` (no
-price provider maps the asset — permanent, never asked upstream, never cached). The asset set describes a portfolio, so it travels in the body and the answer is
-`no-store`. Each upstream call its cache misses fan out to (one per CoinGecko token platform and one
-for the native coins, two for DefiLlama) is billed to the request's share of the source's account.
+price provider maps the asset — permanent, never asked upstream, never cached).
+
+Price requests are partitioned by chain family (`evm`, `solana`, `bitcoin`, `tron`): the engine
+sends one request per family scope, the route rejects a body naming another family's assets, and
+each request travels under that family's own client id — the engine's per-scope ids are
+unlinkable, so a cross-family portfolio never appears in one request and the asset set links no
+scopes beyond what each scope's own traffic already shows. What stays linkable is what all
+gateway traffic shares: the client IP and the timing of the per-family requests; hiding those
+needs an OHTTP-style relay, which the route layout does not preclude.
+
+The asset set describes a portfolio, so it travels in the body and the answer is `no-store`. Each
+upstream call a request's cache misses fans out to (one per CoinGecko token platform and one for
+the native coins, two for DefiLlama) is billed to the request's share of the source's account.
 
 Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
 client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then

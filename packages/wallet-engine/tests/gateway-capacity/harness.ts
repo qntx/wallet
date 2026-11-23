@@ -189,7 +189,7 @@ export const routeClass = (pathname: string): RouteClass => {
   if (pathname.startsWith("/v1/tokens/")) {
     return "tokens";
   }
-  if (pathname === "/v1/prices") {
+  if (pathname.startsWith("/v1/prices/")) {
     return "prices";
   }
   if (pathname.startsWith("/v1/quotes")) {
@@ -207,7 +207,7 @@ export const routeClass = (pathname: string): RouteClass => {
   return "other";
 };
 
-/** One `POST /v1/prices` request as measured — its assets, what the gateway cache answered. */
+/** One `POST /v1/prices/:family` request as measured — its assets, what the gateway cache answered. */
 export type PricesRead = {
   readonly assets: ReadonlyArray<string>;
   readonly currency: string;

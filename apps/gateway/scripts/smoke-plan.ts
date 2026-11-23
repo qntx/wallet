@@ -5,9 +5,11 @@ import {
   health,
   nativeAssetId,
   networkById,
-  prices,
+  priceAssetFamily,
+  pricesPath,
   pricesResponse,
 } from "@qntx/wallet-engine/gateway/contract";
+import type { PriceFamily } from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import type { GatewayNetwork } from "../src/types.ts";
@@ -101,27 +103,31 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   /* Prices are mainnet-only and independent of the served networks: both environments price the
      same assets. Each currency proves a different provider path — USD reaches the keyless fallback
      even without a CoinGecko key, EUR needs CoinGecko itself. */
-  const priceAssets = ["bip122:000000000019d6689c085ae165831e93", "eip155:1"].map((network) => {
+  const priceAssets = new Map<PriceFamily, string[]>();
+  for (const network of ["bip122:000000000019d6689c085ae165831e93", "eip155:1"]) {
     const id = nativeAssetId(network);
-    if (id === undefined) {
-      throw new Error(`${network} has no price asset`);
+    const family = id === undefined ? undefined : priceAssetFamily(id);
+    if (id === undefined || family === undefined) {
+      throw new Error(`${network} has no price asset or family`);
     }
-    return id;
-  });
+    priceAssets.set(family, [...(priceAssets.get(family) ?? []), id]);
+  }
   for (const currency of options.env === "production" ? ["usd", "eur"] : ["usd"]) {
-    await check(`prices ${currency}`, async () => {
-      const r = await post(prices.path, { currency, assets: priceAssets });
-      const body: unknown = await r.json();
-      if (!accepts(pricesResponse, body)) {
-        throw new Error(`status ${r.status}: ${JSON.stringify(body).slice(0, 120)}`);
-      }
-      const { missing } = body as { missing: string[] };
-      if (missing.length > 0) {
-        throw new Error(
-          `unpriced ${missing.join(",")} via ${String(r.headers.get("x-gateway-providers"))}`,
-        );
-      }
-    });
+    for (const [family, assets] of priceAssets) {
+      await check(`prices ${currency}/${family}`, async () => {
+        const r = await post(pricesPath(family), { currency, assets });
+        const body: unknown = await r.json();
+        if (!accepts(pricesResponse, body)) {
+          throw new Error(`status ${r.status}: ${JSON.stringify(body).slice(0, 120)}`);
+        }
+        const { missing } = body as { missing: string[] };
+        if (missing.length > 0) {
+          throw new Error(
+            `unpriced ${missing.join(",")} via ${String(r.headers.get("x-gateway-providers"))}`,
+          );
+        }
+      });
+    }
   }
   for (const { caip2, family } of plan) {
     if (family === "evm") {

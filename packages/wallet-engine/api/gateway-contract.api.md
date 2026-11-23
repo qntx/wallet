@@ -607,7 +607,24 @@ export const phishingListResponse: z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<
 }, z.core.$strip>], "kind">;
 
 // @public
+export const PRICE_FAMILIES: readonly ["evm", "solana", "bitcoin", "tron"];
+
+// @public
+export const priceAssetFamily: (asset: string) => PriceFamily | undefined;
+
+// @public
 export const priceAssetId: z.ZodMiniString<string>;
+
+// @public (undocumented)
+export type PriceFamily = (typeof PRICE_FAMILIES)[number];
+
+// @public (undocumented)
+export const priceFamily: z.ZodMiniEnum<{
+    bitcoin: "bitcoin";
+    evm: "evm";
+    solana: "solana";
+    tron: "tron";
+}>;
 
 // @public (undocumented)
 export type PriceQuote = z.infer<typeof priceQuote>;
@@ -659,6 +676,9 @@ export const prices: Endpoint<z.ZodMiniObject<{
     missing: z.ZodMiniArray<z.ZodMiniString<string>>;
     unsupported: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>>;
+
+// @public
+export const pricesPath: (family: PriceFamily) => string;
 
 // @public (undocumented)
 export type PricesRequest = z.infer<typeof pricesRequest>;

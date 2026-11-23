@@ -9,10 +9,12 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   PROVIDERS_HEADER,
   nativeAssetId,
-  prices,
+  priceAssetFamily,
+  pricesPath,
   pricesResponse,
   swapQuoteSolana,
 } from "@qntx/wallet-engine/gateway/contract";
+import type { PriceFamily } from "@qntx/wallet-engine/gateway/contract";
 
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
@@ -104,26 +106,45 @@ const upstream = fakeFetch({
   "https://api.jup.ag": () => Response.json(JUPITER_BUILD),
 });
 
-const requestPrices = async (currency: string): Promise<Response> =>
-  productionGateway({ fetch: upstream.fetch }).request(prices.path, {
-    ...post({ currency, assets: ASSETS }),
-    headers: headers({ "content-type": "application/json", ...at }),
-  });
+/** One request per family scope — the route never takes a cross-family asset set. */
+const requestPrices = async (currency: string): Promise<ReadonlyArray<Response>> => {
+  const byFamily = new Map<PriceFamily, string[]>();
+  for (const a of ASSETS) {
+    const family = priceAssetFamily(a);
+    if (family === undefined) {
+      throw new Error(`${a} has no price family`);
+    }
+    byFamily.set(family, [...(byFamily.get(family) ?? []), a]);
+  }
+  const gateway = productionGateway({ fetch: upstream.fetch });
+  return Promise.all(
+    [...byFamily].map(async ([family, assets]) =>
+      gateway.request(pricesPath(family), {
+        ...post({ currency, assets }),
+        headers: headers({ "content-type": "application/json", ...at }),
+      }),
+    ),
+  );
+};
 
 describe("one client prefix's share of the production accounts", () => {
   it("eur prices answer 200 through coingecko", async () => {
-    const res = await requestPrices("eur");
-    await expectContract(res, pricesResponse);
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toContain("coingecko");
+    for (const res of await requestPrices("eur")) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- contract check in order
+      await expectContract(res, pricesResponse);
+      expect(res.status).toBe(200);
+      expect(res.headers.get(PROVIDERS_HEADER)).toContain("coingecko");
+    }
     expect(upstream.callsTo(COINGECKO_API).length).toBeGreaterThan(0);
   });
 
   it("usd prices answer 200 through coingecko", async () => {
-    const res = await requestPrices("usd");
-    await expectContract(res, pricesResponse);
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toContain("coingecko");
+    for (const res of await requestPrices("usd")) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- contract check in order
+      await expectContract(res, pricesResponse);
+      expect(res.status).toBe(200);
+      expect(res.headers.get(PROVIDERS_HEADER)).toContain("coingecko");
+    }
     expect(upstream.callsTo(DEFILLAMA_API)).toHaveLength(0);
   });
 

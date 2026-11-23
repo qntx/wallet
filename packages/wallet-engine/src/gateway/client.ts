@@ -1,15 +1,20 @@
 import {
   CLIENT_ID_HEADER,
+  PRICE_FAMILIES,
   bridgeQuote,
   esploraGet,
   history,
   networkById,
+  parseWith,
+  priceFamily,
+  prices,
   rpc,
   swapQuote,
   swapQuoteSolana,
   tokenList,
   tron,
 } from "./contract/index.ts";
+import type { PriceFamily } from "./contract/index.ts";
 import type { GatewayConfig, GatewayScope } from "./session.ts";
 
 export { gatewaySession } from "./session.ts";
@@ -22,6 +27,21 @@ const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 const TRON_PREFIX = `${routePrefix(tron.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
+const PRICES_PREFIX = `${routePrefix(prices.path)}/`;
+
+/**
+ * The contract's price families must be exactly the session's non-service scopes — each scope has
+ * one client id, so this compile-time tie keeps the tables from drifting apart.
+ */
+const familiesAreScopes: ReadonlyArray<GatewayScope> = PRICE_FAMILIES;
+const scopesAreFamilies: Record<Exclude<GatewayScope, "service">, PriceFamily> = {
+  evm: "evm",
+  solana: "solana",
+  bitcoin: "bitcoin",
+  tron: "tron",
+};
+void familiesAreScopes;
+void scopesAreFamilies;
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -47,6 +67,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(TOKENS_PREFIX)) {
     return networkById(pathname.slice(TOKENS_PREFIX.length))?.family ?? "service";
+  }
+  if (pathname.startsWith(PRICES_PREFIX)) {
+    return parseWith(priceFamily, pathname.slice(PRICES_PREFIX.length)) ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";
