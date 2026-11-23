@@ -1,5 +1,9 @@
 /**
- * HID and BLE transport framing, ported from the vendor's implementation (Apache-2.0,
+ * The host half of the Ledger transport: APDU framing and the `DeviceIo` adapter. The kernel driver
+ * exchanges raw APDUs — one `{ kind: "message", data }` request per APDU — and all wire framing
+ * happens here, where the transport lives.
+ *
+ * HID and BLE framing is ported from the vendor's implementation (Apache-2.0,
  * refs/ledgerjs-npm/devices-8.4.4/src/hid-framing.ts and ble/{sendAPDU,receiveAPDU}.ts).
  *
  * HID: fixed 64-byte reports `channel(2, BE) ‖ tag 0x05 ‖ seq(2, BE) ‖ [len(2, BE) on frame 0] ‖
@@ -9,25 +13,28 @@
  *
  * Reassembly is a small state machine: channel/tag/sequence checked in order, the announced length
  * must be ≥ 2 (a response always carries a status word), data beyond the announced length is a
- * violation, and any frame after completion is a violation — all `transport`.
+ * violation, and any frame after completion is a violation — all `integrity`. Bad host arguments
+ * (an out-of-range channel, MTU or APDU size) are `invalid-input`.
  */
-import { input } from "./bytes.ts";
-import { LedgerError } from "./errors.ts";
+import type { DeviceRequest, DeviceResponse } from "../protocol/hardware.ts";
+import { WalletError } from "../types.ts";
+import type { DeviceIo } from "./index.ts";
 
 export const HID_REPORT_SIZE = 64;
 
 const APDU_TAG = 0x05;
 const MTU_TAG = 0x08;
 
-const transport = (message: string): LedgerError => new LedgerError("transport", message);
+const integrity = (message: string): WalletError => new WalletError("integrity", message);
+const input = (message: string): WalletError => new WalletError("invalid-input", message);
 
-/** `push` returns the complete response once; a push after completion is `transport`. */
+/** `push` returns the complete response once; a push after completion is `integrity`. */
 export type Assembler = {
   push: (frame: Uint8Array) => Uint8Array | undefined;
 };
 
 const checkApdu = (apdu: Uint8Array): void => {
-  // 5 header bytes + up to 255 data bytes (encodeCommand bounds).
+  // 5 header bytes + up to 255 data bytes.
   if (apdu.length < 5 || apdu.length > 260) {
     throw input("APDU is not 5..260 bytes");
   }
@@ -57,7 +64,7 @@ export function hidFrames(apdu: Uint8Array, channel: number): Uint8Array[] {
   return frames;
 }
 
-/** Reassembles one HID response; every violation is `transport`. */
+/** Reassembles one HID response; every violation is `integrity`. */
 export function hidAssembler(channel: number): Assembler {
   let sequence = 0;
   let announced = 0;
@@ -67,25 +74,25 @@ export function hidAssembler(channel: number): Assembler {
   return {
     push(frame: Uint8Array): Uint8Array | undefined {
       if (done) {
-        throw transport("frame received after the response completed");
+        throw integrity("frame received after the response completed");
       }
       if (frame.length !== HID_REPORT_SIZE) {
-        throw transport("HID frame is not 64 bytes");
+        throw integrity("HID frame is not 64 bytes");
       }
       const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
       if (view.getUint16(0) !== channel) {
-        throw transport("HID frame on the wrong channel");
+        throw integrity("HID frame on the wrong channel");
       }
       if (view.getUint8(2) !== APDU_TAG) {
-        throw transport("HID frame carries a foreign tag");
+        throw integrity("HID frame carries a foreign tag");
       }
       if (view.getUint16(3) !== sequence) {
-        throw transport("HID frame out of sequence");
+        throw integrity("HID frame out of sequence");
       }
       if (sequence === 0) {
         announced = view.getUint16(5);
         if (announced < 2) {
-          throw transport("announced response length is shorter than a status word");
+          throw integrity("announced response length is shorter than a status word");
         }
         data = new Uint8Array(announced);
         received = Math.min(announced, frame.length - 7);
@@ -110,11 +117,11 @@ export const BLE_MTU_REQUEST: Uint8Array = Uint8Array.of(0x08, 0x00, 0x00, 0x00,
 
 export function bleMtu(frame: Uint8Array): number {
   if (frame.length < 6 || frame[0] !== MTU_TAG) {
-    throw transport("not an MTU negotiation frame");
+    throw integrity("not an MTU negotiation frame");
   }
   const { 5: mtu } = frame;
   if (mtu === undefined || mtu < 6) {
-    throw transport("negotiated MTU is not usable");
+    throw integrity("negotiated MTU is not usable");
   }
   return mtu;
 }
@@ -143,7 +150,7 @@ export function bleFrames(apdu: Uint8Array, mtu: number): Uint8Array[] {
   return frames;
 }
 
-/** Reassembles one BLE response; every violation is `transport`. */
+/** Reassembles one BLE response; every violation is `integrity`. */
 export function bleAssembler(mtu: number): Assembler {
   if (!Number.isSafeInteger(mtu) || mtu < 6 || mtu > 0xff) {
     throw input("BLE MTU is not 6..255");
@@ -156,32 +163,32 @@ export function bleAssembler(mtu: number): Assembler {
   return {
     push(frame: Uint8Array): Uint8Array | undefined {
       if (done) {
-        throw transport("frame received after the response completed");
+        throw integrity("frame received after the response completed");
       }
       if (frame.length > mtu) {
-        throw transport("BLE frame exceeds the negotiated MTU");
+        throw integrity("BLE frame exceeds the negotiated MTU");
       }
       if (frame[0] !== APDU_TAG) {
-        throw transport("BLE frame carries a foreign tag");
+        throw integrity("BLE frame carries a foreign tag");
       }
       if (frame.length < 3) {
-        throw transport("BLE frame is too short for the sequence header");
+        throw integrity("BLE frame is too short for the sequence header");
       }
       const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
       if (view.getUint16(1) !== sequence) {
-        throw transport("BLE frame out of sequence");
+        throw integrity("BLE frame out of sequence");
       }
       let chunk = frame.subarray(3);
       if (sequence === 0) {
         if (chunk.length < 2) {
-          throw transport("first BLE frame is too short for the announced length");
+          throw integrity("first BLE frame is too short for the announced length");
         }
         announced = view.getUint16(3);
         chunk = chunk.subarray(2);
       }
       sequence += 1;
       if (received + chunk.length > announced) {
-        throw transport("BLE data exceeds the announced response length");
+        throw integrity("BLE data exceeds the announced response length");
       }
       chunks.push(chunk);
       received += chunk.length;
@@ -197,6 +204,104 @@ export function bleAssembler(mtu: number): Assembler {
         return out;
       }
       return undefined;
+    },
+  };
+}
+
+/** A byte-oriented HID port: 64-byte report writes and reads. */
+export type LedgerHidPort = {
+  write: (report: Uint8Array) => Promise<void>;
+  read: () => Promise<Uint8Array>;
+};
+
+/** A byte-oriented BLE port: characteristic writes and notification reads. */
+export type LedgerBlePort = {
+  write: (frame: Uint8Array) => Promise<void>;
+  read: () => Promise<Uint8Array>;
+};
+
+/**
+ * One APDU exchange over HID: frames the request, reassembles the response. One call at a time — an
+ * interleaved call while a previous one is in flight is `invalid-input`.
+ */
+export function ledgerHidExchange(
+  port: LedgerHidPort,
+  channel: number,
+): (apdu: Uint8Array) => Promise<Uint8Array> {
+  if (!Number.isSafeInteger(channel) || channel < 0 || channel > 0xffff) {
+    throw input("HID channel is not a u16");
+  }
+  let inFlight = false;
+  return async (apdu) => {
+    if (inFlight) {
+      throw input("exchange is already in flight on this link");
+    }
+    inFlight = true;
+    try {
+      for (const frame of hidFrames(apdu, channel)) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- frames are ordered on one link
+        await port.write(frame);
+      }
+      const assemble = hidAssembler(channel);
+      for (;;) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- response frames are ordered
+        const complete = assemble.push(await port.read());
+        if (complete !== undefined) {
+          return complete;
+        }
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+}
+
+/** Negotiates the BLE MTU once, then returns the framed exchange. */
+export async function ledgerBleExchange(
+  port: LedgerBlePort,
+): Promise<(apdu: Uint8Array) => Promise<Uint8Array>> {
+  await port.write(BLE_MTU_REQUEST);
+  const mtu = bleMtu(await port.read());
+  let inFlight = false;
+  return async (apdu) => {
+    if (inFlight) {
+      throw input("exchange is already in flight on this link");
+    }
+    inFlight = true;
+    try {
+      for (const frame of bleFrames(apdu, mtu)) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- frames are ordered on one link
+        await port.write(frame);
+      }
+      const assemble = bleAssembler(mtu);
+      for (;;) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- response frames are ordered
+        const complete = assemble.push(await port.read());
+        if (complete !== undefined) {
+          return complete;
+        }
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+}
+
+/**
+ * A `DeviceIo` backed by a raw APDU exchange: `message` requests are answered with `apdu`, any
+ * other request kind is `unsupported` — a Ledger device cannot take a QR or compare exchange.
+ */
+export function ledgerIo(
+  apdu: (apdu: Uint8Array) => Promise<Uint8Array>,
+  signal?: AbortSignal,
+): DeviceIo {
+  return {
+    ...(signal === undefined ? {} : { signal }),
+    exchange: async (request: DeviceRequest): Promise<DeviceResponse> => {
+      if (request.kind !== "message") {
+        throw new WalletError("unsupported", "the ledger transport only carries APDU messages");
+      }
+      return { kind: "message", data: await apdu(request.data) };
     },
   };
 }

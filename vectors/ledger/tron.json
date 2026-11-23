@@ -346,6 +346,28 @@
         "customContracts": false,
         "signByHash": true
       }
+    },
+    {
+      "name": "public-node",
+      "call": {
+        "fn": "tronPublicNode",
+        "path": [
+          2147483692,
+          2147483843,
+          2147483648
+        ]
+      },
+      "commands": [
+        {
+          "apdu": "e00200010d038000002c800000c380000000",
+          "response": "4104b561fcd5e03a15fd18756d6f81c70109bf83982d638ab1ce3a0a495a77711df921f394fe44ea17185b6afed295692c529aa2c8ef63234accea38377e71b7f3f322544e62745a53706b6e61517643376a50434c55347a6e4a4d676d3866687547545459ce001f3cb7d00326bcd772c237896190823290a7d6e44753ad574b2d9e9e95049000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "publicKey": "03b561fcd5e03a15fd18756d6f81c70109bf83982d638ab1ce3a0a495a77711df9",
+        "chainCode": "ce001f3cb7d00326bcd772c237896190823290a7d6e44753ad574b2d9e9e9504"
+      }
     }
   ]
 }

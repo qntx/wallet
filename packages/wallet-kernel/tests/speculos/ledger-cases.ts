@@ -34,6 +34,7 @@ import { appAndVersion, requireApp } from "../../src/modules/ledger/protocol/dev
 import {
   ethAddress,
   ethConfiguration,
+  ethPublicNode,
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
@@ -47,6 +48,7 @@ import {
 import {
   tronAddress,
   tronConfiguration,
+  tronPublicNode,
   tronSignPersonalMessage,
   tronSignTransaction,
   tronSignTypedDataHash,
@@ -59,6 +61,12 @@ export const SOL_PATH: ReadonlyArray<number> = [
   0x80_00_00_2c, 0x80_00_01_f5, 0x80_00_00_00, 0x80_00_00_00,
 ];
 export const TRX_PATH: ReadonlyArray<number> = [0x80_00_00_2c, 0x80_00_00_c3, 0x80_00_00_00, 0, 0];
+export const ETH_ACCOUNT_PATH: ReadonlyArray<number> = [
+  0x80_00_00_2c, 0x80_00_00_3c, 0x80_00_00_00,
+];
+export const TRX_ACCOUNT_PATH: ReadonlyArray<number> = [
+  0x80_00_00_2c, 0x80_00_00_c3, 0x80_00_00_00,
+];
 
 const chainsVectors = (file: string): unknown =>
   JSON.parse(
@@ -384,6 +392,11 @@ const addrResult = (r: { publicKey: Uint8Array; address: string }): unknown => (
   address: r.address,
 });
 
+const nodeResult = (r: { publicKey: Uint8Array; chainCode: Uint8Array }): unknown => ({
+  publicKey: hex(r.publicKey),
+  chainCode: hex(r.chainCode),
+});
+
 export const ETHEREUM_CASES: CaseDef[] = [
   {
     name: "app-and-version",
@@ -409,6 +422,11 @@ export const ETHEREUM_CASES: CaseDef[] = [
       );
       return addrResult(out);
     },
+  },
+  {
+    name: "public-node",
+    call: { fn: "ethPublicNode", path: ETH_ACCOUNT_PATH },
+    run: async (ex) => nodeResult(await ethPublicNode(ex, ETH_ACCOUNT_PATH)),
   },
   {
     name: "tx-legacy",
@@ -755,6 +773,11 @@ export const TRON_CASES: CaseDef[] = [
       );
       return addrResult(out);
     },
+  },
+  {
+    name: "public-node",
+    call: { fn: "tronPublicNode", path: TRX_ACCOUNT_PATH },
+    run: async (ex) => nodeResult(await tronPublicNode(ex, TRX_ACCOUNT_PATH)),
   },
   {
     name: "tx-transfer",

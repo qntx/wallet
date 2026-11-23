@@ -48,22 +48,14 @@ const signature = (data: Uint8Array): Uint8Array => {
 };
 
 /**
- * `INS_02` → `LV(65 uncompressed) ‖ LV(34 base58)`. The returned base58 address must be the one
- * derived from the returned key — anything else means the bytes in between are not the address the
- * device signed for.
+ * `INS_02` → `LV(65 uncompressed) ‖ LV(34 base58) ‖ [chain code 32 when P2 requests it]`. The
+ * returned base58 address must be the one derived from the returned key — anything else means the
+ * bytes in between are not the address the device signed for (docs/APDU.md).
  */
-export async function tronAddress(
-  exchange: Exchange,
-  keyPath: KeyPath,
-  display: boolean,
-): Promise<{ readonly publicKey: Uint8Array; readonly address: string }> {
-  const data = await transmit(exchange, "tron", {
-    cla: CLA,
-    ins: INS_GET_PUBLIC_KEY,
-    p1: display ? P1_CONFIRM : 0x00,
-    p2: 0x00,
-    data: encodePath(keyPath, MAX_PATH_DEPTH),
-  });
+const publicNodeReply = (
+  data: Uint8Array,
+  chainCode: boolean,
+): { publicKey: Uint8Array; address: string; chainCode?: Uint8Array } => {
   const reader = new Reader(data);
   const uncompressed = reader.lv();
   if (uncompressed.length !== 65 || uncompressed[0] !== 0x04) {
@@ -80,11 +72,48 @@ export async function tronAddress(
   } catch {
     throw new LedgerError("invalid-response", "tron address is not ASCII");
   }
+  const code = chainCode ? reader.bytes(32) : undefined;
   reader.end();
   if (address !== tronAddressFromPublicKey(uncompressed)) {
     throw new LedgerError("invalid-response", "the address does not match the public key");
   }
+  return { publicKey, address, ...(code === undefined ? {} : { chainCode: code }) };
+};
+
+/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+export async function tronAddress(
+  exchange: Exchange,
+  keyPath: KeyPath,
+  display: boolean,
+): Promise<{ readonly publicKey: Uint8Array; readonly address: string }> {
+  const data = await transmit(exchange, "tron", {
+    cla: CLA,
+    ins: INS_GET_PUBLIC_KEY,
+    p1: display ? P1_CONFIRM : 0x00,
+    p2: 0x00,
+    data: encodePath(keyPath, MAX_PATH_DEPTH),
+  });
+  const { publicKey, address } = publicNodeReply(data, false);
   return { publicKey, address };
+}
+
+/** `INS_02` (P2 `0x01` P2_CHAINCODE) → the compressed key plus the 32-byte chain code. */
+export async function tronPublicNode(
+  exchange: Exchange,
+  keyPath: KeyPath,
+): Promise<{ readonly publicKey: Uint8Array; readonly chainCode: Uint8Array }> {
+  const data = await transmit(exchange, "tron", {
+    cla: CLA,
+    ins: INS_GET_PUBLIC_KEY,
+    p1: 0x00,
+    p2: 0x01,
+    data: encodePath(keyPath, MAX_PATH_DEPTH),
+  });
+  const { publicKey, chainCode } = publicNodeReply(data, true);
+  if (chainCode === undefined) {
+    throw new LedgerError("invalid-response", "tron reply carries no chain code");
+  }
+  return { publicKey, chainCode };
 }
 
 /**

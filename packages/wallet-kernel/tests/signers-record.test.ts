@@ -72,7 +72,7 @@ describe("hardware-wallet header codec", () => {
   it("rejects a bad device, a bad fingerprint and missing or extra keys", () => {
     const base = { device: "keystone", fingerprint: "a1b2c3d4", createdAt: 1 };
     for (const text of [
-      JSON.stringify({ ...base, device: "ledger" }),
+      JSON.stringify({ ...base, device: "trezor" }),
       JSON.stringify({ ...base, device: 1 }),
       JSON.stringify({ ...base, fingerprint: "a1b2c3" }),
       JSON.stringify({ ...base, fingerprint: "A1B2C3D4" }),

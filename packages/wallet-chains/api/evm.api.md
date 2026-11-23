@@ -1008,7 +1008,7 @@ export const typedDataFields: (json: TypedDataInput, leaf?: (type: string, value
 } | undefined;
 
 // @public
-type TypedDataInput = {
+export type TypedDataInput = {
     readonly types: Record<string, ReadonlyArray<TypedDataField>>;
     readonly primaryType: string;
     readonly domain: Record<string, unknown>;

@@ -967,6 +967,12 @@ export const tronTypedDataDigest: (json: TypedDataInput) => Uint8Array;
 export const tronTypedDataFromArgs: (domain: unknown, types: unknown, message: unknown) => string;
 
 // @public
+export const tronTypedDataHashes: (json: TypedDataInput) => {
+    readonly domain: Uint8Array;
+    readonly message: Uint8Array;
+};
+
+// @public
 export const tronTypedDataLeaf: (type: string, value: unknown) => string | undefined;
 
 // @public

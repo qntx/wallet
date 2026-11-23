@@ -147,7 +147,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$6(arr) {
+	function u32$7(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -293,7 +293,7 @@
 	* equalBytes(new Uint8Array([1]), new Uint8Array([1]));
 	* ```
 	*/
-	function equalBytes$6(a, b) {
+	function equalBytes$9(a, b) {
 		a = abytes$3(a);
 		b = abytes$3(b);
 		if (a.length !== b.length) return false;
@@ -499,7 +499,7 @@
 	}));
 	// packages/wallet/dist/types.mjs
 	/** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
-	var HARDWARE_DEVICES = ["keystone"];
+	var HARDWARE_DEVICES = ["keystone", "ledger"];
 	// packages/wallet/dist/core-BVJx7-H0.mjs
 	init_defineProperty();
 	/**
@@ -1074,7 +1074,7 @@
 	var hexQuantity = str(66, /^0x[0-9a-fA-F]+$/);
 	var hexData = str(4e4, /^0x[0-9a-fA-F]*$/);
 	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
-	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+	var solanaAddress$1 = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 	var safeInt = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
@@ -1136,8 +1136,8 @@
 		account: accountRef,
 		message: bytes$1(1, 4096),
 		lookupTables: opt(arr(obj({
-			address: solanaAddress,
-			addresses: arr(solanaAddress, 256)
+			address: solanaAddress$1,
+			addresses: arr(solanaAddress$1, 256)
 		}), 64))
 	}), obj({
 		kind: literal("solana.message"),
@@ -2164,7 +2164,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$5(arr) {
+	function u32$6(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -4355,8 +4355,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -4378,10 +4378,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$6(block);
+		const b32 = u32$7(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$6(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$6(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$7(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$7(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -4465,14 +4465,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$6(k);
+			let k32 = u32$7(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$6(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$7(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$6(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$7(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4486,7 +4486,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$6(nonce));
+			const n32 = swap32IfBE$1(u32$7(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -5042,7 +5042,7 @@
 				const data = ciphertext.subarray(0, -16);
 				const passedTag = ciphertext.subarray(-16);
 				const tag = computeTag(xorStream, key, nonce, data, AAD);
-				if (!equalBytes$6(passedTag, tag)) {
+				if (!equalBytes$9(passedTag, tag)) {
 					clean$1(tag);
 					throw new Error("invalid tag");
 				}
@@ -5376,7 +5376,7 @@
 	* equalBytes(Uint8Array.of(1), Uint8Array.of(1));
 	* ```
 	*/
-	function equalBytes$5(a, b) {
+	function equalBytes$8(a, b) {
 		a = abytes(a);
 		b = abytes(b);
 		if (a.length !== b.length) return false;
@@ -7762,7 +7762,7 @@
 			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes$5(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
+			if (!equalBytes$8(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
 			const s2 = Fp.sqr(s);
 			const u1 = Fp.add(_1n$6, Fp.mulN(a, s2));
 			const u2 = Fp.sub(_1n$6, Fp.mulN(a, s2));
@@ -8210,7 +8210,7 @@
 		if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) return false;
 		const expected = dek.use((bytes) => factorBinding(bytes, factorContext(stored.kind, stored.id), stored.header));
 		try {
-			return equalBytes$6(expected, sealed.subarray(33, 65));
+			return equalBytes$9(expected, sealed.subarray(33, 65));
 		} finally {
 			wipe(expected);
 		}
@@ -8225,7 +8225,7 @@
 			const ephPk = x25519.getPublicKey(eph);
 			const shared = x25519.getSharedSecret(eph, factorPk);
 			try {
-				if (equalBytes$6(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
+				if (equalBytes$9(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					const envelope = dek.use((bytes) => seal(wrapKey, bytes, factorContext(factor.kind, factor.id), factor.header, random));
@@ -8256,7 +8256,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$6(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
+			if (!equalBytes$9(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -8268,7 +8268,7 @@
 				throw corruptError("invalid factor ephemeral key");
 			}
 			try {
-				if (equalBytes$6(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
+				if (equalBytes$9(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					let dekBytes;
@@ -8278,7 +8278,7 @@
 						throw corruptError("factor wrapping failed authentication");
 					}
 					const expected = factorBinding(dekBytes, factorContext(stored.kind, stored.id), stored.header);
-					const bound = equalBytes$6(expected, binding);
+					const bound = equalBytes$9(expected, binding);
 					wipe(expected);
 					if (!bound) {
 						wipe(dekBytes);
@@ -8419,7 +8419,7 @@
 	var DOMAIN = "qntx-wallet/vault/v1/manifest";
 	var isManifestRecord = (record) => record.kind === MANIFEST_KIND;
 	var byCodeUnits = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-	function u32$4(value) {
+	function u32$5(value) {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
 		return out;
@@ -8431,7 +8431,7 @@
 		const hash = sha256$1.create();
 		const lp = (value) => {
 			const bytes = typeof value === "string" ? utf8ToBytes$1(value) : value;
-			hash.update(u32$4(bytes.length));
+			hash.update(u32$5(bytes.length));
 			hash.update(bytes);
 		};
 		const row = (entry) => {
@@ -8441,13 +8441,13 @@
 			lp(entry.sealed);
 		};
 		lp(DOMAIN);
-		hash.update(u32$4(meta.format));
+		hash.update(u32$5(meta.format));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
-		hash.update(u32$4(records.length));
+		hash.update(u32$5(records.length));
 		for (const record of records) row(record);
 		const factors = [...image.factors].sort((a, b) => byCodeUnits(a.id, b.id));
-		hash.update(u32$4(factors.length));
+		hash.update(u32$5(factors.length));
 		for (const factor of factors) row(factor);
 		return hash.digest();
 	}
@@ -8492,7 +8492,7 @@
 			throw failure;
 		}
 		try {
-			if (!equalBytes$6(sealed, manifestDigest(image))) throw failure;
+			if (!equalBytes$9(sealed, manifestDigest(image))) throw failure;
 		} finally {
 			wipe(sealed);
 		}
@@ -8796,7 +8796,7 @@
 				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
 				try {
-					verified = opened.use((a) => dek.use((b) => equalBytes$6(a, b)));
+					verified = opened.use((a) => dek.use((b) => equalBytes$9(a, b)));
 				} finally {
 					opened.wipe();
 				}
@@ -10686,7 +10686,7 @@
 	}));
 	// node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
 	/** Checks if two Uint8Arrays are equal. Not constant-time. */
-	function equalBytes$4(a, b) {
+	function equalBytes$7(a, b) {
 		if (a.length !== b.length) return false;
 		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 		return true;
@@ -10716,7 +10716,7 @@
 	function equal(a, b) {
 		const aBytes = isBytes$1(a);
 		const bBytes = isBytes$1(b);
-		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$4(a, b);
+		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$7(a, b);
 		return a === b;
 	}
 	/** Checks if the given value is a Uint8Array. */
@@ -11302,7 +11302,7 @@
 						inner.encodeStream(w, elm);
 						if (terminator && terminator.length <= _w.pos - startPos) {
 							const data = _w.finish(false).subarray(startPos, _w.pos);
-							if (equalBytes$4(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
+							if (equalBytes$7(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
 						}
 						_w.exitField();
 					}
@@ -11322,7 +11322,7 @@
 						if (inner.size && r.leftBytes < inner.size) break;
 					}
 					else if (terminator) for (let i = 0;; i++) {
-						if (equalBytes$4(r.bytes(terminator.length, true), terminator)) {
+						if (equalBytes$7(r.bytes(terminator.length, true), terminator)) {
 							r.bytes(terminator.length);
 							break;
 						}
@@ -11379,7 +11379,7 @@
 		_255n = /* @__PURE__ */ BigInt(255);
 		hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 		utils = /* @__PURE__ */ Object.freeze({
-			equalBytes: equalBytes$4,
+			equalBytes: equalBytes$7,
 			isBytes: isBytes$1,
 			isCoder,
 			checkBounds,
@@ -12019,7 +12019,7 @@
 				decodeStream: (r) => {
 					let hasFlag = r.leftBytes >= marker.length;
 					if (hasFlag) {
-						hasFlag = equalBytes$4(r.bytes(marker.length, true), marker);
+						hasFlag = equalBytes$7(r.bytes(marker.length, true), marker);
 						if (hasFlag) r.bytes(marker.length);
 					}
 					return hasFlag !== xor;
@@ -12914,7 +12914,7 @@
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$5(this.state);
+			this.state32 = u32$6(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -12933,7 +12933,7 @@
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$5(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$6(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -13118,7 +13118,7 @@
 			throw new SiwxError({ code: "VerificationFailed" });
 		}
 		const expected = parseEip55(message.address);
-		if (!equalBytes$5(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
+		if (!equalBytes$8(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
 	}
 	//! On-chain smart-account verification: the ERC-6492 universal validator via a
 	//! deployless `eth_call`. Covers deployed ERC-1271 accounts, counterfactual
@@ -13178,15 +13178,15 @@
 			reason: "RPC request failed"
 		});
 	}
-	var MAGIC = (() => {
+	var MAGIC$1 = (() => {
 		const m = /* @__PURE__ */ new Uint8Array(32);
 		for (let i = 0; i < m.length; i++) m[i] = i % 2 === 0 ? 100 : 146;
 		return m;
 	})();
 	/** True when `signature` ends with the ERC-6492 detection suffix. */
 	function has6492MagicSuffix(signature) {
-		if (signature.length < MAGIC.length) return false;
-		for (let i = 0; i < MAGIC.length; i++) if (signature[signature.length - MAGIC.length + i] !== MAGIC[i]) return false;
+		if (signature.length < MAGIC$1.length) return false;
+		for (let i = 0; i < MAGIC$1.length; i++) if (signature[signature.length - MAGIC$1.length + i] !== MAGIC$1[i]) return false;
 		return true;
 	}
 	/** `eth_chainId` as a decimal number; malformed → `Backend`. */
@@ -13242,7 +13242,7 @@
 	* and `eth_chainId` is bound to the message chain id (cached per provider on success only) before
 	* any `eth_call`.
 	*/
-	function evm$2(options) {
+	function evm$3(options) {
 		var _options$rpc;
 		const rpc = (_options$rpc = options === null || options === void 0 ? void 0 : options.rpc) !== null && _options$rpc !== void 0 ? _options$rpc : {};
 		const verifiedChains = /* @__PURE__ */ new Set();
@@ -13334,7 +13334,7 @@
 		}
 		if (point.equals(ed25519.Point.ZERO)) throw fieldError("address", "identity pubkey");
 		if (!point.isTorsionFree()) throw fieldError("address", "not in the prime-order subgroup");
-		if (!equalBytes$5(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
+		if (!equalBytes$8(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
 	}
 	/**
 	* Validate that `address` is a canonical, non-identity, prime-order-subgroup Ed25519 verifying key
@@ -13763,7 +13763,7 @@
 	};
 	var parseValid = (text, family) => {
 		if (family === "evm") {
-			const ns = evm$2();
+			const ns = evm$3();
 			const message = ns.parse(new TextEncoder().encode(text));
 			ns.account(message);
 			return plainFields(message);
@@ -14570,7 +14570,7 @@
 	* @param values - The {@link ox#Hex.Hex} values to concatenate.
 	* @returns The concatenated {@link ox#Hex.Hex} value.
 	*/
-	function concat$4(...values) {
+	function concat$6(...values) {
 		if (values.length === 0) return "0x";
 		if (values.length === 1) return values[0];
 		if (values.length === 2) return `0x${values[0].slice(2)}${values[1].slice(2)}`;
@@ -15277,7 +15277,7 @@
 	* @param options - Decoding options.
 	* @returns Decoded bigint.
 	*/
-	function toBigInt(bytes, options = {}) {
+	function toBigInt$1(bytes, options = {}) {
 		const { signed, size } = options;
 		if (typeof size !== "undefined") assertSize$1(bytes, size);
 		return bytesToBigInt(bytes, signed);
@@ -16805,7 +16805,7 @@
 			const value = values[i];
 			data.push(encodePacked.encode(type, value));
 		}
-		return concat$4(...data);
+		return concat$6(...data);
 	}
 	(function(encodePacked) {
 		function encode(type, value, isArray = false) {
@@ -16849,7 +16849,7 @@
 				const data = [];
 				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
 				if (data.length === 0) return "0x";
-				return concat$4(...data);
+				return concat$6(...data);
 			}
 			throw new InvalidTypeError$1(type);
 		}
@@ -17202,7 +17202,7 @@
 		const signed = param.type.startsWith("int");
 		const size = Number.parseInt(param.type.split("int")[1] || "256", 10);
 		const value = cursor.readBytes(32);
-		return [size > 48 ? toBigInt(value, { signed }) : toNumber(value, { signed }), 32];
+		return [size > 48 ? toBigInt$1(value, { signed }) : toNumber(value, { signed }), 32];
 	}
 	/** @internal */
 	function decodeTuple(cursor, param, options) {
@@ -18425,7 +18425,7 @@
 			types,
 			typeHashes
 		}));
-		return concat$4(...parts);
+		return concat$6(...parts);
 	}
 	/**
 	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
@@ -18911,7 +18911,7 @@
 		if (CANONICAL_HEX.test(value)) return value;
 		return canonicalHex(quantityBigInt(value, field));
 	};
-	var hexBytes$1 = (value, field) => {
+	var hexBytes$2 = (value, field) => {
 		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 		return value.toLowerCase();
 	};
@@ -19000,7 +19000,7 @@
 		const nonce = safeInteger(tx["nonce"], "nonce");
 		const gas = quantity(tx["gas"], "gas");
 		const value = quantity(tx["value"], "value");
-		const data = hexBytes$1(tx["data"], "data");
+		const data = hexBytes$2(tx["data"], "data");
 		const toRaw = tx["to"];
 		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
 		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
@@ -20099,7 +20099,7 @@
 	* the root entry (declaring them here would cycle index ↔ tasks); the helpers stay
 	* package-internal.
 	*/
-	var equalBytes$3 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$6 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/**
 	* Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize —
 	* the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found by
@@ -20122,7 +20122,7 @@
 			} catch (_unused2) {
 				recovered = void 0;
 			}
-			if (recovered !== void 0 && equalBytes$3(recovered, task.publicKey)) return {
+			if (recovered !== void 0 && equalBytes$6(recovered, task.publicKey)) return {
 				r: sig.r,
 				s: sig.s,
 				yParity
@@ -20803,7 +20803,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$4(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$6(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -20988,7 +20988,7 @@
 	*/
 	function hash$4(authorization, options = {}) {
 		const { presign } = options;
-		return keccak256(concat$4("0x05", fromHex$1(toTuple(presign ? {
+		return keccak256(concat$6("0x05", fromHex$1(toTuple(presign ? {
 			address: authorization.address,
 			chainId: authorization.chainId,
 			nonce: authorization.nonce
@@ -21119,7 +21119,7 @@
 	*/
 	function encode(data) {
 		const message = from$6(data);
-		return concat$4(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+		return concat$6(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
 	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
@@ -21365,7 +21365,7 @@
 		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$4("0x01", fromHex$1([
+		return concat$6("0x01", fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -21562,7 +21562,7 @@
 		const accessTupleList = toTupleList(accessList);
 		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
-		return concat$4(serializedType$1, fromHex$1([
+		return concat$6(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22095,7 +22095,7 @@
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$4(serializedType, fromHex$1([
+		return concat$6(serializedType, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22642,7 +22642,7 @@
 		publicKey: key.publicKey,
 		digest
 	});
-	var personalDigest$1 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
+	var personalDigest$2 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
 	/**
 	* The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
 	* returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
@@ -22654,7 +22654,7 @@
 	});
 	var planEvmPersonalMessage = (message, key) => ({
 		kind: "evm.personal-message",
-		tasks: [ecdsa$1(personalDigest$1(message), key)]
+		tasks: [ecdsa$1(personalDigest$2(message), key)]
 	});
 	var planEvmTypedData = (typedData, key) => {
 		const { json } = parseTypedData(typedData);
@@ -22675,7 +22675,7 @@
 		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
 		if (request.kind === "evm.fiat24-session") return {
 			kind: "evm.fiat24-session",
-			tasks: [ecdsa$1(personalDigest$1(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+			tasks: [ecdsa$1(personalDigest$2(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
 		};
 		return planEvmTypedData(request.typedData, key);
 	};
@@ -22711,7 +22711,7 @@
 	};
 	// packages/wallet-chains/dist/networks.mjs
 	init_objectSpread2();
-	var evm$1 = (chainId, name, symbol, testnet) => ({
+	var evm$2 = (chainId, name, symbol, testnet) => ({
 		id: `eip155:${chainId}`,
 		family: "evm",
 		name,
@@ -22721,73 +22721,73 @@
 		chainId
 	});
 	var EVM_NETWORKS = [
-		evm$1(1, "Ethereum", "ETH", false),
-		evm$1(8453, "Base", "ETH", false),
-		evm$1(42161, "Arbitrum One", "ETH", false),
-		evm$1(10, "OP Mainnet", "ETH", false),
-		evm$1(137, "Polygon", "POL", false),
-		evm$1(56, "BNB Smart Chain", "BNB", false),
-		evm$1(999, "HyperEVM", "HYPE", false),
-		evm$1(43114, "Avalanche C-Chain", "AVAX", false),
-		evm$1(4663, "Robinhood Chain", "ETH", false),
-		evm$1(143, "Monad", "MON", false),
-		evm$1(5042, "Arc", "USDC", false),
-		evm$1(9745, "Plasma", "XPL", false),
-		evm$1(196, "X Layer", "OKB", false),
-		evm$1(1672, "Pharos", "PROS", false),
-		evm$1(5e3, "Mantle", "MNT", false),
-		evm$1(25, "Cronos", "CRO", false),
-		evm$1(100, "Gnosis", "xDAI", false),
-		evm$1(988, "Stable", "USDT0", false),
-		evm$1(747474, "Katana", "ETH", false),
-		evm$1(80094, "Berachain", "BERA", false),
-		evm$1(480, "World Chain", "ETH", false),
-		evm$1(130, "Unichain", "ETH", false),
-		evm$1(1329, "Sei", "SEI", false),
-		evm$1(59144, "Linea", "ETH", false),
-		evm$1(42220, "Celo", "CELO", false),
-		evm$1(146, "Sonic", "S", false),
-		evm$1(324, "ZKsync Era", "ETH", false),
-		evm$1(1868, "Soneium", "ETH", false),
-		evm$1(4326, "MegaETH", "ETH", false),
-		evm$1(8217, "Kaia", "KAIA", false),
-		evm$1(33139, "ApeChain", "APE", false),
-		evm$1(57073, "Ink", "ETH", false),
-		evm$1(252, "Fraxtal", "FRAX", false),
-		evm$1(2020, "Ronin", "RON", false),
-		evm$1(534352, "Scroll", "ETH", false),
-		evm$1(60808, "BOB", "ETH", false),
-		evm$1(204, "opBNB", "BNB", false),
-		evm$1(42170, "Arbitrum Nova", "ETH", false),
-		evm$1(167e3, "Taiko", "ETH", false),
-		evm$1(14, "Flare", "FLR", false),
-		evm$1(7777777, "Zora", "ETH", false),
-		evm$1(11155111, "Sepolia", "ETH", true),
-		evm$1(84532, "Base Sepolia", "ETH", true),
-		evm$1(421614, "Arbitrum Sepolia", "ETH", true),
-		evm$1(11155420, "OP Sepolia", "ETH", true),
-		evm$1(80002, "Polygon Amoy", "POL", true),
-		evm$1(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm$1(998, "HyperEVM Testnet", "HYPE", true),
-		evm$1(43113, "Avalanche Fuji", "AVAX", true),
-		evm$1(46630, "Robinhood Chain Testnet", "ETH", true),
-		evm$1(10143, "Monad Testnet", "MON", true),
-		evm$1(5042002, "Arc Testnet", "USDC", true),
-		evm$1(1952, "X Layer Testnet", "OKB", true),
-		evm$1(5003, "Mantle Sepolia", "MNT", true),
-		evm$1(10200, "Gnosis Chiado", "xDAI", true),
-		evm$1(1301, "Unichain Sepolia", "ETH", true),
-		evm$1(1328, "Sei Testnet", "SEI", true),
-		evm$1(59141, "Linea Sepolia", "ETH", true),
-		evm$1(11142220, "Celo Sepolia", "CELO", true),
-		evm$1(14601, "Sonic Testnet", "S", true),
-		evm$1(300, "ZKsync Sepolia", "ETH", true),
-		evm$1(1946, "Soneium Minato", "ETH", true),
-		evm$1(33111, "ApeChain Curtis", "APE", true),
-		evm$1(763373, "Ink Sepolia", "ETH", true),
-		evm$1(2523, "Fraxtal Hoodi", "FRAX", true),
-		evm$1(5611, "opBNB Testnet", "tBNB", true),
-		evm$1(999999999, "Zora Sepolia", "ETH", true)
+		evm$2(1, "Ethereum", "ETH", false),
+		evm$2(8453, "Base", "ETH", false),
+		evm$2(42161, "Arbitrum One", "ETH", false),
+		evm$2(10, "OP Mainnet", "ETH", false),
+		evm$2(137, "Polygon", "POL", false),
+		evm$2(56, "BNB Smart Chain", "BNB", false),
+		evm$2(999, "HyperEVM", "HYPE", false),
+		evm$2(43114, "Avalanche C-Chain", "AVAX", false),
+		evm$2(4663, "Robinhood Chain", "ETH", false),
+		evm$2(143, "Monad", "MON", false),
+		evm$2(5042, "Arc", "USDC", false),
+		evm$2(9745, "Plasma", "XPL", false),
+		evm$2(196, "X Layer", "OKB", false),
+		evm$2(1672, "Pharos", "PROS", false),
+		evm$2(5e3, "Mantle", "MNT", false),
+		evm$2(25, "Cronos", "CRO", false),
+		evm$2(100, "Gnosis", "xDAI", false),
+		evm$2(988, "Stable", "USDT0", false),
+		evm$2(747474, "Katana", "ETH", false),
+		evm$2(80094, "Berachain", "BERA", false),
+		evm$2(480, "World Chain", "ETH", false),
+		evm$2(130, "Unichain", "ETH", false),
+		evm$2(1329, "Sei", "SEI", false),
+		evm$2(59144, "Linea", "ETH", false),
+		evm$2(42220, "Celo", "CELO", false),
+		evm$2(146, "Sonic", "S", false),
+		evm$2(324, "ZKsync Era", "ETH", false),
+		evm$2(1868, "Soneium", "ETH", false),
+		evm$2(4326, "MegaETH", "ETH", false),
+		evm$2(8217, "Kaia", "KAIA", false),
+		evm$2(33139, "ApeChain", "APE", false),
+		evm$2(57073, "Ink", "ETH", false),
+		evm$2(252, "Fraxtal", "FRAX", false),
+		evm$2(2020, "Ronin", "RON", false),
+		evm$2(534352, "Scroll", "ETH", false),
+		evm$2(60808, "BOB", "ETH", false),
+		evm$2(204, "opBNB", "BNB", false),
+		evm$2(42170, "Arbitrum Nova", "ETH", false),
+		evm$2(167e3, "Taiko", "ETH", false),
+		evm$2(14, "Flare", "FLR", false),
+		evm$2(7777777, "Zora", "ETH", false),
+		evm$2(11155111, "Sepolia", "ETH", true),
+		evm$2(84532, "Base Sepolia", "ETH", true),
+		evm$2(421614, "Arbitrum Sepolia", "ETH", true),
+		evm$2(11155420, "OP Sepolia", "ETH", true),
+		evm$2(80002, "Polygon Amoy", "POL", true),
+		evm$2(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm$2(998, "HyperEVM Testnet", "HYPE", true),
+		evm$2(43113, "Avalanche Fuji", "AVAX", true),
+		evm$2(46630, "Robinhood Chain Testnet", "ETH", true),
+		evm$2(10143, "Monad Testnet", "MON", true),
+		evm$2(5042002, "Arc Testnet", "USDC", true),
+		evm$2(1952, "X Layer Testnet", "OKB", true),
+		evm$2(5003, "Mantle Sepolia", "MNT", true),
+		evm$2(10200, "Gnosis Chiado", "xDAI", true),
+		evm$2(1301, "Unichain Sepolia", "ETH", true),
+		evm$2(1328, "Sei Testnet", "SEI", true),
+		evm$2(59141, "Linea Sepolia", "ETH", true),
+		evm$2(11142220, "Celo Sepolia", "CELO", true),
+		evm$2(14601, "Sonic Testnet", "S", true),
+		evm$2(300, "ZKsync Sepolia", "ETH", true),
+		evm$2(1946, "Soneium Minato", "ETH", true),
+		evm$2(33111, "ApeChain Curtis", "APE", true),
+		evm$2(763373, "Ink Sepolia", "ETH", true),
+		evm$2(2523, "Fraxtal Hoodi", "FRAX", true),
+		evm$2(5611, "opBNB Testnet", "tBNB", true),
+		evm$2(999999999, "Zora Sepolia", "ETH", true)
 	];
 	var BUILT_IN_NETWORKS = Object.freeze([
 		...EVM_NETWORKS,
@@ -27994,7 +27994,7 @@ zoo`.split("\n"));
 	* order, exactly what must not happen.
 	*/
 	var utf8$6 = new TextEncoder();
-	function concat$3(...chunks) {
+	function concat$5(...chunks) {
 		let length = 0;
 		for (const chunk of chunks) length += chunk.length;
 		const out = new Uint8Array(length);
@@ -28031,29 +28031,29 @@ zoo`.split("\n"));
 		if (value >= 0) {
 			if (value <= 127) return new Uint8Array([value]);
 			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$3(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$3(new Uint8Array([206]), u32be(value));
-			return concat$3(new Uint8Array([207]), u64be$1(BigInt(value)));
+			if (value <= 65535) return concat$5(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$5(new Uint8Array([206]), u32be(value));
+			return concat$5(new Uint8Array([207]), u64be$1(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$3(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$3(new Uint8Array([210]), u32be(value + 4294967296));
-		return concat$3(new Uint8Array([211]), i64be(BigInt(value)));
+		if (value >= -32768) return concat$5(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$5(new Uint8Array([210]), u32be(value + 4294967296));
+		return concat$5(new Uint8Array([211]), i64be(BigInt(value)));
 	}
 	function packStr(value) {
 		const bytes = utf8$6.encode(value);
 		const { length } = bytes;
-		if (length < 32) return concat$3(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$3(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$3(new Uint8Array([218]), u16be(length), bytes);
-		return concat$3(new Uint8Array([219]), u32be(length), bytes);
+		if (length < 32) return concat$5(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$5(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$5(new Uint8Array([218]), u16be(length), bytes);
+		return concat$5(new Uint8Array([219]), u32be(length), bytes);
 	}
 	function packBool(value) {
 		return new Uint8Array([value ? 195 : 194]);
 	}
 	function packArray(items) {
-		return concat$3(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$3(new Uint8Array([220]), u16be(items.length)) : (() => {
+		return concat$5(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$5(new Uint8Array([220]), u16be(items.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
@@ -28062,7 +28062,7 @@ zoo`.split("\n"));
 	* literally; this writer never iterates an object.
 	*/
 	function packMap(entries) {
-		return concat$3(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$3(new Uint8Array([222]), u16be(entries.length)) : (() => {
+		return concat$5(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$5(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
@@ -28180,9 +28180,9 @@ zoo`.split("\n"));
 	*/
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$3(packed, u64be(args.nonce), vault, expiry));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$5(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$5(new Uint8Array([0]), u64be(args.expiresAfter));
+		return keccak_256(concat$5(packed, u64be(args.nonce), vault, expiry));
 	}
 	/**
 	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
@@ -29480,7 +29480,7 @@ zoo`.split("\n"));
 							var _config$description4;
 							throw new SolanaError(SOLANA_ERROR__CODECS__SENTINEL_MISSING_AT_END_OF_BYTES, {
 								codecDescription: (_config$description4 = config.description) !== null && _config$description4 !== void 0 ? _config$description4 : "array",
-								hexSentinel: hexBytes(sentinel),
+								hexSentinel: hexBytes$1(sentinel),
 								sentinel
 							});
 						}
@@ -29527,7 +29527,7 @@ zoo`.split("\n"));
 			sizeStrategy: size === "remainder" ? "remainder" : "sentinel"
 		});
 	}
-	function hexBytes(bytes) {
+	function hexBytes$1(bytes) {
 		return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
 	}
 	function getBytesDecoder() {
@@ -30732,9 +30732,9 @@ zoo`.split("\n"));
 		var _table$network;
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[mint];
 	};
-	var u32 = getU32Decoder();
+	var u32$4 = getU32Decoder();
 	var u64$1 = getU64Decoder();
-	var u32le$2 = (data, offset) => u32.decode(data, offset);
+	var u32le$2 = (data, offset) => u32$4.decode(data, offset);
 	var u64le$2 = (data, offset) => u64$1.decode(data, offset);
 	/**
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
@@ -31331,7 +31331,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/plan-D_EI4CuP.mjs
+	// packages/wallet-chains/dist/plan-BkeI38lR.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -31450,7 +31450,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$2 = (parts) => {
+	var concat$4 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -31464,11 +31464,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$2([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$4([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$2([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$4([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$2([
+	var requiredBytesField = (field, data) => concat$4([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -31482,7 +31482,7 @@ zoo`.split("\n"));
 	var encodeMessage = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$2(present.map((f) => f.bytes));
+		return concat$4(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -31490,7 +31490,7 @@ zoo`.split("\n"));
 	* validated by `readFields`.
 	*/
 	var collectExtra = (fields, known) => fields.filter((f) => !known.includes(f.field));
-	var equalBytes$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$5 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	var TRON_CONTRACT_TYPES = [
 		{
 			id: 0,
@@ -31812,7 +31812,7 @@ zoo`.split("\n"));
 				18
 			])
 		});
-		if (!equalBytes$2(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
+		if (!equalBytes$5(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
 		return raw;
 	};
 	var encodeTronRawData = (raw) => {
@@ -32458,19 +32458,28 @@ zoo`.split("\n"));
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
 	};
 	/**
-	* The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
-	* hashStruct(primaryType, message))`. The domain is hashed under the fields its non-null keys
-	* derive; the message under `json.primaryType`, which must be the unique root of `types` minus
-	* `EIP712Domain`.
+	* The domain separator and message hash of a parsed document — `hashStruct(EIP712Domain, domain)`
+	* under the fields its non-null keys derive, `hashStruct(primaryType, message)` under the unique
+	* root type of `types` minus `EIP712Domain`. Returned separately for signers that send the two
+	* hashes to the device rather than one digest (Tron `INS_0C`).
 	*/
-	var tronTypedDataDigest = (json) => {
+	var tronTypedDataHashes = (json) => {
 		const domainFields = domainFieldsOf(json.domain);
 		const messageTypes = {};
 		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
 		const encoder = makeEncoder(messageTypes, false);
 		if (encoder.primary !== json.primaryType) fail$5(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
-		const domain = makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain);
-		const message = encoder.hashStruct(json.primaryType, json.message);
+		return {
+			domain: makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain),
+			message: encoder.hashStruct(json.primaryType, json.message)
+		};
+	};
+	/**
+	* The signing digest of a parsed document: `keccak256(0x1901 ‖ hashStruct(EIP712Domain, domain) ‖
+	* hashStruct(primaryType, message))` — `keccak256(0x1901 ‖ hashes.domain ‖ hashes.message)`.
+	*/
+	var tronTypedDataDigest = (json) => {
+		const { domain, message } = tronTypedDataHashes(json);
 		return keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message));
 	};
 	/**
@@ -32604,7 +32613,7 @@ zoo`.split("\n"));
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
 	};
-	var utf8$2 = new TextDecoder("utf-8", {
+	var utf8$2$1 = new TextDecoder("utf-8", {
 		fatal: true,
 		ignoreBOM: true
 	});
@@ -32612,7 +32621,7 @@ zoo`.split("\n"));
 		if (f === void 0) return "";
 		const data = bytesOf$2(f);
 		try {
-			return utf8$2.decode(data);
+			return utf8$2$1.decode(data);
 		} catch (_unused) {
 			return malformed$1(`${what} is not UTF-8`);
 		}
@@ -32629,7 +32638,7 @@ zoo`.split("\n"));
 	* non-canonical.
 	*/
 	var canonical = (f, encoded) => {
-		if (f !== void 0 && !equalBytes$2(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
+		if (f !== void 0 && !equalBytes$5(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
 	};
 	var encAddress = (n, address) => requiredBytesField(n, tronAddressToBytes(address));
 	var encBytes = (n, data) => bytesField(n, data);
@@ -33949,14 +33958,14 @@ zoo`.split("\n"));
 		const seed = input.length === 64 ? input.slice(0, 32) : input;
 		if (seed.length !== 32) throw new KernelError("invalid-input", "a Solana key is a 32-byte seed or a 64-byte keypair");
 		const publicKey = ed25519.getPublicKey(seed);
-		if (input.length === 64 && !equalBytes$1(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
+		if (input.length === 64 && !equalBytes$4(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
 		return {
 			secret: seed,
 			publicKey,
 			address: solanaAddressFromPublicKey(publicKey)
 		};
 	}
-	var equalBytes$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$4 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/** The decoded secret, its public key and its chain address — input is wiped by the caller. */
 	function isKeyFamily(family) {
 		return family === "evm" || family === "solana" || family === "bitcoin" || family === "tron";
@@ -34511,7 +34520,7 @@ zoo`.split("\n"));
 	async function confirmWithPassphrase(ctx, params, passphrase) {
 		const allMatch = ctx.session.getDraft(params.draft).expected.every((expected, i) => {
 			const answer = params.answers[i];
-			return answer !== void 0 && answer.length === expected.length && equalBytes$6(answer, expected);
+			return answer !== void 0 && answer.length === expected.length && equalBytes$9(answer, expected);
 		});
 		for (const answer of params.answers) wipe(answer);
 		if (!allMatch) throw new KernelError("invalid-input", "backup confirmation failed");
@@ -35520,7 +35529,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes$3, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -35536,7 +35545,7 @@ zoo`.split("\n"));
 		hasEven = (y) => y % _2n$1 === _0n$3;
 		isBytes = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
-		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
+		equalBytes$3 = /* @__PURE__ */ (() => utils.equalBytes)();
 		sha256 = /* @__PURE__ */ (() => sha256$1)();
 		hash160 = (msg) => ripemd160(sha256(msg));
 		sha256x2 = (...msgs) => sha256(sha256(concatBytes(...msgs)));
@@ -36157,7 +36166,7 @@ zoo`.split("\n"));
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
 					if (typeof current === "string") current = vC.decode(hex$3.decode(current));
-					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
+					if (!equalBytes$3(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
@@ -36215,7 +36224,7 @@ zoo`.split("\n"));
 			let b = _other[key];
 			if (typeof a === "string") a = valueCoder.decode(hex$3.decode(a));
 			if (typeof b === "string") b = valueCoder.decode(hex$3.decode(b));
-			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
+			if (!equalBytes$3(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
 	}
@@ -36502,7 +36511,7 @@ zoo`.split("\n"));
 		}
 	}
 	function checkWSH(s, witnessScript) {
-		if (!equalBytes(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
+		if (!equalBytes$3(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
 		const w = OutScript.decode(witnessScript);
 		if (w.type === "tr" || w.type === "tr_ns" || w.type === "tr_ms") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2SH`);
 		if (w.type === "wpkh" || w.type === "wsh" || w.type === "sh") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2WSH`);
@@ -36532,7 +36541,7 @@ zoo`.split("\n"));
 			if (s.type === "tr_ns" || s.type === "tr_ms" || s.type === "ms" || s.type == "pk") throw new Error(`checkScript: non-wrapped ${s.type}`);
 			if (redeemScript) {
 				if (s.type !== "sh") throw new Error("checkScript: redeemScript without P2SH");
-				if (!equalBytes(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
+				if (!equalBytes$3(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
 				r = _WitnessOutScript.decode(redeemScript);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "tr" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ns" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ms") throw new Error(`checkScript: P2${r.type} cannot be wrapped in P2SH`);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "sh") throw new Error("checkScript: P2SH cannot be wrapped in P2SH");
@@ -36572,8 +36581,8 @@ zoo`.split("\n"));
 		if (!["tr_ns", "tr_ms"].includes(out.type)) throw new Error(`P2TR: invalid leaf script=${out.type}`);
 		const outms = out;
 		if (!allowUnknownOutputs && outms.pubkeys) for (const p of outms.pubkeys) {
-			if (equalBytes(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
-			if (equalBytes(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
+			if (equalBytes$3(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
+			if (equalBytes$3(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
 		}
 	}
 	/**
@@ -36638,7 +36647,7 @@ zoo`.split("\n"));
 			validateObject(tree, {}, {}, "tree");
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
-			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
+			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes$3(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
 			const script = typeof leafScript === "string" ? hex$3.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
@@ -36782,7 +36791,7 @@ zoo`.split("\n"));
 						type: "tr",
 						pubkey: data
 					};
-					else if (version === 1 && equalBytes(data, P2A_PROGRAM)) return {
+					else if (version === 1 && equalBytes$3(data, P2A_PROGRAM)) return {
 						type: "p2a",
 						script: Script.encode([1, data])
 					};
@@ -36815,7 +36824,7 @@ zoo`.split("\n"));
 		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
 		OutP2A = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
+				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes$3(from[1], P2A_PROGRAM)) return;
 				return {
 					type: "p2a",
 					script: Script.encode(from)
@@ -37041,7 +37050,7 @@ zoo`.split("\n"));
 			decodeStream: (r) => {
 				const raw = r.bytes(r.leftBytes);
 				const out = OutScript.decode(raw);
-				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
+				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes$3(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
 				return out;
 			}
 		})))();
@@ -37064,7 +37073,7 @@ zoo`.split("\n"));
 		checkCanonicalScript = (script, name, allowNonCanonicalScript) => {
 			if (allowNonCanonicalScript) return;
 			const decoded = Script.decode(script);
-			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
+			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes$3(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
 		};
 		p2sh = (child, network = NETWORK, allowNonCanonicalScript = false) => {
 			validateObject(child, {}, {}, "child");
@@ -37151,7 +37160,7 @@ zoo`.split("\n"));
 		throw new Error(`cloneDeep: unknown type=${typeof obj}`);
 	}
 	function getTaprootKeys(privKey, pubKey, internalKey, merkleRoot = EMPTY$2) {
-		if (equalBytes(internalKey, pubKey)) {
+		if (equalBytes$3(internalKey, pubKey)) {
 			privKey = taprootTweakPrivKey(privKey, merkleRoot);
 			pubKey = pubSchnorr(privKey);
 		}
@@ -37280,7 +37289,7 @@ zoo`.split("\n"));
 		}
 		const checkOutputKey = (internalKey, merkleRoot, parity) => {
 			const [outputKey, outputParity] = taprootTweakPubkey(internalKey, merkleRoot);
-			if (!equalBytes(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
+			if (!equalBytes$3(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
 			if (parity !== void 0 && outputParity !== parity) throw new Error("validateInput: Taproot control-block parity does not match previous output");
 		};
 		if (input.tapLeafScript) for (const [controlBlock, scriptWithVersion] of input.tapLeafScript) {
@@ -37289,8 +37298,8 @@ zoo`.split("\n"));
 			let merkleRoot = tapLeafHash(script, leafVersion);
 			for (const sibling of controlBlock.merklePath) merkleRoot = compareBytes$2(sibling, merkleRoot) === -1 ? tagSchnorr("TapBranch", sibling, merkleRoot) : tagSchnorr("TapBranch", merkleRoot, sibling);
 			checkOutputKey(controlBlock.internalKey, merkleRoot, controlBlock.version & 1);
-			if (input.tapInternalKey && !equalBytes(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
-			if (input.tapMerkleRoot && !equalBytes(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
+			if (input.tapInternalKey && !equalBytes$3(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
+			if (input.tapMerkleRoot && !equalBytes$3(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
 		}
 		if (input.tapInternalKey && (input.tapMerkleRoot || !((_input$tapLeafScript2 = input.tapLeafScript) === null || _input$tapLeafScript2 === void 0 ? void 0 : _input$tapLeafScript2.length))) checkOutputKey(input.tapInternalKey, input.tapMerkleRoot || EMPTY$2);
 	}
@@ -37337,7 +37346,7 @@ zoo`.split("\n"));
 			const last = _i.nonWitnessUtxo.outputs.length - 1;
 			if (_i.index > last) throw new Error(`validateInput: index(${_i.index}) not in nonWitnessUtxo`);
 			prevOut = _i.nonWitnessUtxo.outputs[_i.index];
-			if (_i.witnessUtxo && (!equalBytes(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
+			if (_i.witnessUtxo && (!equalBytes$3(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
 			if (_i.txid) {
 				if (_i.nonWitnessUtxo.outputs.length - 1 < _i.index) throw new Error("nonWitnessUtxo: incorect output index");
 				const tx = Transaction.fromRaw(RawTx.encode(_i.nonWitnessUtxo), {
@@ -37983,7 +37992,7 @@ zoo`.split("\n"));
 				const nextLockTime = resolvePSBTLocktime(inputs, (_this$global$fallback3 = this.global.fallbackLocktime) !== null && _this$global$fallback3 !== void 0 ? _this$global$fallback3 : 0);
 				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
 				const current = this.inputs[idx];
-				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
+				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes$3(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
 				this.inputs[idx] = normalized;
 			}
 			checkOutputIdx(idx) {
@@ -38038,7 +38047,7 @@ zoo`.split("\n"));
 				}
 				const current = this.outputs[idx];
 				const normalized = cloneDeep(this.normalizeOutput(output, current, allowedFields));
-				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
+				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes$3(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
 				this.outputs[idx] = normalized;
 			}
 			addOutputAddress(address, amount, network = NETWORK) {
@@ -38141,14 +38150,14 @@ zoo`.split("\n"));
 				const canSign = (privateKey) => {
 					if (inputType.txType === "taproot") {
 						const pubKey = pubSchnorr(privateKey);
-						if (input.tapInternalKey && equalBytes(pubKey, input.tapInternalKey)) return true;
+						if (input.tapInternalKey && equalBytes$3(pubKey, input.tapInternalKey)) return true;
 						if (!input.tapLeafScript) return false;
-						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes(op, pubKey)) return true;
+						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes$3(op, pubKey)) return true;
 						return false;
 					}
 					const pubKey = pubECDSA(privateKey);
 					const pubKeyHash = hash160(pubKey);
-					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
+					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes$3(op, pubKey) || equalBytes$3(op, pubKeyHash))) return true;
 					return false;
 				};
 				if (!isBytes(privateKey)) {
@@ -38159,7 +38168,7 @@ zoo`.split("\n"));
 						const signers = rows.filter((row) => row.fingerprint == root.fingerprint).map((row) => {
 							let s = root;
 							for (const i of row.path) s = s.deriveChild(i);
-							if (!equalBytes(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
+							if (!equalBytes$3(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
 							if (!s.privateKey) throw new Error(`${label}: no privateKey`);
 							return s;
 						});
@@ -38201,7 +38210,7 @@ zoo`.split("\n"));
 					if (input.tapInternalKey) {
 						const { pubKey, privKey } = getTaprootKeys(privateKey, schnorrPub, input.tapInternalKey, merkleRoot);
 						const [taprootPubKey, _] = taprootTweakPubkey(input.tapInternalKey, merkleRoot);
-						if (equalBytes(taprootPubKey, pubKey)) {
+						if (equalBytes$3(taprootPubKey, pubKey)) {
 							const hash = this.preimageWitnessV1(idx, prevOutScript, sighash, amount);
 							const sig = concatBytes(signSchnorr(hash, privKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapKeySig: sig }, true);
@@ -38215,7 +38224,7 @@ zoo`.split("\n"));
 							const scriptDecoded = Script.decode(script);
 							const ver = _script[_script.length - 1];
 							const hash = tapLeafHash(script, ver);
-							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, schnorrPub)) === -1) continue;
+							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes$3(i, schnorrPub)) === -1) continue;
 							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
 							const sig = concatBytes(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapScriptSig: [[{
@@ -38231,7 +38240,7 @@ zoo`.split("\n"));
 					const pubKey = pubECDSA(privateKey);
 					let hasPubkey = false;
 					const pubKeyHash = hash160(pubKey);
-					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
+					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes$3(i, pubKey) || equalBytes$3(i, pubKeyHash))) hasPubkey = true;
 					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
 					let hash;
 					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
@@ -38276,7 +38285,7 @@ zoo`.split("\n"));
 							const ver = _script[_script.length - 1];
 							const outScript = OutScript.decode(script);
 							const hash = tapLeafHash(script, ver);
-							const scriptSig = input.tapScriptSig.filter((i) => equalBytes(i[0].leafHash, hash));
+							const scriptSig = input.tapScriptSig.filter((i) => equalBytes$3(i[0].leafHash, hash));
 							let signatures = [];
 							let witness;
 							if (outScript.type === "tr_ms") {
@@ -38284,7 +38293,7 @@ zoo`.split("\n"));
 								const pubkeys = outScript.pubkeys;
 								let added = 0;
 								for (const pub of pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
 									if (added === m || sigIdx === -1) {
 										signatures.push(EMPTY$2);
 										continue;
@@ -38295,7 +38304,7 @@ zoo`.split("\n"));
 								if (added !== m) continue;
 							} else if (outScript.type === "tr_ns") {
 								for (const pub of outScript.pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
 									if (sigIdx === -1) continue;
 									signatures.push(scriptSig[sigIdx][1]);
 								}
@@ -38303,7 +38312,7 @@ zoo`.split("\n"));
 							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
 								const scriptDecoded = Script.decode(script);
 								signatures = scriptSig.map(([{ pubKey }, signature]) => {
-									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, pubKey));
+									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes$3(i, pubKey));
 									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
 									return {
 										signature,
@@ -38350,7 +38359,7 @@ zoo`.split("\n"));
 					const pubkeys = inputType.last.pubkeys;
 					let signatures = [];
 					for (const pub of pubkeys) {
-						const sign = input.partialSig.find((s) => equalBytes(pub, s[0]));
+						const sign = input.partialSig.find((s) => equalBytes$3(pub, s[0]));
 						if (!sign) continue;
 						signatures.push(sign[1]);
 					}
@@ -38404,7 +38413,7 @@ zoo`.split("\n"));
 				}
 				for (const k of ["inputs", "outputs"]) if (this[k].length !== other[k].length) throw new Error(`Transaction/combine: different ${k} length this=${this[k].length} other=${other[k].length}`);
 				const unsignedTx = this.unsignedTx;
-				if (!equalBytes(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
+				if (!equalBytes$3(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
 				let txModifiable;
 				if (thisV2 && otherV2) {
 					const policy = (tx) => {
@@ -38459,7 +38468,7 @@ zoo`.split("\n"));
 				candidate.inputs = inputs;
 				candidate.outputs = outputs;
 				if ((!thisV2 || !otherV2) && candidate.isPSBTv2()) candidate.global.txModifiable = candidate.txModifiable;
-				if (!equalBytes(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
+				if (!equalBytes$3(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
 				this.global = candidate.global;
 				this.inputs = candidate.inputs;
 				this.outputs = candidate.outputs;
@@ -38482,7 +38491,7 @@ zoo`.split("\n"));
 	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
 	* class).
 	*/
-	var MAINNET_BIP32 = {
+	var MAINNET_BIP32$1 = {
 		public: 76067358,
 		private: 76066276
 	};
@@ -38497,7 +38506,7 @@ zoo`.split("\n"));
 			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
 			params: NETWORK,
 			coinType: 0,
-			bip32: MAINNET_BIP32
+			bip32: MAINNET_BIP32$1
 		},
 		{
 			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
@@ -38531,10 +38540,10 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8$2 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
-	var concat$1 = (...parts) => {
+	var LEGACY_MAGIC = utf8$2("Bitcoin Signed Message:\n");
+	var concat$3 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -38544,12 +38553,12 @@ zoo`.split("\n"));
 		return out;
 	};
 	/** CompactSize length prefix for the one-byte form. */
-	var varint = (n) => Uint8Array.of(n);
+	var varint$1 = (n) => Uint8Array.of(n);
 	var COMPACT_SIZE_ONE_BYTE_MAX = 252;
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$1(varint(data.length), data);
+		return concat$3(varint$1(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -38563,8 +38572,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8$2(BIP322_TAG));
+		return sha256$1(concat$3(tag, tag, utf8$2(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -38572,8 +38581,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$1(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$1(u32le(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$3(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$3(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -38634,15 +38643,15 @@ zoo`.split("\n"));
 	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
 	var encodeBip322Simple = (witness) => {
-		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$3(varint$1(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$3(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
 	*/
-	var encodeLegacySignature = (yParity, compact) => base64(concat$1(Uint8Array.of(27 + yParity + 4), compact));
+	var encodeLegacySignature = (yParity, compact) => base64(concat$3(Uint8Array.of(27 + yParity + 4), compact));
 	/**
 	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
 	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
@@ -38665,7 +38674,7 @@ zoo`.split("\n"));
 	var taprootTask = (tx, index, input, type, key) => {
 		if (input.tapLeafScript !== void 0 || input.tapMerkleRoot !== void 0) throw cannotSign(index);
 		const x = key.publicKey.slice(1);
-		if (input.tapInternalKey === void 0 || !equalBytes(input.tapInternalKey, x)) throw cannotSign(index);
+		if (input.tapInternalKey === void 0 || !equalBytes$3(input.tapInternalKey, x)) throw cannotSign(index);
 		const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
 		const prevouts = prevoutsOf(tx, index);
 		return {
@@ -38680,7 +38689,7 @@ zoo`.split("\n"));
 	var ecdsaTask = (tx, index, input, type, key) => {
 		const pubHash = hash160(key.publicKey);
 		let digest;
-		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes(type.last.hash, pubHash)) {
+		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes$3(type.last.hash, pubHash)) {
 			const scriptCode = OutScript.encode({
 				type: "pkh",
 				hash: type.last.hash
@@ -38692,7 +38701,7 @@ zoo`.split("\n"));
 				throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
 			}
 			digest = tx.preimageWitnessV0(index, scriptCode, type.sighash, prevOut.amount);
-		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
+		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes$3(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
 		else throw cannotSign(index);
 		return {
 			scheme: "ecdsa-secp256k1",
@@ -38762,7 +38771,7 @@ zoo`.split("\n"));
 		const decoded = decodeAddress(request.network, request.address);
 		const pubHash = hash160(key.publicKey);
 		if (request.format === "legacy") {
-			if (decoded.type !== "pkh" || !equalBytes(decoded.hash, pubHash)) throw cannotSignAddress();
+			if (decoded.type !== "pkh" || !equalBytes$3(decoded.hash, pubHash)) throw cannotSignAddress();
 			return {
 				kind: "bitcoin.message",
 				format: "legacy",
@@ -38776,7 +38785,7 @@ zoo`.split("\n"));
 			};
 		}
 		const scriptPubKey = OutScript.encode(decoded);
-		if (decoded.type === "wpkh" && equalBytes(decoded.hash, pubHash)) {
+		if (decoded.type === "wpkh" && equalBytes$3(decoded.hash, pubHash)) {
 			const tx = bip322ToSign(scriptPubKey, request.message);
 			return {
 				kind: "bitcoin.message",
@@ -38796,7 +38805,7 @@ zoo`.split("\n"));
 		if (decoded.type === "tr") {
 			const x = key.publicKey.slice(1);
 			const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
-			if (equalBytes(decoded.pubkey, outputKey)) {
+			if (equalBytes$3(decoded.pubkey, outputKey)) {
 				const tx = bip322ToSign(scriptPubKey, request.message);
 				return {
 					kind: "bitcoin.message",
@@ -38879,18 +38888,18 @@ zoo`.split("\n"));
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
 	* marker.
 	*/
-	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isRecord$1$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	/**
 	* Bip32Derivation values are [pubkey, { fingerprint, path }] tuples; tapBip32Derivation values are
 	* { hashes, der: { fingerprint, path } }.
 	*/
 	var derivationPaths = (map) => {
-		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$1(map) ? Object.values(map) : [];
+		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$1$1(map) ? Object.values(map) : [];
 		const paths = [];
 		for (const entry of entries) {
 			const value = Array.isArray(entry) ? entry[1] : entry;
-			if (!isRecord$1(value)) continue;
-			const { path } = isRecord$1(value["der"]) ? value["der"] : value;
+			if (!isRecord$1$1(value)) continue;
+			const { path } = isRecord$1$1(value["der"]) ? value["der"] : value;
 			if (Array.isArray(path) && path.every((p) => typeof p === "number")) paths.push(path);
 		}
 		return paths;
@@ -38913,13 +38922,13 @@ zoo`.split("\n"));
 	};
 	var DEFAULT_SIGHASH = 0;
 	var SIGHASH_ALL = 1;
-	var TEMPLATES = /* @__PURE__ */ new Set([
+	var TEMPLATES$1 = /* @__PURE__ */ new Set([
 		"btc.bip44",
 		"btc.bip49",
 		"btc.bip84",
 		"btc.bip86"
 	]);
-	var isSignEntry = (value) => isRecord$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES.has(value["template"]);
+	var isSignEntry = (value) => isRecord$1$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES$1.has(value["template"]);
 	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
 	/**
 	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller). Every
@@ -38982,6 +38991,15 @@ zoo`.split("\n"));
 		const address = template === "btc.bip84" ? p2wpkh(pub, net.params).address : template === "btc.bip49" ? p2sh(p2wpkh(pub, net.params), net.params).address : template === "btc.bip44" ? p2pkh(pub, net.params).address : p2tr(pub.subarray(1), void 0, net.params).address;
 		if (address === void 0) throw new ChainError("invalid-request", "could not encode the derived address");
 		return address;
+	}
+	/**
+	* The compressed (P2WPKH) or x-only (P2TR) public key at `change`/`index` under an account-level
+	* xpub — the key placed in a PSBT's bip32Derivation/tapBip32Derivation entry so the signing kernel
+	* can re-derive it.
+	*/
+	function bitcoinPubkeyFromXpub(xpub, template, network, change, index) {
+		const pub = xpubChild(xpub, network, change, index);
+		return template === "btc.bip86" ? pub.subarray(1) : pub;
 	}
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
@@ -39086,9 +39104,9 @@ zoo`.split("\n"));
 	};
 	var samePrevout = (a, b) => {
 		const [x, y] = [a.witnessUtxo, b.witnessUtxo];
-		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes(x.script, y.script);
+		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes$3(x.script, y.script);
 		const [m, n] = [a.nonWitnessUtxo, b.nonWitnessUtxo];
-		const full = m === void 0 || n === void 0 ? m === n : equalBytes(RawTx.encode(m), RawTx.encode(n));
+		const full = m === void 0 || n === void 0 ? m === n : equalBytes$3(RawTx.encode(m), RawTx.encode(n));
 		return witness && full;
 	};
 	/**
@@ -39100,7 +39118,7 @@ zoo`.split("\n"));
 		try {
 			const want = Transaction.fromPSBT(requested);
 			const got = Transaction.fromPSBT(signed);
-			if (!equalBytes(want.unsignedTx, got.unsignedTx)) return false;
+			if (!equalBytes$3(want.unsignedTx, got.unsignedTx)) return false;
 			return Array.from({ length: want.inputsLength }, (_, i) => i).every((i) => samePrevout(want.getInput(i), got.getInput(i)));
 		} catch (_unused3) {
 			return false;
@@ -40242,7 +40260,7 @@ zoo`.split("\n"));
 		86
 	];
 	/** The PSBT derivation entry that claims this account's fingerprint and path, if any. */
-	var derivationOf = (owner, fingerprint, purpose) => {
+	var derivationOf$1 = (owner, fingerprint, purpose) => {
 		var _owner$bip32Derivatio;
 		if (purpose === 86) {
 			var _owner$tapBip32Deriva;
@@ -40282,7 +40300,7 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		const { index: idx } = entry;
 		const input = tx.getInput(idx);
-		const der = derivationOf(input, b.fingerprint, purpose);
+		const der = derivationOf$1(input, b.fingerprint, purpose);
 		if (der === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
 		const pub = await childAt(b, purpose, der.path);
 		if (!deepEqual(der.pubkey, expectedPub(purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
@@ -40318,7 +40336,7 @@ zoo`.split("\n"));
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
 			for (const purpose of PURPOSES) {
-				const entry = derivationOf(output, b.fingerprint, purpose);
+				const entry = derivationOf$1(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
 					const pub = await childAt(b, purpose, entry.path);
@@ -40474,9 +40492,9 @@ zoo`.split("\n"));
 	init_secp256k1();
 	init_bip32();
 	init_utils();
-	var HARDENED$6 = 2147483648;
+	var HARDENED$9 = 2147483648;
 	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$6 ? `/${i - HARDENED$6}'` : `/${i}`).join("")}`;
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$9 ? `/${i - HARDENED$9}'` : `/${i}`).join("")}`;
 	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
 	var seedKeys = (seed, random) => {
 		const secpNodes = /* @__PURE__ */ new Map();
@@ -40831,19 +40849,19 @@ zoo`.split("\n"));
 	* source — the plan itself is reused, never recomputed.
 	*/
 	init_objectSpread2();
-	var HARDENED$5 = 2147483648;
+	var HARDENED$8 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED$5,
-			HARDENED$5
+			groupIndex + HARDENED$8,
+			HARDENED$8
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$5,
-			HARDENED$5,
+			(family === "tron" ? 195 : 60) + HARDENED$8,
+			HARDENED$8,
 			0,
 			groupIndex
 		];
@@ -40876,9 +40894,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$5,
-			net.coinType + HARDENED$5,
-			groupIndex + HARDENED$5
+			purpose + HARDENED$8,
+			net.coinType + HARDENED$8,
+			groupIndex + HARDENED$8
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -41121,7 +41139,7 @@ zoo`.split("\n"));
 		assertByteLength(bytes, 32, "secret key");
 	}
 	/** Structural guard: a plain record (not `null`, not an array). */
-	function isRecord(value) {
+	function isRecord$1(value) {
 		return typeof value === "object" && value !== null && !Array.isArray(value);
 	}
 	/**
@@ -41206,7 +41224,7 @@ zoo`.split("\n"));
 	}
 	/** Structural validation of an unsigned event (no crypto). */
 	function validateEvent(event) {
-		if (!isRecord(event)) return false;
+		if (!isRecord$1(event)) return false;
 		if (typeof event["kind"] !== "number" || !Number.isSafeInteger(event["kind"]) || event["kind"] < 0 || event["kind"] > 65535) return false;
 		if (typeof event["content"] !== "string" || hasLoneSurrogate(event["content"])) return false;
 		if (typeof event["created_at"] !== "number" || !Number.isSafeInteger(event["created_at"]) || event["created_at"] < 0) return false;
@@ -41220,7 +41238,7 @@ zoo`.split("\n"));
 	}
 	/** Structural validation of a full event including id and sig hex shape. */
 	function validateSignedEvent(event) {
-		if (isRecord(event) && validatedEvents.has(event)) return true;
+		if (isRecord$1(event) && validatedEvents.has(event)) return true;
 		if (!validateEvent(event)) return false;
 		const e = event;
 		if (typeof e["id"] !== "string" || !isHex32(e["id"])) return false;
@@ -41512,7 +41530,7 @@ zoo`.split("\n"));
 		const { sbox2 } = tableEncoding;
 		const toClean = [];
 		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$6(key));
+		const k32 = swap32IfBE$1(u32$7(key));
 		const Nk = k32.length;
 		const subByte = (n) => applySbox(sbox2, n, n, n, n);
 		const xk = new Uint32Array(len + 28);
@@ -41612,7 +41630,7 @@ zoo`.split("\n"));
 	function prepareBlockEncrypt(plaintext, outLen, dst) {
 		if (dst === void 0) dst = new Uint8Array(outLen);
 		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$6(dst);
+		const o = u32$7(dst);
 		return {
 			b: plaintext,
 			o,
@@ -41637,7 +41655,7 @@ zoo`.split("\n"));
 	}
 	function padPCKS(left) {
 		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$6(tmp);
+		const tmp32 = u32$7(tmp);
 		tmp.set(left);
 		const paddingByte = BLOCK_SIZE - left.length;
 		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
@@ -41674,12 +41692,12 @@ zoo`.split("\n"));
 				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
 				const xk = expandKeyLE(key);
 				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$6(input);
+				const b = u32$7(input);
 				swap32IfBE$1(b);
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
+				const n32 = u32$7(_iv);
 				swap32IfBE$1(n32);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				let i = 0;
@@ -41708,11 +41726,11 @@ zoo`.split("\n"));
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
+				const n32 = u32$7(_iv);
 				swap32IfBE$1(n32);
 				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$6(ciphertext);
-				const o = u32$6(dst);
+				const b = u32$7(ciphertext);
+				const o = u32$7(dst);
 				swap32IfBE$1(b);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				for (let i = 0; i + 4 <= b.length;) {
@@ -41907,7 +41925,7 @@ zoo`.split("\n"));
 		var _opts$maxPayloadChars;
 		const { nonce, ciphertext, mac } = decodePayload(payload, (_opts$maxPayloadChars = opts === null || opts === void 0 ? void 0 : opts.maxPayloadChars) !== null && _opts$maxPayloadChars !== void 0 ? _opts$maxPayloadChars : DEFAULT_MAX_PAYLOAD_CHARS);
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
-		if (!equalBytes$6(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
+		if (!equalBytes$9(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip59.mjs
@@ -41941,7 +41959,7 @@ zoo`.split("\n"));
 		}
 	}
 	function parseRumor(value) {
-		if (!isRecord(value)) throw new Nip59Error("invalid rumor");
+		if (!isRecord$1(value)) throw new Nip59Error("invalid rumor");
 		if (Object.hasOwn(value, "sig")) throw new Nip59Error("rumor must be unsigned");
 		const givenId = value["id"];
 		if (!validateEvent(value)) throw new Nip59Error("invalid rumor");
@@ -42221,9 +42239,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$5(B);
-		const V = u32$5(new Uint8Array(blockSize * N));
-		const tmp = u32$5(new Uint8Array(blockSize));
+		const B32 = u32$6(B);
+		const V = u32$6(new Uint8Array(blockSize * N));
+		const tmp = u32$6(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;
@@ -42613,7 +42631,7 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/ops.ts
-	async function sign$1(ctx, pool, params, requestSession) {
+	async function sign$2(ctx, pool, params, requestSession) {
 		ctx.session.require(requestSession);
 		return signEvent(pool, params.publicKey, params.event);
 	}
@@ -42769,7 +42787,7 @@ zoo`.split("\n"));
 				"nostr.deriveKey": async (ctx, params, session) => deriveKey(ctx, params, session),
 				"nostr.removeKey": async (ctx, params, session) => removeKey(ctx, params, session),
 				"nostr.exportKey": async (ctx, params, session) => exportKey(ctx, params, session),
-				"nostr.signEvent": async (ctx, params, session) => sign$1(ctx, pool, params, session),
+				"nostr.signEvent": async (ctx, params, session) => sign$2(ctx, pool, params, session),
 				"nostr.nip04Encrypt": async (ctx, params, session) => nip04Encrypt(ctx, pool, params, session),
 				"nostr.nip04Decrypt": async (ctx, params, session) => nip04Decrypt(ctx, pool, params, session),
 				"nostr.nip44Encrypt": async (ctx, params, session) => nip44Encrypt(ctx, pool, params, session),
@@ -43126,7 +43144,7 @@ zoo`.split("\n"));
 	init_sha2();
 	init_utils$2();
 	var HARDWARE_WALLET_KIND = "hardware-wallet";
-	var HARDENED$4 = 2147483648;
+	var HARDENED$7 = 2147483648;
 	/** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
 	var DEVICE_TEXT$1 = /^[\u0020-\u007E]{1,64}$/;
 	var HEX$1 = /^[0-9a-f]+$/;
@@ -43209,12 +43227,12 @@ zoo`.split("\n"));
 			if (digits.length > 1 && digits.startsWith("0")) throw bodyFailure();
 			const index = Number(digits);
 			if (!Number.isSafeInteger(index) || index > 2147483647) throw bodyFailure();
-			return hardened ? index + HARDENED$4 : index;
+			return hardened ? index + HARDENED$7 : index;
 		});
 	}
 	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; empty paths are `m`. */
 	function pathToString(path) {
-		return `m${path.map((i) => i >= HARDENED$4 ? `/${i - HARDENED$4}'` : `/${i}`).join("")}`;
+		return `m${path.map((i) => i >= HARDENED$7 ? `/${i - HARDENED$7}'` : `/${i}`).join("")}`;
 	}
 	var asHexBytes = (value, length) => {
 		if (typeof value !== "string" || value.length !== length * 2 || !HEX$1.test(value)) throw bodyFailure();
@@ -43276,7 +43294,7 @@ zoo`.split("\n"));
 				const publicKey = asHexBytes(entry, 32);
 				if (!ed25519.utils.isValidPublicKey(publicKey)) throw bodyFailure();
 				const parsedPath = pathFromString(path);
-				if (parsedPath.some((i) => i < HARDENED$4)) throw bodyFailure();
+				if (parsedPath.some((i) => i < HARDENED$7)) throw bodyFailure();
 				return {
 					path: parsedPath,
 					publicKey
@@ -43320,7 +43338,7 @@ zoo`.split("\n"));
 	function fail$4() {
 		throw new KernelError("integrity", "malformed cbor");
 	}
-	var utf8 = new TextDecoder("utf-8", { fatal: true });
+	var utf8$1 = new TextDecoder("utf-8", { fatal: true });
 	var take = (cursor, length) => {
 		if (length < 0 || cursor.offset + length > cursor.bytes.length) fail$4();
 		const slice = cursor.bytes.subarray(cursor.offset, cursor.offset + length);
@@ -43377,7 +43395,7 @@ zoo`.split("\n"));
 				try {
 					return {
 						kind: "text",
-						value: utf8.decode(raw)
+						value: utf8$1.decode(raw)
 					};
 				} catch (_unused) {
 					return fail$4();
@@ -43806,50 +43824,50 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$3 = 2147483648;
+	var HARDENED$6 = 2147483648;
 	/** The BIP-32 account nodes the sync pins: btc purposes, ethereum and tron, coin 0' account 0'. */
 	var SECP256K1_PATHS = [
 		[
 			2147483692,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483697,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483732,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483734,
-			HARDENED$3,
-			HARDENED$3
+			HARDENED$6,
+			HARDENED$6
 		],
 		[
 			2147483692,
 			2147483708,
-			HARDENED$3
+			HARDENED$6
 		],
 		[
 			2147483692,
 			2147483843,
-			HARDENED$3
+			HARDENED$6
 		]
 	];
 	/** The solana account and its change leaf — the only ed25519 keys the sync pins. */
 	var ED25519_PATHS = [[
 		2147483692,
 		2147484149,
-		HARDENED$3
+		HARDENED$6
 	], [
 		2147483692,
 		2147484149,
-		HARDENED$3,
-		HARDENED$3
+		HARDENED$6,
+		HARDENED$6
 	]];
 	function fail$2() {
 		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
@@ -43859,7 +43877,7 @@ zoo`.split("\n"));
 		const components = [];
 		for (const component of keyPath.components) {
 			if (component.index === void 0 || component.index > 2147483647) return;
-			components.push(component.index + (component.hardened ? HARDENED$3 : 0));
+			components.push(component.index + (component.hardened ? HARDENED$6 : 0));
 		}
 		return components;
 	};
@@ -43875,7 +43893,7 @@ zoo`.split("\n"));
 			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
 			if (key.origin !== void 0) {
 				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) fail$2();
+				if (source !== void 0 && !equalBytes$9(source, accounts.masterFingerprint)) fail$2();
 			}
 			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) continue;
 			if (claimed.some((seen) => samePath$2(seen, path))) fail$2();
@@ -43913,9 +43931,9 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$2 = 2147483648;
+	var HARDENED$5 = 2147483648;
 	var ORIGIN$1 = "qntx";
-	var h = (...indices) => indices.map((i) => i + HARDENED$2);
+	var h = (...indices) => indices.map((i) => i + HARDENED$5);
 	/**
 	* The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a prefix
 	* matches the path itself or any extension of it.
@@ -43950,7 +43968,7 @@ zoo`.split("\n"));
 		h(44, 9e3)
 	];
 	var under = (prefix, path) => path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
-	function integrity$2() {
+	function integrity$3() {
 		throw new KernelError("integrity", "malformed key-derivation answer");
 	}
 	/** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
@@ -43967,7 +43985,7 @@ zoo`.split("\n"));
 			},
 			scan: ["crypto-multi-accounts"]
 		});
-		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$2();
+		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$3();
 		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
 		const nodes = [];
 		const ed25519 = [];
@@ -43976,18 +43994,18 @@ zoo`.split("\n"));
 			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
 			if (key.origin !== void 0) {
 				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) integrity$2();
+				if (source !== void 0 && !equalBytes$9(source, accounts.masterFingerprint)) integrity$3();
 			}
-			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$2();
+			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$3();
 			if (need.secp256k1.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$2();
+				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$3();
 				nodes.push(_objectSpread2({
 					path,
 					publicKey: new Uint8Array(key.key),
 					chainCode: new Uint8Array(key.chainCode)
 				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
 			} else if (need.ed25519.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 32) integrity$2();
+				if (key.key.length !== 32) integrity$3();
 				ed25519.push({
 					path,
 					publicKey: new Uint8Array(key.key)
@@ -43996,7 +44014,7 @@ zoo`.split("\n"));
 			answered.push(path);
 		}
 		const wanted = [...need.secp256k1, ...need.ed25519];
-		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$2(a, w)))) integrity$2();
+		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$2(a, w)))) integrity$3();
 		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
 			nodes,
 			ed25519
@@ -44019,14 +44037,14 @@ zoo`.split("\n"));
 	init_transaction();
 	init_objectSpread2();
 	var ORIGIN = "qntx";
-	function integrity$1() {
+	function integrity$2() {
 		throw new KernelError("integrity", "malformed device sign exchange");
 	}
 	function wrongDevice() {
 		throw new KernelError("wrong-device", "the signature answers a different request");
 	}
 	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
-	var display = (_request, plan) => {
+	var display$1 = (_request, plan) => {
 		switch (plan.kind) {
 			case "evm.transaction": return plan.tx.type === "legacy" || plan.tx.type === "eip1559" ? "clear" : "unsupported";
 			case "evm.personal-message":
@@ -44052,31 +44070,31 @@ zoo`.split("\n"));
 			show,
 			scan: [type]
 		});
-		if (response.kind !== "qr" || response.ur.type !== type) integrity$1();
+		if (response.kind !== "qr" || response.ur.type !== type) integrity$2();
 		return decodeCbor(response.ur.cbor);
 	};
 	/** A signature answer must name the request id this exchange minted. */
 	var checkRequestId = (returned, sent) => {
-		if (returned === void 0 || !equalBytes$6(returned, sent)) wrongDevice();
+		if (returned === void 0 || !equalBytes$9(returned, sent)) wrongDevice();
 	};
 	var compactSecp256k1 = (signature, requestId, length) => {
 		checkRequestId(signature.requestId, requestId);
-		if (signature.signature.length !== length) integrity$1();
+		if (signature.signature.length !== length) integrity$2();
 		return signature.signature.subarray(0, 64);
 	};
 	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
-	var expectDigest = (computed, task) => {
-		if (!equalBytes$6(computed, task.digest)) integrity$1();
+	var personalDigest$1 = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	var expectDigest$1 = (computed, task) => {
+		if (!equalBytes$9(computed, task.digest)) integrity$2();
 	};
-	var evm = async (link, context, request, stage) => {
+	var evm$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
 		const requestId = context.random(16);
 		let signData;
 		let dataType;
 		let chainId;
 		if (stage.kind === "evm.transaction") {
-			if (request.kind !== "evm.transaction") integrity$1();
+			if (request.kind !== "evm.transaction") integrity$2();
 			const { tx } = request;
 			signData = evmSigningPreimage(tx);
 			const { chainId: txChainId } = tx;
@@ -44086,21 +44104,21 @@ zoo`.split("\n"));
 			} else if (tx.type === "eip1559") {
 				dataType = 4;
 				chainId = txChainId;
-			} else integrity$1();
-			expectDigest(keccak_256(signData), task);
+			} else integrity$2();
+			expectDigest$1(keccak_256(signData), task);
 		} else if (stage.kind === "evm.typed-data") {
-			if (request.kind !== "evm.typed-data") integrity$1();
+			if (request.kind !== "evm.typed-data") integrity$2();
 			signData = utf8ToBytes$1(request.typedData);
 			dataType = 2;
-			expectDigest(planEvm(request, {
+			expectDigest$1(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
 			}).tasks[0].digest, task);
 		} else {
-			if (request.kind !== stage.kind) integrity$1();
+			if (request.kind !== stage.kind) integrity$2();
 			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
 			dataType = 3;
-			expectDigest(personalDigest(signData), task);
+			expectDigest$1(personalDigest$1(signData), task);
 		}
 		return compactSecp256k1(ethSignature(await exchange(link, {
 			type: "eth-sign-request",
@@ -44115,7 +44133,7 @@ zoo`.split("\n"));
 			}))
 		}, "eth-signature")), requestId, 65);
 	};
-	var tron = async (link, context, request, stage) => {
+	var tron$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
 		const requestId = context.random(16);
 		let signData;
@@ -44123,12 +44141,12 @@ zoo`.split("\n"));
 		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
 			signData = request.rawData;
 			dataType = 1;
-			expectDigest(sha256$1(signData), task);
+			expectDigest$1(sha256$1(signData), task);
 		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			signData = request.message;
 			dataType = 2;
-			expectDigest(tronMessageDigest(signData), task);
-		} else integrity$1();
+			expectDigest$1(tronMessageDigest(signData), task);
+		} else integrity$2();
 		return compactSecp256k1(tronSignature(await exchange(link, {
 			type: "tron-sign-request",
 			cbor: tronSignRequest({
@@ -44141,11 +44159,11 @@ zoo`.split("\n"));
 			})
 		}, "tron-signature")), requestId, 65);
 	};
-	var solana = async (link, context, request, stage) => {
+	var solana$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.kind !== stage.kind) integrity$1();
+		if (request.kind !== stage.kind) integrity$2();
 		const signData = request.message;
-		if (!equalBytes$6(signData, task.message)) integrity$1();
+		if (!equalBytes$9(signData, task.message)) integrity$2();
 		const requestId = context.random(16);
 		const answer = solSignature(await exchange(link, {
 			type: "sol-sign-request",
@@ -44159,50 +44177,50 @@ zoo`.split("\n"));
 			})
 		}, "sol-signature"));
 		checkRequestId(answer.requestId, requestId);
-		if (answer.signature.length !== 64) integrity$1();
+		if (answer.signature.length !== 64) integrity$2();
 		return answer.signature;
 	};
-	var bitcoinPsbt = async (link, stage) => {
+	var bitcoinPsbt$1 = async (link, stage) => {
 		const signed = cryptoPsbtBytes(await exchange(link, {
 			type: "crypto-psbt",
 			cbor: cryptoPsbt(stage.psbt)
 		}, "crypto-psbt"));
-		if (!samePsbtContent(stage.psbt, signed)) integrity$1();
+		if (!samePsbtContent(stage.psbt, signed)) integrity$2();
 		let transaction;
 		try {
 			transaction = Transaction.fromPSBT(signed);
 		} catch (_unused) {
-			integrity$1();
+			integrity$2();
 		}
 		return stage.tasks.map((task, index) => {
 			var _input$partialSig;
 			const planned = stage.inputs[index];
-			if (planned === void 0) integrity$1();
+			if (planned === void 0) integrity$2();
 			const input = transaction.getInput(planned.index);
 			if (task.scheme === "bip340") {
 				const signature = input.tapKeySig;
-				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$1();
-				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$1();
+				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$2();
+				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$2();
 				return signature.subarray(0, 64);
 			}
-			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$6(key, task.publicKey));
-			if (entry === void 0) integrity$1();
+			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$9(key, task.publicKey));
+			if (entry === void 0) integrity$2();
 			const [, der] = entry;
-			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$1();
+			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$2();
 			let signature;
 			try {
 				signature = secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
 			} catch (_unused2) {
-				integrity$1();
+				integrity$2();
 			}
 			return signature;
 		});
 	};
-	var bitcoinMessage = async (link, context, request, stage) => {
+	var bitcoinMessage$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$2();
 		const signData = utf8ToBytes$1(request.message);
-		expectDigest(legacyMessageHash(request.message), task);
+		expectDigest$1(legacyMessageHash(request.message), task);
 		const requestId = context.random(16);
 		const answer = btcSignature(await exchange(link, {
 			type: "btc-sign-request",
@@ -44215,44 +44233,52 @@ zoo`.split("\n"));
 			})
 		}, "btc-signature"));
 		checkRequestId(answer.requestId, requestId);
-		if (!equalBytes$6(answer.publicKey, task.publicKey)) wrongDevice();
-		if (answer.signature.length !== 65) integrity$1();
+		if (!equalBytes$9(answer.publicKey, task.publicKey)) wrongDevice();
+		if (answer.signature.length !== 65) integrity$2();
 		return answer.signature.subarray(1);
 	};
-	var sign = async (link, context) => {
+	var sign$1 = async (link, context) => {
 		const { request, stage } = context;
 		switch (stage.kind) {
 			case "evm.transaction":
 			case "evm.personal-message":
 			case "evm.fiat24-session":
 			case "evm.typed-data":
-				if (request.kind !== stage.kind) integrity$1();
-				return [await evm(link, context, request, stage)];
+				if (request.kind !== stage.kind) integrity$2();
+				return [await evm$1(link, context, request, stage)];
 			case "tron.transaction":
 			case "tron.message":
-				if (request.kind !== stage.kind) integrity$1();
-				return [await tron(link, context, request, stage)];
+				if (request.kind !== stage.kind) integrity$2();
+				return [await tron$1(link, context, request, stage)];
 			case "solana.transaction":
 			case "solana.message":
-				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$1();
-				return [await solana(link, context, request, stage)];
+				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$2();
+				return [await solana$1(link, context, request, stage)];
 			case "bitcoin.psbt":
-				if (request.kind !== "bitcoin.psbt") integrity$1();
-				return bitcoinPsbt(link, stage);
+				if (request.kind !== "bitcoin.psbt") integrity$2();
+				return bitcoinPsbt$1(link, stage);
 			case "bitcoin.message":
-				if (request.kind !== "bitcoin.message") integrity$1();
-				return [await bitcoinMessage(link, context, request, stage)];
+				if (request.kind !== "bitcoin.message") integrity$2();
+				return [await bitcoinMessage$1(link, context, request, stage)];
 			default: throw new KernelError("unsupported", "keystone cannot sign this request");
 		}
 	};
-	// packages/wallet-kernel/src/modules/signers/drivers.ts
-	var DRIVERS = { keystone: {
+	// packages/wallet-kernel/src/modules/signers/keystone/driver.ts
+	/**
+	* The Keystone driver: QR air-gapped pairing, compare-style address checks, and QR signing. `pair`
+	* scans the device's `crypto-multi-accounts` sync and pins the public material `sync.ts` admits;
+	* `verifyAddress` asks the host to show the kernel's address for the user to compare against the
+	* device menu (Keystone has no host-initiated address display). `sign` shows the registry request
+	* `sign.ts` builds and admits only the answer to that exchange; `accounts` runs the
+	* `qr-hardware-call` key-derivation exchange `derive.ts` pins.
+	*/
+	var KEYSTONE_DRIVER = {
 		pair: async (link) => parseSync(await link.exchange({
 			kind: "qr",
 			scan: ["crypto-multi-accounts"]
 		})),
-		display,
-		sign,
+		display: display$1,
+		sign: sign$1,
 		accounts: derive,
 		verifyAddress: async (link, target) => {
 			const response = await link.exchange({
@@ -44266,7 +44292,2037 @@ zoo`.split("\n"));
 				matched: response.matched
 			};
 		}
-	} };
+	};
+	// packages/wallet-kernel/src/modules/signers/ledger/display.ts
+	/**
+	* What the device would show for a request: `clear` only when the pinned app renders the full
+	* request natively without a setting, `blind` when it signs behind a setting or a hash, and
+	* `unsupported` when the pinned build cannot serve the request at all. The rule of thumb: claiming
+	* `clear` for what the device would blind-sign is the bug to avoid — `blind` is the safe answer.
+	*
+	* Verified against the pinned app sources:
+	*
+	* - Ethereum 1.24.0: tx without calldata renders the review flow; calldata or creation needs "Blind
+	*   signing"; EIP-712 shows domain fields + message hash only; EIP-7702 is not in the default build
+	*   (EIP7702_SUPPORT ?= 0).
+	* - Tron 0.8.2 (src/handlers/sign.c): dedicated screens exist for the contract types listed below —
+	*   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
+	*   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
+	*   a TRC20 transfer/approve needs "Custom contracts"; a contract call carrying TRX/TRC10 value
+	*   with a TRC20 selector is refused outright (E_INCORRECT_DATA).
+	* - Solana 1.16.0: the app renders System Program transfers; every other instruction is a blind sign
+	*   (handle_sign_offchain_message.c / libsol parser); off-chain messages are the v0 `\xffsolana
+	*   offchain` document — format 0 restricted-ASCII shows text, format 1 UTF-8 shows a hash behind
+	*   the blind setting.
+	* - Bitcoin 2.5.1: a default-wallet PSBT renders its own address/amount review; mixed-template inputs
+	*   cannot form one policy; message signing renders printable ASCII only.
+	*/
+	/** TRC20 selectors the device ABI-decodes to a token screen (parse.c SELECTOR). */
+	var TRC20_SELECTORS = [Uint8Array.of(169, 5, 156, 187), Uint8Array.of(9, 94, 167, 179)];
+	/**
+	* Contract types with a dedicated approval screen on the pinned app (sign.c's ux_flow_display
+	* switch). Not listed: CancelAllUnfreezeV2Contract — the app has no case for it, so it signs behind
+	* "Sign by hash".
+	*/
+	var DEDICATED_CONTRACTS = /* @__PURE__ */ new Set([
+		"TransferContract",
+		"TransferAssetContract",
+		"VoteWitnessContract",
+		"FreezeBalanceV2Contract",
+		"UnfreezeBalanceV2Contract",
+		"WithdrawExpireUnfreezeContract",
+		"DelegateResourceContract",
+		"UnDelegateResourceContract",
+		"WithdrawBalanceContract",
+		"AccountPermissionUpdateContract"
+	]);
+	/** Whether a TriggerSmartContract is a TRC20 transfer/approve the device ABI-decodes. */
+	var isTrc20Call = (contract) => {
+		const { data } = contract;
+		return data.length === 68 && TRC20_SELECTORS.some((sel) => sel.every((b, i) => data[i] === b));
+	};
+	var OFFCHAIN_DOMAIN = Uint8Array.of(255, ...new TextEncoder().encode("solana offchain"));
+	/** Printable-ASCII per the app: 0x20..0x7e plus LF (libsol/string_utils.c is_data_ascii). */
+	var isAscii = (bytes) => bytes.every((b) => b >= 32 && b <= 126 || b === 10);
+	/**
+	* The v0 off-chain message the pinned app accepts: `ff"solana offchain" ‖ version 0 ‖ appDomain 32
+	* ‖ format ≤1 ‖ signerCount ≥1 ‖ signers ‖ len(u16 LE) ‖ message`, message length matching exactly.
+	* Returns the message body or `undefined` when the bytes are not that document.
+	*/
+	var offchainMessage = (message) => {
+		const head = OFFCHAIN_DOMAIN.length + 1 + 32 + 1 + 1;
+		if (message.length < head + 2) return;
+		if (!OFFCHAIN_DOMAIN.every((b, i) => message[i] === b) || message[16] !== 0) return;
+		const { 49: format, 50: signers } = message;
+		if (format === void 0 || format > 1 || signers === void 0 || signers === 0) return;
+		const bodyAt = head + signers * 32;
+		const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
+		if (message.length < bodyAt + 2 || view.getUint16(bodyAt, true) !== message.length - bodyAt - 2) return;
+		return message.subarray(bodyAt + 2);
+	};
+	/**
+	* The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
+	* data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
+	* dedicated screen needs "Sign by hash".
+	*/
+	var contractType = (slot) => slot.typeUrl.slice(slot.typeUrl.lastIndexOf(".") + 1);
+	/** The decoded TriggerSmartContract of a raw transaction, or undefined for another/unknown slot. */
+	var tronTrigger = (rawData) => {
+		var _decodeTronContract;
+		const slot = decodeTronRawData(rawData).contract;
+		if (contractType(slot) !== "TriggerSmartContract") return;
+		const decoded = (_decodeTronContract = decodeTronContract(slot.typeId, slot.value)) === null || _decodeTronContract === void 0 ? void 0 : _decodeTronContract.contract;
+		return (decoded === null || decoded === void 0 ? void 0 : decoded.type) === "TriggerSmartContract" ? decoded : void 0;
+	};
+	var tronSettings = (rawData) => {
+		const raw = decodeTronRawData(rawData);
+		const type = contractType(raw.contract);
+		const trigger = type === "TriggerSmartContract" ? tronTrigger(rawData) : void 0;
+		return {
+			dataAllowed: raw.memo !== void 0 && raw.memo.length > 0,
+			customContracts: type === "TriggerSmartContract" && (trigger === void 0 || !isTrc20Call(trigger)),
+			signByHash: type !== "TriggerSmartContract" && !DEDICATED_CONTRACTS.has(type)
+		};
+	};
+	/**
+	* Whether a decoded tron transaction is rendered by a dedicated screen with no setting: a dedicated
+	* contract — or a TRC20 transfer/approve — and no `data` memo (data needs Allow data).
+	*/
+	var tronClears = (rawData) => {
+		const needs = tronSettings(rawData);
+		if (needs.dataAllowed || needs.customContracts || needs.signByHash) return false;
+		const trigger = tronTrigger(rawData);
+		return trigger === void 0 || trigger.callValue === 0n && trigger.callTokenValue === 0n;
+	};
+	/** Whether a compiled solana message is all System transfers / ComputeBudget instructions. */
+	var solanaClears = (message) => {
+		const parsed = parseCompiledMessage(message);
+		if (parsed.lookups.length > 0) return false;
+		const { staticAccounts, instructions } = parsed;
+		return instructions.every((ix) => {
+			const program = staticAccounts[ix.programAddressIndex];
+			if (program === PROGRAM_IDS.computeBudget) return true;
+			if (program !== PROGRAM_IDS.system) return false;
+			const view = new DataView(ix.data.buffer, ix.data.byteOffset, ix.data.byteLength);
+			return ix.data.length === 12 && view.getUint32(0, true) === 2;
+		});
+	};
+	/** The off-chain message classification the display needs. */
+	var solanaOffchain = (message) => {
+		const body = offchainMessage(message);
+		if (body === void 0) return;
+		return isAscii(body) ? "ascii" : "utf8";
+	};
+	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
+	var display = (request, plan) => {
+		if (plan.kind === "evm.transaction") {
+			const { tx } = plan;
+			if (tx.type === "eip7702") return "unsupported";
+			return tx.to !== void 0 && (tx.data === "0x" || tx.data === "") ? "clear" : "blind";
+		}
+		if (plan.kind === "evm.personal-message" || plan.kind === "evm.fiat24-session") return "clear";
+		if (plan.kind === "evm.typed-data") return "blind";
+		if (plan.kind === "tron.transaction") {
+			if (request.kind !== "tron.transaction") return "unsupported";
+			return tronClears(request.rawData) ? "clear" : "blind";
+		}
+		if (plan.kind === "tron.message") return "clear";
+		if (plan.kind === "tron.typed-data") return "blind";
+		if (plan.kind === "solana.transaction") {
+			if (request.kind !== "solana.transaction") return "unsupported";
+			return solanaClears(request.message) ? "clear" : "blind";
+		}
+		if (plan.kind === "solana.message") {
+			if (request.kind !== "solana.message") return "unsupported";
+			const offchain = solanaOffchain(request.message);
+			return offchain === void 0 ? "unsupported" : offchain === "ascii" ? "clear" : "blind";
+		}
+		if (plan.kind === "bitcoin.psbt") {
+			if (request.kind !== "bitcoin.psbt") return "unsupported";
+			return new Set(request.sign.map((s) => s.template)).size === 1 ? "clear" : "unsupported";
+		}
+		if (plan.kind === "bitcoin.message" && request.kind === "bitcoin.message" && plan.format === "legacy" && request.format === "legacy") {
+			const bytes = new TextEncoder().encode(request.message);
+			return bytes.length <= 640 && bytes.every((b) => b >= 32 && b <= 126) ? "clear" : "blind";
+		}
+		return "unsupported";
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/errors.ts
+	init_defineProperty();
+	var LedgerError = class extends Error {
+		constructor(code, message, sw) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			_defineProperty(
+				this,
+				/** The status word that triggered the error, when one did. */
+				"sw",
+				void 0
+			);
+			this.name = "LedgerError";
+			this.code = code;
+			this.sw = sw;
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/bytes.ts
+	init_defineProperty();
+	var input = (message) => new LedgerError("invalid-input", message);
+	var response = (message) => new LedgerError("invalid-response", message);
+	function u32(value) {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	}
+	/** Bitcoin CompactSize varint (doc/merkle.md "Merkleized maps" counts keys this way). */
+	function varint(value) {
+		if (!Number.isSafeInteger(value) || value < 0) throw input("varint value is not a non-negative safe integer");
+		if (value < 253) return Uint8Array.of(value);
+		if (value <= 65535) {
+			const out = /* @__PURE__ */ new Uint8Array(3);
+			new DataView(out.buffer).setUint8(0, 253);
+			new DataView(out.buffer).setUint16(1, value, true);
+			return out;
+		}
+		if (value <= 4294967295) {
+			const out = /* @__PURE__ */ new Uint8Array(5);
+			new DataView(out.buffer).setUint8(0, 254);
+			new DataView(out.buffer).setUint32(1, value, true);
+			return out;
+		}
+		const out = /* @__PURE__ */ new Uint8Array(9);
+		new DataView(out.buffer).setUint8(0, 255);
+		new DataView(out.buffer).setBigUint64(1, BigInt(value), true);
+		return out;
+	}
+	/**
+	* `depth ‖ u32(index)…` (ledger-app-solana/doc/api.md "BIP32 path encoding"): depth 1..maxDepth,
+	* indices are u32 (≥ 0x80000000 hardened), else `invalid-input`.
+	*/
+	function encodePath(path, maxDepth) {
+		if (path.length === 0 || path.length > maxDepth) throw input("derivation path depth out of range");
+		const out = new Uint8Array(1 + 4 * path.length);
+		out[0] = path.length;
+		const view = new DataView(out.buffer);
+		for (const [i, index] of path.entries()) {
+			if (!Number.isSafeInteger(index) || index < 0 || index > 4294967295) throw input("derivation path index is not a u32");
+			view.setUint32(1 + 4 * i, index);
+		}
+		return out;
+	}
+	/**
+	* A bounded cursor over a device response: every read checks its span, `end()` requires the buffer
+	* consumed. Any overrun or leftover is `invalid-response`.
+	*/
+	var Reader = class {
+		constructor(data) {
+			_defineProperty(this, "offset", 0);
+			_defineProperty(this, "data", void 0);
+			this.data = data;
+		}
+		get remaining() {
+			return this.data.length - this.offset;
+		}
+		take(count) {
+			if (count < 0 || this.remaining < count) throw response("response is shorter than its declared layout");
+			const out = this.data.subarray(this.offset, this.offset + count);
+			this.offset += count;
+			return out;
+		}
+		view(count, read) {
+			const slice = this.take(count);
+			return read(new DataView(slice.buffer, slice.byteOffset, slice.byteLength));
+		}
+		u8() {
+			return this.view(1, (v) => v.getUint8(0));
+		}
+		u16() {
+			return this.view(2, (v) => v.getUint16(0));
+		}
+		u32() {
+			return this.view(4, (v) => v.getUint32(0));
+		}
+		bytes(count) {
+			return this.take(count);
+		}
+		/** U8-length-prefixed bytes. */
+		lv() {
+			const length = this.u8();
+			return this.take(length);
+		}
+		/** Bitcoin CompactSize varint; counts beyond u53 are not representable and rejected. */
+		varint() {
+			const tag = this.u8();
+			if (tag < 253) return tag;
+			if (tag === 253) return this.view(2, (v) => v.getUint16(0, true));
+			if (tag === 254) return this.view(4, (v) => v.getUint32(0, true));
+			const value = this.view(8, (v) => v.getBigUint64(0, true));
+			if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw response("varint count does not fit in a safe integer");
+			return Number(value);
+		}
+		rest() {
+			return this.take(this.remaining);
+		}
+		end() {
+			if (this.remaining !== 0) throw response("response has trailing bytes");
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/status.ts
+	/** The error assigned to a status word the allow-list knows. */
+	function mapped(app, sw) {
+		switch (sw) {
+			case 21781: return "device-locked";
+			case 21761: return "user-rejected";
+			case 28160: return "app-not-open";
+			case 27904: return "unsupported";
+		}
+		switch (app) {
+			case "dashboard":
+				if (sw === 26631) return "app-not-installed";
+				break;
+			case "solana":
+				if (sw === 27010) return "user-rejected";
+				if (sw === 26632) return "setting-required";
+				break;
+			case "tron":
+				if (sw === 27275 || sw === 27276 || sw === 27277) return "setting-required";
+				if (sw === 27278) return "unsupported";
+				break;
+			case "bitcoin": if (sw === 27266) return "unsupported";
+		}
+		if ((app === "ethereum" || app === "solana" || app === "tron" || app === "bitcoin") && sw === 27013) return "user-rejected";
+	}
+	var MESSAGES = {
+		"invalid-input": "input out of range",
+		transport: "transport framing violation",
+		"invalid-response": "device returned an invalid response",
+		"device-locked": "device is locked",
+		"app-not-open": "the app is not open on the device",
+		"app-not-installed": "the app is not installed on the device",
+		"user-rejected": "the operation was refused on the device",
+		"setting-required": "the app requires a setting that is off",
+		unsupported: "the device does not support this request",
+		"device-fault": "the device returned an unknown status word"
+	};
+	/** The LedgerError for status word `sw` seen on `app`; the word is always recorded. */
+	function statusError(app, sw) {
+		var _mapped;
+		const code = (_mapped = mapped(app, sw)) !== null && _mapped !== void 0 ? _mapped : "device-fault";
+		return new LedgerError(code, MESSAGES[code], sw);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/apdu.ts
+	/**
+	* Short-APDU codec and the exchange primitive every app call is built on
+	* (ledger-app-solana/doc/api.md "APDU Command payload encoding").
+	*
+	* Wire command: `CLA ‖ INS ‖ P1 ‖ P2 ‖ Lc ‖ data` — Lc is always present, data ≤ 255 bytes. Wire
+	* response: `data ‖ SW(2)` — the transport layer's length prefix is stripped before this.
+	*/
+	var byte = (value) => {
+		if (!Number.isSafeInteger(value) || value < 0 || value > 255) throw input("APDU header field is not a byte");
+	};
+	function encodeCommand(command) {
+		const { cla, ins, p1, p2, data } = command;
+		for (const field of [
+			cla,
+			ins,
+			p1,
+			p2
+		]) byte(field);
+		if (data.length > 255) throw input("APDU data exceeds 255 bytes");
+		const out = new Uint8Array(5 + data.length);
+		out.set([
+			cla,
+			ins,
+			p1,
+			p2,
+			data.length
+		]);
+		out.set(data, 5);
+		return out;
+	}
+	function decodeResponse(bytes) {
+		if (bytes.length < 2) throw new LedgerError("transport", "response is shorter than a status word");
+		return {
+			data: bytes.subarray(0, -2),
+			sw: new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 2, 2).getUint16(0)
+		};
+	}
+	/** One command → its data, or the LedgerError the status word maps to. */
+	async function transmit(exchange, app, command) {
+		const { data, sw } = decodeResponse(await exchange(encodeCommand(command)));
+		if (sw !== 36864) throw statusError(app, sw);
+		return data;
+	}
+	/**
+	* A multi-chunk command sequence: every non-last reply must be `9000` with empty data
+	* (ledger-app-ethereum/doc/apdu.md "streamed to the device in 255 bytes maximum data chunks"); a
+	* non-empty intermediate reply is `invalid-response`. Returns the last reply's data.
+	*/
+	async function transmitChunks(exchange, app, commands) {
+		const last = commands.at(-1);
+		if (last === void 0) throw input("empty command sequence");
+		for (const command of commands.slice(0, -1)) if ((await transmit(exchange, app, command)).length > 0) throw new LedgerError("invalid-response", "an intermediate chunk returned data");
+		return transmit(exchange, app, last);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/merkle.ts
+	init_sha2();
+	/** `sha256(0x00 ‖ data)` — the domain-separated leaf hash of doc/merkle.md. */
+	function leafHash(data) {
+		const h = new Uint8Array(1 + data.length);
+		h.set(data, 1);
+		return sha256$1(h);
+	}
+	var nodeHash = (left, right) => {
+		const h = /* @__PURE__ */ new Uint8Array(65);
+		h[0] = 1;
+		h.set(left, 1);
+		h.set(right, 33);
+		return sha256$1(h);
+	};
+	var checkLeaves = (leafHashes) => {
+		for (const leaf of leafHashes) if (leaf.length !== 32) throw input("a Merkle leaf hash is not 32 bytes");
+	};
+	/** The largest power of two strictly below n (merkle.ts highestPowerOf2LessThan); requires n ≥ 2. */
+	var largestSplit = (n) => {
+		let k = 1;
+		while (k * 2 < n) k *= 2;
+		return k;
+	};
+	/** The MTH of a list of leaf hashes — empty → 32 zero bytes, single → the leaf itself. */
+	function merkleRoot(leafHashes) {
+		checkLeaves(leafHashes);
+		const [first] = leafHashes;
+		if (first === void 0) return /* @__PURE__ */ new Uint8Array(32);
+		if (leafHashes.length === 1) return Uint8Array.from(first);
+		const k = largestSplit(leafHashes.length);
+		return nodeHash(merkleRoot(leafHashes.slice(0, k)), merkleRoot(leafHashes.slice(k)));
+	}
+	/**
+	* The audit path for leaf `index`: sibling hashes bottom-up (merkle.ts proveNode — the sibling at
+	* the leaf's own level first, then each ancestor's sibling up to below the root).
+	*/
+	function merkleProof(leafHashes, index) {
+		checkLeaves(leafHashes);
+		if (!Number.isSafeInteger(index) || index < 0 || index >= leafHashes.length) throw input("Merkle proof index is out of range");
+		const walk = (leaves, i) => {
+			if (leaves.length === 1) return [];
+			const k = largestSplit(leaves.length);
+			return i < k ? [...walk(leaves.slice(0, k), i), merkleRoot(leaves.slice(k))] : [...walk(leaves.slice(k), i - k), merkleRoot(leaves.slice(0, k))];
+		};
+		return walk(leafHashes, index);
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/policy.ts
+	init_sha2();
+	init_utils$2();
+	init_bip32();
+	var HARDENED$4 = 2147483648;
+	var MAX_ACCOUNT = 100;
+	var TEMPLATES = {
+		"btc.bip44": {
+			template: "pkh(@0/**)",
+			purpose: 44
+		},
+		"btc.bip49": {
+			template: "sh(wpkh(@0/**))",
+			purpose: 49
+		},
+		"btc.bip84": {
+			template: "wpkh(@0/**)",
+			purpose: 84
+		},
+		"btc.bip86": {
+			template: "tr(@0/**)",
+			purpose: 86
+		}
+	};
+	/** BIP-32 mainnet version bytes (BIP32_PUBKEY_VERSION in the pinned Makefile, COIN=bitcoin). */
+	var MAINNET_BIP32 = {
+		public: 76067358,
+		private: 76066276
+	};
+	var xpubKey = (xpub) => {
+		try {
+			return HDKey$1.fromExtendedKey(xpub, MAINNET_BIP32);
+		} catch (_unused) {
+			throw input("the policy key is not a mainnet xpub");
+		}
+	};
+	var ascii$1 = (value) => new TextEncoder().encode(value);
+	/**
+	* `[fingerprinthex/purpose'/coin'/account']xpub` for a default wallet. `account` must be the three
+	* hardened steps of the matching BIP (purpose matching the template, coin 0' or 1', account' at
+	* most 100 per doc/wallet.md) and `xpub` a mainnet extended public key at that depth.
+	*/
+	function defaultPolicy(template, fingerprint, account, xpub) {
+		const spec = TEMPLATES[template];
+		if (spec === void 0) throw input("unknown bitcoin account template");
+		if (fingerprint.length !== 4) throw input("the master fingerprint is not 4 bytes");
+		const [purpose, coin, index] = account;
+		if (purpose === void 0 || coin === void 0 || index === void 0 || account.length !== 3 || !account.every((step) => Number.isSafeInteger(step) && step >= HARDENED$4 && step <= 4294967295)) throw input("the account path is not three hardened steps");
+		if (purpose - HARDENED$4 !== spec.purpose) throw input("the account purpose does not match the template");
+		if (coin - HARDENED$4 !== 0 && coin - HARDENED$4 !== 1) throw input("the account coin type is not 0' or 1'");
+		if (index - HARDENED$4 > MAX_ACCOUNT) throw input("the account index is above 100");
+		if (xpubKey(xpub).depth !== account.length) throw input("the xpub depth does not match the account path");
+		const origin = account.map((step) => `${String(step - HARDENED$4)}'`).join("/");
+		return {
+			template: spec.template,
+			key: `[${bytesToHex$4(fingerprint)}/${origin}]${xpub}`
+		};
+	}
+	var TEMPLATE_NAMES = /* @__PURE__ */ new Set([
+		"pkh(@0/**)",
+		"sh(wpkh(@0/**))",
+		"wpkh(@0/**)",
+		"tr(@0/**)"
+	]);
+	var KEY_RE = /^\[([0-9a-f]{8})((?:\/\d+'){3})\](.+)$/;
+	/**
+	* Parse `policy.key` back into origin and xpub. A default policy's key always carries origin
+	* information (doc/wallet.md: compulsory for keys the device must treat as internal), so a key
+	* without it — or with a path that is not exactly three hardened steps — is `invalid-input`.
+	*/
+	function policyKey(policy) {
+		if (!TEMPLATE_NAMES.has(policy.template)) throw input("unknown wallet policy template");
+		const match = KEY_RE.exec(policy.key);
+		if (match === null) throw input("the policy key has no valid origin");
+		const [, fpr, origin, xpub] = match;
+		if (fpr === void 0 || origin === void 0 || xpub === void 0) throw input("the policy key has no valid origin");
+		const fingerprint = /* @__PURE__ */ new Uint8Array(4);
+		for (let i = 0; i < 4; i += 1) fingerprint[i] = Number.parseInt(fpr.slice(2 * i, 2 * i + 2), 16);
+		const account = origin.slice(1).split("/").map((step) => {
+			const n = Number(step.slice(0, -1));
+			if (n > 2147483647) throw input("a policy origin step is not a hardened index");
+			return n + HARDENED$4;
+		});
+		if (xpubKey(xpub).depth !== account.length) throw input("the policy key origin does not match its xpub");
+		return {
+			fingerprint,
+			account,
+			xpub
+		};
+	}
+	var WALLET_POLICY_V2 = 2;
+	/**
+	* `02 ‖ 00 (empty name) ‖ varint templateLen ‖ sha256(template) ‖ varint 1 ‖ merkleRoot(keys)` —
+	* doc/wallet.md "Serialization" for a default (nameless, single-key) wallet.
+	*/
+	function serializePolicy(policy) {
+		const template = ascii$1(policy.template);
+		const keyRoot = merkleRoot([leafHash(ascii$1(policy.key))]);
+		const out = new Uint8Array(2 + varint(template.length).length + 32 + 1 + 32);
+		out[0] = WALLET_POLICY_V2;
+		out[1] = 0;
+		out.set(varint(template.length), 2);
+		out.set(sha256$1(template), 2 + varint(template.length).length);
+		out.set(varint(1), 2 + varint(template.length).length + 32);
+		out.set(keyRoot, 2 + varint(template.length).length + 32 + 1);
+		return out;
+	}
+	/** The 32-byte wallet policy id — `sha256(serializePolicy)` (doc/wallet.md). */
+	function policyId(policy) {
+		return sha256$1(serializePolicy(policy));
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/client.ts
+	init_sha2();
+	init_utils$2();
+	var newKnown = () => ({
+		preimages: /* @__PURE__ */ new Map(),
+		trees: /* @__PURE__ */ new Map()
+	});
+	/** AddKnownPreimage — a plain sha256 lookup for blobs like the serialized policy/template. */
+	var knownPreimage = (known, preimage) => {
+		known.preimages.set(bytesToHex$4(sha256$1(preimage)), preimage);
+	};
+	/**
+	* AddKnownList — every element is served both as the leaf-hash preimage `0x00 ‖ element` (the
+	* device asks for sha256(0x00‖el) and strips the leaf domain byte) and through its tree root.
+	*/
+	var knownList = (known, elements) => {
+		const leaves = elements.map((el) => leafHash(el));
+		for (const el of elements) {
+			const preimage = new Uint8Array(1 + el.length);
+			preimage.set(el, 1);
+			knownPreimage(known, preimage);
+		}
+		known.trees.set(bytesToHex$4(merkleRoot(leaves)), leaves);
+	};
+	/** AddKnownMapping — a merkleized map registers its key list and its value list. */
+	var knownMapping = (known, kvs) => {
+		knownList(known, kvs.map((kv) => kv.key));
+		knownList(known, kvs.map((kv) => kv.value));
+	};
+	/** AddKnownWalletPolicy — policy serialization, descriptor template, and the key-info list. */
+	var knownWalletPolicy = (known, policy) => {
+		knownPreimage(known, serializePolicy(policy));
+		knownPreimage(known, ascii$1(policy.template));
+		knownList(known, [ascii$1(policy.key)]);
+	};
+	/**
+	* The round bound for `interact`. A compliant device asks a leaf-index or leaf-proof command plus a
+	* preimage command per element and re-walks a tree per leaf it visits, so usage grows quadratically
+	* in tree size: the recorded Speculos transcripts use ≤ 1.4 rounds per (preimage + Σn² over trees).
+	* `8 + 6 × (preimages + Σn²) + Σceil(len/253)` leaves the largest recorded case under a quarter of
+	* its bound while still cutting off a device that loops.
+	*/
+	var maxRounds = (known) => {
+		let cost = 0;
+		for (const preimage of known.preimages.values()) cost += Math.ceil(preimage.length / 253);
+		for (const tree of known.trees.values()) cost += tree.length * tree.length;
+		return 8 + 6 * (known.preimages.size + cost);
+	};
+	var invalid$2 = (message) => new LedgerError("invalid-response", message);
+	var concat$2 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var yieldCommand = (state, request) => {
+		if (request.length === 0) throw invalid$2("YIELD carries no data");
+		state.yielded.push(Uint8Array.from(request));
+		return /* @__PURE__ */ new Uint8Array(0);
+	};
+	var preimageCommand = (state, request) => {
+		const reader = new Reader(request);
+		if (reader.u8() !== 0) throw invalid$2("GET_PREIMAGE request version is not 0");
+		const hash = reader.bytes(32);
+		reader.end();
+		const preimage = state.known.preimages.get(bytesToHex$4(hash));
+		if (preimage === void 0) throw invalid$2("GET_PREIMAGE asked for an unknown hash");
+		const count = varint(preimage.length);
+		const payload = Math.min(255 - count.length - 1, preimage.length);
+		for (let i = payload; i < preimage.length; i += 1) state.queue.push(preimage.subarray(i, i + 1));
+		return concat$2(count, Uint8Array.of(payload), preimage.subarray(0, payload));
+	};
+	var leafProofCommand = (state, request) => {
+		const reader = new Reader(request);
+		const root = bytesToHex$4(reader.bytes(32));
+		const size = reader.varint();
+		const index = reader.varint();
+		reader.end();
+		const tree = state.known.trees.get(root);
+		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_PROOF asked for an unknown root");
+		if (size !== tree.length || index >= size) throw invalid$2("GET_MERKLE_LEAF_PROOF size or index is out of range");
+		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_PROOF arrived with a pending queue");
+		const proof = merkleProof(tree, index);
+		const answer = Math.min(Math.floor(221 / 32), proof.length);
+		for (const hash of proof.slice(answer)) state.queue.push(hash);
+		return concat$2(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
+	};
+	var leafIndexCommand = (state, request) => {
+		const reader = new Reader(request);
+		const root = bytesToHex$4(reader.bytes(32));
+		const leaf = reader.bytes(32);
+		reader.end();
+		const tree = state.known.trees.get(root);
+		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_INDEX asked for an unknown root");
+		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
+		const index = tree.findIndex((hash) => equalBytes$2(hash, leaf));
+		return concat$2(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
+	};
+	var moreElementsCommand = (state, request) => {
+		if (request.length > 0) throw invalid$2("GET_MORE_ELEMENTS carries trailing bytes");
+		const [first] = state.queue;
+		if (first === void 0) throw invalid$2("GET_MORE_ELEMENTS has an empty queue");
+		const count = Math.min(Math.floor(253 / first.length), state.queue.length);
+		const returned = state.queue.splice(0, count);
+		return concat$2(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
+	};
+	var dispatch = (state, request) => {
+		const [code] = request;
+		const rest = request.subarray(1);
+		switch (code) {
+			case 16: return yieldCommand(state, rest);
+			case 64: return preimageCommand(state, rest);
+			case 65: return leafProofCommand(state, rest);
+			case 66: return leafIndexCommand(state, rest);
+			case 160: return moreElementsCommand(state, rest);
+			default: throw invalid$2("unknown client command code");
+		}
+	};
+	/**
+	* Run `command` (an `E1` APDU) and serve every client command the device asks, up to `maxRounds`
+	* interruptions. Returns the final response data and everything the device yielded.
+	*/
+	async function interact(exchange, command, known, rounds) {
+		if (!Number.isSafeInteger(rounds) || rounds < 0) throw input("maxRounds is not a non-negative integer");
+		const state = {
+			known,
+			queue: [],
+			yielded: []
+		};
+		let { data, sw } = decodeResponse(await exchange(encodeCommand(command)));
+		for (let round = 0;; round += 1) {
+			if (sw === 36864) return {
+				data,
+				yielded: state.yielded
+			};
+			if (sw !== 57344) throw statusError("bitcoin", sw);
+			if (round >= rounds) throw invalid$2("the device exceeded its client-command budget");
+			const response = await exchange(encodeCommand({
+				cla: 248,
+				ins: 1,
+				p1: 0,
+				p2: 1,
+				data: dispatch(state, data)
+			}));
+			({data, sw} = decodeResponse(response));
+		}
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/psbt.ts
+	init_transaction();
+	var MAGIC = Uint8Array.of(112, 115, 98, 116, 255);
+	var KEY_INPUT_COUNT = 4;
+	var KEY_OUTPUT_COUNT = 5;
+	var KEY_VERSION = 251;
+	var invalid$1 = (message) => input(message);
+	var equalBytes$1 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var compareKeys = (a, b) => {
+		const av = new DataView(a.buffer, a.byteOffset, a.byteLength);
+		const bv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+		for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+			const d = av.getUint8(i) - bv.getUint8(i);
+			if (d !== 0) return d;
+		}
+		return a.length - b.length;
+	};
+	/** Keys must be sorted and unique within a map (doc/merkle.md "Merkleized maps"). */
+	var sortMap = (kvs) => {
+		const sorted = [...kvs].sort((x, y) => compareKeys(x.key, y.key));
+		let prev;
+		for (const kv of sorted) {
+			if (prev !== void 0 && equalBytes$1(prev, kv.key)) throw invalid$1("a PSBT map has a duplicate key");
+			prev = kv.key;
+		}
+		return sorted;
+	};
+	/** A CompactSize-encoded number stored as a standalone value (inputCount/outputCount). */
+	var countValue = (global, type) => {
+		const hit = global.find((kv) => kv.key.length === 1 && kv.key[0] === type);
+		if (hit === void 0) throw invalid$1("the PSBTv2 global map lacks a required count field");
+		try {
+			const reader = new Reader(hit.value);
+			const count = reader.varint();
+			reader.end();
+			return count;
+		} catch (_unused) {
+			throw invalid$1("a PSBTv2 count field is not a varint");
+		}
+	};
+	/** Split the raw `psbt‖…‖0x00` stream into maps; every malformed byte is `invalid-input`. */
+	var splitMaps = (v2) => {
+		const reader = new Reader(v2);
+		const maps = [];
+		try {
+			if (!equalBytes$1(reader.bytes(5), MAGIC)) throw invalid$1("the PSBTv2 stream has no magic prefix");
+			let map = [];
+			while (reader.remaining > 0) {
+				const keyLength = reader.varint();
+				if (keyLength === 0) {
+					maps.push(map);
+					map = [];
+					continue;
+				}
+				const key = reader.bytes(keyLength);
+				const valueLength = reader.varint();
+				map.push({
+					key,
+					value: reader.bytes(valueLength)
+				});
+			}
+			if (map.length > 0) throw invalid$1("the last PSBT map is not terminated");
+		} catch (error) {
+			if (error instanceof LedgerError && error.code === "invalid-input") throw error;
+			throw invalid$1("the PSBTv2 stream is malformed");
+		}
+		const [global] = maps;
+		if (global === void 0) throw invalid$1("the PSBTv2 stream has no global map");
+		return {
+			maps,
+			global: sortMap(global)
+		};
+	};
+	/** PSBT_GLOBAL_VERSION is a 4-byte little-endian number (BIP-370); absent on v0/v1. */
+	var versionOf = (global) => {
+		const hit = global.find((kv) => kv.key.length === 1 && kv.key[0] === KEY_VERSION);
+		if (hit === void 0 || hit.value.length !== 4) return;
+		return new DataView(hit.value.buffer, hit.value.byteOffset, 4).getUint32(0, true);
+	};
+	/**
+	* The global, per-input and per-output raw maps of `psbt`, each sorted by key bytes. A stream that
+	* is already PSBTv2 keeps its maps verbatim — unknown and proprietary key/value pairs included;
+	* anything else is normalized through @scure/btc-signer (v0/v1 → v2), and whatever it cannot decode
+	* is `invalid-input`.
+	*/
+	var toV2 = (psbt) => {
+		try {
+			return Transaction.fromPSBT(psbt, {
+				unknown: "ignore",
+				proprietary: "ignore",
+				allowUnknownVersion: true,
+				allowUnknownInputs: true,
+				allowUnknownOutputs: true,
+				disableScriptCheck: true
+			}).toPSBT(2);
+		} catch (_unused2) {
+			throw invalid$1("the PSBT does not decode or cannot be expressed as version 2");
+		}
+	};
+	function psbtV2Maps(psbt) {
+		let parsed;
+		try {
+			parsed = splitMaps(psbt);
+		} catch (_unused3) {
+			parsed = void 0;
+		}
+		const { maps, global } = parsed !== void 0 && versionOf(parsed.global) === 2 ? parsed : splitMaps(toV2(psbt));
+		const inputCount = countValue(global, KEY_INPUT_COUNT);
+		const outputCount = countValue(global, KEY_OUTPUT_COUNT);
+		if (maps.length !== 1 + inputCount + outputCount) throw invalid$1("the PSBTv2 map count does not match its global counts");
+		return {
+			global,
+			inputs: maps.slice(1, 1 + inputCount).map(sortMap),
+			outputs: maps.slice(1 + inputCount).map(sortMap)
+		};
+	}
+	/**
+	* `varint n ‖ merkleRoot(keys) ‖ merkleRoot(values)` — the 65–73 byte commitment of doc/merkle.md
+	* (MerkleMap.commitment). `kvs` must already be the sorted map psbtV2Maps returns.
+	*/
+	function mapCommitment(kvs) {
+		const count = varint(kvs.length);
+		const out = new Uint8Array(count.length + 64);
+		out.set(count, 0);
+		out.set(merkleRoot(kvs.map((kv) => leafHash(kv.key))), count.length);
+		out.set(merkleRoot(kvs.map((kv) => leafHash(kv.value))), count.length + 32);
+		return out;
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/index.ts
+	init_secp256k1();
+	init_utils$2();
+	init_bip32();
+	init_utils();
+	var CLA$3 = 225;
+	var PROTOCOL_VERSION = 1;
+	var INS_GET_EXTENDED_PUBKEY = 0;
+	var INS_GET_WALLET_ADDRESS = 3;
+	var INS_SIGN_PSBT = 4;
+	var INS_GET_MASTER_FINGERPRINT = 5;
+	var INS_SIGN_MESSAGE$1 = 16;
+	var MAX_PATH_DEPTH$3 = 10;
+	var MAX_ADDRESS_INDEX = 5e4;
+	var MESSAGE_CHUNK = 64;
+	var MAINNET = "bip122:000000000019d6689c085ae165831e93";
+	var PSBT_IN_BIP32_DERIVATION = 6;
+	var PSBT_IN_TAP_BIP32_DERIVATION = 22;
+	var CHAINS_TEMPLATE = {
+		"pkh(@0/**)": "btc.bip44",
+		"sh(wpkh(@0/**))": "btc.bip49",
+		"wpkh(@0/**)": "btc.bip84",
+		"tr(@0/**)": "btc.bip86"
+	};
+	var invalid = (message) => new LedgerError("invalid-response", message);
+	var concat$1 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	var equalBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var PRINTABLE$1 = (byte) => byte >= 32 && byte <= 126;
+	var asciiReply = (data) => {
+		if (!data.every(PRINTABLE$1)) throw invalid("a response string is not printable ASCII");
+		return new TextDecoder().decode(data);
+	};
+	var command$2 = (ins, data) => ({
+		cla: CLA$3,
+		ins,
+		p1: 0,
+		p2: PROTOCOL_VERSION,
+		data
+	});
+	/** `E1 05 00 01` → the 4-byte master fingerprint (doc/bitcoin.md GET_MASTER_FINGERPRINT). */
+	async function btcMasterFingerprint(exchange) {
+		const data = await transmit(exchange, "bitcoin", command$2(INS_GET_MASTER_FINGERPRINT, /* @__PURE__ */ new Uint8Array(0)));
+		if (data.length !== 4) throw invalid("the master fingerprint is not 4 bytes");
+		return Uint8Array.from(data);
+	}
+	/**
+	* `E1 00 00 01` — `display ‖ n ‖ path` → the ASCII xpub at `path` (doc/bitcoin.md
+	* GET_EXTENDED_PUBKEY). The returned extended key must decode as a mainnet xpub whose depth and
+	* child index match the request — a wrong key is `invalid-response`.
+	*/
+	async function btcExtendedPublicKey(exchange, path, display) {
+		const last = path.at(-1);
+		if (last === void 0) throw input("the derivation path is empty");
+		const xpub = asciiReply(await transmit(exchange, "bitcoin", command$2(INS_GET_EXTENDED_PUBKEY, concat$1(Uint8Array.of(display ? 1 : 0), encodePath(path, MAX_PATH_DEPTH$3)))));
+		const key = (() => {
+			try {
+				return HDKey$1.fromExtendedKey(xpub, MAINNET_BIP32);
+			} catch (_unused) {
+				throw invalid("the extended pubkey does not decode");
+			}
+		})();
+		if (key.depth !== path.length || key.index !== last) throw invalid("the extended pubkey does not match the requested path");
+		return xpub;
+	}
+	/** The local address for `policy` at `change`/`index` — the device reply must equal it. */
+	var expectedAddress = (policy, change, index) => {
+		const { xpub } = policyKey(policy);
+		return bitcoinAddressFromXpub(xpub, CHAINS_TEMPLATE[policy.template], MAINNET, change, index);
+	};
+	/**
+	* `E1 03 00 01` — `display ‖ policyId ‖ 32×00 (default-wallet HMAC) ‖ change ‖ u32 index` → the
+	* ASCII address (doc/bitcoin.md GET_WALLET_ADDRESS). doc/wallet.md caps the default-wallet index at
+	* 50000; the reply must equal the address derived from the policy key locally.
+	*/
+	async function btcWalletAddress(exchange, policy, change, index, display) {
+		if (change !== 0 && change !== 1) throw input("change must be 0 or 1");
+		if (!Number.isSafeInteger(index) || index < 0 || index > MAX_ADDRESS_INDEX) throw input("the address index is out of range");
+		const expected = expectedAddress(policy, change, index);
+		const known = newKnown();
+		knownWalletPolicy(known, policy);
+		const { data } = await interact(exchange, command$2(INS_GET_WALLET_ADDRESS, concat$1(Uint8Array.of(display ? 1 : 0), policyId(policy), /* @__PURE__ */ new Uint8Array(32), Uint8Array.of(change), u32(index))), known, maxRounds(known));
+		const address = asciiReply(data);
+		if (address !== expected) throw invalid("the device address does not match the policy key");
+		return address;
+	}
+	/**
+	* A `bip32Derivation`/`tapBip32Derivation` value — `fpr4 ‖ u32le path[]`, prefixed by a varint
+	* tapleaf-hash list under BIP-371. Returns undefined when the entry does not parse.
+	*/
+	var derivationOf = (value, taproot) => {
+		try {
+			const reader = new Reader(value);
+			if (taproot) reader.bytes(reader.varint() * 32);
+			const fingerprint = reader.bytes(4);
+			const path = [];
+			while (reader.remaining > 0) {
+				const step = reader.bytes(4);
+				path.push(new DataView(step.buffer, step.byteOffset, 4).getUint32(0, true));
+			}
+			return {
+				fingerprint,
+				path
+			};
+		} catch (_unused2) {
+			return;
+		}
+	};
+	/**
+	* `path` must be `policy.account ‖ change ‖ index` with a non-hardened tail — the only keys a
+	* default policy derives (`@0/**`). Returns the expected public key form (33-byte compressed, or
+	* 32-byte x-only for the taproot template), or undefined when the entry does not name this policy.
+	*/
+	var policyChild = (path, parsed, taproot) => {
+		const { account, xpub } = parsed;
+		if (path.length !== account.length + 2 || !account.every((step, i) => path[i] === step)) return;
+		const change = path.at(-2);
+		const index = path.at(-1);
+		if (change !== 0 && change !== 1 || index === void 0 || index >= 2147483648) return;
+		return bitcoinPubkeyFromXpub(xpub, taproot ? "btc.bip86" : "btc.bip84", MAINNET, change, index);
+	};
+	/**
+	* The yielded `pubkey` must be the key the input's own derivation fields claim under the policy —
+	* the ownership check doc/wallet.md's key origin performs on the device. For ECDSA the yield
+	* carries the derivation entry's compressed pubkey; for a taproot key-path spend it carries the
+	* _tweaked output key_ while `tapBip32Derivation` is keyed by the internal x-only key (BIP-371), so
+	* the match is `tweak(derive(path))` — verified live against the pinned 2.5.1 app.
+	*/
+	var ownKey = (kvs, pubkey, parsed) => {
+		if (pubkey.length === 32) {
+			for (const { key, value } of kvs) {
+				if (key.length !== 33 || key[0] !== PSBT_IN_TAP_BIP32_DERIVATION) continue;
+				const derivation = derivationOf(value, true);
+				if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+				const internal = policyChild(derivation.path, parsed, true);
+				if (internal === void 0 || !equalBytes(internal, key.subarray(1))) continue;
+				const [tweaked] = taprootTweakPubkey(internal, /* @__PURE__ */ new Uint8Array());
+				if (equalBytes(tweaked, pubkey)) return;
+			}
+			throw invalid("the yielded pubkey does not belong to the wallet policy");
+		}
+		for (const { key, value } of kvs) {
+			if (key.length !== 34 || key[0] !== PSBT_IN_BIP32_DERIVATION || !equalBytes(key.subarray(1), pubkey)) continue;
+			const derivation = derivationOf(value, false);
+			if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+			const expected = policyChild(derivation.path, parsed, false);
+			if (expected !== void 0 && equalBytes(expected, pubkey)) return;
+		}
+		throw invalid("the yielded pubkey does not belong to the wallet policy");
+	};
+	/**
+	* One YIELD item: `varint tagOrInput ‖ u8 pubkeyAugmLen ‖ pubkeyAugm ‖ signature` (doc/bitcoin.md
+	* SIGN_PSBT, src/handler/sign_psbt/sign_input.c yield_signature). Tags above 65535 are MuSig2
+	* frames and a 64-byte pubkey augmentation is a tapscript spend — neither exists under the single-
+	* key default policies this client supports, so both are `invalid-response`.
+	*/
+	var parseYield = (item, inputs) => {
+		const reader = new Reader(item);
+		const index = reader.varint();
+		if (index > 65535) throw invalid("a yielded tag is not a signature under a default policy");
+		const kvs = inputs[index];
+		if (kvs === void 0) throw invalid("a yielded input index is out of range");
+		const pubkey = reader.bytes(reader.u8());
+		const signature = reader.rest();
+		reader.end();
+		if (pubkey.length === 64) throw invalid("tapscript signatures are not supported");
+		if (pubkey.length === 33) {
+			try {
+				secp256k1.Signature.fromBytes(signature.subarray(0, -1), "der");
+			} catch (_unused3) {
+				throw invalid("the yielded ECDSA signature is not DER plus a sighash byte");
+			}
+			return {
+				input: index,
+				pubkey,
+				signature,
+				kvs
+			};
+		}
+		if (pubkey.length === 32) {
+			if (signature.length !== 64 && signature.length !== 65) throw invalid("the yielded taproot signature is not 64 or 65 bytes");
+			return {
+				input: index,
+				pubkey,
+				signature,
+				kvs
+			};
+		}
+		throw invalid("the yielded pubkey is not 32 or 33 bytes");
+	};
+	/**
+	* `E1 04 00 01` — the merkleized global/input/output map commitments plus `policyId ‖ 32×00`
+	* (doc/bitcoin.md SIGN_PSBT); signatures arrive through YIELD. Every yield is re-validated: input
+	* index in range, pubkey shape, DER-plus-sighash or 64/65-byte signature, no duplicate (input,
+	* pubkey) pair, and the key must belong to the policy.
+	*/
+	async function btcSignPsbt(exchange, psbt, policy) {
+		const parsed = policyKey(policy);
+		const maps = psbtV2Maps(psbt);
+		const inputCommitments = maps.inputs.map((m) => mapCommitment(m));
+		const outputCommitments = maps.outputs.map((m) => mapCommitment(m));
+		const known = newKnown();
+		knownWalletPolicy(known, policy);
+		knownMapping(known, maps.global);
+		for (const map of maps.inputs) knownMapping(known, map);
+		for (const map of maps.outputs) knownMapping(known, map);
+		knownList(known, inputCommitments);
+		knownList(known, outputCommitments);
+		const { yielded } = await interact(exchange, command$2(INS_SIGN_PSBT, concat$1(mapCommitment(maps.global), varint(maps.inputs.length), merkleRoot(inputCommitments.map((c) => leafHash(c))), varint(maps.outputs.length), merkleRoot(outputCommitments.map((c) => leafHash(c))), policyId(policy), /* @__PURE__ */ new Uint8Array(32))), known, maxRounds(known));
+		const seen = /* @__PURE__ */ new Set();
+		const out = [];
+		for (const item of yielded) {
+			const yield1 = parseYield(item, maps.inputs);
+			const tag = `${String(yield1.input)}:${bytesToHex$4(yield1.pubkey)}`;
+			if (seen.has(tag)) throw invalid("a signature was yielded twice for the same input and key");
+			seen.add(tag);
+			ownKey(yield1.kvs, yield1.pubkey, parsed);
+			out.push({
+				input: yield1.input,
+				publicKey: yield1.pubkey,
+				signature: yield1.signature
+			});
+		}
+		return out;
+	}
+	/**
+	* `E1 10 00 01` — `n ‖ path ‖ varint len ‖ merkleRoot(64-byte chunks)` → exactly 65 bytes
+	* (doc/bitcoin.md SIGN_MESSAGE). The first byte is `27 + 4 + parity` in the pinned source
+	* (src/handler/sign_message.c — 31 or 32); r‖s follows.
+	*/
+	async function btcSignMessage(exchange, path, message) {
+		const chunks = [];
+		for (let offset = 0; offset < message.length; offset += MESSAGE_CHUNK) chunks.push(message.subarray(offset, offset + MESSAGE_CHUNK));
+		const known = newKnown();
+		knownList(known, chunks);
+		const { data } = await interact(exchange, command$2(INS_SIGN_MESSAGE$1, concat$1(encodePath(path, MAX_PATH_DEPTH$3), varint(message.length), merkleRoot(chunks.map((c) => leafHash(c))))), known, maxRounds(known));
+		if (data.length !== 65) throw invalid("the message signature is not 65 bytes");
+		const [header] = data;
+		if (header !== 31 && header !== 32) throw invalid("the message signature header is invalid");
+		return {
+			header,
+			signature: data.subarray(1)
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/ethereum.ts
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	var CLA$2 = 224;
+	var INS_GET_PUBLIC_KEY$1 = 2;
+	var INS_SIGN$1 = 4;
+	var INS_GET_APP_CONFIGURATION$2 = 6;
+	var INS_SIGN_PERSONAL_MESSAGE$1 = 8;
+	var INS_SIGN_EIP_712_MESSAGE = 12;
+	var INS_EIP712_STRUCT_DEF = 26;
+	var INS_EIP712_STRUCT_IMPL = 28;
+	var P1_CONFIRM$2 = 1;
+	var P1_NON_CONFIRM = 0;
+	var P1_FIRST$1 = 0;
+	var P1_MORE$1 = 128;
+	var P2_EIP712_V1_IMPLEM = 1;
+	var P2_DEF_NAME = 0;
+	var P2_DEF_FIELD = 255;
+	var P2_IMPL_NAME = 0;
+	var P2_IMPL_ARRAY = 15;
+	var P2_IMPL_FIELD = 255;
+	var P1_DEF_COMPLETE = 0;
+	var P1_IMPL_PARTIAL = 1;
+	var P1_IMPL_COMPLETE = 0;
+	var MAX_PATH_DEPTH$2 = 10;
+	var CHUNK$2 = 255;
+	var utf8 = (value) => utf8ToBytes$1(value);
+	/** The JSON value form kernel typed-data parsing produces for struct fields. */
+	var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var command$1 = (ins, p1, p2, data) => ({
+		cla: CLA$2,
+		ins,
+		p1,
+		p2,
+		data
+	});
+	/** Validates a 65-byte uncompressed key and returns its 33-byte compressed form. */
+	var secp256k1Compressed = (bytes) => {
+		try {
+			return secp256k1.Point.fromBytes(bytes).toBytes(true);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "the returned key is not a secp256k1 point");
+		}
+	};
+	/** `r ‖ s` from a 65-byte `v ‖ r ‖ s` reply; parity is recovered when the document is assembled. */
+	var rsSignature = (data) => {
+		if (data.length !== 65) throw new LedgerError("invalid-response", "signature reply is not 65 bytes");
+		return data.subarray(1, 65);
+	};
+	/**
+	* `LV(65 uncompressed) ‖ LV(40 ascii hex) ‖ [chain code 32]` — the ASCII address must be the
+	* address of the returned key, so a swapped address string cannot pass.
+	*/
+	var publicNodeReply$1 = (data, chainCode) => {
+		const reader = new Reader(data);
+		const uncompressed = reader.lv();
+		if (uncompressed.length !== 65 || uncompressed[0] !== 4) throw new LedgerError("invalid-response", "ethereum public key is not a 65-byte point");
+		const publicKey = secp256k1Compressed(uncompressed);
+		const ascii = reader.lv();
+		if (ascii.length !== 40) throw new LedgerError("invalid-response", "ethereum address is not 40 hex characters");
+		let hexAddress;
+		try {
+			hexAddress = new TextDecoder("ascii", { fatal: true }).decode(ascii);
+		} catch (_unused2) {
+			throw new LedgerError("invalid-response", "ethereum address is not ASCII");
+		}
+		const code = chainCode ? reader.bytes(32) : void 0;
+		reader.end();
+		const address = evmAddressFromPublicKey(uncompressed);
+		if (hexAddress.toLowerCase() !== address.slice(2).toLowerCase()) throw new LedgerError("invalid-response", "the address does not match the public key");
+		return _objectSpread2({
+			publicKey,
+			address
+		}, code === void 0 ? {} : { chainCode: code });
+	};
+	/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+	async function ethAddress(exchange, keyPath, display) {
+		const { publicKey, address } = publicNodeReply$1(await transmit(exchange, "ethereum", command$1(INS_GET_PUBLIC_KEY$1, display ? P1_CONFIRM$2 : P1_NON_CONFIRM, 0, encodePath(keyPath, MAX_PATH_DEPTH$2))), false);
+		return {
+			publicKey,
+			address
+		};
+	}
+	/** `INS_02` (P2 `0x01`) → the compressed key plus the 32-byte BIP-32 chain code (doc/apdu.md). */
+	async function ethPublicNode(exchange, keyPath) {
+		const { publicKey, chainCode } = publicNodeReply$1(await transmit(exchange, "ethereum", command$1(INS_GET_PUBLIC_KEY$1, P1_NON_CONFIRM, 1, encodePath(keyPath, MAX_PATH_DEPTH$2))), true);
+		if (chainCode === void 0) throw new LedgerError("invalid-response", "ethereum reply carries no chain code");
+		return {
+			publicKey,
+			chainCode
+		};
+	}
+	/** Encoded size of the RLP item starting at `offset`; overruns and bad lengths → invalid-input. */
+	var rlpItemLength = (rlp, offset) => {
+		const first = rlp[offset];
+		if (first === void 0) throw input("truncated RLP");
+		if (first <= 127) return 1;
+		let header;
+		let payload;
+		if (first <= 183) {
+			header = 1;
+			payload = first - 128;
+		} else {
+			const count = first <= 191 ? first - 183 : first - 247;
+			const lenStart = offset + 1;
+			let declared = 0;
+			for (let i = 0; i < count; i += 1) {
+				const byte = rlp[lenStart + i];
+				if (byte === void 0) throw input("truncated RLP length");
+				declared = declared * 256 + byte;
+			}
+			header = 1 + count;
+			payload = declared;
+		}
+		if (offset + header + payload > rlp.length) throw input("RLP item overruns the buffer");
+		return header + payload;
+	};
+	/**
+	* Encoded length of the last three top-level items of a legacy RLP list (the v, r, s tail — see
+	* safeChunkTransaction's `encodedVrs`). Throws invalid-input on malformed RLP.
+	*/
+	var rlpVrsTailLength = (tx) => {
+		const { 0: first } = tx;
+		if (first === void 0 || first < 192) throw input("legacy transaction is not an RLP list");
+		let offset = 1;
+		if (first > 247) {
+			const count = first - 247;
+			let declared = 0;
+			for (let i = 0; i < count; i += 1) {
+				const byte = tx[offset + i];
+				if (byte === void 0) throw input("truncated RLP list header");
+				declared = declared * 256 + byte;
+			}
+			offset += count;
+			if (offset + declared !== tx.length) throw input("RLP list length does not cover the transaction");
+		}
+		let antepenultimate = 0;
+		let penultimate = 0;
+		let last = 0;
+		let count = 0;
+		while (offset < tx.length) {
+			antepenultimate = penultimate;
+			penultimate = last;
+			last = offset;
+			offset += rlpItemLength(tx, offset);
+			count += 1;
+		}
+		if (offset !== tx.length || count < 3) throw input("transaction is not a well-formed RLP list");
+		return tx.length - antepenultimate;
+	};
+	/**
+	* Splits `path ‖ tx` into ≤255 chunks. A legacy transaction must never end a chunk such that only
+	* its v,r,s tail remains in the last chunk (hw-app-eth safeChunkTransaction); typed transactions
+	* (type byte < 0x80) use a naive split.
+	*/
+	var safeChunk = (path, tx) => {
+		const payload = new Uint8Array(path.length + tx.length);
+		payload.set(path);
+		payload.set(tx, path.length);
+		if (payload.length <= CHUNK$2) return [payload];
+		let chunkSize = CHUNK$2;
+		const { 0: first } = tx;
+		if (first !== void 0 && first >= 192) {
+			const tail = rlpVrsTailLength(tx);
+			const remainder = payload.length % CHUNK$2;
+			if (remainder !== 0 && remainder <= tail) for (let candidate = 254; candidate >= 1; candidate -= 1) {
+				const last = payload.length % candidate;
+				if (last === 0 || last > tail) {
+					chunkSize = candidate;
+					break;
+				}
+			}
+		}
+		const chunks = [];
+		for (let offset = 0; offset < payload.length; offset += chunkSize) chunks.push(payload.subarray(offset, offset + chunkSize));
+		return chunks;
+	};
+	/** Splits `payload` into ≤255 chunks: first `P1 0x00`, continuations `P1 0x80` (apdu_constants.h). */
+	var chunked = (ins, payload) => {
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$2) commands.push(command$1(ins, offset === 0 ? P1_FIRST$1 : P1_MORE$1, 0, payload.subarray(offset, offset + CHUNK$2)));
+		return commands;
+	};
+	/**
+	* `INS_04` — `unsigned` is the serialized unsigned transaction (typed: `type ‖ rlp`; legacy: the
+	* RLP list including the EIP-155 `chainId,0,0` tail).
+	*/
+	async function ethSignTransaction(exchange, keyPath, unsigned) {
+		if (unsigned.length === 0) throw input("transaction is empty");
+		const { 0: first } = unsigned;
+		if (first === void 0 || first < 1 || first >= 128 && first < 192) throw input("transaction is neither typed nor a legacy RLP list");
+		return rsSignature(await transmitChunks(exchange, "ethereum", safeChunk(encodePath(keyPath, MAX_PATH_DEPTH$2), unsigned).map((data, i) => command$1(INS_SIGN$1, i === 0 ? P1_FIRST$1 : P1_MORE$1, 0, data))));
+	}
+	/** `INS_08` — `path ‖ u32 length ‖ message`, streamed in ≤255-byte chunks. */
+	async function ethSignPersonalMessage(exchange, keyPath, message) {
+		if (message.length > 4294967295) throw input("message exceeds the u32 length field");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH$2);
+		const payload = new Uint8Array(path.length + 4 + message.length);
+		payload.set(path);
+		payload.set(u32(message.length), path.length);
+		payload.set(message, path.length + 4);
+		return rsSignature(await transmitChunks(exchange, "ethereum", chunked(INS_SIGN_PERSONAL_MESSAGE$1, payload)));
+	}
+	/** Atomic EIP-712 type keys — eip712_v1_commands.c + utils.ts EIP712_TYPE_PROPERTIES. */
+	var TYPE_KEYS = {
+		custom: 0,
+		int: 1,
+		uint: 2,
+		address: 3,
+		bool: 4,
+		string: 5,
+		bytesFixed: 6,
+		bytesDynamic: 7
+	};
+	/** Port of destructTypeFromString: `baseType` + array suffixes in declaration order. */
+	var destructType = (typeName) => {
+		var _sized$;
+		const match = /^([^[\]]*)((?:\[\d*\])*)$/.exec(typeName);
+		const base = match === null || match === void 0 ? void 0 : match[1];
+		const suffix = match === null || match === void 0 ? void 0 : match[2];
+		if (match === null || base === void 0 || base === "" || suffix === void 0) throw input("malformed EIP-712 type");
+		const sized = /^(u?int|bytes)(\d{0,3})$/.exec(base);
+		const name = (_sized$ = sized === null || sized === void 0 ? void 0 : sized[1]) !== null && _sized$ !== void 0 ? _sized$ : base;
+		const sizeText = sized === null || sized === void 0 ? void 0 : sized[2];
+		const size = sizeText === void 0 || sizeText === "" ? void 0 : Number(sizeText);
+		if ((name === "int" || name === "uint") && size !== void 0 && (size % 8 !== 0 || size < 8 || size > 256)) throw input("invalid EIP-712 integer width");
+		if (name === "bytes" && size !== void 0 && (size < 1 || size > 32)) throw input("invalid EIP-712 bytes width");
+		const arrays = [];
+		for (const dim of suffix.matchAll(/\[(\d*)\]/g)) arrays.push(dim[1] === void 0 || dim[1] === "" ? void 0 : Number(dim[1]));
+		return {
+			name,
+			size,
+			arrays
+		};
+	};
+	var ATOMIC = /* @__PURE__ */ new Set([
+		"int",
+		"uint",
+		"address",
+		"bool",
+		"string",
+		"bytes"
+	]);
+	var atomicKind = (t) => {
+		switch (t.name) {
+			case "int": return TYPE_KEYS.int;
+			case "uint": return TYPE_KEYS.uint;
+			case "address": return TYPE_KEYS.address;
+			case "bool": return TYPE_KEYS.bool;
+			case "string": return TYPE_KEYS.string;
+			case "bytes": return t.size === void 0 ? TYPE_KEYS.bytesDynamic : TYPE_KEYS.bytesFixed;
+			default: return;
+		}
+	};
+	/**
+	* The field-definition payload (utils.ts makeTypeEntryStructBuffer): typedesc byte (bit7 array,
+	* bit6 has-size, low nibble type key), optional custom-type name, optional type size, optional
+	* array levels, then `u8 ‖ name`.
+	*/
+	var structFieldDefinition = (fieldName, typeName) => {
+		var _t$size;
+		const t = destructType(typeName);
+		const key = atomicKind(t);
+		const isArray = t.arrays.length > 0;
+		const isCustom = key === void 0;
+		const typeSize = key === TYPE_KEYS.int || key === TYPE_KEYS.uint ? Math.floor(((_t$size = t.size) !== null && _t$size !== void 0 ? _t$size : 256) / 8) : key === TYPE_KEYS.bytesFixed ? t.size : void 0;
+		const parts = [(isArray ? 128 : 0) | (typeSize === void 0 ? 0 : 64) | (isCustom ? TYPE_KEYS.custom : key)];
+		if (isCustom) {
+			const name = utf8(t.name);
+			if (name.length > 255) throw input("EIP-712 type name exceeds 255 bytes");
+			parts.push(name.length, ...name);
+		}
+		if (typeSize !== void 0) parts.push(typeSize);
+		if (isArray) {
+			if (t.arrays.length > 255) throw input("array level count exceeds 255");
+			parts.push(t.arrays.length);
+			for (const size of t.arrays) if (size === void 0) parts.push(0);
+			else {
+				if (size > 255) throw input("fixed array size exceeds 255");
+				parts.push(1, size);
+			}
+		}
+		const field = utf8(fieldName);
+		if (field.length > 255) throw input("EIP-712 field name exceeds 255 bytes");
+		parts.push(field.length, ...field);
+		return Uint8Array.from(parts);
+	};
+	var bigEndianMinimal = (value) => {
+		if (value < 0n) throw input("negative value cannot be encoded unsigned");
+		if (value === 0n) return Uint8Array.of(0);
+		let hex = value.toString(16);
+		if (hex.length % 2 === 1) hex = `0${hex}`;
+		return hexToBytes$3(hex);
+	};
+	/** Mirrors the value forms ox's ABI integer encoding accepts — anything `BigInt()` parses. */
+	var toBigInt = (value) => {
+		switch (typeof value) {
+			case "bigint":
+			case "boolean":
+			case "number":
+			case "string": try {
+				return BigInt(value);
+			} catch (_unused3) {
+				return;
+			}
+			default: return;
+		}
+	};
+	var hexBytes = (value) => {
+		if (typeof value !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(value)) return;
+		return hexToBytes$3(value.slice(2));
+	};
+	/**
+	* The wire encoding of one atomic field value (utils.ts EIP712_TYPE_ENCODERS). Accepted value forms
+	* mirror the encoder the kernel hashes with (ox TypedData → AbiParameters.encode): int/uint take
+	* anything `BigInt()` parses, bool only `boolean`, address/bytes only `0x` hex (bytesN exact
+	* length), string is stringified. A missing field is `invalid-input` — a zero fail-safe could never
+	* match the hash of a document the field is absent from.
+	*/
+	var encodeFieldValue = (t, value) => {
+		var _t$size2;
+		if (value === void 0) throw input("EIP-712 field has no value");
+		const bits = (_t$size2 = t.size) !== null && _t$size2 !== void 0 ? _t$size2 : 256;
+		switch (t.name) {
+			case "uint": {
+				const v = toBigInt(value);
+				if (v === void 0 || v < 0n || v >= 2n ** BigInt(bits)) throw input("uint value out of range");
+				return bigEndianMinimal(v);
+			}
+			case "int": {
+				const v = toBigInt(value);
+				const min = -(2n ** BigInt(bits - 1));
+				const max = 2n ** BigInt(bits - 1) - 1n;
+				if (v === void 0 || v < min || v > max) throw input("int value out of range");
+				return bigEndianMinimal(v < 0n ? v + 2n ** BigInt(bits) : v);
+			}
+			case "address": {
+				const bytes = hexBytes(value);
+				if (bytes === void 0 || bytes.length !== 20) throw input("address value is not a 0x-prefixed 20-byte hex string");
+				return bytes;
+			}
+			case "bool":
+				if (typeof value !== "boolean") throw input("bool value is not a boolean");
+				return Uint8Array.of(value ? 1 : 0);
+			case "string": return utf8(String(value));
+			case "bytes": {
+				const bytes = hexBytes(value);
+				if (bytes === void 0) throw input("bytes value is not 0x-prefixed hex");
+				if (t.size !== void 0 && bytes.length !== t.size) throw input("fixed bytes value is not the declared size");
+				return bytes;
+			}
+			default: throw input("not an atomic EIP-712 type");
+		}
+	};
+	/**
+	* `INS_1C` field value: `u16 ‖ encoded` split across APDUs of ≤255 bytes; non-last chunks carry
+	* `P1_PARTIAL`, the last `P1_COMPLETE` (eip712_v1_commands.c accepts any non-zero P1 as partial).
+	*/
+	var implFieldCommands = (encoded) => {
+		const payload = new Uint8Array(2 + encoded.length);
+		new DataView(payload.buffer).setUint16(0, encoded.length);
+		payload.set(encoded, 2);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$2) {
+			const last = offset + CHUNK$2 >= payload.length;
+			commands.push(command$1(INS_EIP712_STRUCT_IMPL, last ? P1_IMPL_COMPLETE : P1_IMPL_PARTIAL, P2_IMPL_FIELD, payload.subarray(offset, offset + CHUNK$2)));
+		}
+		return commands;
+	};
+	/** `Object.entries` comparator matching `Object.keys(types).sort()` ordering. */
+	var byTypeName = ([a], [b]) => a < b ? -1 : a > b ? 1 : 0;
+	/**
+	* `INS_0C` full mode (`P2 0x01`) — sends all struct definitions (types sorted alphabetically, as
+	* hw-app-eth does to keep the schema hash stable), then the EIP712Domain and primaryType
+	* implementations, then the signing path. Sends no filters: on the pinned app that leaves the BASIC
+	* filtering mode, which requires the blind-signing setting to sign.
+	*/
+	async function ethSignTypedData(exchange, keyPath, typedData) {
+		const { types, primaryType, domain, message } = typedData;
+		if (types[primaryType] === void 0) throw input("primary type is not declared in types");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH$2);
+		const commands = [];
+		for (const [typeName, fields] of Object.entries(types).sort(byTypeName)) {
+			commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_NAME, utf8(typeName)));
+			for (const field of fields) commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_FIELD, structFieldDefinition(field.name, field.type)));
+		}
+		const implFields = (structName, value, depth) => {
+			if (depth > 32) throw input("EIP-712 nesting exceeds the depth bound");
+			const fields = types[structName];
+			if (fields === void 0) throw input(`undeclared EIP-712 struct ${JSON.stringify(structName)}`);
+			for (const field of fields) implValue(destructType(field.type), value[field.name], depth);
+		};
+		const implValue = (t, value, depth) => {
+			if (t.arrays.length > 0) {
+				const [level, ...rest] = t.arrays;
+				if (!Array.isArray(value)) throw input("EIP-712 array field is not an array");
+				if (level !== void 0 && value.length !== level) throw input("fixed array length does not match its declared size");
+				if (value.length > 255) throw input("EIP-712 array has more than 255 entries");
+				commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_ARRAY, Uint8Array.of(value.length)));
+				for (const entry of value) implValue({
+					name: t.name,
+					size: t.size,
+					arrays: rest
+				}, entry, depth + 1);
+				return;
+			}
+			if (!ATOMIC.has(t.name)) {
+				if (!isRecord(value)) throw input("EIP-712 struct field is not an object");
+				implFields(t.name, value, depth + 1);
+				return;
+			}
+			commands.push(...implFieldCommands(encodeFieldValue(t, value)));
+		};
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8("EIP712Domain")));
+		const domainFields = types["EIP712Domain"];
+		if (domainFields === void 0) throw input("types has no EIP712Domain");
+		for (const field of domainFields) implValue(destructType(field.type), domain[field.name], 0);
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8(primaryType)));
+		implFields(primaryType, message, 0);
+		commands.push(command$1(INS_SIGN_EIP_712_MESSAGE, P1_NON_CONFIRM, P2_EIP712_V1_IMPLEM, path));
+		return rsSignature(await transmitChunks(exchange, "ethereum", commands));
+	}
+	/**
+	* `INS_06` — `flags ‖ major ‖ minor ‖ patch`; flags bit 0 is APP_FLAG_DATA_ALLOWED, the "Blind
+	* signing" setting (src/apdu_constants.h).
+	*/
+	async function ethConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "ethereum", command$1(INS_GET_APP_CONFIGURATION$2, 0, 0, /* @__PURE__ */ new Uint8Array(0))));
+		const flags = reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			blindSigning: (flags & 1) !== 0
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/solana.ts
+	/**
+	* Solana app client (CLA `0xE0`). Sources: refs/ledger-app-solana src/globals.h (`InsGetPubkey
+	* 0x05`, `InsSignMessage 0x06`, `InsSignOffchainMessage 0x07`, `InsGetAppConfiguration 0x04`,
+	* `P1_NON_CONFIRM 0x00`, `P2_EXTEND 0x01`, `P2_MORE 0x02`), src/main_application.c (configuration
+	* reply layout) and doc/api.md (payload layouts).
+	*/
+	var CLA$1 = 224;
+	var INS_GET_APP_CONFIGURATION$1 = 4;
+	var INS_GET_PUBKEY = 5;
+	var INS_SIGN_MESSAGE = 6;
+	var INS_SIGN_OFFCHAIN_MESSAGE = 7;
+	var P1_CONFIRM$1 = 1;
+	var P2_EXTEND = 1;
+	var P2_MORE = 2;
+	var MAX_PATH_DEPTH$1 = 5;
+	var MAX_MESSAGE = 1232;
+	var CHUNK$1 = 255;
+	var HARDENED$3 = 2147483648;
+	/** Solana derives hardened-only paths; depth 1..5 per the app docs. */
+	var path = (keyPath) => {
+		for (const index of keyPath) if (!Number.isSafeInteger(index) || index < HARDENED$3 || index > 4294967295) throw input("solana derivation path indices must all be hardened");
+		return encodePath(keyPath, MAX_PATH_DEPTH$1);
+	};
+	/** `INS ‖ P1 ‖ P2 0x00` command. */
+	var command = (ins, p1, data) => ({
+		cla: CLA$1,
+		ins,
+		p1,
+		p2: 0,
+		data
+	});
+	/** Exactly 64 bytes of ed25519 signature, or invalid-response. */
+	var signature64 = (data) => {
+		if (data.length !== 64) throw new LedgerError("invalid-response", "solana signature is not 64 bytes");
+		return data;
+	};
+	/** `INS_05` → the 32-byte ed25519 public key, validated to decode as a curve point. */
+	async function solanaAddress(exchange, keyPath, display) {
+		const data = await transmit(exchange, "solana", command(INS_GET_PUBKEY, display ? P1_CONFIRM$1 : 0, path(keyPath)));
+		if (data.length !== 32) throw new LedgerError("invalid-response", "solana public key is not 32 bytes");
+		try {
+			ed25519.Point.fromBytes(data);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "solana public key is not an ed25519 point");
+		}
+		return data;
+	}
+	/**
+	* Chunks `payload` into ≤255-byte APDU data fields: the first chunk carries `P2 = 0`, continuations
+	* `P2_EXTEND`, and every chunk but the last `P2_MORE` (globals.h).
+	*/
+	var signCommands$1 = (ins, keyPath, message) => {
+		if (message.length === 0 || message.length > MAX_MESSAGE) throw input("solana message is not 1..1232 bytes");
+		const prefix = path(keyPath);
+		const payload = new Uint8Array(1 + prefix.length + message.length);
+		payload[0] = 1;
+		payload.set(prefix, 1);
+		payload.set(message, 1 + prefix.length);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK$1) {
+			const slice = payload.subarray(offset, offset + CHUNK$1);
+			const p2 = (offset === 0 ? 0 : P2_EXTEND) + (offset + CHUNK$1 < payload.length ? P2_MORE : 0);
+			commands.push({
+				cla: CLA$1,
+				ins,
+				p1: P1_CONFIRM$1,
+				p2,
+				data: slice
+			});
+		}
+		return commands;
+	};
+	/** `INS_06` — signs a serialized transaction message. */
+	async function solanaSignTransaction(exchange, keyPath, message) {
+		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_MESSAGE, keyPath, message)));
+	}
+	/** `INS_07` — signs a serialized off-chain message. */
+	async function solanaSignOffchainMessage(exchange, keyPath, message) {
+		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_OFFCHAIN_MESSAGE, keyPath, message)));
+	}
+	/**
+	* `INS_04` — `allow_blind_sign ‖ pubkey_display ‖ major ‖ minor ‖ patch`, exactly 5 bytes on the
+	* pinned build: main_application.c `InsGetAppConfiguration` only appends `tx_check_opt_in ‖
+	* tx_check_enable` under HAVE_TRANSACTION_CHECKS, which the pinned tag does not define.
+	*/
+	async function solanaConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "solana", command(INS_GET_APP_CONFIGURATION$1, 0, /* @__PURE__ */ new Uint8Array(0))));
+		const blindSigning = reader.u8() !== 0;
+		reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			blindSigning
+		};
+	}
+	// packages/wallet-kernel/src/modules/ledger/protocol/tron.ts
+	init_secp256k1();
+	init_objectSpread2();
+	var CLA = 224;
+	var INS_GET_PUBLIC_KEY = 2;
+	var INS_SIGN = 4;
+	var INS_GET_APP_CONFIGURATION = 6;
+	var INS_SIGN_PERSONAL_MESSAGE = 8;
+	var INS_SIGN_TIP_712_MESSAGE = 12;
+	var P1_CONFIRM = 1;
+	var P1_SIGN = 16;
+	var P1_FIRST = 0;
+	var P1_MORE = 128;
+	var P1_LAST = 144;
+	var MAX_PATH_DEPTH = 10;
+	var CHUNK = 255;
+	var secp256k1OnCurve = (bytes) => {
+		try {
+			return secp256k1.Point.fromBytes(bytes).toBytes(true);
+		} catch (_unused) {
+			throw new LedgerError("invalid-response", "the returned key is not a secp256k1 point");
+		}
+	};
+	/** `r ‖ s` from the app's 65-byte `r ‖ s ‖ v` signature; v is recovered when the tx is assembled. */
+	var signature = (data) => {
+		if (data.length !== 65) throw new LedgerError("invalid-response", "tron signature is not 65 bytes");
+		return data.subarray(0, 64);
+	};
+	/**
+	* `INS_02` → `LV(65 uncompressed) ‖ LV(34 base58) ‖ [chain code 32 when P2 requests it]`. The
+	* returned base58 address must be the one derived from the returned key — anything else means the
+	* bytes in between are not the address the device signed for (docs/APDU.md).
+	*/
+	var publicNodeReply = (data, chainCode) => {
+		const reader = new Reader(data);
+		const uncompressed = reader.lv();
+		if (uncompressed.length !== 65 || uncompressed[0] !== 4) throw new LedgerError("invalid-response", "tron public key is not a 65-byte point");
+		const publicKey = secp256k1OnCurve(uncompressed);
+		const addressBytes = reader.lv();
+		if (addressBytes.length !== 34) throw new LedgerError("invalid-response", "tron address is not 34 base58 characters");
+		let address;
+		try {
+			address = new TextDecoder("ascii", { fatal: true }).decode(addressBytes);
+		} catch (_unused2) {
+			throw new LedgerError("invalid-response", "tron address is not ASCII");
+		}
+		const code = chainCode ? reader.bytes(32) : void 0;
+		reader.end();
+		if (address !== tronAddressFromPublicKey(uncompressed)) throw new LedgerError("invalid-response", "the address does not match the public key");
+		return _objectSpread2({
+			publicKey,
+			address
+		}, code === void 0 ? {} : { chainCode: code });
+	};
+	/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+	async function tronAddress(exchange, keyPath, display) {
+		const { publicKey, address } = publicNodeReply(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_PUBLIC_KEY,
+			p1: display ? P1_CONFIRM : 0,
+			p2: 0,
+			data: encodePath(keyPath, MAX_PATH_DEPTH)
+		}), false);
+		return {
+			publicKey,
+			address
+		};
+	}
+	/** `INS_02` (P2 `0x01` P2_CHAINCODE) → the compressed key plus the 32-byte chain code. */
+	async function tronPublicNode(exchange, keyPath) {
+		const { publicKey, chainCode } = publicNodeReply(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_PUBLIC_KEY,
+			p1: 0,
+			p2: 1,
+			data: encodePath(keyPath, MAX_PATH_DEPTH)
+		}), true);
+		if (chainCode === void 0) throw new LedgerError("invalid-response", "tron reply carries no chain code");
+		return {
+			publicKey,
+			chainCode
+		};
+	}
+	/**
+	* Chunks `path ‖ body` for INS 04: a single chunk carries `P1_SIGN`, otherwise `P1_FIRST` /
+	* `P1_MORE` / `P1_LAST` (src/handlers/sign.c).
+	*/
+	var signCommands = (ins, keyPath, body, lastP1) => {
+		const prefix = encodePath(keyPath, MAX_PATH_DEPTH);
+		const payload = new Uint8Array(prefix.length + body.length);
+		payload.set(prefix);
+		payload.set(body, prefix.length);
+		const commands = [];
+		for (let offset = 0; offset < payload.length; offset += CHUNK) {
+			const slice = payload.subarray(offset, offset + CHUNK);
+			const first = offset === 0;
+			const last = offset + CHUNK >= payload.length;
+			commands.push({
+				cla: CLA,
+				ins,
+				p1: first && last ? P1_SIGN : first ? P1_FIRST : last ? lastP1 : P1_MORE,
+				p2: 0,
+				data: slice
+			});
+		}
+		return commands;
+	};
+	/** `INS_04` — signs `raw_data` (the protobuf-encoded transaction content). */
+	async function tronSignTransaction(exchange, keyPath, rawData) {
+		return signature(await transmitChunks(exchange, "tron", signCommands(INS_SIGN, keyPath, rawData, P1_LAST)));
+	}
+	/**
+	* `INS_08` — `path ‖ u32 length ‖ message`; chunks use `P1_SIGN` single, `P1_FIRST` then `P1_MORE`
+	* for the rest — there is no distinct last flag, the app counts the declared message length down
+	* (src/handlers/sign_personal_message.c).
+	*/
+	async function tronSignPersonalMessage(exchange, keyPath, message) {
+		const body = new Uint8Array(4 + message.length);
+		body.set(u32(message.length));
+		body.set(message, 4);
+		return signature(await transmitChunks(exchange, "tron", signCommands(INS_SIGN_PERSONAL_MESSAGE, keyPath, body, P1_MORE)));
+	}
+	/** `INS_0C` — `path ‖ domainHash(32) ‖ messageHash(32)` in a single APDU (requires Sign by hash). */
+	async function tronSignTypedDataHash(exchange, keyPath, domainHash, messageHash) {
+		if (domainHash.length !== 32 || messageHash.length !== 32) throw input("TIP-712 hashes must be 32 bytes");
+		const path = encodePath(keyPath, MAX_PATH_DEPTH);
+		const data = new Uint8Array(path.length + 64);
+		data.set(path);
+		data.set(domainHash, path.length);
+		data.set(messageHash, path.length + 32);
+		return signature(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_SIGN_TIP_712_MESSAGE,
+			p1: 0,
+			p2: 0,
+			data
+		}));
+	}
+	/**
+	* `INS_06` — `config ‖ major ‖ minor ‖ patch`, config bits: 0 data allowed, 1 custom contract, 3
+	* sign by hash (src/handlers/get_app_configuration.c).
+	*/
+	async function tronConfiguration(exchange) {
+		const reader = new Reader(await transmit(exchange, "tron", {
+			cla: CLA,
+			ins: INS_GET_APP_CONFIGURATION,
+			p1: 0,
+			p2: 0,
+			data: /* @__PURE__ */ new Uint8Array(0)
+		}));
+		const flags = reader.u8();
+		const major = reader.u8();
+		const minor = reader.u8();
+		const patch = reader.u8();
+		reader.end();
+		return {
+			version: `${major}.${minor}.${patch}`,
+			dataAllowed: (flags & 1) !== 0,
+			customContracts: (flags & 2) !== 0,
+			signByHash: (flags & 8) !== 0
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/ledger/errors.ts
+	/**
+	* Ledger protocol errors into kernel errors: the wire-level `LedgerError` codes the protocol
+	* clients throw map onto the signer module's contract codes. `user-rejected` is the only code a
+	* caller may want to intercept before mapping (an address check answers `matched: false` rather
+	* than failing), so the map is exported as a pure function and the catch is the caller's.
+	*/
+	var CODES = {
+		"device-locked": "device-locked",
+		"app-not-open": "device-app-closed",
+		"app-not-installed": "device-app-closed",
+		"user-rejected": "device-rejected",
+		"setting-required": "blind-signing-disabled",
+		unsupported: "unsupported",
+		"invalid-input": "unsupported",
+		"invalid-response": "integrity",
+		transport: "integrity",
+		"device-fault": "unsupported"
+	};
+	/** Maps one `LedgerError` to the kernel code its ledger code names. */
+	var mapLedgerError = (error) => new KernelError(CODES[error.code], error.code === "device-fault" ? "the device refused the request" : error.message);
+	/**
+	* Runs `job` and maps any `LedgerError` it throws to the kernel code for that ledger code —
+	* `device-fault` loses its (unreliable, status-word-dependent) message for the fixed refusal text.
+	* Kernel errors from the driver's own guards pass through untouched.
+	*/
+	var call$3 = async (job) => {
+		try {
+			return await job();
+		} catch (error) {
+			if (error instanceof LedgerError) throw mapLedgerError(error);
+			throw error;
+		}
+	};
+	// packages/wallet-kernel/src/modules/ledger/protocol/device.ts
+	var PRINTABLE = (b) => b >= 32 && b <= 126;
+	var ascii = (bytes) => {
+		if (!bytes.every(PRINTABLE)) throw new LedgerError("invalid-response", "a response string is not printable ASCII");
+		return new TextDecoder().decode(bytes);
+	};
+	/** `B0 01 00 00` — `01 ‖ LV(name) ‖ LV(version) ‖ [LV(flags)]`, nothing after. */
+	async function appAndVersion(exchange) {
+		const reader = new Reader(await transmit(exchange, "dashboard", {
+			cla: 176,
+			ins: 1,
+			p1: 0,
+			p2: 0,
+			data: /* @__PURE__ */ new Uint8Array(0)
+		}));
+		if (reader.u8() !== 1) throw new LedgerError("invalid-response", "GET_APP_AND_VERSION format is not 0x01");
+		const name = ascii(reader.lv());
+		const version = ascii(reader.lv());
+		const flags = reader.remaining > 0 ? reader.lv() : /* @__PURE__ */ new Uint8Array(0);
+		reader.end();
+		return {
+			name,
+			version,
+			flags
+		};
+	}
+	/**
+	* Names and minimum versions pinned in scripts/ledger/apps.json — device-release tags
+	* `nanos+_1.6.1_2.5.1_sdk_v26.6.2`, `nanos+_1.7.0_1.24.0_sdk_v27.1.7`,
+	* `nanos+_1.6.1_1.16.0_sdk_v26.4.0`, `nanos+_1.7.0_0.8.2_sdk_v27.1.5`. A unit test keeps this table
+	* equal to apps.json.
+	*/
+	var LEDGER_APPS = {
+		bitcoin: {
+			name: "Bitcoin",
+			minimum: [
+				2,
+				5,
+				1
+			]
+		},
+		ethereum: {
+			name: "Ethereum",
+			minimum: [
+				1,
+				24,
+				0
+			]
+		},
+		solana: {
+			name: "Solana",
+			minimum: [
+				1,
+				16,
+				0
+			]
+		},
+		tron: {
+			name: "Tron",
+			minimum: [
+				0,
+				8,
+				2
+			]
+		}
+	};
+	/** Wrong app in the foreground → app-not-open; malformed or too-old version → unsupported. */
+	function requireApp(info, app) {
+		if (info.name !== LEDGER_APPS[app].name) throw new LedgerError("app-not-open", "the app is not open on the device");
+		const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(info.version);
+		if (match === null) throw new LedgerError("unsupported", "the app version is not x.y.z");
+		const actual = [
+			Number(match[1]),
+			Number(match[2]),
+			Number(match[3])
+		];
+		const { minimum } = LEDGER_APPS[app];
+		for (const i of [
+			0,
+			1,
+			2
+		]) if (actual[i] !== minimum[i]) {
+			if (actual[i] < minimum[i]) throw new LedgerError("unsupported", "the app version is below the pinned minimum");
+			return;
+		}
+	}
+	// packages/wallet-kernel/src/modules/signers/ledger/link.ts
+	var apduExchange = (link) => {
+		const exchange = async (apdu) => {
+			const response = await link.exchange({
+				kind: "message",
+				data: apdu
+			});
+			if (response.kind !== "message") throw new KernelError("integrity", "the device answered a message with another kind");
+			return response.data;
+		};
+		return exchange;
+	};
+	/** `appAndVersion` plus `requireApp`: wrong app or too-old version fails before any other APDU. */
+	var requiredApp = async (exchange, app) => call$3(async () => {
+		const info = await appAndVersion(exchange);
+		requireApp(info, app);
+		return info;
+	});
+	// packages/wallet-kernel/src/modules/signers/ledger/pair.ts
+	/**
+	* Pairing and account fetch. The Bitcoin app is the identity source: it is the only Ledger app that
+	* reveals the BIP-32 master fingerprint (the ETH/Tron/Solana apps are path-locked to their coin
+	* type — the pinned Makefiles' PATH_APP_LOAD_PARAMS), so `pair` requires it and pins the four
+	* group-0 account xpubs it serves. `accounts` serves one chain family per call — coin type 0' →
+	* bitcoin (re-checking the master fingerprint against the pin), 60' → ethereum, 195' → tron, 501' →
+	* solana; any other type or a mix is `unsupported`.
+	*/
+	init_bip32();
+	var HARDENED$2 = 2147483648;
+	var PAIR_PURPOSES = [
+		44,
+		49,
+		84,
+		86
+	];
+	var unsupported = (message) => {
+		throw new KernelError("unsupported", message);
+	};
+	/** The pinned node the xpub at `path` carries — public key, chain code and parent fingerprint. */
+	var nodeAt$1 = (path, xpub) => {
+		const key = HDKey$1.fromExtendedKey(xpub);
+		if (key.publicKey === null || key.chainCode === null) throw new KernelError("integrity", "the account xpub carries no public material");
+		const parent = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(parent.buffer).setUint32(0, key.parentFingerprint);
+		return {
+			path,
+			publicKey: key.publicKey,
+			chainCode: key.chainCode,
+			parent
+		};
+	};
+	/**
+	* The pairing ceremony: the Bitcoin app must be open — only it reveals the master fingerprint. The
+	* pinned nodes are the four group-0 account xpubs m/{44,49,84,86}'/0'/0'.
+	*/
+	var pair = async (link) => call$3(async () => {
+		const exchange = apduExchange(link);
+		const info = await requiredApp(exchange, "bitcoin");
+		const fingerprint = await btcMasterFingerprint(exchange);
+		const nodes = [];
+		for (const purpose of PAIR_PURPOSES) {
+			const path = [
+				purpose + HARDENED$2,
+				HARDENED$2,
+				HARDENED$2
+			];
+			nodes.push(nodeAt$1(path, await btcExtendedPublicKey(exchange, path, false)));
+		}
+		return {
+			fingerprint,
+			firmware: `Bitcoin ${info.version}`,
+			nodes,
+			ed25519: []
+		};
+	});
+	/** The coin type a BIP-44-style account path names — `undefined` when the path has no second step. */
+	var coinType = (path) => {
+		const [, coin] = path;
+		return coin === void 0 || coin < HARDENED$2 ? void 0 : coin - HARDENED$2;
+	};
+	var SECP_FAMILY = {
+		0: "bitcoin",
+		60: "ethereum",
+		195: "tron"
+	};
+	/**
+	* Fetches the pinned material for `need` — one chain family per call. Bitcoin re-checks the master
+	* fingerprint (`wrong-device` on a different seed); ethereum/tron take the chain-code public-node
+	* variant; solana reads the ed25519 keys directly.
+	*/
+	var accounts = async (link, need, pin) => {
+		const families = /* @__PURE__ */ new Set();
+		for (const path of need.secp256k1) {
+			const coin = coinType(path);
+			const app = coin === void 0 ? void 0 : SECP_FAMILY[coin];
+			if (app === void 0) throw new KernelError("unsupported", "the account path is not a supported ledger family");
+			families.add(app);
+		}
+		for (const path of need.ed25519) {
+			if (coinType(path) !== 501) unsupported("the ed25519 path is not the solana family");
+			families.add("solana");
+		}
+		if (families.size > 1) unsupported("fetch one chain family at a time");
+		const [app] = families;
+		if (app === void 0) return {
+			fingerprint: pin.fingerprint,
+			nodes: [],
+			ed25519: []
+		};
+		return call$3(async () => {
+			const exchange = apduExchange(link);
+			await requiredApp(exchange, app);
+			if (app === "bitcoin") {
+				if (!equalBytes$9(await btcMasterFingerprint(exchange), pin.fingerprint)) throw new KernelError("wrong-device", "the device is not the paired one");
+				const nodes = [];
+				for (const path of need.secp256k1) nodes.push(nodeAt$1(path, await btcExtendedPublicKey(exchange, path, false)));
+				return {
+					fingerprint: pin.fingerprint,
+					nodes,
+					ed25519: []
+				};
+			}
+			if (app === "ethereum" || app === "tron") {
+				const get = app === "ethereum" ? ethPublicNode : tronPublicNode;
+				const nodes = [];
+				for (const path of need.secp256k1) {
+					const node = await get(exchange, path);
+					nodes.push({
+						path,
+						publicKey: node.publicKey,
+						chainCode: node.chainCode
+					});
+				}
+				return {
+					fingerprint: pin.fingerprint,
+					nodes,
+					ed25519: []
+				};
+			}
+			const ed25519 = [];
+			for (const path of need.ed25519) ed25519.push({
+				path,
+				publicKey: await solanaAddress(exchange, path, false)
+			});
+			return {
+				fingerprint: pin.fingerprint,
+				nodes: [],
+				ed25519
+			};
+		});
+	};
 	// packages/wallet-kernel/src/modules/signers/material.ts
 	init_bip32();
 	var HARDENED$1 = 2147483648;
@@ -44319,6 +46375,242 @@ zoo`.split("\n"));
 		},
 		fingerprint: async () => pin.fingerprint
 	});
+	// packages/wallet-kernel/src/modules/signers/ledger/sign.ts
+	/**
+	* Ledger signing: what the device is sent for one plan stage and the admission checks on what comes
+	* back. The device payload is always recomputed from the request — never trusted from the plan —
+	* and checked against the task digest (`expectDigest`) before any APDU leaves, so a kernel-side
+	* inconsistency fails closed. Requests the device can only blind-sign first read the app's
+	* configuration: the required setting off means `blind-signing-disabled` before the device is even
+	* asked. Bitcoin PSBT yields are released only when they match the plan — the yielded input, the
+	* yielded key and the sighash byte must all agree, and yields outside the plan are ignored.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	function integrity$1() {
+		throw new KernelError("integrity", "malformed device sign exchange");
+	}
+	var blind = () => new KernelError("blind-signing-disabled", "the device setting required to sign is off");
+	var expectDigest = (computed, task) => {
+		if (!equalBytes$9(computed, task.digest)) integrity$1();
+	};
+	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
+	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	var evmBlind = (tx) => tx.to === void 0 || tx.data !== "0x" && tx.data !== "";
+	var evm = async (exchange, request, stage) => {
+		await requiredApp(exchange, "ethereum");
+		const [task] = stage.tasks;
+		if (stage.kind === "evm.transaction") {
+			if (request.kind !== "evm.transaction") integrity$1();
+			const { tx } = request;
+			if (tx.type === "eip7702") integrity$1();
+			const preimage = evmSigningPreimage(tx);
+			expectDigest(keccak_256(preimage), task);
+			if (evmBlind(tx)) {
+				if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+			}
+			return call$3(async () => ethSignTransaction(exchange, task.path, preimage));
+		}
+		if (stage.kind === "evm.typed-data") {
+			if (request.kind !== "evm.typed-data") integrity$1();
+			expectDigest(planEvm(request, {
+				path: task.path,
+				publicKey: task.publicKey
+			}).tasks[0].digest, task);
+			if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+			return call$3(async () => ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json));
+		}
+		if (request.kind !== stage.kind) integrity$1();
+		const signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
+		expectDigest(personalDigest(signData), task);
+		return call$3(async () => ethSignPersonalMessage(exchange, task.path, signData));
+	};
+	var tron = async (exchange, request, stage) => {
+		await requiredApp(exchange, "tron");
+		const [task] = stage.tasks;
+		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
+			const { rawData } = request;
+			expectDigest(sha256$1(rawData), task);
+			const needs = tronSettings(rawData);
+			if (needs.dataAllowed || needs.customContracts || needs.signByHash) {
+				const config = await call$3(async () => tronConfiguration(exchange));
+				if (needs.dataAllowed && !config.dataAllowed || needs.customContracts && !config.customContracts || needs.signByHash && !config.signByHash) throw blind();
+			}
+			return call$3(async () => tronSignTransaction(exchange, task.path, rawData));
+		}
+		if (request.kind === "tron.message" && stage.kind === "tron.message") {
+			expectDigest(tronMessageDigest(request.message), task);
+			return call$3(async () => tronSignPersonalMessage(exchange, task.path, request.message));
+		}
+		if (request.kind === "tron.typed-data" && stage.kind === "tron.typed-data") {
+			const { json } = parseTronTypedData(request.typedData);
+			const { domain, message } = tronTypedDataHashes(json);
+			expectDigest(keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message)), task);
+			if (!(await call$3(async () => tronConfiguration(exchange))).signByHash) throw blind();
+			return call$3(async () => tronSignTypedDataHash(exchange, task.path, domain, message));
+		}
+		return integrity$1();
+	};
+	var solana = async (exchange, request, stage) => {
+		await requiredApp(exchange, "solana");
+		const [task] = stage.tasks;
+		if (!equalBytes$9(request.message, task.message)) integrity$1();
+		if (request.kind === "solana.transaction") {
+			if (!solanaClears(request.message)) {
+				if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+			}
+			return call$3(async () => solanaSignTransaction(exchange, task.path, request.message));
+		}
+		const offchain = solanaOffchain(request.message);
+		if (offchain === void 0) integrity$1();
+		if (offchain === "utf8") {
+			if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+		}
+		return call$3(async () => solanaSignOffchainMessage(exchange, task.path, request.message));
+	};
+	var bitcoinPsbt = async (exchange, context, request, stage) => {
+		await requiredApp(exchange, "bitcoin");
+		const templates = new Set(request.sign.map((s) => s.template));
+		if (templates.size !== 1) integrity$1();
+		const [template] = templates;
+		const [firstTask] = stage.tasks;
+		if (template === void 0 || firstTask === void 0) integrity$1();
+		const account = firstTask.path.slice(0, 3);
+		const net = bitcoinNetwork(request.network);
+		const xpub = await pinnedMaterial(context.pin).extendedPublicKey(account, net.bip32);
+		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
+		const yielded = await call$3(async () => btcSignPsbt(exchange, stage.psbt, policy));
+		return stage.tasks.map((task, index) => {
+			const planned = stage.inputs[index];
+			if (planned === void 0) return integrity$1();
+			const hit = yielded.find((y) => y.input === planned.index);
+			if (hit === void 0) return integrity$1();
+			if (task.scheme === "bip340") {
+				if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+				const { signature } = hit;
+				if (signature.length !== (planned.sighash === 0 ? 64 : 65)) return integrity$1();
+				if (signature.length === 65 && signature[64] !== planned.sighash) return integrity$1();
+				return signature.subarray(0, 64);
+			}
+			if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+			const der = hit.signature;
+			if (der.at(-1) !== planned.sighash) return integrity$1();
+			return secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
+		});
+	};
+	var bitcoinMessage = async (exchange, request, stage) => {
+		await requiredApp(exchange, "bitcoin");
+		const [task] = stage.tasks;
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		expectDigest(legacyMessageHash(request.message), task);
+		return (await call$3(async () => btcSignMessage(exchange, task.path, utf8ToBytes$1(request.message)))).signature;
+	};
+	var sign = async (link, context) => {
+		const { request, stage } = context;
+		const exchange = apduExchange(link);
+		if (stage.kind === "evm.transaction" || stage.kind === "evm.personal-message" || stage.kind === "evm.fiat24-session" || stage.kind === "evm.typed-data") {
+			if (request.kind !== stage.kind) return integrity$1();
+			return [await evm(exchange, request, stage)];
+		}
+		if (stage.kind === "tron.transaction" || stage.kind === "tron.message" || stage.kind === "tron.typed-data") {
+			if (request.kind !== stage.kind) return integrity$1();
+			return [await tron(exchange, request, stage)];
+		}
+		if (stage.kind === "solana.transaction" || stage.kind === "solana.message") {
+			if (request.kind !== "solana.transaction" && request.kind !== "solana.message") return integrity$1();
+			return [await solana(exchange, request, stage)];
+		}
+		if (stage.kind === "bitcoin.psbt") {
+			if (request.kind !== "bitcoin.psbt") return integrity$1();
+			return bitcoinPsbt(exchange, context, request, stage);
+		}
+		if (stage.kind === "bitcoin.message") {
+			if (request.kind !== "bitcoin.message") return integrity$1();
+			return [await bitcoinMessage(exchange, request, stage)];
+		}
+		return integrity$1();
+	};
+	// packages/wallet-kernel/src/modules/signers/ledger/verify.ts
+	/**
+	* On-device address verification: the device renders the address and the kernel compares its answer
+	* against the request. Bitcoin builds the default wallet policy for the pinned account node (same
+	* xpub serialization `pinnedMaterial` uses) and asks for the receive address at change 0; EVM, Tron
+	* and Solana ask for the address at the leaf path directly. A user rejection on the device is a
+	* negative verdict — `matched: false` — never an error; every other Ledger failure maps by the
+	* standard table.
+	*/
+	init_objectSpread2();
+	var BTC_TEMPLATE = /* @__PURE__ */ new Set([
+		"btc.bip44",
+		"btc.bip49",
+		"btc.bip84",
+		"btc.bip86"
+	]);
+	var isBitcoinTemplate = (template) => BTC_TEMPLATE.has(template);
+	/** The device's answer to the display, or `undefined` when the user rejected it there. */
+	var shown = async (job) => {
+		try {
+			return await job();
+		} catch (error) {
+			if (error instanceof LedgerError && error.code === "user-rejected") return;
+			if (error instanceof LedgerError) throw mapLedgerError(error);
+			throw error;
+		}
+	};
+	var bitcoin = async (exchange, target, pin) => {
+		const [purpose, coin, group, change, index] = target.path;
+		if (index === void 0 || purpose === void 0 || coin === void 0 || group === void 0 || target.path.length !== 5 || change !== 0 && change !== 1) throw new KernelError("integrity", "a bitcoin address path is m/purpose'/coin'/account'/*/i");
+		const account = [
+			purpose,
+			coin,
+			group
+		];
+		const net = bitcoinNetwork(target.network);
+		const xpub = await pinnedMaterial(pin).extendedPublicKey(account, net.bip32);
+		const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
+		return shown(async () => btcWalletAddress(exchange, policy, change, index, true));
+	};
+	var verifyAddress = async (link, target, pin) => {
+		const exchange = apduExchange(link);
+		let deviceAddress;
+		if (isBitcoinTemplate(target.template)) {
+			await requiredApp(exchange, "bitcoin");
+			deviceAddress = await bitcoin(exchange, _objectSpread2(_objectSpread2({}, target), {}, { template: target.template }), pin);
+		} else if (target.template === "evm.bip44") {
+			await requiredApp(exchange, "ethereum");
+			deviceAddress = await shown(async () => {
+				return (await ethAddress(exchange, target.path, true)).address.toLowerCase();
+			});
+			return {
+				method: "device",
+				matched: deviceAddress !== void 0 && deviceAddress === target.address.toLowerCase()
+			};
+		} else if (target.template === "tron.bip44") {
+			await requiredApp(exchange, "tron");
+			deviceAddress = await shown(async () => {
+				return (await tronAddress(exchange, target.path, true)).address;
+			});
+		} else if (target.template === "solana.bip44-change") {
+			await requiredApp(exchange, "solana");
+			deviceAddress = await shown(async () => solanaAddressFromPublicKey(await solanaAddress(exchange, target.path, true)));
+		} else throw new KernelError("unsupported", "the device cannot check this address");
+		return {
+			method: "device",
+			matched: deviceAddress === target.address
+		};
+	};
+	// packages/wallet-kernel/src/modules/signers/drivers.ts
+	var DRIVERS = {
+		keystone: KEYSTONE_DRIVER,
+		ledger: {
+			pair,
+			display,
+			sign,
+			accounts,
+			verifyAddress
+		}
+	};
 	// packages/wallet-kernel/src/modules/signers/operation.ts
 	init_utils$2();
 	/** 300 s without a `step` answer discards the operation (I6). */
@@ -44447,7 +46739,10 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/signers/prompt.ts
-	var DEVICE_NAME = { keystone: "Keystone" };
+	var DEVICE_NAME = {
+		keystone: "Keystone",
+		ledger: "Ledger"
+	};
 	var LINES = {
 		"zh-Hans": {
 			clear: "设备将完整显示请求内容，请在设备上核对",
@@ -44631,7 +46926,7 @@ zoo`.split("\n"));
 						secp256k1,
 						ed25519
 					}, pin);
-					if (!equalBytes$6(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
+					if (!equalBytes$9(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
 					pin = mergePin(pin, fetched);
 					const body = authenticatedBody(pin);
 					await ctx.commit([{
@@ -54440,13 +56735,13 @@ zoo`.split("\n"));
 	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
 	* cumulative budget deduped by leaf public key.
 	*/
-	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$6(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$9(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
 	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
 		const signer = state.signers.get(key);
 		const { paymentHash } = approval.decoded;
 		const budget = approval.decoded.invoiceAmountSats;
 		if (signer === void 0 || paymentHash === void 0 || budget === void 0) return false;
-		if (!equalBytes$6(rt.lightningSendHtlcScript({
+		if (!equalBytes$9(rt.lightningSendHtlcScript({
 			paymentHash,
 			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
 			identityPublicKey: await signer.identityPublicKey()
@@ -54459,7 +56754,7 @@ zoo`.split("\n"));
 	var exitCovered = (outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.exitOutputs.some((output) => equalBytes$6(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
+		if (!outflow.exitOutputs.some((output) => equalBytes$9(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
 		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
 		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
@@ -54468,7 +56763,7 @@ zoo`.split("\n"));
 	var onchainCovered = (rt, outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.outputs.every((output) => equalBytes$6(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$6(output.script, addressScript))) return false;
+		if (!outflow.outputs.every((output) => equalBytes$9(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$9(output.script, addressScript))) return false;
 		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
 	};
 	/**
@@ -54486,8 +56781,8 @@ zoo`.split("\n"));
 		const spent = /* @__PURE__ */ new Map();
 		for (const output of outputs) {
 			var _spent$get;
-			if (equalBytes$6(output.ownerPublicKey, identity)) continue;
-			if (!equalBytes$6(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			if (equalBytes$9(output.ownerPublicKey, identity)) continue;
+			if (!equalBytes$9(output.tokenIdentifier, intent.tokenIdentifier)) return false;
 			const owner = bytesToHex$4(output.ownerPublicKey);
 			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
 		}
@@ -54802,7 +57097,7 @@ zoo`.split("\n"));
 					});
 					else {
 						before.delete(`${record.kind}/${record.id}`);
-						if (prior.header !== record.header || !equalBytes$6(prior.sealed, record.sealed)) opened.push({
+						if (prior.header !== record.header || !equalBytes$9(prior.sealed, record.sealed)) opened.push({
 							kind: record.kind,
 							id: record.id,
 							plaintext: openChecked(dek, record)
@@ -54817,7 +57112,7 @@ zoo`.split("\n"));
 				const priorFactors = new Map(prev.factors.map((factor) => [factor.id, factor]));
 				for (const factor of next.factors) {
 					const prior = priorFactors.get(factor.id);
-					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$6(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
+					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$9(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
 				}
 			} catch (_unused) {
 				if (!handedOff) for (const record of opened) wipe(record.plaintext);

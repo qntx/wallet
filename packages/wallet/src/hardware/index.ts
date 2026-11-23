@@ -46,6 +46,9 @@ export type {
   QrPayload,
 } from "../protocol/hardware.ts";
 
+export { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "./ledger.ts";
+export type { LedgerBlePort, LedgerHidPort } from "./ledger.ts";
+
 /** The host transport for one device operation. */
 export type DeviceIo = {
   /**

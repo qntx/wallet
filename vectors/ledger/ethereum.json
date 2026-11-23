@@ -1036,6 +1036,28 @@
         "version": "1.24.0",
         "blindSigning": false
       }
+    },
+    {
+      "name": "public-node",
+      "call": {
+        "fn": "ethPublicNode",
+        "path": [
+          2147483692,
+          2147483708,
+          2147483648
+        ]
+      },
+      "commands": [
+        {
+          "apdu": "e00200010d038000002c8000003c80000000",
+          "response": "41042b0d4af3a89c8d1ba39d1d0ce581f5e2279556af494095eeb501105e4eae7dbb54fc9725950e059905eebbf16e4be975903e7a528ca05599fbbdeb6c087037f52837343665333134633165634241336646653535343943643136373438323065423939346133613933c72d8fa85d6bee4f6d5b9d6d4cb53545084af4d425a4ad75e7d1d02db90e0cb09000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "publicKey": "032b0d4af3a89c8d1ba39d1d0ce581f5e2279556af494095eeb501105e4eae7dbb",
+        "chainCode": "c72d8fa85d6bee4f6d5b9d6d4cb53545084af4d425a4ad75e7d1d02db90e0cb0"
+      }
     }
   ]
 }

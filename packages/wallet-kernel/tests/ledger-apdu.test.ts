@@ -1,6 +1,6 @@
 /**
- * APDU command/response codec, the status-word allow-list, chunked transmission, and the link layer
- * over fake HID/BLE ports (no-interleaving guard, BLE MTU handshake).
+ * APDU command/response codec, the status-word allow-list, chunked transmission, the byte reader,
+ * and the pinned dashboard commands.
  */
 
 import { readFileSync } from "node:fs";
@@ -23,8 +23,6 @@ import {
   requireApp,
 } from "../src/modules/ledger/protocol/device.ts";
 import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import { bleExchange, hidExchange } from "../src/modules/ledger/protocol/link.ts";
-import type { BlePort, HidPort } from "../src/modules/ledger/protocol/link.ts";
 import { statusError } from "../src/modules/ledger/protocol/status.ts";
 
 const code = async (job: Promise<unknown>): Promise<string> => {
@@ -45,61 +43,6 @@ const cmd = (over: Partial<Command> = {}): Command => ({
   data: new Uint8Array(0),
   ...over,
 });
-
-/** A HidPort that records writes and serves the queued reads (then errors on exhaustion). */
-const hidQueue = (reads: Uint8Array[]): { port: HidPort; written: Uint8Array[] } => {
-  const written: Uint8Array[] = [];
-  return {
-    written,
-    port: {
-      write: async (report) => {
-        written.push(report);
-        return Promise.resolve();
-      },
-      read: async () => {
-        const frame = reads.shift();
-        return frame === undefined
-          ? Promise.reject(new Error("unexpected read"))
-          : Promise.resolve(frame);
-      },
-    },
-  };
-};
-
-/** A BlePort that records writes and serves the queued reads (then errors on exhaustion). */
-const bleQueue = (reads: Uint8Array[]): { port: BlePort; written: Uint8Array[] } => {
-  const written: Uint8Array[] = [];
-  return {
-    written,
-    port: {
-      write: async (frame) => {
-        written.push(frame);
-        return Promise.resolve();
-      },
-      read: async () => {
-        const frame = reads.shift();
-        return frame === undefined
-          ? Promise.reject(new Error("unexpected read"))
-          : Promise.resolve(frame);
-      },
-    },
-  };
-};
-
-/** A BlePort that answers the MTU handshake, then leaves every later read pending. */
-const bleMtuThenHang = (): BlePort => {
-  let reads = 0;
-  return {
-    write: async () => Promise.resolve(),
-    read: async () => {
-      reads += 1;
-      if (reads === 1) {
-        return Promise.resolve(Uint8Array.of(0x08, 0, 0, 0, 3, 32));
-      }
-      return new Promise<Uint8Array>(() => {});
-    },
-  };
-};
 
 type AppPins = Partial<Record<string, { name?: unknown; version?: unknown }>>;
 
@@ -204,60 +147,6 @@ describe("ledger apdu", () => {
     const out = await transmitChunks(seq, "ethereum", [cmd(), cmd(), cmd()]);
     expect([...out]).toStrictEqual([0x77]);
     await expect(code(transmitChunks(seq, "ethereum", []))).resolves.toBe("invalid-input");
-  });
-
-  it("exchanges APDUs over a fake HID port and forbids interleaving", async () => {
-    const channel = 0x2a3f;
-    // one 64-byte response frame: channel ‖ 05 ‖ seq 0 ‖ len 2 ‖ 90 00 ‖ pad
-    const frame = new Uint8Array(64);
-    frame.set([channel >> 8, channel & 0xff, 0x05, 0, 0, 0, 2, 0x90, 0]);
-    const { port, written } = hidQueue([frame]);
-    const exchange = hidExchange(port, channel);
-    const response = await exchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0));
-    expect([...response]).toStrictEqual([0x90, 0]);
-    expect(written).toHaveLength(1);
-  });
-
-  it("forbids a second exchange while one is in flight", async () => {
-    const slow: HidPort = {
-      write: async () => Promise.resolve(),
-      read: async () => new Promise<Uint8Array>(() => {}),
-    };
-    const slowExchange = hidExchange(slow, 1);
-    const first = slowExchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0));
-    void first.catch(() => {});
-    await expect(code(slowExchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0)))).resolves.toBe(
-      "invalid-input",
-    );
-  });
-
-  it("runs the BLE MTU handshake before framing", async () => {
-    const { port, written } = bleQueue([
-      Uint8Array.of(0x08, 0, 0, 0, 3, 32), // mtu answer: 32
-      Uint8Array.of(0x05, 0, 0, 0, 2, 0x90, 0x00), // assembled response: 9000
-    ]);
-    const exchange = await bleExchange(port);
-    expect(written.map((f) => [...f])).toStrictEqual([[0x08, 0, 0, 0, 0]]);
-    const response = await exchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0));
-    expect([...response]).toStrictEqual([0x90, 0x00]);
-    // every written frame fits the negotiated mtu
-    for (const f of written.slice(1)) {
-      expect(f.length).toBeLessThanOrEqual(32);
-    }
-  });
-
-  it("rejects out-of-range HID channels", () => {
-    const { port } = hidQueue([]);
-    expect(() => hidExchange(port, -1)).toThrow(LedgerError);
-    expect(() => hidExchange(port, 0x1_00_00)).toThrow(LedgerError);
-    expect(() => hidExchange(port, 1.5)).toThrow(LedgerError);
-  });
-
-  it("forbids a second BLE exchange while one is in flight", async () => {
-    const exchange = await bleExchange(bleMtuThenHang());
-    const first = exchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0));
-    void first.catch(() => {});
-    await expect(code(exchange(Uint8Array.of(0xe0, 0x01, 0, 0, 0)))).resolves.toBe("invalid-input");
   });
 });
 

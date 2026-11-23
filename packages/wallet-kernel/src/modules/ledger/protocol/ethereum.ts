@@ -75,24 +75,13 @@ const rsSignature = (data: Uint8Array): Uint8Array => {
 };
 
 /**
- * `INS_02` → `LV(65 uncompressed) ‖ LV(40 ascii hex)`. The ascii address must be the address of the
- * returned key — the check pins the response so a swapped address string cannot pass.
+ * `LV(65 uncompressed) ‖ LV(40 ascii hex) ‖ [chain code 32]` — the ASCII address must be the
+ * address of the returned key, so a swapped address string cannot pass.
  */
-export async function ethAddress(
-  exchange: Exchange,
-  keyPath: KeyPath,
-  display: boolean,
-): Promise<{ readonly publicKey: Uint8Array; readonly address: string }> {
-  const data = await transmit(
-    exchange,
-    "ethereum",
-    command(
-      INS_GET_PUBLIC_KEY,
-      display ? P1_CONFIRM : P1_NON_CONFIRM,
-      0x00,
-      encodePath(keyPath, MAX_PATH_DEPTH),
-    ),
-  );
+const publicNodeReply = (
+  data: Uint8Array,
+  chainCode: boolean,
+): { publicKey: Uint8Array; address: string; chainCode?: Uint8Array } => {
   const reader = new Reader(data);
   const uncompressed = reader.lv();
   if (uncompressed.length !== 65 || uncompressed[0] !== 0x04) {
@@ -109,12 +98,50 @@ export async function ethAddress(
   } catch {
     throw new LedgerError("invalid-response", "ethereum address is not ASCII");
   }
+  const code = chainCode ? reader.bytes(32) : undefined;
   reader.end();
   const address = evmAddressFromPublicKey(uncompressed);
   if (hexAddress.toLowerCase() !== address.slice(2).toLowerCase()) {
     throw new LedgerError("invalid-response", "the address does not match the public key");
   }
+  return { publicKey, address, ...(code === undefined ? {} : { chainCode: code }) };
+};
+
+/** `INS_02` (P2 `0x00`) → the key and address at `keyPath`; `display` asks the device to confirm. */
+export async function ethAddress(
+  exchange: Exchange,
+  keyPath: KeyPath,
+  display: boolean,
+): Promise<{ readonly publicKey: Uint8Array; readonly address: string }> {
+  const data = await transmit(
+    exchange,
+    "ethereum",
+    command(
+      INS_GET_PUBLIC_KEY,
+      display ? P1_CONFIRM : P1_NON_CONFIRM,
+      0x00,
+      encodePath(keyPath, MAX_PATH_DEPTH),
+    ),
+  );
+  const { publicKey, address } = publicNodeReply(data, false);
   return { publicKey, address };
+}
+
+/** `INS_02` (P2 `0x01`) → the compressed key plus the 32-byte BIP-32 chain code (doc/apdu.md). */
+export async function ethPublicNode(
+  exchange: Exchange,
+  keyPath: KeyPath,
+): Promise<{ readonly publicKey: Uint8Array; readonly chainCode: Uint8Array }> {
+  const data = await transmit(
+    exchange,
+    "ethereum",
+    command(INS_GET_PUBLIC_KEY, P1_NON_CONFIRM, 0x01, encodePath(keyPath, MAX_PATH_DEPTH)),
+  );
+  const { publicKey, chainCode } = publicNodeReply(data, true);
+  if (chainCode === undefined) {
+    throw new LedgerError("invalid-response", "ethereum reply carries no chain code");
+  }
+  return { publicKey, chainCode };
 }
 
 /** Encoded size of the RLP item starting at `offset`; overruns and bad lengths → invalid-input. */

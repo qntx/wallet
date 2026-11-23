@@ -53,13 +53,13 @@ const SIGNERS_FILES = [
   "keystone/sign.ts",
   "keystone/sync.ts",
 ];
-// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 66_560;
+// measured 90004 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 94_505;
 const LEDGER_ENTRY = "qntx-budget-ledger.ts";
 const LEDGER_ENTRY_ID = "\0qntx-budget-ledger";
 const LEDGER_PROTOCOL = "packages/wallet-kernel/src/modules/ledger/protocol/";
-// measured 74466 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
-const LEDGER_BUDGET = 78_190;
+// measured 69217 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
+const LEDGER_BUDGET = 72_678;
 
 type Unit = {
   readonly name: string;

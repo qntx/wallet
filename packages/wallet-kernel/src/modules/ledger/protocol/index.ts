@@ -7,6 +7,7 @@ export type { AppInfo, LedgerApp } from "./device.ts";
 export {
   ethAddress,
   ethConfiguration,
+  ethPublicNode,
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
@@ -20,6 +21,7 @@ export {
 export {
   tronAddress,
   tronConfiguration,
+  tronPublicNode,
   tronSignPersonalMessage,
   tronSignTransaction,
   tronSignTypedDataHash,
@@ -34,15 +36,3 @@ export {
 export type { BitcoinYield } from "./bitcoin/index.ts";
 export { defaultPolicy, policyId, serializePolicy } from "./bitcoin/policy.ts";
 export type { BitcoinDescriptorTemplate, BitcoinPolicy } from "./bitcoin/policy.ts";
-export {
-  bleAssembler,
-  bleFrames,
-  bleMtu,
-  BLE_MTU_REQUEST,
-  hidAssembler,
-  hidFrames,
-  HID_REPORT_SIZE,
-} from "./framing.ts";
-export type { Assembler } from "./framing.ts";
-export { bleExchange, hidExchange } from "./link.ts";
-export type { BlePort, HidPort } from "./link.ts";

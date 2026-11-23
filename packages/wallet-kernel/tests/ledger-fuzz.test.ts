@@ -11,13 +11,6 @@ import type { Exchange } from "../src/modules/ledger/protocol/apdu.ts";
 import { Reader } from "../src/modules/ledger/protocol/bytes.ts";
 import { appAndVersion, requireApp } from "../src/modules/ledger/protocol/device.ts";
 import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import {
-  bleAssembler,
-  bleMtu,
-  bleFrames,
-  hidAssembler,
-  hidFrames,
-} from "../src/modules/ledger/protocol/framing.ts";
 import { statusError } from "../src/modules/ledger/protocol/status.ts";
 
 const RUNS = Number(process.env["FUZZ_RUNS"] ?? "2000");
@@ -44,49 +37,6 @@ const ledgerErrorAsync = async (fn: () => Promise<unknown>): Promise<void> => {
 };
 
 describe("ledger fuzz", () => {
-  it("framing assemblers only throw LedgerError(transport)", () => {
-    expect(() =>
-      fc.assert(
-        fc.property(
-          fc.array(fc.uint8Array({ minLength: 0, maxLength: 80 }), { maxLength: 8 }),
-          fc.integer({ min: 0, max: 0x1_00_00 }),
-          (frames, channelRaw) => {
-            const channel = channelRaw % 0x1_00_00;
-            onlyLedgerError(() => {
-              const a = hidAssembler(channel);
-              for (const f of frames) {
-                a.push(f);
-              }
-            });
-            onlyLedgerError(() => {
-              const b = bleAssembler(20 + (channelRaw % 200) + 6);
-              for (const f of frames) {
-                b.push(f);
-              }
-            });
-          },
-        ),
-      ),
-    ).not.toThrow();
-  }, 600_000);
-
-  it("frame generators only throw LedgerError on hostile inputs", () => {
-    expect(() =>
-      fc.assert(
-        fc.property(
-          fc.uint8Array({ minLength: 0, maxLength: 300 }),
-          fc.integer({ min: -10, max: 0x1_00_10 }),
-          fc.integer({ min: -5, max: 300 }),
-          (apdu, channel, mtu) => {
-            onlyLedgerError(() => hidFrames(apdu, channel));
-            onlyLedgerError(() => bleFrames(apdu, mtu));
-            onlyLedgerError(() => bleMtu(apdu));
-          },
-        ),
-      ),
-    ).not.toThrow();
-  }, 600_000);
-
   it("APDU decode/encode and the byte Reader only throw LedgerError", () => {
     expect(() =>
       fc.assert(

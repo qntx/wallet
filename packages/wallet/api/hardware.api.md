@@ -285,7 +285,7 @@ type FactorInfo = {
 export function hardware(wallet: Wallet): HardwareApi;
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone"];
+const HARDWARE_DEVICES: readonly ["keystone", "ledger"];
 
 // @public (undocumented)
 export type HardwareApi = {
@@ -399,6 +399,27 @@ type KeysApi = {
     readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
     readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
 };
+
+// @public
+export function ledgerBleExchange(port: LedgerBlePort): Promise<(apdu: Uint8Array) => Promise<Uint8Array>>;
+
+// @public
+export type LedgerBlePort = {
+    write: (frame: Uint8Array) => Promise<void>;
+    read: () => Promise<Uint8Array>;
+};
+
+// @public
+export function ledgerHidExchange(port: LedgerHidPort, channel: number): (apdu: Uint8Array) => Promise<Uint8Array>;
+
+// @public
+export type LedgerHidPort = {
+    write: (report: Uint8Array) => Promise<void>;
+    read: () => Promise<Uint8Array>;
+};
+
+// @public
+export function ledgerIo(apdu: (apdu: Uint8Array) => Promise<Uint8Array>, signal?: AbortSignal): DeviceIo;
 
 // @public
 type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";

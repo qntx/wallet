@@ -107,7 +107,7 @@ const boot = async (
   opts?: FakeDeviceOptions,
 ): Promise<Boot & { device: ReturnType<typeof fakeDevice> }> => {
   const device = fakeDevice(SEED, opts);
-  const h = createHarness({ drivers: { keystone: device.driver } });
+  const h = createHarness({ drivers: { keystone: device.driver, ledger: device.driver } });
   await h.settle();
   const res = ok(
     await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: FACTOR() }),
@@ -521,7 +521,10 @@ describe("hardware sign refusals", () => {
   it("the verification prompt carries the device line", async () => {
     const fake = fakeKeystore();
     const device = fakeDevice(SEED);
-    const h = createHarness({ keystore: fake.keystore, drivers: { keystone: device.driver } });
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver, ledger: device.driver },
+    });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {
