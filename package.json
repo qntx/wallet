@@ -55,6 +55,7 @@
     "@vitest/coverage-v8": "5.0.5",
     "bumpp": "12.3.0",
     "cborg": "6.1.5",
+    "hdkey": "2.1.0",
     "madge": "8.0.0",
     "micro-key-producer": "0.10.2",
     "tronweb": "6.5.2",

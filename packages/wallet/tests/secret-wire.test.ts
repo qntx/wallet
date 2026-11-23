@@ -786,6 +786,7 @@ describe("method classification", () => {
       | "backup.restore"
       | "nostr.exportKey"
       | "chain.sign"
+      | "chain.exportAccount"
       | "spark.approve"
       | "hardware.begin"
     >();

@@ -159,9 +159,46 @@ export type ChainAccountsParams = {
 };
 
 // @public (undocumented)
+export type ChainExportedKey = {
+    readonly node: ChainExportNode;
+    readonly path: string;
+    readonly curve: "secp256k1" | "ed25519";
+    readonly publicKey: Uint8Array;
+    readonly chainCode?: Uint8Array;
+    readonly parentFingerprint?: string;
+};
+
+// @public
+export type ChainExportNode = {
+    readonly kind: "evm.account";
+} | {
+    readonly kind: "leaf";
+    readonly template: "evm.bip44" | "tron.bip44" | "solana.bip44-change";
+} | {
+    readonly kind: "btc.account";
+    readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+    readonly network: string;
+};
+
+// @public (undocumented)
+export type ChainExportParams = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly nodes: ReadonlyArray<ChainExportNode>;
+    readonly verify: VerifyFactor;
+};
+
+// @public (undocumented)
+export type ChainExportResult = {
+    readonly fingerprint: string;
+    readonly keys: ReadonlyArray<ChainExportedKey>;
+};
+
+// @public (undocumented)
 export const CHAINS_METHODS: {
     readonly "wallet.accounts": MethodSpec<ChainAccountsParams, ChainAccount>;
     readonly "chain.sign": MethodSpec<ChainSignParams, ChainSignResult>;
+    readonly "chain.exportAccount": MethodSpec<ChainExportParams, ChainExportResult>;
 };
 
 // @public (undocumented)

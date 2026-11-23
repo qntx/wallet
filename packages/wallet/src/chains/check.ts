@@ -3,17 +3,21 @@
  * request's is refused for every request kind, then the family's check verifies the signature (or
  * signed content) against the account. Internal — reached through chains() and hardware() only.
  */
+import { base58 } from "@scure/base";
+
 import { ChainError } from "@qntx/wallet-chains";
 import {
   bitcoinAddressFromXpub,
+  bitcoinNetwork,
   samePsbtContent,
   verifyBitcoinMessage,
   verifyLegacyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
 } from "@qntx/wallet-chains/bitcoin";
-import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
-import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import { evmAddressFromPublicKey, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import { solanaAddressFromPublicKey, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import {
+  tronAddressFromPublicKey,
   verifyTronMessageSignature,
   verifyTronTransactionSignature,
   verifyTronTypedDataSignature,
@@ -21,7 +25,15 @@ import {
 
 import { integrity } from "../channel.ts";
 import type { WalletInternals } from "../internal.ts";
-import type { ChainAccount, ChainSignRequest, ChainSignResult } from "../protocol/chains.ts";
+import type {
+  ChainAccount,
+  ChainExportedKey,
+  ChainExportNode,
+  ChainExportParams,
+  ChainExportResult,
+  ChainSignRequest,
+  ChainSignResult,
+} from "../protocol/chains.ts";
 
 /**
  * The PSBT check: each sign entry names its template, so the account is fetched once per distinct
@@ -220,5 +232,182 @@ export const checkSignResult = async (
       return checkBitcoinMessage(internals, request, result);
     case "bitcoin.psbt":
       return checkPsbt(internals, request, result);
+  }
+};
+
+const HARDENED = 0x80000000;
+
+const sameNode = (a: ChainExportNode, b: ChainExportNode): boolean => {
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  if (a.kind === "leaf" && b.kind === "leaf") {
+    return a.template === b.template;
+  }
+  if (a.kind === "btc.account" && b.kind === "btc.account") {
+    return a.template === b.template && a.network === b.network;
+  }
+  return a.kind === "evm.account";
+};
+
+/**
+ * The network `wallet.accounts` is asked with for a network-free leaf node — a mainnet per family;
+ * the address is network-independent, the id only has to be a valid one.
+ */
+const LEAF: Readonly<
+  Record<
+    "evm.bip44" | "tron.bip44" | "solana.bip44-change",
+    {
+      readonly network: string;
+      readonly curve: "secp256k1" | "ed25519";
+      readonly path: (groupIndex: number) => string;
+      readonly address: (publicKey: Uint8Array) => string;
+    }
+  >
+> = {
+  "evm.bip44": {
+    network: "eip155:1",
+    curve: "secp256k1",
+    path: (g) => `m/44'/60'/0'/0/${String(g)}`,
+    address: evmAddressFromPublicKey,
+  },
+  "tron.bip44": {
+    network: "tron:728126428",
+    curve: "secp256k1",
+    path: (g) => `m/44'/195'/0'/0/${String(g)}`,
+    address: tronAddressFromPublicKey,
+  },
+  "solana.bip44-change": {
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    curve: "ed25519",
+    path: (g) => `m/44'/501'/${String(g)}'/0'`,
+    address: solanaAddressFromPublicKey,
+  },
+};
+
+/** The 78-byte BIP-32 serialization of an account node's extended public key. */
+const xpubPayload = (
+  version: number,
+  parentFingerprint: number,
+  index: number,
+  chainCode: Uint8Array,
+  publicKey: Uint8Array,
+): Uint8Array => {
+  const out = new Uint8Array(78);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, version);
+  out[4] = 3;
+  view.setUint32(5, parentFingerprint);
+  view.setUint32(9, index);
+  out.set(chainCode, 13);
+  out.set(publicKey, 45);
+  return out;
+};
+
+type ExportRequest = Pick<ChainExportParams, "walletId" | "groupIndex" | "nodes">;
+
+const checkExportLeaf = async (
+  internals: WalletInternals,
+  params: ExportRequest,
+  node: Extract<ChainExportNode, { kind: "leaf" }>,
+  key: ChainExportedKey,
+): Promise<void> => {
+  const spec = LEAF[node.template];
+  if (
+    key.curve !== spec.curve ||
+    key.chainCode !== undefined ||
+    key.parentFingerprint !== undefined ||
+    key.path !== spec.path(params.groupIndex)
+  ) {
+    throw integrity("exported leaf does not match the node");
+  }
+  const account = await internals.call("wallet.accounts", {
+    walletId: params.walletId,
+    groupIndex: params.groupIndex,
+    template: node.template,
+    network: spec.network,
+  });
+  if (!("address" in account) || spec.address(key.publicKey) !== account.address) {
+    throw integrity("exported public key does not match the account");
+  }
+};
+
+const checkExportBtc = async (
+  internals: WalletInternals,
+  params: ExportRequest,
+  node: Extract<ChainExportNode, { kind: "btc.account" }>,
+  key: ChainExportedKey,
+  fingerprint: string,
+): Promise<void> => {
+  const account = await internals.call("wallet.accounts", {
+    walletId: params.walletId,
+    groupIndex: params.groupIndex,
+    template: node.template,
+    network: node.network,
+  });
+  if (!("xpub" in account)) {
+    throw integrity("chain account has no xpub");
+  }
+  const net = bitcoinNetwork(node.network);
+  const expected =
+    key.curve === "secp256k1" &&
+    key.publicKey.length === 33 &&
+    key.chainCode !== undefined &&
+    key.parentFingerprint !== undefined
+      ? xpubPayload(
+          net.bip32.public,
+          Number.parseInt(key.parentFingerprint, 16),
+          params.groupIndex + HARDENED,
+          key.chainCode,
+          key.publicKey,
+        )
+      : undefined;
+  const decoded = base58.decode(account.xpub);
+  if (
+    expected === undefined ||
+    decoded.length !== 82 ||
+    !expected.every((byte, i) => byte === decoded[i]) ||
+    key.path !== account.path ||
+    fingerprint !== account.fingerprint
+  ) {
+    throw integrity("exported account key does not match the account xpub");
+  }
+};
+
+/**
+ * The `chain.exportAccount` result check: keys echo the requested nodes in order, leaves hash to
+ * the address `wallet.accounts` serves for the template, and the Bitcoin account key re-serializes
+ * to the account xpub. `evm.account` carries the shared account node — re-deriving the group's leaf
+ * from it needs `@scure/bip32`, which is not a runtime dependency of this package, so the main
+ * runtime checks its fixed path, curve and account fields only. A mismatch is `integrity`.
+ */
+export const checkExportResult = async (
+  internals: WalletInternals,
+  params: ExportRequest,
+  result: ChainExportResult,
+): Promise<void> => {
+  if (result.keys.length !== params.nodes.length) {
+    throw integrity("export result does not match the request");
+  }
+  for (const [i, node] of params.nodes.entries()) {
+    const key = result.keys[i];
+    if (key === undefined || !sameNode(key.node, node)) {
+      throw integrity("export result does not match the request");
+    }
+    if (node.kind === "leaf") {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one wallet.accounts call per node.
+      await checkExportLeaf(internals, params, node, key);
+    } else if (node.kind === "btc.account") {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one wallet.accounts call per node.
+      await checkExportBtc(internals, params, node, key, result.fingerprint);
+    } else if (
+      key.curve !== "secp256k1" ||
+      key.publicKey.length !== 33 ||
+      key.chainCode === undefined ||
+      key.parentFingerprint === undefined ||
+      key.path !== "m/44'/60'/0'"
+    ) {
+      throw integrity("exported account key does not match the node");
+    }
   }
 };

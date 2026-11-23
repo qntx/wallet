@@ -319,6 +319,10 @@ export { CHAINS_METHODS } from "./chains.ts";
 export type {
   ChainAccount,
   ChainAccountsParams,
+  ChainExportedKey,
+  ChainExportNode,
+  ChainExportParams,
+  ChainExportResult,
   ChainSignRequest,
   ChainSignResult,
   ChainTemplate,

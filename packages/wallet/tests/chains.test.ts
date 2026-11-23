@@ -14,8 +14,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
+import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { signEvmPersonalMessage, signEvmTransaction } from "@qntx/wallet-chains/evm/sign";
+import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
 import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
+import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import {
   signTronMessage,
   signTronTransaction,
@@ -23,7 +26,12 @@ import {
 } from "@qntx/wallet-chains/tron/sign";
 
 import { chains } from "../src/chains/index.ts";
-import type { ChainSignRequest, ChainTemplate } from "../src/protocol/chains.ts";
+import type {
+  ChainExportedKey,
+  ChainExportResult,
+  ChainSignRequest,
+  ChainTemplate,
+} from "../src/protocol/chains.ts";
 import type { ProtocolValue } from "../src/protocol/index.ts";
 import { connectKernel } from "../src/wallet.ts";
 import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort, walletError } from "./host.test.ts";
@@ -983,6 +991,282 @@ describe("chains(wallet)", () => {
           verify: { kind: "password", password: "test password" },
         }),
       ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    });
+  });
+
+  describe("exportAccount", () => {
+    const fp8 = (value: number): string => value.toString(16).padStart(8, "0");
+    const master = HDKey.fromMasterSeed(
+      mnemonicToSeedSync(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      ),
+    );
+    const FINGERPRINT = fp8(master.fingerprint);
+    const evmLeaf = master.derive("m/44'/60'/0'/0/0");
+    const tronLeaf = master.derive("m/44'/195'/0'/0/0");
+    const btcNode = master.derive("m/84'/0'/0'");
+    const solanaPub = ed25519.getPublicKey(new Uint8Array(32).fill(9));
+    const evmAccountNode = master.derive("m/44'/60'/0'");
+    const pubOf = (node: HDKey): Uint8Array => {
+      if (node.publicKey === null) {
+        throw new Error("derivation produced no key");
+      }
+      return node.publicKey;
+    };
+    const ccOf = (node: HDKey): Uint8Array => {
+      if (node.chainCode === null) {
+        throw new Error("derivation produced no chain code");
+      }
+      return node.chainCode;
+    };
+    const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
+
+    const nodes = [
+      { kind: "leaf", template: "evm.bip44" },
+      { kind: "leaf", template: "tron.bip44" },
+      { kind: "leaf", template: "solana.bip44-change" },
+      { kind: "btc.account", template: "btc.bip84", network: BTC_NETWORK },
+    ] as const;
+    const result = (): ChainExportResult => ({
+      fingerprint: FINGERPRINT,
+      keys: [
+        {
+          node: nodes[0],
+          path: "m/44'/60'/0'/0/0",
+          curve: "secp256k1",
+          publicKey: pubOf(evmLeaf),
+        },
+        {
+          node: nodes[1],
+          path: "m/44'/195'/0'/0/0",
+          curve: "secp256k1",
+          publicKey: pubOf(tronLeaf),
+        },
+        {
+          node: nodes[2],
+          path: "m/44'/501'/0'/0'",
+          curve: "ed25519",
+          publicKey: solanaPub,
+        },
+        {
+          node: nodes[3],
+          path: "m/84'/0'/0'",
+          curve: "secp256k1",
+          publicKey: pubOf(btcNode),
+          chainCode: ccOf(btcNode),
+          parentFingerprint: fp8(btcNode.parentFingerprint),
+        },
+      ],
+    });
+    const accountsAnswer = (request: { params: unknown }): { ok: ProtocolValue } => {
+      const { template, network } = request.params as { template: string; network: string };
+      if (template === "evm.bip44") {
+        return {
+          ok: { template, network, address: evmAddressFromPublicKey(pubOf(evmLeaf)) },
+        };
+      }
+      if (template === "tron.bip44") {
+        return {
+          ok: { template, network, address: tronAddressFromPublicKey(pubOf(tronLeaf)) },
+        };
+      }
+      if (template === "solana.bip44-change") {
+        return {
+          ok: { template, network, address: solanaAddressFromPublicKey(solanaPub) },
+        };
+      }
+      return {
+        ok: {
+          template,
+          network,
+          xpub: btcNode.publicExtendedKey,
+          fingerprint: FINGERPRINT,
+          path: "m/84'/0'/0'",
+        },
+      };
+    };
+    const exportConnect = async (answer: ProtocolValue, seen: { verify?: unknown }) => {
+      const kernel = new FakeKernel(unlockedStatus());
+      kernel.handlers.set("chain.exportAccount", (request) => {
+        seen.verify = (request.params as { verify: unknown }).verify;
+        return { ok: answer };
+      });
+      kernel.handlers.set("wallet.accounts", accountsAnswer);
+      const wallet = await connectKernel({
+        verifyEvent,
+        spawn: () => {
+          const port = new ScriptedPort(kernel);
+          kernel.attach(port);
+          return port;
+        },
+        factors: "software",
+        passkey: PASSKEY,
+        ceremony: undefined,
+        setTimer: (ms, fn) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+      });
+      return { kernel, wallet };
+    };
+    const params = () => ({
+      walletId: "0a".repeat(8),
+      groupIndex: 0,
+      nodes: [...nodes],
+      verify: { kind: "password" as const, password: "test password" },
+    });
+    const mutable = (r: ChainExportResult): { fingerprint: string; keys: ChainExportedKey[] } => ({
+      fingerprint: r.fingerprint,
+      keys: [...r.keys],
+    });
+    const at = (r: { keys: ReadonlyArray<ChainExportedKey> }, i: number): ChainExportedKey => {
+      const key = r.keys[i];
+      if (key === undefined) {
+        throw new Error("missing key");
+      }
+      return key;
+    };
+
+    it("returns the kernel's material after the re-checks pass", async () => {
+      const seen: { verify?: unknown } = {};
+      const { kernel, wallet } = await exportConnect(result(), seen);
+      const out = await chains(wallet).exportAccount(params());
+      expect(out.fingerprint).toBe(FINGERPRINT);
+      expect(out.keys).toHaveLength(4);
+      expect(seen.verify).toStrictEqual({
+        kind: "password",
+        password: utf8ToBytes("test password"),
+      });
+      expect(kernel.received).toStrictEqual(
+        expect.arrayContaining(["chain.exportAccount", "wallet.accounts"]),
+      );
+    });
+
+    it("rejects a leaf key that does not hash to the account address", async () => {
+      const tampered = mutable(result());
+      const leaf = at(tampered, 0);
+      tampered.keys[0] = {
+        node: leaf.node,
+        path: leaf.path,
+        curve: leaf.curve,
+        publicKey: pubOf(tronLeaf),
+      };
+      const { wallet } = await exportConnect(tampered, {});
+      await expect(chains(wallet).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("rejects a solana leaf whose public key does not match the account", async () => {
+      const tampered = mutable(result());
+      const leaf = at(tampered, 2);
+      tampered.keys[2] = {
+        node: leaf.node,
+        path: leaf.path,
+        curve: leaf.curve,
+        publicKey: ed25519.getPublicKey(new Uint8Array(32).fill(4)),
+      };
+      const { wallet } = await exportConnect(tampered, {});
+      await expect(chains(wallet).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("rejects a tampered chain code and a foreign fingerprint", async () => {
+      for (const mutate of [
+        (key: ChainExportedKey): ChainExportedKey => ({
+          ...key,
+          chainCode: new Uint8Array(32).fill(1),
+        }),
+        (key: ChainExportedKey): ChainExportedKey => ({
+          ...key,
+          parentFingerprint: "00000000",
+        }),
+      ]) {
+        const tampered = mutable(result());
+        tampered.keys[3] = mutate(at(tampered, 3));
+        // oxlint-disable-next-line no-await-in-loop -- each tampered answer gets its own connect
+        const { wallet } = await exportConnect(tampered, {});
+        // oxlint-disable-next-line no-await-in-loop -- sequential tamper cases
+        await expect(chains(wallet).exportAccount(params())).rejects.toSatisfy(
+          (e) => walletError(e).code === "integrity",
+        );
+      }
+      const { wallet } = await exportConnect({ ...result(), fingerprint: "00000000" }, {});
+      await expect(chains(wallet).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("rejects a leaf carrying account fields and a reordered key list", async () => {
+      const echo = mutable(result());
+      const echoed = at(echo, 0);
+      echo.keys[0] = {
+        node: { kind: "leaf", template: "tron.bip44" },
+        path: echoed.path,
+        curve: echoed.curve,
+        publicKey: echoed.publicKey,
+      };
+      const { wallet: w0 } = await exportConnect(echo, {});
+      await expect(chains(w0).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+      const tampered = mutable(result());
+      const leaf = at(tampered, 0);
+      tampered.keys[0] = {
+        node: leaf.node,
+        path: leaf.path,
+        curve: leaf.curve,
+        publicKey: leaf.publicKey,
+        chainCode: new Uint8Array(32),
+      };
+      const { wallet } = await exportConnect(tampered, {});
+      await expect(chains(wallet).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+      const reordered = result();
+      const { wallet: w2 } = await exportConnect(
+        {
+          ...reordered,
+          keys: [
+            ...reordered.keys.slice(1, 2),
+            ...reordered.keys.slice(0, 1),
+            ...reordered.keys.slice(2),
+          ],
+        },
+        {},
+      );
+      await expect(chains(w2).exportAccount(params())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("checks the evm account node's fixed path and fields", async () => {
+      const key = {
+        node: { kind: "evm.account" as const },
+        path: "m/44'/60'/0'",
+        curve: "secp256k1",
+        publicKey: pubOf(evmAccountNode),
+        chainCode: ccOf(evmAccountNode),
+        parentFingerprint: fp8(evmAccountNode.parentFingerprint),
+      };
+      const accountParams = () => ({
+        walletId: "0a".repeat(8),
+        groupIndex: 0,
+        nodes: [{ kind: "evm.account" as const }],
+        verify: { kind: "password" as const, password: "test password" },
+      });
+      const { wallet } = await exportConnect({ fingerprint: FINGERPRINT, keys: [key] }, {});
+      await expect(chains(wallet).exportAccount(accountParams())).resolves.toMatchObject({
+        fingerprint: FINGERPRINT,
+      });
+      const { wallet: bad } = await exportConnect(
+        { fingerprint: FINGERPRINT, keys: [{ ...key, path: "m/44'/60'/1'" }] },
+        {},
+      );
+      await expect(chains(bad).exportAccount(accountParams())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
     });
   });
 });
