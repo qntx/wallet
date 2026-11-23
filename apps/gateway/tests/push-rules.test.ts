@@ -211,14 +211,46 @@ describe("applyCheck", () => {
   });
 
   it("emits no reverted for an inbound failed receipt that never notified", () => {
-    const checked = applyCheck(freshRecord(), included({ success: false }), NOW, own);
-    if (checked.record === undefined) {
-      throw new TypeError("unreachable");
-    }
+    let { record } = applyCheck(freshRecord(), included({ success: false }), NOW, own);
+    expect(record?.status).toBe("included");
     for (let index = 0; index < ABSENT_LIMIT; index += 1) {
-      const outcome = applyCheck(checked.record, { kind: "absent" }, NOW, own);
+      if (record === undefined) {
+        throw new TypeError("unreachable");
+      }
+      const outcome = applyCheck(record, { kind: "absent" }, NOW, own);
       expect(outcome.emit).toBeUndefined();
+      ({ record } = outcome);
     }
+    expect(record?.status).toBe("gone");
+  });
+
+  it("emits no second reverted after a failed re-inclusion keeps the reverted marker", () => {
+    // gone + reverted (notified stays "reverted" when the re-inclusion's receipt failed: an
+    // incoming failed receipt notifies nothing, so nothing new is owed).
+    let record = includedRecord();
+    for (let index = 0; index < ABSENT_LIMIT; index += 1) {
+      const outcome = applyCheck(record, { kind: "absent" }, NOW, own);
+      if (outcome.record === undefined) {
+        throw new TypeError("unreachable");
+      }
+      ({ record } = outcome);
+    }
+    expect(record.status).toBe("gone");
+    expect(record.notified).toBe("reverted");
+    const reincluded = applyCheck(record, included({ success: false, block: 200 }), NOW, own);
+    expect(reincluded.emit).toBeUndefined();
+    expect(reincluded.record?.status).toBe("included");
+    expect(reincluded.record?.notified).toBe("reverted");
+    let again = reincluded.record;
+    for (let index = 0; index < ABSENT_LIMIT; index += 1) {
+      if (again === undefined) {
+        throw new TypeError("unreachable");
+      }
+      const outcome = applyCheck(again, { kind: "absent" }, NOW, own);
+      expect(outcome.emit).toBeUndefined();
+      again = outcome.record;
+    }
+    expect(again?.status).toBe("gone");
   });
 
   it("bumps generation and re-notifies on a re-inclusion after gone", () => {
@@ -244,7 +276,10 @@ describe("applyCheck", () => {
     expect(record?.nextCheck).toBeUndefined();
     const later = applyCheck(record ?? freshRecord(), included(), NOW + 1, own);
     expect(later.emit).toBeUndefined();
-    expect(later.record?.status).toBe("final");
+    expect(later.record).toStrictEqual(record);
+    const absent = applyCheck(record ?? freshRecord(), { kind: "absent" }, NOW + 2, own);
+    expect(absent.emit).toBeUndefined();
+    expect(absent.record).toStrictEqual(record);
   });
 
   it("paces re-checks: 15 s after the first check, a minute to the fifth, five minutes after", () => {
