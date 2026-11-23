@@ -521,6 +521,24 @@ const tokenAccountDump = (
     },
   });
 
+/* `waitFunded` confirms the airdrop, but simulation runs against the rooted
+   bank — roots lag confirmations, so retry prepare like `waitBuild` does. */
+const waitPrepare = async (
+  requests: RequestController,
+  input: Parameters<RequestController["prepare"]>[0],
+  deadline: number,
+): Promise<Awaited<ReturnType<RequestController["prepare"]>>> => {
+  try {
+    return await requests.prepare(input);
+  } catch (error) {
+    if (Date.now() > deadline) {
+      throw error;
+    }
+    await sleep(1000);
+    return waitPrepare(requests, input, deadline);
+  }
+};
+
 const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   const wallet = await createNodeWallet({
     verifyEvent,
@@ -1274,7 +1292,8 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
     });
     const owner = solAddress(solFrom(acct));
     const mint = NFT_ACCOUNTS.plain.mint.address;
-    const recipient = solAddress((await generateKeyPairSigner()).address);
+    const recipientSigner = await generateKeyPairSigner();
+    const recipient = solAddress(recipientSigner.address);
     const [senderAta] = await findAssociatedTokenPda({
       mint: solAddress(mint),
       owner,
@@ -1351,28 +1370,18 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
       });
       await transactions.init();
       const requests = await requestsFor(transactions);
-      /* `waitFunded` confirms the airdrop, but simulation runs against the rooted
-         bank — roots lag confirmations, so retry prepare like `waitBuild` does. */
-      let pending: Awaited<ReturnType<typeof requests.prepare>>;
-      const prepDeadline = Date.now() + 90_000;
-      for (;;) {
-        try {
-          pending = await requests.prepare({
-            method: "solana-nft-send",
-            account: hdAccount,
-            network: NETWORK,
-            asset: mint,
-            to: recipient,
-            fee: "normal",
-          });
-          break;
-        } catch (error) {
-          if (Date.now() > prepDeadline) {
-            throw new Error(`${String(error)}\n${ledgerLog(ledger)}`, { cause: error });
-          }
-          await sleep(1000);
-        }
-      }
+      const pending = await waitPrepare(
+        requests,
+        {
+          method: "solana-nft-send",
+          account: hdAccount,
+          network: NETWORK,
+          asset: mint,
+          to: recipient,
+          fee: "normal",
+        },
+        Date.now() + 90_000,
+      );
       expect(pending.display).toMatchObject({
         outflows: [{ to: recipientAta, amount: { asset: mint, amount: "1" } }],
       });
