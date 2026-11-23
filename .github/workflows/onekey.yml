@@ -50,6 +50,9 @@ jobs:
       # Re-record every session against the live emulator, then run the whole suite against the
       # fresh transcript (responses carry live answers); request bytes must equal the committed
       # ones — the check script fails on any drift.
+      # The suite reads both models' transcripts: start from the committed ones and overwrite only
+      # this model's with the live recording.
+      - run: mkdir -p "$RUNNER_TEMP/onekey" && cp vectors/onekey/*.json "$RUNNER_TEMP/onekey/"
       - run: bun scripts/vectors/onekey-emulator.ts --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
       # The driver sessions start from an uninitialized device too: replace the seeded container.
       - run: |
