@@ -1,6 +1,6 @@
 import { spawnSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { base64 } from "@scure/base";
 import { getCreateAccountInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
+  getApproveInstruction,
   getCreateAssociatedTokenIdempotentInstruction,
   getInitializeMintInstruction,
   getMintToCheckedInstruction,
@@ -33,6 +34,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   address as solAddress,
   generateKeyPairSigner,
+  getAddressEncoder,
 } from "@solana/kit";
 import type { Instruction } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
@@ -42,6 +44,8 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { ApprovalsController } from "../src/approvals/controller.ts";
+import { metaplexMetadataAddress } from "../src/chains/nfts.ts";
 import { SolanaChainAdapter } from "../src/chains/solana.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
@@ -154,6 +158,25 @@ const realTimer = (ms: number, fn: () => unknown): (() => void) => {
   return () => {
     clearTimeout(id);
   };
+};
+
+const waitUntil = async (check: () => boolean, deadline = Date.now() + 60_000): Promise<void> => {
+  if (check()) {
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new Error("waitUntil timed out");
+  }
+  await sleep(250);
+  return waitUntil(check, deadline);
+};
+
+const mustFind = <T>(list: ReadonlyArray<T>, pred: (item: T) => boolean, name: string): T => {
+  const found = list.find(pred);
+  if (found === undefined) {
+    throw new Error(`expected ${name} missing`);
+  }
+  return found;
 };
 
 const balance = (v: unknown): number => {
@@ -446,6 +469,74 @@ const withdrawStakeAll = async (
   }
   await run({ kind: "withdraw", stakeAccount, lamports: BigInt(balance.value) });
   return withdrawStakeAll(run, r, stakeAccount, attempt + 1);
+};
+
+const NFT_ACCOUNTS = JSON.parse(
+  readFileSync(new URL("fixtures/nfts/solana-mainnet-accounts.json", import.meta.url), "utf8"),
+) as {
+  readonly owner: string;
+  readonly plain: {
+    readonly mint: { readonly address: string; readonly response: { value: unknown } };
+    readonly metadata: { readonly address: string; readonly response: { value: unknown } };
+    readonly ata: { readonly address: string; readonly response: { value: unknown } };
+  };
+};
+
+/** The `solana-test-validator --account <address> <file>` dump shape from a fixture response. */
+const accountDump = (address: string, value: unknown): string => {
+  /* The captured `rentEpoch` is u64::MAX rounded by JSON (…52000 overflows u64);
+     the dumped `space` field is not part of the account-dump shape either. */
+  const { space: _space, rentEpoch: _rentEpoch, ...rest } = value as Record<string, unknown>;
+  return JSON.stringify({ pubkey: address, account: { ...rest, rentEpoch: 0 } });
+};
+
+/** A 165-byte SPL token account: mint @0, owner @32, amount u64LE @64, state u8 @108. */
+const tokenAccountDump = (
+  address: string,
+  mint: string,
+  owner: string,
+  amount: bigint,
+  lamports: number,
+): string =>
+  JSON.stringify({
+    pubkey: address,
+    account: {
+      lamports,
+      data: [
+        base64.encode(
+          (() => {
+            const b = new Uint8Array(165);
+            b.set(getAddressEncoder().encode(solAddress(mint)), 0);
+            b.set(getAddressEncoder().encode(solAddress(owner)), 32);
+            new DataView(b.buffer).setBigUint64(64, amount, true);
+            b[108] = 1; // initialized
+            return b;
+          })(),
+        ),
+        "base64",
+      ],
+      owner: TOKEN_PROGRAM_ADDRESS,
+      executable: false,
+      rentEpoch: 0,
+    },
+  });
+
+/* `waitFunded` confirms the airdrop, but simulation runs against the rooted
+   bank — roots lag confirmations, so retry prepare like `waitBuild` does. */
+const waitPrepare = async (
+  requests: RequestController,
+  input: Parameters<RequestController["prepare"]>[0],
+  deadline: number,
+): Promise<Awaited<ReturnType<RequestController["prepare"]>>> => {
+  try {
+    return await requests.prepare(input);
+  } catch (error) {
+    if (Date.now() > deadline) {
+      throw error;
+    }
+    await sleep(1000);
+    return waitPrepare(requests, input, deadline);
+  }
 };
 
 const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
@@ -800,6 +891,245 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
   }, 600_000);
 });
 
+describe.runIf(RUN)("solana e2e: approvals inventory and revocation", () => {
+  it("lists an SPL delegate and revokes it through the pipeline", async () => {
+    const ledger = mkdtempSync(join(tmpdir(), "sol-appr-"));
+    const validator = spawn(
+      VALIDATOR,
+      [
+        "--reset",
+        "--ledger",
+        ledger,
+        "--quiet",
+        "--bind-address",
+        "127.0.0.1",
+        "--rpc-port",
+        "8896",
+        "--faucet-port",
+        "9906",
+      ],
+      { stdio: "ignore" },
+    );
+    try {
+      const url = "http://127.0.0.1:8896";
+      const r = rpc(url);
+      await waitHealthy(r, ledger, Date.now() + 120_000);
+      const payer = await generateKeyPairSigner();
+      const delegateSigner = await generateKeyPairSigner();
+      const delegate = delegateSigner.address;
+      const a = new SolanaChainAdapter();
+      await waitFunded(r, payer.address, Date.now() + 120_000);
+
+      const { wallet, walletId } = await realWallet();
+      const hdAccount = {
+        kind: "hd" as const,
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change" as const,
+      };
+      const acct = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: hdAccount.template,
+        network: NETWORK,
+      });
+      const from = solAddress(solFrom(acct));
+      await waitFunded(r, from, Date.now() + 120_000);
+
+      /* Mint + a funded token account owned by the wallet — the setup payer signs all of it. */
+      const mint = await generateKeyPairSigner();
+      const rent = (await r.call("getMinimumBalanceForRentExemption", [
+        82,
+        { commitment: "confirmed" },
+      ])) as number;
+      const [ata] = await findAssociatedTokenPda({
+        mint: mint.address,
+        owner: from,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      });
+      const unsigned = await waitBuild(
+        a,
+        r,
+        NETWORK,
+        payer.address,
+        payer.address,
+        Date.now() + 60_000,
+      );
+      const mintHash = await send(
+        a,
+        r,
+        payer,
+        {
+          family: "solana",
+          network: NETWORK,
+          from: payer.address,
+          instructions: [
+            getCreateAccountInstruction({
+              payer,
+              newAccount: mint,
+              lamports: BigInt(rent),
+              space: 82n,
+              programAddress: TOKEN_PROGRAM_ADDRESS,
+            }),
+            getInitializeMintInstruction({
+              mint: mint.address,
+              decimals: 6,
+              mintAuthority: payer.address,
+            }),
+            getCreateAssociatedTokenIdempotentInstruction({
+              ata,
+              mint: mint.address,
+              owner: from,
+              payer,
+              tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            }),
+            getMintToCheckedInstruction({
+              mint: mint.address,
+              token: ata,
+              mintAuthority: payer,
+              amount: 1_000_000n,
+              decimals: 6,
+            }),
+          ],
+          writable: [],
+          unitsConsumed: 0,
+          blockhash: unsigned.blockhash,
+          lastValidBlockHeight: unsigned.lastValidBlockHeight,
+        },
+        [mint],
+      );
+      await waitConfirmed(a, r, mintHash, Date.now() + 60_000);
+
+      /* The SPL Approve must come from the wallet itself — kernel normalize → decode → sign. */
+      const lifetime = (await r.call("getLatestBlockhash", [{ commitment: "confirmed" }])) as {
+        value: { blockhash: string; lastValidBlockHeight: number };
+      };
+      const message = new Uint8Array(
+        getCompiledTransactionMessageEncoder().encode(
+          compileTransactionMessage(
+            setTransactionMessageLifetimeUsingBlockhash(
+              {
+                blockhash: blockhash(lifetime.value.blockhash),
+                lastValidBlockHeight: BigInt(lifetime.value.lastValidBlockHeight),
+              },
+              setTransactionMessageFeePayer(
+                from,
+                appendTransactionMessageInstructions(
+                  [
+                    getApproveInstruction({
+                      source: ata,
+                      delegate,
+                      owner: from,
+                      amount: 500_000n,
+                    }),
+                  ],
+                  setTransactionMessageConfig(
+                    {
+                      priorityFeeLamports: 5000n,
+                      computeUnitLimit: 1_400_000,
+                      loadedAccountsDataSizeLimit: 32 * 1024 * 1024,
+                    },
+                    createTransactionMessage({ version: 1 }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      const signed = await chains(wallet).sign({
+        request: {
+          kind: "solana.transaction",
+          network: NETWORK,
+          account: hdAccount,
+          message,
+        },
+        verify: BVERIFY,
+      });
+      const { signature } = signed as Extract<typeof signed, { kind: "solana.transaction" }>;
+      expect(signature).toHaveLength(64);
+      const approveHash = await a.broadcast(r, a.finalize(message, [signature]));
+      await waitConfirmed(a, r, approveHash, Date.now() + 60_000);
+
+      const networks = new NetworkController({
+        ...idleNetworkDeps,
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { [NETWORK]: [url] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: { warn: () => {} },
+      });
+      const transactions = new TransactionController({
+        wallet,
+        networks,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: realTimer,
+        now: () => Date.now(),
+        logger: { warn: () => {} },
+        pollMs: 200,
+      });
+      await transactions.init();
+      const requests = await requestsFor(transactions);
+      const approvals = new ApprovalsController({
+        networks,
+        transactions,
+        gateway: undefined,
+        fetch: globalThis.fetch,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        setTimer: realTimer,
+        now: () => Date.now(),
+        logger: { warn: () => {} },
+        addressOf: async (ref, network) => transactions.addressOf(ref, network),
+        known: () => [],
+        tokenMetadata: async () => Promise.resolve({ symbol: "TST", decimals: 6 }),
+        sessions: async () => Promise.resolve([]),
+        prepare: async (input) => requests.prepare(input),
+      });
+      await approvals.init();
+
+      const key = await approvals.load(hdAccount, NETWORK);
+      const view = () =>
+        mustFind(Object.values(approvals.getState().views), (v) => v.key === key, "view");
+      await waitUntil(() => view().status === "ready");
+      /* Solana has no gateway scan — the delegate row comes from the chain enumeration. */
+      expect(view().sources.map((s) => s.source)).toStrictEqual(["local"]);
+      const delegateRow = mustFind(
+        view().rows,
+        (row) => row.kind === "spl-delegate",
+        "spl-delegate row",
+      );
+      expect(delegateRow).toMatchObject({
+        kind: "spl-delegate",
+        tokenAccount: ata,
+        delegate,
+        amount: "500000",
+        exposure: "500000",
+      });
+
+      const pending = await approvals.revoke(key, delegateRow.id);
+      expect(pending.display).toMatchObject({
+        approvals: [{ kind: "delegate-revoked", account: ata }],
+      });
+      const revoked = await requests.approve(
+        pending.id,
+        "solana-revoke",
+        approval(pending, BVERIFY),
+      );
+      await waitConfirmed(a, r, txHashOf(revoked), Date.now() + 120_000);
+      await waitUntil(() => !view().rows.some((row) => row.kind === "spl-delegate"));
+
+      const info = (await r.call("getAccountInfo", [
+        ata,
+        { encoding: "jsonParsed", commitment: "confirmed" },
+      ])) as { value: { data: { parsed: { info: { delegate?: string } } } } };
+      expect(info.value.data.parsed.info.delegate).toBeUndefined();
+    } finally {
+      validator.kill("SIGKILL");
+      rmSync(ledger, { recursive: true, force: true });
+    }
+  }, 420_000);
+});
+
 describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
   it("a v1 transfer and a >1232-byte v1 memo land on the local validator", async () => {
     const ledger = mkdtempSync(join(tmpdir(), "sol-v1-"));
@@ -943,4 +1273,142 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
       rmSync(ledger, { recursive: true, force: true });
     }
   }, 300_000);
+
+  it("sends a preloaded mainnet SPL NFT to a second address through the pipeline", async () => {
+    /* The plain (non-programmable) fixture NFT: real mainnet mint + Metaplex
+       metadata bytes, plus a crafted ATA owned by the test wallet holding 1. */
+    const { wallet, walletId } = await realWallet();
+    const hdAccount = {
+      kind: "hd" as const,
+      walletId,
+      groupIndex: 0,
+      template: "solana.bip44-change" as const,
+    };
+    const acct = await chains(wallet).account({
+      walletId,
+      groupIndex: 0,
+      template: hdAccount.template,
+      network: NETWORK,
+    });
+    const owner = solAddress(solFrom(acct));
+    const mint = NFT_ACCOUNTS.plain.mint.address;
+    const recipientSigner = await generateKeyPairSigner();
+    const recipient = solAddress(recipientSigner.address);
+    const [senderAta] = await findAssociatedTokenPda({
+      mint: solAddress(mint),
+      owner,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const [recipientAta] = await findAssociatedTokenPda({
+      mint: solAddress(mint),
+      owner: recipient,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const metadata = await metaplexMetadataAddress(mint);
+    expect(metadata).toBe(NFT_ACCOUNTS.plain.metadata.address);
+
+    const dumps = mkdtempSync(join(tmpdir(), "sol-nft-acct-"));
+    writeFileSync(
+      join(dumps, "mint.json"),
+      accountDump(mint, NFT_ACCOUNTS.plain.mint.response.value),
+    );
+    writeFileSync(
+      join(dumps, "meta.json"),
+      accountDump(metadata, NFT_ACCOUNTS.plain.metadata.response.value),
+    );
+    writeFileSync(join(dumps, "ata.json"), tokenAccountDump(senderAta, mint, owner, 1n, 2039280));
+
+    const ledger = mkdtempSync(join(tmpdir(), "sol-nft-"));
+    const validator = spawn(
+      VALIDATOR,
+      [
+        "--reset",
+        "--ledger",
+        ledger,
+        "--quiet",
+        "--bind-address",
+        "127.0.0.1",
+        "--rpc-port",
+        "8897",
+        "--faucet-port",
+        "9907",
+        "--account",
+        mint,
+        join(dumps, "mint.json"),
+        "--account",
+        metadata,
+        join(dumps, "meta.json"),
+        "--account",
+        senderAta,
+        join(dumps, "ata.json"),
+      ],
+      { stdio: "ignore" },
+    );
+    try {
+      const url = "http://127.0.0.1:8897";
+      const r = rpc(url);
+      await waitHealthy(r, ledger, Date.now() + 120_000);
+      const a = new SolanaChainAdapter();
+      await waitFunded(r, owner, Date.now() + 120_000);
+
+      const networks = new NetworkController({
+        ...idleNetworkDeps,
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { [NETWORK]: [url] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: { warn: () => {} },
+      });
+      const transactions = new TransactionController({
+        wallet,
+        networks,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: realTimer,
+        now: () => Date.now(),
+        logger: { warn: () => {} },
+        pollMs: 200,
+      });
+      await transactions.init();
+      const requests = await requestsFor(transactions);
+      const pending = await waitPrepare(
+        requests,
+        {
+          method: "solana-nft-send",
+          account: hdAccount,
+          network: NETWORK,
+          asset: mint,
+          to: recipient,
+          fee: "normal",
+        },
+        Date.now() + 90_000,
+      );
+      expect(pending.display).toMatchObject({
+        outflows: [{ to: recipientAta, amount: { asset: mint, amount: "1" } }],
+      });
+      const tx = await requests.approve(pending.id, "solana-nft-send", approval(pending, BVERIFY));
+      await waitConfirmed(a, r, txHashOf(tx), Date.now() + 120_000);
+
+      const ataAmount = async (account: string): Promise<string> => {
+        const bal = (await r.call("getTokenAccountBalance", [
+          account,
+          { commitment: "confirmed" },
+        ])) as { value: { amount: string } };
+        return bal.value.amount;
+      };
+      await expect(ataAmount(recipientAta)).resolves.toBe("1");
+      await expect(ataAmount(senderAta)).resolves.toBe("0");
+
+      /* The engine's tracked transaction re-read reports the included send. */
+      await waitUntil(() => {
+        const tracked = Object.values(transactions.getState().txs).find(
+          (t) => t.hash === txHashOf(tx),
+        );
+        return tracked?.state === "confirmed";
+      });
+    } finally {
+      validator.kill("SIGKILL");
+      rmSync(ledger, { recursive: true, force: true });
+      rmSync(dumps, { recursive: true, force: true });
+    }
+  }, 420_000);
 });

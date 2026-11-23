@@ -150,9 +150,17 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     this.update((s) => ({ ...s, wallets: { ...s.wallets, [walletId]: status } }));
   }
 
+  /** Metadata sync signs with the wallet's nostr sync key — only a vault wallet has one. */
+  private isVault(walletId: string): boolean {
+    return (
+      this.options.wallet.getSnapshot().wallets.find((w) => w.walletId === walletId)?.custody ===
+      "vault"
+    );
+  }
+
   private async pullOne(walletId: string, gen: number): Promise<void> {
     const config = this.options.metaSync;
-    if (config === undefined || this.inflight.has(walletId)) {
+    if (config === undefined || this.inflight.has(walletId) || !this.isVault(walletId)) {
       return;
     }
     const signer = this.options.nostr.syncSigner(walletId);
@@ -302,7 +310,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
 
   private async publishNow(walletId: string, gen: number): Promise<void> {
     const config = this.options.metaSync;
-    if (config === undefined || !this.pulled.has(walletId)) {
+    if (config === undefined || !this.pulled.has(walletId) || !this.isVault(walletId)) {
       return;
     }
     const signer = this.options.nostr.syncSigner(walletId);

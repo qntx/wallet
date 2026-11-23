@@ -1,6 +1,6 @@
 import * as z from "zod/mini";
 
-export type HttpMethod = "GET" | "POST" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
   readonly method: HttpMethod;

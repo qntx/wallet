@@ -1,0 +1,41 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "id": "J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w",
+    "interface": "ProgrammableNFT",
+    "content": {
+      "metadata": {
+        "attributes": [
+          {
+            "trait_type": "Background",
+            "value": "Orange"
+          },
+          {
+            "trait_type": "Rank",
+            "value": 441
+          }
+        ],
+        "description": "Fock it.",
+        "name": "Mad Lads",
+        "symbol": "MAD",
+        "token_standard": "ProgrammableNonFungible"
+      },
+      "links": {
+        "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
+        "external_url": "https://madlads.com"
+      },
+      "files": [
+        {
+          "uri": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
+          "mime": "image/png"
+        }
+      ]
+    },
+    "grouping": [],
+    "compression": {
+      "compressed": false
+    },
+    "burnt": false
+  },
+  "id": 1
+}

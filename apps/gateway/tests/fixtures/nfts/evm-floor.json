@@ -1,0 +1,16 @@
+{
+  "openSea": {
+    "floorPrice": 6.03,
+    "priceCurrency": "ETH",
+    "collectionUrl": "https://opensea.io/collection/boredapeyachtclub",
+    "retrievedAt": "2026-11-23T03:35:32.348Z",
+    "error": null
+  },
+  "looksRare": {
+    "floorPrice": 69.0,
+    "priceCurrency": "ETH",
+    "collectionUrl": "https://looksrare.org/collections/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
+    "retrievedAt": "2025-01-13T03:42:07.872Z",
+    "error": null
+  }
+}

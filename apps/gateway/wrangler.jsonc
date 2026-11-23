@@ -8,8 +8,12 @@
   // Invocation logs record request URLs (quote queries carry wallet addresses) and client
   // metadata — our own JSON request-log lines stay instead.
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  // One object per provider account name; the binding lives per env, the migration is shared.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] }],
+  // One object per provider account name (PROVIDER_BUDGET) and one per push family (PUSH); the
+  // bindings live per env, the migrations are shared.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["PushObject"] },
+  ],
   "env": {
     "staging": {
       // Must differ from production's account: Workers Scripts Edit is account-wide, so a staging
@@ -36,10 +40,14 @@
       // Rate-limit bindings count per Cloudflare location; PROVIDER_BUDGET is the one
       // worldwide counter an upstream credential's quota needs (README "Rate limiting").
       "durable_objects": {
-        "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }],
+        "bindings": [
+          { "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" },
+          { "name": "PUSH", "class_name": "PushObject" },
+        ],
       },
       // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
       // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
+      // PUSH_LIMITER charges subscription writes per IP prefix (PUT costs 5).
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -60,6 +68,11 @@
           "name": "SHARE_LIMITER",
           "namespace_id": "1004",
           "simple": { "limit": 1000, "period": 60 },
+        },
+        {
+          "name": "PUSH_LIMITER",
+          "namespace_id": "1005",
+          "simple": { "limit": 60, "period": 60 },
         },
       ],
     },
@@ -87,10 +100,14 @@
       },
       "kv_namespaces": [{ "binding": "RISK", "id": "983019ff51a54c5abea1a0a8189d299d" }],
       "durable_objects": {
-        "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }],
+        "bindings": [
+          { "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" },
+          { "name": "PUSH", "class_name": "PushObject" },
+        ],
       },
       // IP/RPC/DEFAULT count requests (an RPC batch's calls count individually). SHARE_LIMITER's
       // units are shares of a provider account's per-minute budget, keyed account:ip-prefix.
+      // PUSH_LIMITER charges subscription writes per IP prefix (PUT costs 5).
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -111,6 +128,11 @@
           "name": "SHARE_LIMITER",
           "namespace_id": "2004",
           "simple": { "limit": 1000, "period": 60 },
+        },
+        {
+          "name": "PUSH_LIMITER",
+          "namespace_id": "2005",
+          "simple": { "limit": 60, "period": 60 },
         },
       ],
     },

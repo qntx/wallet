@@ -14,6 +14,10 @@
  *   Nothing imports it yet, so an ablation cannot measure it; an `export *` build keeps every
  *   export and measures the upper bound of what wiring the client in can add. It is not part of the
  *   application share — it has its own budget.
+ * - Signers: a fourth build the same way — namespace re-exports of every file under modules/signers/
+ *   keep every export of the hardware signer module live (already wired, so the delta is only
+ *   tree-shaken extras). Kernel infrastructure, not an application unit: it is out of the share and
+ *   has its own budget.
  */
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
@@ -31,6 +35,26 @@ const CARD_ENTRY_ID = "\0qntx-budget-card";
 const CARD_PROTOCOL = "packages/wallet-kernel/src/modules/card/protocol/";
 // measured 38260 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
 const CARD_BUDGET = 40_192;
+const SIGNERS_ENTRY = "qntx-budget-signers.ts";
+const SIGNERS_ENTRY_ID = "\0qntx-budget-signers";
+const SIGNERS_MODULE = "packages/wallet-kernel/src/modules/signers/";
+const SIGNERS_FILES = [
+  "index.ts",
+  "driver.ts",
+  "drivers.ts",
+  "material.ts",
+  "operation.ts",
+  "prompt.ts",
+  "record.ts",
+  "keystone/cbor.ts",
+  "keystone/derive.ts",
+  "keystone/driver.ts",
+  "keystone/registry.ts",
+  "keystone/sign.ts",
+  "keystone/sync.ts",
+];
+// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 66_560;
 
 type Unit = {
   readonly name: string;
@@ -108,8 +132,11 @@ const plugins = (ablate: boolean) => [
       if (id === resolve(ROOT, CARD_ENTRY)) {
         return CARD_ENTRY_ID;
       }
+      if (id === resolve(ROOT, SIGNERS_ENTRY)) {
+        return SIGNERS_ENTRY_ID;
+      }
       // The virtual entry only references absolute paths; claim them as real files.
-      if (importer === CARD_ENTRY_ID) {
+      if (importer === CARD_ENTRY_ID || importer === SIGNERS_ENTRY_ID) {
         return id;
       }
       if (id.startsWith(".") || id.startsWith("/") || id.startsWith("\0")) {
@@ -126,6 +153,16 @@ const plugins = (ablate: boolean) => [
     load(id: string) {
       if (id === CARD_ENTRY_ID) {
         return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, CARD_PROTOCOL, "index.ts")}";`;
+      }
+      if (id === SIGNERS_ENTRY_ID) {
+        // Namespace re-exports retain every export of every signers file; `export *` would
+        // silently drop a colliding name. The module is kernel infrastructure, already wired
+        // by the real entry — this build measures the upper bound of what it can cost.
+        const imports = SIGNERS_FILES.map(
+          (file, i) => `import * as s${i} from "${resolve(ROOT, SIGNERS_MODULE, file)}";`,
+        ).join(" ");
+        const names = SIGNERS_FILES.map((_file, i) => `s${i}`).join(", ");
+        return `import "${resolve(ROOT, ENTRY)}"; ${imports} export { ${names} };`;
       }
       return ablate ? (STUBS[rel(id)] ?? null) : null;
     },
@@ -178,6 +215,7 @@ const run = async (ablate: boolean, entry: string = ENTRY) => {
 const full = await run(false);
 const ablated = await run(true);
 const card = await run(false, CARD_ENTRY);
+const signers = await run(false, SIGNERS_ENTRY);
 
 const delta = full.bytes - ablated.bytes;
 const share = delta / full.bytes;
@@ -230,6 +268,22 @@ if (cardBytes === 0) {
 }
 if (cardBytes > CARD_BUDGET) {
   breaches.push(`card protocol client: ${cardBytes} B exceeds ${CARD_BUDGET} B`);
+}
+let signersBytes = 0;
+for (const [id, renderedLength] of signers.rendered) {
+  if (id.startsWith(SIGNERS_MODULE)) {
+    signersBytes += renderedLength;
+  }
+}
+const signersDelta = signers.bytes - full.bytes;
+console.log(
+  `  ${"signers module".padEnd(26)} ${String(signersBytes).padStart(7)} B / ${SIGNERS_BUDGET} B  ${signersBytes === 0 || signersBytes > SIGNERS_BUDGET ? "BREACH " : ""}— hardware signer module, all exports retained (bundle delta +${signersDelta} B)`,
+);
+if (signersBytes === 0) {
+  breaches.push(`signers module: no rendered modules under ${SIGNERS_MODULE}`);
+}
+if (signersBytes > SIGNERS_BUDGET) {
+  breaches.push(`signers module: ${signersBytes} B exceeds ${SIGNERS_BUDGET} B`);
 }
 console.log(
   "note: prompt rows for hyperliquid/polymarket inside modules/chains/prompt.ts share a file with core rows and are not attributed.",

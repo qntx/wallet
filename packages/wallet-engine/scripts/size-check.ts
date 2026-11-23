@@ -6,14 +6,17 @@
  *   engine's own code — what a host that never touches apps pays. The bundle must also stay free of
  *   apps markers (the Hyperliquid base URL and the `@nktkas/hyperliquid` specifier survive
  *   minification), proving the apps entry never leaks into the main one.
- * - `apps`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core entry and the
- *   two provider sub-entries, each with `@qntx/*` workspace packages external (they are the host's
- *   peer deps). The core must stay free of both venues' markers — providers only reach a bundle
- *   through their own sub-entry — and of every provider dir name under src/apps, read from the
- *   filesystem at run time and matched case-insensitively like the other markers.
+ * - `apps`, `apps-fiat24`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core
+ *   entry and the three provider sub-entries, each with `@qntx/*` workspace packages external (they
+ *   are the host's peer deps). The core must stay free of every venue's markers — providers only
+ *   reach a bundle through their own sub-entry — and of every provider dir name under src/apps,
+ *   read from the filesystem at run time and matched case-insensitively like the other markers.
  * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
  *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
  *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
+ * - `push`: the `@qntx/wallet-engine/push` opener with nothing external — notification extensions
+ *   ship the bundle standalone, so the number includes @noble/@scure. It must stay free of zod,
+ *   which the wire-format module deliberately avoids.
  */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -73,14 +76,17 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
-       deposit and the nonce/tracking fixes. */
-    budget: 144 * 1024,
+    /* Measured 173 412 B on the merged tree: the approvals lane's 156 692 B plus the NFT
+       controller (accepted +6 KiB index increase), the notifications controller, the versioned
+       backup controller with cloud transports and the hardware-wallet custody handling. */
+    budget: 172 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",
       "api.hyperliquid",
       "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
       "@walletconnect/",
       "@reown/",
       "relay.walletconnect",
@@ -94,7 +100,25 @@ const ENTRIES: ReadonlyArray<Entry> = [
        (a record keyed by app id) and the per-definition AppRequests stamping. */
     budget: 10 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: [...PROVIDER_DIRS, "@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
+    forbidden: [
+      ...PROVIDER_DIRS,
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+    ],
+  },
+  {
+    name: "apps-fiat24",
+    source: "src/apps/fiat24/index.ts",
+    /* Measured 115557 B: the bundled @qntx/fiat24 SDK (read actions, flows state machines, the
+       REST/session client, deployments, zod schemas) + the viem client core, plus the provider
+       itself — errors, the corroborating rpc transport, owner/account reads, the live view, the
+       enablement record machine, the signer bridge, flows and sessions. */
+    budget: 118 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
     name: "apps-hyperliquid",
@@ -104,7 +128,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
        provider (incl. the CCTP deposit reads through the injected networks client). */
     budget: 20 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["polymarket.com"],
+    forbidden: ["polymarket.com", "@qntx/fiat24", "api.fiat24"],
   },
   {
     name: "apps-polymarket",
@@ -115,13 +139,72 @@ const ENTRIES: ReadonlyArray<Entry> = [
        verification. */
     budget: 40 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "@qntx/fiat24", "api.fiat24"],
+  },
+  {
+    name: "push",
+    source: "src/push/index.ts",
+    /* Measured 5828 B: the opener plus its full dependency closure — @noble/ciphers AES-GCM and
+       @scure/base bundled so the number is what a notification extension pays. */
+    budget: 7 * 1024,
+    external: [],
+    forbidden: ["zod"],
+  },
+  {
+    name: "gateway-contract",
+    source: "src/gateway/contract/index.ts",
+    /* Measured 40573 B: the zod schemas and parsers of every contract endpoint — what the
+       gateway app and a validating host pay for the wire contract alone. */
+    budget: 42 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
+  },
+  {
+    name: "idb",
+    source: "src/idb/indexeddb.ts",
+    /* Measured 9187 B: the IndexedDB public store and its record cipher — the browser host's
+       durable-store entry. */
+    budget: 10 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
+  },
+  {
+    name: "connect",
+    source: "src/connect/index.ts",
+    /* Measured 135618 B: the injected provider script and the message bridge with its EVM,
+       Solana, Bitcoin, TRON and Nostr surfaces plus the codecs they pull. */
+    budget: 136 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
   },
   {
     name: "walletconnect",
     source: "src/walletconnect/index.ts",
-    /* measured 420545 B gzipped — our glue plus WalletKit, the sign client and the core. */
-    budget: 414 * 1024,
+    /* Measured 18806 B: our session glue only — WalletKit, the sign client and the core are
+       optional peers the host installs and bundler-external here. */
+    budget: 20 * 1024,
     external: WALLETCONNECT_EXTERNAL,
     forbidden: [],
   },

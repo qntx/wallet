@@ -5,11 +5,12 @@
  * Nostr API lives in the "./nostr" subpath (nostr(wallet)).
  */
 export { parseBackupHeader } from "./backup.ts";
-export type { BackupHeader, BackupHeaderWallet } from "./backup.ts";
+export type { BackupHeader, BackupHeaderKey, BackupHeaderWallet } from "./backup.ts";
 export type { BackupInfo } from "./types.ts";
 export type { WalletOptions } from "./options.ts";
 export {
   WalletError,
+  HARDWARE_DEVICES,
   type AutoLockPolicy,
   type BackupApi,
   type DataKeyApi,
@@ -17,6 +18,8 @@ export {
   type ExportedMnemonic,
   type ExportedSecret,
   type FactorInfo,
+  type HardwareDevice,
+  type HardwareWalletInfo,
   type InitialFactor,
   type LockReason,
   type MnemonicDraft,
@@ -31,6 +34,7 @@ export {
   type VerifyFactor,
   type VaultApi,
   type VaultState,
+  type VaultWalletInfo,
   type Wallet,
   type WalletErrorCode,
   type WalletInfo,

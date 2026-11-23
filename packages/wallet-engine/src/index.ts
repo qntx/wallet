@@ -2,8 +2,8 @@ export { Controller } from "./controller.ts";
 export type { ControllerOptions } from "./controller.ts";
 export { createEventBus } from "./events.ts";
 export type { EngineLogger, EventBus } from "./events.ts";
-export { EngineStoreError } from "./errors.ts";
-export type { EngineErrorCode } from "./errors.ts";
+export { EngineStoreError, NftTransferError } from "./errors.ts";
+export type { EngineErrorCode, NftRefusal } from "./errors.ts";
 export type { EngineCollection, EngineStore, PublicStore } from "./store/port.ts";
 export { createMemoryEngineStore, createMemoryPublicStore } from "./store/memory.ts";
 export { formatDecimal, parseDecimal } from "./decimal.ts";
@@ -45,6 +45,19 @@ export { AssetsController } from "./assets/controller.ts";
 export type { AccountBalances, AssetsControllerState, TokenBalance } from "./assets/controller.ts";
 export type { SpamReason } from "./assets/spam.ts";
 export type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./assets/bitcoin.ts";
+export { APPROVALS_POLL_MS, ApprovalsController } from "./approvals/controller.ts";
+export type { ApprovalsControllerOptions } from "./approvals/controller.ts";
+export type {
+  ApprovalKind,
+  ApprovalRisk,
+  ApprovalRow,
+  ApprovalSource,
+  ApprovalSourceState,
+  ApprovalsState,
+  ApprovalsView,
+  SessionLink,
+  TokenRef,
+} from "./approvals/types.ts";
 export { PRICES_POLL_MS, PricesController } from "./prices/controller.ts";
 export type {
   PriceQuoteState,
@@ -57,6 +70,24 @@ export { PRICE_STALE_MS } from "./prices/valuation.ts";
 export type { PriceView, Valuation, ValuedHolding } from "./prices/valuation.ts";
 export type { FiatCurrency } from "./gateway/contract/prices.ts";
 export { FIAT_CURRENCIES } from "./gateway/contract/prices.ts";
+export { NFT_INVENTORY_MAX_PAGES, NFT_POLL_MS, NftController } from "./nfts/controller.ts";
+export type {
+  NftControllerOptions,
+  NftDetailView,
+  NftFailure,
+  NftFloorView,
+  NftInventory,
+  NftResult,
+  NftState,
+  NftView,
+} from "./nfts/controller.ts";
+export type {
+  NftCollectionView,
+  NftItemFacts,
+  NftMedia,
+  NftTransferSupport,
+} from "./nfts/metadata.ts";
+export type { NftAcquisition, NftSpamReason } from "./nfts/spam.ts";
 export type { GatewayConfig, GatewayScope } from "./gateway/client.ts";
 export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
@@ -69,6 +100,7 @@ export {
   AcknowledgementRequiredError,
   BlindSigningDisabledError,
   InvalidTokenError,
+  NonceConflictError,
   OriginBusyError,
   REQUEST_TTL_MS,
   RESIMULATE_AFTER_MS,
@@ -134,7 +166,12 @@ export type {
   TransactionControllerState,
   TxState,
 } from "./transactions/controller.ts";
-export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transactions/route.ts";
+export type {
+  DelegationStatus,
+  DisplayIntent,
+  EvmRevokeTarget,
+  SparkDepositTag,
+} from "./transactions/route.ts";
 export type { TxBlock } from "./transactions/route.ts";
 export { SolanaClusterBindingError } from "./transactions/solana.ts";
 export type { SolanaBindingReason } from "./transactions/solana.ts";
@@ -178,7 +215,15 @@ export { backupPasswordStrength } from "./backup/strength.ts";
 export type { BackupPasswordStrength } from "./backup/strength.ts";
 export type { BackupErrorCategory } from "./backup/errors.ts";
 export { createMemoryCloudStore } from "./backup/memory.ts";
-export type { CloudStore } from "./backup/port.ts";
+export { createGoogleDriveCloudStore } from "./backup/google-drive.ts";
+export type { GoogleDriveCloudStoreOptions } from "./backup/google-drive.ts";
+export {
+  CLOUD_TEXT_MAX_BYTES,
+  CloudStoreError,
+  checkCloudName,
+  checkCloudText,
+} from "./backup/port.ts";
+export type { CloudStore, CloudStoreErrorCode } from "./backup/port.ts";
 export { SparkController } from "./spark/controller.ts";
 export type {
   SparkAccountState,
@@ -234,4 +279,12 @@ export type {
 export { HistoryController } from "./history/controller.ts";
 export type { GroupHistory, HistoryControllerOptions, HistoryState } from "./history/controller.ts";
 export type { HistoryGroup } from "./history/local.ts";
+export { NotificationsController } from "./notifications/controller.ts";
+export type {
+  NotificationEvent,
+  NotificationsControllerOptions,
+  NotificationsState,
+  NotificationStatus,
+  PushKeyStore,
+} from "./notifications/controller.ts";
 export type { HistoryChange, HistoryEntry, HistoryFlag, HistoryStatus } from "./history/types.ts";

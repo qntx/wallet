@@ -1,19 +1,17 @@
 /**
  * The vault manifest: one record, sealed under the DEK, that commits to the vault's whole structure
- * — the format, the keyId and every other record and factor row byte for byte. Every content commit
- * rewrites it in the same transaction and every reload under a session checks it, so a store writer
- * without the DEK can neither put back a row the vault dropped (a retired backup key, a disabled
- * policy, a deleted wallet), nor delete, add or alter one, nor rewrite the format. The password
- * failure counters stay outside it: they change without a session.
+ * — the format, the revision, the keyId and every other record and factor row byte for byte. Every
+ * content commit rewrites it in the same transaction and every reload under a session checks it, so
+ * a store writer without the DEK can neither put back a row the vault dropped (a retired backup
+ * key, a disabled policy, a deleted wallet), nor delete, add or alter one, nor rewrite the format,
+ * nor raise the revision the manifest binds. The floor catching an older committed image — still
+ * consistent, manifest and all — lives outside the store in the vault anchor (vault/anchor.ts).
  *
- * What it cannot see is the whole image put back to an earlier committed state — that is a
- * consistent vault the DEK once sealed. Detecting it needs a monotonic counter outside the store.
- *
- * Digest = SHA-256(lp("qntx-wallet/vault/v1/manifest") ‖ u32be(format) ‖ lp(keyId) ‖
- * u32be(#records) ‖ per record: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed) ‖ u32be(#factors) ‖ per
- * factor: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed)), where lp(x) = u32be(byteLength(x)) ‖ x,
- * strings are UTF-8, the manifest record itself is left out, records are ordered by (kind, id) and
- * factors by id, both in UTF-16 code-unit order.
+ * Digest = SHA-256(lp("qntx-wallet/vault/v1/manifest") ‖ u32be(format) ‖ u64be(revision) ‖
+ * lp(keyId) ‖ u32be(#records) ‖ per record: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed) ‖
+ * u32be(#factors) ‖ per factor: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed)), where lp(x) =
+ * u32be(byteLength(x)) ‖ x, strings are UTF-8, the manifest record itself is left out, records are
+ * ordered by (kind, id) and factors by id, both in UTF-16 code-unit order.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -43,6 +41,15 @@ function u32(value: number): Uint8Array {
   return out;
 }
 
+/** U64be as two u32 words — bare Hermes has no BigInt reliance here. */
+function u64(value: number): Uint8Array {
+  const out = new Uint8Array(8);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, Math.floor(value / 0x1_00_00_00_00));
+  view.setUint32(4, value % 0x1_00_00_00_00);
+  return out;
+}
+
 /** The structure digest of `image`, the manifest record itself excluded. */
 export function manifestDigest(image: VaultImage): Uint8Array {
   const { meta } = image;
@@ -63,6 +70,7 @@ export function manifestDigest(image: VaultImage): Uint8Array {
   };
   lp(DOMAIN);
   hash.update(u32(meta.format));
+  hash.update(u64(meta.revision));
   lp(meta.keyId);
   const records = image.records
     .filter((record) => !isManifestRecord(record))

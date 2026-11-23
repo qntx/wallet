@@ -11,6 +11,7 @@ import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
 import type {
+  AppAuthority,
   AppFlow,
   AppGroup,
   AppProvider,
@@ -645,6 +646,29 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
         renewalDue: newest.validUntil - now < RENEWAL_WINDOW_MS,
         error: undefined,
       });
+    },
+    authorities: async (group): Promise<ReadonlyArray<AppAuthority>> => {
+      const { builder } = options;
+      if (builder === undefined) {
+        return [];
+      }
+      const owner = await provider.agents.owner(group);
+      const approved = await provider.account.maxBuilderFee(owner, builder.address.toLowerCase());
+      if (approved <= 0) {
+        return [];
+      }
+      /* `disable({ revoke: true })` only clears the agent — the builder-fee approval stays on
+         HyperCore until an `approveBuilderFee` to zero, which no engine surface reaches. */
+      return [
+        {
+          kind: "builder-fee",
+          network: options.network,
+          account: owner,
+          holder: builder.address,
+          limit: approved.toString(),
+          revoke: "none",
+        },
+      ];
     },
   };
   return {

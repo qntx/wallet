@@ -34,6 +34,7 @@ import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import { mapPool } from "../pool.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
@@ -47,7 +48,6 @@ import { spamReasons, symbolOwners } from "./spam.ts";
 import type { SpamReason } from "./spam.ts";
 import { TokenLists } from "./token-lists.ts";
 import {
-  mapPool,
   trc10Balances,
   tronAccountView,
   tronBalanceOf,

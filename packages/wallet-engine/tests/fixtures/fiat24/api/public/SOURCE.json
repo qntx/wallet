@@ -1,0 +1,68 @@
+{
+  "timestamp.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/timestamp",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "f2d744041430bca55d42c9ce794c6790309fca94f31d2073c64c40d38fe90566"
+  },
+  "countries.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/countries",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "2b92ffa0923d6d8f847ddb8777dae58dc2f56b6a15ec72a5c4764c0719f14a7a"
+  },
+  "rates.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/rates",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "cf0b3e68931f29c6e8da4b26dbefba499aba93ebdf322ce56e3fce7b5fe4b1b0"
+  },
+  "payment-purposes.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/payment-purposes",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "84cca761732e3db9ae71c0db6d7a6c333984da8468f70b3e15ebcf8311f7c57e"
+  },
+  "banks.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/banks",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "5339d48a4608ef36dccd15c17291d731aa2744be38c514feb51c0bd084152542"
+  },
+  "banks-iban.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/banks/iban/CH9300762011623852957",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "e7dbd67be74b4313361e922b46e26669f4f396b06dd5e1aa1f19284f4f14d906"
+  },
+  "banks-iban-bad.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/banks/iban/CH0000000000000000000",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "90853433247df5103d32cd9c09160a3ee026fd2469778d007c149d78d84d7591"
+  },
+  "country-cities.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/country-cities",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "99678b945dbd98eca4a6b039a23143026fba4b5646eae0b920178de95bec815f"
+  },
+  "status-kyc-9102.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/status-kyc?id=9102",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "75c0ea09b5e741343feae88231375d648db278e2eeb5a73f714690561172fc52"
+  },
+  "status-kyc-missing.json": {
+    "source": "recorded 2026-11-22T06:22:02Z https://api.fiat24.com/status-kyc?id=37033549",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "sha256": "6bfd43fc61308541003b37d53b821c8c3f0e7c04dbe2cc693c516302211c94bc"
+  },
+  "br-noauth.txt": {
+    "source": "recorded 2026-11-21T16:10:21Z https://api.fiat24.com/br",
+    "status": 401,
+    "contentType": "text/plain; charset=utf-8",
+    "sha256": "d089c8a9fc28e4e50223eb38c9409e362521be9380a37341304fbac7a4cd9e5f"
+  }
+}

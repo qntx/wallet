@@ -1,11 +1,14 @@
 /**
- * The backup reconcile loop (design/backup.mdx "同步"): keeps the cloud file
- * `qntx-wallet-backup-<id>.json` in step with the vault. Single-flight — a trigger during a run
- * schedules exactly one rerun; `lock()` bumps a generation so a stale run never writes state, store
- * or cloud after that point.
+ * The backup reconcile loop (design/backup.mdx "同步"): keeps the cloud namespace in step with the
+ * vault. Every upload is a new file `qntx-wallet-backup-<id>-<sha256(text)>.json` — the name binds
+ * the content, so versions never overwrite each other, every read self-verifies, and a foreign
+ * version's header coverage caches by name. Single-flight — a trigger during a run schedules
+ * exactly one rerun; `lock()` bumps a generation so a stale run never writes state, store or cloud
+ * after that point.
  *
  * Security shape: the engine only ever moves ciphertext. The BEK stays in the enclave; the local
- * record is a digest/coverage baseline, not a key.
+ * record is a name/coverage baseline, not a key. A device deletes only versions it wrote or
+ * adopted, and only once a newer own version is confirmed present.
  */
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
@@ -27,6 +30,7 @@ import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import { BackupControllerError } from "./errors.ts";
 import type { BackupErrorCategory } from "./errors.ts";
+import { CloudStoreError } from "./port.ts";
 import type { CloudStore } from "./port.ts";
 import { backupPasswordStrength } from "./strength.ts";
 
@@ -42,32 +46,47 @@ export type BackupControllerState = {
   readonly error: BackupErrorCategory | undefined;
 };
 
+/** Sorted id sets — `wallets` give walletIds, `importedKeys` give keyIds. */
+type Coverage = {
+  readonly walletIds: ReadonlyArray<string>;
+  readonly keyIds: ReadonlyArray<string>;
+};
+
+/** A versioned file the record vouches for. */
+type VersionedFile = {
+  readonly name: string;
+  readonly coverage: Coverage;
+};
+
 /** The EngineStore `backup/state` record — a baseline, never a key. */
 type BackupRecord = {
-  readonly id: string;
-  readonly digest: string | undefined;
-  readonly uploadedAt: number | undefined;
-  readonly walletIds: ReadonlyArray<string>;
-  /**
-   * The envelope this device last started uploading, persisted before `cloud.write`: a read-back
-   * that lags or a write that throws after landing is confirmed next pass instead of reported as a
-   * foreign file. `id` is the backup id the upload was for — a record surviving from an older
-   * backup id keeps it bound to the file it actually wrote.
-   */
-  readonly pending?: {
-    readonly id: string;
-    readonly digest: string;
-    readonly walletIds: ReadonlyArray<string>;
-  };
+  /** The confirmed head: a version this device wrote, or adopted through a verified restore. */
+  readonly head?: VersionedFile;
+  readonly uploadedAt?: number;
+  /** An upload whose landing is not yet confirmed — promoted or superseded next pass. */
+  readonly pending?: VersionedFile;
+  /** Own/adopted versions to delete once a head is confirmed — any backup id. */
+  readonly superseded: ReadonlyArray<string>;
 };
 
 const COLLECTION = "backup";
 const RECORD_KEY = "state";
-const FILE_PREFIX = "qntx-wallet-backup-";
-const FILE_SUFFIX = ".json";
+const FILE_NAME = /^qntx-wallet-backup-([0-9a-f]{32})-([0-9a-f]{64})\.json$/;
 
-function fileName(id: string): string {
-  return `${FILE_PREFIX}${id}${FILE_SUFFIX}`;
+function fileName(id: string, digest: string): string {
+  return `qntx-wallet-backup-${id}-${digest}.json`;
+}
+
+function parseFileName(name: string): { readonly id: string; readonly digest: string } | undefined {
+  const match = FILE_NAME.exec(name);
+  if (match === null) {
+    return undefined;
+  }
+  const [, id, digest] = match;
+  if (id === undefined || digest === undefined) {
+    return undefined;
+  }
+  return { id, digest };
 }
 
 function digestOf(text: string): string {
@@ -82,10 +101,50 @@ function sameSet(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+function isSubset(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
+  return a.every((v) => b.includes(v));
+}
+
+function sameCoverage(a: Coverage, b: Coverage): boolean {
+  return sameSet(a.walletIds, b.walletIds) && sameSet(a.keyIds, b.keyIds);
+}
+
+function coverageSubset(a: Coverage, b: Coverage): boolean {
+  return isSubset(a.walletIds, b.walletIds) && isSubset(a.keyIds, b.keyIds);
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((e) => typeof e === "string");
+
+function parseCoverage(value: unknown): Coverage | undefined {
+  if (
+    !isObject(value) ||
+    !Object.keys(value).every((k) => k === "walletIds" || k === "keyIds") ||
+    !isStringArray(value["walletIds"]) ||
+    !isStringArray(value["keyIds"])
+  ) {
+    return undefined;
+  }
+  return { walletIds: value["walletIds"], keyIds: value["keyIds"] };
+}
+
+function parseVersionedFile(value: unknown): VersionedFile | undefined {
+  if (
+    !isObject(value) ||
+    !Object.keys(value).every((k) => k === "name" || k === "coverage") ||
+    typeof value["name"] !== "string" ||
+    parseFileName(value["name"]) === undefined
+  ) {
+    return undefined;
+  }
+  const coverage = parseCoverage(value["coverage"]);
+  if (coverage === undefined) {
+    return undefined;
+  }
+  return { name: value["name"], coverage };
+}
 
 /** Strict record validation — anything malformed reads as absent (and is logged). */
 function parseRecord(bytes: Uint8Array | undefined): BackupRecord | undefined {
@@ -94,54 +153,37 @@ function parseRecord(bytes: Uint8Array | undefined): BackupRecord | undefined {
   }
   try {
     const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    if (!isObject(value)) {
+    if (
+      !isObject(value) ||
+      !Object.keys(value).every(
+        (k) => k === "head" || k === "uploadedAt" || k === "pending" || k === "superseded",
+      )
+    ) {
       return undefined;
     }
-    const o = value;
-    const { id } = o;
-    const { digest } = o;
-    const { uploadedAt } = o;
-    const { walletIds } = o;
-    if (typeof id !== "string" || !/^[0-9a-f]{32}$/.test(id)) {
-      return undefined;
-    }
-    if (digest !== undefined && (typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))) {
-      return undefined;
-    }
+    const { uploadedAt, head, pending, superseded } = value;
     if (
       uploadedAt !== undefined &&
       (typeof uploadedAt !== "number" || !Number.isSafeInteger(uploadedAt))
     ) {
       return undefined;
     }
-    if (!isStringArray(walletIds)) {
+    const parsedHead = head === undefined ? undefined : parseVersionedFile(head);
+    if (head !== undefined && parsedHead === undefined) {
       return undefined;
     }
-    const { pending } = o;
-    if (pending === undefined) {
-      return { id, digest, uploadedAt, walletIds };
+    const parsedPending = pending === undefined ? undefined : parseVersionedFile(pending);
+    if (pending !== undefined && parsedPending === undefined) {
+      return undefined;
     }
-    if (
-      !isObject(pending) ||
-      !Object.keys(pending).every((k) => k === "id" || k === "digest" || k === "walletIds") ||
-      typeof pending["id"] !== "string" ||
-      !/^[0-9a-f]{32}$/.test(pending["id"]) ||
-      typeof pending["digest"] !== "string" ||
-      !/^[0-9a-f]{64}$/.test(pending["digest"]) ||
-      !isStringArray(pending["walletIds"])
-    ) {
+    if (!isStringArray(superseded) || !superseded.every((n) => parseFileName(n) !== undefined)) {
       return undefined;
     }
     return {
-      id,
-      digest,
-      uploadedAt,
-      walletIds,
-      pending: {
-        id: pending["id"],
-        digest: pending["digest"],
-        walletIds: pending["walletIds"],
-      },
+      ...(parsedHead === undefined ? {} : { head: parsedHead }),
+      ...(uploadedAt === undefined ? {} : { uploadedAt }),
+      ...(parsedPending === undefined ? {} : { pending: parsedPending }),
+      superseded,
     };
   } catch {
     return undefined;
@@ -165,8 +207,15 @@ export class BackupController extends Controller<BackupControllerState> {
   private generation = 0;
   private current: Promise<void> | undefined;
   private rerun = false;
-  /** Set by restore() before the store opens — written as a record on the first reconcile. */
-  private pendingAdoption: { readonly id: string; readonly digest: string } | undefined;
+  /**
+   * Header coverage by file name — a versioned name binds its content, so entries never need
+   * invalidation; the map is cleared on lock() with the rest of the session state.
+   */
+  private readonly remoteCoverage = new Map<string, Coverage>();
+  /** Foreign names already seen to hold garbage — never read again this session. */
+  private readonly remoteInvalid = new Set<string>();
+  /** Set by restore() before the kernel call — applied by the first pass that sees the record. */
+  private pendingAdoption: { readonly name: string; readonly coverage: Coverage } | undefined;
 
   constructor(options: BackupControllerOptions) {
     super({ name: "backup", defaultState: () => defaultState() });
@@ -194,6 +243,8 @@ export class BackupController extends Controller<BackupControllerState> {
   lock(): void {
     this.generation += 1;
     this.engineStore = undefined;
+    this.remoteCoverage.clear();
+    this.remoteInvalid.clear();
     this.update(() => defaultState());
   }
 
@@ -220,8 +271,13 @@ export class BackupController extends Controller<BackupControllerState> {
   }): Promise<void> {
     // Check before the ceremony: the user must not verify and retain a BEK when there is
     // nowhere to upload it.
-    if (this.cloud === undefined || !(await this.cloud.available())) {
+    if (this.cloud === undefined) {
       throw new BackupControllerError("unavailable", "the cloud store is unavailable");
+    }
+    try {
+      await this.cloud.list();
+    } catch (error) {
+      throw toBackupControllerError(error);
     }
     const strengths = await Promise.all(
       options.factors.flatMap((factor) =>
@@ -243,28 +299,39 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.reconcileOrThrow();
   }
 
-  /** Files under our prefix with a parseable header. */
-  async list(): Promise<ReadonlyArray<{ readonly name: string; readonly header: BackupHeader }>> {
-    if (this.cloud === undefined) {
+  /** Every versioned file with a verified digest and a parseable header. */
+  async list(): Promise<
+    ReadonlyArray<{ readonly name: string; readonly id: string; readonly header: BackupHeader }>
+  > {
+    const { cloud } = this;
+    if (cloud === undefined) {
       return [];
     }
-    const all = await this.cloud.list();
-    const names = all.filter((n) => n.startsWith(FILE_PREFIX) && n.endsWith(FILE_SUFFIX));
-    const { cloud } = this;
-    const texts = await Promise.all(names.map(async (name) => cloud.read(name)));
-    const out: Array<{ name: string; header: BackupHeader }> = [];
-    for (const [index, name] of names.entries()) {
-      const text = texts[index];
-      if (text === undefined) {
-        continue;
-      }
-      try {
-        out.push({ name, header: parseBackupHeader(text) });
-      } catch {
-        this.logger.warn("backup file failed to parse", new Error(name));
-      }
-    }
-    return out;
+    const listed = await cloud.list();
+    const rows = await Promise.all(
+      listed.map(async (name) => {
+        const parsed = parseFileName(name);
+        if (parsed === undefined) {
+          return undefined;
+        }
+        const text = await cloud.read(name);
+        if (text === undefined) {
+          // Vanished between list and read — nothing to warn about.
+          return undefined;
+        }
+        if (digestOf(text) !== parsed.digest) {
+          this.logger.warn("backup file failed digest verification", new Error(name));
+          return undefined;
+        }
+        try {
+          return { name, id: parsed.id, header: parseBackupHeader(text) };
+        } catch (error) {
+          this.logger.warn("backup file failed to parse", error);
+          return undefined;
+        }
+      }),
+    );
+    return rows.filter((row) => row !== undefined);
   }
 
   /**
@@ -283,48 +350,38 @@ export class BackupController extends Controller<BackupControllerState> {
     readonly wallets: ReadonlyArray<WalletInfo>;
     readonly passphraseRequired: ReadonlyArray<string>;
   }> {
-    if (this.cloud === undefined) {
+    const { cloud } = this;
+    if (cloud === undefined) {
       throw new BackupControllerError("cloud", "no cloud store configured");
     }
-    const text = await this.cloud.read(options.name);
+    const parsed = parseFileName(options.name);
+    if (parsed === undefined) {
+      throw new BackupControllerError("cloud", "unrecognized backup file name");
+    }
+    const text = await cloud.read(options.name);
     if (text === undefined) {
       throw new BackupControllerError("cloud", "backup file not found");
     }
-    const id = idFromName(options.name);
-    if (id === undefined) {
-      throw new BackupControllerError("cloud", "unrecognized backup file name");
+    if (digestOf(text) !== parsed.digest) {
+      throw new BackupControllerError("cloud", "backup file is corrupt");
     }
-    const wasUninitialized = this.wallet.getSnapshot().vault === "uninitialized";
-    if (wasUninitialized) {
-      // Set before the kernel restore: the commit's status event can already trigger the
-      // first reconcile once the engine store opens.
-      this.pendingAdoption = { id, digest: digestOf(text) };
-    }
-    let restored: Awaited<ReturnType<Wallet["backup"]["restore"]>>;
+    // The file's name and header coverage ride into the next pass only after the kernel unwrap
+    // succeeds — it is what authenticates the header. Parked any earlier, a pass triggered by the
+    // ceremony itself would apply it against the pre-merge coverage.
+    let adoption: { readonly name: string; readonly coverage: Coverage } | undefined;
     try {
-      restored = await this.wallet.backup.restore({
-        envelope: text,
-        backupFactor: options.backupFactor,
-        ...(options.passphrases === undefined ? {} : { passphrases: options.passphrases }),
-        ...(options.factor === undefined ? {} : { factor: options.factor }),
-      });
+      adoption = { name: options.name, coverage: headerCoverage(parseBackupHeader(text)) };
     } catch (error) {
-      this.pendingAdoption = undefined;
-      throw error;
+      this.logger.warn("backup file header failed to parse", error);
     }
-    const { backup } = this.wallet.getSnapshot();
-    if (!wasUninitialized && backup !== null && backup.id === id) {
-      // Own-lineage merge: baseline to this file's digest, empty coverage forces the next
-      // sync to upload the merged superset.
-      const previous = await this.readRecord();
-      await this.writeRecord({
-        id,
-        digest: digestOf(text),
-        uploadedAt: previous?.uploadedAt,
-        walletIds: [],
-      });
-    }
-    // Converge now — the commit's snapshot trigger may have run before the baseline landed.
+    const restored = await this.wallet.backup.restore({
+      envelope: text,
+      backupFactor: options.backupFactor,
+      ...(options.passphrases === undefined ? {} : { passphrases: options.passphrases }),
+      ...(options.factor === undefined ? {} : { factor: options.factor }),
+    });
+    this.pendingAdoption = adoption;
+    // Converge now — the commit's snapshot trigger may have run before the adoption landed.
     // Restore already succeeded, so a failed reconcile only leaves its status behind.
     try {
       await this.reconcile();
@@ -338,7 +395,8 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.reconcile();
     const { status, error } = this.getState();
     if (status === "error" || status === "conflict" || status === "unavailable") {
-      throw new BackupControllerError(error ?? "cloud", `backup sync failed: ${status}`);
+      const category = error ?? (status === "unavailable" ? "unavailable" : "cloud");
+      throw new BackupControllerError(category, `backup sync failed: ${status}`);
     }
   }
 
@@ -361,41 +419,32 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.engineStore?.collection(COLLECTION).delete(RECORD_KEY);
   }
 
-  /** Best-effort: the superseded backup id's file should not linger once a new id is the baseline. */
-  private async deleteStaleFile(generation: number, oldId: string): Promise<void> {
-    try {
-      if (generation !== this.generation) {
-        return;
-      }
-      await this.cloud?.delete(fileName(oldId));
-    } catch (error) {
-      this.logger.warn("stale backup file delete failed", error);
-    }
-  }
-
   private snapshot(): WalletSnapshot {
     return this.wallet.getSnapshot();
   }
 
-  private unprotected(snapshot: WalletSnapshot, record: BackupRecord | undefined) {
-    const covered =
-      snapshot.backup !== null &&
-      record !== undefined &&
-      record.id === snapshot.backup.id &&
-      record.digest !== undefined;
-    const wallets = snapshot.wallets.filter((w) => w.backup !== "mnemonic");
-    const walletIds = wallets
-      .map((w) => w.walletId)
-      .filter((id) => !covered || !record.walletIds.includes(id));
-    return { walletIds: sorted(walletIds) };
+  private coverage(snapshot: WalletSnapshot): Coverage {
+    return {
+      walletIds: sorted(
+        snapshot.wallets.filter((w) => w.custody === "vault").map((w) => w.walletId),
+      ),
+      keyIds: sorted(snapshot.importedKeys.map((k) => k.keyId)),
+    };
   }
 
-  private coverage(snapshot: WalletSnapshot): {
-    readonly walletIds: ReadonlyArray<string>;
-  } {
-    return {
-      walletIds: sorted(snapshot.wallets.map((w) => w.walletId)),
-    };
+  private unprotected(snapshot: WalletSnapshot, record: BackupRecord | undefined) {
+    const head = record?.head;
+    const headIds =
+      snapshot.backup !== null &&
+      head !== undefined &&
+      parseFileName(head.name)?.id === snapshot.backup.id
+        ? head.coverage.walletIds
+        : [];
+    const walletIds = snapshot.wallets
+      .filter((w) => w.custody === "vault" && w.backup !== "mnemonic")
+      .map((w) => w.walletId)
+      .filter((id) => !headIds.includes(id));
+    return { walletIds: sorted(walletIds) };
   }
 
   private setStatus(
@@ -416,6 +465,16 @@ export class BackupController extends Controller<BackupControllerState> {
       error,
       unprotected: this.unprotected(snapshot, record),
     }));
+  }
+
+  /** Maps a thrown cloud call: `unavailable` stands alone, every other failure is `error`. */
+  private setCloudError(generation: number, error: unknown, record?: BackupRecord): void {
+    const category = cloudErrorCategory(error);
+    if (category === "unavailable") {
+      this.setStatus(generation, "unavailable", undefined, record);
+    } else {
+      this.setStatus(generation, "error", category, record);
+    }
   }
 
   /**
@@ -449,162 +508,341 @@ export class BackupController extends Controller<BackupControllerState> {
       return;
     }
     let record = await this.readRecord();
-    if (this.cloud === undefined || !(await this.cloud.available())) {
+    const { cloud } = this;
+    if (cloud === undefined) {
       this.setStatus(generation, "unavailable", undefined, record);
       return;
     }
-    if (generation !== this.generation) {
-      return;
-    }
 
-    // Pending adoption lands once — and only when the vault's backup key is the file's key.
+    // A restore parked this adoption; it lands only when the vault's backup key is the file's.
     const adoption = this.pendingAdoption;
     if (adoption !== undefined) {
       this.pendingAdoption = undefined;
-      if (snapshot.backup?.id === adoption.id) {
-        record = {
-          id: adoption.id,
-          digest: adoption.digest,
-          uploadedAt: undefined,
-          walletIds: [],
-        };
-        if (generation !== this.generation) {
-          return;
+      if (snapshot.backup?.id === parseFileName(adoption.name)?.id) {
+        const adopted = adopt(record, adoption, this.coverage(snapshot));
+        if (adopted !== undefined && adopted !== record) {
+          if (generation !== this.generation) {
+            return;
+          }
+          await this.writeRecord(adopted);
+          record = adopted;
         }
-        await this.writeRecord(record);
       } else {
         this.logger.warn(
           "backup adoption dropped — the vault's backup key is not the file's",
-          new Error(adoption.id),
+          new Error(adoption.name),
         );
       }
     }
 
     const { backup } = snapshot;
     if (backup === null) {
-      // Backup off in the vault: remove our file + record, then report off.
-      if (record !== undefined) {
-        try {
-          if (generation !== this.generation) {
-            return;
-          }
-          await this.cloud.delete(fileName(record.id));
-          if (generation !== this.generation) {
-            return;
-          }
-          await this.deleteRecord();
-        } catch (error) {
-          this.logger.warn("backup cloud delete failed — retrying next reconcile", error);
-          this.setStatus(generation, "error", "cloud", record);
-          return;
-        }
-      }
-      this.setStatus(generation, "off", undefined, undefined);
+      // Backup off in the vault: remove our files + record, then report off.
+      await this.passOff(generation, cloud, record);
       return;
     }
 
-    // An earlier pass may have landed its `pending` envelope without confirming it — when the
-    // remote proves it landed, promote it to the baseline and converge from there. The pending
-    // marker is bound to the backup id it was written for, not to the record carrying it.
-    if (record !== undefined && record.pending !== undefined && record.pending.id === backup.id) {
-      try {
-        const remote = await this.cloud.read(fileName(backup.id));
-        if (remote !== undefined && digestOf(remote) === record.pending.digest) {
-          const promoted: BackupRecord = {
-            id: backup.id,
-            digest: record.pending.digest,
-            uploadedAt: this.now(),
-            walletIds: record.pending.walletIds,
+    const local = this.coverage(snapshot);
+    try {
+      // 1. The list pins down this backup id's versions.
+      const names = await cloud.list();
+      const versions = new Set(names.filter((n) => parseFileName(n)?.id === backup.id));
+
+      // 2. A landed pending promotes to head; a pending of another id is just stale.
+      const superseded = new Set(record?.superseded);
+      let head = record?.head;
+      let pending = record?.pending;
+      let dirty = false;
+      if (pending !== undefined) {
+        if (parseFileName(pending.name)?.id !== backup.id) {
+          superseded.add(pending.name);
+          pending = undefined;
+          dirty = true;
+        } else if (versions.has(pending.name)) {
+          if (head !== undefined && head.name !== pending.name) {
+            superseded.add(head.name);
+          }
+          head = pending;
+          pending = undefined;
+          dirty = true;
+        }
+      }
+      // 3. A head of another id means the BEK rotated — it is stale like any superseded file.
+      if (head !== undefined && parseFileName(head.name)?.id !== backup.id) {
+        superseded.add(head.name);
+        head = undefined;
+        dirty = true;
+      }
+      // 4. A head missing from the list gets one read-back before being declared gone — the
+      // list is eventually consistent. A corrupt head is ours but worthless: supersede it.
+      if (head !== undefined && !versions.has(head.name)) {
+        const remote = await cloud.read(head.name);
+        const parsed = parseFileName(head.name);
+        if (remote === undefined || parsed === undefined || digestOf(remote) !== parsed.digest) {
+          superseded.add(head.name);
+          head = undefined;
+          dirty = true;
+        }
+      }
+      if (dirty) {
+        const next: BackupRecord = {
+          ...(head === undefined ? {} : { head }),
+          ...(record?.uploadedAt === undefined ? {} : { uploadedAt: record.uploadedAt }),
+          ...(pending === undefined ? {} : { pending }),
+          superseded: [...superseded].sort(),
+        };
+        if (generation !== this.generation) {
+          return;
+        }
+        await this.writeRecord(next);
+        record = next;
+      }
+
+      // 5. Foreign versions: ours by id only — read, verify and parse each (cached by name).
+      // A version the local coverage does not contain is a conflict; unreadable files are
+      // logged and left alone — they hold nothing recoverable and are never deleted.
+      const foreignNames = [...versions].filter(
+        (n) => n !== head?.name && n !== pending?.name && !superseded.has(n),
+      );
+      const foreign = await Promise.all(
+        foreignNames.map(async (n) => this.remoteCoverageOf(cloud, n)),
+      );
+      const conflict = foreign.some((c) => c !== undefined && !coverageSubset(c, local));
+
+      // 6. Upload when the head is missing or no longer covers the vault — conflict never
+      // blocks it: we overwrite nothing and delete nothing foreign, so it is always safe.
+      if (head === undefined || !sameCoverage(head.coverage, local)) {
+        this.setStatus(generation, "syncing", undefined, record);
+        const envelope = await this.wallet.backup.update();
+        if (generation !== this.generation) {
+          return;
+        }
+        const name = fileName(backup.id, digestOf(envelope));
+        if (pending !== undefined && pending.name !== name) {
+          superseded.add(pending.name);
+        }
+        const staged: BackupRecord = {
+          ...(head === undefined ? {} : { head }),
+          ...(record?.uploadedAt === undefined ? {} : { uploadedAt: record.uploadedAt }),
+          pending: { name, coverage: local },
+          superseded: [...superseded].sort(),
+        };
+        if (generation !== this.generation) {
+          return;
+        }
+        await this.writeRecord(staged);
+        record = staged;
+        if (generation !== this.generation) {
+          return;
+        }
+        await cloud.write(name, envelope);
+        const readBack = await cloud.read(name);
+        if (readBack !== envelope) {
+          // The landed write stays pending — the next pass confirms it instead of
+          // conflicting with itself.
+          this.setStatus(generation, "error", "cloud", record);
+          return;
+        }
+        if (head !== undefined && head.name !== name) {
+          superseded.add(head.name);
+        }
+        head = { name, coverage: local };
+        pending = undefined;
+        const confirmed: BackupRecord = {
+          head,
+          uploadedAt: this.now(),
+          superseded: [...superseded].sort(),
+        };
+        if (generation !== this.generation) {
+          return;
+        }
+        await this.writeRecord(confirmed);
+        record = confirmed;
+      }
+
+      // 7. Superseded files go only once a head is confirmed present — best effort, the
+      // survivors retry next pass.
+      if (head !== undefined && superseded.size > 0) {
+        const remaining: string[] = [];
+        for (const name of superseded) {
+          if (name === head.name) {
+            continue;
+          }
+          try {
+            if (generation !== this.generation) {
+              return;
+            }
+            // oxlint-disable-next-line eslint/no-await-in-loop -- deletes serialize so each failure lands in `remaining`
+            await cloud.delete(name);
+          } catch (error) {
+            this.logger.warn("superseded backup file delete failed — retrying next pass", error);
+            remaining.push(name);
+          }
+        }
+        if (remaining.length !== superseded.size) {
+          const next: BackupRecord = {
+            ...(record?.head === undefined ? {} : { head: record.head }),
+            ...(record?.uploadedAt === undefined ? {} : { uploadedAt: record.uploadedAt }),
+            ...(record?.pending === undefined ? {} : { pending: record.pending }),
+            superseded: remaining.sort(),
           };
           if (generation !== this.generation) {
             return;
           }
-          await this.writeRecord(promoted);
-          if (record.id !== backup.id) {
-            await this.deleteStaleFile(generation, record.id);
-          }
-          record = promoted;
+          await this.writeRecord(next);
+          record = next;
         }
-      } catch (error) {
-        if (generation !== this.generation) {
-          return;
-        }
-        this.logger.warn("backup reconcile failed", error);
-        this.setStatus(generation, "error", "cloud", record);
-        return;
       }
-    }
 
-    const baseline = record !== undefined && record.id === backup.id ? record.digest : undefined;
-    const cov = this.coverage(snapshot);
-    if (
-      baseline !== undefined &&
-      record !== undefined &&
-      sameSet(cov.walletIds, record.walletIds)
-    ) {
-      this.setStatus(generation, "synced", undefined, record);
-      return;
-    }
-
-    this.setStatus(generation, "syncing", undefined, record);
-    try {
-      const envelope = await this.wallet.backup.update();
-      if (generation !== this.generation) {
-        return;
-      }
-      const name = fileName(backup.id);
-      const remote = await this.cloud.read(name);
-      const digest = digestOf(envelope);
-      const pendingDigest = record?.pending?.id === backup.id ? record.pending.digest : undefined;
-      if (
-        remote !== undefined &&
-        digestOf(remote) !== baseline &&
-        digestOf(remote) !== pendingDigest
-      ) {
-        this.setStatus(generation, "conflict", "conflict", record);
-        return;
-      }
-      if (generation !== this.generation) {
-        return;
-      }
-      const staged: BackupRecord = {
-        ...(record ?? {
-          id: backup.id,
-          digest: undefined,
-          uploadedAt: undefined,
-          walletIds: [],
-        }),
-        pending: { id: backup.id, digest, walletIds: cov.walletIds },
-      };
-      await this.writeRecord(staged);
-      await this.cloud.write(name, envelope);
-      const readBack = await this.cloud.read(name);
-      if (readBack !== envelope) {
-        this.setStatus(generation, "error", "cloud", record);
-        return;
-      }
-      const next: BackupRecord = {
-        id: backup.id,
-        digest,
-        uploadedAt: this.now(),
-        walletIds: cov.walletIds,
-      };
-      if (generation !== this.generation) {
-        return;
-      }
-      await this.writeRecord(next);
-      if (record !== undefined && record.id !== backup.id) {
-        await this.deleteStaleFile(generation, record.id);
-      }
-      this.setStatus(generation, "synced", undefined, next);
+      // 8. synced reports only what this device confirmed; foreign coverage only flags conflict.
+      this.setStatus(
+        generation,
+        conflict ? "conflict" : "synced",
+        conflict ? "conflict" : undefined,
+        record,
+      );
     } catch (error) {
       if (generation !== this.generation) {
         return;
       }
       this.logger.warn("backup reconcile failed", error);
-      this.setStatus(generation, "error", "cloud", record);
+      this.setCloudError(generation, error, record);
     }
   }
+
+  /**
+   * The header coverage of a foreign version — cached by name either way: the name binds the
+   * content, so garbage stays garbage and is never re-read. Read failures propagate for the pass to
+   * map them; only a verified-but-corrupt payload resolves undefined.
+   */
+  private async remoteCoverageOf(cloud: CloudStore, name: string): Promise<Coverage | undefined> {
+    const cached = this.remoteCoverage.get(name);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (this.remoteInvalid.has(name)) {
+      return undefined;
+    }
+    const parsed = parseFileName(name);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    const text = await cloud.read(name);
+    if (text === undefined) {
+      return undefined;
+    }
+    let coverage: Coverage | undefined;
+    if (digestOf(text) === parsed.digest) {
+      try {
+        coverage = headerCoverage(parseBackupHeader(text));
+      } catch (error) {
+        this.logger.warn("foreign backup file failed to parse", error);
+      }
+    } else {
+      this.logger.warn("foreign backup file failed digest verification", new Error(name));
+    }
+    if (coverage === undefined) {
+      this.remoteInvalid.add(name);
+      return undefined;
+    }
+    this.remoteCoverage.set(name, coverage);
+    return coverage;
+  }
+
+  /** Backup off: delete every recorded file, then the record itself; failures retry next pass. */
+  private async passOff(
+    generation: number,
+    cloud: CloudStore,
+    record: BackupRecord | undefined,
+  ): Promise<void> {
+    if (record === undefined) {
+      this.setStatus(generation, "off", undefined, undefined);
+      return;
+    }
+    const names = new Set(
+      [record.head?.name, record.pending?.name, ...record.superseded].filter(
+        (n) => n !== undefined,
+      ),
+    );
+    const remaining: string[] = [];
+    for (const name of names) {
+      try {
+        if (generation !== this.generation) {
+          return;
+        }
+        // oxlint-disable-next-line eslint/no-await-in-loop -- deletes serialize so each failure lands in `remaining`
+        await cloud.delete(name);
+      } catch (error) {
+        this.logger.warn("backup cloud delete failed — retrying next pass", error);
+        remaining.push(name);
+      }
+    }
+    if (remaining.length > 0) {
+      const next: BackupRecord = { superseded: remaining.sort() };
+      if (generation !== this.generation) {
+        return;
+      }
+      await this.writeRecord(next);
+      this.setStatus(generation, "error", "cloud", next);
+      return;
+    }
+    if (generation !== this.generation) {
+      return;
+    }
+    await this.deleteRecord();
+    this.setStatus(generation, "off", undefined, undefined);
+  }
+}
+
+/**
+ * The restore adoption rules (design §3): C_R is the file's header coverage — authenticated by the
+ * successful unwrap — and C_L the post-restore local coverage. Returns the record as-is when
+ * nothing changes.
+ */
+function adopt(
+  record: BackupRecord | undefined,
+  adoption: { readonly name: string; readonly coverage: Coverage },
+  local: Coverage,
+): BackupRecord | undefined {
+  if (adoption.name === record?.head?.name) {
+    return record;
+  }
+  if (!coverageSubset(adoption.coverage, local)) {
+    // C_R ⊄ C_L: wallets were skipped — the file stays foreign and the conflict is reported.
+    return record;
+  }
+  const superseded = new Set(record?.superseded);
+  const head = record?.head;
+  if (
+    sameCoverage(adoption.coverage, local) &&
+    (head === undefined || !sameCoverage(head.coverage, local))
+  ) {
+    // C_R = C_L without an equivalent head: adopt the file — no re-upload.
+    if (head !== undefined && head.name !== adoption.name) {
+      superseded.add(head.name);
+    }
+    return {
+      head: { name: adoption.name, coverage: adoption.coverage },
+      ...(record?.uploadedAt === undefined ? {} : { uploadedAt: record.uploadedAt }),
+      ...(record?.pending === undefined ? {} : { pending: record.pending }),
+      superseded: [...superseded].sort(),
+    };
+  }
+  // Otherwise the file is redundant — it leaves once the head is confirmed.
+  superseded.add(adoption.name);
+  return {
+    ...(head === undefined ? {} : { head }),
+    ...(record?.uploadedAt === undefined ? {} : { uploadedAt: record.uploadedAt }),
+    ...(record?.pending === undefined ? {} : { pending: record.pending }),
+    superseded: [...superseded].sort(),
+  };
+}
+
+function headerCoverage(header: BackupHeader): Coverage {
+  return {
+    walletIds: sorted(header.wallets.map((w) => w.walletId)),
+    keyIds: sorted(header.keys.map((k) => k.keyId)),
+  };
 }
 
 function defaultState(): BackupControllerState {
@@ -617,10 +855,16 @@ function defaultState(): BackupControllerState {
   };
 }
 
-function idFromName(name: string): string | undefined {
-  if (!name.startsWith(FILE_PREFIX) || !name.endsWith(FILE_SUFFIX)) {
-    return undefined;
+function cloudErrorCategory(error: unknown): BackupErrorCategory {
+  if (error instanceof CloudStoreError) {
+    return error.code === "unavailable" || error.code === "auth-required" || error.code === "quota"
+      ? error.code
+      : "cloud";
   }
-  const id = name.slice(FILE_PREFIX.length, name.length - FILE_SUFFIX.length);
-  return /^[0-9a-f]{32}$/.test(id) ? id : undefined;
+  return "cloud";
+}
+
+function toBackupControllerError(error: unknown): BackupControllerError {
+  const message = error instanceof CloudStoreError ? error.message : "the cloud store check failed";
+  return new BackupControllerError(cloudErrorCategory(error), message);
 }

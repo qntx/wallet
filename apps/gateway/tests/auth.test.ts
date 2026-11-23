@@ -5,15 +5,15 @@ import { PROVIDERS_HEADER, networkById } from "@qntx/wallet-engine/gateway/contr
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
+import type { WorkerEnv } from "../src/env.ts";
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
 import { gatewayFor } from "../src/worker.ts";
-import type { WorkerEnv } from "../src/worker.ts";
 import {
   allowAll,
   call,
   fakeFetch,
   headers,
-  memoryPriceCache,
+  memoryEdgeCache,
   memoryRiskStore,
   openBudget,
   post,
@@ -24,7 +24,8 @@ import {
 const IP = "203.0.113.9";
 const limiters = { ip: allowAll, rpc: allowAll, default: allowAll, share: allowAll };
 const risk = memoryRiskStore();
-const prices = { cache: memoryPriceCache() };
+const prices = { cache: memoryEdgeCache() };
+const nfts = { cache: memoryEdgeCache() };
 
 const NET = {
   id: "eip155:11155111",
@@ -60,6 +61,11 @@ const productionEnv = (): WorkerEnv => ({
     idFromName: (name: string) => name,
     get: () => ({ lease: async () => Promise.resolve({ ok: true as const, granted: 1000 }) }),
   } as unknown as WorkerEnv["PROVIDER_BUDGET"],
+  PUSH_LIMITER: allowAll,
+  PUSH: {
+    idFromName: (name: string) => name,
+    get: () => ({}),
+  } as unknown as WorkerEnv["PUSH"],
   CORS_ORIGINS: "",
   NETWORKS: "production",
   ZEROX_API_KEY: "z",
@@ -91,6 +97,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
@@ -127,6 +134,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: {
         alchemy: async () => {
@@ -176,6 +184,7 @@ describe("upstream auth", () => {
       risk,
       tokens: memoryRiskStore(),
       tokenNetworks: new Set(),
+      nfts,
       prices,
       auth: { alchemy: authDown, blockstream: authDown },
     });
@@ -218,6 +227,7 @@ describe("upstream auth", () => {
         risk,
         tokens: memoryRiskStore(),
         tokenNetworks: new Set(),
+        nfts,
         prices,
         auth: { alchemy: bearer("k1"), drpc: header("Drpc-Key", "d") },
       }),

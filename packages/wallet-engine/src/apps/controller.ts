@@ -21,8 +21,10 @@ import type { AppSocket } from "./socket.ts";
 import { createAppStorage } from "./storage.ts";
 import type {
   AppApis,
+  AppAuthority,
   AppContext,
   AppDefinition,
+  AppError,
   AppFlow,
   AppGroup,
   AppGroups,
@@ -36,6 +38,21 @@ import type {
 } from "./types.ts";
 
 const COLLECTION = "apps";
+
+/** One row of `AppsController.authorities`: an app's authority, or its own read failure. */
+export type AppAuthorityRow = { readonly app: AppId } & (
+  | { readonly authority: AppAuthority }
+  | { readonly error: AppError }
+);
+
+/* The app's own error type carries `category`; an unexpected throw reads as `unavailable`. */
+const authorityError = (error: unknown): AppError =>
+  error instanceof Error && "category" in error && typeof error.category === "string"
+    ? { category: error.category, message: error.message }
+    : {
+        category: "unavailable",
+        message: error instanceof Error ? error.message : String(error),
+      };
 
 const DEFAULT_GROUP: AppGroupState = {
   status: "disabled",
@@ -496,6 +513,30 @@ export class AppsController<G extends AppGroups = AppGroups> extends Controller<
           this.deps.logger.warn(`apps reconcile ${app} failed`, error);
         });
     }
+  }
+
+  /**
+   * The venue-held authorities every app reports for `group` — display-only, unlocked like the
+   * other reads. An app without `authorities` contributes nothing and one's failure lands as its
+   * own `{ app, error }` row instead of hiding the rest.
+   */
+  async authorities(group: AppGroup): Promise<ReadonlyArray<AppAuthorityRow>> {
+    const rows: AppAuthorityRow[] = [];
+    for (const [app, { provider }] of this.deps.registrations) {
+      this.requireUnlocked(app);
+      if (provider.authorities === undefined) {
+        continue;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- providers read in order.
+        for (const authority of await provider.authorities(this.groupOf(group))) {
+          rows.push({ app, authority });
+        }
+      } catch (error) {
+        rows.push({ app, error: authorityError(error) });
+      }
+    }
+    return rows;
   }
 }
 

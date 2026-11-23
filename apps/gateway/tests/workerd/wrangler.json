@@ -5,13 +5,26 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["PushObject"] }
+  ],
   "vars": {
     "SCALE": "production",
-    "UPSTREAM_DELAY_MS": "0"
+    "UPSTREAM_DELAY_MS": "0",
+    "PUSH_SEAL_KEY": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+    "APNS_KEY": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgagZ5+A1MFIYCNXi4zwC8ORi734LO4r0PbT4pz1gP5nWhRANCAARlJUXmfn/zk1CisgjAMKqGQmslkUkUScgE80nnf4yxEv31Sba0IL6Nl+8QR0agZ8nTmmY476AEuY8YoSENPVrh\n-----END PRIVATE KEY-----",
+    "APNS_KEY_ID": "HARNESSTST",
+    "APNS_TEAM_ID": "TEAMHARNES",
+    "APNS_TOPIC": "sh.qntx.wallet.harness",
+    "ALCHEMY_NOTIFY_TOKEN": "harness-notify-token",
+    "ALCHEMY_WEBHOOKS": "{\"eip155:11155111\": {\"id\": \"wh_harness\", \"signingKey\": \"harness-signing-key\"}}"
   },
   "durable_objects": {
-    "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }]
+    "bindings": [
+      { "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" },
+      { "name": "PUSH", "class_name": "PushObject" }
+    ]
   },
   "ratelimits": [
     {
@@ -33,6 +46,11 @@
       "name": "SHARE_LIMITER",
       "namespace_id": "1004",
       "simple": { "limit": 1000, "period": 60 }
+    },
+    {
+      "name": "PUSH_LIMITER",
+      "namespace_id": "1005",
+      "simple": { "limit": 60, "period": 60 }
     }
   ]
 }

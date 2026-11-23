@@ -6,6 +6,11 @@ import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
 import {
+  HARDWARE_WALLET_KIND,
+  hardwareWalletInfo,
+  parseHardwareHeader,
+} from "./modules/signers/record.ts";
+import {
   parseBackupKeyHeader,
   parseDataKeyHeader,
   parseEntropyHeader,
@@ -37,11 +42,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
     !Number.isSafeInteger(meta.revision) ||
     meta.revision < 1 ||
     typeof meta.keyId !== "string" ||
-    !/^[0-9a-f]{32}$/.test(meta.keyId) ||
-    !Number.isSafeInteger(meta.failedAttempts) ||
-    meta.failedAttempts < 0 ||
-    !Number.isSafeInteger(meta.lastFailureAt) ||
-    meta.lastFailureAt < 0
+    !/^[0-9a-f]{32}$/.test(meta.keyId)
   ) {
     return "corrupted";
   }
@@ -120,6 +121,9 @@ export function statusContents(
       } else if (record.kind === "key") {
         const header = parseKeyHeader(record.header);
         importedKeys.push({ keyId: record.id, ...header });
+      } else if (record.kind === HARDWARE_WALLET_KIND) {
+        const header = parseHardwareHeader(record.header);
+        wallets.push({ ...hardwareWalletInfo(header), walletId: record.id });
       } else if (record.kind === "backup-key") {
         // The backup key is a single fixed record — a stray id is malformed.
         if (record.id === "default") {

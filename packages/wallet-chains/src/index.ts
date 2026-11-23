@@ -341,6 +341,24 @@ export type ApprovalChange =
       /** The key receiving the role. */
       readonly authority: string;
       readonly verified: false;
+    }
+  | {
+      /**
+       * `approve(address(0), value)`: names no spender — clears ERC-721 token `value`'s approval;
+       * on an ERC-20 it only touches the zero address's allowance, which no key can spend. Grants
+       * nothing.
+       */
+      readonly kind: "approval-cleared";
+      readonly asset: string;
+      readonly value: string;
+      readonly verified: false;
+    }
+  | {
+      /** SPL `Revoke`: the token account's delegate loses its allowance. Grants nothing. */
+      readonly kind: "delegate-revoked";
+      /** The token account whose delegate is removed. */
+      readonly account: string;
+      readonly verified: false;
     };
 
 /** The TRON resource a freeze/delegate acts on (ResourceCode 0/1/2). */

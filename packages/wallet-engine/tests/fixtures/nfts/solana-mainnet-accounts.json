@@ -1,0 +1,191 @@
+{
+  "owner": "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW",
+  "fetchedAt": "2026-11-23T03:42:52.378Z",
+  "rpc": "https://api.mainnet-beta.solana.com",
+  "plain": {
+    "mint": {
+      "address": "FCk24cq1pYhQo5MQYKHf5N9VnY8tdrToF7u6gvvsnGrn",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795933
+        },
+        "value": {
+          "data": [
+            "AQAAAPcXK6u3CQhmJmMFRCLU3WR2aKQOm0UqmL1gQa0NzesrAQAAAAAAAAAAAQEAAAD3FyurtwkIZiZjBUQi1N1kdmikDptFKpi9YEGtDc3rKw==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 1461600,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 82
+        }
+      }
+    },
+    "metadata": {
+      "address": "3zF1mBqwtAViGVi5VR2YWDWU75t4GVki53X4WfoJqcz8",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795936
+        },
+        "value": {
+          "data": [
+            "BBU7mQjzfDvicKRwHJ/PJDL9WraVCB9vMEw3M+t9B0dp0wWllvRpYh+JgRvIqupjoJcZ4Wrj7CLlGf4uXxVa6msgAAAAVGhlIE1hZGxpc3QAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAAAATUFEAAAAAAAAAMgAAABodHRwczovL29uZS54bmZ0cy5kZXYvYXBpL21ldGFkYXRhL21hZGxpc3QvY29sbGVjdGlvbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAVO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQFkAAEB/wEAAAABAIQaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 3733800,
+          "owner": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+          "rentEpoch": 18446744073709552000,
+          "space": 607
+        }
+      }
+    },
+    "ata": {
+      "address": "CnivC6ji9xksrVZYnncyVavR7sYQ2XzACViKGoZ6eAL7",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795940
+        },
+        "value": {
+          "data": [
+            "0wWllvRpYh+JgRvIqupjoJcZ4Wrj7CLlGf4uXxVa6msVO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 2039280,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 165
+        }
+      }
+    }
+  },
+  "programmable": {
+    "mint": {
+      "address": "J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795942
+        },
+        "value": {
+          "data": [
+            "AQAAABK4Ju63JqUbepW884c9MYvfCDN/CLsI5YAPhTC5C1h7AQAAAAAAAAAAAQEAAAASuCbutyalG3qVvPOHPTGL3wgzfwi7COWAD4UwuQtYew==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 1461600,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 82
+        }
+      }
+    },
+    "metadata": {
+      "address": "8KyuwGzav7jTW9YaBGj2Qtp2q24zPUR3rD5caojXaby4",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795945
+        },
+        "value": {
+          "data": [
+            "BBU7mQjzfDvicKRwHJ/PJDL9WraVCB9vMEw3M+t9B0dp/LMbT/nmaHvrNct8XasZ0y1npo5XYk7Lww+zrBxcCF4gAAAATWFkIExhZHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAAAATUFEAAAAAAAAAMgAAABodHRwczovL21hZGxhZHMtY29sbGVjdGlvbi5zMy51cy13ZXN0LTIuYW1hem9uYXdzLmNvbS9fY29sbGVjdGlvbi5qc29uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPQBAQEAAAAVO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQFkAAEB/QEEAAABAPAmAAAAAAAAAQABCYYiheNxCpDVHZ5HAt6andXp/cisgdLSrNHh3cgk/sQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 3733800,
+          "owner": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+          "rentEpoch": 18446744073709552000,
+          "space": 607
+        }
+      }
+    },
+    "ata": {
+      "address": "BvRSMZ6XHyiy45kN84F2YRhpX5SVwtyWN1YPzpyMZNBx",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795948
+        },
+        "value": {
+          "data": [
+            "/LMbT/nmaHvrNct8XasZ0y1npo5XYk7Lww+zrBxcCF4VO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 2039280,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 165
+        }
+      }
+    }
+  },
+  "frozen": {
+    "mint": {
+      "address": "2EEA4dfWwc4hjuP24KAFCiuyMntNdfHTtgdpnbJceuGU",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795951
+        },
+        "value": {
+          "data": [
+            "AQAAAJ0RFWgTiRCM23nMmJXqkOepEh2XrZvWHIyfy4DmWM2yAQAAAAAAAAAAAQEAAACdERVoE4kQjNt5zJiV6pDnqRIdl62b1hyMn8uA5ljNsg==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 1461600,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 82
+        }
+      }
+    },
+    "metadata": {
+      "address": "BAoyVdfdMMX57jb1npPa4g7KKmixWVhxVDkwrsoDpkte",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795953
+        },
+        "value": {
+          "data": [
+            "BBU7mQjzfDvicKRwHJ/PJDL9WraVCB9vMEw3M+t9B0dpEj8c/wCbe56naqqunZIdcJuWpb7UsV+blmNbolu552kgAAAATWFkIExhZCBAcGgxMDFwcAAAAAAAAAAAAAAAAAAAAAAKAAAATUFEAAAAAAAAAMgAAABodHRwczovL21hZGxpc3QtaW1hZ2VzLnMzLnVzLXdlc3QtMi5hbWF6b25hd3MuY29tL3BoMTAxcHAuanNvbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAVO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQFkAAEB+gEAAQHTBaWW9GliH4mBG8iq6mOglxnhauPsIuUZ/i5fFVrqawAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 3733800,
+          "owner": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+          "rentEpoch": 18446744073709552000,
+          "space": 607
+        }
+      }
+    },
+    "ata": {
+      "address": "BXvxCqo7N2sXimGnr2GBy9Yrz77RPZwMb34KTd4AvEEP",
+      "response": {
+        "context": {
+          "apiVersion": "4.4.0",
+          "slot": 472795957
+        },
+        "value": {
+          "data": [
+            "Ej8c/wCbe56naqqunZIdcJuWpb7UsV+blmNbolu552kVO5kI83w74nCkcByfzyQy/Vq2lQgfbzBMNzPrfQdHaQEAAAAAAAAAAQAAABU7mQjzfDvicKRwHJ/PJDL9WraVCB9vMEw3M+t9B0dpAgAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "base64"
+          ],
+          "executable": false,
+          "lamports": 2039280,
+          "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "rentEpoch": 18446744073709552000,
+          "space": 165
+        }
+      }
+    }
+  }
+}

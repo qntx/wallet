@@ -1,7 +1,12 @@
 /**
- * Spot prices of the assets the engine holds, from the gateway's `POST /v1/prices`. Display-only:
- * nothing that builds, approves or signs a transaction may read this state (lint-enforced — only
- * the composition root imports `prices/`).
+ * Spot prices of the assets the engine holds, from the gateway's `POST /v1/prices/:family`.
+ * Display-only: nothing that builds, approves or signs a transaction may read this state
+ * (lint-enforced — only the composition root imports `prices/`).
+ *
+ * One request runs per chain-family scope, under that scope's own client id, and names only that
+ * family's assets — a request never carries a cross-family asset set, so the held portfolio links
+ * no scopes beyond what each scope's own traffic already shows. An asset whose namespace has no
+ * family is never sent.
  *
  * Fetches are single-flight: a refresh asked for while one runs runs once more after it. A newly
  * held asset triggers a refresh; the full set is re-read every {@link PRICES_POLL_MS} while the
@@ -24,10 +29,12 @@ import {
   fiatPrice,
   parseWith,
   percentChange,
+  priceAssetFamily,
   priceAssetId,
   prices,
+  pricesPath,
 } from "../gateway/contract/index.ts";
-import type { FiatCurrency, PricesResponse } from "../gateway/contract/index.ts";
+import type { FiatCurrency, PriceFamily, PricesResponse } from "../gateway/contract/index.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat, timeoutSignal } from "../timer.ts";
@@ -266,8 +273,26 @@ export class PricesController extends Controller<PricesState> {
     for (const asset of assets) {
       this.asked.add(asset);
     }
+    // One request per family scope — a cross-family asset set is never sent. Assets whose
+    // namespace has no family go straight to `unsupported` and leave no request.
+    const grouped = new Map<PriceFamily, string[]>();
+    const unsendable: string[] = [];
+    for (const asset of assets) {
+      const family = priceAssetFamily(asset);
+      if (family === undefined) {
+        unsendable.push(asset);
+      } else {
+        const list = grouped.get(family) ?? [];
+        list.push(asset);
+        grouped.set(family, list);
+      }
+    }
     const answers = await Promise.all(
-      chunks(assets, MAX_PRICE_ASSETS).map(async (batch) => this.request(gateway, currency, batch)),
+      [...grouped].flatMap(([family, familyAssets]) =>
+        chunks(familyAssets, MAX_PRICE_ASSETS).map(async (batch) =>
+          this.request(gateway, currency, pricesPath(family), batch),
+        ),
+      ),
     );
     if (epoch !== this.epoch) {
       return;
@@ -280,7 +305,7 @@ export class PricesController extends Controller<PricesState> {
     const answered = answers.filter((a): a is PricesResponse => typeof a !== "string");
     const fresh = new Map(answered.flatMap((a) => a.prices).map((q) => [q.asset, q]));
     const missing = answered.flatMap((a) => a.missing);
-    const unsupported = new Set(answered.flatMap((a) => a.unsupported));
+    const unsupported = new Set([...unsendable, ...answered.flatMap((a) => a.unsupported)]);
     const fetchedAt = this.options.now();
     this.update((s) => ({
       ...s,
@@ -322,12 +347,13 @@ export class PricesController extends Controller<PricesState> {
   private async request(
     gateway: GatewayConfig,
     currency: FiatCurrency,
+    path: string,
     assets: ReadonlyArray<string>,
   ): Promise<PricesResponse | PricesFailure> {
     const bound = timeoutSignal(FETCH_TIMEOUT_MS, this.options.setTimer);
     this.aborts.add(bound.abort);
     try {
-      const response = await this.fetchGateway(`${gateway.url.replace(/\/+$/, "")}${prices.path}`, {
+      const response = await this.fetchGateway(`${gateway.url.replace(/\/+$/, "")}${path}`, {
         method: prices.method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ currency, assets }),

@@ -9,6 +9,7 @@ import { startKernel } from "@qntx/wallet-kernel";
 import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
 import { MAX_SESSION_MS, idleMsOf, isBrowserWorkerInit } from "../shared.ts";
+import { createCacheAnchor } from "./anchor.ts";
 import { createIndexedDbStore } from "./indexeddb.ts";
 import { basePlatform } from "./platform.ts";
 import { loadSparkBackend } from "./spark.ts";
@@ -37,6 +38,7 @@ export function startBrowserKernel(scope: KernelScope, sparkWasm: URL): void {
     const platform: KernelPlatform = {
       ...basePlatform(),
       store: createIndexedDbStore(),
+      anchor: createCacheAnchor(),
       // Session limits are owned here, not by the page: idle from the validated init message,
       // the fixed maximum, and the scrypt ceiling for this platform. Only presence-bearing
       // methods refresh the idle timer — request traffic does not keep a session alive.

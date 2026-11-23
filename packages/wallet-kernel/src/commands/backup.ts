@@ -28,7 +28,7 @@ import type {
   Factor,
   NullValue,
 } from "@qntx/wallet/protocol";
-import type { WalletInfo } from "@qntx/wallet/types";
+import type { VaultWalletInfo } from "@qntx/wallet/types";
 
 import { KEY_FAMILY_BYTE, keyIdOf } from "../derive/key-id.ts";
 import type { KeyFamily } from "../derive/key-id.ts";
@@ -692,7 +692,7 @@ export async function restoreBackup(
     factor?: Factor;
   },
   requestSession: string | undefined,
-): Promise<{ wallets: WalletInfo[]; passphraseRequired: string[]; session: string }> {
+): Promise<{ wallets: VaultWalletInfo[]; passphraseRequired: string[]; session: string }> {
   const passphrases = new Map<string, Uint8Array>();
   try {
     return await restoreWithPassphrases(ctx, params, requestSession, passphrases);
@@ -717,7 +717,7 @@ async function restoreWithPassphrases(
   },
   requestSession: string | undefined,
   passphrases: Map<string, Uint8Array>,
-): Promise<{ wallets: WalletInfo[]; passphraseRequired: string[]; session: string }> {
+): Promise<{ wallets: VaultWalletInfo[]; passphraseRequired: string[]; session: string }> {
   for (const entry of params.passphrases ?? []) {
     if (passphrases.has(entry.walletId)) {
       throw new KernelError("invalid-input", `duplicate passphrase for wallet ${entry.walletId}`);
@@ -772,7 +772,7 @@ async function restoreWithPassphrases(
           }
 
           const records: StoredRecord[] = [];
-          const restored: WalletInfo[] = [];
+          const restored: VaultWalletInfo[] = [];
           const passphraseRequired: string[] = [];
           const now = ctx.platform.now();
           for (const [index, wallet] of decoded.wallets.entries()) {

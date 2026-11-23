@@ -9,6 +9,7 @@
     "src/browser",
     "src/worker/worker.ts",
     "src/worker/browser-kernel.ts",
-    "src/worker/indexeddb.ts"
+    "src/worker/indexeddb.ts",
+    "src/worker/anchor.ts"
   ]
 }

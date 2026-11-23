@@ -19,8 +19,6 @@ const validImage = () => ({
     format: VAULT_FORMAT,
     keyId: HEX,
     revision: 1,
-    failedAttempts: 0,
-    lastFailureAt: 0,
   },
   records: [validRecord()],
   factors: [validFactor()],
@@ -74,16 +72,11 @@ describe("assertVaultImage", () => {
       () => assertVaultImage({ ...validImage(), meta: { ...validImage().meta, revision: 0 } }),
     ],
     [
-      "meta failedAttempts negative",
-      () =>
-        assertVaultImage({ ...validImage(), meta: { ...validImage().meta, failedAttempts: -1 } }),
-    ],
-    [
-      "meta failedAttempts unsafe",
+      "meta carries a dropped counter field",
       () =>
         assertVaultImage({
           ...validImage(),
-          meta: { ...validImage().meta, lastFailureAt: Number.MAX_SAFE_INTEGER + 1 },
+          meta: { ...validImage().meta, failedAttempts: 0, lastFailureAt: 0 },
         }),
     ],
     ["records not array", () => assertVaultImage({ ...validImage(), records: {} })],

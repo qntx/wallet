@@ -129,6 +129,37 @@ describe("EVM decode/normalize fuzz", () => {
     );
   });
 
+  it("approve calldata with arbitrary arguments returns an intent or a ChainError", () => {
+    fc.assert(
+      fc.property(
+        fc.uint8Array({ minLength: 20, maxLength: 20 }),
+        fc.uint8Array({ maxLength: 96 }),
+        (to, tail) => {
+          const spender = hexOf(to).slice(2).padStart(64, "0");
+          const data = `0x095ea7b3${spender}${hexOf(tail).slice(2)}`;
+          const request = evmRequest({ to, value: "0x0", data });
+          expect(intentOrChainError(attempt(() => decodeEvm(request, SIGNER)))).toBe(true);
+        },
+      ),
+      { numRuns },
+    );
+  });
+
+  it("approve calldata to the zero spender returns an intent or a ChainError", () => {
+    fc.assert(
+      fc.property(
+        fc.uint8Array({ minLength: 20, maxLength: 20 }),
+        fc.uint8Array({ maxLength: 96 }),
+        (to, tail) => {
+          const data = `0x095ea7b3${"0".repeat(64)}${hexOf(tail).slice(2)}`;
+          const request = evmRequest({ to, value: "0x0", data });
+          expect(intentOrChainError(attempt(() => decodeEvm(request, SIGNER)))).toBe(true);
+        },
+      ),
+      { numRuns },
+    );
+  });
+
   it("normalizeEvm is idempotent on accepted inputs", () => {
     fc.assert(
       fc.property(evmTx, (tx) => {

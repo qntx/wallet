@@ -10,6 +10,7 @@ import type { StoreApi } from "zustand/vanilla";
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
+import { WalletError } from "@qntx/wallet";
 import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import {
@@ -20,12 +21,14 @@ import {
 } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
+import { sessions } from "@qntx/wallet/sessions";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
 import { WatchController } from "./accounts/watch.ts";
 import type { WatchAccount } from "./accounts/watch.ts";
 import { AddressBookController } from "./addresses/controller.ts";
+import { ApprovalsController } from "./approvals/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
@@ -42,6 +45,7 @@ import { WeblnHandler } from "./connect/webln.ts";
 import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
 import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
+import { tokenAssetId } from "./gateway/contract/index.ts";
 import { HistoryController } from "./history/controller.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
@@ -50,6 +54,9 @@ import type { MetaSyncConfig } from "./meta/controller.ts";
 import { resolveEns } from "./names/ens.ts";
 import type { EnsResolution } from "./names/ens.ts";
 import { NetworkController } from "./networks/controller.ts";
+import { NftController } from "./nfts/controller.ts";
+import { NotificationsController } from "./notifications/controller.ts";
+import type { PushKeyStore } from "./notifications/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { withdrawLnurl } from "./payments/pay.ts";
@@ -60,9 +67,11 @@ import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { PhishingController } from "./phishing/controller.ts";
 import { PricesController } from "./prices/controller.ts";
 import { groupHoldings, heldAssets } from "./prices/holdings.ts";
+import type { Holding } from "./prices/holdings.ts";
 import { valueHoldings } from "./prices/valuation.ts";
 import type { Valuation } from "./prices/valuation.ts";
 import { RequestController } from "./requests/controller.ts";
+import { knownAddresses } from "./requests/risk.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
@@ -134,6 +143,12 @@ export type EngineOptions = {
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
+  /**
+   * Where the notification extension reads payload keys (iOS App Group keychain, Android app
+   * storage). Absent → the extension cannot decrypt and shows the generic text; in-app
+   * `notifications.receive` still works.
+   */
+  readonly pushKeys?: PushKeyStore;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
@@ -236,6 +251,31 @@ export type WalletEngine = {
     "add" | "rename" | "setNote" | "remove"
   >;
   readonly history: HostController<HistoryController, "load" | "loadMore">;
+  /**
+   * The approvals inventory: loaded per account+network, every row corroborated on chain.
+   * `exposure(key)` values the rows' exposure at current quotes — display-only.
+   */
+  readonly approvals: HostController<
+    ApprovalsController,
+    "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"
+  > & { readonly exposure: (key: string) => Valuation };
+  /** NFT inventory — display-only gateway data; transfers go through requests. */
+  readonly nfts: HostController<
+    NftController,
+    | "setVisible"
+    | "load"
+    | "loadMore"
+    | "refresh"
+    | "detail"
+    | "collection"
+    | "floor"
+    | "setHidden"
+    | "inscriptions"
+  >;
+  readonly notifications: HostController<
+    NotificationsController,
+    "setToken" | "enable" | "disable" | "receive"
+  >;
   /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
   readonly connections: HostController<
     ConnectionController,
@@ -526,6 +566,75 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     setTimer,
     now: options.now,
     logger: options.logger,
+  });
+
+  const approvals = new ApprovalsController({
+    networks,
+    transactions,
+    gateway,
+    fetch: options.fetch,
+    openStore: sessionStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    addressOf: async (account, network) => transactions.addressOf(account, network),
+    known: (family) =>
+      knownAddresses(
+        Object.values(addressBook.getState().entries),
+        Object.values(transactions.getState().txs),
+        family,
+      ),
+    tokenMetadata: async (network, address) => assets.tokenMetadata(network, address),
+    /* Internal requests — `requests` is constructed below; the thunk only runs at call time. */
+    prepare: async (input) => requests.prepare(input),
+    sessions: async (owner) => {
+      try {
+        const list = await sessions(options.wallet).list();
+        return list
+          .filter((session) => session.owner.toLowerCase() === owner.toLowerCase())
+          .map((session) => ({
+            address: session.address,
+            scheme: session.scheme,
+            name: session.name,
+            validUntil: session.validUntil,
+            supported: session.supported,
+          }));
+      } catch (error) {
+        options.logger.warn("listing session keys for approvals failed", error);
+        return [];
+      }
+    },
+  });
+
+  const nfts = new NftController({
+    networks,
+    gateway,
+    fetch: options.fetch,
+    openStore: sessionStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    balances: () => assets.getState().balances,
+    activity: () => ({
+      entries: Object.values(history.getState().groups).flatMap((group) => group.entries),
+      txs: Object.values(transactions.getState().txs),
+    }),
+    onActivityChange: (listener) => {
+      const offHistory = history.store.subscribe(listener);
+      const offTxs = transactions.store.subscribe(listener);
+      return () => {
+        offHistory();
+        offTxs();
+      };
+    },
+    onConfirmed: (listener) =>
+      transactions.store.subscribe((state, previous) => {
+        for (const tx of Object.values(state.txs)) {
+          if (tx.state === "confirmed" && previous.txs[tx.id]?.state !== "confirmed") {
+            listener(tx);
+          }
+        }
+      }),
   });
 
   const accounts = new AccountTreeController({
@@ -852,10 +961,59 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return "address" in account
         ? enabled.map((network) => ({ network, address: account.address }))
         : [];
-    } catch {
+    } catch (error) {
+      // Hardware groups without a pinned path need the device — surface it, don't swallow.
+      if (error instanceof WalletError && error.code === "device-required") {
+        throw error;
+      }
       return [];
     }
   };
+  const notifications = new NotificationsController({
+    gateway:
+      options.gateway === undefined
+        ? undefined
+        : { url: options.gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
+    openStore: sessionStore,
+    random: options.random,
+    now: options.now,
+    setTimer,
+    logger: options.logger,
+    keys: options.pushKeys,
+    accounts,
+    networks,
+    transactions,
+    addresses: async (walletId, family) => {
+      // A bitcoin receive chain needs a gap-limit policy; the gateway has no watcher either.
+      if (family === "bitcoin") {
+        return [];
+      }
+      const out: string[] = [];
+      for (const group of accounts.getState().groups[walletId] ?? []) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
+        for (const { address } of await groupAddresses(
+          { walletId, groupIndex: group.index },
+          family,
+        )) {
+          out.push(address);
+        }
+      }
+      return out;
+    },
+    reconcile: async (event) => {
+      const loaded = history.getState().groups;
+      await Promise.all([
+        ...(accounts.getState().groups[event.walletId] ?? [])
+          .filter((group) => loaded[`${event.walletId}:${group.index}`] !== undefined)
+          .map(async (group) =>
+            history.load({ walletId: event.walletId, groupIndex: group.index }),
+          ),
+        event.family === "bitcoin"
+          ? Promise.resolve()
+          : assets.refresh(event.address, event.network),
+      ]);
+    },
+  });
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -1017,6 +1175,9 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     watch.lock();
     transactions.lock();
     history.lock();
+    approvals.lock();
+    nfts.lock();
+    notifications.lock();
     prices.lock();
     assets.lock();
     networks.lock();
@@ -1067,6 +1228,9 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await prices.init();
         await transactions.init();
         await history.init();
+        await approvals.init();
+        await nfts.init();
+        await notifications.init();
         await requests.init();
         await connections.init();
         depositClaimer.start();
@@ -1134,6 +1298,45 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     transactions,
     requests,
     history,
+    approvals: {
+      getState: () => approvals.getState(),
+      store: approvals.store,
+      load: async (account, network) => approvals.load(account, network),
+      unload: (key) => approvals.unload(key),
+      refresh: async (key) => approvals.refresh(key),
+      setVisible: (visible) => approvals.setVisible(visible),
+      revoke: async (key, rowId, fee) => approvals.revoke(key, rowId, fee),
+      revokeBatch: async (key, rowIds, fee) => approvals.revokeBatch(key, rowIds, fee),
+      /* The rows' fiat exposure at current quotes — display-only, like every valuation. */
+      exposure: (key: string): Valuation => {
+        const rows = approvals.getState().views[key]?.rows ?? [];
+        const holdings: Holding[] = rows.flatMap((row) => {
+          if (
+            (row.kind === "erc20" ||
+              row.kind === "trc20" ||
+              row.kind === "permit2" ||
+              row.kind === "spl-delegate") &&
+            row.exposure !== undefined &&
+            row.token.decimals !== undefined
+          ) {
+            return [
+              {
+                key: row.id,
+                network: row.network,
+                asset: tokenAssetId(row.network, row.token.address),
+                symbol: row.token.symbol ?? "?",
+                decimals: row.token.decimals,
+                amount: BigInt(row.exposure),
+              },
+            ];
+          }
+          return [];
+        });
+        return valueHoldings(holdings, prices.getState(), options.now());
+      },
+    },
+    nfts,
+    notifications,
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),

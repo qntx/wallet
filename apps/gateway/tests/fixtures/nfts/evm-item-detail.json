@@ -1,0 +1,75 @@
+{
+  "contract": {
+    "address": "0xe785E82358879F061BC3dcAC6f0444462D4b5330",
+    "name": "World Of Women",
+    "symbol": "WOW",
+    "totalSupply": "10000",
+    "tokenType": "ERC721",
+    "isSpam": false,
+    "openSeaMetadata": {
+      "collectionName": "World of Women",
+      "safelistRequestStatus": "verified",
+      "description": "World of Women is a collection of 10,000 NFTs that gives you full access to our network of artists, creators, entrepreneurs, and executives who are championing diversity and equal opportunity on the blockchain.\n\nCreated and illustrated by Yam Karkai (@ykarkai), World of Women has made prominent appearances at Christie's, The New Yorker and Billboard.\n\nThe Time is WoW.",
+      "imageUrl": "https://i2c.seadn.io/admin-uploads/20e55f17e6d30cc82f8fcd35347339/e320e55f17e6d30cc82f8fcd35347339.png"
+    }
+  },
+  "tokenId": "44",
+  "tokenType": "ERC721",
+  "balance": null,
+  "name": "WoW #44",
+  "description": "",
+  "image": {
+    "originalUrl": "https://i2c.seadn.io/ethereum/0xe785e82358879f061bc3dcac6f0444462d4b5330/d34a8f3743c353b110ad868724fe46cc.png",
+    "cachedUrl": "https://nft2-cdn.alchemy.com/eth-mainnet/9316855d8f60a32cd44aa71f07cd7dc1",
+    "contentType": "image/png"
+  },
+  "animation": {
+    "originalUrl": null,
+    "cachedUrl": null,
+    "contentType": null
+  },
+  "collection": {
+    "name": "World of Women"
+  },
+  "raw": {
+    "metadata": {
+      "name": "WoW #44",
+      "description": "World of Women #44.",
+      "attributes": [
+        {
+          "trait_type": "Background",
+          "value": "Purple"
+        },
+        {
+          "trait_type": "Mint Order",
+          "value": 12
+        },
+        {
+          "trait_type": "Is Rare",
+          "value": true
+        },
+        {
+          "trait_type": "Broken"
+        },
+        {
+          "trait_type": 5,
+          "value": "not a trait"
+        },
+        "garbage",
+        {
+          "trait_type": "Ignored",
+          "value": {
+            "nested": true
+          }
+        }
+      ],
+      "external_url": "https://worldofwomen.art/"
+    }
+  },
+  "mint": {
+    "mintAddress": null,
+    "blockNumber": null,
+    "timestamp": null,
+    "transactionHash": null
+  }
+}

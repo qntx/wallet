@@ -10,9 +10,11 @@ const config: UserConfig = defineConfig({
         connect: "src/connect/index.ts",
         "gateway-contract": "src/gateway/contract/index.ts",
         apps: "src/apps/index.ts",
+        "apps-fiat24": "src/apps/fiat24/index.ts",
         "apps-hyperliquid": "src/apps/hyperliquid/index.ts",
         "apps-polymarket": "src/apps/polymarket/index.ts",
         walletconnect: "src/walletconnect/index.ts",
+        push: "src/push/index.ts",
       },
       tsconfig: "tsconfig.src.json",
       // Keep dependencies external in declarations too — the walletconnect entry's

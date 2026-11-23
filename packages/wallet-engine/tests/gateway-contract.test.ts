@@ -49,8 +49,28 @@ import {
   tokenList,
   tokenListPath,
   tokenListResponse,
+  NFT_DATA_URI_MAX,
+  NFT_PAGE_MAX,
+  NFT_URL_MAX,
+  nftAddressFits,
+  nftCollection,
+  nftCollectionFits,
+  nftCollectionPath,
+  nftCollectionResponse,
+  nftDetail,
+  nftFloor,
+  nftFloorPath,
+  nftFloorResponse,
+  nftItem,
+  nftItemFits,
+  nftItemPath,
+  nftItemSchema,
+  nftItems,
+  nftItemsPath,
+  nftPage,
+  nftPageFits,
 } from "../src/gateway/contract/index.ts";
-import type { HashList } from "../src/gateway/contract/index.ts";
+import type { HashList, NftCollection, NftItem } from "../src/gateway/contract/index.ts";
 import { listOf } from "./phishing-helpers.ts";
 
 const call = (method: string, id: number | string | null = 1, params: unknown[] = []) => ({
@@ -1001,6 +1021,263 @@ describe("tokenListResponse", () => {
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: "6" })]))).toBe(false);
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 0 })]))).toBe(true);
     expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 255 })]))).toBe(true);
+  });
+});
+
+describe("nfts contract", () => {
+  /* Shapes the gateway adapter produces from the captured Alchemy/DAS answers. */
+  const evmItem: NftItem = {
+    contract: "0x0000000000696760e15f265e828db644a0c242eb",
+    tokenId: "34454361969670104802583458346517400542074712368450903800518897101070583190115",
+    standard: "erc721",
+    balance: "1",
+    name: "vitalik.wei",
+    image: { url: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", mime: "image/svg+xml" },
+    animation: null,
+    collection: {
+      id: "0x0000000000696760e15f265e828db644a0c242eb",
+      name: "Wei Name Service",
+      verified: true,
+    },
+    spam: false,
+  };
+  const evm1155: NftItem = {
+    ...evmItem,
+    tokenId: "44",
+    standard: "erc1155",
+    balance: "3",
+    name: null,
+    image: null,
+    collection: null,
+    spam: true,
+  };
+  const solanaItem: NftItem = {
+    contract: "SMBtHCCC6RYRutFEPb4gZqeBLUZbMNhRKaMKZZLHi7W",
+    tokenId: null,
+    standard: "metaplex-programmable",
+    balance: "1",
+    name: "SMB Gen2",
+    image: null,
+    animation: null,
+    collection: null,
+    spam: false,
+  };
+
+  it("accepts mapped items, pages, details, collections and floors", () => {
+    expect(accepts(nftItemSchema, evmItem)).toBe(true);
+    expect(accepts(nftItemSchema, evm1155)).toBe(true);
+    expect(accepts(nftItemSchema, solanaItem)).toBe(true);
+    expect(
+      accepts(nftPage, { items: [evmItem, evm1155], cursor: "c864816d-9b0e-4c8d-ab0b:2" }),
+    ).toBe(true);
+    expect(accepts(nftPage, { items: [], cursor: null })).toBe(true);
+    expect(
+      accepts(nftDetail, {
+        item: evmItem,
+        description: "World of Women is a collection of 10,000 NFTs.",
+        attributes: [
+          { trait: "Eyes", value: "Green To The Left" },
+          { trait: "Level", value: "7" },
+        ],
+        externalUrl: "https://www.worldofwomen.xyz/",
+      }),
+    ).toBe(true);
+    expect(
+      accepts(nftCollectionResponse, {
+        id: "0xe785e82358879f061bc3dcac6f0444462d4b5330",
+        name: "World of Women",
+        symbol: "WOW",
+        description: null,
+        image: {
+          url: "https://i2c.seadn.io/admin-uploads/20e55f17e6d30cc82f8fcd35347339.png",
+          mime: null,
+        },
+        totalSupply: "10000",
+        standard: "erc721",
+        spam: false,
+        verified: true,
+      }),
+    ).toBe(true);
+    expect(
+      accepts(nftFloorResponse, {
+        floors: [
+          {
+            marketplace: "opensea",
+            amount: "6.03",
+            currency: "ETH",
+            retrievedAt: Date.parse("2026-11-23T03:35:32.348Z"),
+          },
+          {
+            marketplace: "looksrare",
+            amount: "69",
+            currency: "ETH",
+            retrievedAt: null,
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      accepts(nftFloorResponse, {
+        floors: [{ marketplace: "opensea", amount: "0.000055", currency: "ETH", retrievedAt: 0 }],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects over-long strings and overflowing or leading-zero ids", () => {
+    expect(accepts(nftItemSchema, { ...evmItem, tokenId: "01" })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, tokenId: (2n ** 256n).toString(10) })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, tokenId: (2n ** 256n - 1n).toString(10) })).toBe(
+      true,
+    );
+    expect(accepts(nftItemSchema, { ...evmItem, balance: "0" })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, balance: "007" })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, name: "n".repeat(201) })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, contract: "c".repeat(65) })).toBe(false);
+    expect(accepts(nftItemSchema, { ...evmItem, extra: 1 })).toBe(false);
+    const items = Array.from({ length: NFT_PAGE_MAX + 1 }, () => evmItem);
+    expect(accepts(nftPage, { items, cursor: null })).toBe(false);
+  });
+
+  it("bounds media refs: data URIs to 64 KiB, remote URLs to 2048", () => {
+    const image = (url: string) => ({ ...evmItem, image: { url, mime: null } });
+    expect(accepts(nftItemSchema, image(`data:${"a".repeat(NFT_DATA_URI_MAX - 5)}`))).toBe(true);
+    expect(accepts(nftItemSchema, image(`data:${"a".repeat(NFT_DATA_URI_MAX - 4)}`))).toBe(false);
+    expect(accepts(nftItemSchema, image(`https://x.test/${"a".repeat(NFT_URL_MAX - 15)}`))).toBe(
+      true,
+    );
+    expect(accepts(nftItemSchema, image(`https://x.test/${"a".repeat(NFT_URL_MAX - 14)}`))).toBe(
+      false,
+    );
+    expect(accepts(nftItemSchema, image(""))).toBe(false);
+    expect(
+      accepts(nftItemSchema, {
+        ...evmItem,
+        image: { url: "https://x.test/i.png", mime: "m".repeat(65) },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects floor amounts with trailing zeros or exponents", () => {
+    const floor = (amount: string) => ({
+      floors: [{ marketplace: "opensea", amount, currency: "ETH", retrievedAt: null }],
+    });
+    expect(accepts(nftFloorResponse, floor("6.03"))).toBe(true);
+    expect(accepts(nftFloorResponse, floor("69.0"))).toBe(false);
+    expect(accepts(nftFloorResponse, floor("5.5e-5"))).toBe(false);
+    expect(accepts(nftFloorResponse, floor("0.10"))).toBe(false);
+    expect(accepts(nftFloorResponse, floor("0.0000000000000000001"))).toBe(false);
+    expect(accepts(nftFloorResponse, floor("1.50"))).toBe(false);
+    expect(accepts(nftFloorResponse, floor("0"))).toBe(true);
+    const currency = (c: string) => ({
+      floors: [{ marketplace: "looksrare", amount: "1", currency: c, retrievedAt: 0 }],
+    });
+    expect(accepts(nftFloorResponse, currency("USDC"))).toBe(true);
+    expect(accepts(nftFloorResponse, currency("usdc"))).toBe(false);
+  });
+
+  it("maps the four endpoints to their paths with the network last", () => {
+    expect(nftItems.path).toBe("/v1/nfts/items/:caip2");
+    expect(nftItem.path).toBe("/v1/nfts/item/:caip2");
+    expect(nftCollection.path).toBe("/v1/nfts/collection/:caip2");
+    expect(nftFloor.path).toBe("/v1/nfts/floor/:caip2");
+    expect(nftItemsPath("eip155:1")).toBe("/v1/nfts/items/eip155:1");
+    expect(nftItemPath("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")).toBe(
+      "/v1/nfts/item/solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    );
+    expect(nftCollectionPath("eip155:1")).toBe("/v1/nfts/collection/eip155:1");
+    expect(nftFloorPath("eip155:1")).toBe("/v1/nfts/floor/eip155:1");
+  });
+
+  it("nftAddressFits pins the address shape to the namespace", () => {
+    expect(nftAddressFits("eip155:1", evmItem.contract)).toBe(true);
+    expect(nftAddressFits("eip155:1", evmItem.contract.toUpperCase().replace("0X", "0x"))).toBe(
+      false,
+    );
+    expect(nftAddressFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", solanaItem.contract)).toBe(
+      true,
+    );
+    expect(
+      nftAddressFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "0OIl_not_base58_xxxxxxxxxx"),
+    ).toBe(false);
+    expect(nftAddressFits("bip122:000000000019d6689c085ae165831e93", evmItem.contract)).toBe(false);
+  });
+
+  it("nftItemFits applies the family's token id, standard and balance rules", () => {
+    expect(nftItemFits("eip155:1", evmItem)).toBe(true);
+    expect(nftItemFits("eip155:1", evm1155)).toBe(true);
+    // An uppercase EVM contract never fits.
+    expect(
+      nftItemFits("eip155:1", {
+        ...evmItem,
+        contract: "0x0000000000696760E15f265e828DB644A0c242EB",
+      }),
+    ).toBe(false);
+    expect(nftItemFits("eip155:1", { ...evmItem, tokenId: null })).toBe(false);
+    expect(nftItemFits("eip155:1", { ...evmItem, balance: "2" })).toBe(false);
+    expect(nftItemFits("eip155:1", { ...evm1155, balance: "2" })).toBe(true);
+    expect(nftItemFits("eip155:1", { ...evmItem, standard: "metaplex" })).toBe(false);
+    expect(nftItemFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", solanaItem)).toBe(true);
+    expect(
+      nftItemFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", { ...solanaItem, tokenId: "1" }),
+    ).toBe(false);
+    expect(
+      nftItemFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", {
+        ...solanaItem,
+        standard: "erc721",
+      }),
+    ).toBe(false);
+    // A collection ref must name an address of the same family.
+    expect(
+      nftItemFits("eip155:1", {
+        ...evmItem,
+        collection: { id: solanaItem.contract, name: null, verified: false },
+      }),
+    ).toBe(false);
+    expect(
+      nftItemFits("eip155:1", {
+        ...evmItem,
+        collection: { id: null, name: null, verified: false },
+      }),
+    ).toBe(true);
+    expect(nftItemFits("bip122:000000000019d6689c085ae165831e93", evmItem)).toBe(false);
+  });
+
+  it("nftPageFits rejects duplicate (contract, tokenId) pairs", () => {
+    expect(nftPageFits("eip155:1", { items: [evmItem], cursor: null })).toBe(true);
+    expect(nftPageFits("eip155:1", { items: [evmItem, evm1155], cursor: null })).toBe(true);
+    expect(nftPageFits("eip155:1", { items: [evmItem, evmItem], cursor: null })).toBe(false);
+    expect(
+      nftPageFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", {
+        items: [solanaItem, solanaItem],
+        cursor: null,
+      }),
+    ).toBe(false);
+    // A page containing an item that does not fit fails whole.
+    expect(nftPageFits("eip155:1", { items: [evmItem, solanaItem], cursor: null })).toBe(false);
+  });
+
+  it("nftCollectionFits pins the id to the network and the standard to the family", () => {
+    const evmCollection: NftCollection = {
+      id: "0xe785e82358879f061bc3dcac6f0444462d4b5330",
+      name: "World of Women",
+      symbol: "WOW",
+      description: null,
+      image: null,
+      totalSupply: "10000",
+      standard: "erc721",
+      spam: false,
+      verified: true,
+    };
+    expect(nftCollectionFits("eip155:1", evmCollection)).toBe(true);
+    expect(nftCollectionFits("eip155:1", { ...evmCollection, standard: null })).toBe(true);
+    expect(nftCollectionFits("eip155:1", { ...evmCollection, standard: "metaplex" })).toBe(false);
+    expect(
+      nftCollectionFits("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", {
+        ...evmCollection,
+        id: solanaItem.contract,
+        standard: "metaplex-core",
+      }),
+    ).toBe(true);
   });
 });
 

@@ -13,11 +13,20 @@ export type StorePort = {
 
 export type StoreRequest =
   | { readonly t: "load"; readonly id: number }
-  | { readonly t: "commit"; readonly id: number; readonly ops: ReadonlyArray<StoreOp> };
+  | { readonly t: "commit"; readonly id: number; readonly ops: ReadonlyArray<StoreOp> }
+  | { readonly t: "anchor-read"; readonly id: number }
+  | {
+      readonly t: "anchor-replace";
+      readonly id: number;
+      readonly next: Uint8Array;
+      readonly expected: Uint8Array | undefined;
+    };
 
 export type StoreReply =
   | { readonly t: "loaded"; readonly id: number; readonly image: WireImage }
   | { readonly t: "committed"; readonly id: number }
+  | { readonly t: "anchor-loaded"; readonly id: number; readonly bytes: Uint8Array | undefined }
+  | { readonly t: "anchor-replaced"; readonly id: number; readonly ok: boolean }
   | { readonly t: "failed"; readonly id: number; readonly code: KernelErrorCode }
   | { readonly t: "changed" };
 

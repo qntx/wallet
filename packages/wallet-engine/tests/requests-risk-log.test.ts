@@ -775,10 +775,13 @@ describe("fiat24 recipient risk", () => {
     await w.start();
     w.txs["a"] = trackedFiat24({ payee: "9" }, "a");
     const first = await prepare(w, payPayee("10"));
-    expect(first.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    expect(first.risk).toStrictEqual([
+      { code: "first-recipient", level: "warning" },
+      { code: "fiat24-payee-offchain", level: "warning" },
+    ]);
     w.requests.reject(first.id);
     const again = await prepare(w, payPayee("9"));
-    expect(again.risk).toStrictEqual([]);
+    expect(again.risk).toStrictEqual([{ code: "fiat24-payee-offchain", level: "warning" }]);
     w.requests.reject(again.id);
   });
 
@@ -787,7 +790,10 @@ describe("fiat24 recipient risk", () => {
     await w.start();
     w.txs["a"] = trackedFiat24({ account: "11234" }, "a");
     const payee = await prepare(w, payPayee("11234"));
-    expect(payee.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    expect(payee.risk).toStrictEqual([
+      { code: "first-recipient", level: "warning" },
+      { code: "fiat24-payee-offchain", level: "warning" },
+    ]);
     w.requests.reject(payee.id);
     const near = await prepare(w, payAccount(21234n));
     expect(near.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);

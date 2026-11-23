@@ -1,7 +1,7 @@
 /**
- * Polymarket order outcomes without `not-found`: an order no reconcile read saw is `unknown`, its
- * defensive `DELETE /order` result rides `cancel`, and the eventual status arrives through
- * `trade.corrections`. `unknown` is never a reason to place the order again.
+ * Polymarket order outcomes: an order no reconcile read saw is `unknown`, its defensive `DELETE
+ * /order` result rides `cancel`, and the eventual status arrives through `trade.corrections`.
+ * `unknown` is never a reason to place the order again.
  */
 import type {
   PolymarketCancelAttempt,
@@ -9,7 +9,7 @@ import type {
   PolymarketProvider,
 } from "@qntx/wallet-engine/apps/polymarket";
 
-/** Before: `case "not-found": offerRetry()`. After: `not-found` is gone and `unknown` never retries. */
+/** `unknown` never offers a retry. */
 export function describeOutcome(outcome: PolymarketOrderOutcome): string {
   switch (outcome.kind) {
     case "resting":
@@ -18,7 +18,7 @@ export function describeOutcome(outcome: PolymarketOrderOutcome): string {
       return `order ${outcome.orderId} is on the book`;
     case "unmatched":
       return `order ${outcome.orderId} did not rest`;
-    /* `canceled` now carries `making` — the order row's `size_matched`. A value above "0" is a
+    /* `canceled` carries `making` — the order row's `size_matched`. A value above "0" is a
        partial fill taken before the cancel; re-place only the unfilled remainder. */
     case "canceled":
       return `order ${outcome.orderId} canceled after filling ${outcome.making}`;

@@ -7,6 +7,7 @@ import type { HybridObject } from "react-native-nitro-modules";
 import { closeKernel, openKernel, report, runProbe, sendToKernel } from "@qntx/v1-probe";
 
 import { CardSurfacesPage } from "./card-surfaces.tsx";
+import { CloudStorePage } from "./cloud-store.tsx";
 import { engineSmoke } from "./engine-smoke.ts";
 import { sessionSmoke, sessionSmokePhase } from "./session-smoke.ts";
 import { smokeCreate, smokePhase, smokeUnlock } from "./social-smoke.ts";
@@ -288,9 +289,12 @@ export const App = (): React.JSX.Element => {
         setDone(true);
         return;
       }
-      // EXPO_PUBLIC_CARD_SURFACES=1 renders its own page below; the probe
-      // suite must not run behind it.
-      if (process.env.EXPO_PUBLIC_CARD_SURFACES === "1") {
+      // EXPO_PUBLIC_CARD_SURFACES=1 / EXPO_PUBLIC_CLOUD_STORE=1 render their
+      // own pages below; the probe suite must not run behind them.
+      if (
+        process.env.EXPO_PUBLIC_CARD_SURFACES === "1" ||
+        process.env.EXPO_PUBLIC_CLOUD_STORE === "1"
+      ) {
         return;
       }
       if (process.env.EXPO_PUBLIC_V1_PROBES !== "1") {
@@ -363,6 +367,9 @@ export const App = (): React.JSX.Element => {
 
   if (process.env.EXPO_PUBLIC_CARD_SURFACES === "1") {
     return <CardSurfacesPage />;
+  }
+  if (process.env.EXPO_PUBLIC_CLOUD_STORE === "1") {
+    return <CloudStorePage />;
   }
 
   return (

@@ -21,7 +21,6 @@ import {
 } from "@qntx/wallet-chains/tron";
 import type { TronContract } from "@qntx/wallet-chains/tron";
 
-import { mapPool } from "../assets/tron.ts";
 import type { TronApi } from "../chains/tron.ts";
 import { transactionById, transactionInfo, tronLogAddress } from "../chains/tron.ts";
 import {
@@ -38,6 +37,7 @@ import type {
 } from "../gateway/contract/index.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { independentTrusted } from "../networks/controller.ts";
+import { mapPool } from "../pool.ts";
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 import { tronTokenFlags } from "./flags.ts";

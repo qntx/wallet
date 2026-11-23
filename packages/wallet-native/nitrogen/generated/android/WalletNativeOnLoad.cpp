@@ -15,6 +15,7 @@
 #include <fbjni/fbjni.h>
 #include <NitroModules/HybridObjectRegistry.hpp>
 
+#include "JHybridGoogleDriveAuthSpec.hpp"
 #include "JHybridSecureInputViewSpec.hpp"
 #include "JFunc_void_SecureInputState.hpp"
 #include "views/JHybridSecureInputViewStateUpdater.hpp"
@@ -37,12 +38,21 @@ struct JHybridSecureInputViewSpecImpl: public jni::JavaClass<JHybridSecureInputV
     return javaPart->getJHybridSecureInputViewSpec();
   }
 };
+struct JHybridGoogleDriveAuthSpecImpl: public jni::JavaClass<JHybridGoogleDriveAuthSpecImpl, JHybridGoogleDriveAuthSpec::JavaPart> {
+  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/qntxwallet/HybridGoogleDriveAuth;";
+  static std::shared_ptr<JHybridGoogleDriveAuthSpec> create() {
+    static const auto constructorFn = javaClassStatic()->getConstructor<JHybridGoogleDriveAuthSpecImpl::javaobject()>();
+    jni::local_ref<JHybridGoogleDriveAuthSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
+    return javaPart->getJHybridGoogleDriveAuthSpec();
+  }
+};
 
 void registerAllNatives() {
   using namespace margelo::nitro;
   using namespace margelo::nitro::qntxwallet;
 
   // Register native JNI methods
+  margelo::nitro::qntxwallet::JHybridGoogleDriveAuthSpec::CxxPart::registerNatives();
   margelo::nitro::qntxwallet::JHybridSecureInputViewSpec::CxxPart::registerNatives();
   margelo::nitro::qntxwallet::JFunc_void_SecureInputState_cxx::registerNatives();
   margelo::nitro::qntxwallet::views::JHybridSecureInputViewStateUpdater::registerNatives();
@@ -61,6 +71,12 @@ void registerAllNatives() {
     "SecureInputView",
     []() -> std::shared_ptr<HybridObject> {
       return JHybridSecureInputViewSpecImpl::create();
+    }
+  );
+  HybridObjectRegistry::registerHybridObjectConstructor(
+    "GoogleDriveAuth",
+    []() -> std::shared_ptr<HybridObject> {
+      return JHybridGoogleDriveAuthSpecImpl::create();
     }
   );
 }

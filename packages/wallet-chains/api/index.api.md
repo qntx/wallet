@@ -62,6 +62,15 @@ export type ApprovalChange = {
     readonly role: "staker" | "withdrawer";
     readonly authority: string;
     readonly verified: false;
+} | {
+    readonly kind: "approval-cleared";
+    readonly asset: string;
+    readonly value: string;
+    readonly verified: false;
+} | {
+    readonly kind: "delegate-revoked";
+    readonly account: string;
+    readonly verified: false;
 };
 
 // @public

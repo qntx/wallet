@@ -9,6 +9,7 @@
     "src/worker/worker.ts",
     "src/worker/browser-kernel.ts",
     "src/worker/indexeddb.ts",
+    "src/worker/anchor.ts",
     "tests/browser/page",
     "tests/web",
     "tests/browser-passkey.test.ts"

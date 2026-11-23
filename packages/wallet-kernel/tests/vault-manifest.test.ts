@@ -189,7 +189,7 @@ describe("replayed rows", () => {
     await h.settle();
 
     await h.store.commit([{ op: "put-record", record: captured }]);
-    const fresh = createHarness({ store: h.store, seed: 46 });
+    const fresh = createHarness({ store: h.store, seed: 46, anchor: h.anchor });
     await fresh.settle();
     expect(errCode(await fresh.call("vault.unlock", { factor: verifyPasskey() }))).toBe(
       "integrity",
@@ -205,7 +205,7 @@ describe("dropped rows", () => {
     const wallet = rowOf(await h.store.load(), "entropy");
     await h.store.commit([{ op: "delete-record", kind: wallet.kind, id: wallet.id }]);
 
-    const fresh = createHarness({ store: h.store, seed: 48 });
+    const fresh = createHarness({ store: h.store, seed: 48, anchor: h.anchor });
     await fresh.settle();
     expect(errCode(await fresh.call("vault.unlock", { factor: verifyPasskey() }))).toBe(
       "integrity",
@@ -238,7 +238,7 @@ describe("dropped rows", () => {
     const manifest = rowOf(await h.store.load(), "manifest");
     await h.store.commit([{ op: "delete-record", kind: manifest.kind, id: manifest.id }]);
 
-    const fresh = createHarness({ store: h.store, seed: 50 });
+    const fresh = createHarness({ store: h.store, seed: 50, anchor: h.anchor });
     await fresh.settle();
     await expect(vaultHealth(fresh)).resolves.toBe("corrupted");
   });
@@ -262,7 +262,12 @@ describe("vault format", () => {
     for (const format of [3, 4]) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
       await rewriteImage(h.store, withFormat(format));
-      const fresh = createHarness({ store: h.store, keystore: fk.keystore, noIdle: true });
+      const fresh = createHarness({
+        store: h.store,
+        keystore: fk.keystore,
+        noIdle: true,
+        anchor: h.anchor,
+      });
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
       await fresh.settle();
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
@@ -284,8 +289,6 @@ const vector = loadVectors("vault-manifest.json") as {
       format: number;
       revision: number;
       keyId: string;
-      failedAttempts: number;
-      lastFailureAt: number;
     };
     records: VectorRow[];
     factors: VectorRow[];
@@ -300,8 +303,6 @@ const vector = loadVectors("vault-manifest.json") as {
         format: number;
         revision: number;
         keyId: string;
-        failedAttempts: number;
-        lastFailureAt: number;
       };
       records: VectorRow[];
       factors: VectorRow[];
@@ -365,7 +366,13 @@ describe("manifest vector", () => {
 
   it("seals the manifest record byte for byte", () => {
     const platform = { random: () => hexToBytes(vector.nonce) } as unknown as KernelPlatform;
-    const image: VaultImage = { ...vectorImage, records: vectorImage.records.slice(1) };
+    // The manifest binds the post-commit revision: the image before the put must sit one
+    // revision below the vector image, whose revision the commit then bumps to.
+    const image: VaultImage = {
+      ...vectorImage,
+      meta: { ...vector.image.meta, revision: vector.image.meta.revision - 1 },
+      records: vectorImage.records.slice(1),
+    };
     const ops = withManifest(
       platform,
       image,
@@ -398,13 +405,15 @@ describe("manifest vector", () => {
     for (const image of variants) {
       expect(structureFailure(() => assertManifest(vectorDek(), image))).toStrictEqual(corrupted);
     }
-    // Counters change without a session and stay outside the manifest.
-    expect(() => {
-      assertManifest(vectorDek(), {
-        ...sealedImage,
-        meta: { ...vector.image.meta, failedAttempts: 9 },
-      });
-    }).not.toThrow();
+    // The manifest binds the revision: an image claiming a different one fails authentication.
+    expect(
+      structureFailure(() =>
+        assertManifest(vectorDek(), {
+          ...sealedImage,
+          meta: { ...vector.image.meta, revision: vector.image.meta.revision + 1 },
+        }),
+      ),
+    ).toStrictEqual(corrupted);
     // Another DEK cannot vouch for it.
     expect(
       structureFailure(() => assertManifest(Secret.take(new Uint8Array(32)), sealedImage)),

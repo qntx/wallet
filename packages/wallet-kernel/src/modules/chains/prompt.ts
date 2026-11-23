@@ -275,6 +275,8 @@ type Catalog = {
   readonly fiat24SessionBearer: (date: string) => string;
   readonly fiat24SessionPower: string;
   readonly fiat24SessionSigns: (message: string) => string;
+  readonly clearApproval: (asset: string, id: string) => string;
+  readonly delegateRevoked: (account: string) => string;
 };
 
 const zh: Catalog = {
@@ -582,6 +584,8 @@ const zh: Catalog = {
   fiat24SessionPower:
     "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道",
   fiat24SessionSigns: (message) => `签名消息：${message}`,
+  clearApproval: (asset, id) => `清除 ${asset} #${id} 的单个授权`,
+  delegateRevoked: (account) => `撤销代币账户 ${account} 的代理授权`,
 };
 
 const en: Catalog = {
@@ -916,6 +920,8 @@ const en: Catalog = {
   fiat24SessionPower:
     "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
   fiat24SessionSigns: (message) => `Signs: ${message}`,
+  clearApproval: (asset, id) => `Clear the approval on ${asset} #${id}`,
+  delegateRevoked: (account) => `Revoke the delegate of token account ${account}`,
 };
 
 export const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = { "zh-Hans": zh, en };
@@ -967,6 +973,12 @@ const networkLabel = (catalog: Catalog, id: string): string => {
 function approvalLine(catalog: Catalog, change: ApprovalChange): string {
   if (change.kind === "stake-authority") {
     return catalog.stakeAuthority(change.account, catalog.stakeRole[change.role], change.authority);
+  }
+  if (change.kind === "approval-cleared") {
+    return catalog.clearApproval(change.asset, change.value);
+  }
+  if (change.kind === "delegate-revoked") {
+    return catalog.delegateRevoked(change.account);
   }
   if (change.kind === "operator") {
     return change.approved

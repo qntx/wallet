@@ -35,6 +35,20 @@ export type Argon2id = (
   length: number,
 ) => Promise<Uint8Array>;
 
+/**
+ * A few bytes of vault state the kernel keeps outside the record store, where a store writer who
+ * puts an older vault image back cannot put this back too (hosts: RN platform keystore, Web Cache
+ * Storage partition, Node main-thread memory). Written only by the kernel.
+ */
+export type VaultAnchor = {
+  readonly read: () => Promise<Uint8Array | undefined>;
+  /**
+   * Atomic compare-and-swap: writes `next` only when the stored bytes equal `expected` (undefined =
+   * nothing stored); false, writing nothing, otherwise.
+   */
+  readonly replace: (next: Uint8Array, expected: Uint8Array | undefined) => Promise<boolean>;
+};
+
 /** Session limits owned by the worker entry (Web and Node: idle 5/15/60 min, max 12 h). */
 export type KernelPolicy = {
   readonly maxSessionMs: number;
@@ -74,6 +88,11 @@ export type KernelPlatform = {
   /** Memory-hard KDF for secrets an attacker can take offline: the cloud-backup password. */
   readonly argon2id: Argon2id;
   readonly store: RecordStore;
+  /**
+   * Vault state kept outside `store`: the revision floor and the password failure counters, where a
+   * writer of the store alone cannot roll them back (see vault/anchor.ts).
+   */
+  readonly anchor: VaultAnchor;
   readonly policy: KernelPolicy;
   /**
    * The device keystore — present only on hosts with secure hardware (RN). `undefined` on web/node.

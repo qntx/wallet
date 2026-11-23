@@ -16,13 +16,15 @@ export type ChainRequestMethod =
   | "evm-delegation"
   | "evm-batch"
   | "evm-approve"
+  | "evm-revoke"
   | "evm-cctp"
   | "evm-swap"
   | "evm-bridge"
   | "evm-nft-send"
-  | "solana-core-send"
+  | "solana-nft-send"
   | "evm-lido"
   | "solana-stake"
+  | "solana-revoke"
   | "solana-swap"
   | "tron-stake"
   | "tron-approve";
@@ -196,10 +198,34 @@ export class SignInOriginError extends Error {
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
   readonly stage: "rejected" | "failed" | "expired" | "invalidated";
-  constructor(stage: RequestEndedError["stage"], message: string | undefined) {
+  /**
+   * Whether the request had reached the `signed` stage when it ended — `false` proves nothing it
+   * produced was broadcast, `true` means a signature may already be out.
+   */
+  readonly signed: boolean;
+  constructor(stage: RequestEndedError["stage"], message: string | undefined, signed: boolean) {
     super(message ?? `request ${stage}`);
     this.name = "RequestEndedError";
     this.stage = stage;
+    this.signed = signed;
+  }
+}
+
+/**
+ * An app pinned the nonce its transaction must carry but the sender's next free nonce differs — the
+ * request is refused before anything is shown rather than signed at a nonce that would sit
+ * `unknown` forever.
+ */
+export class NonceConflictError extends Error {
+  /** The nonce the caller requires the transaction to carry. */
+  readonly expected: number;
+  /** The sender's next free nonce as the engine sees it. */
+  readonly next: number;
+  constructor(expected: number, next: number) {
+    super("the transaction must carry a nonce the sender cannot sign next");
+    this.name = "NonceConflictError";
+    this.expected = expected;
+    this.next = next;
   }
 }
 

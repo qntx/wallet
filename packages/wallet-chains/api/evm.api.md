@@ -90,6 +90,15 @@ type ApprovalChange = {
     readonly role: "staker" | "withdrawer";
     readonly authority: string;
     readonly verified: false;
+} | {
+    readonly kind: "approval-cleared";
+    readonly asset: string;
+    readonly value: string;
+    readonly verified: false;
+} | {
+    readonly kind: "delegate-revoked";
+    readonly account: string;
+    readonly verified: false;
 };
 
 // @public
@@ -287,6 +296,9 @@ type EvmAccessListEntry = {
 
 // @public
 export function evmAddressFromPublicKey(pubkey: Uint8Array): string;
+
+// @public
+export const evmSigningPreimage: (tx: EvmTransaction) => Uint8Array;
 
 // @public
 export type EvmSignPlan = {

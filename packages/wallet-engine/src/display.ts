@@ -7,13 +7,17 @@ export const TOKEN_DECIMALS_MAX = 36;
 const UNSAFE_TEXT =
   /[\p{Cc}\p{Zl}\p{Zp}]|\u200C|\u200D|\u200E|\u200F|\u061C|\u00AD|[\u{E0000}-\u{E007F}]/u;
 
+/** The text carries a hidden, control, bidi or zero-width character and must not be shown. */
+export const hasUnsafeText = (text: string): boolean =>
+  hasHiddenCharacters(text) || UNSAFE_TEXT.test(text);
+
 /**
  * Untrusted contract text (a token symbol) as safe-to-show text: trimmed, non-empty, at most `max`
  * code points, with no control, bidi-control or zero-width characters. `undefined` otherwise.
  */
 export function safeDisplayText(raw: string, max: number): string | undefined {
   const text = raw.trim();
-  if (hasHiddenCharacters(text) || UNSAFE_TEXT.test(text)) {
+  if (hasUnsafeText(text)) {
     return undefined;
   }
   let count = 0;

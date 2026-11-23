@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §10 Bank Payout step 6 (hostile)",
+  "body": {
+    "contactId": "EA-123456",
+    "purposeId": 999,
+    "ref": "690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3\u0000\u0000"
+  }
+}

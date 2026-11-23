@@ -1,0 +1,18 @@
+repository https://github.com/KeystoneHQ/keystone3-firmware
+tag 3.2.2
+commit f74496eedd0978a0de5c43fefd8291b201674e8e
+paths rust/apps/wallets/src/keystone_connect.rs rust/apps/wallets/src/backpack.rs src/ui/gui_wallet/multi/web3/gui_wallet.c
+licence MIT
+
+repository https://github.com/KeystoneHQ/ur-registry-rust
+tag 1.0.9
+paths src/extend/crypto_multi_accounts.rs src/crypto_hd_key.rs src/crypto_key_path.rs src/crypto_coin_info.rs
+licence MIT
+
+sync.json — crypto-multi-accounts payload built by scripts/vectors/keystone.ts
+with @keystonehq/bc-ur-registry 0.8.1 (Apache-2.0) as the independent encoder
+over keys derived from the standard test mnemonic; the key set, paths, notes
+and device strings mirror keystone_connect.rs and gui_wallet.c. The `firmware`
+entries are the UR:CRYPTO-MULTI-ACCOUNTS strings captured in the ur-registry
+crypto_multi_accounts.rs decode tests plus the literal bytes of its encode
+test.

@@ -1,0 +1,185 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "total": 4,
+    "limit": 100,
+    "page": 1,
+    "items": [
+      {
+        "id": "ZUd989GKtyDfNJ65GzR45mDeA3XihHTuFTso9MDQRgT",
+        "interface": "V1_NFT",
+        "content": {
+          "metadata": {
+            "attributes": [
+              {
+                "value": "Jupiter LFG",
+                "trait_type": "Issued by"
+              },
+              {
+                "value": "#75/5000",
+                "trait_type": "Metaplex Edition"
+              },
+              {
+                "value": "Yes",
+                "trait_type": "Verified"
+              },
+              {
+                "value": "sanctumdrop.com",
+                "trait_type": "URL"
+              }
+            ],
+            "description": "",
+            "name": "Allocation 1st phase Sanctum",
+            "symbol": "SNCTMA",
+            "token_standard": "NonFungible"
+          },
+          "links": {
+            "image": "https://i.ibb.co/16RCQyh/sdroc.jpg",
+            "external_url": "https://sanctumdrop.com/"
+          },
+          "files": [
+            {
+              "uri": "https://i.ibb.co/16RCQyh/sdroc.jpg",
+              "mime": "image/jpg"
+            }
+          ]
+        },
+        "grouping": [
+          {
+            "group_key": "collection",
+            "group_value": "5aPf1zww469Lj5VAWgBg8hyWpu584rPBEtnDLe92sudq"
+          }
+        ],
+        "compression": {
+          "compressed": true
+        },
+        "burnt": false
+      },
+      {
+        "id": "2EEA4dfWwc4hjuP24KAFCiuyMntNdfHTtgdpnbJceuGU",
+        "interface": "V1_NFT",
+        "content": {
+          "metadata": {
+            "attributes": [
+              {
+                "value": "Madlist Key",
+                "trait_type": "Held"
+              },
+              {
+                "value": "Blood Pact",
+                "trait_type": "Intrinsic"
+              },
+              {
+                "value": "Madlisted",
+                "trait_type": "Rank"
+              },
+              {
+                "value": "Madness",
+                "trait_type": "Wanting"
+              },
+              {
+                "value": "WAO",
+                "trait_type": "Feeling"
+              }
+            ],
+            "description": "Welcome to the Family",
+            "name": "Mad Lad @ph101pp",
+            "symbol": "MAD",
+            "token_standard": "NonFungible"
+          },
+          "links": {
+            "external_url": "https://madlads.com",
+            "image": "https://madlist-images.s3.us-west-2.amazonaws.com/ph101pp.png"
+          },
+          "files": [
+            {
+              "uri": "https://madlist-images.s3.us-west-2.amazonaws.com/ph101pp.png",
+              "mime": "image/png"
+            }
+          ]
+        },
+        "grouping": [
+          {
+            "group_key": "collection",
+            "group_value": "FCk24cq1pYhQo5MQYKHf5N9VnY8tdrToF7u6gvvsnGrn"
+          }
+        ],
+        "compression": {
+          "compressed": false
+        },
+        "burnt": false
+      },
+      {
+        "id": "SMBtHCCC6RYRutFEPb4gZqeBLUZbMNhRKaMKZZLHi7W",
+        "interface": "ProgrammableNFT",
+        "content": {
+          "metadata": {
+            "name": "SMB Gen2",
+            "symbol": "SMB",
+            "token_standard": "ProgrammableNonFungible"
+          },
+          "links": {},
+          "files": []
+        },
+        "grouping": [],
+        "compression": {
+          "compressed": false
+        },
+        "burnt": false
+      },
+      {
+        "id": "4t55EY8W3Y2wsnAa5MuSSfco9maRurs1so6z7PzP31vE",
+        "interface": "Custom",
+        "content": {
+          "metadata": {
+            "attributes": [
+              {
+                "value": "Blue",
+                "trait_type": "Background"
+              },
+              {
+                "value": "Zombie",
+                "trait_type": "Base"
+              },
+              {
+                "value": "Naked",
+                "trait_type": "Body"
+              },
+              {
+                "value": "Sad",
+                "trait_type": "Mouth"
+              },
+              {
+                "value": "Headband",
+                "trait_type": "Head"
+              },
+              {
+                "value": "Goggles",
+                "trait_type": "Eyes"
+              }
+            ],
+            "description": "A unique collection of 3333 Yetis exploring the mountains of Solana.",
+            "name": "",
+            "symbol": "YYY"
+          },
+          "links": {
+            "image": "https://nftstorage.link/ipfs/QmRRhhfaSrUGpzQFrvXEYyW4Knet9fCKBMYotyBy7KGfdM/2058.png",
+            "external_url": ""
+          },
+          "files": [
+            {
+              "uri": "https://nftstorage.link/ipfs/QmRRhhfaSrUGpzQFrvXEYyW4Knet9fCKBMYotyBy7KGfdM/2058.png",
+              "mime": "image/png"
+            }
+          ]
+        },
+        "grouping": [],
+        "compression": {
+          "compressed": false
+        },
+        "burnt": false
+      }
+    ]
+  },
+  "id": 1
+}

@@ -8,7 +8,14 @@
  * The shared wire validators (factor, wallet info, ids) live here too so the nostr module's table
  * can reuse them — `protocol/nostr.ts` imports only from this file.
  */
-import type { FactorInfo, WalletErrorCode, WalletInfo } from "../types.ts";
+import { HARDWARE_DEVICES } from "../types.ts";
+import type {
+  FactorInfo,
+  HardwareDevice,
+  VaultWalletInfo,
+  WalletErrorCode,
+  WalletInfo,
+} from "../types.ts";
 import type { NullValue, Validator } from "./validate.ts";
 import { arr, bool, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 
@@ -237,7 +244,15 @@ export const backupUnlockFactor: Validator<BackupUnlockFactor> = union(
   }),
 );
 
-export const walletInfo: Validator<WalletInfo> = obj({
+/** A hardware-signing device family on the wire; each signer adds a literal to HARDWARE_DEVICES. */
+export const hardwareDevice: Validator<HardwareDevice> = union(
+  ...HARDWARE_DEVICES.map((device) => literal(device)),
+);
+
+const DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
+
+export const vaultWalletInfo: Validator<VaultWalletInfo> = obj({
+  custody: literal("vault"),
   walletId,
   origin: union(literal("passkey"), literal("mnemonic")),
   words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
@@ -245,6 +260,19 @@ export const walletInfo: Validator<WalletInfo> = obj({
   passphrase: bool,
   createdAt: safeTime,
 });
+
+export const walletInfo: Validator<WalletInfo> = union(
+  vaultWalletInfo,
+  obj({
+    custody: literal("hardware"),
+    walletId,
+    device: hardwareDevice,
+    fingerprint: str(8, /^[0-9a-f]{8}$/),
+    model: opt(str(64, DEVICE_TEXT)),
+    firmware: opt(str(64, DEVICE_TEXT)),
+    createdAt: safeTime,
+  }),
+);
 
 /** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 const passphraseBytes: Validator<Uint8Array> = bytes(1, 1024);
@@ -269,6 +297,11 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("integrity"),
   literal("approval-required"),
   literal("crashed"),
+  literal("device-required"),
+  literal("device-locked"),
+  literal("device-app-closed"),
+  literal("device-rejected"),
+  literal("wrong-device"),
 );
 
 /**
@@ -276,11 +309,14 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
  * session it opened. Creating a wallet derives no protocol keys — modules add keys separately.
  */
 export type CreatedResult = {
-  readonly wallet: WalletInfo;
+  readonly wallet: VaultWalletInfo;
   readonly session: string;
 };
 
-const createdResult: Validator<CreatedResult> = obj({ wallet: walletInfo, session: sessionId });
+const createdResult: Validator<CreatedResult> = obj({
+  wallet: vaultWalletInfo,
+  session: sessionId,
+});
 
 // `status` itself is a core method, but its result validator composes every module's status
 // section — it is wired in protocol/index.ts, not here.
@@ -340,7 +376,7 @@ export const CORE_METHODS: {
       readonly factor?: Factor;
     },
     {
-      readonly wallets: ReadonlyArray<WalletInfo>;
+      readonly wallets: ReadonlyArray<VaultWalletInfo>;
       readonly passphraseRequired: ReadonlyArray<string>;
       readonly session: string;
     }
@@ -494,7 +530,7 @@ export const CORE_METHODS: {
       factor: opt(factor),
     }),
     result: obj({
-      wallets: arr(walletInfo, 1000),
+      wallets: arr(vaultWalletInfo, 1000),
       passphraseRequired: arr(str(128), 1000),
       session: sessionId,
     }),

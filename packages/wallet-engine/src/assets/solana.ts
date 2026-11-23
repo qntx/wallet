@@ -19,11 +19,12 @@
  */
 import { base64 } from "@scure/base";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { address, getAddressEncoder, getProgramDerivedAddress, isAddress } from "@solana/kit";
+import { address, getAddressEncoder, isAddress } from "@solana/kit";
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
 
 import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 
+import { metaplexMetadataAddress } from "../chains/nfts.ts";
 import { parseWith, tokenName, tokenSymbol } from "../gateway/contract/index.ts";
 import type { SolanaRpc } from "../networks/controller.ts";
 
@@ -119,20 +120,6 @@ export type MintFacts = {
   readonly name?: string | undefined;
   readonly permanentDelegate: boolean;
   readonly nonTransferable: boolean;
-};
-
-/** The Metaplex metadata PDA of `mint`: seeds `["metadata", program, mint]` under the program. */
-export const metaplexMetadataAddress = async (mint: string): Promise<string> => {
-  const encoder = getAddressEncoder();
-  const [pda] = await getProgramDerivedAddress({
-    programAddress: address(METAPLEX_METADATA_PROGRAM),
-    seeds: [
-      "metadata",
-      encoder.encode(address(METAPLEX_METADATA_PROGRAM)),
-      encoder.encode(address(mint)),
-    ],
-  });
-  return pda;
 };
 
 /** A Metaplex metadata account's name/symbol, or `undefined` when it does not describe `mint`. */

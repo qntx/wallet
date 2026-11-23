@@ -30,7 +30,7 @@ export type BackupApi = {
         }>;
         readonly factor?: InitialFactor;
     }) => Promise<{
-        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
 };
@@ -40,11 +40,12 @@ export type BackupHeader = {
     readonly version: 1;
     readonly createdAt: number;
     readonly wallets: ReadonlyArray<BackupHeaderWallet>;
+    readonly keys: ReadonlyArray<BackupHeaderKey>;
     readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
 
 // @public (undocumented)
-type BackupHeaderKey = {
+export type BackupHeaderKey = {
     readonly keyId: string;
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };
@@ -117,6 +118,23 @@ export type FactorInfo = {
 };
 
 // @public
+export const HARDWARE_DEVICES: readonly ["keystone"];
+
+// @public
+export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
+
+// @public
+export type HardwareWalletInfo = {
+    readonly custody: "hardware";
+    readonly walletId: string;
+    readonly device: HardwareDevice;
+    readonly fingerprint: string;
+    readonly model?: string;
+    readonly firmware?: string;
+    readonly createdAt: number;
+};
+
+// @public
 export type InitialFactor = {
     readonly kind: "passkey";
     readonly name: string;
@@ -150,7 +168,7 @@ export type MnemonicDraft = {
     readonly quiz: ReadonlyArray<number>;
     readonly confirm: (answers: ReadonlyArray<string>, options?: {
         readonly passphrase?: string;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly discard: () => Promise<void>;
 };
 
@@ -239,6 +257,17 @@ export type VaultApi = {
 // @public
 export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
+// @public (undocumented)
+export type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
 // @public
 export type VerifyFactor = Exclude<UnlockFactor, {
     readonly kind: "device";
@@ -267,17 +296,10 @@ export class WalletError extends Error {
 }
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
 
 // @public (undocumented)
-export type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+export type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
 
 // @public (undocumented)
 export type WalletOptions = {
@@ -291,10 +313,10 @@ export type WalletsApi = {
     readonly createWithPasskey: (options: {
         readonly name: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly restoreWithPasskey: (options?: {
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly createMnemonic: (options: {
         readonly words: 12 | 24;
         readonly factor?: InitialFactor;
@@ -303,7 +325,7 @@ export type WalletsApi = {
         readonly mnemonic: string;
         readonly passphrase?: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
     readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
 };

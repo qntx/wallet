@@ -71,6 +71,14 @@ describe("bucket", () => {
     expect(result.ok).toBe(false);
     expect(result).toStrictEqual({ ok: false, retryAfterSeconds: expect.any(Number) });
   });
+
+  it("treats a level absent from persisted state as empty", () => {
+    /* A window added after the state was stored holds no level: window 2 starts at zero and the
+       announced wait is its refill to min (10 units at 1/s). */
+    const state: BucketState = { levels: [50], at: 0 };
+    expect(grant(windows, state, 0, 50, 10)).toStrictEqual({ ok: false, retryAfterSeconds: 10 });
+    expect(state.levels).toStrictEqual([50, 0]);
+  });
 });
 
 describe("localBudget", () => {

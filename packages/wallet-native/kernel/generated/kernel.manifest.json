@@ -1,6 +1,6 @@
 {
   "protocol": 3,
-  "vaultFormat": 5,
+  "vaultFormat": 6,
   "backends": {
     "spark": {
       "abiVersion": 1
@@ -27,13 +27,13 @@
     },
     {
       "name": "@qntx/nostr",
-      "version": "0.15.4",
-      "integrity": "sha512-kxWfN3HxKm7bTDn7Mzd+X80J74fbzNwUHOx8in5qMcb89/FgytR0jXllnF6eqGyO7VYG3pKSj94JnhgbkV73BQ=="
+      "version": "0.16.0",
+      "integrity": "sha512-52tWXXYutmDisBRVJ2+b5mgIHlKufXzV4zBQ1LlKKPmUsHeSVr214R25GKh9QF2bNfOnkik10j3SZjEZ8O2ytA=="
     },
     {
       "name": "@qntx/nostr-native",
-      "version": "0.15.4",
-      "integrity": "sha512-CUBflKqmXeIMyZbm4FP0ssZRmbtbu1IXfsuDso9nxLekPsnXYfo+0gzQNKNxpYTwvQ5ay608nmLsSQ4PV4soMw=="
+      "version": "0.16.0",
+      "integrity": "sha512-qJsZpSeCyywolLSgbFD/62XTbugR6FgGJLIl5PpGZedv8kFrZxBT4Oneg9fcDTW7KZehk19Ti6Wf/SVc3qM19g=="
     },
     {
       "name": "@qntx/siwx",
@@ -79,7 +79,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "54b81b25f1aa1302fddcaeae2faf2b59dc952007aa4660ce3713d82e60451fed"
+      "sha256": "1a4cb7ff98bbce73d7408fdac7c25f8f9d469e275e17c9d72a17f2b2922eb81e"
     }
   ]
 }

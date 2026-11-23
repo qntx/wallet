@@ -14,3 +14,7 @@ export * from "./quotes.ts";
 export * from "./history.ts";
 export * from "./prices.ts";
 export * from "./tokens.ts";
+export * from "./approvals.ts";
+export * from "./nfts.ts";
+export * from "./push.ts";
+export * from "./push-message.ts";

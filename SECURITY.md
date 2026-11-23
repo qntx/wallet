@@ -45,3 +45,29 @@ disclosure timeline with you.
   when the device is more than 5 s off Hyperliquid's server time, but it runs in
   the main runtime: a compromised main runtime can skip it, so the residual
   exposure is the device's own clock error plus 60 s.
+- **Vault rollback** (the vault anchor): the vault manifest authenticates one image, and a
+  21-byte record kept outside the vault store holds the revision floor and the password failure
+  counters, so an older committed image put back reads `corrupted` and rewriting the store does
+  not reset the password backoff. No platform gives an app a hardware monotonic counter (Android
+  rollback resistance is platform-only, the Secure Enclave's anti-replay storage serves the
+  system), so the floor is only as strong as the storage it sits in:
+  - React Native keeps it in the platform credential store — an iOS keychain item
+    (`WhenUnlockedThisDeviceOnly`), Android Keystore entry aliases — outside the app container,
+    which is never backed up. It catches a writer of the app's files who cannot write that store
+    (a file-level replacement, a replay of the vault file alone). It does not stop root or a
+    jailbreak, code running as the app, or a consistent restore of the whole device.
+  - The Web has no rollback-resistant storage. The anchor sits in Cache Storage, a different
+    backend from the IndexedDB vault (Chromium keeps every IndexedDB database of an origin in one
+    LevelDB), so restoring the vault database alone is caught; same-origin script, an extension
+    with access to the origin, or a restore of the whole browser profile rewrites both. The online
+    backoff never slows an attacker who can read storage: the password factor can be attacked
+    offline at its PBKDF2 cost.
+  - Node keeps the store and the anchor in the host process's memory; neither outlives it.
+- **Secret buffers:** every secret field of a kernel request must own its memory; a request whose
+  secret shares bytes with another field is refused, because the kernel wipes secrets in place.
+- **Gateway privacy:** the gateway sees a fresh client id per session and per scope (one per chain
+  family plus `service`), and each scope's requests name only that scope's data — price requests
+  are sent per family under that family's id. Each scope's own requests still name its addresses;
+  what links one scope to another is the network layer — the client IP and the timing of requests
+  a refresh sends together. Hiding those needs an OHTTP-style relay in front of the gateway, which
+  this release does not ship.

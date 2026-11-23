@@ -5,8 +5,8 @@
     "": {
       "name": "@qntx/wallet-harness",
       "dependencies": {
-        "@qntx/nostr": "0.15.4",
-        "@qntx/nostr-native": "0.15.4",
+        "@qntx/nostr": "0.16.0",
+        "@qntx/nostr-native": "0.16.0",
         "@qntx/spark-native": "0.5.2",
         "@qntx/v1-probe": "link:./modules/v1-probe",
         "@qntx/wallet": "link:../../packages/wallet",
@@ -287,9 +287,9 @@
 
     "@oxc-project/types": ["@oxc-project/types@0.154.0", "", {}, "sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA=="],
 
-    "@qntx/nostr": ["@qntx/nostr@0.15.4", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-kxWfN3HxKm7bTDn7Mzd+X80J74fbzNwUHOx8in5qMcb89/FgytR0jXllnF6eqGyO7VYG3pKSj94JnhgbkV73BQ=="],
+    "@qntx/nostr": ["@qntx/nostr@0.16.0", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-52tWXXYutmDisBRVJ2+b5mgIHlKufXzV4zBQ1LlKKPmUsHeSVr214R25GKh9QF2bNfOnkik10j3SZjEZ8O2ytA=="],
 
-    "@qntx/nostr-native": ["@qntx/nostr-native@0.15.4", "", { "peerDependencies": { "@qntx/nostr": "^0.15.4", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-CUBflKqmXeIMyZbm4FP0ssZRmbtbu1IXfsuDso9nxLekPsnXYfo+0gzQNKNxpYTwvQ5ay608nmLsSQ4PV4soMw=="],
+    "@qntx/nostr-native": ["@qntx/nostr-native@0.16.0", "", { "peerDependencies": { "@qntx/nostr": "^0.16.0", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-qJsZpSeCyywolLSgbFD/62XTbugR6FgGJLIl5PpGZedv8kFrZxBT4Oneg9fcDTW7KZehk19Ti6Wf/SVc3qM19g=="],
 
     "@qntx/spark": ["@qntx/spark@0.5.2", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-x5J1vJCuUdW5ANldVuRJRu5qczxkENhnZqEWH5PQt7dKKGqJbuLvsV6EyphKbf0MoYYM2kxWalW0NCzoXojamQ=="],
 

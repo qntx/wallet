@@ -1,5 +1,7 @@
 import type { CostModel } from "./budget/costs.ts";
 import type { Account } from "./config/accounts.ts";
+import type { Limiters } from "./limits.ts";
+import type { PushService } from "./push/backend.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
 
@@ -19,22 +21,6 @@ export type UpstreamRequest = {
    * bounds once the attempt has returned.
    */
   readonly bodyDeadlineMs?: number;
-};
-
-export type RateLimiter = {
-  limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
-};
-
-export type Limiters = {
-  /** Per IP prefix across every client id — the ceiling rotating client ids cannot escape. */
-  readonly ip: RateLimiter;
-  readonly rpc: RateLimiter;
-  readonly default: RateLimiter;
-  /**
-   * Shares of each provider account's per-minute budget, keyed `account:ip-prefix`: one client's
-   * traffic is bounded in the provider's own units even when its calls are cheap per request.
-   */
-  readonly share: RateLimiter;
 };
 
 /** The provider account an upstream authenticates against, by name — never a secret. */
@@ -86,11 +72,11 @@ export type ProviderBudget = {
 };
 
 /**
- * Per-asset price cache shared by every client: keys never carry client identity. `get` answers
+ * A read-path cache shared by every client: keys never carry client identity. `get` answers
  * `undefined` on a miss; entries live at most `ttlSeconds` (the reader also checks the embedded
  * expiry, so a store that keeps entries longer cannot serve them stale).
  */
-export type PriceCache = {
+export type EdgeCache = {
   readonly get: (key: string) => Promise<string | undefined>;
   readonly put: (key: string, value: string, ttlSeconds: number) => Promise<void>;
 };
@@ -141,12 +127,22 @@ export type GatewayOptions = {
   /** A Jupiter API key for `/v1/quotes/swap/solana` — absent, the upstream is called keyless. */
   readonly jupiter?: { readonly apiKey: string };
   /**
+   * The push service: capabilities, per-family object backends and the push limiter. Absent — no
+   * seal key, no sender or no served family — `GET /v1/push` advertises empty arrays and the write
+   * routes answer `unsupported`.
+   */
+  readonly push?: PushService;
+  /**
    * Spot prices: the shared per-asset cache, and the CoinGecko Pro key that enables the primary
    * source. Without the key only the keyless DefiLlama fallback serves, and it quotes USD only.
    */
   readonly prices: {
-    readonly cache: PriceCache;
+    readonly cache: EdgeCache;
     readonly coingecko?: { readonly apiKey: string };
+  };
+  /** NFT reads: the shared per-route cache of upstream answers. */
+  readonly nfts: {
+    readonly cache: EdgeCache;
   };
   /** The wall clock, Unix ms; defaults to `Date.now`. */
   readonly now?: () => number;

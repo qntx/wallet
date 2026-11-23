@@ -12,8 +12,9 @@ import type { FactorInfo, StatusPayload as StatusT } from "@qntx/wallet/types";
 
 import { KernelError } from "../src/errors.ts";
 import { NOSTR_KEY_KIND, encodeNostrKeyHeader } from "../src/modules/nostr/record.ts";
-import type { Pbkdf2 } from "../src/platform.ts";
+import type { Pbkdf2, VaultAnchor } from "../src/platform.ts";
 import { Secret, wipe } from "../src/secret/secret.ts";
+import { createMemoryAnchor, readAnchor } from "../src/vault/anchor.ts";
 import { recordContext, seal } from "../src/vault/envelope.ts";
 import {
   factorPublicKey,
@@ -198,10 +199,10 @@ async function storedMeta(store: RecordStore): Promise<VaultMeta> {
   return must(image.meta);
 }
 
-/** The persisted wrong-password counter. */
-async function storedFailedAttempts(store: RecordStore): Promise<number> {
-  const meta = await storedMeta(store);
-  return meta.failedAttempts;
+/** The persisted wrong-password counter — it lives in the anchor, outside the store. */
+async function storedFailedAttempts(anchor: VaultAnchor): Promise<number> {
+  const state = await readAnchor(anchor);
+  return state.failedAttempts;
 }
 
 /** "ok" or the error code — lifted out so test bodies carry no conditionals. */
@@ -235,14 +236,12 @@ function flakyCommit(store: RecordStore, broken: { current: boolean }): RecordSt
   };
 }
 
-/** A format-2 meta row as written by a vault init, with overridable fields for health tests. */
+/** A meta row as written by a vault init, with overridable fields for health tests. */
 function metaOf(overrides?: Partial<VaultMeta>): VaultMeta {
   return {
     format: VAULT_FORMAT,
     revision: 1,
     keyId: "ab".repeat(16),
-    failedAttempts: 0,
-    lastFailureAt: 0,
     ...overrides,
   };
 }
@@ -263,7 +262,7 @@ function passkeyFactor(): { kind: "passkey"; credentialId: Uint8Array; prf: Uint
  * the test's purposes.
  */
 function respawn(h: Harness, wrapStore?: (store: RecordStore) => RecordStore): Harness {
-  return createHarness({ store: h.store, wrapStore });
+  return createHarness({ store: h.store, wrapStore, anchor: h.anchor });
 }
 
 async function createPasskeyWallet(h: ReturnType<typeof createHarness>) {
@@ -322,7 +321,7 @@ describe("create / import", () => {
     const status = lastStatus(h);
     expect(status.vault).toBe("unlocked");
     expect(status.wallets[0]?.walletId).toBe(passkeyVector.vector.walletId);
-    expect(status.wallets[0]?.backup).toBe("passkey");
+    expect(status.wallets[0]).toMatchObject({ backup: "passkey" });
     expect(status.nostr.keys[0]?.publicKey).toBe(publicKey);
     expect(status.factors).toHaveLength(1);
   });
@@ -419,7 +418,7 @@ describe("create / import", () => {
       passkeyVector.vector.mnemonic,
     );
     await h.settle();
-    expect(lastStatus(h).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h).wallets[0]).toMatchObject({ backup: "mnemonic" });
     const metaAfter = await storedMeta(h.store);
     expect(metaAfter.revision).toBe(metaBefore.revision + 1);
 
@@ -437,7 +436,7 @@ describe("create / import", () => {
       }),
     );
     const session2 = strField(unlocked, "session");
-    expect(lastStatus(h2).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h2).wallets[0]).toMatchObject({ backup: "mnemonic" });
     const again = ok(
       await h2.call("wallet.exportMnemonic", { verify: verify(), walletId }, session2),
     );
@@ -589,7 +588,7 @@ describe("mnemonic draft", () => {
     const res = ok(await h.call("wallet.confirmMnemonic", { draft, answers: right }));
     expect(strField(res, "session")).toMatch(/^[0-9a-f]{32}$/);
     expect(lastStatus(h).vault).toBe("unlocked");
-    expect(lastStatus(h).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h).wallets[0]).toMatchObject({ backup: "mnemonic" });
   });
 
   it("discards the draft", async () => {
@@ -1452,13 +1451,13 @@ describe("password rate limiting", () => {
     // The 5th failure arms the 30 s backoff.
     expect(errCode(await badPassword(h2))).toBe("wrong-password");
     const t = h2.wallNow();
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     // The 6th attempt is rate-limited with the armed deadline — never counted: retries cannot
     // push the horizon forward.
     const limited = await badPassword(h2);
     expect(errCode(limited)).toBe("rate-limited");
     expect(errPayload(limited).retryAt).toBe(t + 30_000);
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     // The next real failure lands the 6th increment and arms the 60 s tier.
     h2.advanceWall(61_000);
     expect(errCode(await badPassword(h2))).toBe("wrong-password");
@@ -1477,11 +1476,11 @@ describe("password rate limiting", () => {
       factor: { kind: "password", password: new Uint8Array(PASSWORD) },
     });
     expect("ok" in unlocked).toBe(true);
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(0);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(0);
     const h3 = respawn(h, nonEchoing);
     await h3.settle();
     expect(errCode(await badPassword(h3))).toBe("wrong-password");
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(1);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(1);
   });
 
   it("pipelined attempts never lose an increment", async () => {
@@ -1494,7 +1493,7 @@ describe("password rate limiting", () => {
     const codes = results.map(errCode);
     expect(codes.filter((c) => c === "wrong-password")).toHaveLength(5);
     expect(codes.filter((c) => c === "rate-limited")).toHaveLength(1);
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
   });
 
   it("retries during backoff move neither the counter nor the deadline", async () => {
@@ -1515,7 +1514,7 @@ describe("password rate limiting", () => {
       expect(errCode(limited)).toBe("rate-limited");
       expect(errPayload(limited).retryAt).toBe(t + 30_000);
     }
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
   });
 
   it("re-verification shares the persisted counters and arms the same backoff", async () => {
@@ -1546,12 +1545,12 @@ describe("password rate limiting", () => {
       expect(errCode(await badVerify())).toBe("wrong-password");
     }
     const t = h2.wallNow();
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     // The next re-verification is rate-limited with the armed deadline — never counted.
     const limited = await badVerify();
     expect(errCode(limited)).toBe("rate-limited");
     expect(errPayload(limited).retryAt).toBe(t + 30_000);
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     // The shared counter gates the unlock path too: a fresh locked kernel sees the same horizon.
     const h3 = respawn(h, nonEchoing);
     await h3.settle();
@@ -1577,7 +1576,7 @@ describe("password rate limiting", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- attempts are sequential by design
       expect(errCode(await badPassword(h2))).toBe("wrong-password");
     }
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     const limited = await h2.call(
       "vault.addFactor",
       {
@@ -1614,7 +1613,7 @@ describe("password rate limiting", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- attempts are sequential by design
       expect(errCode(await badVerify())).toBe("wrong-password");
     }
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(4);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(4);
     // A correct verify clears the counter — the next miss starts at 1, not 5.
     const right = await h2.call(
       "vault.addFactor",
@@ -1625,9 +1624,9 @@ describe("password rate limiting", () => {
       session,
     );
     expect("ok" in right).toBe(true);
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(0);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(0);
     expect(errCode(await badVerify())).toBe("wrong-password");
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(1);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(1);
   });
 
   it("two kernels sharing one store never lose an increment", async () => {
@@ -1651,7 +1650,7 @@ describe("password rate limiting", () => {
       expect(["wrong-password", "rate-limited"]).toContain(code);
     }
     const counted = codes.filter((c) => c === "wrong-password").length;
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(counted);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(counted);
     expect(counted).toBeGreaterThanOrEqual(5);
   });
 
@@ -1662,7 +1661,7 @@ describe("password rate limiting", () => {
     const h2 = respawn(h, nonEchoing);
     await h2.settle();
     expect(errCode(await badPassword(h2))).toBe("invalid-input");
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(0);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(0);
   });
 
   it("a passkey unlock is never gated by password backoff", async () => {
@@ -1686,7 +1685,7 @@ describe("password rate limiting", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential attempts
       await badPassword(h2);
     }
-    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    await expect(storedFailedAttempts(h.anchor)).resolves.toBe(5);
     // The passkey path does not consult the password counters at all.
     const unlocked = await h2.call("vault.unlock", { factor: passkeyFactor() });
     expect("ok" in unlocked).toBe(true);
@@ -1710,7 +1709,7 @@ describe("integrity", () => {
     const h = createHarness();
     await h.settle();
     await createPasskeyWallet(h);
-    const h2 = createHarness({ store: h.store });
+    const h2 = createHarness({ store: h.store, anchor: h.anchor });
     await h2.settle();
     expect(lastStatus(h2).vault).toBe("locked");
     expect(ok(await h2.call("vault.reset"))).toBeNull();
@@ -1857,7 +1856,7 @@ describe("integrity", () => {
     const words = new TextDecoder().decode(bytesField(created, "words")).split(" ");
 
     // Another tab establishes a vault first.
-    const other = createHarness({ store: h.store, seed: 2 });
+    const other = createHarness({ store: h.store, seed: 2, anchor: h.anchor });
     await other.settle();
     ok(
       await other.call("wallet.importMnemonic", {
@@ -2012,9 +2011,9 @@ describe("vault health", () => {
     await h.settle();
     await createPasskeyWallet(h);
     await h.settle(); // flush the create commit's own echo-reload before arming the failure
-    // An external commit triggers a reload whose load fails once.
+    // An external (precondition-only, content-neutral) commit triggers a reload whose load fails.
     broken.current = true;
-    await h.store.commit([{ op: "reset-failures" }]);
+    await h.store.commit([{ op: "expect-revision", revision: 1 }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("unavailable");
     broken.current = false;
@@ -2073,7 +2072,8 @@ describe("concurrent writers on one store", () => {
     passkeyFactorId: string;
   }> {
     const shared = createMemoryStore();
-    const a = createHarness({ store: shared });
+    const anchor = createMemoryAnchor();
+    const a = createHarness({ store: shared, anchor });
     await a.settle();
     const created = ok(
       await a.call("wallet.importMnemonic", {
@@ -2096,7 +2096,7 @@ describe("concurrent writers on one store", () => {
     const { factors } = lastStatus(a);
     const passwordFactorId = factorId(factors.find((f) => f.kind === "password"));
     const passkeyFactorId = factorId(factors.find((f) => f.kind === "passkey"));
-    const b = createHarness({ store: shared });
+    const b = createHarness({ store: shared, anchor });
     await b.settle();
     const unlockB = ok(
       await b.call("vault.unlock", {
@@ -2226,7 +2226,8 @@ function plantedFactor(): StoredFactor {
 describe("public-key factor wrapping and DEK rotation", () => {
   it("a tampered factor binding corrupts the vault at unlock", async () => {
     const shared = createMemoryStore();
-    const setup = createHarness({ store: shared });
+    const anchor = createMemoryAnchor();
+    const setup = createHarness({ store: shared, anchor });
     await setup.settle();
     await createPasskeyWallet(setup);
 
@@ -2236,7 +2237,7 @@ describe("public-key factor wrapping and DEK rotation", () => {
     const sealed = tamperSealed(factor.sealed, 40);
     await shared.commit([{ op: "put-factor", factor: { ...factor, sealed } }]);
 
-    const h = createHarness({ store: shared });
+    const h = createHarness({ store: shared, anchor });
     await h.settle();
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("integrity");
     expect(lastStatus(h).vault).toBe("corrupted");
@@ -2247,7 +2248,8 @@ describe("public-key factor wrapping and DEK rotation", () => {
 
   it("a planted factor row corrupts a locked vault — the real password cannot unlock", async () => {
     const shared = createMemoryStore();
-    const setup = createHarness({ store: shared });
+    const anchor = createMemoryAnchor();
+    const setup = createHarness({ store: shared, anchor });
     await setup.settle();
     ok(
       await setup.call("wallet.importMnemonic", {
@@ -2257,7 +2259,7 @@ describe("public-key factor wrapping and DEK rotation", () => {
     );
     await shared.commit([{ op: "put-factor", factor: plantedFactor() }]);
 
-    const h = createHarness({ store: shared });
+    const h = createHarness({ store: shared, anchor });
     await h.settle();
     // The password still unwraps the real factor; reconciliation then proves the planted row's
     // binding does not match this vault's DEK.
@@ -2411,7 +2413,8 @@ describe("live-state reconciliation across kernels", () => {
     walletId: string;
   }> {
     const shared = createMemoryStore();
-    const a = createHarness({ store: shared });
+    const anchor = createMemoryAnchor();
+    const a = createHarness({ store: shared, anchor });
     await a.settle();
     const created = ok(
       await a.call("wallet.importMnemonic", {
@@ -2421,7 +2424,7 @@ describe("live-state reconciliation across kernels", () => {
     );
     const sessionA = strField(created, "session");
     const walletId = strField(field(created, "wallet"), "walletId");
-    const b = createHarness({ store: shared });
+    const b = createHarness({ store: shared, anchor });
     await b.settle();
     const unlockB = ok(await b.call("vault.unlock", { factor: passwordFactor() }));
     return { shared, a, b, sessionA, walletId, sessionB: strField(unlockB, "session") };
@@ -2763,7 +2766,7 @@ describe("rotation and the session", () => {
     expect(lastStatus(h).vault).toBe("locked");
     // Nothing landed: the old password still opens the vault, in this kernel and a fresh one.
     ok(await h.call("vault.unlock", { factor: oldPassword() }));
-    const fresh = createHarness({ store: h.store });
+    const fresh = createHarness({ store: h.store, anchor: h.anchor });
     await fresh.settle();
     ok(await fresh.call("vault.unlock", { factor: oldPassword() }));
   });

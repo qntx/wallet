@@ -11,6 +11,8 @@ export type { SecureInputProps, SecureInputState } from "./specs/secure-input.ni
  * ID: the kernel decides the kind and the label; the main runtime can only size the view and
  * observe `onStateChange` — it never sees the characters. `onStateChange`, like every Nitro view
  * callback, must be passed through `callback(...)`.
+ *
+ * @experimental
  */
 export const SecureInput: ReactNativeView<SecureInputProps, SecureInputMethods> = getHostComponent<
   SecureInputProps,

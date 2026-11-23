@@ -38,11 +38,12 @@ import type {
   DelegationStatus,
 } from "./route.ts";
 import { accountAddressOf, awaitingFinality, newId } from "./route.ts";
+import { prepareSolanaRevoke } from "./solana-revoke.ts";
 import {
   bindDappSolana,
   pollSolana,
   prepareSolana,
-  prepareSolanaCoreSend,
+  prepareSolanaNftSend,
   prepareSolanaStake,
   prepareSolanaSwap,
   submitDappSolana,
@@ -748,19 +749,28 @@ export class TransactionController extends Controller<TransactionControllerState
   async prepareDapp(
     account: AccountRef,
     request: SignRequest,
+    options?: { readonly nonce?: number },
   ): Promise<PreparedRequest | PreparedMessage> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
     const normalized = normalizeEvm(request);
     if (normalized.kind === "evm.transaction") {
-      return this.evmRoute.prepareCall(this.routeCtx(), {
-        account,
-        network: normalized.network,
-        tx: normalized.tx,
-      });
+      return this.evmRoute.prepareCall(
+        this.routeCtx(),
+        {
+          account,
+          network: normalized.network,
+          tx: normalized.tx,
+        },
+        options?.nonce,
+      );
     }
-    if (normalized.kind !== "evm.personal-message" && normalized.kind !== "evm.typed-data") {
+    if (
+      normalized.kind !== "evm.personal-message" &&
+      normalized.kind !== "evm.typed-data" &&
+      normalized.kind !== "evm.fiat24-session"
+    ) {
       throw new Error(`unsupported dApp request ${normalized.kind}`);
     }
     const { kind, network } = normalized;
@@ -779,7 +789,15 @@ export class TransactionController extends Controller<TransactionControllerState
           request:
             normalized.kind === "evm.personal-message"
               ? { kind: normalized.kind, network, account, message: normalized.message }
-              : { kind: normalized.kind, network, account, typedData: normalized.typedData },
+              : normalized.kind === "evm.fiat24-session"
+                ? {
+                    kind: normalized.kind,
+                    network,
+                    account,
+                    tokenId: normalized.tokenId,
+                    deadline: normalized.deadline,
+                  }
+                : { kind: normalized.kind, network, account, typedData: normalized.typedData },
           verify,
         });
         if (result.kind !== kind || !("signature" in result)) {
@@ -897,6 +915,7 @@ export class TransactionController extends Controller<TransactionControllerState
           | "evm-delegation"
           | "evm-batch"
           | "evm-approve"
+          | "evm-revoke"
           | "evm-cctp"
           | "evm-swap"
           | "evm-bridge"
@@ -924,6 +943,20 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return prepareSolanaStake(this.routeCtx(), input);
+  }
+
+  /**
+   * Internal `solana-revoke` requests: every token account is re-read on both endpoints before a
+   * program-matched `Revoke` goes through the same fee/simulation tail as a send.
+   */
+  async prepareSolanaRevoke(
+    input: Extract<ChainRequestInput, { method: "solana-revoke" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareSolanaRevoke(this.routeCtx(), input);
   }
 
   /**
@@ -961,14 +994,14 @@ export class TransactionController extends Controller<TransactionControllerState
     return prepareSolanaSwap(this.routeCtx(), input);
   }
 
-  async prepareSolanaCoreSend(
-    input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
+  async prepareSolanaNftSend(
+    input: Extract<ChainRequestInput, { method: "solana-nft-send" }>,
     _requestId: string,
   ): Promise<PreparedRequest> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    return prepareSolanaCoreSend(this.routeCtx(), input);
+    return prepareSolanaNftSend(this.routeCtx(), input);
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */
@@ -982,6 +1015,26 @@ export class TransactionController extends Controller<TransactionControllerState
       network,
       await accountAddressOf(ctx, account, "evm.bip44", network),
     );
+  }
+
+  /**
+   * The address `account` resolves to on `network` — HD through the chains proxy, imported from the
+   * vault's key list; the ref's family must match the network's.
+   */
+  async addressOf(account: AccountRef, network: string): Promise<string> {
+    const { family } = this.options.networks.info(network);
+    const template =
+      family === "evm"
+        ? ("evm.bip44" as const)
+        : family === "solana"
+          ? ("solana.bip44-change" as const)
+          : family === "tron"
+            ? ("tron.bip44" as const)
+            : undefined;
+    if (template === undefined) {
+      throw new Error(`no account template for the ${family} family`);
+    }
+    return accountAddressOf(this.routeCtx(), account, template, network);
   }
 
   private track(id: string, hash: string): void {
