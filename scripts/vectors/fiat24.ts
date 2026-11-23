@@ -366,9 +366,9 @@ const sendPrompt = (amt: string, sym: string, id: string, warn?: [string, string
     warn === undefined ? [] : [warn[1]],
   );
 const INTERNAL_EN = (id: string) =>
-  `Fiat24 account #${id} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`;
+  `Fiat24 account #${id} is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`;
 const INTERNAL_ZH = (id: string) =>
-  `Fiat24 账户 #${id} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`;
+  `Fiat24 账户 #${id} 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`;
 
 const UNLIM_EN = (role: string) =>
   `Danger: an unlimited allowance lets the Fiat24 ${role} contract take your entire balance of this token`;
@@ -427,12 +427,12 @@ const main = async () => {
     cases.push(c);
   };
 
-  /* transferByAccountId on all four cash tokens; the EUR24 case addresses an issuer-internal
-     account and carries the internal-account warning. */
+  /* transferByAccountId on all four cash tokens; the EUR24 and CNH24 cases address
+     issuer-internal accounts — every id whose first decimal digit is 9, at any width — and
+     carry the internal-account warning. */
   for (const [name, token, abi, sym, id, amount, pretty] of [
     ["transferByAccountId-usd24", USD24, USD24_ABI, "USD24", "10365", 20000n, "200"],
     ["transferByAccountId-chf24", CHF24, CHF24_ABI, "CHF24", "2050", 50050n, "500.5"],
-    ["transferByAccountId-cnh24", CNH24, CNH24_ABI, "CNH24", "999999", 88n, "0.88"],
   ] as const) {
     add({
       name,
@@ -467,6 +467,26 @@ const main = async () => {
       verifiability: "partial",
       warnings: ["fiat24-internal-account"],
       prompt: sendPrompt("1", "EUR24", "9102", [INTERNAL_EN("9102"), INTERNAL_ZH("9102")]),
+    },
+  });
+  add({
+    name: "transferByAccountId-cnh24-internal",
+    signer: SIGNER,
+    request: evmTx(
+      CNH24,
+      await call(CNH24_ABI, "transferByAccountId(uint256,uint256)", "transferByAccountId", [
+        999999n,
+        88n,
+      ]),
+    ),
+    expect: {
+      summary: "transfer",
+      verifiability: "partial",
+      warnings: ["fiat24-internal-account"],
+      prompt: sendPrompt("0.88", "CNH24", "999999", [
+        INTERNAL_EN("999999"),
+        INTERNAL_ZH("999999"),
+      ]),
     },
   });
 

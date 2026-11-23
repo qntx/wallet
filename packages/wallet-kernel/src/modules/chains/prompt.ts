@@ -388,7 +388,7 @@ const zh: Catalog = {
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
     "fiat24-internal-account": (message) =>
-      `Fiat24 账户 #${message} 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+      `Fiat24 账户 #${message} 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`,
     "fiat24-card-pull": () => "Fiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你",
     "fiat24-unlimited-approval": (role) =>
       `危险：无限额度授权允许 Fiat24 ${role === "card" ? "卡" : "充值与兑换"}合约转走你此代币的全部余额`,
@@ -702,7 +702,7 @@ const en: Catalog = {
     "token-2022-transfer-fee": (message) => message,
     "token-2022-extension": (message) => message,
     "fiat24-internal-account": (message) =>
-      `Fiat24 account #${message} is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+      `Fiat24 account #${message} is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`,
     "fiat24-card-pull": () =>
       "The Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
     "fiat24-unlimited-approval": (role) =>

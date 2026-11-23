@@ -113,12 +113,22 @@ describe("Fiat24 transferByAccountId", () => {
     expect(intent.warnings).toStrictEqual([]);
   });
 
+  /* The contract's own bound: Fiat24Account.sol:119 rejects
+     `_tokenId.hasFirstDigit(INTERNALDIGIT)` with INTERNALDIGIT = 9 — every account whose most
+     significant decimal digit is 9 is issuer-only, at any width. */
   it.each([
-    [9099n, []],
+    [9n, [{ kind: "fiat24-internal-account", message: "9" }]],
+    [95n, [{ kind: "fiat24-internal-account", message: "95" }]],
     [9100n, [{ kind: "fiat24-internal-account", message: "9100" }]],
     [9299n, [{ kind: "fiat24-internal-account", message: "9299" }]],
-    [9300n, []],
-  ] as const)("internal-account warning only inside 9100..9299: %s", (id, warnings) => {
+    [9300n, [{ kind: "fiat24-internal-account", message: "9300" }]],
+    [99999n, [{ kind: "fiat24-internal-account", message: "99999" }]],
+    [900001n, [{ kind: "fiat24-internal-account", message: "900001" }]],
+    [8n, []],
+    [19n, []],
+    [89n, []],
+    [1009n, []],
+  ] as const)("internal-account warning is every id starting with 9: %s", (id, warnings) => {
     const intent = decodeEvm(tx(EUR24, sendByAccount(id)), SIGNER);
     expect(intent.warnings).toStrictEqual(warnings);
   });

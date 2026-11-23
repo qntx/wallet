@@ -4016,10 +4016,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH\nFiat24 account #9102 is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person`,
+      `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH\nFiat24 账户 #9102 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款`,
+      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`,
     );
   });
 

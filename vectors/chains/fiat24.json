@@ -117,41 +117,6 @@
       }
     },
     {
-      "name": "transferByAccountId-cnh24",
-      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      "request": {
-        "kind": "evm.transaction",
-        "network": "eip155:42161",
-        "account": {
-          "kind": "hd",
-          "walletId": "w",
-          "groupIndex": 0,
-          "template": "evm.bip44"
-        },
-        "tx": {
-          "type": "eip1559",
-          "chainId": 42161,
-          "nonce": 0,
-          "gas": "0x30000",
-          "to": "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
-          "value": "0x0",
-          "data": "0xe89082b300000000000000000000000000000000000000000000000000000000000f423f0000000000000000000000000000000000000000000000000000000000000058",
-          "accessList": [],
-          "maxFeePerGas": "0x3b9aca00",
-          "maxPriorityFeePerGas": "0x1"
-        }
-      },
-      "expect": {
-        "summary": "transfer",
-        "verifiability": "partial",
-        "warnings": [],
-        "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
-        }
-      }
-    },
-    {
       "name": "transferByAccountId-eur24-internal",
       "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
       "request": {
@@ -183,8 +148,45 @@
           "fiat24-internal-account"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #9102 is one of the issuer's internal accounts (9100–9299), not a client — this is not a payment to a person",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #9102 是发行方的内部账户（9100–9299），不是客户账户——这不是向个人付款"
+          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
+          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
+        }
+      }
+    },
+    {
+      "name": "transferByAccountId-cnh24-internal",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
+          "value": "0x0",
+          "data": "0xe89082b300000000000000000000000000000000000000000000000000000000000f423f0000000000000000000000000000000000000000000000000000000000000058",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "transfer",
+        "verifiability": "partial",
+        "warnings": [
+          "fiat24-internal-account"
+        ],
+        "prompt": {
+          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #999999 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
+          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #999999 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
         }
       }
     },

@@ -78,10 +78,12 @@ export const FIAT24_TOKENS: Readonly<
   },
 };
 
-/* The issuer's internal accounts — the contract itself bounds the range
-   (Fiat24Account.sol:299,318): ids 9100–9299 are treasury/payout desks, not clients. */
-const INTERNAL_ACCOUNT_MIN = 9100n;
-const INTERNAL_ACCOUNT_MAX = 9299n;
+/* The issuer's internal accounts — the contract itself bounds them: Fiat24Account.sol:119
+   `require(!_tokenId.hasFirstDigit(INTERNALDIGIT))` with INTERNALDIGIT = 9 (line 34), and
+   DigitsOfUint.hasFirstDigit reads the most significant decimal digit
+   (libraries/DigitsOfUint.sol). Clients can never mint those, so paying one is never a payment
+   to a person. */
+const isInternalAccount = (account: bigint): boolean => account.toString(10).startsWith("9");
 
 const TRANSFER_BY_ACCOUNT_ID = AbiFunction.from(
   "function transferByAccountId(uint256 accountId, uint256 amount)",
@@ -479,10 +481,9 @@ const decodeFiat24Token = (
                 account: account.toString(10),
               }),
             ],
-            warnings:
-              account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX
-                ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
-                : [],
+            warnings: isInternalAccount(account)
+              ? [{ kind: "fiat24-internal-account", message: account.toString(10) }]
+              : [],
           };
         },
       },
