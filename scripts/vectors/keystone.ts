@@ -371,11 +371,13 @@ const SIGN_DATA = Buffer.from(
 const ORIGIN = "qntx";
 // A valid BIP-174 PSBT for the crypto-psbt case — `psbt` bytes out of the committed
 // chains signing-plan vectors, so this generator keeps importing no project code.
-const SIGN_PSBT = (
-  JSON.parse(readFileSync("vectors/chains/signing-plans.json", "utf8")) as {
-    cases: Array<{ name: string; request: { psbt?: string } }>;
-  }
-).cases.find((entry) => entry.name === "bitcoin-psbt-every-template")?.request.psbt;
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- vectors are trusted fixtures
+const SIGNING_PLANS = JSON.parse(readFileSync("vectors/chains/signing-plans.json", "utf8")) as {
+  cases: Array<{ name: string; request: { psbt?: string } }>;
+};
+const SIGN_PSBT: string | undefined = SIGNING_PLANS.cases.find(
+  (entry) => entry.name === "bitcoin-psbt-every-template",
+)?.request.psbt;
 if (SIGN_PSBT === undefined) {
   throw new Error("signing-plans vectors lost their bitcoin.psbt case");
 }
