@@ -65,6 +65,7 @@ import {
   assessSignIn,
   assessRecipients,
   assessIntentRecipients,
+  comparable,
   assessSimulation,
   impersonatesBuiltIn,
   impersonatesTronToken,
@@ -1025,13 +1026,13 @@ export class RequestController extends Controller<RequestControllerState> {
     return network;
   }
 
-  private sparkBuilt(account: SparkAccountRef, action: PreparedSparkAction): Built {
+  private sparkBuilt(account: SparkAccountRef, action: PreparedSparkAction, self?: string): Built {
     return {
       account,
       network: action.display.network,
       display: action.display,
       checks: collectChecks(action.checks),
-      risk: this.sparkRisk(action.display),
+      risk: this.sparkRisk(action.display, self),
       run: {
         factor: "required",
         staleReason: () => action.staleReason(this.options.now()),
@@ -1122,7 +1123,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...(input.speed === undefined ? {} : { speed: input.speed }),
         },
       );
-      return this.sparkBuilt(input.account, action);
+      return this.sparkBuilt(input.account, action, address);
     }
     if (input.method === "evm-sign") {
       if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
@@ -1946,12 +1947,16 @@ export class RequestController extends Controller<RequestControllerState> {
    * Sats/token transfers name a Spark receiver and exits a bitcoin one — both assessed. Lightning
    * names a payee public key, which no address book holds, so it is not assessed.
    */
-  private sparkRisk(display: SparkDisplay): ReadonlyArray<RiskFinding> {
+  private sparkRisk(display: SparkDisplay, self?: string): ReadonlyArray<RiskFinding> {
     if (display.kind === "lightning") {
       return [];
     }
     const family = display.kind === "exit" ? "bitcoin" : "spark";
     const receiver = normalizeAddress(family, display.receiver) ?? display.receiver;
+    // A spark-exit pays the wallet's own fresh receive address — self is never a recipient.
+    if (self !== undefined && comparable(family, receiver) === comparable(family, self)) {
+      return [];
+    }
     return assessRecipients(family, [receiver], this.knownAddresses(family));
   }
 }
