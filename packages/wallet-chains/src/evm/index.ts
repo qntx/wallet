@@ -46,6 +46,9 @@ export type {
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
 export { FIAT24_CHAIN, fiat24SessionMessage } from "./fiat24.ts";
 export type { EvmToken, EvmTokenTable } from "./tokens.ts";
+export { planEvm } from "./plan.ts";
+export { assembleEvm } from "./assemble.ts";
+export type { EvmSignPlan } from "./plan.ts";
 
 /**
  * Normalizes a SignRequest for the EVM family: exact key sets, chainId vs the CAIP-2 `network`,

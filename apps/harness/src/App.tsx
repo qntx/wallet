@@ -6,6 +6,7 @@ import type { HybridObject } from "react-native-nitro-modules";
 
 import { closeKernel, openKernel, report, runProbe, sendToKernel } from "@qntx/v1-probe";
 
+import { CardSurfacesPage } from "./card-surfaces.tsx";
 import { engineSmoke } from "./engine-smoke.ts";
 import { sessionSmoke, sessionSmokePhase } from "./session-smoke.ts";
 import { smokeCreate, smokePhase, smokeUnlock } from "./social-smoke.ts";
@@ -287,6 +288,11 @@ export const App = (): React.JSX.Element => {
         setDone(true);
         return;
       }
+      // EXPO_PUBLIC_CARD_SURFACES=1 renders its own page below; the probe
+      // suite must not run behind it.
+      if (process.env.EXPO_PUBLIC_CARD_SURFACES === "1") {
+        return;
+      }
       if (process.env.EXPO_PUBLIC_V1_PROBES !== "1") {
         try {
           const session = await sessionSmokePhase();
@@ -354,6 +360,10 @@ export const App = (): React.JSX.Element => {
       closeKernel();
     };
   }, []);
+
+  if (process.env.EXPO_PUBLIC_CARD_SURFACES === "1") {
+    return <CardSurfacesPage />;
+  }
 
   return (
     <SafeAreaView style={styles.root}>

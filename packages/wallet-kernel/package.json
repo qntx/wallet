@@ -18,6 +18,7 @@
   "scripts": {
     "test": "vp test",
     "test:coverage": "vp test --coverage",
+    "smoke:hermes": "bun scripts/hermes-smoke.ts",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json"
   },

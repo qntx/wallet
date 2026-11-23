@@ -104,7 +104,7 @@ const NO_RANDOM = (): Uint8Array => {
 };
 const NO_LOG = { warn: () => undefined };
 
-const provider = (network: "mainnet" | "testnet"): HyperliquidProvider =>
+const provider = (network: "mainnet" | "testnet"): Omit<HyperliquidProvider, "approveBuilder"> =>
   createHyperliquidProvider({
     network: HL_NETWORK[network],
     fetch: fixtureFetch(FIXTURES[network]),

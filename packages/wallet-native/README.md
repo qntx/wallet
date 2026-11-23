@@ -46,6 +46,33 @@ export default {
 - `android.minSdkVersion: 30` — required: per-use Keystore keys that accept a biometric _or_ the
   device credential need API 30 (`setUserAuthenticationParameters` semantics).
 
+## Card surfaces (NFC reader, secure input)
+
+To talk to a qntx card the host app needs, on iOS:
+
+- The entitlement `com.apple.developer.nfc.readersession.formats` = `["TAG"]`.
+- `ios.infoPlist.NFCReaderUsageDescription` — the purpose string shown under the NFC system
+  panel's prompt.
+- `ios.infoPlist["com.apple.developer.nfc.readersession.iso7816.select-identifiers"]` =
+  `["F0716E74780101", "D2760000850101"]` — every AID a `SELECT` may name must be declared or
+  CoreNFC rejects it (the wallet applet and its NDEF applet, protocol §2).
+
+For the secure-input field, render `SecureInput` from the `@qntx/wallet-native/secure-input`
+subpath wherever the wallet asks for the card's access code or short ID:
+
+```tsx
+import { callback } from "react-native-nitro-modules";
+
+import { SecureInput } from "@qntx/wallet-native/secure-input";
+
+<SecureInput onStateChange={callback((state) => setState(state))} />;
+```
+
+Its `onStateChange` callback (and every Nitro view callback) must be wrapped with
+`callback(...)`. The component takes no other props: the kernel decides the kind and the label;
+the main runtime only observes `idle | empty | filled | submitted`. The component lives on a
+subpath so importing the package root does not eagerly load the Nitro view machinery.
+
 ## Usage
 
 ```ts

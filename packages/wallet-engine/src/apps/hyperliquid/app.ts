@@ -7,11 +7,13 @@
  */
 import type { HyperliquidNetwork } from "@qntx/wallet/protocol";
 
-import type { AppContext, AppDefinition } from "../types.ts";
+import type { AppContext, AppDefinition } from "../spi.ts";
 import { createHyperliquidEnable } from "./enable.ts";
 import { createHyperliquidProvider } from "./provider.ts";
 import type { HyperliquidProvider } from "./provider.ts";
 import { createHyperliquidSocket } from "./socket.ts";
+import { createHyperliquidHints } from "./state.ts";
+import type { HyperliquidDetail } from "./state.ts";
 
 export type AppsBuilderConfig = {
   /** The builder address the trades attach once `maxBuilderFee` confirms `feeRateTenthsBps`. */
@@ -29,7 +31,7 @@ export type AppsHyperliquidConfig = {
 
 export function hyperliquid(
   config: AppsHyperliquidConfig,
-): AppDefinition<"hyperliquid", HyperliquidProvider> {
+): AppDefinition<"hyperliquid", HyperliquidProvider, HyperliquidDetail> {
   const { network, agentName, builder } = config;
   if (!/^[A-Za-z0-9._-]{1,16}$/.test(agentName)) {
     throw new Error("hyperliquid agentName must match ^[A-Za-z0-9._-]{1,16}$");
@@ -49,12 +51,17 @@ export function hyperliquid(
 
   return {
     id: "hyperliquid",
-    create: (context: AppContext) => {
+    enableWhen: ["available"],
+    create: (context: AppContext<HyperliquidDetail>) => {
       const socket = createHyperliquidSocket({
         network,
         socket: context.socket,
         setTimer: context.setTimer,
         random: context.random,
+      });
+      const hints = createHyperliquidHints({
+        storage: context.storage,
+        logger: context.logger,
       });
       const provider = createHyperliquidProvider({
         wallet: context.wallet,
@@ -68,32 +75,40 @@ export function hyperliquid(
         networks: context.networks,
         socket,
         builderFor: (group) => {
-          /* Trades carry the builder only while the controller confirmed the fee this session —
-             a lock or a stale approval makes it return undefined and the field is omitted. */
+          /* Trades carry the builder only while the group state confirms the fee — a lock or a
+             stale approval makes it return undefined and the field is omitted. */
           if (builder === undefined) {
             return undefined;
           }
-          const state =
-            context.state()?.groups[`${group.walletId}/${group.groupIndex}`]?.hyperliquid;
-          return state?.builder === "approved" ? builder : undefined;
+          return context.groupState(group)?.builder === "approved" ? builder : undefined;
         },
       });
+      const enable = createHyperliquidEnable({
+        wallet: context.wallet,
+        provider,
+        userSigned: provider.userSigned,
+        requests: context.requests,
+        network,
+        agentName,
+        ...(builder === undefined ? {} : { builder }),
+        now: context.now,
+        setTimer: context.setTimer,
+        logger: context.logger,
+        hints,
+      });
+      const api: HyperliquidProvider = {
+        ...provider,
+        approveBuilder: async (group) =>
+          context.flow(group, async (flow) => enable.approveBuilder(group, flow)),
+      };
       return {
-        api: provider,
-        provider: createHyperliquidEnable({
-          wallet: context.wallet,
-          provider,
-          userSigned: provider.userSigned,
-          requests: context.requests,
-          network,
-          agentName,
-          ...(builder === undefined ? {} : { builder }),
-          now: context.now,
-          setTimer: context.setTimer,
-          logger: context.logger,
-        }),
+        api,
+        provider: enable.provider,
         unlock: provider.agents.refresh,
-        lock: provider.agents.reset,
+        lock: () => {
+          provider.agents.reset();
+          hints.reset();
+        },
         close: () => socket.close(),
       };
     },

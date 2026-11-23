@@ -1,55 +1,28 @@
-/** TRON signing for `chain.sign` — derive, normalize, decode, then sign or return the intent. */
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { HDKey } from "@scure/bip32";
-
-import type { DisplayIntent } from "@qntx/wallet-chains";
-import { decodeTron, normalizeTron, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
+/** TRON request preparation for `chain.sign` — normalize, decode, and plan; never signs. */
+import type { DisplayIntent, KeyPath } from "@qntx/wallet-chains";
 import {
-  signTronMessage,
-  signTronTransaction,
-  signTronTypedData,
-} from "@qntx/wallet-chains/tron/sign";
+  decodeTron,
+  normalizeTron,
+  planTron,
+  tronAddressFromPublicKey,
+} from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../../errors.ts";
-import type { ExecuteResult, TronKeySource, TronRequest } from "./shared.ts";
+import type { PublicMaterial } from "./keys.ts";
+import type { Prepared, TronRequest } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 
-export const executeTron = (
+/**
+ * Validates and decodes the request and returns its signing plan. `path` is the account's BIP-32
+ * path (`[]` for an imported key); the public key comes only through `material`.
+ */
+export const prepareTron = async (
   request: TronRequest,
-  source: TronKeySource,
-  intentOnly: boolean,
-): ExecuteResult => {
-  if (source.kind === "imported") {
-    /* The record's plaintext is the private key; `chainSign` wipes the opened copy. */
-    const priv = source.secret;
-    const signer = tronAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
-    return tronBody(request, priv, signer, intentOnly);
-  }
-  const master = HDKey.fromMasterSeed(source.seed);
-  try {
-    const child = master.derive(`m/44'/195'/0'/0/${source.account.groupIndex}`);
-    try {
-      const priv = child.privateKey;
-      const pub = child.publicKey;
-      if (priv === null || pub === null) {
-        throw new KernelError("integrity", "no private key at account path");
-      }
-      const signer = tronAddressFromPublicKey(pub);
-      return tronBody(request, priv, signer, intentOnly);
-    } finally {
-      child.wipePrivateData();
-    }
-  } finally {
-    master.wipePrivateData();
-  }
-};
-
-const tronBody = (
-  request: TronRequest,
-  priv: Uint8Array,
-  signer: string,
-  intentOnly: boolean,
-): ExecuteResult => {
+  path: KeyPath,
+  material: PublicMaterial,
+): Promise<Prepared> => {
+  const pub = await material.secp256k1(path);
+  const signer = tronAddressFromPublicKey(pub);
   let normalized;
   try {
     normalized = normalizeTron(request);
@@ -65,23 +38,11 @@ const tronBody = (
   } catch (error) {
     mapChainError(error);
   }
-  if (intentOnly) {
-    return { prompt: intent };
+  let plan;
+  try {
+    plan = planTron(request, { path, publicKey: pub });
+  } catch (error) {
+    mapChainError(error);
   }
-  if (request.kind === "tron.transaction") {
-    return {
-      kind: "tron.transaction",
-      signature: signTronTransaction(request.rawData, priv),
-    };
-  }
-  if (request.kind === "tron.typed-data") {
-    return {
-      kind: "tron.typed-data",
-      signature: signTronTypedData(request.typedData, priv),
-    };
-  }
-  return {
-    kind: "tron.message",
-    signature: signTronMessage(request.message, priv),
-  };
+  return { prompt: intent, plan };
 };

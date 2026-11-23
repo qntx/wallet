@@ -1,5 +1,5 @@
-import { formatDecimal, parseDecimal } from "../../decimal.ts";
-import type { Decimal } from "../../decimal.ts";
+import { formatDecimal, parseDecimal } from "../spi.ts";
+import type { Decimal } from "../spi.ts";
 import { HyperliquidError } from "./errors.ts";
 
 /**

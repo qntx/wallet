@@ -210,7 +210,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
     await requests.init();
     const group = { walletId, groupIndex: 0 };
     const groupState = (): { status?: string; requestId?: string } | undefined =>
-      controller.getState().groups[`${walletId}/0`]?.hyperliquid;
+      controller.getState().groups[`${walletId}/0`]?.["hyperliquid"];
     const approve = async (id: string): Promise<void> => {
       try {
         await requests.approve(id, "evm-sign", { verify: VERIFY });
@@ -228,7 +228,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
     /* Auto-approve every request the flows publish — the password factor stands in for the
        approval UI. */
     const unsub = controller.store.subscribe((s) => {
-      const id = s.groups[`${walletId}/0`]?.hyperliquid?.requestId;
+      const id = s.groups[`${walletId}/0`]?.["hyperliquid"]?.requestId;
       // oxlint-disable-next-line vitest/no-conditional-in-test -- a reactive callback, not a branch.
       if (id !== undefined) {
         void approve(id).catch(() => undefined);

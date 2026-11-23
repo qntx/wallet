@@ -3,7 +3,7 @@ import type { UserConfig } from "vite-plus";
 
 const config: UserConfig = defineConfig({
   pack: {
-    entry: { index: "src/index.ts" },
+    entry: { index: "src/index.ts", "secure-input": "src/secure-input.ts" },
     tsconfig: "tsconfig.src.json",
     deps: {
       neverBundle: ["@qntx/wallet", "@qntx/wallet-kernel", "@qntx/nostr", "cborg"],

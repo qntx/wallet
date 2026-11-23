@@ -53,6 +53,21 @@
   `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a kernel
   session scheme; it never holds a private key.
 
+### Card wallet
+
+- APDUs do not pass through the main runtime. The kernel hands its APDUs (already record-layer
+  ciphertext) directly to the native card reader (`__qntx.cardReader`) and the responses come
+  straight back to the kernel; the main runtime can neither read nor reroute them and only drives
+  the tap cadence. The NFC session, its text and its end are opened, set and closed only by the
+  kernel.
+- The secure input view (`SecureInput`, `@qntx/wallet-native/secure-input`) may be a Nitro
+  HybridView because it exposes no content: the main runtime can mount and size it and receives
+  only `idle | empty | filled | submitted` — no characters, no length, no hash. Reading the code
+  stays a kernel-only host object (`__qntx.secureInput`), never registered with Nitro.
+- The access-code and short-ID fields are editable only while a kernel `secureInput.request` is
+  pending, and take focus and raise the keyboard on that request (the most recently mounted view
+  first).
+
 `design/` is local-only and never committed.
 
 ## Commands
@@ -74,8 +89,8 @@ change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, k
 dependencies) needs `bun run native:kernel` and the regenerated files in the same PR; CI's
 native-host-test fails on a stale bundle.
 
-`bun run smoke:hermes` runs the kernel and chains bundles in a bare Hermes CLI and needs `HERMES`
-pointing at that binary (it exits 1 without it). CI builds the CLI from the facebook/hermes
+`bun run smoke:hermes` runs the kernel, chains and card protocol bundles in a bare Hermes CLI and
+needs `HERMES` pointing at that binary (it exits 1 without it). CI builds the CLI from the facebook/hermes
 commit pinned as `hermes-commit` in `.github/workflows/hermes.yml`; build the same one locally
 (needs cmake, ninja and ICU):
 

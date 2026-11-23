@@ -551,6 +551,54 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - gateway: the JSON-RPC route honours `x-gateway-provider` like the TRON route. A pinned request is
   served, metered and budgeted by that provider alone; an unknown pin is a 400 before any upstream
   call.
+- `vectors/chains/signing-plans.json` (generator `packages/wallet-chains/scripts/signing-plans-vectors.ts`):
+  plans and artefacts for every family, digests from viem, tronweb, bitcoinjs-lib and @solana/kit.
+- **qntx card protocol client** (`packages/wallet-kernel/src/modules/card/protocol/`, private to
+  the kernel, not yet wired to any kernel command). A self-contained host implementation of the
+  qntx card protocol 1 (`qntx/wallet-applet` `spec/protocol.md`): card IDs and short IDs,
+  certificate verification against batch anchors (`PRODUCTION_ANCHORS` is empty until the first
+  production batch; a card that chains to no anchor is `card-not-genuine`), `accessHash` through
+  the injected Argon2id (6–64 printable ASCII characters, `m = 64 MiB, t = 3, p = 4`), OPEN with
+  the signed ephemeral ECDH and SP 800-56C key schedule, the AES-CBC/CMAC record layer with
+  counters, pre-wrapped records and teardown on any failure (`session-broken`, keys wiped), encoders
+  for every inner command, the per-command status-word mapping to a typed `CardError` union, and
+  decoders that verify every card output: WalletInfo membership and CREATE echoes, public keys,
+  Wei25519 points mapped to RFC 8032 encodings with subgroup checks, ECDSA (low-s normalisation,
+  recovery bit, repeated `r`), BIP-340 under the taproot-tweaked key, Ed25519 streaming and
+  assembly under strict RFC 8032 verification, OFFER and EXPORT signatures for multi-card transfer
+  and re-seal. Pure and synchronous except `accessHash`; runs in bare Hermes with no globals. It
+  already follows the two protocol amendments the owner approved (spec proposals B1 and B2, being
+  applied in the applet repository): `VERIFY`'s wait gate answers `6986` (`wait-required`) and
+  `6985` is a wrong card state for every command; `finish` carries 1–236 bytes and the client never
+  sends an empty one. Their spec vectors arrive with the applet's next vector drop.
+- `vectors/card/`: the applet's published vector files pinned by commit and SHA-256
+  (`vectors/card/SOURCE`, `scripts/check-card-vectors.ts <applet checkout>` fails on drift), and
+  `oracle.json`, independent host-side vectors from `scripts/vectors/card-oracle.py`
+  (libsecp256k1, the Argon2 reference implementation, pyca/cryptography).
+- `bun run smoke:hermes` also runs the card protocol client under bare Hermes
+  (`packages/wallet-kernel` `smoke:hermes`).
+- `scripts/check-kernel-budget.ts` reports the card protocol client on its own line with a
+  measured budget; `scripts/check-boundaries.ts` keeps `modules/card/protocol/` self-contained.
+- `@qntx/wallet-native`: two kernel-only native capabilities for the qntx card wallet (OD-5).
+  `__qntx.cardReader` opens an NFC reader session whose visible text only the kernel sets (iOS:
+  `NFCTagReaderSession.alertMessage`, set once before `begin`; Android: reader mode behind the
+  module's own dialog, polling only while that dialog holds window focus) and exchanges APDUs
+  directly between the kernel runtime and native code: the main runtime never relays them and only
+  drives the tap cadence (the card-wallet transport architecture, AGENTS.md). `__qntx.secureInput`
+  collects a card access code or printed short ID from a native field and hands the bytes to the
+  kernel runtime only. Neither is registered with Nitro or reachable from the main runtime.
+  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`);
+  platform types `CardReader`, `SecureInput` in the kernel's `platform.ts` (not yet wired into
+  `KernelPlatform`).
+- `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
+  mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
+  whether it collects an access code (masked, printable ASCII, ≤ 64) or a short ID (8 hex digits)
+  and which label it shows. The field is editable only while a kernel request is pending, takes
+  focus and raises the keyboard on that request, has no edit menu (no paste, copy or cut), is
+  excluded from autofill, and on Android sets `FLAG_SECURE` while an access code is being typed.
+- `apps/harness`: a card-surfaces page (`EXPO_PUBLIC_CARD_SURFACES=1`) that drives both surfaces
+  through a real kernel runtime with a fake card reader, and a leak check proving the typed code
+  never appears in any main-runtime message, log, event payload or React state.
 
 ### Changed
 
@@ -970,6 +1018,60 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - `@qntx/wallet-chains/evm`: a typed-data `bytes` value must be even-length hex; no decoder accepts
   an odd-length one (ox left-pads it when hashing, so the display would not match the signed
   bytes).
+- **@qntx/wallet-chains** — signing is split into `plan → backend → assemble`. Each family entry
+  exports a pure planner and assembler: `planEvm`/`assembleEvm` (`/evm`), `planTron`/`assembleTron`
+  (`/tron`), `planSolana`/`assembleSolana` (`/solana`), `planBitcoinPsbt`, `planBitcoinMessage`,
+  `assembleBitcoinPsbt`, `assembleBitcoinMessage` (`/bitcoin`). A plan is plain, serialisable data
+  (`SignTask[]`: scheme `ecdsa-secp256k1` | `bip340` | `ed25519`, path, public key, digest or
+  message, BIP-86 tweak) and carries no key material; EIP-7702 is a two-stage plan
+  (`Assembled.kind === "next"`). Assemble verifies every 64-byte signature against the task key
+  (ECDSA by key recovery; BIP-340 under the tweaked output key; Ed25519 under strict RFC 8032) and
+  refuses anything else with the new `ChainErrorCode` `invalid-signature`. A high `s` is
+  normalised to low `s` rather than refused, since the qntx card returns `s` unnormalised
+  (protocol §12.1); both are owner decisions.
+- **@qntx/wallet-chains** — the `*/sign` entries add one local task signer per family
+  (`signEvmTask`, `signTronTask`, `signSolanaTask`, `signBitcoinTask`); the raw-key functions
+  (`signEvmTransaction`, `signBitcoinPsbt`, …) keep their signatures and outputs and now run
+  plan → task signer → assemble. Legacy P2PKH sighashes still come from `@scure/btc-signer`. The
+  `bitcoin` family size budget is 64 KiB gzip (measured 62 152 B; raised once by owner decision).
+- **Kernel** — `chain.sign` prepares with public keys only (`PublicMaterial`), keeps the plan
+  across the verification prompt, and signs it through a `SigningBackend` (today the vault seed /
+  imported key). `wallet.accounts` derives addresses and xpubs through the same `PublicMaterial`.
+  Software-wallet signatures are byte-identical (every existing vector unchanged).
+- **Kernel** — PSBT inputs and other requests that today failed only after approval (taproot
+  input without its internal key or with a non-default sighash, a sighash outside the allow-list,
+  undecodable typed data) are refused before the prompt with `invalid-input`. A taproot input
+  carrying `tapLeafScript` or `tapMerkleRoot` is refused instead of also receiving a script-path
+  signature.
+- **wallet-engine (apps):** each `AppDefinition` declares `enableWhen`, the eligibility answers under
+  which `enable`/`renew` may start (Hyperliquid `["available"]`, Polymarket
+  `["available", "close-only"]`). The controller no longer special-cases any app. `createApps`
+  rejects ids outside `^[a-z][a-z0-9-]{1,31}$`, duplicate ids and empty or out-of-range `enableWhen`.
+- **wallet-engine (apps):** the controller owns only `status`, `termsAcknowledged`, `requestId` and
+  `error`. App-specific fields are the provider's detail type, merged flat:
+  `AppGroupState<D> = AppGroupBase & Partial<D>` (`HyperliquidGroupState`, `PolymarketGroupState`).
+  `createApps` types `controller` by the listed definitions. `needs-migration` stays a generic
+  status (owner decision).
+- **wallet-engine (apps):** `controller.approveBuilder(group, "hyperliquid")` is now
+  `apps.hyperliquid.approveBuilder(group)`.
+- **wallet-engine (apps):** `AppContext.state()` gives way to `availability()`, `groupState(group)` and
+  `flow(group, run)`, which expose only the app's own view.
+- **wallet-engine (apps):** the controller's `apps` record is exactly `{ termsAcknowledged: true }`,
+  written by `acknowledgeTerms` only. Hyperliquid keeps its enabled-agent and declined-builder hints
+  in its own `apps.hyperliquid` records, which the wallet-deletion prune now covers.
+- **wallet-engine:** the main entry exports `parseDecimal`, `formatDecimal`, `Decimal`, `SetTimer`,
+  `timeoutSignal` and `readJson`. `@qntx/wallet-engine/gateway/contract` exports `APP_ID`.
+- **wallet-engine (apps, internal):** providers under `packages/wallet-engine/src/apps/<app>/`
+  import only `src/apps/spi.ts`. The new check-boundaries rule `app-provider-spi` enforces this,
+  with probes and `tests/apps-spi.test.ts`. size-check bans every provider directory name from the
+  `/apps` core bundle. `createAppSocketCore` stays repository-internal (owner decision): it is the
+  SPI's one runtime piece outside the public entries. The engine README gains "Writing an app
+  provider", with a compiled example at `tests/migration/app-provider.ts`.
+- `@qntx/wallet-native` Android manifest now declares `android.permission.NFC`,
+  `android.permission.HIDE_OVERLAY_WINDOWS` and an optional `android.hardware.nfc` feature; the iOS
+  pod weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
+  entitlement, `NFCReaderUsageDescription` and the ISO 7816 select identifiers
+  `F0716E74780101`, `D2760000850101` (see the package README).
 
 ### Removed
 
@@ -993,6 +1095,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - **BREAKING:** `@qntx/wallet-engine/apps/polymarket`: the `not-found` order outcome. An order no
   reconcile read saw is `unknown`, carries the result of a defensive `DELETE /order` by id in
   `cancel`, and must not be placed again blindly.
+- **BREAKING:** `@qntx/wallet-engine/apps`: `AppsController.approveBuilder`, `AppContext.state`,
+  `AppProvider.id`, `AppProvider.approveBuilder`, `isAppId`, `AppStep`, `AppAgent`, and the app
+  fields of the generic `AppGroupState`. `AppId` is now `string`.
 
 ### Fixed
 
@@ -1242,6 +1347,12 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   cross-checked with the host endpoint when one is configured. A deployed deposit wallet must carry
   the template's exact runtime, the relayer's `/deployed` answers are only hints, and any
   disagreement fails with the new `PolymarketErrorCategory` `deployment-mismatch`.
+- **wallet-engine (apps):** flows are guarded per group and app. Before, a flow of one app made
+  another app's `enable` on the same group throw `busy`, and its `cancel` dropped the other app's
+  in-flight writes.
+- `@qntx/wallet-native`: `HybridKernelHost` failed to compile on iOS (`reset()` on a const
+  captured `shared_ptr`).
+- `apps/harness`: the V1 probe module followed the `SecretBytes` kernel-runtime hooks again.
 
 ### Security
 

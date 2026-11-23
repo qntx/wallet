@@ -2,6 +2,7 @@
 
 #include <NitroModules/InstallNitro.hpp>
 
+#include "FakeCardReader.hpp"
 #include "runtime/KernelRuntime.hpp"
 
 #if __has_include("generated/probes.hpp")
@@ -157,7 +158,9 @@ std::shared_ptr<qntx::KernelRuntime> startKernel(
       margelo::nitro::install(runtime);
     };
   }
-  hooks.onPost = [channel](std::vector<uint8_t> bytes) { channel->push(std::move(bytes)); };
+  hooks.onPost = [channel](qntx::SecretBytes bytes) {
+    channel->push(std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size()));
+  };
   hooks.onError = [channel](std::string message) { channel->fail(std::move(message)); };
   return qntx::KernelRuntime::start(std::move(script), std::move(hooks), "", profile);
 }
@@ -359,6 +362,10 @@ qntx::harness::probes::Script scriptFor(const std::string& name) {
   if (name == "chains") {
     return kChains;
   }
+  // The "-device" suffix runs the same script against the platform reader.
+  if (name == "card-surfaces" || name == "card-surfaces-device") {
+    return kCardSurfaces;
+  }
   throw std::invalid_argument("unknown probe script: " + name);
 }
 
@@ -469,7 +476,7 @@ std::string runRoundtrip(bool bytecode) {
       }
       for (int i = 0; i < count; i++) {
         const auto t0 = Clock::now();
-        rt->post(std::vector<uint8_t>(message));
+        rt->post(qntx::SecretBytes(message.data(), message.size()));
         auto echoed = channel->take(deadlineAfter(std::chrono::seconds(30)));
         const auto t1 = Clock::now();
         if (echoed.size() != size) {
@@ -675,7 +682,7 @@ std::string runEchoCheck(bool bytecode) {
       channel);
   try {
     channel->take(deadlineAfter(std::chrono::seconds(30)));
-    rt->post(std::vector<uint8_t>{'p', 'i', 'n', 'g'});
+    rt->post(qntx::SecretBytes(std::vector<uint8_t>{'p', 'i', 'n', 'g'}));
     auto echoed = channel->take(deadlineAfter(std::chrono::seconds(30)));
     rt->destroy();
     return std::string("{\"echoed\":") +
@@ -816,8 +823,12 @@ std::shared_ptr<Promise<void>> HybridV1Probe::openKernel(
             : std::make_shared<const std::vector<uint8_t>>(
                   script.source, script.source + script.sourceSize)};
     qntx::KernelRuntime::Hooks hooks;
-    hooks.onPost = [session](std::vector<uint8_t> bytes) {
-      session->onPost(std::move(bytes));
+    if (probe == "card-surfaces") {
+      // Scripted card behind the leak check; "-device" keeps the platform one.
+      hooks.cardReader = qntx::harness::fakeCardReader();
+    }
+    hooks.onPost = [session](qntx::SecretBytes bytes) {
+      session->onPost(std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size()));
     };
     hooks.onError = [session](std::string message) {
       session->onError(std::move(message));
@@ -890,7 +901,7 @@ std::shared_ptr<Promise<std::shared_ptr<ArrayBuffer>>> HybridV1Probe::send(
       session->pending.push_back(promise);
     }
   }
-  session->rt->post(std::move(bytes));
+  session->rt->post(qntx::SecretBytes(std::move(bytes)));
   if (buffered) {
     promise->resolve(std::move(buffered));
   }

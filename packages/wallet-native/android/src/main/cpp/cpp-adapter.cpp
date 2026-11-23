@@ -9,6 +9,8 @@ void kernelVaultDirectoryInit(facebook::jni::alias_ref<jclass> clazz);
 void kernelLifecycleInit(facebook::jni::alias_ref<jclass> clazz);
 void kernelKeystoreInit(facebook::jni::alias_ref<jclass> clazz);
 void kernelPasskeyInit(facebook::jni::alias_ref<jclass> clazz);
+void kernelCardReaderInit(facebook::jni::alias_ref<jclass> clazz);
+void kernelSecureInputInit(facebook::jni::alias_ref<jclass> clazz);
 }
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -21,6 +23,10 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
         facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/Keystore"));
     qntx::kernelPasskeyInit(
         facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/Passkey"));
+    qntx::kernelCardReaderInit(
+        facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/CardReader"));
+    qntx::kernelSecureInputInit(
+        facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/SecureInputField"));
     margelo::nitro::qntxwallet::registerAllNatives();
     qntx::kernelPbkdf2OnLoad(
         facebook::jni::Environment::current(),

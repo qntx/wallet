@@ -158,6 +158,7 @@ std::shared_ptr<KernelRuntime> KernelRuntime::start(
   impl.hooks = std::move(hooks);
   impl.globals = std::make_shared<KernelGlobalsState>();
   impl.globals->vaultDirectory = std::move(vaultDirectory);
+  impl.globals->cardReader = impl.hooks.cardReader;
   impl.globals->active = std::make_shared<std::atomic_bool>(true);
   impl.globals->postToHost = impl.hooks.onPost;
   impl.globals->reportFatal = [&impl](std::string message) {

@@ -141,7 +141,14 @@ const stepUntil = async (timers: Timers, reached: () => boolean): Promise<void> 
     await new Promise((resolve) => {
       setImmediate(resolve);
     });
-    timers.step();
+    if (!timers.step()) {
+      /* As in `drive`: nothing is due on the manual clock, so the call waits on the kernel signing
+         in its worker — give it real time instead of spinning through the iteration budget. */
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the pump must tick between steps.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1);
+      });
+    }
   }
   throw new Error("the awaited point was never reached");
 };
@@ -276,7 +283,7 @@ const rig = async (
     readonly sockets?: FakeSocket[];
   } = {},
 ): Promise<{
-  provider: HyperliquidProvider & HyperliquidProviderInternals;
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals;
   wallet: Wallet;
   walletId: string;
 }> => {
@@ -327,7 +334,7 @@ const pump = async (timers: Timers, steps = 1): Promise<void> => {
 let agentAddress: string | undefined;
 
 const enable = async (
-  provider: HyperliquidProvider & HyperliquidProviderInternals,
+  provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals,
   wallet: Wallet,
   walletId: string,
 ): Promise<{ address: string; group: { walletId: string; groupIndex: number } }> => {
@@ -1192,7 +1199,7 @@ describe("hyperliquid trade — wire actions", () => {
 
   const wire = async (
     run: (
-      provider: HyperliquidProvider & HyperliquidProviderInternals,
+      provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals,
       group: { walletId: string; groupIndex: number },
     ) => Promise<unknown>,
     answers: Parameters<typeof serve>[2] = {},

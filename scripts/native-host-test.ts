@@ -101,6 +101,9 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelBackends.cpp"),
   resolve(cppDir, "runtime/KernelKeystore.cpp"),
   resolve(cppDir, "runtime/KernelPasskey.cpp"),
+  resolve(cppDir, "runtime/KernelCardReader.cpp"),
+  resolve(cppDir, "runtime/KernelSecureInput.cpp"),
+  resolve(cppDir, "host/SecureInput.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "runtime/platform/KernelArgon2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
@@ -108,6 +111,7 @@ const runtimeSources = [
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostKeystore.cpp"),
   resolve(moduleDir, "tests/host/HostPasskey.cpp"),
+  resolve(moduleDir, "tests/host/HostCardReader.cpp"),
   resolve(moduleDir, "tests/host/HostNostrNative.cpp"),
   resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
 ];

@@ -8,10 +8,34 @@
 #include "WalletNative-Swift-Cxx-Bridge.hpp"
 
 // Include C++ implementation defined types
-
+#include "HybridSecureInputViewSpecSwift.hpp"
+#include "WalletNative-Swift-Cxx-Umbrella.hpp"
+#include <NitroModules/NitroDefines.hpp>
 
 namespace margelo::nitro::qntxwallet::bridge::swift {
 
+  // pragma MARK: std::function<void(SecureInputState /* state */)>
+  Func_void_SecureInputState create_Func_void_SecureInputState(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = WalletNative::Func_void_SecureInputState::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](SecureInputState state) mutable -> void {
+      swiftClosure.call(static_cast<int>(state));
+    };
+  }
   
+  // pragma MARK: std::shared_ptr<HybridSecureInputViewSpec>
+  std::shared_ptr<HybridSecureInputViewSpec> create_std__shared_ptr_HybridSecureInputViewSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
+    WalletNative::HybridSecureInputViewSpec_cxx swiftPart = WalletNative::HybridSecureInputViewSpec_cxx::fromUnsafe(swiftUnsafePointer);
+    return std::make_shared<margelo::nitro::qntxwallet::HybridSecureInputViewSpecSwift>(swiftPart);
+  }
+  void* NON_NULL get_std__shared_ptr_HybridSecureInputViewSpec_(std__shared_ptr_HybridSecureInputViewSpec_ cppType) {
+    std::shared_ptr<margelo::nitro::qntxwallet::HybridSecureInputViewSpecSwift> swiftWrapper = std::dynamic_pointer_cast<margelo::nitro::qntxwallet::HybridSecureInputViewSpecSwift>(cppType);
+    #ifdef NITRO_DEBUG
+    if (swiftWrapper == nullptr) [[unlikely]] {
+      throw std::runtime_error("Class \"HybridSecureInputViewSpec\" is not implemented in Swift!");
+    }
+    #endif
+    WalletNative::HybridSecureInputViewSpec_cxx& swiftPart = swiftWrapper->getSwiftPart();
+    return swiftPart.toUnsafe();
+  }
 
 } // namespace margelo::nitro::qntxwallet::bridge::swift

@@ -1,0 +1,10 @@
+{
+  "uiViewClassName": "SecureInputView",
+  "supportsRawText": false,
+  "bubblingEventTypes": {},
+  "directEventTypes": {},
+  "validAttributes": {
+    "onStateChange": true,
+    "hybridRef": true
+  }
+}

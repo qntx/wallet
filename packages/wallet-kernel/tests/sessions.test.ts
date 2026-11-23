@@ -7,16 +7,24 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  assembleEvm,
   evmAddressFromPublicKey,
   hyperliquidL1Document,
   normalizeEvm,
+  planEvm,
 } from "@qntx/wallet-chains/evm";
-import { signEvmTypedData } from "@qntx/wallet-chains/evm/sign";
+import { signEvmTask, signEvmTypedData } from "@qntx/wallet-chains/evm/sign";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { createSessionsModule } from "../src/modules/sessions/index.ts";
-import { encodeSessionHeader, findSession, SESSION_KIND } from "../src/modules/sessions/record.ts";
+import {
+  encodeSessionHeader,
+  findSession,
+  parseSessionHeader,
+  SESSION_KIND,
+} from "../src/modules/sessions/record.ts";
 import type { SessionHeader } from "../src/modules/sessions/record.ts";
+import { hyperliquidL1Agent } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/index.ts";
 import { signSession } from "../src/modules/sessions/sessions.ts";
 import { Secret, wipe } from "../src/secret/secret.ts";
 import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
@@ -272,7 +280,12 @@ describe("sessions.sign against the oracle vectors", () => {
   const signEndToEnd = async (
     vector: L1Case,
     start: number,
-  ): Promise<{ signed: ProtocolValue; keyBytes: Uint8Array }> => {
+  ): Promise<{
+    signed: ProtocolValue;
+    keyBytes: Uint8Array;
+    header: SessionHeader;
+    now: number;
+  }> => {
     const keyBytes = hexToBytes(vector.privateKey.slice(2));
     const expectedAddress = evmAddressFromPublicKey(
       secp256k1.getPublicKey(keyBytes, true),
@@ -308,7 +321,11 @@ describe("sessions.sign against the oracle vectors", () => {
     const signed = ok(
       await h.call("sessions.sign", { scheme: SCHEME, address, params: signArgs(vector) }, session),
     );
-    return { signed, keyBytes };
+    const record = sessionRecord(await h.store.load(), address);
+    if (record === undefined) {
+      throw new Error("missing session record");
+    }
+    return { signed, keyBytes, header: parseSessionHeader(record.header), now: h.wallNow() };
   };
 
   /* Vectors carrying expiresAfter byte-compare end to end: the clock starts at nonce−1 so the
@@ -331,6 +348,30 @@ describe("sessions.sign against the oracle vectors", () => {
       signEvmTypedData(hyperliquidL1Document(signArgs(vector), vector.network), keyBytes),
     );
     expect(bytesToHex(bytesField(signed, "signature"))).toBe(expected);
+  });
+
+  /* The seam: sessions.sign's output is the plan → task signer → assemble artefact of the
+     scheme's document, not a bespoke signature. */
+  const startFor = (vector: L1Case): number =>
+    vector.expiresAfter === undefined ? vector.nonce : vector.nonce - 1;
+
+  const signedArtefact = (assembled: { kind: string; artefact?: Uint8Array }): Uint8Array => {
+    if (assembled.kind !== "signed" || assembled.artefact === undefined) {
+      throw new Error("expected a signed artefact");
+    }
+    return assembled.artefact;
+  };
+
+  it.each(allowListed)("$name is the plan → task signer → assemble artefact", async (vector) => {
+    const { signed, keyBytes, header, now } = await signEndToEnd(vector, startFor(vector));
+    const document = hyperliquidL1Agent.document(signArgs(vector), header, now);
+    const plan = planEvm({ kind: "evm.typed-data", typedData: document } as never, {
+      path: [],
+      publicKey: secp256k1.getPublicKey(keyBytes, true),
+    });
+    const [task] = plan.tasks;
+    const artefact = signedArtefact(assembleEvm(plan, [signEvmTask(task, keyBytes)]));
+    expect(bytesToHex(bytesField(signed, "signature"))).toBe(bytesToHex(artefact));
   });
 
   it.each(dummies)("$name is rejected as invalid-input", async (vector) => {

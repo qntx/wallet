@@ -10,8 +10,8 @@
  */
 import * as z from "zod/mini";
 
-import { timeoutSignal } from "../../timer.ts";
-import type { SetTimer } from "../../timer.ts";
+import { timeoutSignal } from "../spi.ts";
+import type { SetTimer } from "../spi.ts";
 import { CLOB_HOST } from "./constants.ts";
 import { PolymarketError } from "./errors.ts";
 

@@ -8,10 +8,16 @@
 #pragma once
 
 // Forward declarations of C++ defined types
-
+// Forward declaration of `HybridSecureInputViewSpec` to properly resolve imports.
+namespace margelo::nitro::qntxwallet { class HybridSecureInputViewSpec; }
+// Forward declaration of `SecureInputState` to properly resolve imports.
+namespace margelo::nitro::qntxwallet { enum class SecureInputState; }
 
 // Include C++ defined types
-
+#include "HybridSecureInputViewSpec.hpp"
+#include "SecureInputState.hpp"
+#include <functional>
+#include <memory>
 
 // C++ helpers for Swift
 #include "WalletNative-Swift-Cxx-Bridge.hpp"
@@ -23,7 +29,8 @@
 #include <NitroModules/DateToChronoDate.hpp>
 
 // Forward declarations of Swift defined types
-
+// Forward declaration of `HybridSecureInputViewSpec_cxx` to properly resolve imports.
+namespace WalletNative { class HybridSecureInputViewSpec_cxx; }
 
 // Include Swift defined types
 #if __has_include("WalletNative-Swift.h")

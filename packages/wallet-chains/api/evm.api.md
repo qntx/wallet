@@ -93,6 +93,18 @@ type ApprovalChange = {
 };
 
 // @public
+type Assembled<A, P> = {
+    readonly kind: "signed";
+    readonly artefact: A;
+} | {
+    readonly kind: "next";
+    readonly plan: P;
+};
+
+// @public (undocumented)
+export const assembleEvm: (plan: EvmSignPlan, signatures: ReadonlyArray<Uint8Array>) => Assembled<Uint8Array, EvmSignPlan>;
+
+// @public
 export const assertNoExecutionGrant: (domain: Record<string, unknown>, signer: string) => void;
 
 // @public (undocumented)
@@ -236,6 +248,14 @@ type DisplayIntent = {
     readonly blind?: BlindReason;
 };
 
+// @public (undocumented)
+type EcdsaTask = {
+    readonly scheme: "ecdsa-secp256k1";
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
+    readonly digest: Uint8Array;
+};
+
 // @public
 export const encodeBatchExecute: (calls: ReadonlyArray<{
     readonly to: string;
@@ -267,6 +287,17 @@ type EvmAccessListEntry = {
 
 // @public
 export function evmAddressFromPublicKey(pubkey: Uint8Array): string;
+
+// @public
+export type EvmSignPlan = {
+    readonly kind: "evm.transaction";
+    readonly tx: EvmTransaction;
+    readonly authorization?: Uint8Array;
+    readonly tasks: readonly [EcdsaTask];
+} | {
+    readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data";
+    readonly tasks: readonly [EcdsaTask];
+};
 
 // @public
 export type EvmToken = {
@@ -548,6 +579,9 @@ export const isEvmAddress: (value: string) => boolean;
 export const isZeroExSettler: (chainId: number, address: string, feature?: bigint) => boolean;
 
 // @public
+type KeyPath = ReadonlyArray<number>;
+
+// @public
 export const LIDO_CHAIN = 1;
 
 // @public (undocumented)
@@ -626,6 +660,11 @@ export const parseTypedData: (typedData: string) => ParsedTypedData;
 
 // @public
 export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+
+// @public
+export const planEvm: (request: Extract<SignRequest, {
+    kind: "evm.transaction" | "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data";
+}>, key: TaskKey) => EvmSignPlan;
 
 // @public
 type PolymarketContent = {
@@ -899,6 +938,12 @@ type StakeAction = {
         readonly witness: string;
         readonly count: string;
     }>;
+};
+
+// @public (undocumented)
+type TaskKey = {
+    readonly path: KeyPath;
+    readonly publicKey: Uint8Array;
 };
 
 // @public

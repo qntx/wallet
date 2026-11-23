@@ -18,6 +18,7 @@ import {
   swallow,
   tick,
   until,
+  untilPresent,
   VERIFY,
   world,
 } from "./apps-helpers.ts";
@@ -207,7 +208,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     await w.destroy();
   });
 
-  it("persisted record keeps only termsAcknowledged and the last enabled agent", async () => {
+  it("persisted record keeps only termsAcknowledged; the app record keeps the last enabled agent", async () => {
     const w = await world(20);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
@@ -217,9 +218,17 @@ describe("apps hyperliquid enablement on the node host", () => {
     const raw = await w.store.collection("apps").get(key);
     expect(raw).toBeDefined();
     const record = JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>;
-    expect(Object.keys(record).toSorted()).toStrictEqual(["enabledAgent", "termsAcknowledged"]);
+    expect(Object.keys(record)).toStrictEqual(["termsAcknowledged"]);
     expect(record["termsAcknowledged"]).toBe(true);
-    expect(record["enabledAgent"]).toBe(enabled);
+    /* The enablement record is the provider's own and written fire-and-forget — poll until the
+       persist lands. */
+    const hintsKey = `${w.walletId}/20/enablement`;
+    const hintsRaw = await untilPresent(async () =>
+      w.store.collection("apps.hyperliquid").get(hintsKey),
+    );
+    const hints = JSON.parse(new TextDecoder().decode(hintsRaw)) as Record<string, unknown>;
+    expect(Object.keys(hints)).toStrictEqual(["enabledAgent"]);
+    expect(hints["enabledAgent"]).toBe(enabled);
     await w.destroy();
   });
 

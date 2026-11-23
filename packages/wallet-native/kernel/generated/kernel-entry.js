@@ -293,7 +293,7 @@
 	* equalBytes(new Uint8Array([1]), new Uint8Array([1]));
 	* ```
 	*/
-	function equalBytes$5(a, b) {
+	function equalBytes$6(a, b) {
 		a = abytes$3(a);
 		b = abytes$3(b);
 		if (a.length !== b.length) return false;
@@ -4913,7 +4913,7 @@
 				const data = ciphertext.subarray(0, -16);
 				const passedTag = ciphertext.subarray(-16);
 				const tag = computeTag(xorStream, key, nonce, data, AAD);
-				if (!equalBytes$5(passedTag, tag)) {
+				if (!equalBytes$6(passedTag, tag)) {
 					clean$1(tag);
 					throw new Error("invalid tag");
 				}
@@ -5247,7 +5247,7 @@
 	* equalBytes(Uint8Array.of(1), Uint8Array.of(1));
 	* ```
 	*/
-	function equalBytes$4(a, b) {
+	function equalBytes$5(a, b) {
 		a = abytes(a);
 		b = abytes(b);
 		if (a.length !== b.length) return false;
@@ -7534,7 +7534,7 @@
 		abytes$2(secretKey, size);
 		return adjustScalarBytes(sha512(secretKey.subarray(0, size))).subarray(0, size);
 	}
-	var Fn$2 = /* @__PURE__ */ (() => ed25519_Point.Fn)();
+	var Fn$3 = /* @__PURE__ */ (() => ed25519_Point.Fn)();
 	function ed(opts) {
 		return eddsa(ed25519_Point, sha512, Object.assign({
 			adjustScalarBytes,
@@ -7633,7 +7633,7 @@
 			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes$4(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
+			if (!equalBytes$5(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
 			const s2 = Fp.sqr(s);
 			const u1 = Fp.add(_1n$6, Fp.mulN(a, s2));
 			const u2 = Fp.sub(_1n$6, Fp.mulN(a, s2));
@@ -7711,7 +7711,7 @@
 		return Fp;
 	})());
 	_defineProperty(_RistrettoPoint, "Fn", /* @__PURE__ */ (() => {
-		return Fn$2;
+		return Fn$3;
 	})());
 	// packages/wallet-kernel/src/vault/header-codec.ts
 	/**
@@ -8081,7 +8081,7 @@
 		if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) return false;
 		const expected = dek.use((bytes) => factorBinding(bytes, factorContext(stored.kind, stored.id), stored.header));
 		try {
-			return equalBytes$5(expected, sealed.subarray(33, 65));
+			return equalBytes$6(expected, sealed.subarray(33, 65));
 		} finally {
 			wipe(expected);
 		}
@@ -8096,7 +8096,7 @@
 			const ephPk = x25519.getPublicKey(eph);
 			const shared = x25519.getSharedSecret(eph, factorPk);
 			try {
-				if (equalBytes$5(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
+				if (equalBytes$6(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					const envelope = dek.use((bytes) => seal(wrapKey, bytes, factorContext(factor.kind, factor.id), factor.header, random));
@@ -8127,7 +8127,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$5(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
+			if (!equalBytes$6(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -8139,7 +8139,7 @@
 				throw corruptError("invalid factor ephemeral key");
 			}
 			try {
-				if (equalBytes$5(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
+				if (equalBytes$6(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					let dekBytes;
@@ -8149,7 +8149,7 @@
 						throw corruptError("factor wrapping failed authentication");
 					}
 					const expected = factorBinding(dekBytes, factorContext(stored.kind, stored.id), stored.header);
-					const bound = equalBytes$5(expected, binding);
+					const bound = equalBytes$6(expected, binding);
 					wipe(expected);
 					if (!bound) {
 						wipe(dekBytes);
@@ -8363,7 +8363,7 @@
 			throw failure;
 		}
 		try {
-			if (!equalBytes$5(sealed, manifestDigest(image))) throw failure;
+			if (!equalBytes$6(sealed, manifestDigest(image))) throw failure;
 		} finally {
 			wipe(sealed);
 		}
@@ -8667,7 +8667,7 @@
 				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
 				try {
-					verified = opened.use((a) => dek.use((b) => equalBytes$5(a, b)));
+					verified = opened.use((a) => dek.use((b) => equalBytes$6(a, b)));
 				} finally {
 					opened.wipe();
 				}
@@ -9621,7 +9621,7 @@
 	* const isValid = p256ecdsa.verify(sig, msg, publicKey);
 	* ```
 	*/
-	function ecdsa(Point, hash, ecdsaOpts = {}) {
+	function ecdsa$2(Point, hash, ecdsaOpts = {}) {
 		validatePointCons(Point);
 		const hash_ = hash;
 		ahash(hash_);
@@ -10064,7 +10064,7 @@
 			Fp: Fpk1,
 			endo: secp256k1_ENDO
 		});
-		secp256k1 = /* @__PURE__ */ ecdsa(Pointk1, sha256$1);
+		secp256k1 = /* @__PURE__ */ ecdsa$2(Pointk1, sha256$1);
 		TAGGED_HASH_PREFIXES = Object.create(null);
 		pointToBytes = (point) => point.toBytes(true).slice(1);
 		affineXToBytes = ({ x }) => Fpk1.toBytes(x);
@@ -10309,7 +10309,7 @@
 		ripemd160 = /* @__PURE__ */ createHasher(() => new _RIPEMD160());
 	}));
 	// node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
-	var Point$1, Fn$1, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
+	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
 	var init_bip32 = __esmMin((() => {
 		init_secp256k1();
 		init_hmac();
@@ -10320,7 +10320,7 @@
 		init_defineProperty();
 		init_objectSpread2();
 		Point$1 = /* @__PURE__ */ (() => secp256k1.Point)();
-		Fn$1 = /* @__PURE__ */ (() => Point$1.Fn)();
+		Fn$2 = /* @__PURE__ */ (() => Point$1.Fn)();
 		base58check$2 = /* @__PURE__ */ createBase58check(sha256$1);
 		MASTER_SECRET$1 = /* @__PURE__ */ (() => {
 			/*! scure-bip32 - MIT License (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com) */
@@ -10489,12 +10489,12 @@
 					if (index >= (this._privateKey ? 2 ** 32 - 1 : 2147483647)) throw new Error(`HDKey: cannot retry child derivation at index ${index}`);
 					return this.deriveChild(index + 1);
 				};
-				const ctweak = Fn$1.fromBytes(childTweak, true);
-				if (!Fn$1.isValid(ctweak)) return retry();
+				const ctweak = Fn$2.fromBytes(childTweak, true);
+				if (!Fn$2.isValid(ctweak)) return retry();
 				if (this._privateKey) {
-					const added = Fn$1.create(Fn$1.fromBytes(this._privateKey) + ctweak);
-					if (!Fn$1.isValidNot0(added)) return retry();
-					opt.privateKey = Fn$1.toBytes(added);
+					const added = Fn$2.create(Fn$2.fromBytes(this._privateKey) + ctweak);
+					if (!Fn$2.isValidNot0(added)) return retry();
+					opt.privateKey = Fn$2.toBytes(added);
 				} else {
 					const point = Point$1.fromBytes(this._publicKey);
 					const added = ctweak === 0n ? point : point.add(Point$1.BASE.multiply(ctweak));
@@ -10542,7 +10542,7 @@
 	}));
 	// node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
 	/** Checks if two Uint8Arrays are equal. Not constant-time. */
-	function equalBytes$3(a, b) {
+	function equalBytes$4(a, b) {
 		if (a.length !== b.length) return false;
 		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 		return true;
@@ -10572,7 +10572,7 @@
 	function equal(a, b) {
 		const aBytes = isBytes$1(a);
 		const bBytes = isBytes$1(b);
-		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$3(a, b);
+		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$4(a, b);
 		return a === b;
 	}
 	/** Checks if the given value is a Uint8Array. */
@@ -10925,7 +10925,7 @@
 	function apply(inner, base) {
 		if (!isCoder(inner)) throw new TypeError(`apply: invalid inner value ${inner}`);
 		if (!isBaseCoder(base)) throw new TypeError(`apply: invalid base value ${base}`);
-		return wrap({
+		return wrap$1({
 			size: inner.size,
 			encodeStream: (w, value) => {
 				let innerValue;
@@ -10991,7 +10991,7 @@
 		if (typeof path !== "string" && !isCoder(path)) throw new TypeError(`flagged: wrong path=${path}`);
 		if (!isCoder(inner)) throw new TypeError(`flagged: invalid inner value ${inner}`);
 		const hasDef = def !== void 0;
-		return wrap({
+		return wrap$1({
 			encodeStream: (w, value) => {
 				if (typeof path === "string") {
 					if (Path.resolve(w.stack, path)) inner.encodeStream(w, value);
@@ -11031,7 +11031,7 @@
 	function magic(inner, constant, check = true) {
 		if (!isCoder(inner)) throw new TypeError(`magic: invalid inner value ${inner}`);
 		if (typeof check !== "boolean") throw new TypeError(`magic: expected boolean, got ${typeof check}`);
-		return wrap({
+		return wrap$1({
 			size: inner.size,
 			encodeStream: (w, _value) => inner.encodeStream(w, constant),
 			decodeStream: (r) => {
@@ -11086,7 +11086,7 @@
 			if (!isCoder(fields[name])) throw new TypeError(`struct: field ${name} is not CoderType`);
 			coders.push(fields[name]);
 		}
-		return wrap({
+		return wrap$1({
 			size: sizeof(coders),
 			encodeStream: (w, value) => {
 				const _w = w;
@@ -11145,7 +11145,7 @@
 		const _length = lengthCoder(typeof len === "string" ? `../${len}` : terminator || len);
 		if (len === null && inner.size === 0) throw new Error("array: null length cannot use zero-size inner");
 		if ((isCoder(len) || typeof len === "string") && inner.size === 0) throw new Error("array: dynamic length cannot use zero-size inner");
-		return wrap({
+		return wrap$1({
 			size: typeof len === "number" && inner.size !== void 0 ? len * inner.size : void 0,
 			encodeStream: (w, value) => {
 				const _w = w;
@@ -11158,7 +11158,7 @@
 						inner.encodeStream(w, elm);
 						if (terminator && terminator.length <= _w.pos - startPos) {
 							const data = _w.finish(false).subarray(startPos, _w.pos);
-							if (equalBytes$3(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
+							if (equalBytes$4(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
 						}
 						_w.exitField();
 					}
@@ -11178,7 +11178,7 @@
 						if (inner.size && r.leftBytes < inner.size) break;
 					}
 					else if (terminator) for (let i = 0;; i++) {
-						if (equalBytes$3(r.bytes(terminator.length, true), terminator)) {
+						if (equalBytes$4(r.bytes(terminator.length, true), terminator)) {
 							r.bytes(terminator.length);
 							break;
 						}
@@ -11208,7 +11208,7 @@
 			}
 		});
 	}
-	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
+	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap$1, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
 	var init_micro_packed = __esmMin((() => {
 		init_base();
 		init_defineProperty();
@@ -11235,7 +11235,7 @@
 		_255n = /* @__PURE__ */ BigInt(255);
 		hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 		utils = /* @__PURE__ */ Object.freeze({
-			equalBytes: equalBytes$3,
+			equalBytes: equalBytes$4,
 			isBytes: isBytes$1,
 			isCoder,
 			checkBounds,
@@ -11684,7 +11684,7 @@
 			}
 		};
 		swapEndianness = (b) => Uint8Array.from(b).reverse();
-		wrap = (inner) => {
+		wrap$1 = (inner) => {
 			const _inner = inner;
 			if (!isPlainObject(_inner)) throw new TypeError(`wrap: invalid inner value ${_inner}`);
 			if (typeof _inner.encodeStream !== "function") throw new TypeError("wrap: encodeStream should be function");
@@ -11730,7 +11730,7 @@
 			if (typeof minimal !== "boolean") throw new Error(`bigint/minimal: expected boolean, got ${typeof minimal}`);
 			const bLen = BigInt(size);
 			const signBit = _2n$3 ** (_8n$1 * bLen - _1n$4);
-			return wrap({
+			return wrap$1({
 				size: sized ? size : void 0,
 				encodeStream: (w, value) => {
 					const zero = value === _0n$5;
@@ -11777,7 +11777,7 @@
 		U256LE = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ bigint(32, true));
 		U64LE = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ bigint(8, true));
 		I64LE = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ bigint(8, true, true));
-		view = (len, opts) => wrap({
+		view = (len, opts) => wrap$1({
 			size: len,
 			encodeStream: (w, value) => w.writeView(len, (view, pos) => opts.write(view, pos, value)),
 			decodeStream: (r) => r.readView(len, opts.read),
@@ -11831,7 +11831,7 @@
 			const _isb = isBytes$1(len);
 			const terminator = _isb ? Uint8Array.from(len) : void 0;
 			const findTerminator = terminator && terminator.length ? createFindBytes(terminator) : void 0;
-			return wrap({
+			return wrap$1({
 				size: typeof len === "number" ? len : void 0,
 				encodeStream: (w, value) => {
 					if (!_isb) _length.encodeStream(w, value.length);
@@ -11867,7 +11867,7 @@
 			if (flagValue.length === 0) throw new Error("flag/flagValue: empty marker");
 			if (typeof xor !== "boolean") throw new TypeError(`flag/xor: expected boolean, got ${typeof xor}`);
 			const marker = Uint8Array.from(flagValue);
-			return wrap({
+			return wrap$1({
 				size: void 0,
 				encodeStream: (w, value) => {
 					if (!!value !== xor) w.bytes(marker);
@@ -11875,7 +11875,7 @@
 				decodeStream: (r) => {
 					let hasFlag = r.leftBytes >= marker.length;
 					if (hasFlag) {
-						hasFlag = equalBytes$3(r.bytes(marker.length, true), marker);
+						hasFlag = equalBytes$4(r.bytes(marker.length, true), marker);
 						if (hasFlag) r.bytes(marker.length);
 					}
 					return hasFlag !== xor;
@@ -12974,7 +12974,7 @@
 			throw new SiwxError({ code: "VerificationFailed" });
 		}
 		const expected = parseEip55(message.address);
-		if (!equalBytes$4(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
+		if (!equalBytes$5(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
 	}
 	//! On-chain smart-account verification: the ERC-6492 universal validator via a
 	//! deployless `eth_call`. Covers deployed ERC-1271 accounts, counterfactual
@@ -13190,7 +13190,7 @@
 		}
 		if (point.equals(ed25519.Point.ZERO)) throw fieldError("address", "identity pubkey");
 		if (!point.isTorsionFree()) throw fieldError("address", "not in the prime-order subgroup");
-		if (!equalBytes$4(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
+		if (!equalBytes$5(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
 	}
 	/**
 	* Validate that `address` is a canonical, non-identity, prime-order-subgroup Ed25519 verifying key
@@ -13741,6 +13741,205 @@
 			account
 		};
 	};
+	// packages/wallet-chains/dist/assets-sg2_Z3nZ.mjs
+	var USDC$1 = Object.freeze({
+		symbol: "USDC",
+		decimals: 6,
+		name: "USD Coin"
+	});
+	var USDT$2 = Object.freeze({
+		symbol: "USDT",
+		decimals: 6,
+		name: "Tether USD"
+	});
+	var CELO_ALIAS = Object.freeze({
+		symbol: "CELO",
+		decimals: 18,
+		name: "Celo native asset",
+		role: "native-alias"
+	});
+	var ARC_USDC_ALIAS = Object.freeze({
+		symbol: "USDC",
+		decimals: 6,
+		name: "USDC",
+		role: "native-alias"
+	});
+	var WETH = Object.freeze({
+		symbol: "WETH",
+		decimals: 18,
+		name: "Wrapped Ether",
+		role: "wrapped-native"
+	});
+	var WBNB = Object.freeze({
+		symbol: "WBNB",
+		decimals: 18,
+		name: "Wrapped BNB",
+		role: "wrapped-native"
+	});
+	/** The built-in table. */
+	var evmTokenTable = Object.freeze({
+		"1": Object.freeze({
+			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1,
+			"0xdAC17F958D2ee523a2206206994597C13D831ec7": USDT$2,
+			"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": WETH
+		}),
+		"10": Object.freeze({
+			"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"25": Object.freeze({
+			"0x3D7F2C478aAfdB65542BCB44bCeeC05849999d2D": USDC$1,
+			"0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23": Object.freeze({
+				symbol: "WCRO",
+				decimals: 18,
+				name: "Wrapped CRO",
+				role: "wrapped-native"
+			})
+		}),
+		"56": Object.freeze({ "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c": WBNB }),
+		"130": Object.freeze({
+			"0x078D782b760474a361dDA0AF3839290b0EF57AD6": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"137": Object.freeze({
+			"0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC$1,
+			"0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270": Object.freeze({
+				symbol: "WPOL",
+				decimals: 18,
+				name: "Wrapped Polygon Ecosystem Token",
+				role: "wrapped-native"
+			})
+		}),
+		"143": Object.freeze({
+			"0x754704Bc059F8C67012fEd69BC8A327a5aafb603": USDC$1,
+			"0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A": Object.freeze({
+				symbol: "WMON",
+				decimals: 18,
+				name: "Wrapped MON",
+				role: "wrapped-native"
+			})
+		}),
+		"146": Object.freeze({
+			"0x29219dd400f2Bf60E5a23d13Be72B486D4038894": USDC$1,
+			"0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38": Object.freeze({
+				symbol: "wS",
+				decimals: 18,
+				name: "Wrapped Sonic",
+				role: "wrapped-native"
+			})
+		}),
+		"196": Object.freeze({ "0xB6CEceAB302E2E4948951eE7843FC24E92933061": USDC$1 }),
+		"204": Object.freeze({ "0x4200000000000000000000000000000000000006": WBNB }),
+		"324": Object.freeze({ "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4": USDC$1 }),
+		"480": Object.freeze({
+			"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"988": Object.freeze({ "0x779Ded0c9e1022225f8E0630b35a9b54bE713736": Object.freeze({
+			symbol: "USDT0",
+			decimals: 6,
+			name: "USDT0",
+			role: "native-alias"
+		}) }),
+		"999": Object.freeze({
+			"0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC$1,
+			"0x5555555555555555555555555555555555555555": Object.freeze({
+				symbol: "WHYPE",
+				decimals: 18,
+				name: "Wrapped HYPE",
+				role: "wrapped-native"
+			})
+		}),
+		"1329": Object.freeze({
+			"0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": USDC$1,
+			"0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7": Object.freeze({
+				symbol: "WSEI",
+				decimals: 18,
+				name: "Wrapped SEI",
+				role: "wrapped-native"
+			})
+		}),
+		"1672": Object.freeze({ "0xC879C018dB60520F4355C26eD1a6D572cdAC1815": USDC$1 }),
+		"1868": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"4326": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"5042": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
+		"8217": Object.freeze({
+			"0xd077A400968890Eacc75cdc901F0356c943e4fDb": USDT$2,
+			"0x19Aac5f612f524B754CA7e7c41cbFa2E981A4432": Object.freeze({
+				symbol: "WKLAY",
+				decimals: 18,
+				name: "Wrapped Klay",
+				role: "wrapped-native"
+			})
+		}),
+		"8453": Object.freeze({
+			"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC$1 }),
+		"42161": Object.freeze({
+			"0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1,
+			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH,
+			"0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62": Object.freeze({
+				symbol: "USD24",
+				decimals: 2,
+				name: "Fiat24 USD"
+			}),
+			"0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA": Object.freeze({
+				symbol: "EUR24",
+				decimals: 2,
+				name: "Fiat24 EUR"
+			}),
+			"0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4": Object.freeze({
+				symbol: "CHF24",
+				decimals: 2,
+				name: "Fiat24 CHF"
+			}),
+			"0x7288Ac74d211735374A23707D1518DCbbc0144fd": Object.freeze({
+				symbol: "CNH24",
+				decimals: 2,
+				name: "Fiat24 CNH"
+			})
+		}),
+		"42220": Object.freeze({
+			"0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC$1,
+			"0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e": USDT$2,
+			"0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS
+		}),
+		"43114": Object.freeze({
+			"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1,
+			"0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT$2,
+			"0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7": Object.freeze({
+				symbol: "WAVAX",
+				decimals: 18,
+				name: "Wrapped AVAX",
+				role: "wrapped-native"
+			})
+		}),
+		"57073": Object.freeze({
+			"0x2D270e6886d130D724215A266106e6832161EAEd": USDC$1,
+			"0x4200000000000000000000000000000000000006": WETH
+		}),
+		"59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC$1 }),
+		"60808": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"80094": Object.freeze({ "0x6969696969696969696969696969696969696969": Object.freeze({
+			symbol: "WBERA",
+			decimals: 18,
+			name: "Wrapped Bera",
+			role: "wrapped-native"
+		}) }),
+		"534352": Object.freeze({ "0x5300000000000000000000000000000000000004": WETH }),
+		"747474": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"5042002": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
+		"7777777": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
+		"11142220": Object.freeze({ "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS })
+	});
+	var lookupEvmToken = (table, chainId, address) => {
+		var _table$String;
+		return (_table$String = table[String(chainId)]) === null || _table$String === void 0 ? void 0 : _table$String[address];
+	};
+	/** The native asset id in `AssetFlow` and simulated asset changes. */
+	var EVM_NATIVE_ASSET = "native";
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/version.js
 	/** @internal */
 	var version = "0.1.1";
@@ -16752,7 +16951,7 @@
 			checksumAddress,
 			staticPosition
 		});
-		if (param.type === "address") return decodeAddress(cursor, { checksum: checksumAddress });
+		if (param.type === "address") return decodeAddress$1(cursor, { checksum: checksumAddress });
 		if (param.type === "bool") return decodeBool(cursor);
 		if (param.type.startsWith("bytes")) return decodeBytes(cursor, param, { staticPosition });
 		if (param.type.startsWith("uint") || param.type.startsWith("int")) return decodeNumber(cursor, param);
@@ -16770,7 +16969,7 @@
 	*/
 	var arraySuffixRegex = /^(.*)\[(\d+)?\]$/;
 	/** @internal */
-	function decodeAddress(cursor, options = {}) {
+	function decodeAddress$1(cursor, options = {}) {
 		const { checksum: checksum$3 = false } = options;
 		const value = cursor.readBytes(32);
 		const wrap = (address) => checksum$3 ? checksum(address) : address;
@@ -18889,205 +19088,9 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-CmtgRdAi.mjs
+	// packages/wallet-chains/dist/token-call-Dab29nkr.mjs
 	init_utils$2();
 	init_objectSpread2();
-	var USDC$1 = Object.freeze({
-		symbol: "USDC",
-		decimals: 6,
-		name: "USD Coin"
-	});
-	var USDT$2 = Object.freeze({
-		symbol: "USDT",
-		decimals: 6,
-		name: "Tether USD"
-	});
-	var CELO_ALIAS = Object.freeze({
-		symbol: "CELO",
-		decimals: 18,
-		name: "Celo native asset",
-		role: "native-alias"
-	});
-	var ARC_USDC_ALIAS = Object.freeze({
-		symbol: "USDC",
-		decimals: 6,
-		name: "USDC",
-		role: "native-alias"
-	});
-	var WETH = Object.freeze({
-		symbol: "WETH",
-		decimals: 18,
-		name: "Wrapped Ether",
-		role: "wrapped-native"
-	});
-	var WBNB = Object.freeze({
-		symbol: "WBNB",
-		decimals: 18,
-		name: "Wrapped BNB",
-		role: "wrapped-native"
-	});
-	/** The built-in table. */
-	var evmTokenTable = Object.freeze({
-		"1": Object.freeze({
-			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1,
-			"0xdAC17F958D2ee523a2206206994597C13D831ec7": USDT$2,
-			"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": WETH
-		}),
-		"10": Object.freeze({
-			"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"25": Object.freeze({
-			"0x3D7F2C478aAfdB65542BCB44bCeeC05849999d2D": USDC$1,
-			"0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23": Object.freeze({
-				symbol: "WCRO",
-				decimals: 18,
-				name: "Wrapped CRO",
-				role: "wrapped-native"
-			})
-		}),
-		"56": Object.freeze({ "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c": WBNB }),
-		"130": Object.freeze({
-			"0x078D782b760474a361dDA0AF3839290b0EF57AD6": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"137": Object.freeze({
-			"0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC$1,
-			"0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270": Object.freeze({
-				symbol: "WPOL",
-				decimals: 18,
-				name: "Wrapped Polygon Ecosystem Token",
-				role: "wrapped-native"
-			})
-		}),
-		"143": Object.freeze({
-			"0x754704Bc059F8C67012fEd69BC8A327a5aafb603": USDC$1,
-			"0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A": Object.freeze({
-				symbol: "WMON",
-				decimals: 18,
-				name: "Wrapped MON",
-				role: "wrapped-native"
-			})
-		}),
-		"146": Object.freeze({
-			"0x29219dd400f2Bf60E5a23d13Be72B486D4038894": USDC$1,
-			"0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38": Object.freeze({
-				symbol: "wS",
-				decimals: 18,
-				name: "Wrapped Sonic",
-				role: "wrapped-native"
-			})
-		}),
-		"196": Object.freeze({ "0xB6CEceAB302E2E4948951eE7843FC24E92933061": USDC$1 }),
-		"204": Object.freeze({ "0x4200000000000000000000000000000000000006": WBNB }),
-		"324": Object.freeze({ "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4": USDC$1 }),
-		"480": Object.freeze({
-			"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"988": Object.freeze({ "0x779Ded0c9e1022225f8E0630b35a9b54bE713736": Object.freeze({
-			symbol: "USDT0",
-			decimals: 6,
-			name: "USDT0",
-			role: "native-alias"
-		}) }),
-		"999": Object.freeze({
-			"0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC$1,
-			"0x5555555555555555555555555555555555555555": Object.freeze({
-				symbol: "WHYPE",
-				decimals: 18,
-				name: "Wrapped HYPE",
-				role: "wrapped-native"
-			})
-		}),
-		"1329": Object.freeze({
-			"0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": USDC$1,
-			"0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7": Object.freeze({
-				symbol: "WSEI",
-				decimals: 18,
-				name: "Wrapped SEI",
-				role: "wrapped-native"
-			})
-		}),
-		"1672": Object.freeze({ "0xC879C018dB60520F4355C26eD1a6D572cdAC1815": USDC$1 }),
-		"1868": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"4326": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"5042": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
-		"8217": Object.freeze({
-			"0xd077A400968890Eacc75cdc901F0356c943e4fDb": USDT$2,
-			"0x19Aac5f612f524B754CA7e7c41cbFa2E981A4432": Object.freeze({
-				symbol: "WKLAY",
-				decimals: 18,
-				name: "Wrapped Klay",
-				role: "wrapped-native"
-			})
-		}),
-		"8453": Object.freeze({
-			"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"9745": Object.freeze({ "0x2d661C89D812261039AF9764eceaAee884f5F67F": USDC$1 }),
-		"42161": Object.freeze({
-			"0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1,
-			"0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": WETH,
-			"0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62": Object.freeze({
-				symbol: "USD24",
-				decimals: 2,
-				name: "Fiat24 USD"
-			}),
-			"0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA": Object.freeze({
-				symbol: "EUR24",
-				decimals: 2,
-				name: "Fiat24 EUR"
-			}),
-			"0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4": Object.freeze({
-				symbol: "CHF24",
-				decimals: 2,
-				name: "Fiat24 CHF"
-			}),
-			"0x7288Ac74d211735374A23707D1518DCbbc0144fd": Object.freeze({
-				symbol: "CNH24",
-				decimals: 2,
-				name: "Fiat24 CNH"
-			})
-		}),
-		"42220": Object.freeze({
-			"0xcebA9300f2b948710d2653dD7B07f33A8B32118C": USDC$1,
-			"0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e": USDT$2,
-			"0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS
-		}),
-		"43114": Object.freeze({
-			"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1,
-			"0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT$2,
-			"0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7": Object.freeze({
-				symbol: "WAVAX",
-				decimals: 18,
-				name: "Wrapped AVAX",
-				role: "wrapped-native"
-			})
-		}),
-		"57073": Object.freeze({
-			"0x2D270e6886d130D724215A266106e6832161EAEd": USDC$1,
-			"0x4200000000000000000000000000000000000006": WETH
-		}),
-		"59144": Object.freeze({ "0x176211869cA2b568f2A7D4EE941E073a821EE1ff": USDC$1 }),
-		"60808": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"80094": Object.freeze({ "0x6969696969696969696969696969696969696969": Object.freeze({
-			symbol: "WBERA",
-			decimals: 18,
-			name: "Wrapped Bera",
-			role: "wrapped-native"
-		}) }),
-		"534352": Object.freeze({ "0x5300000000000000000000000000000000000004": WETH }),
-		"747474": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"5042002": Object.freeze({ "0x3600000000000000000000000000000000000000": ARC_USDC_ALIAS }),
-		"7777777": Object.freeze({ "0x4200000000000000000000000000000000000006": WETH }),
-		"11142220": Object.freeze({ "0x471EcE3750Da237f93B8E339c536989b8978a438": CELO_ALIAS })
-	});
-	var lookupEvmToken = (table, chainId, address) => {
-		var _table$String;
-		return (_table$String = table[String(chainId)]) === null || _table$String === void 0 ? void 0 : _table$String[address];
-	};
 	var MAX_UINT256 = 2n ** 256n - 1n;
 	var MAX_UINT160 = 2n ** 160n - 1n;
 	/** The canonical Permit2 deployment (the same address on every supported chain). */
@@ -19109,8 +19112,6 @@
 			unlimited: change !== "decrease" && value === max
 		}, extra), {}, { verified: known !== void 0 });
 	};
-	/** The native asset id in `AssetFlow` and simulated asset changes. */
-	var EVM_NATIVE_ASSET = "native";
 	/**
 	* An order leg amount: the chain's native asset when `token` matches `nativeMarker` — each protocol
 	* names its own marker and the leg it applies to (UniswapX: the zero address, outputs only —
@@ -19941,682 +19942,87 @@
 			}
 		}
 	};
-	// packages/wallet-chains/dist/networks.mjs
-	init_objectSpread2();
-	var evm = (chainId, name, symbol, testnet) => ({
-		id: `eip155:${chainId}`,
-		family: "evm",
-		name,
-		symbol,
-		decimals: 18,
-		testnet,
-		chainId
-	});
-	var EVM_NETWORKS = [
-		evm(1, "Ethereum", "ETH", false),
-		evm(8453, "Base", "ETH", false),
-		evm(42161, "Arbitrum One", "ETH", false),
-		evm(10, "OP Mainnet", "ETH", false),
-		evm(137, "Polygon", "POL", false),
-		evm(56, "BNB Smart Chain", "BNB", false),
-		evm(999, "HyperEVM", "HYPE", false),
-		evm(43114, "Avalanche C-Chain", "AVAX", false),
-		evm(4663, "Robinhood Chain", "ETH", false),
-		evm(143, "Monad", "MON", false),
-		evm(5042, "Arc", "USDC", false),
-		evm(9745, "Plasma", "XPL", false),
-		evm(196, "X Layer", "OKB", false),
-		evm(1672, "Pharos", "PROS", false),
-		evm(5e3, "Mantle", "MNT", false),
-		evm(25, "Cronos", "CRO", false),
-		evm(100, "Gnosis", "xDAI", false),
-		evm(988, "Stable", "USDT0", false),
-		evm(747474, "Katana", "ETH", false),
-		evm(80094, "Berachain", "BERA", false),
-		evm(480, "World Chain", "ETH", false),
-		evm(130, "Unichain", "ETH", false),
-		evm(1329, "Sei", "SEI", false),
-		evm(59144, "Linea", "ETH", false),
-		evm(42220, "Celo", "CELO", false),
-		evm(146, "Sonic", "S", false),
-		evm(324, "ZKsync Era", "ETH", false),
-		evm(1868, "Soneium", "ETH", false),
-		evm(4326, "MegaETH", "ETH", false),
-		evm(8217, "Kaia", "KAIA", false),
-		evm(33139, "ApeChain", "APE", false),
-		evm(57073, "Ink", "ETH", false),
-		evm(252, "Fraxtal", "FRAX", false),
-		evm(2020, "Ronin", "RON", false),
-		evm(534352, "Scroll", "ETH", false),
-		evm(60808, "BOB", "ETH", false),
-		evm(204, "opBNB", "BNB", false),
-		evm(42170, "Arbitrum Nova", "ETH", false),
-		evm(167e3, "Taiko", "ETH", false),
-		evm(14, "Flare", "FLR", false),
-		evm(7777777, "Zora", "ETH", false),
-		evm(11155111, "Sepolia", "ETH", true),
-		evm(84532, "Base Sepolia", "ETH", true),
-		evm(421614, "Arbitrum Sepolia", "ETH", true),
-		evm(11155420, "OP Sepolia", "ETH", true),
-		evm(80002, "Polygon Amoy", "POL", true),
-		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm(998, "HyperEVM Testnet", "HYPE", true),
-		evm(43113, "Avalanche Fuji", "AVAX", true),
-		evm(46630, "Robinhood Chain Testnet", "ETH", true),
-		evm(10143, "Monad Testnet", "MON", true),
-		evm(5042002, "Arc Testnet", "USDC", true),
-		evm(1952, "X Layer Testnet", "OKB", true),
-		evm(5003, "Mantle Sepolia", "MNT", true),
-		evm(10200, "Gnosis Chiado", "xDAI", true),
-		evm(1301, "Unichain Sepolia", "ETH", true),
-		evm(1328, "Sei Testnet", "SEI", true),
-		evm(59141, "Linea Sepolia", "ETH", true),
-		evm(11142220, "Celo Sepolia", "CELO", true),
-		evm(14601, "Sonic Testnet", "S", true),
-		evm(300, "ZKsync Sepolia", "ETH", true),
-		evm(1946, "Soneium Minato", "ETH", true),
-		evm(33111, "ApeChain Curtis", "APE", true),
-		evm(763373, "Ink Sepolia", "ETH", true),
-		evm(2523, "Fraxtal Hoodi", "FRAX", true),
-		evm(5611, "opBNB Testnet", "tBNB", true),
-		evm(999999999, "Zora Sepolia", "ETH", true)
-	];
-	var BUILT_IN_NETWORKS = Object.freeze([
-		...EVM_NETWORKS,
-		{
-			id: "bip122:000000000019d6689c085ae165831e93",
-			chainId: 0,
-			name: "Bitcoin",
-			symbol: "BTC",
-			decimals: 8,
-			testnet: false,
-			family: "bitcoin",
-			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-		},
-		{
-			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
-			chainId: 0,
-			name: "Bitcoin Testnet4",
-			symbol: "tBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
-		},
-		{
-			id: "bip122:00000008819873e925422c1ff0f99f7c",
-			chainId: 0,
-			name: "Bitcoin Signet",
-			symbol: "sBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
-		},
-		{
-			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
-			chainId: 0,
-			name: "Bitcoin Regtest",
-			symbol: "rBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
-		},
-		{
-			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-			chainId: 0,
-			name: "Solana",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: false,
-			family: "solana",
-			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
-		},
-		{
-			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-			chainId: 0,
-			name: "Solana Devnet",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: true,
-			family: "solana",
-			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
-		},
-		{
-			id: "tron:728126428",
-			family: "tron",
-			name: "TRON",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: false,
-			chainId: 728126428,
-			genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"
-		},
-		{
-			id: "tron:2494104990",
-			family: "tron",
-			name: "TRON Shasta",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: true,
-			chainId: 2494104990,
-			genesisHash: "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e"
-		},
-		{
-			id: "tron:3448148188",
-			family: "tron",
-			name: "TRON Nile",
-			symbol: "TRX",
-			decimals: 6,
-			testnet: true,
-			chainId: 3448148188,
-			genesisHash: "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc"
-		}
-	]);
-	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
+	// packages/wallet-chains/dist/tasks-7AFv3PQn.mjs
+	init_secp256k1();
 	/**
-	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
-	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
-	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
+	* Signing tasks — the serialisable middle of the `plan → backend → assemble` split. A plan is plain
+	* data (no key material, no closures); a backend returns one 64-byte signature per task; `assemble`
+	* verifies every signature against the task's public key before using it. The task types live in
+	* the root entry (declaring them here would cycle index ↔ tasks); the helpers stay
+	* package-internal.
 	*/
-	var withNativeAmountMeta = (intent, network, asset, decimals) => {
-		var _networkMeta;
-		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
-		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
-		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
-			amount: amount(a.amount),
-			receive: amount(a.receive)
-		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) }), i.message === void 0 || i.message.kind !== "typed-data" ? {} : { message: _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i.message), i.message.seaport === void 0 ? {} : { seaport: _objectSpread2(_objectSpread2({}, i.message.seaport), {}, {
-			offer: i.message.seaport.offer.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
-				startAmount: amount(item.startAmount),
-				endAmount: amount(item.endAmount)
-			})),
-			consideration: i.message.seaport.consideration.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
-				startAmount: amount(item.startAmount),
-				endAmount: amount(item.endAmount)
-			}))
-		}) }), i.message.order === void 0 ? {} : { order: _objectSpread2(_objectSpread2({}, i.message.order), {}, {
-			give: amount(i.message.order.give),
-			receive: i.message.order.receive.map((leg) => _objectSpread2(_objectSpread2({}, leg), {}, { amount: amount(leg.amount) }))
-		}) }), i.message.safe === void 0 ? {} : { safe: _objectSpread2(_objectSpread2({}, i.message.safe), {}, { calls: i.message.safe.calls.map(decorate) }, i.message.safe.refund === void 0 ? {} : { refund: _objectSpread2(_objectSpread2({}, i.message.safe.refund), {}, {
-			gasPrice: amount(i.message.safe.refund.gasPrice),
-			amount: amount(i.message.safe.refund.amount)
-		}) }) }) });
-		return decorate(intent);
+	var equalBytes$3 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	/**
+	* Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize —
+	* the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found by
+	* recovering the key for both parities and comparing with the task key — that comparison is the
+	* verification.
+	*/
+	var acceptEcdsa = (task, signature) => {
+		if (signature.length !== 64) throw new ChainError("invalid-signature", "signature must be 64 bytes");
+		let parsed;
+		try {
+			parsed = secp256k1.Signature.fromBytes(signature, "compact");
+		} catch (_unused) {
+			throw new ChainError("invalid-signature", "signature does not verify under the task key");
+		}
+		const sig = parsed.hasHighS() ? new secp256k1.Signature(parsed.r, secp256k1.Point.Fn.neg(parsed.s)) : parsed;
+		for (const yParity of [0, 1]) {
+			let recovered;
+			try {
+				recovered = sig.addRecoveryBit(yParity).recoverPublicKey(task.digest).toBytes(true);
+			} catch (_unused2) {
+				recovered = void 0;
+			}
+			if (recovered !== void 0 && equalBytes$3(recovered, task.publicKey)) return {
+				r: sig.r,
+				s: sig.s,
+				yParity
+			};
+		}
+		throw new ChainError("invalid-signature", "signature does not verify under the task key");
 	};
-	// packages/wallet-chains/dist/families-BlgplKAJ.mjs
-	var RECOGNISED_FAMILIES = [
-		{
-			family: "Hyperliquid L1",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Exchange",
-				primaryType: /^Agent$/
-			},
-			nearMiss: "typed-data-commitment"
-		},
-		{
-			family: "Hyperliquid",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "HyperliquidSignTransaction"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket exchange",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Polymarket CTF Exchange"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket CLOB auth",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "ClobAuthDomain"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Polymarket deposit wallet",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "DepositWallet"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Fiat24",
-			claim: {
-				surface: "evm.call",
-				callee: "fiat24"
-			},
-			nearMiss: "fiat24-function"
-		},
-		{
-			family: "Fiat24 session grant",
-			claim: {
-				surface: "evm.personal-message",
-				prefixes: ["I agree to access my profile.", "I agree to access my Fiat24 profile."]
-			},
-			nearMiss: "fiat24-session-grant"
-		},
-		{
-			family: "built-in token",
-			claim: {
-				surface: "evm.call",
-				callee: "token-table"
-			},
-			nearMiss: "token-function"
-		},
-		{
-			family: "built-in TRON token",
-			claim: {
-				surface: "tron.call",
-				callee: "token-table"
-			},
-			nearMiss: "token-function"
-		},
-		{
-			family: "permit",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^Permit/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Permit2",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "permit2"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "built-in token signature",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "token-table"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Safe",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^SafeTx$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Seaport",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^(?:OrderComponents|BulkOrder)$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Seaport",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "seaport"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "1inch",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "1inch Aggregation Router",
-				contracts: [
-					"0x111111125421cA6dc452d289314280a0f8842A65",
-					"0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
-					"0x1111111254EEB25477B68fb85Ed929f73A960582"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "1inch LOP",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "1inch Limit Order Protocol",
-				contracts: [
-					"0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
-					"0x11431a89893025D2a48dCA4EddC396f8C8117187",
-					"0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
-					"0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
-					"0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "CoW",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Gnosis Protocol",
-				contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Snapshot",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "snapshot",
-				primaryType: /^(?:Vote|Alias)$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "0x",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "ZeroEx",
-				contracts: ["0xDef1C0ded9bec7F1a1670819833240f027b25EfF", "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Blur",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Blur Exchange",
-				contracts: [
-					"0x000000000000Ad05Ccc4F10045630fb830B95127",
-					"0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
-					"0x29469395eAf6f95920E59F858042f0e28D98a20B"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "LooksRare",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "LooksRareProtocol",
-				contracts: ["0x0000000000E655fAe4d56241588680F86E3b2377"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Bebop",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "BebopSettlement",
-				contracts: ["0xbbbbbBB520d69a9775E85b458C58c648259FAD5F"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Bebop",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "JamSettlement",
-				contracts: ["0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Paraswap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "AUGUSTUS RFQ",
-				contracts: [
-					"0xe92b586627ccA7a83dC919cc7127196d70f55a06",
-					"0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
-					"0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
-					"0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Velora Delta",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Portikus",
-				contracts: ["0x0000000000bbF5c5Fd284e657F01Bd000933C96D"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "KyberSwap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Kyber Limit Order Protocol",
-				contracts: ["0x227B0c196eA8db17A665EA6824D972A64202E936"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "KyberSwap",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Kyber DSLO Protocol",
-				contracts: ["0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "OpenOcean",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "openocean Limit Order Protocol",
-				contracts: [
-					"0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
-					"0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
-					"0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
-					"0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
-					"0xB45373129B4220160b92bd2320869f44d48eCd01",
-					"0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
-					"0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
-					"0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
-					"0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
-					"0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
-					"0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
-					"0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Odos",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "OdosLimitOrderRouter",
-				contracts: [
-					"0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
-					"0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
-					"0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
-					"0x93052961c75c92Fd5d6362655936C239EF2D5336",
-					"0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
-					"0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
-					"0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
-					"0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
-					"0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
-					"0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
-					"0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
-				]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "EIP-3009",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Morpho Blue",
-			claim: {
-				surface: "evm.typed-data",
-				verifyingContract: "morpho-blue"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Aave credit delegation",
-			claim: {
-				surface: "evm.typed-data",
-				primaryType: /^DelegationWithSig$/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Farcaster KeyGateway",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Farcaster KeyGateway",
-				contracts: ["0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "Farcaster SignedKeyRequestValidator",
-			claim: {
-				surface: "evm.typed-data",
-				domainName: "Farcaster SignedKeyRequestValidator",
-				contracts: ["0x00000000FC700472606ED4fA22623Acf62c60553"]
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "TRON permit",
-			claim: {
-				surface: "tron.typed-data",
-				primaryType: /^Permit/
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "TRON Permit2",
-			claim: {
-				surface: "tron.typed-data",
-				verifyingContract: "permit2"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "built-in TRC-20 signature",
-			claim: {
-				surface: "tron.typed-data",
-				verifyingContract: "token-table"
-			},
-			nearMiss: "typed-data-variant"
-		},
-		{
-			family: "System",
-			claim: {
-				surface: "solana.instruction",
-				program: "system"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Token",
-			claim: {
-				surface: "solana.instruction",
-				program: "token"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Token-2022",
-			claim: {
-				surface: "solana.instruction",
-				program: "token2022"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Stake",
-			claim: {
-				surface: "solana.instruction",
-				program: "stake"
-			},
-			nearMiss: "core-instruction"
-		},
-		{
-			family: "Associated Token",
-			claim: {
-				surface: "solana.instruction",
-				program: "associatedToken"
-			},
-			nearMiss: "core-instruction"
+	/** Checks a backend's 64-byte `R_x‖s` Schnorr signature against the task's output key. */
+	var acceptBip340 = (task, signature) => {
+		if (signature.length !== 64) throw new ChainError("invalid-signature", "signature must be 64 bytes");
+		let ok;
+		try {
+			ok = schnorr.verify(signature, task.message, task.publicKey);
+		} catch (_unused3) {
+			ok = false;
 		}
-	];
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
-	init_defineProperty();
+		if (!ok) throw new ChainError("invalid-signature", "signature does not verify under the task key");
+		return signature;
+	};
+	/** Checks a backend's 64-byte `R‖S` Ed25519 signature under strict RFC 8032 rules. */
+	var acceptEd25519 = (task, signature) => {
+		if (signature.length !== 64) throw new ChainError("invalid-signature", "signature must be 64 bytes");
+		let ok;
+		try {
+			ok = ed25519.verify(signature, task.message, task.publicKey, { zip215: false });
+		} catch (_unused4) {
+			ok = false;
+		}
+		if (!ok) throw new ChainError("invalid-signature", "signature does not verify under the task key");
+		return signature;
+	};
+	/** Every assemble starts here: a backend must return exactly one signature per task. */
+	var signaturesOf = (tasks, signatures) => {
+		if (signatures.length !== tasks.length) throw new ChainError("invalid-signature", `expected ${tasks.length} signatures, got ${signatures.length}`);
+	};
 	/**
-	* Converts a structured Access List into a list of tuples.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AccessList } from 'ox'
-	*
-	* const accessList = AccessList.toTupleList([
-	*   {
-	*     address: '0x0000000000000000000000000000000000000000',
-	*     storageKeys: [
-	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
-	*     ]
-	*   }
-	* ])
-	* // @log: [
-	* // @log:   [
-	* // @log:     '0x0000000000000000000000000000000000000000',
-	* // @log:     [
-	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
-	* // @log:     ],
-	* // @log:   ],
-	* // @log: ]
-	* ```
-	*
-	* @param accessList - Access list.
-	* @returns List of tuples.
+	* The synchronous driver the raw-key wrappers use: sign every task of the current plan, assemble,
+	* and repeat while assemble returns a dependent "next" plan (EIP-7702's two stages).
 	*/
-	function toTupleList$1(accessList) {
-		if (!accessList || accessList.length === 0) return [];
-		const tuple = [];
-		for (const { address, storageKeys } of accessList) {
-			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
-			if (address) assert$7(address, { strict: false });
-			tuple.push([address, storageKeys]);
-		}
-		return tuple;
-	}
-	/** Thrown when the size of a storage key is invalid. */
-	var InvalidStorageKeySizeError = class extends BaseError {
-		constructor({ storageKey }) {
-			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
-			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
+	var signLocally = (plan, sign, assemble) => {
+		let current = plan;
+		for (;;) {
+			const signatures = current.tasks.map((task, index) => sign(task, index));
+			const result = assemble(current, signatures);
+			if (result.kind === "signed") return result.artefact;
+			current = result.plan;
 		}
 	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
-	/**
-	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
-	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
-	*
-	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
-	*
-	* @internal
-	*/
-	function quantityToHex(value) {
-		if (value === void 0 || value === null) return "0x";
-		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
-		return fromNumber$1(value);
-	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
 	/**
@@ -21230,36 +20636,6 @@
 		return fromHex$2(toHex(signature));
 	}
 	/**
-	* Decodes a 65-byte recovered byte representation (`yParity ++ r ++ s`,
-	* big-endian) into a {@link ox#Signature.Signature}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signature = Signature.fromRecoveredBytes(
-	*   new Uint8Array(65)
-	* )
-	* // @log: { r: '0x00...0000', s: '0x00...0000', yParity: 0 }
-	* ```
-	*
-	* @param bytes - The 65-byte recovered representation.
-	* @returns The decoded {@link ox#Signature.Signature}.
-	*/
-	function fromRecoveredBytes(bytes) {
-		if (bytes.length !== 65) throw new InvalidSerializedSizeError({
-			expectedSize: 65,
-			signature: bytes
-		});
-		const yParity = bytes[0];
-		if (yParity !== 0 && yParity !== 1) throw new InvalidYParityError({ value: yParity });
-		return {
-			r: fromBytes$2(bytes.subarray(1, 33)),
-			s: fromBytes$2(bytes.subarray(33, 65)),
-			yParity
-		};
-	}
-	/**
 	* Serializes a {@link ox#Signature.Signature} to {@link ox#Hex.Hex}.
 	*
 	* @example
@@ -21551,7 +20927,7 @@
 	* @param list - An {@link ox#Authorization.List}.
 	* @returns An [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) Authorization tuple list.
 	*/
-	function toTupleList(list) {
+	function toTupleList$1(list) {
 		if (!list || list.length === 0) return [];
 		const tupleList = [];
 		for (const authorization of list) tupleList.push(toTuple(authorization));
@@ -21566,6 +20942,122 @@
 			size: 1,
 			value: `${yParity}`
 		});
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
+	/**
+	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
+	* of the ERC-191 v0x45 envelope). Concatenated with the per-message
+	* `Hex.fromString(String(byteLength))` and the message itself.
+	*
+	* @internal
+	*/
+	var erc191PrefixHex = "0x19" + fromString$2("Ethereum Signed Message:\n").slice(2);
+	/**
+	* Encodes a personal sign message in [ERC-191 format](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e): `0x19 ‖ "Ethereum Signed Message:\n" + message.length ‖ message`.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Hex, PersonalMessage } from 'ox'
+	*
+	* const data = PersonalMessage.encode(
+	*   Hex.fromString('hello world')
+	* )
+	* // @log: '0x19457468657265756d205369676e6564204d6573736167653a0a313168656c6c6f20776f726c64'
+	* // @log: (0x19 ‖ 'Ethereum Signed Message:\n11' ‖ 'hello world')
+	* ```
+	*
+	* @param data - The data to encode.
+	* @returns The encoded personal sign message.
+	*/
+	function encode(data) {
+		const message = from$6(data);
+		return concat$4(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+	}
+	/**
+	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Hex, PersonalMessage, Secp256k1 } from 'ox'
+	*
+	* const payload = PersonalMessage.getSignPayload(
+	*   Hex.fromString('hello world')
+	* ) // [!code focus]
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param data - The data to get the sign payload for.
+	* @returns The payload to use for signing.
+	*/
+	function getSignPayload$4(data) {
+		return keccak256(encode(data));
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
+	init_defineProperty();
+	/**
+	* Converts a structured Access List into a list of tuples.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AccessList } from 'ox'
+	*
+	* const accessList = AccessList.toTupleList([
+	*   {
+	*     address: '0x0000000000000000000000000000000000000000',
+	*     storageKeys: [
+	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
+	*     ]
+	*   }
+	* ])
+	* // @log: [
+	* // @log:   [
+	* // @log:     '0x0000000000000000000000000000000000000000',
+	* // @log:     [
+	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
+	* // @log:     ],
+	* // @log:   ],
+	* // @log: ]
+	* ```
+	*
+	* @param accessList - Access list.
+	* @returns List of tuples.
+	*/
+	function toTupleList(accessList) {
+		if (!accessList || accessList.length === 0) return [];
+		const tuple = [];
+		for (const { address, storageKeys } of accessList) {
+			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
+			if (address) assert$7(address, { strict: false });
+			tuple.push([address, storageKeys]);
+		}
+		return tuple;
+	}
+	/** Thrown when the size of a storage key is invalid. */
+	var InvalidStorageKeySizeError = class extends BaseError {
+		constructor({ storageKey }) {
+			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
+			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
+		}
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
+	/**
+	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
+	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
+	*
+	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
+	*
+	* @internal
+	*/
+	function quantityToHex(value) {
+		if (value === void 0 || value === null) return "0x";
+		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
+		return fromNumber$1(value);
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
 	init_objectSpread2();
@@ -21626,7 +21118,7 @@
 	* @param envelope - The transaction envelope to get the sign payload for.
 	* @returns The sign payload.
 	*/
-	function getSignPayload$4(envelope) {
+	function getSignPayload$3(envelope) {
 		return hash$3(envelope, { presign: true });
 	}
 	/**
@@ -21723,7 +21215,7 @@
 		var _ref;
 		const { chainId, gas, data, input, nonce, to, value, accessList, gasPrice } = envelope;
 		assert$4(envelope);
-		const accessTupleList = toTupleList$1(accessList);
+		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
 		return concat$4("0x01", fromHex$1([
 			fromNumber$1(chainId),
@@ -21800,7 +21292,7 @@
 	* @param envelope - The transaction envelope to get the sign payload for.
 	* @returns The sign payload.
 	*/
-	function getSignPayload$3(envelope) {
+	function getSignPayload$2(envelope) {
 		return hash$2(envelope, { presign: true });
 	}
 	/**
@@ -21919,8 +21411,8 @@
 		var _ref;
 		const { authorizationList, chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
 		assert$3(envelope);
-		const accessTupleList = toTupleList$1(accessList);
-		const authorizationTupleList = toTupleList(authorizationList);
+		const accessTupleList = toTupleList(accessList);
+		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
 		return concat$4(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
@@ -21995,7 +21487,7 @@
 	* @param envelope - The transaction envelope to get the sign payload for.
 	* @returns The sign payload.
 	*/
-	function getSignPayload$2(envelope) {
+	function getSignPayload$1(envelope) {
 		return hash$1(envelope, { presign: true });
 	}
 	/**
@@ -22354,7 +21846,7 @@
 	* @param envelope - The transaction envelope to get the sign payload for.
 	* @returns The sign payload.
 	*/
-	function getSignPayload$1(envelope) {
+	function getSignPayload(envelope) {
 		return hash(envelope, { presign: true });
 	}
 	/**
@@ -22453,7 +21945,7 @@
 		var _ref;
 		const { chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
 		assert$1(envelope);
-		const accessTupleList = toTupleList$1(accessList);
+		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
 		return concat$4(serializedType, fromHex$1([
 			fromNumber$1(chainId),
@@ -22468,8 +21960,405 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-Du_WsBnA.mjs
+	// packages/wallet-chains/dist/assemble-ENAYlC7Y.mjs
+	init_utils$2();
 	init_objectSpread2();
+	/**
+	* The Fiat24 contracts (SR Saphirstein AG) the decoder recognises by address — Arbitrum One only.
+	* The pinned proxies come from the issuer's own list
+	* (https://docs.fiat24.com/developer/integration-guide/part-1-smart-contracts.md) re-read on chain
+	* at block 526439604: EIP-1967 implementation slots, symbol()/decimals() — Sourcify full matches,
+	* solc 0.8.18.
+	*/
+	var FIAT24_CHAIN = 42161;
+	/** The ERC-721 "Fiat24 Account" — each token id is a client account. */
+	var FIAT24_ACCOUNT = "0x133CAEecA096cA54889db71956c7f75862Ead7A0";
+	/** The FX/top-up contract (Fiat24CryptoDeposit). */
+	var FIAT24_DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
+	/** The card-authorisation contract (Fiat24CardAuthorizationMarqeta). */
+	var FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
+	/**
+	* The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
+	* share the one Fiat24Token.sol source and `decimals()` is the constant 2 (Fiat24Token.sol:256-258;
+	* issuer list above).
+	*/
+	var FIAT24_TOKENS = {
+		"0xbe00f3db78688d9704bcb4e0a827aea3a9cc0d62": {
+			address: "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62",
+			symbol: "USD24"
+		},
+		"0x2c5d06f591d0d8cd43ac232c2b654475a142c7da": {
+			address: "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA",
+			symbol: "EUR24"
+		},
+		"0xd41f1f0cf89fd239ca4c1f8e8ada46345c86b0a4": {
+			address: "0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4",
+			symbol: "CHF24"
+		},
+		"0x7288ac74d211735374a23707d1518dcbbc0144fd": {
+			address: "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
+			symbol: "CNH24"
+		}
+	};
+	var INTERNAL_ACCOUNT_MIN = 9100n;
+	var INTERNAL_ACCOUNT_MAX = 9299n;
+	var TRANSFER_BY_ACCOUNT_ID = from$2("function transferByAccountId(uint256 accountId, uint256 amount)");
+	var CLIENT_PAYOUT = from$2("function clientPayout(uint256 amount, string contactId)");
+	var CLIENT_PAYOUT_REF = from$2("function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)");
+	var MONEY_EXCHANGE_EXACT_IN = from$2("function moneyExchangeExactIn(address input, address output, uint256 amount)");
+	var MONEY_EXCHANGE_EXACT_OUT = from$2("function moneyExchangeExactOut(address input, address output, uint256 amount)");
+	var DEPOSIT_TOKEN_VIA_USDC = from$2("function depositTokenViaUsdc(address input, address output, uint256 amount)");
+	var DEPOSIT_ETH = from$2("function depositETH(address output) payable");
+	var DEPOSIT_TOKEN_VIA_ETH = from$2("function depositTokenViaEth(address input, address output, uint256 amount)");
+	var MINT_BY_CLIENT = from$2("function mintByClient(uint256 tokenId)");
+	var MINT_BY_CLIENT_WITH_ETH = from$2("function mintByClientWithETH(uint256 tokenId) payable");
+	var ACCOUNT_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
+	var ACCOUNT_SAFE_TRANSFER = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
+	var ACCOUNT_SAFE_TRANSFER_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
+	var FIAT24_SELECTORS = new Set([
+		TRANSFER_BY_ACCOUNT_ID,
+		CLIENT_PAYOUT,
+		CLIENT_PAYOUT_REF,
+		MONEY_EXCHANGE_EXACT_IN,
+		MONEY_EXCHANGE_EXACT_OUT,
+		DEPOSIT_TOKEN_VIA_USDC,
+		DEPOSIT_ETH,
+		DEPOSIT_TOKEN_VIA_ETH,
+		MINT_BY_CLIENT,
+		MINT_BY_CLIENT_WITH_ETH
+	].map((fn) => getSelector(fn)));
+	var ERC20_SELECTORS = new Set([
+		"function transfer(address to, uint256 amount)",
+		"function approve(address spender, uint256 amount)",
+		"function increaseAllowance(address spender, uint256 amount)",
+		"function decreaseAllowance(address spender, uint256 amount)",
+		"function transferFrom(address from, address to, uint256 amount)"
+	].map((signature) => getSelector(signature)));
+	var FIAT24_CONTRACTS = new Set([
+		FIAT24_ACCOUNT,
+		FIAT24_DEPOSIT,
+		FIAT24_CARD,
+		...Object.keys(FIAT24_TOKENS)
+	].map((a) => a.toLowerCase()));
+	/** `to` is one of the seven pinned Fiat24 proxies on Arbitrum One. */
+	var isFiat24Contract = (chainId, to) => chainId === 42161 && FIAT24_CONTRACTS.has(to.toLowerCase());
+	/** `data` starts with a Fiat24-specific selector (any callee, any chain). */
+	var hasFiat24Selector = (data) => FIAT24_SELECTORS.has(data.slice(0, 10).toLowerCase());
+	/** The spender's role when it is a Fiat24 contract on Arbitrum One. */
+	var fiat24Spender = (chainId, spender) => {
+		if (chainId !== 42161) return;
+		const address = spender.toLowerCase();
+		return address === "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14".toLowerCase() ? "card" : address === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase() ? "deposit" : void 0;
+	};
+	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
+	var tryCall$5 = (fn, data) => {
+		const selector = getSelector(fn);
+		if (!data.toLowerCase().startsWith(selector)) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	var argUint$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
+		return value;
+	};
+	var argAddress$3 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
+		return checksumEvmAddress(value);
+	};
+	var argString = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string") throw new ChainError("invalid-request", "decoded argument is not a string");
+		return value;
+	};
+	var runCases = (cases, call) => {
+		for (const c of cases) {
+			const args = tryCall$5(c.fn, call.data);
+			if (args === void 0) continue;
+			if (c.payable === true ? call.value === 0n : call.value > 0n) return "claimed";
+			const decoded = c.run(args, call);
+			return decoded === "claimed" ? "claimed" : { decoded };
+		}
+	};
+	var tokenAmount$2 = (token, amount, chainId, table) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2({
+			asset: token,
+			amount: amount.toString(10)
+		}, known === void 0 ? {} : {
+			symbol: known.symbol,
+			decimals: known.decimals
+		});
+	};
+	/** The cash-token row for an address argument, or undefined for any other token. */
+	var cashToken = (address) => FIAT24_TOKENS[address.toLowerCase()];
+	var fiat24Token = (token) => ({
+		asset: token.address,
+		symbol: token.symbol,
+		decimals: 2
+	});
+	/** Verified outflow of a cash-token amount; `fiat24` names the account or payee the bytes carry. */
+	var cashFlow = (token, amount, chainId, table, fiat24) => ({
+		to: token.address,
+		amount: tokenAmount$2(token.address, amount, chainId, table),
+		verified: true,
+		fiat24
+	});
+	var ethFlow = (to, value) => ({
+		to,
+		amount: {
+			asset: EVM_NATIVE_ASSET,
+			amount: value.toString(10)
+		},
+		verified: true
+	});
+	/** A top-up input paid to the deposit contract — verified only when the token table knows it. */
+	var topUpFlow = (input, amount, chainId, table) => ({
+		to: FIAT24_DEPOSIT,
+		amount: tokenAmount$2(input, amount, chainId, table),
+		verified: lookupEvmToken(table, chainId, input) !== void 0
+	});
+	var payout = (token, args, action, chainId, table) => {
+		const contactId = argString(args, 1);
+		return {
+			summary: "payout",
+			outflows: [cashFlow(token, argUint$3(args, 0), chainId, table, { payee: contactId })],
+			warnings: [{
+				kind: "fiat24-payee-offchain",
+				message: ""
+			}],
+			fiat24: action(contactId)
+		};
+	};
+	/** Both exchange sides need two different cash tokens — anything else is a near miss. */
+	var exchangePair = (args) => {
+		const input = cashToken(argAddress$3(args, 0));
+		const output = cashToken(argAddress$3(args, 1));
+		return input === void 0 || output === void 0 || input.address === output.address ? void 0 : {
+			input,
+			output
+		};
+	};
+	var exchangeIn = (args, chainId, table) => {
+		const pair = exchangePair(args);
+		if (pair === void 0) return "claimed";
+		return {
+			summary: "swap",
+			outflows: [{
+				to: FIAT24_DEPOSIT,
+				amount: tokenAmount$2(pair.input.address, argUint$3(args, 2), chainId, table),
+				verified: true
+			}],
+			warnings: [{
+				kind: "fiat24-issuer-rate",
+				message: ""
+			}],
+			fiat24: {
+				kind: "exchange",
+				side: "exact-in",
+				receive: fiat24Token(pair.output)
+			}
+		};
+	};
+	var exchangeOut = (args, chainId, table) => {
+		const pair = exchangePair(args);
+		if (pair === void 0) return "claimed";
+		return {
+			summary: "swap",
+			outflows: [],
+			warnings: [{
+				kind: "fiat24-issuer-rate",
+				message: ""
+			}, {
+				kind: "fiat24-exact-out-unbounded",
+				message: ""
+			}],
+			fiat24: {
+				kind: "exchange",
+				side: "exact-out",
+				pay: fiat24Token(pair.input),
+				receive: tokenAmount$2(pair.output.address, argUint$3(args, 2), chainId, table)
+			}
+		};
+	};
+	/** A top-up's shared shape: pay in, receive a cash token at a rate the transaction cannot bound. */
+	var topUp = (outflows, output, swapsInTx) => ({
+		summary: "swap",
+		outflows,
+		warnings: [{
+			kind: "fiat24-issuer-rate",
+			message: ""
+		}, ...swapsInTx ? [{
+			kind: "fiat24-swap-quote",
+			message: ""
+		}] : []],
+		fiat24: {
+			kind: "top-up",
+			receive: fiat24Token(output)
+		}
+	});
+	var topUpToken = (args, swapsInTx, chainId, table) => {
+		const input = argAddress$3(args, 0);
+		const output = cashToken(argAddress$3(args, 1));
+		if (output === void 0) return "claimed";
+		return topUp([topUpFlow(input, argUint$3(args, 2), chainId, table)], output, swapsInTx(input));
+	};
+	/** Minting an account permanently links the address to the identity Fiat24 verifies. */
+	var openAccount = (id, outflows) => ({
+		summary: "contract-call",
+		outflows,
+		warnings: [{
+			kind: "fiat24-account-link",
+			message: ""
+		}],
+		fiat24: {
+			kind: "open-account",
+			account: id.toString(10)
+		}
+	});
+	var moveAccount = (args) => {
+		const to = argAddress$3(args, 1);
+		const id = argUint$3(args, 2);
+		return {
+			summary: "transfer",
+			outflows: [{
+				to,
+				amount: {
+					asset: FIAT24_ACCOUNT,
+					amount: "1",
+					tokenId: id.toString(10)
+				},
+				verified: false
+			}],
+			warnings: [{
+				kind: "fiat24-account-move",
+				level: "danger",
+				message: `#${id.toString(10)} → ${to}`
+			}]
+		};
+	};
+	var decodeFiat24Token = (token, call, chainId, table) => {
+		const hit = runCases([
+			{
+				fn: TRANSFER_BY_ACCOUNT_ID,
+				run: (args) => {
+					const account = argUint$3(args, 0);
+					return {
+						summary: "transfer",
+						outflows: [cashFlow(token, argUint$3(args, 1), chainId, table, { account: account.toString(10) })],
+						warnings: account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX ? [{
+							kind: "fiat24-internal-account",
+							message: account.toString(10)
+						}] : []
+					};
+				}
+			},
+			{
+				fn: CLIENT_PAYOUT,
+				run: (args) => payout(token, args, (contactId) => ({
+					kind: "payout",
+					contactId
+				}), chainId, table)
+			},
+			{
+				fn: CLIENT_PAYOUT_REF,
+				run: (args) => payout(token, args, (contactId) => ({
+					kind: "payout",
+					contactId,
+					purposeId: argUint$3(args, 2).toString(10),
+					ref: argString(args, 3)
+				}), chainId, table)
+			}
+		], call);
+		if (hit !== void 0) return hit;
+		const selector = call.data.slice(0, 10).toLowerCase();
+		return ERC20_SELECTORS.has(selector) && call.value === 0n ? void 0 : "claimed";
+	};
+	var decodeFiat24Deposit = (call, chainId, table) => {
+		var _runCases;
+		return (_runCases = runCases([
+			{
+				fn: MONEY_EXCHANGE_EXACT_IN,
+				run: (args) => exchangeIn(args, chainId, table)
+			},
+			{
+				fn: MONEY_EXCHANGE_EXACT_OUT,
+				run: (args) => exchangeOut(args, chainId, table)
+			},
+			{
+				fn: DEPOSIT_TOKEN_VIA_USDC,
+				run: (args) => topUpToken(args, (input) => input.toLowerCase() !== "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".toLowerCase(), chainId, table)
+			},
+			{
+				fn: DEPOSIT_ETH,
+				payable: true,
+				run: (args, call) => {
+					const output = cashToken(argAddress$3(args, 0));
+					return output === void 0 ? "claimed" : topUp([ethFlow("0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F", call.value)], output, true);
+				}
+			},
+			{
+				fn: DEPOSIT_TOKEN_VIA_ETH,
+				run: (args) => topUpToken(args, () => true, chainId, table)
+			}
+		], call)) !== null && _runCases !== void 0 ? _runCases : "claimed";
+	};
+	var decodeFiat24Account = (call) => {
+		var _runCases2;
+		return (_runCases2 = runCases([
+			{
+				fn: MINT_BY_CLIENT,
+				run: (args) => openAccount(argUint$3(args, 0), [])
+			},
+			{
+				fn: MINT_BY_CLIENT_WITH_ETH,
+				payable: true,
+				run: (args, call) => openAccount(argUint$3(args, 0), [ethFlow("0x133CAEecA096cA54889db71956c7f75862Ead7A0", call.value)])
+			},
+			{
+				fn: ACCOUNT_SAFE_TRANSFER_DATA,
+				run: moveAccount
+			},
+			{
+				fn: ACCOUNT_SAFE_TRANSFER,
+				run: moveAccount
+			},
+			{
+				fn: ACCOUNT_TRANSFER_FROM,
+				run: moveAccount
+			}
+		], call)) !== null && _runCases2 !== void 0 ? _runCases2 : "claimed";
+	};
+	/**
+	* Decodes a call to a Fiat24 contract: `{ decoded }` for the calls the rules table describes,
+	* `"claimed"` for every other call into one of the seven pinned proxies (the Fiat24 family's
+	* near-miss reason applies), `undefined` when the call is not Fiat24's — a cash token's ERC-20
+	* selectors, or a callee Fiat24 does not own.
+	*
+	* Only `depositETH` and `mintByClientWithETH` are payable; a positive value on any other function
+	* is a near miss.
+	*/
+	var decodeFiat24 = (chainId, call, table) => {
+		if (chainId !== 42161 || call.to === void 0) return;
+		const to = call.to.toLowerCase();
+		const token = FIAT24_TOKENS[to];
+		if (token !== void 0) return decodeFiat24Token(token, call, chainId, table);
+		if (to === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase()) return decodeFiat24Deposit(call, chainId, table);
+		if (to === "0x133CAEecA096cA54889db71956c7f75862Ead7A0".toLowerCase()) return decodeFiat24Account(call);
+		return FIAT24_CONTRACTS.has(to) ? "claimed" : void 0;
+	};
+	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
+	/** The exact personal-message text a `evm.fiat24-session` request signs. */
+	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
+		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
+	};
 	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
 	function assertHex(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
@@ -22507,7 +22396,7 @@
 				gasPrice: BigInt(tx.gasPrice)
 			});
 			return {
-				payload: getSignPayload$2(envelope),
+				payload: getSignPayload$1(envelope),
 				serialize: (signature) => serialize$1(envelope, { signature })
 			};
 		}
@@ -22518,7 +22407,7 @@
 				accessList: tx.accessList.map(accessEntry)
 			});
 			return {
-				payload: getSignPayload$4(envelope),
+				payload: getSignPayload$3(envelope),
 				serialize: (signature) => serialize$3(envelope, { signature })
 			};
 		}
@@ -22537,7 +22426,7 @@
 				})]
 			});
 			return {
-				payload: getSignPayload$3(envelope),
+				payload: getSignPayload$2(envelope),
 				serialize: (signature) => serialize$2(envelope, { signature })
 			};
 		}
@@ -22548,10 +22437,700 @@
 			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
 		});
 		return {
-			payload: getSignPayload$1(envelope),
+			payload: getSignPayload(envelope),
 			serialize: (signature) => serialize(envelope, { signature })
 		};
 	};
+	/**
+	* /evm/plan — the serialisable signing plan of a normalized request: the digests each signing
+	* backend must sign, and the transaction an EIP-7702 signature later re-enters. No key material.
+	*/
+	var ecdsa$1 = (digest, key) => ({
+		scheme: "ecdsa-secp256k1",
+		path: key.path,
+		publicKey: key.publicKey,
+		digest
+	});
+	var personalDigest = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
+	/**
+	* The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
+	* returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
+	*/
+	var planEvmTransaction = (tx, key) => ({
+		kind: "evm.transaction",
+		tx,
+		tasks: [ecdsa$1(toBytes$1(tx.type === "eip7702" ? getSignPayload$5(evmAuthorization(tx)) : evmEnvelope(tx).payload), key)]
+	});
+	var planEvmPersonalMessage = (message, key) => ({
+		kind: "evm.personal-message",
+		tasks: [ecdsa$1(personalDigest(message), key)]
+	});
+	var planEvmTypedData = (typedData, key) => {
+		const { json } = parseTypedData(typedData);
+		let payload;
+		try {
+			payload = getSignPayload$6(json);
+		} catch (_unused2) {
+			throw new ChainError("invalid-typed-data", "typedData failed to encode");
+		}
+		return {
+			kind: "evm.typed-data",
+			tasks: [ecdsa$1(toBytes$1(payload), key)]
+		};
+	};
+	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
+	var planEvm = (request, key) => {
+		if (request.kind === "evm.transaction") return planEvmTransaction(request.tx, key);
+		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
+		if (request.kind === "evm.fiat24-session") return {
+			kind: "evm.fiat24-session",
+			tasks: [ecdsa$1(personalDigest(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+		};
+		return planEvmTypedData(request.typedData, key);
+	};
+	/**
+	* /evm/assemble — turn verified signature material into the wire artefact: the serialized signed
+	* envelope for a transaction, the 65-byte `r‖s‖v` (v = 27 + yParity) for messages. An `eip7702`
+	* transaction without its authorization returns the stage-2 plan instead.
+	*/
+	var oxSignature = (accepted) => from({
+		r: fromNumber$1(accepted.r),
+		s: fromNumber$1(accepted.s),
+		yParity: accepted.yParity
+	});
+	var assembleEvm = (plan, signatures) => {
+		var _signatures$;
+		signaturesOf(plan.tasks, signatures);
+		const signature = oxSignature(acceptEcdsa(plan.tasks[0], (_signatures$ = signatures[0]) !== null && _signatures$ !== void 0 ? _signatures$ : /* @__PURE__ */ new Uint8Array()));
+		if (plan.kind !== "evm.transaction") return {
+			kind: "signed",
+			artefact: toBytes(signature)
+		};
+		if (plan.tx.type === "eip7702" && plan.authorization === void 0) return {
+			kind: "next",
+			plan: _objectSpread2(_objectSpread2({}, plan), {}, {
+				authorization: toBytes(signature),
+				tasks: [_objectSpread2(_objectSpread2({}, plan.tasks[0]), {}, { digest: toBytes$1(evmEnvelope(plan.tx, signature).payload) })]
+			})
+		};
+		return {
+			kind: "signed",
+			artefact: toBytes$1(evmEnvelope(plan.tx, plan.authorization === void 0 ? void 0 : fromBytes(plan.authorization)).serialize(signature))
+		};
+	};
+	// packages/wallet-chains/dist/networks.mjs
+	init_objectSpread2();
+	var evm = (chainId, name, symbol, testnet) => ({
+		id: `eip155:${chainId}`,
+		family: "evm",
+		name,
+		symbol,
+		decimals: 18,
+		testnet,
+		chainId
+	});
+	var EVM_NETWORKS = [
+		evm(1, "Ethereum", "ETH", false),
+		evm(8453, "Base", "ETH", false),
+		evm(42161, "Arbitrum One", "ETH", false),
+		evm(10, "OP Mainnet", "ETH", false),
+		evm(137, "Polygon", "POL", false),
+		evm(56, "BNB Smart Chain", "BNB", false),
+		evm(999, "HyperEVM", "HYPE", false),
+		evm(43114, "Avalanche C-Chain", "AVAX", false),
+		evm(4663, "Robinhood Chain", "ETH", false),
+		evm(143, "Monad", "MON", false),
+		evm(5042, "Arc", "USDC", false),
+		evm(9745, "Plasma", "XPL", false),
+		evm(196, "X Layer", "OKB", false),
+		evm(1672, "Pharos", "PROS", false),
+		evm(5e3, "Mantle", "MNT", false),
+		evm(25, "Cronos", "CRO", false),
+		evm(100, "Gnosis", "xDAI", false),
+		evm(988, "Stable", "USDT0", false),
+		evm(747474, "Katana", "ETH", false),
+		evm(80094, "Berachain", "BERA", false),
+		evm(480, "World Chain", "ETH", false),
+		evm(130, "Unichain", "ETH", false),
+		evm(1329, "Sei", "SEI", false),
+		evm(59144, "Linea", "ETH", false),
+		evm(42220, "Celo", "CELO", false),
+		evm(146, "Sonic", "S", false),
+		evm(324, "ZKsync Era", "ETH", false),
+		evm(1868, "Soneium", "ETH", false),
+		evm(4326, "MegaETH", "ETH", false),
+		evm(8217, "Kaia", "KAIA", false),
+		evm(33139, "ApeChain", "APE", false),
+		evm(57073, "Ink", "ETH", false),
+		evm(252, "Fraxtal", "FRAX", false),
+		evm(2020, "Ronin", "RON", false),
+		evm(534352, "Scroll", "ETH", false),
+		evm(60808, "BOB", "ETH", false),
+		evm(204, "opBNB", "BNB", false),
+		evm(42170, "Arbitrum Nova", "ETH", false),
+		evm(167e3, "Taiko", "ETH", false),
+		evm(14, "Flare", "FLR", false),
+		evm(7777777, "Zora", "ETH", false),
+		evm(11155111, "Sepolia", "ETH", true),
+		evm(84532, "Base Sepolia", "ETH", true),
+		evm(421614, "Arbitrum Sepolia", "ETH", true),
+		evm(11155420, "OP Sepolia", "ETH", true),
+		evm(80002, "Polygon Amoy", "POL", true),
+		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm(998, "HyperEVM Testnet", "HYPE", true),
+		evm(43113, "Avalanche Fuji", "AVAX", true),
+		evm(46630, "Robinhood Chain Testnet", "ETH", true),
+		evm(10143, "Monad Testnet", "MON", true),
+		evm(5042002, "Arc Testnet", "USDC", true),
+		evm(1952, "X Layer Testnet", "OKB", true),
+		evm(5003, "Mantle Sepolia", "MNT", true),
+		evm(10200, "Gnosis Chiado", "xDAI", true),
+		evm(1301, "Unichain Sepolia", "ETH", true),
+		evm(1328, "Sei Testnet", "SEI", true),
+		evm(59141, "Linea Sepolia", "ETH", true),
+		evm(11142220, "Celo Sepolia", "CELO", true),
+		evm(14601, "Sonic Testnet", "S", true),
+		evm(300, "ZKsync Sepolia", "ETH", true),
+		evm(1946, "Soneium Minato", "ETH", true),
+		evm(33111, "ApeChain Curtis", "APE", true),
+		evm(763373, "Ink Sepolia", "ETH", true),
+		evm(2523, "Fraxtal Hoodi", "FRAX", true),
+		evm(5611, "opBNB Testnet", "tBNB", true),
+		evm(999999999, "Zora Sepolia", "ETH", true)
+	];
+	var BUILT_IN_NETWORKS = Object.freeze([
+		...EVM_NETWORKS,
+		{
+			id: "bip122:000000000019d6689c085ae165831e93",
+			chainId: 0,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+			testnet: false,
+			family: "bitcoin",
+			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+		},
+		{
+			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			chainId: 0,
+			name: "Bitcoin Testnet4",
+			symbol: "tBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
+		},
+		{
+			id: "bip122:00000008819873e925422c1ff0f99f7c",
+			chainId: 0,
+			name: "Bitcoin Signet",
+			symbol: "sBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+		},
+		{
+			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			chainId: 0,
+			name: "Bitcoin Regtest",
+			symbol: "rBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+		},
+		{
+			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+			chainId: 0,
+			name: "Solana",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: false,
+			family: "solana",
+			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+		},
+		{
+			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+			chainId: 0,
+			name: "Solana Devnet",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: true,
+			family: "solana",
+			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+		},
+		{
+			id: "tron:728126428",
+			family: "tron",
+			name: "TRON",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: false,
+			chainId: 728126428,
+			genesisHash: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"
+		},
+		{
+			id: "tron:2494104990",
+			family: "tron",
+			name: "TRON Shasta",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: true,
+			chainId: 2494104990,
+			genesisHash: "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e"
+		},
+		{
+			id: "tron:3448148188",
+			family: "tron",
+			name: "TRON Nile",
+			symbol: "TRX",
+			decimals: 6,
+			testnet: true,
+			chainId: 3448148188,
+			genesisHash: "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc"
+		}
+	]);
+	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
+	/**
+	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
+	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
+	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
+	*/
+	var withNativeAmountMeta = (intent, network, asset, decimals) => {
+		var _networkMeta;
+		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
+		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
+		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
+			amount: amount(a.amount),
+			receive: amount(a.receive)
+		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) }), i.message === void 0 || i.message.kind !== "typed-data" ? {} : { message: _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i.message), i.message.seaport === void 0 ? {} : { seaport: _objectSpread2(_objectSpread2({}, i.message.seaport), {}, {
+			offer: i.message.seaport.offer.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
+				startAmount: amount(item.startAmount),
+				endAmount: amount(item.endAmount)
+			})),
+			consideration: i.message.seaport.consideration.map((item) => _objectSpread2(_objectSpread2({}, item), {}, {
+				startAmount: amount(item.startAmount),
+				endAmount: amount(item.endAmount)
+			}))
+		}) }), i.message.order === void 0 ? {} : { order: _objectSpread2(_objectSpread2({}, i.message.order), {}, {
+			give: amount(i.message.order.give),
+			receive: i.message.order.receive.map((leg) => _objectSpread2(_objectSpread2({}, leg), {}, { amount: amount(leg.amount) }))
+		}) }), i.message.safe === void 0 ? {} : { safe: _objectSpread2(_objectSpread2({}, i.message.safe), {}, { calls: i.message.safe.calls.map(decorate) }, i.message.safe.refund === void 0 ? {} : { refund: _objectSpread2(_objectSpread2({}, i.message.safe.refund), {}, {
+			gasPrice: amount(i.message.safe.refund.gasPrice),
+			amount: amount(i.message.safe.refund.amount)
+		}) }) }) });
+		return decorate(intent);
+	};
+	// packages/wallet-chains/dist/families-BlgplKAJ.mjs
+	var RECOGNISED_FAMILIES = [
+		{
+			family: "Hyperliquid L1",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Exchange",
+				primaryType: /^Agent$/
+			},
+			nearMiss: "typed-data-commitment"
+		},
+		{
+			family: "Hyperliquid",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "HyperliquidSignTransaction"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket exchange",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Polymarket CTF Exchange"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket CLOB auth",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "ClobAuthDomain"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Polymarket deposit wallet",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "DepositWallet"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Fiat24",
+			claim: {
+				surface: "evm.call",
+				callee: "fiat24"
+			},
+			nearMiss: "fiat24-function"
+		},
+		{
+			family: "Fiat24 session grant",
+			claim: {
+				surface: "evm.personal-message",
+				prefixes: ["I agree to access my profile.", "I agree to access my Fiat24 profile."]
+			},
+			nearMiss: "fiat24-session-grant"
+		},
+		{
+			family: "built-in token",
+			claim: {
+				surface: "evm.call",
+				callee: "token-table"
+			},
+			nearMiss: "token-function"
+		},
+		{
+			family: "built-in TRON token",
+			claim: {
+				surface: "tron.call",
+				callee: "token-table"
+			},
+			nearMiss: "token-function"
+		},
+		{
+			family: "permit",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^Permit/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Permit2",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "permit2"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in token signature",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "token-table"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Safe",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^SafeTx$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^(?:OrderComponents|BulkOrder)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "seaport"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "1inch",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "1inch Aggregation Router",
+				contracts: [
+					"0x111111125421cA6dc452d289314280a0f8842A65",
+					"0x6fd4383cB451173D5f9304F041C7BCBf27d561fF",
+					"0x1111111254EEB25477B68fb85Ed929f73A960582"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "1inch LOP",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "1inch Limit Order Protocol",
+				contracts: [
+					"0x119c71D3BbAC22029622cbaEc24854d3D32D2828",
+					"0x11431a89893025D2a48dCA4EddC396f8C8117187",
+					"0x1e38Eff998DF9d3669E32f4ff400031385Bf6362",
+					"0x94Bc2a1C732BcAd7343B25af48385Fe76E08734f",
+					"0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "CoW",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Gnosis Protocol",
+				contracts: ["0x9008D19f58AAbD9eD0D60971565AA8510560ab41"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Snapshot",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "snapshot",
+				primaryType: /^(?:Vote|Alias)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "0x",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "ZeroEx",
+				contracts: ["0xDef1C0ded9bec7F1a1670819833240f027b25EfF", "0xDEF1ABE32c034e558Cdd535791643C58a13aCC10"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Blur",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Blur Exchange",
+				contracts: [
+					"0x000000000000Ad05Ccc4F10045630fb830B95127",
+					"0xb2ecfE4E4D61f8790bbb9DE2D1259B9e2410CEA5",
+					"0x29469395eAf6f95920E59F858042f0e28D98a20B"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "LooksRare",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "LooksRareProtocol",
+				contracts: ["0x0000000000E655fAe4d56241588680F86E3b2377"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Bebop",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "BebopSettlement",
+				contracts: ["0xbbbbbBB520d69a9775E85b458C58c648259FAD5F"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Bebop",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "JamSettlement",
+				contracts: ["0xbEbEbEb035351f58602E0C1C8B59ECBfF5d5f47b"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Paraswap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "AUGUSTUS RFQ",
+				contracts: [
+					"0xe92b586627ccA7a83dC919cc7127196d70f55a06",
+					"0x0927FD43a7a87E3E8b81Df2c44B03C4756849F6D",
+					"0x8DcDfe88EF0351f27437284D0710cD65b20288bb",
+					"0xF3CD476C3C4D3Ac5cA2724767f269070CA09A043"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Velora Delta",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Portikus",
+				contracts: ["0x0000000000bbF5c5Fd284e657F01Bd000933C96D"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "KyberSwap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Kyber Limit Order Protocol",
+				contracts: ["0x227B0c196eA8db17A665EA6824D972A64202E936"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "KyberSwap",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Kyber DSLO Protocol",
+				contracts: ["0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "OpenOcean",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "openocean Limit Order Protocol",
+				contracts: [
+					"0xcC8d695603ce0b43D352891892FcC716c6a7C9f4",
+					"0xc0A62DDCd284020dC883C642A3Ed5D2A1770eb91",
+					"0xA8A0213bb2ce671E457Ec14D08EB9d40E6DA8e2d",
+					"0xFA9B584Bc9543B66BeFdc41fb1DA8636edD7a697",
+					"0xB45373129B4220160b92bd2320869f44d48eCd01",
+					"0x6a9115a77598cb9897347a6c31E6a164Ea06F870",
+					"0xfE9a934A8607EF020aDf22D4431d6cE6005Aa4d3",
+					"0xb5486f71C902fe0844Bb07221Fa8f47834d90B1b",
+					"0x23C78B3d85b45BfA6DC8e09b517ba2d9b0ECCA8C",
+					"0x99b3488Ee3432bB60256140b4BD2488E3b6A705f",
+					"0x4045734fe21c7B7E0cE516BE009780Cc2BA39A8f",
+					"0x8D2B7e5501Eb6D92F8e349f2FEbe785DD070bE74"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Odos",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "OdosLimitOrderRouter",
+				contracts: [
+					"0x5F79636fa7bc622eA48802E6cf80A5dae814daE1",
+					"0xcbF3822A63B7867cD602317fB4aE3ca864826ef8",
+					"0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
+					"0x93052961c75c92Fd5d6362655936C239EF2D5336",
+					"0xB9CBD870916e9Ffc52076Caa714f85a022B7f330",
+					"0x74ab8c1247aE3C5FFFD9F85781F31751bdd98E73",
+					"0xa05A88037402d869b7CA69F5bEc098E19BeDaFbB",
+					"0xeDeAfdEf0901eF74Ee28c207BE8424D3B353D97A",
+					"0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
+					"0xcc0126349d1bD892D1C53381E68dBF0c8F0E045e",
+					"0xb3a9B56056a5c93F468dF62579b9A5BEa1741069"
+				]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "EIP-3009",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^(?:TransferWithAuthorization|ReceiveWithAuthorization|CancelAuthorization)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Morpho Blue",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "morpho-blue"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Aave credit delegation",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^DelegationWithSig$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Farcaster KeyGateway",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Farcaster KeyGateway",
+				contracts: ["0x00000000fC56947c7E7183f8Ca4B62398CaAdf0B"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Farcaster SignedKeyRequestValidator",
+			claim: {
+				surface: "evm.typed-data",
+				domainName: "Farcaster SignedKeyRequestValidator",
+				contracts: ["0x00000000FC700472606ED4fA22623Acf62c60553"]
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "TRON permit",
+			claim: {
+				surface: "tron.typed-data",
+				primaryType: /^Permit/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "TRON Permit2",
+			claim: {
+				surface: "tron.typed-data",
+				verifyingContract: "permit2"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in TRC-20 signature",
+			claim: {
+				surface: "tron.typed-data",
+				verifyingContract: "token-table"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "System",
+			claim: {
+				surface: "solana.instruction",
+				program: "system"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "token"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token-2022",
+			claim: {
+				surface: "solana.instruction",
+				program: "token2022"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Stake",
+			claim: {
+				surface: "solana.instruction",
+				program: "stake"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Associated Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "associatedToken"
+			},
+			nearMiss: "core-instruction"
+		}
+	];
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/ContractAddress.js
 	/**
 	* Computes contract address via [CREATE](https://ethereum.stackexchange.com/questions/68943/create-opcode-what-does-it-really-do/68945#68945) opcode.
@@ -22576,86 +23155,6 @@
 		if (nonce[0] === 0) nonce = new Uint8Array([]);
 		return from$4(`0x${keccak256(fromBytes$1([from, nonce], { as: "Hex" })).slice(26)}`);
 	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
-	/**
-	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
-	* of the ERC-191 v0x45 envelope). Concatenated with the per-message
-	* `Hex.fromString(String(byteLength))` and the message itself.
-	*
-	* @internal
-	*/
-	var erc191PrefixHex = "0x19" + fromString$2("Ethereum Signed Message:\n").slice(2);
-	/**
-	* Encodes a personal sign message in [ERC-191 format](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e): `0x19 ‖ "Ethereum Signed Message:\n" + message.length ‖ message`.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Hex, PersonalMessage } from 'ox'
-	*
-	* const data = PersonalMessage.encode(
-	*   Hex.fromString('hello world')
-	* )
-	* // @log: '0x19457468657265756d205369676e6564204d6573736167653a0a313168656c6c6f20776f726c64'
-	* // @log: (0x19 ‖ 'Ethereum Signed Message:\n11' ‖ 'hello world')
-	* ```
-	*
-	* @param data - The data to encode.
-	* @returns The encoded personal sign message.
-	*/
-	function encode(data) {
-		const message = from$6(data);
-		return concat$4(erc191PrefixHex, fromString$2(String(size$1(message))), message);
-	}
-	/**
-	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Hex, PersonalMessage, Secp256k1 } from 'ox'
-	*
-	* const payload = PersonalMessage.getSignPayload(
-	*   Hex.fromString('hello world')
-	* ) // [!code focus]
-	*
-	* const signature = Secp256k1.sign({
-	*   payload,
-	*   privateKey: '0x...'
-	* })
-	* ```
-	*
-	* @param data - The data to get the sign payload for.
-	* @returns The payload to use for signing.
-	*/
-	function getSignPayload(data) {
-		return keccak256(encode(data));
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
-	/**
-	* Formats a structured {@link ox#Signature.Signature} as the requested
-	* representation: the structured object (`'Object'`), serialized hex
-	* (`'Hex'`), or serialized bytes (`'Bytes'`).
-	*
-	* @internal
-	*/
-	function formatSignature(signature, as) {
-		if (as === "Hex") return toHex(signature);
-		if (as === "Bytes") return toBytes(signature);
-		return signature;
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/secp256k1.js
-	init_secp256k1();
-	init_objectSpread2();
-	var signDefault = (payload, privateKey, options) => secp256k1.sign(payload, privateKey, _objectSpread2(_objectSpread2({}, options), {}, {
-		format: "recovered",
-		lowS: true
-	}));
-	/** @internal */
-	var sign$4 = (payload, privateKey, options) => {
-		var _overrides$Secp256k1$5, _overrides$Secp256k5;
-		return ((_overrides$Secp256k1$5 = (_overrides$Secp256k5 = overrides.Secp256k1) === null || _overrides$Secp256k5 === void 0 ? void 0 : _overrides$Secp256k5.sign) !== null && _overrides$Secp256k1$5 !== void 0 ? _overrides$Secp256k1$5 : signDefault)(payload, privateKey, options);
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/entropy.js
-	var extraEntropy = false;
 	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/pbkdf2.js
 	init_hmac();
 	init_utils$2();
@@ -24932,433 +25431,9 @@ zebra
 zero
 zone
 zoo`.split("\n"));
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Secp256k1.js
-	init_defineProperty();
-	/**
-	* Signs the payload with the provided private key.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1 } from 'ox'
-	*
-	* const signature = Secp256k1.sign({
-	*   // [!code focus]
-	*   payload: '0xdeadbeef', // [!code focus]
-	*   privateKey: '0x...' // [!code focus]
-	* }) // [!code focus]
-	* ```
-	*
-	* @param options - The signing options.
-	* @returns The ECDSA {@link ox#Signature.Signature}.
-	*/
-	function sign$3(options) {
-		const { as = "Object", extraEntropy: extraEntropy$1 = extraEntropy, hash, payload, privateKey } = options;
-		return formatSignature(fromRecoveredBytes(sign$4(from$5(payload), from$5(privateKey), {
-			extraEntropy: typeof extraEntropy$1 === "boolean" ? extraEntropy$1 : from$5(extraEntropy$1),
-			prehash: hash === true
-		})), as);
-	}
-	fromString$1("ox.secp256k1.fromPrf.v1");
-	fromString$1("ox.secp256k1.fromSeed.v1");
 	// packages/wallet-chains/dist/evm.mjs
 	init_utils$2();
 	init_objectSpread2();
-	/**
-	* The Fiat24 contracts (SR Saphirstein AG) the decoder recognises by address — Arbitrum One only.
-	* The pinned proxies come from the issuer's own list
-	* (https://docs.fiat24.com/developer/integration-guide/part-1-smart-contracts.md) re-read on chain
-	* at block 526439604: EIP-1967 implementation slots, symbol()/decimals() — Sourcify full matches,
-	* solc 0.8.18.
-	*/
-	var FIAT24_CHAIN = 42161;
-	/** The ERC-721 "Fiat24 Account" — each token id is a client account. */
-	var FIAT24_ACCOUNT = "0x133CAEecA096cA54889db71956c7f75862Ead7A0";
-	/** The FX/top-up contract (Fiat24CryptoDeposit). */
-	var FIAT24_DEPOSIT = "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F";
-	/** The card-authorisation contract (Fiat24CardAuthorizationMarqeta). */
-	var FIAT24_CARD = "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14";
-	/**
-	* The four cash tokens, keyed by lowercase address; each carries its checksummed form. All four
-	* share the one Fiat24Token.sol source and `decimals()` is the constant 2 (Fiat24Token.sol:256-258;
-	* issuer list above).
-	*/
-	var FIAT24_TOKENS = {
-		"0xbe00f3db78688d9704bcb4e0a827aea3a9cc0d62": {
-			address: "0xbE00f3db78688d9704BCb4e0a827aea3a9Cc0D62",
-			symbol: "USD24"
-		},
-		"0x2c5d06f591d0d8cd43ac232c2b654475a142c7da": {
-			address: "0x2c5d06f591D0d8cd43Ac232c2B654475a142c7DA",
-			symbol: "EUR24"
-		},
-		"0xd41f1f0cf89fd239ca4c1f8e8ada46345c86b0a4": {
-			address: "0xd41F1f0cf89fD239ca4c1F8E8ADA46345c86b0a4",
-			symbol: "CHF24"
-		},
-		"0x7288ac74d211735374a23707d1518dcbbc0144fd": {
-			address: "0x7288Ac74d211735374A23707D1518DCbbc0144fd",
-			symbol: "CNH24"
-		}
-	};
-	var INTERNAL_ACCOUNT_MIN = 9100n;
-	var INTERNAL_ACCOUNT_MAX = 9299n;
-	var TRANSFER_BY_ACCOUNT_ID = from$2("function transferByAccountId(uint256 accountId, uint256 amount)");
-	var CLIENT_PAYOUT = from$2("function clientPayout(uint256 amount, string contactId)");
-	var CLIENT_PAYOUT_REF = from$2("function clientPayoutRef(uint256 amount, string contactId, uint256 purposeId, string ref)");
-	var MONEY_EXCHANGE_EXACT_IN = from$2("function moneyExchangeExactIn(address input, address output, uint256 amount)");
-	var MONEY_EXCHANGE_EXACT_OUT = from$2("function moneyExchangeExactOut(address input, address output, uint256 amount)");
-	var DEPOSIT_TOKEN_VIA_USDC = from$2("function depositTokenViaUsdc(address input, address output, uint256 amount)");
-	var DEPOSIT_ETH = from$2("function depositETH(address output) payable");
-	var DEPOSIT_TOKEN_VIA_ETH = from$2("function depositTokenViaEth(address input, address output, uint256 amount)");
-	var MINT_BY_CLIENT = from$2("function mintByClient(uint256 tokenId)");
-	var MINT_BY_CLIENT_WITH_ETH = from$2("function mintByClientWithETH(uint256 tokenId) payable");
-	var ACCOUNT_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
-	var ACCOUNT_SAFE_TRANSFER = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
-	var ACCOUNT_SAFE_TRANSFER_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
-	var FIAT24_SELECTORS = new Set([
-		TRANSFER_BY_ACCOUNT_ID,
-		CLIENT_PAYOUT,
-		CLIENT_PAYOUT_REF,
-		MONEY_EXCHANGE_EXACT_IN,
-		MONEY_EXCHANGE_EXACT_OUT,
-		DEPOSIT_TOKEN_VIA_USDC,
-		DEPOSIT_ETH,
-		DEPOSIT_TOKEN_VIA_ETH,
-		MINT_BY_CLIENT,
-		MINT_BY_CLIENT_WITH_ETH
-	].map((fn) => getSelector(fn)));
-	var ERC20_SELECTORS = new Set([
-		"function transfer(address to, uint256 amount)",
-		"function approve(address spender, uint256 amount)",
-		"function increaseAllowance(address spender, uint256 amount)",
-		"function decreaseAllowance(address spender, uint256 amount)",
-		"function transferFrom(address from, address to, uint256 amount)"
-	].map((signature) => getSelector(signature)));
-	var FIAT24_CONTRACTS = new Set([
-		FIAT24_ACCOUNT,
-		FIAT24_DEPOSIT,
-		FIAT24_CARD,
-		...Object.keys(FIAT24_TOKENS)
-	].map((a) => a.toLowerCase()));
-	/** `to` is one of the seven pinned Fiat24 proxies on Arbitrum One. */
-	var isFiat24Contract = (chainId, to) => chainId === 42161 && FIAT24_CONTRACTS.has(to.toLowerCase());
-	/** `data` starts with a Fiat24-specific selector (any callee, any chain). */
-	var hasFiat24Selector = (data) => FIAT24_SELECTORS.has(data.slice(0, 10).toLowerCase());
-	/** The spender's role when it is a Fiat24 contract on Arbitrum One. */
-	var fiat24Spender = (chainId, spender) => {
-		if (chainId !== 42161) return;
-		const address = spender.toLowerCase();
-		return address === "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14".toLowerCase() ? "card" : address === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase() ? "deposit" : void 0;
-	};
-	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
-	var tryCall$5 = (fn, data) => {
-		const selector = getSelector(fn);
-		if (!data.toLowerCase().startsWith(selector)) return;
-		try {
-			assertHex$1(data, "data");
-			const args = decodeData(fn, data);
-			if (!Array.isArray(args)) return;
-			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused) {
-			return;
-		}
-	};
-	var argUint$3 = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not a uint256");
-		return value;
-	};
-	var argAddress$3 = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
-		return checksumEvmAddress(value);
-	};
-	var argString = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "string") throw new ChainError("invalid-request", "decoded argument is not a string");
-		return value;
-	};
-	var runCases = (cases, call) => {
-		for (const c of cases) {
-			const args = tryCall$5(c.fn, call.data);
-			if (args === void 0) continue;
-			if (c.payable === true ? call.value === 0n : call.value > 0n) return "claimed";
-			const decoded = c.run(args, call);
-			return decoded === "claimed" ? "claimed" : { decoded };
-		}
-	};
-	var tokenAmount$2 = (token, amount, chainId, table) => {
-		const known = lookupEvmToken(table, chainId, token);
-		return _objectSpread2({
-			asset: token,
-			amount: amount.toString(10)
-		}, known === void 0 ? {} : {
-			symbol: known.symbol,
-			decimals: known.decimals
-		});
-	};
-	/** The cash-token row for an address argument, or undefined for any other token. */
-	var cashToken = (address) => FIAT24_TOKENS[address.toLowerCase()];
-	var fiat24Token = (token) => ({
-		asset: token.address,
-		symbol: token.symbol,
-		decimals: 2
-	});
-	/** Verified outflow of a cash-token amount; `fiat24` names the account or payee the bytes carry. */
-	var cashFlow = (token, amount, chainId, table, fiat24) => ({
-		to: token.address,
-		amount: tokenAmount$2(token.address, amount, chainId, table),
-		verified: true,
-		fiat24
-	});
-	var ethFlow = (to, value) => ({
-		to,
-		amount: {
-			asset: EVM_NATIVE_ASSET,
-			amount: value.toString(10)
-		},
-		verified: true
-	});
-	/** A top-up input paid to the deposit contract — verified only when the token table knows it. */
-	var topUpFlow = (input, amount, chainId, table) => ({
-		to: FIAT24_DEPOSIT,
-		amount: tokenAmount$2(input, amount, chainId, table),
-		verified: lookupEvmToken(table, chainId, input) !== void 0
-	});
-	var payout = (token, args, action, chainId, table) => {
-		const contactId = argString(args, 1);
-		return {
-			summary: "payout",
-			outflows: [cashFlow(token, argUint$3(args, 0), chainId, table, { payee: contactId })],
-			warnings: [{
-				kind: "fiat24-payee-offchain",
-				message: ""
-			}],
-			fiat24: action(contactId)
-		};
-	};
-	/** Both exchange sides need two different cash tokens — anything else is a near miss. */
-	var exchangePair = (args) => {
-		const input = cashToken(argAddress$3(args, 0));
-		const output = cashToken(argAddress$3(args, 1));
-		return input === void 0 || output === void 0 || input.address === output.address ? void 0 : {
-			input,
-			output
-		};
-	};
-	var exchangeIn = (args, chainId, table) => {
-		const pair = exchangePair(args);
-		if (pair === void 0) return "claimed";
-		return {
-			summary: "swap",
-			outflows: [{
-				to: FIAT24_DEPOSIT,
-				amount: tokenAmount$2(pair.input.address, argUint$3(args, 2), chainId, table),
-				verified: true
-			}],
-			warnings: [{
-				kind: "fiat24-issuer-rate",
-				message: ""
-			}],
-			fiat24: {
-				kind: "exchange",
-				side: "exact-in",
-				receive: fiat24Token(pair.output)
-			}
-		};
-	};
-	var exchangeOut = (args, chainId, table) => {
-		const pair = exchangePair(args);
-		if (pair === void 0) return "claimed";
-		return {
-			summary: "swap",
-			outflows: [],
-			warnings: [{
-				kind: "fiat24-issuer-rate",
-				message: ""
-			}, {
-				kind: "fiat24-exact-out-unbounded",
-				message: ""
-			}],
-			fiat24: {
-				kind: "exchange",
-				side: "exact-out",
-				pay: fiat24Token(pair.input),
-				receive: tokenAmount$2(pair.output.address, argUint$3(args, 2), chainId, table)
-			}
-		};
-	};
-	/** A top-up's shared shape: pay in, receive a cash token at a rate the transaction cannot bound. */
-	var topUp = (outflows, output, swapsInTx) => ({
-		summary: "swap",
-		outflows,
-		warnings: [{
-			kind: "fiat24-issuer-rate",
-			message: ""
-		}, ...swapsInTx ? [{
-			kind: "fiat24-swap-quote",
-			message: ""
-		}] : []],
-		fiat24: {
-			kind: "top-up",
-			receive: fiat24Token(output)
-		}
-	});
-	var topUpToken = (args, swapsInTx, chainId, table) => {
-		const input = argAddress$3(args, 0);
-		const output = cashToken(argAddress$3(args, 1));
-		if (output === void 0) return "claimed";
-		return topUp([topUpFlow(input, argUint$3(args, 2), chainId, table)], output, swapsInTx(input));
-	};
-	/** Minting an account permanently links the address to the identity Fiat24 verifies. */
-	var openAccount = (id, outflows) => ({
-		summary: "contract-call",
-		outflows,
-		warnings: [{
-			kind: "fiat24-account-link",
-			message: ""
-		}],
-		fiat24: {
-			kind: "open-account",
-			account: id.toString(10)
-		}
-	});
-	var moveAccount = (args) => {
-		const to = argAddress$3(args, 1);
-		const id = argUint$3(args, 2);
-		return {
-			summary: "transfer",
-			outflows: [{
-				to,
-				amount: {
-					asset: FIAT24_ACCOUNT,
-					amount: "1",
-					tokenId: id.toString(10)
-				},
-				verified: false
-			}],
-			warnings: [{
-				kind: "fiat24-account-move",
-				level: "danger",
-				message: `#${id.toString(10)} → ${to}`
-			}]
-		};
-	};
-	var decodeFiat24Token = (token, call, chainId, table) => {
-		const hit = runCases([
-			{
-				fn: TRANSFER_BY_ACCOUNT_ID,
-				run: (args) => {
-					const account = argUint$3(args, 0);
-					return {
-						summary: "transfer",
-						outflows: [cashFlow(token, argUint$3(args, 1), chainId, table, { account: account.toString(10) })],
-						warnings: account >= INTERNAL_ACCOUNT_MIN && account <= INTERNAL_ACCOUNT_MAX ? [{
-							kind: "fiat24-internal-account",
-							message: account.toString(10)
-						}] : []
-					};
-				}
-			},
-			{
-				fn: CLIENT_PAYOUT,
-				run: (args) => payout(token, args, (contactId) => ({
-					kind: "payout",
-					contactId
-				}), chainId, table)
-			},
-			{
-				fn: CLIENT_PAYOUT_REF,
-				run: (args) => payout(token, args, (contactId) => ({
-					kind: "payout",
-					contactId,
-					purposeId: argUint$3(args, 2).toString(10),
-					ref: argString(args, 3)
-				}), chainId, table)
-			}
-		], call);
-		if (hit !== void 0) return hit;
-		const selector = call.data.slice(0, 10).toLowerCase();
-		return ERC20_SELECTORS.has(selector) && call.value === 0n ? void 0 : "claimed";
-	};
-	var decodeFiat24Deposit = (call, chainId, table) => {
-		var _runCases;
-		return (_runCases = runCases([
-			{
-				fn: MONEY_EXCHANGE_EXACT_IN,
-				run: (args) => exchangeIn(args, chainId, table)
-			},
-			{
-				fn: MONEY_EXCHANGE_EXACT_OUT,
-				run: (args) => exchangeOut(args, chainId, table)
-			},
-			{
-				fn: DEPOSIT_TOKEN_VIA_USDC,
-				run: (args) => topUpToken(args, (input) => input.toLowerCase() !== "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".toLowerCase(), chainId, table)
-			},
-			{
-				fn: DEPOSIT_ETH,
-				payable: true,
-				run: (args, call) => {
-					const output = cashToken(argAddress$3(args, 0));
-					return output === void 0 ? "claimed" : topUp([ethFlow("0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F", call.value)], output, true);
-				}
-			},
-			{
-				fn: DEPOSIT_TOKEN_VIA_ETH,
-				run: (args) => topUpToken(args, () => true, chainId, table)
-			}
-		], call)) !== null && _runCases !== void 0 ? _runCases : "claimed";
-	};
-	var decodeFiat24Account = (call) => {
-		var _runCases2;
-		return (_runCases2 = runCases([
-			{
-				fn: MINT_BY_CLIENT,
-				run: (args) => openAccount(argUint$3(args, 0), [])
-			},
-			{
-				fn: MINT_BY_CLIENT_WITH_ETH,
-				payable: true,
-				run: (args, call) => openAccount(argUint$3(args, 0), [ethFlow("0x133CAEecA096cA54889db71956c7f75862Ead7A0", call.value)])
-			},
-			{
-				fn: ACCOUNT_SAFE_TRANSFER_DATA,
-				run: moveAccount
-			},
-			{
-				fn: ACCOUNT_SAFE_TRANSFER,
-				run: moveAccount
-			},
-			{
-				fn: ACCOUNT_TRANSFER_FROM,
-				run: moveAccount
-			}
-		], call)) !== null && _runCases2 !== void 0 ? _runCases2 : "claimed";
-	};
-	/**
-	* Decodes a call to a Fiat24 contract: `{ decoded }` for the calls the rules table describes,
-	* `"claimed"` for every other call into one of the seven pinned proxies (the Fiat24 family's
-	* near-miss reason applies), `undefined` when the call is not Fiat24's — a cash token's ERC-20
-	* selectors, or a callee Fiat24 does not own.
-	*
-	* Only `depositETH` and `mintByClientWithETH` are payable; a positive value on any other function
-	* is a near miss.
-	*/
-	var decodeFiat24 = (chainId, call, table) => {
-		if (chainId !== 42161 || call.to === void 0) return;
-		const to = call.to.toLowerCase();
-		const token = FIAT24_TOKENS[to];
-		if (token !== void 0) return decodeFiat24Token(token, call, chainId, table);
-		if (to === "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F".toLowerCase()) return decodeFiat24Deposit(call, chainId, table);
-		if (to === "0x133CAEecA096cA54889db71956c7f75862Ead7A0".toLowerCase()) return decodeFiat24Account(call);
-		return FIAT24_CONTRACTS.has(to) ? "claimed" : void 0;
-	};
-	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline}`;
-	/** The exact personal-message text a `evm.fiat24-session` request signs. */
-	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
-		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
-	};
 	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
 	* address only. Verified against the Across deployments registry on 2026-11-08.
@@ -25398,7 +25473,7 @@ zoo`.split("\n"));
 			if (!Array.isArray(args)) return;
 			const reencoded = encodeData$1(fn, args).toLowerCase();
 			return data.toLowerCase().startsWith(reencoded) ? args : void 0;
-		} catch (_unused2) {
+		} catch (_unused) {
 			return;
 		}
 	};
@@ -26305,7 +26380,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused3) {
+		} catch (_unused2) {
 			return;
 		}
 	};
@@ -26738,7 +26813,7 @@ zoo`.split("\n"));
 			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
 			return tuple;
-		} catch (_unused4) {
+		} catch (_unused3) {
 			return;
 		}
 	};
@@ -26818,7 +26893,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused5) {
+		} catch (_unused4) {
 			return;
 		}
 	};
@@ -27047,7 +27122,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused6) {
+		} catch (_unused5) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -27206,7 +27281,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused7) {
+		} catch (_unused6) {
 			return;
 		}
 	};
@@ -27290,7 +27365,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused8) {
+		} catch (_unused7) {
 			return;
 		}
 	};
@@ -28026,6 +28101,33 @@ zoo`.split("\n"));
 			};
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
+	};
+	// packages/wallet-chains/dist/assemble-BdiPo0ZX.mjs
+	/**
+	* /solana/plan — the serialisable signing plan of a normalized request: the compiled transaction
+	* message or the raw offchain bytes are signed as-is by Ed25519. No key material.
+	*/
+	var planSolanaMessage = (kind, message, key) => {
+		if (message.length === 0) throw new ChainError("invalid-request", "message must not be empty");
+		return {
+			kind,
+			tasks: [{
+				scheme: "ed25519",
+				path: key.path,
+				publicKey: key.publicKey,
+				message
+			}]
+		};
+	};
+	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
+	var planSolana = (request, key) => planSolanaMessage(request.kind, request.message, key);
+	var assembleSolana = (plan, signatures) => {
+		var _signatures$;
+		signaturesOf(plan.tasks, signatures);
+		return {
+			kind: "signed",
+			artefact: acceptEd25519(plan.tasks[0], (_signatures$ = signatures[0]) !== null && _signatures$ !== void 0 ? _signatures$ : /* @__PURE__ */ new Uint8Array())
+		};
 	};
 	// node_modules/.bun/@solana+errors@8.5.0+ff0372d108591aba/node_modules/@solana/errors/dist/index.browser.mjs
 	init_objectSpread2();
@@ -30255,7 +30357,7 @@ zoo`.split("\n"));
 	var u32le$1 = (data, offset) => u32$1.decode(data, offset);
 	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
 	var i64le = (data, offset) => i64.decode(data, offset);
-	var key$2 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
+	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
 	var account = (parsed, ix, index, lookups) => {
 		var _ix$accountIndices$in;
 		return index < ix.accountIndices.length ? resolveAccountIndex(parsed, (_ix$accountIndices$in = ix.accountIndices[index]) !== null && _ix$accountIndices$in !== void 0 ? _ix$accountIndices$in : 0, lookups) : void 0;
@@ -30279,12 +30381,12 @@ zoo`.split("\n"));
 				if (data.length !== 116 || !(n === 1 || n === 2 && acc(1) === SYSVAR_IDS.rent)) return;
 				const stake = acc(0);
 				if (stake === void 0) return;
-				const lockup = i64le(data, 68) !== 0n || u64le$1(data, 76) !== 0n || key$2(data, 84) !== ZERO_ADDRESS$1;
+				const lockup = i64le(data, 68) !== 0n || u64le$1(data, 76) !== 0n || key$1(data, 84) !== ZERO_ADDRESS$1;
 				return {
 					kind: "initialize",
 					account: stake,
-					staker: key$2(data, 4),
-					withdrawer: key$2(data, 36),
+					staker: key$1(data, 4),
+					withdrawer: key$1(data, 36),
 					lockup
 				};
 			}
@@ -30298,7 +30400,7 @@ zoo`.split("\n"));
 					kind: "authorize",
 					account: stake,
 					role: r,
-					authority: key$2(data, 4)
+					authority: key$1(data, 4)
 				};
 			}
 			case 2: {
@@ -30394,7 +30496,7 @@ zoo`.split("\n"));
 				account: to,
 				from,
 				lamports: u64le$1(data, 4),
-				owner: key$2(data, 20)
+				owner: key$1(data, 20)
 			};
 		}
 		if (u32le$1(data, 0) === 3) {
@@ -30404,8 +30506,8 @@ zoo`.split("\n"));
 			const from = acc(0);
 			const to = acc(1);
 			if (from === void 0 || to === void 0 || !(ix.accountIndices.length === 2 || ix.accountIndices.length === 3)) return "other";
-			const base = key$2(data, 4);
-			const owner = key$2(data, end - 32);
+			const base = key$1(data, 4);
+			const owner = key$1(data, end - 32);
 			if (ix.accountIndices.length === 3 && acc(2) !== base) return "other";
 			if (ix.accountIndices.length === 2 && base !== from) return "other";
 			const seed = data.subarray(44, 44 + seedLen);
@@ -31038,12 +31140,29 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/typed-data-8KO-lrHQ.mjs
+	// packages/wallet-chains/dist/plan-BI4xz1vZ.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
 	init_base();
 	init_objectSpread2();
+	/**
+	* /tron/assemble — the verified signature material as the 65-byte `r‖s‖v` (v = 27 + yParity), the
+	* tronweb ECKeySign form. Always "signed".
+	*/
+	var assembleTron = (plan, signatures) => {
+		var _signatures$;
+		signaturesOf(plan.tasks, signatures);
+		const { r, s, yParity } = acceptEcdsa(plan.tasks[0], (_signatures$ = signatures[0]) !== null && _signatures$ !== void 0 ? _signatures$ : /* @__PURE__ */ new Uint8Array());
+		return {
+			kind: "signed",
+			artefact: toBytes(from({
+				r: fromNumber$1(r),
+				s: fromNumber$1(s),
+				yParity
+			}))
+		};
+	};
 	/**
 	* A strict protobuf wire reader/writer for the TRON protocol messages. Unlike the google-protobuf
 	* and `@bufbuild/protobuf` readers — which accept non-minimal varints, out-of-order and duplicated
@@ -32206,6 +32325,41 @@ zoo`.split("\n"));
 			const [, max] = intBounds(false, 256);
 			return v === void 0 || v > max ? void 0 : v.toString(10);
 		}
+	};
+	/**
+	* /tron/plan — the serialisable signing plan of a normalized request: a transaction plans
+	* sha256(raw_data), a message the TIP-191 digest, typed data the TIP-712 digest. No key material.
+	*/
+	var ecdsa = (digest, key) => ({
+		scheme: "ecdsa-secp256k1",
+		path: key.path,
+		publicKey: key.publicKey,
+		digest
+	});
+	var planTronTransaction = (rawData, key) => {
+		if (rawData.length === 32) throw new ChainError("invalid-request", "a bare 32-byte digest is not a TRON transaction");
+		decodeTronRawData(rawData);
+		return {
+			kind: "tron.transaction",
+			tasks: [ecdsa(sha256$1(rawData), key)]
+		};
+	};
+	var planTronMessage = (message, key) => {
+		if (message.length === 0) throw new ChainError("invalid-request", "a TRON message is non-empty bytes");
+		return {
+			kind: "tron.message",
+			tasks: [ecdsa(tronMessageDigest(message), key)]
+		};
+	};
+	var planTronTypedData = (typedData, key) => ({
+		kind: "tron.typed-data",
+		tasks: [ecdsa(tronTypedDataDigest(parseTronTypedData(typedData).json), key)]
+	});
+	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
+	var planTron = (request, key) => {
+		if (request.kind === "tron.transaction") return planTronTransaction(request.rawData, key);
+		if (request.kind === "tron.typed-data") return planTronTypedData(request.typedData, key);
+		return planTronMessage(request.message, key);
 	};
 	// packages/wallet-chains/dist/tron.mjs
 	init_utils$2();
@@ -34166,7 +34320,7 @@ zoo`.split("\n"));
 	async function confirmWithPassphrase(ctx, params, passphrase) {
 		const allMatch = ctx.session.getDraft(params.draft).expected.every((expected, i) => {
 			const answer = params.answers[i];
-			return answer !== void 0 && answer.length === expected.length && equalBytes$5(answer, expected);
+			return answer !== void 0 && answer.length === expected.length && equalBytes$6(answer, expected);
 		});
 		for (const answer of params.answers) wipe(answer);
 		if (!allMatch) throw new KernelError("invalid-input", "backup confirmation failed");
@@ -35095,9 +35249,9 @@ zoo`.split("\n"));
 		abytes(privKey, 32, "privKey");
 		const seckey0 = bytesToNumberBE(privKey);
 		const P = Point.BASE.multiply(seckey0);
-		const seckey = hasEven(P.y) ? seckey0 : Fn.neg(seckey0);
+		const seckey = hasEven(P.y) ? seckey0 : Fn$1.neg(seckey0);
 		const t = tapTweak(u.pointToBytes(P), merkleRoot);
-		return numberToBytesBE(Fn.add(seckey, t), 32);
+		return numberToBytesBE(Fn$1.add(seckey, t), 32);
 	}
 	/**
 	* Tweaks a Schnorr public key for Taproot key-path spending.
@@ -35174,7 +35328,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -35183,7 +35337,7 @@ zoo`.split("\n"));
 		init_micro_packed();
 		init_utils$2();
 		Point = /* @__PURE__ */ (() => secp256k1.Point)();
-		Fn = /* @__PURE__ */ (() => Point.Fn)();
+		Fn$1 = /* @__PURE__ */ (() => Point.Fn)();
 		CURVE_ORDER = /* @__PURE__ */ (() => Point.Fn.ORDER)();
 		_0n$3 = /* @__PURE__ */ BigInt(0);
 		_2n$1 = /* @__PURE__ */ BigInt(2);
@@ -35234,7 +35388,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function ScriptNum(bytesLimit = 6, forceMinimal = false) {
-		return wrap({
+		return wrap$1({
 			encodeStream: (w, value) => {
 				if (value === _0n$2) return;
 				const neg = value < 0;
@@ -35427,7 +35581,7 @@ zoo`.split("\n"));
 			if (op === OP.PUSHDATA4) return read(4);
 			throw new Error("Should be not possible");
 		};
-		Script = /* @__PURE__ */ (() => Object.freeze(wrap({
+		Script = /* @__PURE__ */ (() => Object.freeze(wrap$1({
 			encodeStream: (w, value) => {
 				aarray(value, "value");
 				for (let o of value) {
@@ -35508,7 +35662,7 @@ zoo`.split("\n"));
 				]
 			};
 			const limitsList = Object.values(limits);
-			return Object.freeze(wrap({
+			return Object.freeze(wrap$1({
 				encodeStream: (w, value) => {
 					if (typeof value === "number") value = BigInt(value);
 					if (_0n$2 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
@@ -35585,7 +35739,7 @@ zoo`.split("\n"));
 				vc
 			];
 		}
-		return wrap({
+		return wrap$1({
 			encodeStream: (w, value) => {
 				const _value = value;
 				let out = [];
@@ -36690,7 +36844,7 @@ zoo`.split("\n"));
 			}
 			return i;
 		})))();
-		_WitnessOutScript = /* @__PURE__ */ (() => Object.freeze(wrap({
+		_WitnessOutScript = /* @__PURE__ */ (() => Object.freeze(wrap$1({
 			encodeStream: (w, value) => OutScript.encodeStream(w, value),
 			decodeStream: (r) => {
 				const raw = r.bytes(r.leftBytes);
@@ -38124,9 +38278,10 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-DqaJ6u4v.mjs
+	// packages/wallet-chains/dist/assemble-8GvNDony.mjs
 	init_secp256k1();
 	init_sha2();
+	init_payment();
 	init_utils();
 	init_transaction();
 	init_objectSpread2();
@@ -38283,39 +38438,243 @@ zoo`.split("\n"));
 		return out;
 	};
 	/**
-	* Signs the BIP-322 to_sign input through a btc-signer Transaction and returns the `smp`-prefixed
-	* base64 witness encoding. `scriptPubKey` is the message address's output script (P2WPKH or P2TR).
+	* The `smp`-prefixed base64 witness encoding of a BIP-322 simple signature: a count varint then
+	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
-	var signBip322Simple = (message, scriptPubKey, privateKey, auxRand) => {
-		const tx = bip322ToSign(scriptPubKey, message);
-		const pub = secp256k1.getPublicKey(privateKey, true);
-		tx.updateInput(0, _objectSpread2({ bip32Derivation: [[pub, {
-			fingerprint: 0,
-			path: []
-		}]] }, scriptPubKey[0] === 81 ? { tapInternalKey: pub.slice(1) } : {}));
-		const isTaproot = scriptPubKey[0] === 81;
-		if (!tx.signIdx(privateKey, 0, isTaproot ? [SigHash.DEFAULT, SigHash.ALL] : [SigHash.ALL], auxRand(0))) throw new ChainError("invalid-request", "key cannot sign this BIP-322 input");
-		tx.finalizeIdx(0);
-		const witness = tx.getInput(0).finalScriptWitness;
-		if (witness === void 0) throw new ChainError("invalid-request", "BIP-322 input produced no witness");
+	var encodeBip322Simple = (witness) => {
 		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
 	};
-	/**
-	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
-	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
-	*/
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
 	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
-	var signLegacyMessage = (message, privateKey) => {
-		var _recovered$;
-		const hash = legacyMessageHash(message);
-		const recovered = secp256k1.sign(hash, privateKey, {
-			lowS: true,
-			format: "recovered",
-			prehash: false
-		});
-		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
-		return base64(concat$1(Uint8Array.of(header), recovered.slice(1)));
+	/**
+	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
+	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
+	*/
+	var encodeLegacySignature = (yParity, compact) => base64(concat$1(Uint8Array.of(27 + yParity + 4), compact));
+	/**
+	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
+	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
+	* ECDSA over the input's sighash preimage); a message plans the BIP-322-simple or legacy signature
+	* of the address's key. No key material — do not import ./index.ts (cycle).
+	*/
+	var message = (error) => error instanceof Error ? error.message : String(error);
+	var cannotSign = (index) => new ChainError("invalid-request", `input ${index}: key cannot sign`);
+	var preimageLegacy = (tx, idx, scriptCode, sighash) => tx.preimageLegacy(idx, scriptCode, sighash);
+	var prevoutsOf = (tx, index) => {
+		try {
+			const prevouts = [];
+			for (let i = 0; i < tx.inputsLength; i++) prevouts.push(getPrevOut(tx.getInput(i)));
+			return prevouts;
+		} catch (error) {
+			throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
+		}
+	};
+	/** The BIP-340 task of a key-path taproot input, or `key cannot sign`. */
+	var taprootTask = (tx, index, input, type, key) => {
+		if (input.tapLeafScript !== void 0 || input.tapMerkleRoot !== void 0) throw cannotSign(index);
+		const x = key.publicKey.slice(1);
+		if (input.tapInternalKey === void 0 || !equalBytes(input.tapInternalKey, x)) throw cannotSign(index);
+		const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
+		const prevouts = prevoutsOf(tx, index);
+		return {
+			scheme: "bip340",
+			path: key.path,
+			publicKey: outputKey,
+			message: tx.preimageWitnessV1(index, prevouts.map((p) => p.script), type.sighash, prevouts.map((p) => p.amount)),
+			tweak: tagSchnorr("TapTweak", x)
+		};
+	};
+	/** The ECDSA task of a segwit-v0 or legacy single-key input, or `key cannot sign`. */
+	var ecdsaTask = (tx, index, input, type, key) => {
+		const pubHash = hash160(key.publicKey);
+		let digest;
+		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes(type.last.hash, pubHash)) {
+			const scriptCode = OutScript.encode({
+				type: "pkh",
+				hash: type.last.hash
+			});
+			let prevOut;
+			try {
+				prevOut = getPrevOut(input);
+			} catch (error) {
+				throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
+			}
+			digest = tx.preimageWitnessV0(index, scriptCode, type.sighash, prevOut.amount);
+		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
+		else throw cannotSign(index);
+		return {
+			scheme: "ecdsa-secp256k1",
+			path: key.path,
+			publicKey: key.publicKey,
+			digest
+		};
+	};
+	/**
+	* The PSBT plan: one task per `{index, key}` entry, in the given order. The input sighash must be
+	* the type's default or SIGHASH_SINGLE|ANYONECANPAY with a same-index output — the allow-list the
+	* previous signer applied.
+	*/
+	var planBitcoinPsbt = (psbt, inputs) => {
+		let tx;
+		try {
+			tx = Transaction.fromPSBT(psbt);
+		} catch (_unused) {
+			throw new ChainError("invalid-request", "PSBT failed to decode");
+		}
+		const seen = /* @__PURE__ */ new Set();
+		const planInputs = [];
+		const tasks = [];
+		for (const { index, key } of inputs) {
+			if (seen.has(index)) throw new ChainError("invalid-request", `input ${index} is listed twice`);
+			seen.add(index);
+			if (key.publicKey.length !== 33) throw new ChainError("invalid-request", `input ${index}: public key must be 33 bytes`);
+			let input;
+			let type;
+			try {
+				input = tx.getInput(index);
+				type = getInputType(input);
+			} catch (error) {
+				throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
+			}
+			const { sighash } = type;
+			if (!(sighash === type.defaultSighash || sighash === SigHash.SINGLE_ANYONECANPAY && index < tx.outputsLength)) throw new ChainError("unsupported", `input ${index} uses a non-default sighash`);
+			tasks.push(type.txType === "taproot" ? taprootTask(tx, index, input, type, key) : ecdsaTask(tx, index, input, type, key));
+			planInputs.push({
+				index,
+				publicKey: key.publicKey,
+				sighash
+			});
+		}
+		return {
+			kind: "bitcoin.psbt",
+			psbt,
+			inputs: planInputs,
+			tasks
+		};
+	};
+	/** The address's decoded output — the plan rejects anything it cannot bind to the key. */
+	var decodeAddress = (network, address) => {
+		try {
+			return Address(bitcoinNetwork(network).params).decode(address);
+		} catch (_unused2) {
+			throw new ChainError("invalid-address", "address does not belong to this network");
+		}
+	};
+	var cannotSignAddress = () => new ChainError("invalid-request", "key cannot sign this address");
+	/**
+	* The message plan: the address must decode to the key's own output — P2PKH for `legacy`, P2WPKH or
+	* the key's tweaked P2TR for `bip322-simple`.
+	*/
+	var planBitcoinMessage = (request, key) => {
+		if (key.publicKey.length !== 33) throw new ChainError("invalid-request", "public key must be 33 bytes");
+		const decoded = decodeAddress(request.network, request.address);
+		const pubHash = hash160(key.publicKey);
+		if (request.format === "legacy") {
+			if (decoded.type !== "pkh" || !equalBytes(decoded.hash, pubHash)) throw cannotSignAddress();
+			return {
+				kind: "bitcoin.message",
+				format: "legacy",
+				publicKey: key.publicKey,
+				tasks: [{
+					scheme: "ecdsa-secp256k1",
+					path: key.path,
+					publicKey: key.publicKey,
+					digest: legacyMessageHash(request.message)
+				}]
+			};
+		}
+		const scriptPubKey = OutScript.encode(decoded);
+		if (decoded.type === "wpkh" && equalBytes(decoded.hash, pubHash)) {
+			const tx = bip322ToSign(scriptPubKey, request.message);
+			return {
+				kind: "bitcoin.message",
+				format: "bip322-simple",
+				publicKey: key.publicKey,
+				tasks: [{
+					scheme: "ecdsa-secp256k1",
+					path: key.path,
+					publicKey: key.publicKey,
+					digest: tx.preimageWitnessV0(0, OutScript.encode({
+						type: "pkh",
+						hash: decoded.hash
+					}), SigHash.ALL, 0n)
+				}]
+			};
+		}
+		if (decoded.type === "tr") {
+			const x = key.publicKey.slice(1);
+			const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
+			if (equalBytes(decoded.pubkey, outputKey)) {
+				const tx = bip322ToSign(scriptPubKey, request.message);
+				return {
+					kind: "bitcoin.message",
+					format: "bip322-simple",
+					publicKey: key.publicKey,
+					tasks: [{
+						scheme: "bip340",
+						path: key.path,
+						publicKey: outputKey,
+						message: tx.preimageWitnessV1(0, [scriptPubKey], SigHash.DEFAULT, [0n]),
+						tweak: tagSchnorr("TapTweak", x)
+					}]
+				};
+			}
+		}
+		throw cannotSignAddress();
+	};
+	/**
+	* /bitcoin/assemble — graft the verified signature material onto the planned artefact: partial
+	* signatures / tapKeySig into a fresh parse of the planned PSBT, or the witness / compact-signature
+	* string of a message request. Always "signed".
+	*/
+	var der = (r, s) => new secp256k1.Signature(r, s).toBytes("der");
+	var compact = (r, s) => new secp256k1.Signature(r, s).toBytes("compact");
+	/** The artefact `signIdx` produced: partialSig DER‖sighash, or tapKeySig sig[‖sighash]. */
+	var assembleBitcoinPsbt = (plan, signatures) => {
+		signaturesOf(plan.tasks, signatures);
+		let tx;
+		try {
+			tx = Transaction.fromPSBT(plan.psbt);
+		} catch (_unused3) {
+			throw new ChainError("invalid-request", "PSBT failed to decode");
+		}
+		for (let i = 0; i < plan.tasks.length; i++) {
+			const task = plan.tasks[i];
+			const input = plan.inputs[i];
+			const signature = signatures[i];
+			if (task === void 0 || input === void 0 || signature === void 0) throw new ChainError("invalid-signature", "plan is malformed");
+			if (task.scheme === "bip340") {
+				const sig = acceptBip340(task, signature);
+				tx.updateInput(input.index, { tapKeySig: input.sighash === SigHash.DEFAULT ? sig : concatBytes(sig, Uint8Array.of(input.sighash)) }, true);
+			} else {
+				const { r, s } = acceptEcdsa(task, signature);
+				tx.updateInput(input.index, { partialSig: [[input.publicKey, concatBytes(der(r, s), Uint8Array.of(input.sighash))]] }, true);
+			}
+		}
+		return {
+			kind: "signed",
+			artefact: tx.toPSBT(0)
+		};
+	};
+	/** The `smp` witness encoding for bip322-simple, the compact base64 signature for legacy. */
+	var assembleBitcoinMessage = (plan, signatures) => {
+		var _signatures$;
+		signaturesOf(plan.tasks, signatures);
+		const [task] = plan.tasks;
+		const signature = (_signatures$ = signatures[0]) !== null && _signatures$ !== void 0 ? _signatures$ : /* @__PURE__ */ new Uint8Array();
+		if (task.scheme === "bip340") return {
+			kind: "signed",
+			artefact: encodeBip322Simple([acceptBip340(task, signature)])
+		};
+		const { r, s, yParity } = acceptEcdsa(task, signature);
+		if (plan.format === "legacy") return {
+			kind: "signed",
+			artefact: encodeLegacySignature(yParity, compact(r, s))
+		};
+		return {
+			kind: "signed",
+			artefact: encodeBip322Simple([concatBytes(der(r, s), Uint8Array.of(SigHash.ALL)), plan.publicKey])
+		};
 	};
 	// packages/wallet-chains/dist/bitcoin.mjs
 	init_payment();
@@ -38644,30 +39003,6 @@ zoo`.split("\n"));
 		const id = address.toLowerCase();
 		return image.records.find((record) => record.kind === "session-key" && record.id === id);
 	}
-	// packages/wallet-chains/dist/bitcoin-sign.mjs
-	init_payment();
-	init_transaction();
-	/**
-	* /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
-	* (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
-	* first. No key caching.
-	*/
-	var signBitcoinPsbt = (psbt, inputs, auxRand) => {
-		const tx = Transaction.fromPSBT(psbt);
-		for (const { index, privateKey } of inputs) {
-			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
-			const allowed = tx.getInput(index).sighashType === SigHash.SINGLE_ANYONECANPAY ? [SigHash.SINGLE_ANYONECANPAY] : void 0;
-			if (!tx.signIdx(privateKey, index, allowed, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
-		}
-		return tx.toPSBT(0);
-	};
-	/** Returns the signature string: `smp…` base64 witness for bip322-simple, compact base64 for legacy. */
-	var signBitcoinMessage = (request, privateKey, auxRand) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		if (request.format === "legacy") return signLegacyMessage(request.message, privateKey);
-		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
-		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
-	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
 	/**
 	* The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
@@ -39629,8 +39964,8 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-kernel/src/modules/chains/shared.ts
 	/**
-	* Shared types and helpers for the chains module's per-family sign executors — kept in a leaf file
-	* so `index.ts` can import the family executors without an import cycle.
+	* Shared types and helpers for the chains module's per-family prepare functions — kept in a leaf
+	* file so `index.ts` can import the family prepares without an import cycle.
 	*/
 	var BTC_PURPOSE = {
 		"btc.bip44": 44,
@@ -39654,29 +39989,23 @@ zoo`.split("\n"));
 		throw error;
 	}
 	// packages/wallet-kernel/src/modules/chains/bitcoin.ts
-	init_bip32();
 	init_payment();
 	init_transaction();
+	init_utils();
 	init_objectSpread2();
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	/** The BIP-32 master fingerprint: first 4 bytes big-endian of hash160(master pubkey). */
+	var fingerprintOf = (pub) => {
+		const h = hash160(pub);
+		return new DataView(h.buffer, h.byteOffset, h.byteLength).getUint32(0);
+	};
 	var PURPOSES = [
 		44,
 		49,
 		84,
 		86
 	];
-	var contextFor = (b, purpose) => {
-		let ctx = b.purposes.get(purpose);
-		if (ctx === void 0) {
-			ctx = {
-				accountNode: b.master.derive(`m/${purpose}'/${b.coinType}'/${b.groupIndex}'`),
-				children: []
-			};
-			b.purposes.set(purpose, ctx);
-		}
-		return ctx;
-	};
 	/** The PSBT derivation entry that claims this account's fingerprint and path, if any. */
 	var derivationOf = (owner, fingerprint, purpose) => {
 		var _owner$bip32Derivatio;
@@ -39698,14 +40027,14 @@ zoo`.split("\n"));
 	};
 	var expectedPub = (purpose, pub) => purpose === 86 ? pub.slice(1) : pub;
 	var expectedScript = (purpose, pub) => purpose === 86 ? p2tr(pub.slice(1)).script : purpose === 49 ? p2sh(p2wpkh(pub)).script : purpose === 44 ? p2pkh(pub).script : p2wpkh(pub).script;
-	/** Derives `m/purpose'/coin'/group'/change/index` — the only path shape this group may sign. */
-	var childAt = (b, purpose, path) => {
+	/**
+	* The public key at `m/purpose'/coin'/group'/change/index` — the only path shape this group may
+	* sign. The claim is validated before the key leaves the material.
+	*/
+	var childAt = async (b, purpose, path) => {
 		const [purposePath, coinPath, groupPath, change, index] = path;
 		if (path.length !== 5 || purposePath !== purpose + b.hardened || coinPath !== b.coinType + b.hardened || groupPath !== b.groupIndex + b.hardened || change === void 0 || index === void 0 || change !== 0 && change !== 1 || index < 0 || index >= b.hardened) throw new KernelError("invalid-input", "derivation path is not this account's");
-		const ctx = contextFor(b, purpose);
-		const child = ctx.accountNode.deriveChild(change).deriveChild(index);
-		ctx.children.push(child);
-		return child;
+		return b.material.secp256k1(path);
 	};
 	/**
 	* Ownership check for one `request.sign` entry: under the entry's own template, the derivation
@@ -39713,17 +40042,14 @@ zoo`.split("\n"));
 	* (witnessUtxo, or nonWitnessUtxo for P2PKH, plus redeemScript for P2SH-P2WPKH) the script of that
 	* key. A template that disagrees with the input's script type fails the path or script check.
 	*/
-	var bitcoinInput = (b, tx, entry) => {
+	var bitcoinInput = async (b, tx, entry) => {
 		const purpose = BTC_PURPOSE[entry.template];
 		if (purpose === void 0) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		const { index: idx } = entry;
 		const input = tx.getInput(idx);
-		const der = derivationOf(input, b.master.fingerprint, purpose);
+		const der = derivationOf(input, b.fingerprint, purpose);
 		if (der === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
-		const child = childAt(b, purpose, der.path);
-		const pub = child.publicKey;
-		const priv = child.privateKey;
-		if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+		const pub = await childAt(b, purpose, der.path);
 		if (!deepEqual(der.pubkey, expectedPub(purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
 		if (purpose === 44) {
 			var _outs$vout;
@@ -39739,7 +40065,10 @@ zoo`.split("\n"));
 		}
 		return {
 			index: idx,
-			privateKey: priv
+			key: {
+				path: der.path,
+				publicKey: pub
+			}
 		};
 	};
 	/**
@@ -39748,17 +40077,17 @@ zoo`.split("\n"));
 	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
 	* equals that key's script for the purpose. Failures just mean "not own".
 	*/
-	var bitcoinOwnScripts = (b, tx) => {
+	var bitcoinOwnScripts = async (b, tx) => {
 		const ownScripts = /* @__PURE__ */ new Set();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
 			for (const purpose of PURPOSES) {
-				const entry = derivationOf(output, b.master.fingerprint, purpose);
+				const entry = derivationOf(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
-					const pub = childAt(b, purpose, entry.path).publicKey;
-					if (pub !== null && deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
+					const pub = await childAt(b, purpose, entry.path);
+					if (deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
 				} catch (_unused) {
 					continue;
 				}
@@ -39766,11 +40095,12 @@ zoo`.split("\n"));
 		}
 		return ownScripts;
 	};
-	/** The PSBT path: input ownership, output binding, normalize, decode intent or sign. */
-	var executeBitcoinPsbt = (b, request, random, intentOnly) => {
+	/** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
+	var prepareBitcoinPsbt = async (b, request) => {
 		const tx = Transaction.fromPSBT(request.psbt);
-		const inputs = request.sign.map((entry) => bitcoinInput(b, tx, entry));
-		const ownScripts = bitcoinOwnScripts(b, tx);
+		const inputs = [];
+		for (const entry of request.sign) inputs.push(await bitcoinInput(b, tx, entry));
+		const ownScripts = await bitcoinOwnScripts(b, tx);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -39784,25 +40114,28 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return { prompt: intent };
+		let plan;
+		try {
+			plan = planBitcoinPsbt(request.psbt, inputs);
+		} catch (error) {
+			mapChainError(error);
+		}
 		return {
-			kind: "bitcoin.psbt",
-			signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => random(32))
+			prompt: intent,
+			plan
 		};
 	};
-	/** The message path: the declared change/index must derive this address, then normalize/sign. */
-	var executeBitcoinMessage = (b, purpose, request, random, intentOnly) => {
+	/** The message plan: the declared change/index must derive this address, then normalize/plan. */
+	var prepareBitcoinMessage = async (b, purpose, request) => {
 		if (request.format === "legacy" && purpose !== 44) throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
-		const child = childAt(b, purpose, [
+		const path = [
 			purpose + b.hardened,
 			b.coinType + b.hardened,
 			b.groupIndex + b.hardened,
 			request.change,
 			request.index
-		]);
-		const pub = child.publicKey;
-		const priv = child.privateKey;
-		if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+		];
+		const pub = await childAt(b, purpose, path);
 		if ((purpose === 86 ? p2tr(pub.slice(1), void 0, b.net.params).address : purpose === 49 ? p2sh(p2wpkh(pub, b.net.params), b.net.params).address : purpose === 44 ? p2pkh(pub, b.net.params).address : p2wpkh(pub, b.net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
 		let normalized;
 		try {
@@ -39816,109 +40149,57 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return { prompt: _objectSpread2(_objectSpread2({}, messagePromptIntent({
-			kind: "text",
-			text: request.message
-		})), {}, { family: "bitcoin" }) };
+		let plan;
+		try {
+			plan = planBitcoinMessage(request, {
+				path,
+				publicKey: pub
+			});
+		} catch (error) {
+			mapChainError(error);
+		}
 		return {
-			kind: "bitcoin.message",
-			signature: signBitcoinMessage(request, priv, () => random(32))
+			prompt: _objectSpread2(_objectSpread2({}, messagePromptIntent({
+				kind: "text",
+				text: request.message
+			})), {}, { family: "bitcoin" }),
+			plan
 		};
 	};
-	var executeBitcoin = (random, request, account, seed, intentOnly) => {
+	/**
+	* Validates and decodes the request and returns its signing plan. The account's group index and the
+	* request's per-sign-entry templates shape every derivation path.
+	*/
+	var prepareBitcoin = async (request, account, material) => {
 		const net = bitcoinNetwork(request.network);
-		const master = HDKey$1.fromMasterSeed(seed, net.bip32);
 		const b = {
-			master,
-			purposes: /* @__PURE__ */ new Map(),
+			material,
+			fingerprint: fingerprintOf(await material.secp256k1([])),
 			coinType: net.coinType,
 			hardened: 2147483648,
 			groupIndex: account.groupIndex,
 			net
 		};
-		try {
-			if (request.kind === "bitcoin.psbt") return executeBitcoinPsbt(b, request, random, intentOnly);
-			const purpose = "template" in account ? BTC_PURPOSE[account.template] : void 0;
-			if (purpose === void 0) throw new KernelError("invalid-input", "account template is not a bitcoin template");
-			return executeBitcoinMessage(b, purpose, request, random, intentOnly);
-		} finally {
-			for (const ctx of b.purposes.values()) {
-				for (const child of ctx.children) child.wipePrivateData();
-				ctx.accountNode.wipePrivateData();
-			}
-			master.wipePrivateData();
-		}
-	};
-	// packages/wallet-chains/dist/evm-sign.mjs
-	/**
-	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
-	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
-	* key caching; the caller wipes key bytes.
-	*/
-	var key$1 = (privateKey) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		return fromBytes$2(privateKey);
-	};
-	var sign$2 = (payload, privateKey) => sign$3({
-		payload,
-		privateKey,
-		as: "Object"
-	});
-	/** Signs a normalized transaction; returns the serialized signed envelope. */
-	var signEvmTransaction = (tx, privateKey) => {
-		const privateKeyHex = key$1(privateKey);
-		const envelope = evmEnvelope(tx, tx.type === "eip7702" ? sign$2(getSignPayload$5(evmAuthorization(tx)), privateKeyHex) : void 0);
-		return toBytes$1(envelope.serialize(sign$2(envelope.payload, privateKeyHex)));
-	};
-	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
-	var rs_v = (signature) => toBytes(signature);
-	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from(sign$2(getSignPayload(fromBytes$2(message)), key$1(privateKey))));
-	};
-	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmTypedData = (typedData, privateKey) => {
-		const { json } = parseTypedData(typedData);
-		let payload;
-		try {
-			payload = getSignPayload$6(json);
-		} catch (_unused) {
-			throw new ChainError("invalid-typed-data", "typedData failed to encode");
-		}
-		return rs_v(from(sign$2(payload, key$1(privateKey))));
+		if (request.kind === "bitcoin.psbt") return prepareBitcoinPsbt(b, request);
+		const purpose = "template" in account ? BTC_PURPOSE[account.template] : void 0;
+		if (purpose === void 0) throw new KernelError("invalid-input", "account template is not a bitcoin template");
+		return prepareBitcoinMessage(b, purpose, request);
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
-	init_secp256k1();
-	init_utils$2();
-	init_bip32();
 	var FIAT24_SESSION_WINDOW = 1200;
 	var assertFiat24Deadline = (request, now) => {
 		if (request.kind !== "evm.fiat24-session") return;
 		const left = request.deadline - Math.floor(now / 1e3);
 		if (!(left > 0 && left <= FIAT24_SESSION_WINDOW)) throw new KernelError("invalid-input", "fiat24 session deadline out of range");
 	};
-	var executeEvm = (request, source, intentOnly, now) => {
+	/**
+	* Validates and decodes the request and returns its signing plan. `path` is the account's BIP-32
+	* path (`[]` for an imported key); the public key comes only through `material`.
+	*/
+	var prepareEvm = async (request, path, material, now) => {
 		assertFiat24Deadline(request, now);
-		if (source.kind === "imported") {
-			const priv = source.secret;
-			return evmBody(request, priv, evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)), intentOnly);
-		}
-		const master = HDKey$1.fromMasterSeed(source.seed);
-		try {
-			const child = master.derive(`m/44'/60'/0'/0/${source.account.groupIndex}`);
-			try {
-				const priv = child.privateKey;
-				const pub = child.publicKey;
-				if (priv === null || pub === null) throw new KernelError("integrity", "no private key at account path");
-				return evmBody(request, priv, evmAddressFromPublicKey(pub), intentOnly);
-			} finally {
-				child.wipePrivateData();
-			}
-		} finally {
-			master.wipePrivateData();
-		}
-	};
-	var evmBody = (request, priv, signer, intentOnly) => {
+		const pub = await material.secp256k1(path);
+		const signer = evmAddressFromPublicKey(pub);
 		let normalized;
 		try {
 			normalized = normalizeEvm(request);
@@ -39932,60 +40213,298 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return {
+		let plan;
+		try {
+			plan = planEvm(request, {
+				path,
+				publicKey: pub
+			});
+		} catch (error) {
+			mapChainError(error);
+		}
+		return {
 			prompt: intent,
-			signer
+			signer,
+			plan
 		};
-		if (request.kind === "evm.transaction") return {
-			kind: "evm.transaction",
-			signedTransaction: signEvmTransaction(request.tx, priv)
+	};
+	// packages/wallet-kernel/src/modules/chains/keys.ts
+	/**
+	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
+	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
+	* derived through it); `backend` answers one 64-byte signature per task through a family task
+	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
+	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
+	*/
+	init_secp256k1();
+	init_bip32();
+	var HARDENED$1 = 2147483648;
+	/** `m/…` notation of a task path — hardened indices print with `'`. */
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$1 ? `/${i - HARDENED$1}'` : `/${i}`).join("")}`;
+	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
+	var seedKeys = (seed, random) => {
+		const secpNodes = /* @__PURE__ */ new Map();
+		const edNodes = /* @__PURE__ */ new Map();
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
 		};
-		if (request.kind === "evm.personal-message") return {
-			kind: "evm.personal-message",
-			signature: signEvmPersonalMessage(request.message, priv)
+		const secpNode = (path) => {
+			var _path$at;
+			alive();
+			const key = path.join("/");
+			const hit = secpNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
+			secpNodes.set(key, node);
+			return node;
 		};
-		if (request.kind === "evm.fiat24-session") return {
-			kind: "evm.fiat24-session",
-			signature: signEvmPersonalMessage(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)), priv)
+		const edNode = (path) => {
+			var _path$at2;
+			alive();
+			const key = path.join("/");
+			const hit = edNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
+			edNodes.set(key, node);
+			return node;
+		};
+		const privateAt = (task) => {
+			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
+			const priv = secpNode(task.path).privateKey;
+			if (priv === null) throw new KernelError("integrity", "no private key at path");
+			return priv;
 		};
 		return {
-			kind: "evm.typed-data",
-			signature: signEvmTypedData(request.typedData, priv)
+			material: {
+				secp256k1: async (path) => {
+					const pub = secpNode(path).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return pub;
+				},
+				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+				extendedPublicKey: async (path, versions) => {
+					alive();
+					const master = HDKey$1.fromMasterSeed(seed, versions);
+					try {
+						const node = master.derive(pathString(path));
+						try {
+							return node.publicExtendedKey;
+						} finally {
+							node.wipePrivateData();
+						}
+					} finally {
+						master.wipePrivateData();
+					}
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
+			wipe: () => {
+				wiped = true;
+				for (const node of secpNodes.values()) node.wipePrivateData();
+				for (const node of edNodes.values()) wipe(node.privateKey);
+				secpNodes.clear();
+				edNodes.clear();
+			}
 		};
 	};
+	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
+	var importedKeys = (secret, curve, random) => {
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					alive();
+					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return secp256k1.getPublicKey(secret, true);
+				},
+				ed25519: async (path) => {
+					alive();
+					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return ed25519.getPublicKey(secret);
+				},
+				extendedPublicKey: async () => {
+					throw new KernelError("integrity", "imported keys have no extended public key");
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => {
+				alive();
+				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
+				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
+				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
+			} }),
+			wipe: () => {
+				wiped = true;
+				wipe(secret);
+			}
+		};
+	};
+	// packages/wallet-chains/dist/bitcoin-sign.mjs
+	init_secp256k1();
+	init_utils$1();
+	/**
+	* /bitcoin/sign — the only file holding private-key code for the family: the local task signer
+	* (ECDSA, and BIP-340 with the protocol.md §12.2 generic tweak, equal to btc-signer's
+	* taprootTweakPrivKey when the tweak is TapTweak(x(P))), plus the raw-key API reimplemented as
+	* `plan → signBitcoinTask → assemble`. Inputs must already be normalized: the kernel calls
+	* `normalizeBitcoin` first. No key caching.
+	*/
+	var { Fn } = secp256k1.Point;
+	var checkKey$3 = (privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+	};
+	/** Signs one task with a raw secp256k1 key; `auxRand` feeds only the BIP-340 nonce. */
+	var signBitcoinTask = (task, privateKey, auxRand) => {
+		checkKey$3(privateKey);
+		if (task.scheme === "ecdsa-secp256k1") return secp256k1.sign(task.digest, privateKey, { prehash: false });
+		if (task.scheme === "bip340") {
+			const d0 = Fn.fromBytes(privateKey);
+			const internal = secp256k1.Point.BASE.multiply(d0).toAffine().y % 2n === 0n ? d0 : Fn.neg(d0);
+			const tweak = bytesToNumberBE(task.tweak);
+			if (tweak >= Fn.ORDER) throw new ChainError("invalid-request", "tweak is not a valid scalar");
+			const d = Fn.create(internal + tweak);
+			if (d === 0n) throw new ChainError("invalid-request", "tweaked key is zero");
+			return schnorr.sign(task.message, Fn.toBytes(d), auxRand);
+		}
+		throw new ChainError("unsupported", `bitcoin cannot sign ${task.scheme} tasks`);
+	};
+	// packages/wallet-chains/dist/evm-sign.mjs
+	init_secp256k1();
+	/**
+	* /evm/sign — the only file holding private-key code for the family: the local task signer, plus
+	* the raw-key API reimplemented as `plan → signEvmTask → assembleEvm`. Inputs must already be
+	* normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No key caching;
+	* the caller wipes key bytes.
+	*/
+	var checkKey$2 = (privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+	};
+	/** Signs one task with a raw secp256k1 key: RFC 6979, low-s, compact 64 bytes. */
+	var signEvmTask = (task, privateKey) => {
+		checkKey$2(privateKey);
+		if (task.scheme !== "ecdsa-secp256k1") throw new ChainError("unsupported", `evm cannot sign ${task.scheme} tasks`);
+		return secp256k1.sign(task.digest, privateKey, { prehash: false });
+	};
+	var key = (privateKey) => {
+		checkKey$2(privateKey);
+		return {
+			path: [],
+			publicKey: secp256k1.getPublicKey(privateKey, true)
+		};
+	};
+	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signEvmTypedData = (typedData, privateKey) => signLocally(planEvmTypedData(typedData, key(privateKey)), (task) => signEvmTask(task, privateKey), assembleEvm);
 	// packages/wallet-chains/dist/solana-sign.mjs
 	/**
-	* /solana/sign — deterministic Ed25519 signing over the compiled message or raw offchain bytes.
-	* Inputs must already be normalized: the kernel calls `normalizeSolana` first. No key caching; the
-	* caller wipes key bytes.
+	* /solana/sign — the only file holding private-key code for the family: the local task signer, plus
+	* the raw-key API reimplemented as `plan → signSolanaTask → assembleSolana`. Inputs must already be
+	* normalized: the kernel calls `normalizeSolana` first. No key caching; the caller wipes key
+	* bytes.
 	*/
-	/** Signs `message` with a 32-byte Ed25519 seed; returns the 64-byte signature. */
-	var signSolanaMessage = (message, privateKey) => {
+	var checkKey$1 = (privateKey) => {
 		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be a 32-byte seed");
-		if (message.length === 0) throw new ChainError("invalid-request", "message must not be empty");
-		const signature = ed25519.sign(message, privateKey);
-		if (signature.length !== 64) throw new ChainError("invalid-request", "ed25519 produced a malformed signature");
-		return signature;
+	};
+	/** Signs one task with a raw Ed25519 seed: deterministic, 64 bytes. */
+	var signSolanaTask = (task, privateKey) => {
+		checkKey$1(privateKey);
+		if (task.scheme !== "ed25519") throw new ChainError("unsupported", `solana cannot sign ${task.scheme} tasks`);
+		return ed25519.sign(task.message, privateKey);
+	};
+	// packages/wallet-chains/dist/tron-sign.mjs
+	init_secp256k1();
+	/**
+	* /tron/sign — the only file holding private-key code for the family: the local task signer, plus
+	* the raw-key API reimplemented as `plan → signTronTask → assembleTron`. Inputs must already be
+	* normalized: the kernel calls `normalizeTron` first and rejects on a ChainError. No key caching;
+	* the caller wipes key bytes.
+	*/
+	var checkKey = (privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+	};
+	/** Signs one task with a raw secp256k1 key: RFC 6979, low-s, compact 64 bytes. */
+	var signTronTask = (task, privateKey) => {
+		checkKey(privateKey);
+		if (task.scheme !== "ecdsa-secp256k1") throw new ChainError("unsupported", `tron cannot sign ${task.scheme} tasks`);
+		return secp256k1.sign(task.digest, privateKey, { prehash: false });
+	};
+	// packages/wallet-kernel/src/modules/chains/run.ts
+	/** The family's local task signer for the plan's scheme. */
+	var taskSignerFor = (plan) => {
+		if (plan.kind.startsWith("bitcoin.")) return signBitcoinTask;
+		if (plan.kind.startsWith("solana.")) return signSolanaTask;
+		if (plan.kind.startsWith("tron.")) return signTronTask;
+		return signEvmTask;
+	};
+	var wrap = (result, artefact) => result.kind === "signed" ? {
+		kind: "signed",
+		artefact: artefact(result.artefact)
+	} : result;
+	/** Dispatches on the plan kind; a dependent "next" plan passes through unwrapped. */
+	var assembleChain = (plan, signatures) => {
+		switch (plan.kind) {
+			case "evm.transaction": return wrap(assembleEvm(plan, signatures), (signedTransaction) => ({
+				kind: plan.kind,
+				signedTransaction
+			}));
+			case "evm.personal-message":
+			case "evm.fiat24-session":
+			case "evm.typed-data": return wrap(assembleEvm(plan, signatures), (signature) => ({
+				kind: plan.kind,
+				signature
+			}));
+			case "tron.transaction":
+			case "tron.message":
+			case "tron.typed-data": return wrap(assembleTron(plan, signatures), (signature) => ({
+				kind: plan.kind,
+				signature
+			}));
+			case "solana.transaction":
+			case "solana.message": return wrap(assembleSolana(plan, signatures), (signature) => ({
+				kind: plan.kind,
+				signature
+			}));
+			case "bitcoin.psbt": return wrap(assembleBitcoinPsbt(plan, signatures), (signedPsbt) => ({
+				kind: plan.kind,
+				signedPsbt
+			}));
+			case "bitcoin.message": return wrap(assembleBitcoinMessage(plan, signatures), (signature) => ({
+				kind: plan.kind,
+				signature
+			}));
+		}
+	};
+	/**
+	* Signs a plan end to end: tasks go to the backend sequentially — a hardware backend serves one at
+	* a time — and every stage's material is verified during assemble before the next runs.
+	*/
+	var signPlan = async (plan, backend) => {
+		let current = plan;
+		for (;;) {
+			const signatures = [];
+			for (const task of current.tasks) signatures.push(await backend.sign(task));
+			let result;
+			try {
+				result = assembleChain(current, signatures);
+			} catch (error) {
+				if (error instanceof ChainError) throw new KernelError("integrity", "backend signature refused");
+				throw error;
+			}
+			if (result.kind === "signed") return result.artefact;
+			current = result.plan;
+		}
 	};
 	// packages/wallet-kernel/src/modules/chains/solana.ts
-	/** Solana signing for `chain.sign` — the slip10 path, normalize, decode, sign or intent. */
 	init_objectSpread2();
-	var executeSolana = (request, source, intentOnly) => {
-		if (source.kind === "imported") {
-			const priv = source.secret;
-			return solanaBody(request, priv, solanaAddressFromPublicKey(ed25519.getPublicKey(priv)), intentOnly);
-		}
-		const root = HDKey.fromMasterSeed(source.seed);
-		const child = root.derive(`m/44'/501'/${source.account.groupIndex}'/0'`);
-		try {
-			const priv = child.privateKey;
-			return solanaBody(request, priv, solanaAddressFromPublicKey(ed25519.getPublicKey(priv)), intentOnly);
-		} finally {
-			wipe(child.privateKey);
-			wipe(root.privateKey);
-		}
-	};
-	var solanaBody = (request, priv, signer, intentOnly) => {
+	/**
+	* Validates and decodes the request and returns its signing plan. `path` is the account's SLIP-10
+	* path (`[]` for an imported key); the public key comes only through `material`.
+	*/
+	var prepareSolana = async (request, path, material) => {
+		const pub = await material.ed25519(path);
+		const signer = solanaAddressFromPublicKey(pub);
 		let normalized;
 		try {
 			normalized = normalizeSolana(request, signer);
@@ -39999,67 +40518,28 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return { prompt: intent };
+		let plan;
+		try {
+			plan = planSolana(request, {
+				path,
+				publicKey: pub
+			});
+		} catch (error) {
+			mapChainError(error);
+		}
 		return {
-			kind: request.kind,
-			signature: signSolanaMessage(request.message, priv)
+			prompt: intent,
+			plan
 		};
 	};
-	// packages/wallet-chains/dist/tron-sign.mjs
-	init_sha2();
-	/**
-	* /tron/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads: a
-	* transaction signs sha256(raw_data), a message the TIP-191 digest. Inputs must already be
-	* normalized: the kernel calls `normalizeTron` first and rejects on a ChainError. No key caching;
-	* the caller wipes key bytes.
-	*/
-	var key = (privateKey) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		return fromBytes$2(privateKey);
-	};
-	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity, the tronweb ECKeySign form. */
-	var sign$1 = (payload, privateKey) => toBytes(from(sign$3({
-		payload: fromBytes$2(payload),
-		privateKey,
-		as: "Object"
-	})));
-	/** Signs raw_data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signTronTransaction = (rawData, privateKey) => {
-		if (rawData.length === 32) throw new ChainError("invalid-request", "a bare 32-byte digest is not a TRON transaction");
-		decodeTronRawData(rawData);
-		return sign$1(sha256$1(rawData), key(privateKey));
-	};
-	/** TIP-191 message signing; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signTronMessage = (message, privateKey) => {
-		if (message.length === 0) throw new ChainError("invalid-request", "a TRON message is non-empty bytes");
-		return sign$1(tronMessageDigest(message), key(privateKey));
-	};
-	/** TIP-712 typed-data signing; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signTronTypedData = (typedData, privateKey) => sign$1(tronTypedDataDigest(parseTronTypedData(typedData).json), key(privateKey));
 	// packages/wallet-kernel/src/modules/chains/tron.ts
-	init_secp256k1();
-	init_bip32();
-	var executeTron = (request, source, intentOnly) => {
-		if (source.kind === "imported") {
-			const priv = source.secret;
-			return tronBody(request, priv, tronAddressFromPublicKey(secp256k1.getPublicKey(priv, true)), intentOnly);
-		}
-		const master = HDKey$1.fromMasterSeed(source.seed);
-		try {
-			const child = master.derive(`m/44'/195'/0'/0/${source.account.groupIndex}`);
-			try {
-				const priv = child.privateKey;
-				const pub = child.publicKey;
-				if (priv === null || pub === null) throw new KernelError("integrity", "no private key at account path");
-				return tronBody(request, priv, tronAddressFromPublicKey(pub), intentOnly);
-			} finally {
-				child.wipePrivateData();
-			}
-		} finally {
-			master.wipePrivateData();
-		}
-	};
-	var tronBody = (request, priv, signer, intentOnly) => {
+	/**
+	* Validates and decodes the request and returns its signing plan. `path` is the account's BIP-32
+	* path (`[]` for an imported key); the public key comes only through `material`.
+	*/
+	var prepareTron = async (request, path, material) => {
+		const pub = await material.secp256k1(path);
+		const signer = tronAddressFromPublicKey(pub);
 		let normalized;
 		try {
 			normalized = normalizeTron(request);
@@ -40073,94 +40553,80 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return { prompt: intent };
-		if (request.kind === "tron.transaction") return {
-			kind: "tron.transaction",
-			signature: signTronTransaction(request.rawData, priv)
-		};
-		if (request.kind === "tron.typed-data") return {
-			kind: "tron.typed-data",
-			signature: signTronTypedData(request.typedData, priv)
-		};
+		let plan;
+		try {
+			plan = planTron(request, {
+				path,
+				publicKey: pub
+			});
+		} catch (error) {
+			mapChainError(error);
+		}
 		return {
-			kind: "tron.message",
-			signature: signTronMessage(request.message, priv)
+			prompt: intent,
+			plan
 		};
 	};
 	// packages/wallet-kernel/src/modules/chains/index.ts
-	/**
-	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
-	* index, derived from the wallet's entropy record once per session and then served from a cache of
-	* public data only. No records: seed and every node are wiped in `finally` on every path.
-	* `chain.sign` prepares, verifies and signs through the per-family executors in `./evm.ts`,
-	* `./bitcoin.ts`, `./solana.ts` and `./tron.ts`.
-	*/
-	init_bip32();
+	init_utils();
 	init_objectSpread2();
+	var HARDENED = 2147483648;
+	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
+	var leafPath = (family, groupIndex) => {
+		if (family === "solana") return [
+			2147483692,
+			2147484149,
+			groupIndex + HARDENED,
+			HARDENED
+		];
+		return [
+			2147483692,
+			(family === "tron" ? 195 : 60) + HARDENED,
+			HARDENED,
+			0,
+			groupIndex
+		];
+	};
+	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
+	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
 		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
 		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
 	};
-	var accountFor = (master, seed, template, network, groupIndex) => {
-		if (template === "evm.bip44") {
-			const child = master.derive(`m/44'/60'/0'/0/${groupIndex}`);
-			try {
-				const pub = child.publicKey;
-				if (pub === null) throw new KernelError("integrity", "no public key at account path");
-				return {
-					template,
-					network,
-					address: evmAddressFromPublicKey(pub)
-				};
-			} finally {
-				child.wipePrivateData();
-			}
-		}
-		if (template === "solana.bip44-change") {
-			const root = HDKey.fromMasterSeed(seed);
-			const child = root.derive(`m/44'/501'/${groupIndex}'/0'`);
-			try {
-				return {
-					template,
-					network,
-					address: solanaAddressFromPublicKey(ed25519.getPublicKey(child.privateKey))
-				};
-			} finally {
-				wipe(child.privateKey);
-				wipe(root.privateKey);
-			}
-		}
-		if (template === "tron.bip44") {
-			const child = master.derive(`m/44'/195'/0'/0/${groupIndex}`);
-			try {
-				const pub = child.publicKey;
-				if (pub === null) throw new KernelError("integrity", "no public key at account path");
-				return {
-					template,
-					network,
-					address: tronAddressFromPublicKey(pub)
-				};
-			} finally {
-				child.wipePrivateData();
-			}
-		}
+	var accountFor = async (material, template, network, groupIndex) => {
+		if (template === "evm.bip44") return {
+			template,
+			network,
+			address: evmAddressFromPublicKey(await material.secp256k1(leafPath("evm", groupIndex)))
+		};
+		if (template === "solana.bip44-change") return {
+			template,
+			network,
+			address: solanaAddressFromPublicKey(await material.ed25519(leafPath("solana", groupIndex)))
+		};
+		if (template === "tron.bip44") return {
+			template,
+			network,
+			address: tronAddressFromPublicKey(await material.secp256k1(leafPath("tron", groupIndex)))
+		};
 		const purpose = BTC_PURPOSE[template];
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
-		const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
-		const account = master.derive(path);
-		try {
-			return {
-				template,
-				network,
-				xpub: account.publicExtendedKey,
-				fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
-				path
-			};
-		} finally {
-			account.wipePrivateData();
-		}
+		const net = bitcoinNetwork(network);
+		const path = [
+			purpose + HARDENED,
+			net.coinType + HARDENED,
+			groupIndex + HARDENED
+		];
+		const pub = await material.secp256k1([]);
+		return {
+			template,
+			network,
+			xpub: await material.extendedPublicKey(path, net.bip32),
+			fingerprint: hash160(pub).subarray(0, 4).reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
+			path: pathString(path)
+		};
 	};
 	var walletAccounts = async (ctx, params, session, cache) => {
 		var _cache$get, _cache$get2;
@@ -40171,12 +40637,12 @@ zoo`.split("\n"));
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
 		if (known !== void 0) return known;
-		const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
-			const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : void 0);
+		const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+			const keys = seedKeys(seed, ctx.platform.random);
 			try {
-				return accountFor(master, seed, params.template, params.network, params.groupIndex);
+				return await accountFor(keys.material, params.template, params.network, params.groupIndex);
 			} finally {
-				master.wipePrivateData();
+				keys.wipe();
 			}
 		});
 		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
@@ -40199,8 +40665,8 @@ zoo`.split("\n"));
 			"btc.bip86"
 		]
 	};
-	/** The HD pass: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-	var hdPass = (ctx, request, dek) => {
+	/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+	var hdSource = (ctx, request, dek) => {
 		const { account } = request;
 		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
 		if (request.kind === "bitcoin.psbt") {
@@ -40213,22 +40679,16 @@ zoo`.split("\n"));
 		}
 		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
-		const execute = (seed, intentOnly) => {
-			if (request.kind === "bitcoin.psbt") return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
-			if (request.kind === "bitcoin.message") return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
-			if (!("template" in account)) throw new KernelError("invalid-input", "account template does not match the request family");
-			const source = {
-				kind: "hd",
-				account,
-				seed
-			};
-			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly, ctx.platform.now());
-			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
-			return executeSolana(request, source, intentOnly);
-		};
-		return async (intentOnly) => withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => execute(seed, intentOnly));
+		return async (use) => withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+			const keys = seedKeys(seed, ctx.platform.random);
+			try {
+				return await use(keys);
+			} finally {
+				keys.wipe();
+			}
+		});
 	};
-	var importedPass = (ctx, request, dek) => {
+	var importedSource = (ctx, request, dek) => {
 		const { account } = request;
 		if (account.kind !== "imported") throw new KernelError("integrity", "unreachable: imported path with an hd account");
 		const isEvm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data";
@@ -40240,24 +40700,29 @@ zoo`.split("\n"));
 		const header = parseKeyHeader(record.header);
 		const expectedFamily = isEvm ? "evm" : isTron ? "tron" : "solana";
 		if (header.family !== expectedFamily) throw new KernelError("invalid-input", "the key's family does not match the request");
-		const execute = (secret, intentOnly) => {
-			const source = {
-				kind: "imported",
-				secret
-			};
-			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly, ctx.platform.now());
-			if (request.kind === "solana.transaction" || request.kind === "solana.message") return executeSolana(request, source, intentOnly);
-			if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return executeTron(request, source, intentOnly);
-			throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
-		};
-		return (intentOnly) => {
+		const curve = isSolana ? "ed25519" : "secp256k1";
+		return async (use) => {
 			const secret = openRecord(dek, record);
+			const keys = importedKeys(secret, curve, ctx.platform.random);
 			try {
-				return execute(secret, intentOnly);
+				return await use(keys);
 			} finally {
+				keys.wipe();
 				wipe(secret);
 			}
 		};
+	};
+	/**
+	* The family's prepare on this request — `path` applies to evm/tron/solana; bitcoin derives
+	* internally.
+	*/
+	var prepareFor = async (request, material, now) => {
+		const { account } = request;
+		if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return prepareEvm(request, requestPath("evm", account), material, now);
+		if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return prepareTron(request, requestPath("tron", account), material);
+		if (request.kind === "solana.transaction" || request.kind === "solana.message") return prepareSolana(request, requestPath("solana", account), material);
+		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
+		return prepareBitcoin(request, account, material);
 	};
 	/**
 	* The approve-agent binding (design.md §ApproveAgent 绑定): when the decoded intent approves a
@@ -40280,9 +40745,8 @@ zoo`.split("\n"));
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { request, verify } = params;
-		const pass = request.account.kind === "imported" ? importedPass(ctx, request, dek) : hdPass(ctx, request, dek);
-		const prepared = await pass(true);
-		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
+		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
+		const prepared = await openKeys(async (keys) => prepareFor(request, keys.material, ctx.platform.now()));
 		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
 		assertSignable(ctx, dek, prompt);
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
@@ -40290,9 +40754,8 @@ zoo`.split("\n"));
 			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prompt);
 		});
 		ctx.session.require(session);
-		const signed = await pass(false);
-		if ("prompt" in signed) throw new KernelError("integrity", "unreachable: sign pass did not sign");
-		return signed;
+		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
+		return openKeys(async (keys) => signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))));
 	};
 	function createChainsModule() {
 		let accounts = /* @__PURE__ */ new WeakMap();
@@ -41174,7 +41637,7 @@ zoo`.split("\n"));
 		var _opts$maxPayloadChars;
 		const { nonce, ciphertext, mac } = decodePayload(payload, (_opts$maxPayloadChars = opts === null || opts === void 0 ? void 0 : opts.maxPayloadChars) !== null && _opts$maxPayloadChars !== void 0 ? _opts$maxPayloadChars : DEFAULT_MAX_PAYLOAD_CHARS);
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
-		if (!equalBytes$5(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
+		if (!equalBytes$6(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip59.mjs
@@ -52023,13 +52486,13 @@ zoo`.split("\n"));
 	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
 	* cumulative budget deduped by leaf public key.
 	*/
-	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$5(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$6(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
 	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
 		const signer = state.signers.get(key);
 		const { paymentHash } = approval.decoded;
 		const budget = approval.decoded.invoiceAmountSats;
 		if (signer === void 0 || paymentHash === void 0 || budget === void 0) return false;
-		if (!equalBytes$5(rt.lightningSendHtlcScript({
+		if (!equalBytes$6(rt.lightningSendHtlcScript({
 			paymentHash,
 			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
 			identityPublicKey: await signer.identityPublicKey()
@@ -52042,7 +52505,7 @@ zoo`.split("\n"));
 	var exitCovered = (outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.exitOutputs.some((output) => equalBytes$5(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
+		if (!outflow.exitOutputs.some((output) => equalBytes$6(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
 		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
 		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
@@ -52051,7 +52514,7 @@ zoo`.split("\n"));
 	var onchainCovered = (rt, outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.outputs.every((output) => equalBytes$5(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$5(output.script, addressScript))) return false;
+		if (!outflow.outputs.every((output) => equalBytes$6(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$6(output.script, addressScript))) return false;
 		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
 	};
 	/**
@@ -52069,8 +52532,8 @@ zoo`.split("\n"));
 		const spent = /* @__PURE__ */ new Map();
 		for (const output of outputs) {
 			var _spent$get;
-			if (equalBytes$5(output.ownerPublicKey, identity)) continue;
-			if (!equalBytes$5(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			if (equalBytes$6(output.ownerPublicKey, identity)) continue;
+			if (!equalBytes$6(output.tokenIdentifier, intent.tokenIdentifier)) return false;
 			const owner = bytesToHex$4(output.ownerPublicKey);
 			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
 		}
@@ -52381,7 +52844,7 @@ zoo`.split("\n"));
 					});
 					else {
 						before.delete(`${record.kind}/${record.id}`);
-						if (prior.header !== record.header || !equalBytes$5(prior.sealed, record.sealed)) opened.push({
+						if (prior.header !== record.header || !equalBytes$6(prior.sealed, record.sealed)) opened.push({
 							kind: record.kind,
 							id: record.id,
 							plaintext: openChecked(dek, record)
@@ -52396,7 +52859,7 @@ zoo`.split("\n"));
 				const priorFactors = new Map(prev.factors.map((factor) => [factor.id, factor]));
 				for (const factor of next.factors) {
 					const prior = priorFactors.get(factor.id);
-					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$5(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
+					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$6(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
 				}
 			} catch (_unused) {
 				if (!handedOff) for (const record of opened) wipe(record.plaintext);

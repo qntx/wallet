@@ -9,12 +9,13 @@
  * - `apps`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core entry and the
  *   two provider sub-entries, each with `@qntx/*` workspace packages external (they are the host's
  *   peer deps). The core must stay free of both venues' markers — providers only reach a bundle
- *   through their own sub-entry.
+ *   through their own sub-entry — and of every provider dir name under src/apps, read from the
+ *   filesystem at run time and matched case-insensitively like the other markers.
  * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
  *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
  *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -63,6 +64,11 @@ const WALLETCONNECT_EXTERNAL = [
   ),
 ];
 
+/** Every provider dir under src/apps is a forbidden marker in the core bundle, folded lowercase. */
+const PROVIDER_DIRS = readdirSync(resolve(root, "src/apps"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name.toLowerCase());
+
 const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
@@ -88,7 +94,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
        (a record keyed by app id) and the per-definition AppRequests stamping. */
     budget: 10 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
+    forbidden: [...PROVIDER_DIRS, "@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
     name: "apps-hyperliquid",
@@ -159,8 +165,9 @@ async function main(): Promise<number> {
         console.error(`engine-size ${entry.name}: budget exceeded`);
         failed = true;
       }
+      const folded = text.toLowerCase();
       for (const marker of entry.forbidden) {
-        if (text.includes(marker)) {
+        if (folded.includes(marker)) {
           console.error(`engine-size ${entry.name}: bundle contains ${marker}`);
           failed = true;
         }

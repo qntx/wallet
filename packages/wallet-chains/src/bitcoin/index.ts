@@ -16,6 +16,9 @@ export {
   verifyBitcoinPsbtSignatures,
   verifyLegacyBitcoinMessage,
 } from "./verify.ts";
+export { planBitcoinPsbt, planBitcoinMessage } from "./plan.ts";
+export { assembleBitcoinPsbt, assembleBitcoinMessage } from "./assemble.ts";
+export type { BitcoinPsbtPlan, BitcoinMessagePlan } from "./plan.ts";
 
 const common = (request: Record<string, unknown>): { network: string; account: AccountRef } => {
   const base = requestBase(request);

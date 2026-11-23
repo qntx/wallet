@@ -1,23 +1,24 @@
 /**
- * Shared types and helpers for the chains module's per-family sign executors — kept in a leaf file
- * so `index.ts` can import the family executors without an import cycle.
+ * Shared types and helpers for the chains module's per-family prepare functions — kept in a leaf
+ * file so `index.ts` can import the family prepares without an import cycle.
  */
 import { ChainError } from "@qntx/wallet-chains";
-import type { ChainSignResult, ParamsOf } from "@qntx/wallet/protocol";
+import type { ParamsOf } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../errors.ts";
 import type { PromptIntent } from "./prompt.ts";
+import type { ChainPlan } from "./run.ts";
 
-/** The prepare pass also exposes the signing address — the approve-agent binding checks it. */
-export type ExecuteResult =
-  | ChainSignResult
-  | { readonly prompt: PromptIntent; readonly signer?: string };
+/**
+ * What a prepare function produces: the prompt, the signing address (the approve-agent binding
+ * checks it), and the serialisable plan the sign pass executes after verification.
+ */
+export type Prepared = {
+  readonly prompt: PromptIntent;
+  readonly signer?: string;
+  readonly plan: ChainPlan;
+};
 export type SignRequest = ParamsOf<"chain.sign">["request"];
-export type EvmKeySource =
-  | { readonly kind: "hd"; readonly account: HdAccount; readonly seed: Uint8Array }
-  | { readonly kind: "imported"; readonly secret: Uint8Array };
-
-export type SolanaKeySource = EvmKeySource;
 
 export type HdAccount = Extract<
   Exclude<SignRequest, { kind: "bitcoin.psbt" }>["account"],
@@ -35,7 +36,6 @@ export type TronRequest = Extract<
   SignRequest,
   { kind: "tron.transaction" | "tron.message" | "tron.typed-data" }
 >;
-export type TronKeySource = EvmKeySource;
 
 export const BTC_PURPOSE: Readonly<Record<string, number>> = {
   "btc.bip44": 44,

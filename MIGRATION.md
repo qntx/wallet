@@ -1846,3 +1846,145 @@ A Solana transaction ends `dropped` only when a configured host endpoint proves 
 without one, after three consecutive polls more than 60 s apart from first to last. It can stay
 `submitted` about a minute longer than before. Gateways must be deployed with the pinned JSON-RPC
 route (`x-gateway-provider`): an older gateway ignores the pin.
+
+## 36. Signing plans
+
+Compiled snippet: `tests/migration/signing-plans.ts`. Changes affect `@qntx/wallet-chains` hosts.
+Nothing changes in the vault, the protocol, `@qntx/wallet` or the engine API; software-wallet
+signatures are byte-identical.
+
+### Closed unions gained members
+
+| Union                                    | New member                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ChainErrorCode` (`@qntx/wallet-chains`) | `"invalid-signature"` — an assembler refused signature material that does not verify under the task key |
+
+### New exports
+
+- Root: types `KeyPath`, `TaskKey`, `EcdsaTask`, `Bip340Task`, `Ed25519Task`, `SignTask`,
+  `SignScheme`, `Assembled`.
+- `/evm`: `planEvm`, `assembleEvm`, `EvmSignPlan`; `/tron`: `planTron`, `assembleTron`,
+  `TronSignPlan`; `/solana`: `planSolana`, `assembleSolana`, `SolanaSignPlan`; `/bitcoin`:
+  `planBitcoinPsbt`, `planBitcoinMessage`, `assembleBitcoinPsbt`, `assembleBitcoinMessage`,
+  `BitcoinPsbtPlan`, `BitcoinMessagePlan`.
+- `*/sign` (kernel-only by lint): `signEvmTask`, `signTronTask`, `signSolanaTask`,
+  `signBitcoinTask`.
+
+A host that drives an external digest signer plans the request, sends each task's digest, and
+assembles; see the snippet. Assemble refuses a signature that does not verify, normalises a high
+`s`, and computes the recovery id itself — signers return 64 bytes and never a recovery byte.
+
+### Behaviour a raw-key caller may observe
+
+`signBitcoinPsbt` (and `chain.sign`) now refuse before signing, with `ChainError`, inputs they
+previously signed or failed on late: a taproot input whose `tapInternalKey` is absent or another
+key's, that carries `tapLeafScript`/`tapMerkleRoot`, or whose prevout is not the key's BIP-86
+output; inputs whose script is not single-key P2PKH, P2SH-P2WPKH, P2WPKH or P2TR (P2PK, bare or
+P2WSH multisig); a sighash other than the input type's default or `SIGHASH_SINGLE|ANYONECANPAY`
+with a same-index output. Signatures for every accepted input are unchanged.
+
+## 37. App provider interface
+
+Compiled snippets: `tests/migration/app-provider.ts` (a complete provider written against the
+public entries) and `tests/migration/hyperliquid.ts` (updated host composition).
+
+### Group state is typed per app
+
+The generic `AppGroupState` holds only the controller's fields: `status`, `termsAcknowledged`,
+`requestId` and `error`. Each app's fields come from its own type, merged flat, so they are read
+the same way as before:
+
+```ts
+// before
+import type { AppGroupState } from "@qntx/wallet-engine/apps";
+const hl: AppGroupState | undefined = state.groups[key]?.hyperliquid;
+hl?.agent?.address;
+
+// after: `apps.controller` is typed by the definitions you list
+const hl = apps.controller.getState().groups[key]?.hyperliquid; // HyperliquidGroupState | undefined
+hl?.agent?.address;
+```
+
+- Import `HyperliquidGroupState`, `HyperliquidDetail`, `HyperliquidStep` and `HyperliquidGroupAgent`
+  from `@qntx/wallet-engine/apps/hyperliquid`. Import `PolymarketGroupState`, `PolymarketDetail`,
+  `PolymarketStep` and `PolymarketAccountState` from `@qntx/wallet-engine/apps/polymarket`.
+  `AppStep` and `AppAgent` are gone: each app's `step` is now typed with only that app's steps.
+- `renewalDue` is optional. It is absent until the group has been enabled, so read it as
+  `=== true`.
+- If you declare the controller type yourself (`ReturnType<typeof createApps>` widens it), write
+  `AppsController<{ hyperliquid: HyperliquidGroupState }>`.
+- `AppId` is `string`, and `isAppId` is removed. Controller methods accept only the ids you listed.
+
+### `approveBuilder` moved to the Hyperliquid api
+
+```ts
+// before
+await apps.controller.approveBuilder(group, "hyperliquid");
+// after
+await apps.hyperliquid.approveBuilder(group);
+```
+
+Same behaviour: the call needs an enabled group (`HyperliquidError("invalid-input")` otherwise) and
+runs under the same unlock and busy guards. Polymarket never had a builder fee approval, so it has
+no such method.
+
+### Writing or wrapping an `AppDefinition`
+
+- `enableWhen` is required. It lists the eligibility answers (`"available"`, `"close-only"`) under
+  which `enable`/`renew` may start. `createApps` throws if it is empty or contains anything else,
+  and it also throws for an id outside `^[a-z][a-z0-9-]{1,31}$`.
+- `AppDefinition<Id, Api, D>`, `AppContext<D>`, `AppProvider<D>`, `AppFlow<D>` and
+  `AppInstance<Api, D>` take the app's detail type `D`. `D` may not redefine a controller field,
+  and a provider patch cannot write `termsAcknowledged`.
+- `AppProvider.id` and `AppProvider.approveBuilder` are removed.
+- `AppContext.state()` is removed. Use `context.availability()` (this app's availability under the
+  last ready answer), `context.groupState(group)` (this app's state for the group) and
+  `context.flow(group, run)` (an extra action under the controller's guards).
+- See README "Writing an app provider".
+
+### Persisted records
+
+- The controller's `apps` collection now stores exactly `{ "termsAcknowledged": true }` per
+  group and app. Records written by earlier builds also carry `enabledAgent`/`builderDeclined`, so
+  they are rejected as malformed (logged and skipped). There is no migration. Users acknowledge
+  the terms again, and a Hyperliquid group whose agent expired before the upgrade reads `disabled`
+  instead of `needs-reauthorization`.
+- Hyperliquid stores its hints in collection `apps.hyperliquid`, key
+  `<walletId>/<groupIndex>/enablement`. These records are deleted together with their wallet.
+
+### Behaviour
+
+- Flows are guarded per group and app. A running Hyperliquid flow no longer makes a Polymarket
+  `enable`/`disable` on the same group throw `busy`, and a Polymarket `cancel` no longer drops the
+  Hyperliquid flow's writes.
+
+### New main-entry exports
+
+`parseDecimal`, `formatDecimal`, `Decimal`, `SetTimer`, `timeoutSignal`, `readJson`
+(`@qntx/wallet-engine`), and `APP_ID` (`@qntx/wallet-engine/gateway/contract`).
+
+## 38. Card wallet native surfaces
+
+Compiled snippet: `tests/migration/secure-input.ts`. Changes affect `@qntx/wallet-native` host
+apps. No existing host-facing type or call changes; the vault, the kernel protocol and the engine
+are unchanged. Additions a host app may need to act on:
+
+1. **Android permissions merged from the library manifest.** `@qntx/wallet-native` now declares
+   `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` (both normal, install-time
+   permissions) and `<uses-feature android:name="android.hardware.nfc" android:required="false"/>`.
+   Apps that must not request them can remove them with `tools:node="remove"`, which disables card
+   wallets on Android.
+2. **iOS configuration for card wallets** (only when the app offers them): the
+   `com.apple.developer.nfc.readersession.formats = ["TAG"]` entitlement,
+   `NFCReaderUsageDescription`, and `com.apple.developer.nfc.readersession.iso7816.select-identifiers
+   = ["F0716E74780101", "D2760000850101"]`. Without them the kernel's reader reports
+   `unavailable`. CoreNFC is weak-linked, so apps without NFC keep loading.
+3. **Secure input.** Collect card access codes and printed short IDs only with
+   `SecureInput` from `@qntx/wallet-native/secure-input` (wrap `onStateChange` with Nitro's
+   `callback`). Never collect them in a JS `TextInput`: the main runtime must never hold them. The
+   component takes no content props and exposes no methods; `onStateChange` receives only
+   `idle | empty | filled | submitted`. The field becomes editable, takes focus and raises the
+   keyboard only when the kernel requests input.
+4. **Card reader transport.** APDUs flow between the kernel runtime and the native reader
+   directly. A host app neither opens NFC sessions for the card nor relays APDUs; it only drives
+   the tap cadence once the card module is wired in.

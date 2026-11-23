@@ -4,9 +4,12 @@
 // V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8 and
 // V1_ARGON2ID_BACKUP / V1_ARGON2ID_SMALL.
 #include "runtime/KernelRuntime.hpp"
+#include "host/CardReader.hpp"
 #include "host/KernelFile.hpp"
 #include "host/KernelSlot.hpp"
 #include "host/Lifecycle.hpp"
+#include "host/SecureInput.hpp"
+#include "HostCardReader.hpp"
 #include "HostKeystore.hpp"
 #include "HostPasskey.hpp"
 #include "HostNostrNative.hpp"
@@ -88,15 +91,24 @@ struct Mailbox {
     }
     cv.notify_all();
   }
-  size_t waitPosts(size_t n, std::chrono::milliseconds timeout) {
+  // Waits for at least `n` posts. More can land before the caller wakes —
+  // compare against expectations with posts.size(), not this return.
+  bool waitPosts(size_t n, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(m);
-    cv.wait_for(lock, timeout, [&] { return posts.size() >= n; });
-    return posts.size();
+    return cv.wait_for(lock, timeout, [&] { return posts.size() >= n; });
   }
   bool waitErrors(size_t n, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(m);
     cv.wait_for(lock, timeout, [&] { return errors.size() >= n; });
     return errors.size() >= n;
+  }
+  void dump() const {
+    for (const auto& post : posts) {
+      std::fprintf(stderr, "  post: %s\n", post.c_str());
+    }
+    for (const auto& error : errors) {
+      std::fprintf(stderr, "  error: %s\n", error.c_str());
+    }
   }
 };
 
@@ -218,7 +230,7 @@ int destroyBusyloop(const char* hbcPath) {
   auto rt = KernelRuntime::start(
       bytecode ? bytecodeScript(readFile(hbcPath)) : sourceScript(js),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "busyloop: ready post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "busyloop: ready post missing");
   const auto t0 = Clock::now();
   rt->destroy();
   const auto destroyMs =
@@ -303,7 +315,7 @@ int destroyConcurrent() {
   Mailbox box;
   auto rt = KernelRuntime::start(
       sourceScript(std::string(kSendHelper) + "__send(\"ready\");"), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "concurrent: ready post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "concurrent: ready post missing");
   std::thread a([&] {
     for (int i = 0; i < 10; i++) {
       rt->destroy();
@@ -330,7 +342,7 @@ int destroyKdfInflight() {
           " function () { __send(\"kdf-done\"); });"
           "__send(\"submitted\");"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "kdf-inflight: submit post missing");
+  CHECK(box.waitPosts(1, std::chrono::seconds(15)), "kdf-inflight: submit post missing");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "kdf-inflight: runtime still running");
@@ -352,7 +364,7 @@ int timersCancel() {
           "}"
           "__send(\"done\");"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-cancel: never finished");
+  CHECK(box.waitPosts(1, std::chrono::seconds(120)), "timers-cancel: never finished");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
@@ -375,7 +387,7 @@ int timersFired() {
           "}"
           "__qntx.setTimer(0, next);"),
       hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-fired: never finished");
+  CHECK(box.waitPosts(1, std::chrono::seconds(120)), "timers-fired: never finished");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
@@ -419,7 +431,7 @@ __send("pbkdf2-redefined:" + tryCall(function () {
 }));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(5, std::chrono::seconds(30)) == 5, "forged: missing posts");
+  CHECK(box.waitPosts(5, std::chrono::seconds(30)), "forged: missing posts");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() >= 4 && box.posts[0] == "pbkdf2-forged:threw",
       "forged: pbkdf2 accepted forged view");
@@ -466,7 +478,7 @@ for (var i = 0; i < bad.length; i++) {
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "numeric: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "numeric: no report");
   std::string report;
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -517,7 +529,7 @@ out.push("distinct:" + (same ? "no" : "yes"));
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "random: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "random: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("r0:0") != std::string::npos &&
@@ -554,7 +566,7 @@ t("plain", function () { crypto.getRandomValues({ length: 4 }); });
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "grv: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "grv: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("subarray:yes") != std::string::npos &&
@@ -593,7 +605,7 @@ try { Function("return 1")(); out.push("fn:ran"); } catch (e) { out.push("fn:thr
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "", profile);
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "eval: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "eval: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("eval:threw") != std::string::npos &&
@@ -634,7 +646,7 @@ __send(JSON.stringify({
 }));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "descriptors: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "descriptors: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("\"qntx\":true") != std::string::npos &&
@@ -753,7 +765,7 @@ int kernelBytecode() {
   const auto script = bytecodeScript(
       {qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE + qntx::KERNEL_BYTECODE_SIZE});
   auto rt = KernelRuntime::start(script, hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(180)) == 1,
+  CHECK(box.waitPosts(1, std::chrono::seconds(180)),
       "kernel-bytecode: expected the kernel's first frame");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -788,14 +800,14 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "qntx-globals: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "qntx-globals: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "argon2id,backends,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,setTimer"
+                "argon2id,backends,cardReader,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,secureInput,setTimer"
                 "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
                 "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
@@ -885,7 +897,7 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-binding: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "keystore-binding: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -926,7 +938,7 @@ __send("held");
 )JS";
   qntxTestKeystore::holdNext();
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-teardown: no post");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "keystore-teardown: no post");
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "keystore-teardown: runtime still running");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -981,7 +993,7 @@ step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
 });
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "passkey-binding: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "passkey-binding: no report");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   rt->destroy();
   CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "passkey-binding: runtime still running");
@@ -999,6 +1011,654 @@ step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
     std::fprintf(stderr, "passkey-binding onError: %s\n", error.c_str());
   }
   CHECK(box.errors.empty(), "passkey-binding: unexpected onError");
+  return g_failures;
+}
+
+// The card-reader bridge: the prompt reaches the platform verbatim, an ok
+// open connects the session, transmit echoes come back as Uint8Arrays, every
+// failure status ends the session with a silent platform close — and an
+// ended session fails the next transmit with the same code without touching
+// the platform — and the kernel's own misuse throws.
+int cardReaderBinding() {
+  qntxTestCardReader::reset();
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+var r = ["frozen=" + Object.isFrozen(cr)];
+r.push("names=" + Object.getOwnPropertyNames(cr).sort().join(","));
+function throws(name, fn) {
+  try { fn(); r.push(name + "=nothrow"); } catch (e) { r.push(name + "=ok"); }
+}
+function step(fn) { return new Promise(function (resolve) { fn(function (a, b, c) { resolve([a, b, c]); }); }); }
+throws("openNoArgs", function () { cr.open(); });
+throws("openEmpty", function () { cr.open("", function () {}); });
+throws("openLong", function () { cr.open(new Array(1026).join("x"), function () {}); });
+throws("openNoCb", function () { cr.open("ok"); });
+throws("txBeforeOpen", function () { cr.transmit(new Uint8Array(4), function () {}); });
+throws("txShort", function () { cr.transmit(new Uint8Array(3), function () {}); });
+throws("txLong", function () { cr.transmit(new Uint8Array(262), function () {}); });
+throws("txObject", function () { cr.transmit({ length: 4 }, function () {}); });
+throws("txNoCb", function () { cr.transmit(new Uint8Array(4), 1); });
+throws("closeNoArgs", function () { cr.close(); });
+throws("closeOutcome", function () { cr.close("stale", ""); });
+throws("closeLong", function () { cr.close("success", new Array(1026).join("x")); });
+cr.close("success", "no-op");
+step(function (cb) { cr.open("读卡中", cb); }).then(function (o) {
+  r.push("open=" + (o[0] === undefined && o[1] === undefined));
+  throws("doubleOpen", function () { cr.open("again", function () {}); });
+  throws("txShortC", function () { cr.transmit(new Uint8Array(3), function () {}); });
+  throws("txLongC", function () { cr.transmit(new Uint8Array(262), function () {}); });
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xA4, 4, 0, 1, 2, 3]), cb); });
+}).then(function (t) {
+  var ok = t[0] instanceof Uint8Array && t[0].length === 5 && t[0][0] === 3 &&
+      t[0][1] === 2 && t[0][2] === 1 && t[0][3] === 0x90 && t[0][4] === 0;
+  r.push("echo=" + ok + "/" + t[1]);
+  var held = step(function (cb) { cr.transmit(new Uint8Array([0, 0xEF, 0, 0]), cb); });
+  throws("txInflight", function () { cr.transmit(new Uint8Array(4), function () {}); });
+  cr.close("failure", "中止");
+  return held;
+}).then(function (h) {
+  r.push("held=" + h[1]);
+  throws("txAfterClose", function () { cr.transmit(new Uint8Array(4), function () {}); });
+  cr.close("success", "ignored");
+  return step(function (cb) { cr.open("s2", cb); });
+}).then(function (o2) {
+  r.push("reopen=" + (o2[0] === undefined && o2[1] === undefined));
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xEE, 0, 0]), cb); });
+}).then(function (t2) {
+  r.push("tagLost=" + t2[1]);
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xB0, 0, 0]), cb); });
+}).then(function (t3) {
+  r.push("ended=" + t3[1] + "/" + t3[2]);
+  cr.close("failure", "");
+  return step(function (cb) { cr.open("fail:timeout", cb); });
+}).then(function (o3) {
+  r.push("timeout=" + o3[0] + "/" + o3[1]);
+  return step(function (cb) { cr.open("fail:cancelled", cb); });
+}).then(function (o4) {
+  r.push("cancelled=" + o4[0] + "/" + o4[1]);
+  return step(function (cb) { cr.open("fail:tag-lost", cb); });
+}).then(function (o5) {
+  r.push("lost=" + o5[0]);
+  return step(function (cb) { cr.open("fail:interrupted", cb); });
+}).then(function (o6) {
+  r.push("interrupted=" + o6[0]);
+  return step(function (cb) { cr.open("fail:unavailable", cb); });
+}).then(function (o7) {
+  r.push("unavailable=" + o7[0]);
+  return step(function (cb) { cr.open("s3", cb); });
+}).then(function (o8) {
+  r.push("open3=" + (o8[0] === undefined));
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xB0, 0, 0]), cb); });
+}).then(function (t4) {
+  r.push("badResponse=" + t4[1] + "/" + t4[2]);
+  return step(function (cb) { cr.open("s4", cb); });
+}).then(function (o9) {
+  cr.close("success", "完成");
+  __send(r.join(" "));
+});
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-binding: no report");
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
+  }
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1 &&
+            box.posts[0] ==
+                "frozen=true names=close,open,transmit "
+                "openNoArgs=ok openEmpty=ok openLong=ok openNoCb=ok txBeforeOpen=ok "
+                "txShort=ok txLong=ok txObject=ok txNoCb=ok closeNoArgs=ok "
+                "closeOutcome=ok closeLong=ok open=true doubleOpen=ok txShortC=ok txLongC=ok "
+                "echo=true/undefined txInflight=ok held=cancelled txAfterClose=ok reopen=true "
+                "tagLost=tag-lost ended=tag-lost/undefined timeout=timeout/fail:timeout "
+                "cancelled=cancelled/fail:cancelled lost=tag-lost interrupted=interrupted "
+                "unavailable=unavailable open3=true "
+                "badResponse=unavailable/qntx:bad-response",
+      "card-reader-binding: bridge behaviour drifted");
+  CHECK(qntxTestCardReader::opens() == 9, "card-reader-binding: platform saw a bad open");
+  CHECK(qntxTestCardReader::transmits() == 4,
+      "card-reader-binding: an ended session's transmit reached the platform");
+  const auto closes = qntxTestCardReader::closes();
+  CHECK(closes.size() == 9, "card-reader-binding: unexpected platform closes");
+  if (closes.size() == 9) {
+    CHECK(!closes[0].success && closes[0].text == "中止",
+        "card-reader-binding: the kernel's close text did not reach the platform");
+    for (size_t i = 1; i < 8; i++) {
+      CHECK(!closes[i].success && closes[i].text.empty(),
+          "card-reader-binding: a failure close was not silent");
+    }
+    CHECK(closes[8].success && closes[8].text == "完成",
+        "card-reader-binding: the success close did not reach the platform");
+  }
+  for (const auto& error : box.errors) {
+    std::fprintf(stderr, "card-reader-binding onError: %s\n", error.c_str());
+  }
+  CHECK(box.errors.empty(), "card-reader-binding: unexpected onError");
+  return g_failures;
+}
+
+// Process-wide ownership: while one runtime owns the reader, another's open
+// completes unavailable/qntx:busy without ever reaching the platform; after
+// the owner is torn down the reader is free again.
+int cardReaderBusy() {
+  qntxTestCardReader::reset();
+  Mailbox box1;
+  Mailbox box2;
+  const std::string js1 = std::string(kSendHelper) + R"JS(
+__qntx.cardReader.open("r1", function (code) {
+  __send("r1:" + code);
+});
+)JS";
+  const std::string js2 = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+var tries = 0;
+function openOnce() {
+  tries++;
+  cr.open("r2", function (code, detail) {
+    if (code === undefined) {
+      __send("r2-opened:" + tries);
+      return;
+    }
+    if (tries === 1) {
+      __send("r2-busy:" + code + "/" + detail);
+    }
+    setTimeout(openOnce, 20);
+  });
+}
+openOnce();
+)JS";
+  auto rt1 = KernelRuntime::start(sourceScript(js1), hooksFor(box1), "");
+  CHECK(box1.waitPosts(1, std::chrono::seconds(30)), "card-reader-busy: owner never opened");
+  auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), "");
+  CHECK(box2.waitPosts(1, std::chrono::seconds(30)), "card-reader-busy: contender never answered");
+  {
+    std::lock_guard<std::mutex> lock(box1.m);
+    CHECK(box1.posts.size() == 1 && box1.posts[0] == "r1:undefined",
+        "card-reader-busy: the owner's open did not connect");
+  }
+  {
+    std::lock_guard<std::mutex> lock(box2.m);
+    CHECK(box2.posts.size() == 1 && box2.posts[0] == "r2-busy:unavailable/qntx:busy",
+        "card-reader-busy: a busy open did not complete unavailable");
+  }
+  CHECK(qntxTestCardReader::opens() == 1, "card-reader-busy: a busy open reached the platform");
+  rt1->destroy();
+  CHECK(rt1->waitUntilStopped(std::chrono::seconds(5)), "card-reader-busy: owner still running");
+  {
+    const auto closes = qntxTestCardReader::closes();
+    CHECK(closes.size() == 1 && !closes[0].success && closes[0].text.empty(),
+        "card-reader-busy: teardown did not close the owner's session silently");
+  }
+  CHECK(box2.waitPosts(2, std::chrono::seconds(30)),
+      "card-reader-busy: contender never opened after release");
+  rt2->destroy();
+  CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "card-reader-busy: contender still running");
+  {
+    std::lock_guard<std::mutex> lock(box2.m);
+    CHECK(box2.posts.size() == 2 && box2.posts[1].rfind("r2-opened:", 0) == 0,
+        "card-reader-busy: the contender did not open after release");
+  }
+  CHECK(qntxTestCardReader::opens() == 2, "card-reader-busy: released open did not reach the platform");
+  return g_failures;
+}
+
+// Teardown with a held open and a held transmit: the session is closed
+// silently on the kernel thread, ownership is released, and the platform's
+// late completions are dropped without touching the dead runtime.
+int cardReaderTeardown() {
+  {
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+__qntx.cardReader.open("hold", function (code) {
+  __send("late-open:" + code);
+});
+__send("held");
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-teardown: open not parked");
+    CHECK(qntxTestCardReader::opens() == 1, "card-reader-teardown: open never reached the platform");
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-teardown: runtime still running");
+    auto closes = qntxTestCardReader::closes();
+    CHECK(closes.size() == 1 && !closes[0].success && closes[0].text.empty(),
+        "card-reader-teardown: teardown did not close the held session silently");
+    CHECK(qntxTestCardReader::fireHeld(), "card-reader-teardown: the held open was not held");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    std::lock_guard<std::mutex> lock(box.m);
+    CHECK(box.posts.size() == 1, "card-reader-teardown: a completion reached the dead runtime");
+    CHECK(box.errors.empty(), "card-reader-teardown: unexpected onError");
+  }
+  {
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+__qntx.cardReader.open("s", function (code) {
+  __qntx.cardReader.transmit(new Uint8Array([0, 0xEF, 0, 0]), function (v, c) {
+    __send("late-tx:" + c);
+  });
+  __send("tx-parked");
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "card-reader-teardown: transmit not parked");
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-teardown: runtime still running");
+    const auto closes = qntxTestCardReader::closes();
+    CHECK(closes.size() == 1 && !closes[0].success && closes[0].text.empty(),
+        "card-reader-teardown: teardown did not close the live session silently");
+    CHECK(qntxTestCardReader::fireHeld(), "card-reader-teardown: the held transmit was not held");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    std::lock_guard<std::mutex> lock(box.m);
+    CHECK(box.posts.size() == 1, "card-reader-teardown: a completion reached the dead runtime");
+    CHECK(box.errors.empty(), "card-reader-teardown: unexpected onError");
+  }
+  // A completion that lands after the kernel's own close but while the
+  // runtime still lives is dropped: it must not report to JS or close the
+  // platform session a second time.
+  {
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+__qntx.cardReader.open("s", function (code) {
+  __qntx.cardReader.transmit(new Uint8Array([0, 0xEF, 0, 0]), function (v, c) {
+    __send("late-tx:" + c);
+  });
+  __qntx.cardReader.close("failure", "");
+  __send("closed");
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(2, std::chrono::seconds(30)), "card-reader-teardown: session not closed");
+    CHECK(qntxTestCardReader::closes().size() == 1,
+        "card-reader-teardown: the kernel's close never reached the platform");
+    CHECK(qntxTestCardReader::fireHeld(), "card-reader-teardown: the held transmit was not held");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-teardown: runtime still running");
+    {
+      const auto closes = qntxTestCardReader::closes();
+      CHECK(closes.size() == 1, "card-reader-teardown: a late completion closed the session again");
+      std::lock_guard<std::mutex> lock(box.m);
+      // The kernel's own close settled the in-flight transmit cancelled,
+      // exactly once, asynchronously after "closed"; the late tag-lost must
+      // not resolve it again.
+      CHECK(
+          box.posts.size() == 2 && box.posts[0] == "closed" &&
+              box.posts[1] == "late-tx:cancelled",
+          "card-reader-teardown: a late completion re-settled the closed call");
+      CHECK(box.errors.empty(), "card-reader-teardown: unexpected onError");
+    }
+  }
+  return g_failures;
+}
+
+// A platform answer for a call the kernel already closed must not touch the
+// session that replaced it: an old ok must not mark the new session
+// connected, an old failure must not end it or close the new platform
+// session. Run once with the stale answer ok, once with a failure.
+int cardReaderStale() {
+  for (const bool staleFails : {false, true}) {
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+cr.open("hold", function (code) { __send("stale:" + code); });
+cr.close("failure", "");
+cr.open("hold", function (o) {
+  __send("open2:" + (o === undefined));
+  cr.transmit(new Uint8Array([0, 0xA4, 0, 0, 7]), function (v, c) {
+    cr.close("success", "done");
+    __send("tx:" + (v instanceof Uint8Array && v.length === 3 && v[0] === 7) + ":" + c);
+  });
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    // The kernel's own close settles the held first open cancelled.
+    const bool firstPosts = box.waitPosts(1, std::chrono::seconds(30));
+    if (!firstPosts) {
+      box.dump();
+    }
+    CHECK(firstPosts, "card-reader-stale: close never settled");
+    {
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(box.posts[0] == "stale:cancelled", "card-reader-stale: the held open settled wrong");
+    }
+    // The stale answer for the first session lands while the second is
+    // still opening — held at the platform until we release it.
+    const qntx::CardReaderResult stale =
+        staleFails ? qntx::CardReaderResult{qntx::CardReaderStatus::tagLost, {}, "old"}
+                   : qntx::CardReaderResult{qntx::CardReaderStatus::ok, {}, {}};
+    CHECK(qntxTestCardReader::fireHeldAs(stale), "card-reader-stale: the first open was not held");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(
+        qntxTestCardReader::fireHeldAs(qntx::CardReaderResult{qntx::CardReaderStatus::ok, {}, {}}),
+        "card-reader-stale: the second open was not held");
+    const bool sessionPosts = box.waitPosts(3, std::chrono::seconds(30));
+    if (!sessionPosts) {
+      box.dump();
+    }
+    CHECK(sessionPosts, "card-reader-stale: session two broke");
+    {
+      const auto closes = qntxTestCardReader::closes();
+      // Exactly the kernel's own silent failure close and its closing
+      // message — a stale answer must not close the new platform session.
+      CHECK(
+          closes.size() == 2 && !closes[0].success && closes[0].text.empty() &&
+              closes[1].success && closes[1].text == "done",
+          "card-reader-stale: a stale completion closed or broke the new session");
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(
+          box.posts.size() == 3 && box.posts[1] == "open2:true" && box.posts[2] == "tx:true:undefined",
+          "card-reader-stale: the new session answered wrong");
+      CHECK(box.errors.empty(), "card-reader-stale: unexpected onError");
+    }
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-stale: runtime still running");
+  }
+  {
+    // The same rule for a held transmit: open ok, park a transmit, close,
+    // reopen, then fire the old transmit's answer at the new session.
+    qntxTestCardReader::reset();
+    Mailbox box;
+    const std::string js = std::string(kSendHelper) + R"JS(
+var cr = __qntx.cardReader;
+function step(fn) { return new Promise(function (resolve) { fn(function (a, b, c) { resolve([a, b, c]); }); }); }
+step(function (cb) { cr.open("s", cb); }).then(function () {
+  cr.transmit(new Uint8Array([0, 0xEF, 0, 0]), function (v, c) { __send("stale-tx:" + c); });
+  cr.close("failure", "");
+  return step(function (cb) { cr.open("s2", cb); });
+}).then(function (o) {
+  __send("open2:" + (o[0] === undefined));
+  return step(function (cb) { cr.transmit(new Uint8Array([0, 0xA4, 0, 0, 9]), cb); });
+}).then(function (t) {
+  cr.close("success", "done");
+  __send("tx:" + (t[0] instanceof Uint8Array && t[0].length === 3 && t[0][0] === 9) + ":" + t[1]);
+});
+)JS";
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    const bool staleTxPosts = box.waitPosts(1, std::chrono::seconds(30));
+    if (!staleTxPosts) {
+      box.dump();
+    }
+    CHECK(staleTxPosts, "card-reader-stale: close never settled");
+    {
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(box.posts[0] == "stale-tx:cancelled", "card-reader-stale: the held transmit settled wrong");
+    }
+    CHECK(
+        qntxTestCardReader::fireHeldAs(
+            qntx::CardReaderResult{qntx::CardReaderStatus::tagLost, {}, "old"}),
+        "card-reader-stale: the transmit was not held");
+    const bool newSessionPosts = box.waitPosts(3, std::chrono::seconds(30));
+    if (!newSessionPosts) {
+      box.dump();
+    }
+    CHECK(newSessionPosts, "card-reader-stale: session two broke");
+    {
+      const auto closes = qntxTestCardReader::closes();
+      CHECK(
+          closes.size() == 2 && !closes[0].success && closes[1].success,
+          "card-reader-stale: a stale transmit answer closed the new session");
+      std::lock_guard<std::mutex> lock(box.m);
+      CHECK(
+          box.posts.size() == 3 && box.posts[1] == "open2:true" && box.posts[2] == "tx:true:undefined",
+          "card-reader-stale: the new session answered wrong");
+      CHECK(box.errors.empty(), "card-reader-stale: unexpected onError");
+    }
+    rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "card-reader-stale: runtime still running");
+  }
+  return g_failures;
+}
+
+// The secure-input bridge: requests arm the shared hub's prompt, a view's
+// submit returns the bytes as a fresh Uint8Array, a bad submit is refused
+// without completing, cancel maps to cancelled, a second request of the same
+// runtime throws and another runtime's request completes unavailable.
+int secureInputBinding() {
+  Mailbox box;
+  Mailbox box2;
+  std::mutex sinkMutex;
+  std::condition_variable sinkCv;
+  std::vector<std::optional<qntx::SecureInputPrompt>> prompts;
+  auto& hub = qntx::SecureInputHub::shared();
+  const uint64_t view = hub.attach([&](const std::optional<qntx::SecureInputPrompt>& prompt) {
+    std::lock_guard<std::mutex> lock(sinkMutex);
+    prompts.push_back(prompt);
+    sinkCv.notify_all();
+  });
+  const std::string js = std::string(kSendHelper) + R"JS(
+var si = __qntx.secureInput;
+var r = ["frozen=" + Object.isFrozen(si)];
+r.push("names=" + Object.getOwnPropertyNames(si).sort().join(","));
+function throws(name, fn) {
+  try { fn(); r.push(name + "=nothrow"); } catch (e) { r.push(name + "=ok"); }
+}
+function text(v) {
+  if (!(v instanceof Uint8Array)) { return "not-bytes"; }
+  var s = "";
+  for (var i = 0; i < v.length; i++) { s += String.fromCharCode(v[i]); }
+  return s;
+}
+throws("noArgs", function () { si.request(); });
+throws("badKind", function () { si.request("pin", "l", function () {}); });
+throws("emptyLabel", function () { si.request("access-code", "", function () {}); });
+throws("longLabel", function () { si.request("access-code", new Array(514).join("x"), function () {}); });
+throws("noCb", function () { si.request("access-code", "l"); });
+si.request("access-code", "输入访问码", function (v, c) {
+  r.push("req1=" + text(v));
+  si.request("access-code", "取消", function (v2, c2) {
+    r.push("cancelled=" + c2);
+    si.request("access-code", "访问码", function (v3, c3) {
+      r.push("code=" + text(v3));
+      si.request("short-id", "卡号", function (v4, c4) {
+        r.push("sid=" + text(v4));
+        si.request("access-code", "再试", function (v5, c5) {
+          r.push("afterBad=" + text(v5));
+          __send(r.join(" "));
+        });
+        __send("want-bad");
+      });
+      __send("want-sid");
+    });
+    __send("want-code");
+  });
+  si.cancel();
+});
+throws("double", function () { si.request("access-code", "x", function () {}); });
+__send("armed");
+)JS";
+  const std::string js2 = std::string(kSendHelper) + R"JS(
+__qntx.secureInput.request("access-code", "r2", function (v, c) {
+  __send("r2:" + c);
+});
+)JS";
+  auto submit = [&](std::vector<uint8_t> bytes) {
+    return hub.submit(view, qntx::SecretBytes(std::move(bytes)));
+  };
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "secure-input-binding: never armed");
+  {
+    auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), "");
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)),
+        "secure-input-binding: contender never answered");
+    rt2->destroy();
+    CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "secure-input-binding: contender still running");
+  }
+  {
+    std::lock_guard<std::mutex> lock(box2.m);
+    CHECK(box2.posts.size() == 1 && box2.posts[0] == "r2:unavailable",
+        "secure-input-binding: another runtime's request did not complete unavailable");
+  }
+  CHECK(submit({'S', '3', 'c', 'r', '3', 't'}), "secure-input-binding: access-code submit refused");
+  CHECK(box.waitPosts(2, std::chrono::seconds(30)), "secure-input-binding: cancel path stalled");
+  CHECK(submit({'a', 'b', 'c', '1', '2', '3'}), "secure-input-binding: second submit refused");
+  CHECK(box.waitPosts(3, std::chrono::seconds(30)), "secure-input-binding: short-id path stalled");
+  CHECK(submit({'A', '1', 'B', '2', 'C', '3', 'D', '4'}), "secure-input-binding: short-id submit refused");
+  CHECK(box.waitPosts(4, std::chrono::seconds(30)), "secure-input-binding: bad-submit path stalled");
+  CHECK(!submit({0x0A}), "secure-input-binding: an invalid byte was accepted");
+  CHECK(submit({'x', 'y', 'z', '7', '8', '9'}), "secure-input-binding: recovery submit refused");
+  CHECK(box.waitPosts(5, std::chrono::seconds(30)), "secure-input-binding: no report");
+  rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "secure-input-binding: runtime still running");
+  hub.detach(view);
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 5 &&
+            box.posts[4] ==
+                "frozen=true names=cancel,request "
+                "noArgs=ok badKind=ok emptyLabel=ok longLabel=ok noCb=ok double=ok "
+                "req1=S3cr3t cancelled=cancelled code=abc123 sid=A1B2C3D4 afterBad=xyz789",
+      "secure-input-binding: bridge behaviour drifted");
+  {
+    std::lock_guard<std::mutex> sinkLock(sinkMutex);
+    CHECK(prompts.size() >= 4 && prompts[1].has_value() &&
+              prompts[1]->kind == qntx::SecureInputKind::accessCode &&
+              prompts[1]->label == "输入访问码",
+        "secure-input-binding: the prompt did not reach the view verbatim");
+  }
+  for (const auto& error : box.errors) {
+    std::fprintf(stderr, "secure-input-binding onError: %s\n", error.c_str());
+  }
+  CHECK(box.errors.empty(), "secure-input-binding: unexpected onError");
+  return g_failures;
+}
+
+// Teardown with a pending request: the hub drops it without ever calling
+// done, the views are cleared, and a late submit finds nothing pending.
+int secureInputTeardown() {
+  Mailbox box;
+  std::atomic<int> prompts{0};
+  auto& hub = qntx::SecureInputHub::shared();
+  const uint64_t view = hub.attach(
+      [&](const std::optional<qntx::SecureInputPrompt>&) { prompts += 1; });
+  const std::string js = std::string(kSendHelper) + R"JS(
+__qntx.secureInput.request("access-code", "码", function () { __send("late"); });
+__send("armed");
+)JS";
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "secure-input-teardown: never armed");
+  rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "secure-input-teardown: runtime still running");
+  CHECK(!hub.submit(view, qntx::SecretBytes(std::vector<uint8_t>{'a'})),
+      "secure-input-teardown: the request survived teardown");
+  hub.detach(view);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1, "secure-input-teardown: done ran on a dead runtime");
+  CHECK(box.errors.empty(), "secure-input-teardown: unexpected onError");
+  // attach's own empty prompt, the request's prompt, teardown's clear, and
+  // the refused submit's clear of the submitting view.
+  CHECK(prompts.load() == 4, "secure-input-teardown: the view was not cleared");
+  return g_failures;
+}
+
+// The hub on its own, no runtime: one pending request process-wide, submit
+// refuses bad bytes for the kind (and leaves the request pending), cancel
+// completes with cancelled, release drops without completing, and attach
+// replays the current prompt.
+int secureInputHubCase() {
+  qntx::SecureInputHub hub;
+  std::vector<std::optional<qntx::SecureInputPrompt>> seen;
+  const uint64_t view = hub.attach(
+      [&](const std::optional<qntx::SecureInputPrompt>& prompt) { seen.push_back(prompt); });
+  CHECK(seen.size() == 1 && !seen[0].has_value(), "secure-input-hub: attach replayed a prompt");
+  CHECK(!hub.submit(view, qntx::SecretBytes(std::vector<uint8_t>{'a'})),
+      "secure-input-hub: submit without a request");
+  CHECK(seen.size() == 2 && !seen[1].has_value(),
+      "secure-input-hub: a refused submit did not clear the view");
+  int calls = 0;
+  std::optional<qntx::SecureInputFailure> lastFailure;
+  qntx::SecretBytes lastValue;
+  const void* ownerA = &hub;
+  const void* ownerB = &ownerA;
+  auto arm = [&](const void* owner, qntx::SecureInputKind kind) {
+    return hub.request(
+        owner, kind, "label", [&](qntx::SecureInputResult result) {
+          calls += 1;
+          lastFailure = result.failure;
+          lastValue = std::move(result.value);
+        });
+  };
+  auto trySubmit = [&](std::vector<uint8_t> bytes) {
+    return hub.submit(view, qntx::SecretBytes(std::move(bytes)));
+  };
+  CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
+      "secure-input-hub: first request not armed");
+  CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::busySelf,
+      "secure-input-hub: own second request not refused");
+  CHECK(arm(ownerB, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::busyOther,
+      "secure-input-hub: foreign request not refused");
+  CHECK(!trySubmit({}), "secure-input-hub: empty access code accepted");
+  CHECK(!trySubmit(std::vector<uint8_t>(65, 'a')), "secure-input-hub: 65-byte access code accepted");
+  CHECK(!trySubmit({0x1F}), "secure-input-hub: byte below 0x20 accepted");
+  CHECK(!trySubmit({0x7F}), "secure-input-hub: byte above 0x7E accepted");
+  CHECK(trySubmit(std::vector<uint8_t>(64, 'a')), "secure-input-hub: 64-byte access code refused");
+  CHECK(calls == 1 && !lastFailure.has_value() && lastValue.size() == 64,
+      "secure-input-hub: a valid submit did not complete");
+  CHECK(arm(ownerA, qntx::SecureInputKind::shortId) == qntx::SecureInputArm::armed,
+      "secure-input-hub: second request not armed");
+  CHECK(!trySubmit({'A', '1', 'B', '2', 'C', '3', 'D'}), "secure-input-hub: 7-byte short id accepted");
+  CHECK(!trySubmit({'A', '1', 'B', '2', 'C', '3', 'D', '4', '5'}),
+      "secure-input-hub: 9-byte short id accepted");
+  CHECK(!trySubmit({'a', '1', 'b', '2', 'c', '3', 'd', '4'}),
+      "secure-input-hub: lower-case short id accepted");
+  CHECK(!trySubmit({'G', '1', 'B', '2', 'C', '3', 'D', '4'}),
+      "secure-input-hub: non-hex short id accepted");
+  CHECK(trySubmit({'0', '1', '2', '3', 'A', 'B', 'C', 'D'}),
+      "secure-input-hub: valid short id refused");
+  CHECK(calls == 2 && !lastFailure.has_value() && lastValue.size() == 8,
+      "secure-input-hub: a valid short id did not complete");
+  CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
+      "secure-input-hub: third request not armed");
+  hub.cancel(ownerB);
+  CHECK(calls == 2, "secure-input-hub: a foreign cancel completed the request");
+  hub.cancel(ownerA);
+  CHECK(calls == 3 && lastFailure == qntx::SecureInputFailure::cancelled,
+      "secure-input-hub: cancel did not complete cancelled");
+  CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
+      "secure-input-hub: fourth request not armed");
+  hub.release(ownerA);
+  CHECK(calls == 3, "secure-input-hub: release ran the completion");
+  CHECK(!trySubmit({'a'}), "secure-input-hub: submit after release");
+  hub.detach(view);
+  CHECK(seen.size() >= 5 && seen[2].has_value() && seen[2]->label == "label" &&
+            !seen.back().has_value(),
+      "secure-input-hub: the view did not see prompt and clear");
+  // Ordering: the clear reaches the views before the completion, so a request
+  // armed from inside done() is the last prompt a view observes — the view can
+  // never be left idle while a request is pending.
+  {
+    std::vector<std::optional<qntx::SecureInputPrompt>> order;
+    const uint64_t v2 = hub.attach(
+        [&](const std::optional<qntx::SecureInputPrompt>& p) { order.push_back(p); });
+    hub.request(
+        ownerA, qntx::SecureInputKind::accessCode, "first",
+        [&](qntx::SecureInputResult) {
+          hub.request(
+              ownerA, qntx::SecureInputKind::accessCode, "second",
+              [](qntx::SecureInputResult) {});
+        });
+    CHECK(hub.submit(v2, qntx::SecretBytes(std::vector<uint8_t>{'k'})),
+        "secure-input-hub: ordering submit refused");
+    CHECK(order.back().has_value() && order.back()->label == "second",
+        "secure-input-hub: the submit clear overtook a request armed inside done");
+    hub.release(ownerA);
+    hub.request(
+        ownerA, qntx::SecureInputKind::accessCode, "third",
+        [&](qntx::SecureInputResult) {
+          hub.request(
+              ownerA, qntx::SecureInputKind::accessCode, "fourth",
+              [](qntx::SecureInputResult) {});
+        });
+    hub.cancel(ownerA);
+    CHECK(order.back().has_value() && order.back()->label == "fourth",
+        "secure-input-hub: the cancel clear overtook a request armed inside done");
+    hub.release(ownerA);
+    hub.detach(v2);
+  }
   return g_failures;
 }
 
@@ -1050,7 +1710,7 @@ __send(r.join(" "));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-spark: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "backends-spark: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1124,7 +1784,7 @@ __send(r.join(" "));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-nostr: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "backends-nostr: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1280,7 +1940,7 @@ __send("ready");
 )JS";
     auto rt2 = qntx::KernelRuntime::start(sourceScript(js2), hooks2, "");
     CHECK(
-        box2.waitPosts(1, std::chrono::seconds(30)) == 1,
+        box2.waitPosts(1, std::chrono::seconds(30)),
         "kernel-slot: successor never evaluated");
     {
       std::lock_guard<std::mutex> lock(box2.m);
@@ -1338,7 +1998,7 @@ int predecessorChainReleased() {
     auto rt = KernelRuntime::start(script, hooks, "");
     runtimes.push_back(rt);
     CHECK(
-        box.waitPosts(runtimes.size(), std::chrono::seconds(30)) == runtimes.size(),
+        box.waitPosts(runtimes.size(), std::chrono::seconds(30)),
         "predecessor-chain: a runtime never evaluated");
     rt->destroy();
     CHECK(
@@ -1405,7 +2065,7 @@ __send(out.join("|"));
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), dir);
-    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: no report");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)), "file-contract: no report");
     rt->destroy();
     CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1433,7 +2093,7 @@ __send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
 )JS";
   {
     auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), dir);
-    CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: reload no report");
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)), "file-contract: reload no report");
     rt2->destroy();
     CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
@@ -1461,7 +2121,7 @@ int queueCap() {
           // up in the queue instead of draining instantly.
           "__send(\"ready\"); var t = Date.now(); while (Date.now() - t < 5000) {}"),
       std::move(hooks), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
   for (int i = 0; i < 70; i++) {
     rt->post(qntx::SecretBytes(frame.data(), frame.size()));
@@ -1485,7 +2145,7 @@ int globalInventory(KernelProfile profile) {
       hooksFor(box),
       "",
       profile);
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "inventory: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "inventory: no report");
   std::set<std::string> kernelNames;
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -1592,7 +2252,7 @@ out.push("empty:" + (new TextDecoder().decode() === ""));
 __send(out.join(","));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "decoder: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "decoder: no report");
   std::lock_guard<std::mutex> lock(box.m);
   if (!box.posts.empty()) {
     const std::string& r = box.posts[0];
@@ -1659,7 +2319,7 @@ __qntx.pbkdf2("sha512", new Uint8Array([
   new Uint8Array([0x73, 0x61, 0x6c, 0x74, 0x2d, 0xe2, 0x9c, 0x93]), 777, 48, done);
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(60)) == 1, "pbkdf2: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(60)), "pbkdf2: no report");
   {
     std::lock_guard<std::mutex> lock(box.m);
     if (!box.posts.empty() && expect1 && expect2 && expect3) {
@@ -1723,7 +2383,7 @@ __qntx.argon2id(ascii("backup vector password"), ascii("0123456789abcdef"), 6553
 __qntx.argon2id(ascii("password"), ascii("somesalt"), 64, 2, 1, 24, done(1));
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(2, std::chrono::seconds(180)) == 2, "argon2id: no report");
+  CHECK(box.waitPosts(2, std::chrono::seconds(180)), "argon2id: no report");
   {
     std::lock_guard<std::mutex> lock(box.m);
     if (box.posts.size() == 2 && expectBackup && expectSmall) {
@@ -1766,7 +2426,7 @@ __qntx.pbkdf2("sha256", new Uint8Array(4), new Uint8Array(4), 1, 32, cb);
   // Both the ninth and the tenth submit can be rejected when the worker has
   // not picked up the first job yet; every rejection must carry the error.
   CHECK(
-      box.waitPosts(1, std::chrono::seconds(30)) >= 1,
+      box.waitPosts(1, std::chrono::seconds(30)),
       "kdf-queue: full-queue error never arrived");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -1797,7 +2457,7 @@ for (var i = 0; i < 1000; i++) {
 __send("monotonic:" + monotonic + ",fractional:" + fractional + ",subMs:" + subMs);
 )JS";
   auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
-  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "elapsed: no report");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)), "elapsed: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
             box.posts[0].find("monotonic:true") != std::string::npos &&
@@ -1814,7 +2474,7 @@ int kernelProbe(bool bytecode, KernelProfile profile) {
   auto rt = KernelRuntime::start(
       probeScript(qntx::harness::probes::kKernel, bytecode), hooksFor(box), "", profile);
   CHECK(
-      box.waitPosts(2, std::chrono::seconds(180)) == 2,
+      box.waitPosts(2, std::chrono::seconds(180)),
       "kernel-probe: expected kernel-ready and done posts");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -1942,6 +2602,13 @@ int main(int argc, char** argv) {
       {"keystore-binding", [](const char*) { return keystoreBinding(); }},
       {"keystore-teardown", [](const char*) { return keystoreTeardown(); }},
       {"passkey-binding", [](const char*) { return passkeyBinding(); }},
+      {"card-reader-binding", [](const char*) { return cardReaderBinding(); }},
+      {"card-reader-busy", [](const char*) { return cardReaderBusy(); }},
+      {"card-reader-teardown", [](const char*) { return cardReaderTeardown(); }},
+      {"card-reader-stale", [](const char*) { return cardReaderStale(); }},
+      {"secure-input-binding", [](const char*) { return secureInputBinding(); }},
+      {"secure-input-teardown", [](const char*) { return secureInputTeardown(); }},
+      {"secure-input-hub", [](const char*) { return secureInputHubCase(); }},
       {"backends-spark", [](const char*) { return backendsSpark(); }},
       {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},

@@ -3,8 +3,10 @@
 #include "../host/KernelFile.hpp"
 
 #include "KernelBackends.hpp"
+#include "KernelCardReader.hpp"
 #include "KernelKeystore.hpp"
 #include "KernelPasskey.hpp"
+#include "KernelSecureInput.hpp"
 #include "KernelBuffer.hpp"
 #include "KernelJs.hpp"
 #include "platform/KernelArgon2.hpp"
@@ -524,6 +526,8 @@ void installKernelGlobals(
   installKernelBackends(rt, qntx, *intrinsics);
   installKernelKeystore(rt, qntx, state);
   installKernelPasskey(rt, qntx, state);
+  installKernelCardReader(rt, qntx, state);
+  installKernelSecureInput(rt, qntx, state);
 
   intrinsics->freeze.call(rt, jsi::Value(rt, qntx));
   defineHiddenGlobal(rt, *intrinsics, "__qntx", jsi::Value(std::move(qntx)));

@@ -101,8 +101,21 @@ const fileTarget = (edge: Edge): string | undefined =>
   edge.target.kind === "file" ? edge.target.path : undefined;
 const packageTarget = (edge: Edge): { name: string; subpath: string } | undefined =>
   edge.target.kind === "package" ? edge.target : undefined;
+
+/** The card client is a sealed protocol library: its files and these crypto packages only. */
+const CARD_PROTOCOL = `${KERNEL}/modules/card/protocol`;
+const CARD_PROTOCOL_PACKAGES: ReadonlySet<string> = new Set([
+  "@noble/curves",
+  "@noble/hashes",
+  "@noble/ciphers",
+  "@scure/bip32",
+]);
 /** The engine's composition root: src/*.ts. Everything else in engine src is a subdirectory. */
 const isEngineRoot = (path: string): boolean => /^packages\/wallet-engine\/src\/[^/]+$/.test(path);
+/** The `<app>` in `packages/wallet-engine/src/apps/<app>/…`, or undefined for core apps files. */
+const APP_PROVIDER = /^packages\/wallet-engine\/src\/apps\/([^/]+)\//;
+const appDirOf = (path: string): string | undefined => APP_PROVIDER.exec(path)?.[1];
+const APPS_SPI = `${ENGINE}/apps/spi.ts`;
 
 type Rule = {
   readonly id: string;
@@ -110,7 +123,7 @@ type Rule = {
   readonly check: (edge: Edge) => string | undefined;
 };
 
-const RULES: ReadonlyArray<Rule> = [
+export const RULES: ReadonlyArray<Rule> = [
   {
     id: "package-imports",
     check: (edge) =>
@@ -211,6 +224,24 @@ const RULES: ReadonlyArray<Rule> = [
     },
   },
   {
+    id: "card-protocol",
+    check: (edge) => {
+      if (!within(edge.from, CARD_PROTOCOL)) {
+        return undefined;
+      }
+      const target = fileTarget(edge);
+      if (target !== undefined) {
+        return within(target, CARD_PROTOCOL)
+          ? undefined
+          : "the card protocol is self-contained — it imports nothing outside modules/card/protocol";
+      }
+      const pkg = packageTarget(edge);
+      return pkg === undefined || !CARD_PROTOCOL_PACKAGES.has(pkg.name)
+        ? "the card protocol imports only protocol files, @noble/* and @scure/bip32"
+        : undefined;
+    },
+  },
+  {
     id: "chains-leaf",
     check: (edge) => {
       const target = fileTarget(edge);
@@ -231,6 +262,33 @@ const RULES: ReadonlyArray<Rule> = [
       }
       return pkg.name === "@qntx/spark" && pkg.subpath === "./signer"
         ? "@qntx/spark/signer is the kernel's signer surface — the engine never loads it"
+        : undefined;
+    },
+  },
+  {
+    id: "app-provider-spi",
+    check: (edge) => {
+      const target = fileTarget(edge);
+      if (target === undefined) {
+        return undefined;
+      }
+      const fromApp = appDirOf(edge.from);
+      const toApp = appDirOf(target);
+      /* Reverse direction: only an app dir imports itself — the core and the other apps
+         never reach into a provider; a provider reaches its host through its own pack
+         entry. Type-only edges count the same. */
+      if (toApp !== undefined) {
+        return toApp === fromApp
+          ? undefined
+          : "the core and other apps never import a provider — providers reach hosts through their own pack entry";
+      }
+      /* A provider sees the engine only through the SPI. A self-import by package name
+         resolves to an engine file and lands here the same way; targets outside the
+         engine are other rules' business. */
+      return fromApp !== undefined &&
+        within(target, "packages/wallet-engine") &&
+        target !== APPS_SPI
+        ? "an app provider reaches the engine only through src/apps/spi.ts"
         : undefined;
     },
   },
