@@ -1,5 +1,6 @@
 import type { CostModel } from "./budget/costs.ts";
 import type { Account } from "./config/accounts.ts";
+import type { PushService } from "./push/backend.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
 
@@ -140,6 +141,12 @@ export type GatewayOptions = {
   };
   /** A Jupiter API key for `/v1/quotes/swap/solana` — absent, the upstream is called keyless. */
   readonly jupiter?: { readonly apiKey: string };
+  /**
+   * The push service: capabilities, per-family object backends and the push limiter. Absent — no
+   * seal key, no sender or no served family — `GET /v1/push` advertises empty arrays and the write
+   * routes answer `unsupported`.
+   */
+  readonly push?: PushService;
   /**
    * Spot prices: the shared per-asset cache, and the CoinGecko Pro key that enables the primary
    * source. Without the key only the keyless DefiLlama fallback serves, and it quotes USD only.

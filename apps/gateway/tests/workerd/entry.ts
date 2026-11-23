@@ -23,6 +23,7 @@ import type { UpstreamAuthId } from "../../src/types.ts";
 import { upstreamAnswer } from "../upstream-stub.ts";
 
 export { ProviderBudgetObject } from "../../src/budget/durable.ts";
+export { PushObject } from "../../src/push/object.ts";
 
 type HarnessEnv = {
   readonly PROVIDER_BUDGET: DurableObjectNamespace<ProviderBudgetObject>;

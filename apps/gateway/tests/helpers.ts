@@ -263,6 +263,7 @@ export function gateway(options: {
   readonly jupiter?: { apiKey: string };
   readonly log?: (line: string) => void;
   readonly prices?: Parameters<typeof createGateway>[0]["prices"];
+  readonly push?: Parameters<typeof createGateway>[0]["push"];
   readonly now?: () => number;
 }): ReturnType<typeof createGateway> {
   return createGateway({
@@ -287,6 +288,7 @@ export function gateway(options: {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
+    ...(options.push === undefined ? {} : { push: options.push }),
     log: options.log ?? (() => undefined),
   });
 }

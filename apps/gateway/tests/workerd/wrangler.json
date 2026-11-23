@@ -5,13 +5,19 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ProviderBudgetObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["PushObject"] }
+  ],
   "vars": {
     "SCALE": "production",
     "UPSTREAM_DELAY_MS": "0"
   },
   "durable_objects": {
-    "bindings": [{ "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" }]
+    "bindings": [
+      { "name": "PROVIDER_BUDGET", "class_name": "ProviderBudgetObject" },
+      { "name": "PUSH", "class_name": "PushObject" }
+    ]
   },
   "ratelimits": [
     {
@@ -33,6 +39,11 @@
       "name": "SHARE_LIMITER",
       "namespace_id": "1004",
       "simple": { "limit": 1000, "period": 60 }
+    },
+    {
+      "name": "PUSH_LIMITER",
+      "namespace_id": "1005",
+      "simple": { "limit": 60, "period": 60 }
     }
   ]
 }

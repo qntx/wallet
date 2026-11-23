@@ -60,6 +60,11 @@ const productionEnv = (): WorkerEnv => ({
     idFromName: (name: string) => name,
     get: () => ({ lease: async () => Promise.resolve({ ok: true as const, granted: 1000 }) }),
   } as unknown as WorkerEnv["PROVIDER_BUDGET"],
+  PUSH_LIMITER: allowAll,
+  PUSH: {
+    idFromName: (name: string) => name,
+    get: () => ({}),
+  } as unknown as WorkerEnv["PUSH"],
   CORS_ORIGINS: "",
   NETWORKS: "production",
   ZEROX_API_KEY: "z",

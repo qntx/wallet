@@ -1,22 +1,35 @@
+import { PUSH_FAMILIES, PUSH_PLATFORMS } from "@qntx/wallet-engine/gateway/contract";
+import type { PushFamily } from "@qntx/wallet-engine/gateway/contract";
+
 import { durableBudget } from "./budget/leased.ts";
 import { PRODUCTION_ACCOUNTS, STAGING_ACCOUNTS } from "./config/accounts.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
 import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
 import { zeroExConfig } from "./providers/zerox.ts";
+import type { PushNamespace, PushService } from "./push/backend.ts";
+import type { PushFamilyConfig } from "./push/core.ts";
+import { pushFamilies, pushMaterials } from "./push/runtime.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import { tokenListSources } from "./tokens/sources.ts";
 import type { TokenListUpstream } from "./tokens/sources.ts";
 import type { GatewayOptions, PriceCache } from "./types.ts";
 
 /**
- * Optional values no environment requires: the 0x integrator fee, and staging's Jupiter and
- * CoinGecko keys.
+ * Optional values no environment requires: the 0x integrator fee, staging's Jupiter and CoinGecko
+ * keys, and the push secrets — absent ones disable the feature rather than failing a deploy
+ * (`secrets.required` stays push-free so deploy-check has nothing new to demand).
  */
 type OptionalEnv = {
   readonly ZEROX_FEE_RECIPIENT?: string;
   readonly ZEROX_FEE_BPS?: string;
   readonly JUPITER_API_KEY?: string;
   readonly COINGECKO_API_KEY?: string;
+  readonly PUSH_SEAL_KEY?: string;
+  readonly APNS_KEY?: string;
+  readonly APNS_KEY_ID?: string;
+  readonly APNS_TEAM_ID?: string;
+  readonly APNS_TOPIC?: string;
+  readonly FCM_SERVICE_ACCOUNT?: string;
 };
 
 export type WorkerEnv = (Cloudflare.StagingEnv | Cloudflare.ProductionEnv) & OptionalEnv;
@@ -53,6 +66,41 @@ export const priceCacheOf = (open: () => Cache): PriceCache => ({
       }),
     ),
 });
+
+/**
+ * The push service for `GatewayOptions.push`, or `undefined` — enabled only when the seal key, at
+ * least one sender and at least one family config all exist (`pushFamilies` is `{}` until the
+ * watcher layer, so production advertises empty capabilities for now). Malformed secrets throw at
+ * isolate startup.
+ */
+export async function pushServiceFor(
+  env: WorkerEnv,
+  families: Partial<Record<PushFamily, PushFamilyConfig>> = pushFamilies,
+): Promise<PushService | undefined> {
+  const materials = await pushMaterials(
+    env,
+    async (input, init) => fetch(input, init),
+    () => Date.now(),
+  );
+  const served = PUSH_FAMILIES.filter((family) => families[family] !== undefined);
+  if (materials === undefined || served.length === 0) {
+    return undefined;
+  }
+  const namespace: PushNamespace = env.PUSH;
+  return {
+    platforms: PUSH_PLATFORMS.filter((platform) => materials.senders[platform] !== undefined),
+    families: served,
+    backend: (family) => {
+      const object = namespace.get(namespace.idFromName(family));
+      return {
+        subscribe: async (request) => object.subscribe(family, request),
+        unsubscribe: async (id) => object.unsubscribe(family, id),
+        watch: async (request) => object.watch(family, request),
+      };
+    },
+    limiter: env.PUSH_LIMITER,
+  };
+}
 
 /** Maps the worker's env bindings into gateway options; called once per isolate. */
 export function gatewayFor(env: WorkerEnv): GatewayOptions {

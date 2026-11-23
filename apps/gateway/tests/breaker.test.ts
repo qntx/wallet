@@ -135,6 +135,10 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     ),
     upstreams: ["https://app.across.to"],
   },
+  "GET /v1/push": null,
+  "PUT /v1/push/:family/subscription": null,
+  "DELETE /v1/push/:family/subscription": null,
+  "POST /v1/push/:family/transactions": null,
   [`POST ${prices.path}`]: {
     request: [prices.path, post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
     upstreams: [COINGECKO_API, DEFILLAMA_API],
