@@ -1150,7 +1150,13 @@ export type GatewayConfig = {
 };
 
 // @public
+export function gatewayFetch(fetch: typeof globalThis.fetch, gateway: GatewayConfig | undefined): typeof globalThis.fetch;
+
+// @public
 export type GatewayScope = "evm" | "solana" | "bitcoin" | "tron" | "service";
+
+// @public
+export function gatewaySession(url: string, random: (length: number) => Uint8Array): GatewayConfig;
 
 // @public (undocumented)
 export type GroupHistory = {
