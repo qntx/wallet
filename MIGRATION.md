@@ -2048,3 +2048,28 @@ vault alongside them.
    payload (`keystoneQrIo` in the snippet). `sign` takes the same `verify` factor as
    `chains().sign` and its result passes the same verification. `pairKeystone` and
    `signOnDevice` show the two calls a host makes.
+
+## 41. Ledger hardware wallets
+
+Compiled snippet: `tests/migration/ledger.ts`. Nothing changes for hosts that do not offer Ledger.
+
+1. **New device literal.** `HARDWARE_DEVICES` gains `"ledger"`; an exhaustive switch over
+   `HardwareDevice` needs the new arm.
+2. **Transport.** The kernel exchanges one APDU per `{ kind: "message", data }` request. The host
+   frames it: `ledgerHidExchange(port, channel)` for USB (WebHID / RN HID — a `LedgerHidPort` that
+   writes and reads 64-byte reports) or `await ledgerBleExchange(port)` for Bluetooth (Nano X,
+   Stax, Flex), then `ledgerIo(apdu, signal)` turns either into the `DeviceIo` every
+   `hardware(wallet)` call takes. Ledger has no secure channel: whatever carries the frames can
+   read them, so prefer a transport the host itself controls and tell the user that the device
+   screen is what they must check.
+3. **Which app must be open.** `pair` needs the **Bitcoin** app (it is the only one that reveals
+   the master fingerprint). `accounts` serves one chain family per call with that family's app
+   open (Bitcoin, Ethereum, Tron, Solana); `sign` and `verifyAddress` need the request's app. A
+   wrong or closed app is `device-app-closed`; ask the user to open the named app and retry.
+4. **Device settings.** A request the device can only blind-sign (EVM calldata, EIP-712, a Solana
+   instruction the app does not decode, a TRON custom contract call, memo or TIP-712) fails
+   `blind-signing-disabled` until the user enables the corresponding setting in that Ledger app
+   (Ethereum/Solana "Blind signing"; Tron "Custom contracts", "Allow data", "Sign by hash").
+5. **Unsupported on Ledger:** EIP-7702, raw (non off-chain-format) Solana messages, BIP-322 message
+   signing, PSBTs that sign inputs of more than one address type, and Bitcoin test networks —
+   `unsupported` before any prompt.

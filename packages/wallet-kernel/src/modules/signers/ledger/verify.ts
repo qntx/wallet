@@ -1,4 +1,3 @@
-import type { KeyPath, BitcoinTemplate } from "@qntx/wallet-chains";
 /**
  * On-device address verification: the device renders the address and the kernel compares its answer
  * against the request. Bitcoin builds the default wallet policy for the pinned account node (same
@@ -7,6 +6,7 @@ import type { KeyPath, BitcoinTemplate } from "@qntx/wallet-chains";
  * negative verdict — `matched: false` — never an error; every other Ledger failure maps by the
  * standard table.
  */
+import type { KeyPath, BitcoinTemplate } from "@qntx/wallet-chains";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
 import type { ChainTemplate } from "@qntx/wallet/protocol";
@@ -78,6 +78,8 @@ export const verifyAddress = async (
   pin: HardwarePin,
 ): Promise<VerifyVerdict> => {
   const exchange = apduExchange(link);
+  // EVM address text is case-insensitive; every other chain's encoding is canonical.
+  const expected = target.template === "evm.bip44" ? target.address.toLowerCase() : target.address;
   let deviceAddress: string | undefined;
   if (isBitcoinTemplate(target.template)) {
     await requiredApp(exchange, "bitcoin");
@@ -88,10 +90,6 @@ export const verifyAddress = async (
       const answer = await ethAddress(exchange, target.path, true);
       return answer.address.toLowerCase();
     });
-    return {
-      method: "device",
-      matched: deviceAddress !== undefined && deviceAddress === target.address.toLowerCase(),
-    };
   } else if (target.template === "tron.bip44") {
     await requiredApp(exchange, "tron");
     deviceAddress = await shown(async () => {
@@ -106,5 +104,5 @@ export const verifyAddress = async (
   } else {
     throw new KernelError("unsupported", "the device cannot check this address");
   }
-  return { method: "device", matched: deviceAddress === target.address };
+  return { method: "device", matched: deviceAddress === expected };
 };

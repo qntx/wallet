@@ -1,11 +1,11 @@
-import { KernelError } from "../../../errors.ts";
-import type { KernelErrorCode } from "../../../errors.ts";
 /**
  * Ledger protocol errors into kernel errors: the wire-level `LedgerError` codes the protocol
  * clients throw map onto the signer module's contract codes. `user-rejected` is the only code a
  * caller may want to intercept before mapping (an address check answers `matched: false` rather
  * than failing), so the map is exported as a pure function and the catch is the caller's.
  */
+import { KernelError } from "../../../errors.ts";
+import type { KernelErrorCode } from "../../../errors.ts";
 import { LedgerError } from "../../ledger/protocol/errors.ts";
 import type { LedgerErrorCode } from "../../ledger/protocol/errors.ts";
 

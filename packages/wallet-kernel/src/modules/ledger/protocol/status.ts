@@ -9,9 +9,10 @@
  * `src/boilerplate/sw.h` (6985 SW_DENY, 6A82 SW_NOT_SUPPORTED — e.g. get_extended_pubkey.c for an
  * unusual path without display).
  */
-import type { LedgerApp } from "./device.ts";
 import type { LedgerErrorCode } from "./errors.ts";
 import { LedgerError } from "./errors.ts";
+
+export type LedgerApp = "bitcoin" | "ethereum" | "solana" | "tron";
 
 type AppScope = LedgerApp | "dashboard";
 
@@ -65,11 +66,9 @@ function mapped(app: AppScope, sw: number): LedgerErrorCode | undefined {
     default:
       break;
   }
-  // ApduReplyUserRefusal / SWO_CONDITIONS_NOT_SATISFIED / SW_DENY — user rejection.
-  if (
-    (app === "ethereum" || app === "solana" || app === "tron" || app === "bitcoin") &&
-    sw === 0x6985
-  ) {
+  // ApduReplyUserRefusal / SWO_CONDITIONS_NOT_SATISFIED / SW_DENY — user rejection; every pinned
+  // app raises it, the dashboard does not.
+  if (app !== "dashboard" && sw === 0x6985) {
     return "user-rejected";
   }
   return undefined;

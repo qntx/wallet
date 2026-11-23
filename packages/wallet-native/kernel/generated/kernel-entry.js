@@ -44360,11 +44360,8 @@ zoo`.split("\n"));
 		if (message.length < bodyAt + 2 || view.getUint16(bodyAt, true) !== message.length - bodyAt - 2) return;
 		return message.subarray(bodyAt + 2);
 	};
-	/**
-	* The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
-	* data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
-	* dedicated screen needs "Sign by hash".
-	*/
+	var BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
+	/** The protobuf message name behind a contract slot's `typeUrl`. */
 	var contractType = (slot) => slot.typeUrl.slice(slot.typeUrl.lastIndexOf(".") + 1);
 	/** The decoded TriggerSmartContract of a raw transaction, or undefined for another/unknown slot. */
 	var tronTrigger = (rawData) => {
@@ -44374,6 +44371,11 @@ zoo`.split("\n"));
 		const decoded = (_decodeTronContract = decodeTronContract(slot.typeId, slot.value)) === null || _decodeTronContract === void 0 ? void 0 : _decodeTronContract.contract;
 		return (decoded === null || decoded === void 0 ? void 0 : decoded.type) === "TriggerSmartContract" ? decoded : void 0;
 	};
+	/**
+	* The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
+	* data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
+	* dedicated screen needs "Sign by hash".
+	*/
 	var tronSettings = (rawData) => {
 		const raw = decodeTronRawData(rawData);
 		const type = contractType(raw.contract);
@@ -44438,10 +44440,10 @@ zoo`.split("\n"));
 			return offchain === void 0 ? "unsupported" : offchain === "ascii" ? "clear" : "blind";
 		}
 		if (plan.kind === "bitcoin.psbt") {
-			if (request.kind !== "bitcoin.psbt") return "unsupported";
+			if (request.kind !== "bitcoin.psbt" || request.network !== BITCOIN_MAINNET) return "unsupported";
 			return new Set(request.sign.map((s) => s.template)).size === 1 ? "clear" : "unsupported";
 		}
-		if (plan.kind === "bitcoin.message" && request.kind === "bitcoin.message" && plan.format === "legacy" && request.format === "legacy") {
+		if (plan.kind === "bitcoin.message" && request.kind === "bitcoin.message" && request.network === BITCOIN_MAINNET && plan.format === "legacy" && request.format === "legacy") {
 			const bytes = new TextEncoder().encode(request.message);
 			return bytes.length <= 640 && bytes.every((b) => b >= 32 && b <= 126) ? "clear" : "blind";
 		}
@@ -44589,7 +44591,7 @@ zoo`.split("\n"));
 				break;
 			case "bitcoin": if (sw === 27266) return "unsupported";
 		}
-		if ((app === "ethereum" || app === "solana" || app === "tron" || app === "bitcoin") && sw === 27013) return "user-rejected";
+		if (app !== "dashboard" && sw === 27013) return "user-rejected";
 	}
 	var MESSAGES = {
 		"invalid-input": "input out of range",
@@ -46173,6 +46175,13 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/signers/ledger/link.ts
+	/**
+	* The link adapter every Ledger operation uses: one APDU is one `message` request on the
+	* `DeviceLink`, and the answer must be a `message` too — the raw `data ‖ SW` the host's byte pipe
+	* returned. Any other response kind means the host lied about the exchange it ran: `integrity`. App
+	* pinning is shared too: `requiredApp` reads `appAndVersion` and enforces the pinned name and
+	* minimum version before any operation-specific exchange.
+	*/
 	var apduExchange = (link) => {
 		const exchange = async (apdu) => {
 			const response = await link.exchange({
@@ -46532,14 +46541,6 @@ zoo`.split("\n"));
 		return integrity$1();
 	};
 	// packages/wallet-kernel/src/modules/signers/ledger/verify.ts
-	/**
-	* On-device address verification: the device renders the address and the kernel compares its answer
-	* against the request. Bitcoin builds the default wallet policy for the pinned account node (same
-	* xpub serialization `pinnedMaterial` uses) and asks for the receive address at change 0; EVM, Tron
-	* and Solana ask for the address at the leaf path directly. A user rejection on the device is a
-	* negative verdict — `matched: false` — never an error; every other Ledger failure maps by the
-	* standard table.
-	*/
 	init_objectSpread2();
 	var BTC_TEMPLATE = /* @__PURE__ */ new Set([
 		"btc.bip44",
@@ -46573,6 +46574,7 @@ zoo`.split("\n"));
 	};
 	var verifyAddress = async (link, target, pin) => {
 		const exchange = apduExchange(link);
+		const expected = target.template === "evm.bip44" ? target.address.toLowerCase() : target.address;
 		let deviceAddress;
 		if (isBitcoinTemplate(target.template)) {
 			await requiredApp(exchange, "bitcoin");
@@ -46582,10 +46584,6 @@ zoo`.split("\n"));
 			deviceAddress = await shown(async () => {
 				return (await ethAddress(exchange, target.path, true)).address.toLowerCase();
 			});
-			return {
-				method: "device",
-				matched: deviceAddress !== void 0 && deviceAddress === target.address.toLowerCase()
-			};
 		} else if (target.template === "tron.bip44") {
 			await requiredApp(exchange, "tron");
 			deviceAddress = await shown(async () => {
@@ -46597,7 +46595,7 @@ zoo`.split("\n"));
 		} else throw new KernelError("unsupported", "the device cannot check this address");
 		return {
 			method: "device",
-			matched: deviceAddress === target.address
+			matched: deviceAddress === expected
 		};
 	};
 	// packages/wallet-kernel/src/modules/signers/drivers.ts

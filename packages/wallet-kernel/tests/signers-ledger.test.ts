@@ -602,6 +602,9 @@ describe("ledger driver display", () => {
     expect(LEDGER_DRIVER.display(control, messagePlan(control))).toBe("blind");
     const bip322 = { ...ascii, format: "bip322-simple" as const };
     expect(LEDGER_DRIVER.display(bip322, messagePlan(ascii))).toBe("unsupported");
+    // The pinned app is the mainnet build — a testnet request is unservable.
+    const testnet = { ...ascii, network: "bip122:00000000da84f2bafbbc53dee25a72ae" };
+    expect(LEDGER_DRIVER.display(testnet, messagePlan(ascii))).toBe("unsupported");
   });
 
   it("clears a single-template psbt and refuses mixed templates", () => {
@@ -623,6 +626,8 @@ describe("ledger driver display", () => {
       ],
     };
     expect(LEDGER_DRIVER.display(mixed, stage)).toBe("unsupported");
+    const testnet = { ...request, network: "bip122:00000000da84f2bafbbc53dee25a72ae" };
+    expect(LEDGER_DRIVER.display(testnet, stage)).toBe("unsupported");
   });
 });
 

@@ -1,4 +1,3 @@
-import { KernelError } from "../../../errors.ts";
 /**
  * The link adapter every Ledger operation uses: one APDU is one `message` request on the
  * `DeviceLink`, and the answer must be a `message` too — the raw `data ‖ SW` the host's byte pipe
@@ -6,6 +5,7 @@ import { KernelError } from "../../../errors.ts";
  * pinning is shared too: `requiredApp` reads `appAndVersion` and enforces the pinned name and
  * minimum version before any operation-specific exchange.
  */
+import { KernelError } from "../../../errors.ts";
 import type { Exchange } from "../../ledger/protocol/apdu.ts";
 import { appAndVersion, requireApp } from "../../ledger/protocol/device.ts";
 import type { AppInfo, LedgerApp } from "../../ledger/protocol/device.ts";

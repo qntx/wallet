@@ -6,8 +6,8 @@
  * response: `data ‖ SW(2)` — the transport layer's length prefix is stripped before this.
  */
 import { input } from "./bytes.ts";
-import type { LedgerApp } from "./device.ts";
 import { LedgerError } from "./errors.ts";
+import type { LedgerApp } from "./status.ts";
 import { statusError } from "./status.ts";
 
 export type Command = {

@@ -9,8 +9,9 @@ import type { Exchange } from "./apdu.ts";
 import { transmit } from "./apdu.ts";
 import { Reader } from "./bytes.ts";
 import { LedgerError } from "./errors.ts";
+import type { LedgerApp } from "./status.ts";
 
-export type LedgerApp = "bitcoin" | "ethereum" | "solana" | "tron";
+export type { LedgerApp } from "./status.ts";
 
 export type AppInfo = {
   readonly name: string;

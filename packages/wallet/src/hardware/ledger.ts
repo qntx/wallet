@@ -16,9 +16,8 @@
  * violation, and any frame after completion is a violation — all `integrity`. Bad host arguments
  * (an out-of-range channel, MTU or APDU size) are `invalid-input`.
  */
-import type { DeviceRequest, DeviceResponse } from "../protocol/hardware.ts";
+import type { DeviceIo, DeviceRequest, DeviceResponse } from "../protocol/hardware.ts";
 import { WalletError } from "../types.ts";
-import type { DeviceIo } from "./index.ts";
 
 export const HID_REPORT_SIZE = 64;
 

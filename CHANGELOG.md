@@ -633,6 +633,37 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   encoders.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
   keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
+- **Ledger Nano S Plus / Nano X / Stax / Flex** (`modules/signers/ledger/`, device literal
+  `"ledger"`): pairing from the Bitcoin app (the only Ledger app that reveals the BIP-32 master
+  fingerprint) with the four group-0 Bitcoin account keys pinned; per-family account keys from the
+  Ethereum (chain-code public key), Tron and Solana apps, one app per `accounts` call; on-device
+  address display for every family; signing of EVM legacy / EIP-2930 / EIP-1559 / personal_sign /
+  EIP-712, TRON transaction / message / TIP-712, Solana legacy / v0 transaction and formal off-chain
+  message, Bitcoin PSBT (P2PKH, P2SH-P2WPKH, P2WPKH, P2TR key path) and legacy message. Every
+  device payload is recomputed from the request and checked against the plan digest before an APDU
+  leaves the kernel; requests the device can only blind-sign read the app configuration first and
+  fail `blind-signing-disabled` when the app's setting is off; the prompt says whether the device
+  shows the request in full or signs blind. Refused before any prompt (`unsupported`): EIP-7702
+  (not in the Ethereum app's default build since 1.24.0), raw Solana messages that are not formal
+  off-chain documents, BIP-322 (Bitcoin app 2.6.0 is not released to devices), mixed-template
+  PSBTs, non-mainnet Bitcoin.
+- The Ledger protocol client (`modules/ledger/protocol/`): a pure, Hermes-safe implementation of
+  the documented APDU protocols of the Bitcoin (v2: merkleized PSBTv2, default wallet policies,
+  bounded interactive client), Ethereum (incl. EIP-712 full mode and the legacy safe-chunk rule),
+  Solana and Tron apps; no vendor SDK (none runs in the bare kernel runtime). Exact reply parsing:
+  on-curve keys, addresses bound to the returned key, xpub depth and child checked, wallet
+  addresses re-derived locally, PSBT yields bound to the input's own derivation under the policy
+  key.
+- `@qntx/wallet/hardware`: `ledgerHidExchange` (64-byte HID reports), `ledgerBleExchange` (BLE
+  with MTU negotiation) and `ledgerIo` — the host half of the Ledger transport; framing violations
+  fail `integrity`.
+- `@qntx/wallet-chains/tron`: `tronTypedDataHashes` (domain separator and message hash of a TIP-712
+  document, for signers that take the two hashes).
+- Vectors: `vectors/ledger/framing.json` (the vendor's framing vectors) and
+  `vectors/ledger/{bitcoin,ethereum,solana,tron}.json` (APDU transcripts recorded from the pinned
+  device releases on Speculos, replayed byte for byte in unit tests). CI `ledger.yml` builds the
+  pinned apps (`scripts/ledger/apps.json`) and re-checks the transcripts and the end-to-end
+  signing flow live on Speculos.
 
 ### Changed
 

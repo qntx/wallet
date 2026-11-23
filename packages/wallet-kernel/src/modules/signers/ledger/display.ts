@@ -1,4 +1,3 @@
-import { parseCompiledMessage, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 /**
  * What the device would show for a request: `clear` only when the pinned app renders the full
  * request natively without a setting, `blind` when it signs behind a setting or a hash, and
@@ -22,6 +21,7 @@ import { parseCompiledMessage, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
  * - Bitcoin 2.5.1: a default-wallet PSBT renders its own address/amount review; mixed-template inputs
  *   cannot form one policy; message signing renders printable ASCII only.
  */
+import { parseCompiledMessage, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 import { decodeTronContract, decodeTronRawData } from "@qntx/wallet-chains/tron";
 import type { TronContract, TronContractSlot } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
@@ -93,11 +93,10 @@ const offchainMessage = (message: Uint8Array): Uint8Array | undefined => {
   return message.subarray(bodyAt + 2);
 };
 
-/**
- * The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
- * data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
- * dedicated screen needs "Sign by hash".
- */
+// The pinned Bitcoin app is the mainnet build; its PATH_APP_LOAD_PARAMS admit coin type 0' only.
+const BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
+
+/** The protobuf message name behind a contract slot's `typeUrl`. */
 const contractType = (slot: TronContractSlot): string =>
   slot.typeUrl.slice(slot.typeUrl.lastIndexOf(".") + 1);
 
@@ -111,6 +110,11 @@ const tronTrigger = (rawData: Uint8Array) => {
   return decoded?.type === "TriggerSmartContract" ? decoded : undefined;
 };
 
+/**
+ * The device settings a tron transaction needs (parse.c / sign.c): a `data` memo needs "Allow
+ * data", a non-TRC20 TriggerSmartContract needs "Custom contracts", and any contract type without a
+ * dedicated screen needs "Sign by hash".
+ */
 export const tronSettings = (
   rawData: Uint8Array,
 ): { dataAllowed: boolean; customContracts: boolean; signByHash: boolean } => {
@@ -212,7 +216,7 @@ export const display = (
     return offchain === undefined ? "unsupported" : offchain === "ascii" ? "clear" : "blind";
   }
   if (plan.kind === "bitcoin.psbt") {
-    if (request.kind !== "bitcoin.psbt") {
+    if (request.kind !== "bitcoin.psbt" || request.network !== BITCOIN_MAINNET) {
       return "unsupported";
     }
     return new Set(request.sign.map((s) => s.template)).size === 1 ? "clear" : "unsupported";
@@ -220,6 +224,7 @@ export const display = (
   if (
     plan.kind === "bitcoin.message" &&
     request.kind === "bitcoin.message" &&
+    request.network === BITCOIN_MAINNET &&
     plan.format === "legacy" &&
     request.format === "legacy"
   ) {
