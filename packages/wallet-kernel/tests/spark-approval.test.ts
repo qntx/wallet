@@ -11,7 +11,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
  * encodeTestBolt11 (packages/wallet-engine/tests/support/bolt11.ts); decodeBolt11 verifies their
  * signatures.
  */
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -85,10 +85,31 @@ const notImplemented = (): never => {
   throw new Error("stub crypto: operation not implemented");
 };
 
+const VSS_PROOF = 33;
+const VSS_SHARE = 32;
+
+/**
+ * The `t`×33 ‖ `n`×32 layout `splitSecretWithProofs` returns: proof items need only their count,
+ * but each share becomes a share public key (`share·G`), so shares are small nonzero scalars.
+ */
+const fakeSplit = (threshold: number, shares: number): Uint8Array => {
+  const out = new Uint8Array(threshold * VSS_PROOF + shares * VSS_SHARE);
+  for (let i = 0; i < threshold; i++) {
+    out[i * VSS_PROOF] = 0x02;
+  }
+  for (let i = 0; i < shares; i++) {
+    out[threshold * VSS_PROOF + i * VSS_SHARE + VSS_SHARE - 1] = i + 1;
+  }
+  return out;
+};
+
 /**
  * Minimal SparkCrypto: `abiVersion: 1` is the only field the signer inspects up front; FROST
  * nonces, commitments and signature shares are fabricated in the wire shapes the signer stores,
- * echoes back and decodes. FROST correctness belongs to the real backend, not this test.
+ * echoes back and decodes. `prepareTransfer` needs a VSS-shaped split and an ECIES ciphertext the
+ * receiver alone would decrypt — echoing the plaintext keeps the package deterministic and
+ * byte-identical between `prepareTransfer`'s reply and the signed `transfer-package` statement.
+ * FROST/VSS/ECIES correctness belongs to the real backend, not this test.
  */
 const stubCrypto = (): SparkCrypto => ({
   abiVersion: 1,
@@ -104,9 +125,10 @@ const stubCrypto = (): SparkCrypto => ({
   },
   frostSign: () => frostSignResponse(1),
   frostAggregate: notImplemented,
-  eciesEncrypt: notImplemented,
+  eciesEncrypt: (_publicKey: Uint8Array, plaintext: Uint8Array) => plaintext.slice(),
   eciesDecrypt: notImplemented,
-  splitSecretWithProofs: notImplemented,
+  splitSecretWithProofs: (_secret: Uint8Array, threshold: number, shares: number) =>
+    fakeSplit(threshold, shares),
 });
 
 const ok = (response: KernelResponse): ProtocolValue => {
@@ -325,6 +347,141 @@ const approveExit = async (t: SparkTest): Promise<KernelResponse> =>
 const approveOnchain = async (t: SparkTest): Promise<KernelResponse> =>
   approve(t, { kind: "onchain", address: APPROVED.address, maxFeeSats: 200 });
 
+const RECEIVER = pubkey(0x41);
+const TOKEN_ID = new Uint8Array(32).fill(9);
+
+/** The p2tr script the signer whitelists for a recorded transfer receiver. */
+const receiverScript = (identityPublicKey: Uint8Array): Uint8Array =>
+  p2tr(identityPublicKey.slice(1)).script;
+
+const recordBytes = (value: ProtocolValue): Record<string, Uint8Array> => {
+  if (typeof value !== "object" || value === null || Symbol.iterator in value) {
+    throw new Error("expected object");
+  }
+  const out: Record<string, Uint8Array> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = bytesOf(entry);
+  }
+  return out;
+};
+
+const varint = (value: number): Uint8Array => {
+  const bytes: number[] = [];
+  let rest = value;
+  while (rest > 0x7f) {
+    bytes.push((rest & 0x7f) | 0x80);
+    rest = Math.floor(rest / 128);
+  }
+  bytes.push(rest);
+  return new Uint8Array(bytes);
+};
+
+/** Length-delimited protobuf field (`fieldNo` at wire type 2). */
+const lenField = (fieldNo: number, data: Uint8Array): Uint8Array =>
+  concatBytes(new Uint8Array([(fieldNo << 3) | 2]), varint(data.length), data);
+
+/**
+ * A `spark.TransferPackage` carrying `key_tweak_package` (field 2, map<string,bytes>) and
+ * `hash_variant = HASH_VARIANT_V2` (field 6, varint 1) — the digest requires the variant and
+ * `packageOutflow` only compares the tweak map against what `prepareTransfer` recorded.
+ */
+const transferPackage = (operatorPackages: Record<string, Uint8Array>): Uint8Array =>
+  concatBytes(
+    ...Object.entries(operatorPackages).map(([identifier, value]) =>
+      lenField(2, concatBytes(lenField(1, utf8ToBytes(identifier)), lenField(2, value))),
+    ),
+    new Uint8Array([0x30, 0x01]),
+  );
+
+/** Big-endian u128, the wire form of `PartialTokenOutput.token_amount`. */
+const u128be = (amount: bigint): Uint8Array => {
+  const out = new Uint8Array(16);
+  let rest = amount;
+  for (let i = 15; i >= 0; i--) {
+    out[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+  return out;
+};
+
+/**
+ * A `spark_token.PartialTokenTransaction` with one `partial_token_outputs` entry (field 6) of
+ * owner public key (1), token identifier (4) and u128 amount (5) — all `tokenOutflow` reads.
+ */
+const tokenTransaction = (owner: Uint8Array, amount: bigint): Uint8Array =>
+  lenField(
+    6,
+    concatBytes(lenField(1, owner), lenField(4, TOKEN_ID), lenField(5, u128be(amount))),
+  );
+
+/**
+ * Registers the transfer and records its refund signature: `spark.prepareTransfer` gives the
+ * package contents and whitelists the receiver's p2tr script for the leaf, and a `signFrost` job
+ * paying that script with `amountSats` is what `packageOutflow` later reads as the leaf amount.
+ */
+const prepareTransfer = async (
+  t: SparkTest,
+  transferId: string,
+  leafId: string,
+  receiver: Uint8Array,
+  amountSats: number,
+): Promise<Record<string, Uint8Array>> => {
+  const prepared = ok(
+    await t.h.call(
+      "spark.prepareTransfer",
+      {
+        account: t.account,
+        request: {
+          transferId,
+          leaves: [
+            { leafId, key: { type: "leaf", leafId }, receiverIdentityPublicKey: receiver },
+          ],
+        },
+      },
+      t.session,
+    ),
+  );
+  ok(
+    await signFrost(t, {
+      key: { type: "leaf", leafId },
+      target: {
+        transaction: singleInputTx([{ script: receiverScript(receiver), amount: amountSats }]),
+        inputIndex: 0,
+        prevouts: [{ script: LEAF_SCRIPT, amount: amountSats }],
+      },
+    }),
+  );
+  return recordBytes(field(prepared, "operatorPackages"));
+};
+
+const signTransfer = (
+  t: SparkTest,
+  transferId: string,
+  operatorPackages: Record<string, Uint8Array>,
+): Promise<KernelResponse> =>
+  t.h.call(
+    "spark.signIdentity",
+    {
+      account: t.account,
+      statement: {
+        kind: "transfer-package",
+        transferId,
+        package: transferPackage(operatorPackages),
+      },
+    },
+    t.session,
+  );
+
+const signToken = (t: SparkTest, owner: Uint8Array, amount: bigint): Promise<KernelResponse> =>
+  t.h.call(
+    "spark.signIdentity",
+    {
+      account: t.account,
+      statement: { kind: "token-transaction", partialTransaction: tokenTransaction(owner, amount) },
+    },
+    t.session,
+  );
+
 describe("lightning approval", () => {
   it("covers leaves up to the invoice amount plus max fee, and no further", async () => {
     const t = await setup();
@@ -482,6 +639,72 @@ describe("onchain approval", () => {
         ]),
       ),
     ).toBe("approval-required");
+  });
+
+  it("consumes the approval after the first signed spend", async () => {
+    const t = await setup();
+    ok(await approveOnchain(t));
+    const spend = (): Promise<KernelResponse> =>
+      signKeySpend(t, 5000, [{ script: APPROVED.script, amount: 4800 }]);
+    expect(errCode(await spend())).toBeUndefined();
+    expect(errCode(await spend())).toBe("approval-required");
+  });
+});
+
+describe("transfer approval", () => {
+  const approveTransfer = (t: SparkTest, amountSats = 100): Promise<KernelResponse> =>
+    approve(t, {
+      kind: "transfer",
+      receivers: [{ identityPublicKey: RECEIVER, amountSats }],
+    });
+
+  it("covers a transfer to the approved receiver up to the approved amount", async () => {
+    const t = await setup();
+    ok(await approveTransfer(t));
+    const id = "3f7b2e1c-1a2b-4c3d-8e4f-000000000101";
+    const packages = await prepareTransfer(t, id, "leaf-1", RECEIVER, 100);
+    expect(bytesOf(ok(await signTransfer(t, id, packages))).length).toBeGreaterThan(0);
+  });
+
+  it("refuses a transfer whose receiver amount is one sat over the approval", async () => {
+    const t = await setup();
+    ok(await approveTransfer(t));
+    const id = "3f7b2e1c-1a2b-4c3d-8e4f-000000000102";
+    const packages = await prepareTransfer(t, id, "leaf-1", RECEIVER, 101);
+    expect(errCode(await signTransfer(t, id, packages))).toBe("approval-required");
+  });
+
+  it("consumes the approval after the first signed transfer", async () => {
+    const t = await setup();
+    ok(await approveTransfer(t));
+    const idFirst = "3f7b2e1c-1a2b-4c3d-8e4f-000000000103";
+    const idSecond = "3f7b2e1c-1a2b-4c3d-8e4f-000000000104";
+    const first = await prepareTransfer(t, idFirst, "leaf-1", RECEIVER, 60);
+    expect(errCode(await signTransfer(t, idFirst, first))).toBeUndefined();
+    const second = await prepareTransfer(t, idSecond, "leaf-2", RECEIVER, 60);
+    expect(errCode(await signTransfer(t, idSecond, second))).toBe("approval-required");
+  });
+});
+
+describe("token approval", () => {
+  const approveToken = (t: SparkTest, amount = "100"): Promise<KernelResponse> =>
+    approve(t, {
+      kind: "token",
+      tokenIdentifier: TOKEN_ID,
+      receivers: [{ ownerPublicKey: RECEIVER, amount }],
+    });
+
+  it("covers a token send up to the approved amount and consumes the approval", async () => {
+    const t = await setup();
+    ok(await approveToken(t));
+    expect(errCode(await signToken(t, RECEIVER, 100n))).toBeUndefined();
+    expect(errCode(await signToken(t, RECEIVER, 100n))).toBe("approval-required");
+  });
+
+  it("refuses a token send one unit over the approved amount", async () => {
+    const t = await setup();
+    ok(await approveToken(t));
+    expect(errCode(await signToken(t, RECEIVER, 101n))).toBe("approval-required");
   });
 });
 
