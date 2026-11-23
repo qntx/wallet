@@ -503,9 +503,7 @@ export function createPolymarketEnable(
               {
                 kind: "token-allowance" as const,
                 ...base,
-                ...(hit.amount === undefined || hit.amount === "max"
-                  ? {}
-                  : { limit: hit.amount }),
+                ...(hit.amount === undefined || hit.amount === "max" ? {} : { limit: hit.amount }),
               },
             ]
           : [{ kind: "operator" as const, ...base }];
