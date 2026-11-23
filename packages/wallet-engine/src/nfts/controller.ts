@@ -45,8 +45,8 @@ import type { NftCollectionView, NftItemFacts } from "./metadata.ts";
 import { nftAcquisition, nftSpam } from "./spam.ts";
 import type { NftSpamReason } from "./spam.ts";
 
-/** Poll cadence while the inventory is on screen. */
-export const NFT_POLL_MS = 60_000;
+/** Poll cadence while the inventory is on screen — a refresh can walk 20 pages of 100 CU each. */
+export const NFT_POLL_MS = 300_000;
 
 /** The most pages `loadMore` walks before calling the inventory truncated. */
 export const NFT_INVENTORY_MAX_PAGES = 20;
@@ -61,6 +61,7 @@ export type NftFailure =
   | "unavailable"
   | "rate-limited"
   | "unsupported"
+  | "not-found"
   | "invalid-response";
 
 /** An item as displayed: sanitised facts plus the controller's spam verdict and visibility. */
@@ -240,25 +241,23 @@ export class NftController extends Controller<NftState> {
     const address = this.address(network, owner);
     return this.singleFlight(network, address, async (key) => {
       const { epoch } = this;
-      const prior = this.facts.get(key) ?? [];
       const page = await this.requestPage(network, address, undefined);
       if (epoch !== this.epoch) {
         return this.getState().inventories[key] ?? emptyInventory(network, address);
       }
       if (!page.ok) {
-        this.apply(key, network, address, prior, null, 0, false, page.failure);
+        this.fail(key, page.failure);
         return this.must(key, network, address);
       }
-      this.apply(
+      this.apply({
         key,
         network,
-        address,
-        this.sanitised(network, page.value.items),
-        page.value.cursor,
-        1,
-        false,
-        null,
-      );
+        owner: address,
+        list: this.sanitised(network, page.value.items),
+        cursor: page.value.cursor,
+        pages: 1,
+        truncated: false,
+      });
       return this.must(key, network, address);
     });
   }
@@ -286,7 +285,7 @@ export class NftController extends Controller<NftState> {
       }
       const prior = this.facts.get(key) ?? [];
       if (!page.ok) {
-        this.apply(key, network, address, prior, cursor, pages, false, page.failure);
+        this.fail(key, page.failure);
         return this.must(key, network, address);
       }
       const seen = new Set(prior.map((item) => item.id));
@@ -299,16 +298,15 @@ export class NftController extends Controller<NftState> {
       });
       const grown = pages + 1;
       const nextCursor = grown >= NFT_INVENTORY_MAX_PAGES ? null : page.value.cursor;
-      this.apply(
+      this.apply({
         key,
         network,
-        address,
-        [...prior, ...next],
-        nextCursor,
-        grown,
-        grown >= NFT_INVENTORY_MAX_PAGES && page.value.cursor !== null,
-        null,
-      );
+        owner: address,
+        list: [...prior, ...next],
+        cursor: nextCursor,
+        pages: grown,
+        truncated: grown >= NFT_INVENTORY_MAX_PAGES && page.value.cursor !== null,
+      });
       return this.must(key, network, address);
     });
   }
@@ -320,7 +318,6 @@ export class NftController extends Controller<NftState> {
   async refresh(owner: string, network: string): Promise<NftInventory> {
     const address = this.address(network, owner);
     return this.singleFlight(network, address, async (key) => {
-      const prior = this.facts.get(key) ?? [];
       const wanted = Math.max(1, this.getState().inventories[key]?.pages ?? 1);
       const { epoch } = this;
       const items: NftItem[] = [];
@@ -333,7 +330,7 @@ export class NftController extends Controller<NftState> {
           return this.getState().inventories[key] ?? emptyInventory(network, address);
         }
         if (!answer.ok) {
-          this.apply(key, network, address, prior, cursor, wanted, false, answer.failure);
+          this.fail(key, answer.failure);
           return this.must(key, network, address);
         }
         const { items: pageItems, cursor: nextCursor } = answer.value;
@@ -343,16 +340,15 @@ export class NftController extends Controller<NftState> {
       if (epoch !== this.epoch) {
         return this.getState().inventories[key] ?? emptyInventory(network, address);
       }
-      this.apply(
+      this.apply({
         key,
         network,
-        address,
-        this.sanitised(network, items),
+        owner: address,
+        list: this.sanitised(network, items),
         cursor,
-        wanted,
-        wanted >= NFT_INVENTORY_MAX_PAGES && cursor !== null,
-        null,
-      );
+        pages: wanted,
+        truncated: wanted >= NFT_INVENTORY_MAX_PAGES && cursor !== null,
+      });
       return this.must(key, network, address);
     });
   }
@@ -484,8 +480,6 @@ export class NftController extends Controller<NftState> {
     return (balances?.utxos ?? []).filter((utxo) => utxo.protected);
   }
 
-  /* --- internals --- */
-
   private address(network: string, value: string): string {
     const { family } = this.options.networks.info(network);
     if (family === "evm") {
@@ -529,7 +523,12 @@ export class NftController extends Controller<NftState> {
         }
         return {
           ok: false,
-          failure: parsed?.["error"] === "unsupported" ? "unsupported" : "unavailable",
+          failure:
+            parsed?.["error"] === "unsupported"
+              ? "unsupported"
+              : parsed?.["error"] === "not-found"
+                ? "not-found"
+                : "unavailable",
         };
       }
       if (!response.ok) {
@@ -613,20 +612,11 @@ export class NftController extends Controller<NftState> {
   }
 
   private viewOf(facts: NftItemFacts): NftView {
-    const { gatewaySpam: _, deceptive: __, ...rest } = facts;
-    const { entries, txs } = this.options.activity();
-    const spam =
-      nftSpam([facts], {
-        acquisition: (item) =>
-          nftAcquisition(item.network, item.contract, item.tokenId, entries, txs),
-        shown: (item) => this.visibility.get(item.network)?.get(item.id) === "shown",
-      }).get(facts.id) ?? [];
-    const verdict = this.visibility.get(facts.network)?.get(facts.id);
-    return {
-      ...rest,
-      spam,
-      hidden: verdict === "hidden" || (verdict !== "shown" && spam.length > 0),
-    };
+    const [view] = this.views([facts]);
+    if (view === undefined) {
+      throw new Error("views map one-to-one");
+    }
+    return view;
   }
 
   private views(list: ReadonlyArray<NftItemFacts>): NftView[] {
@@ -648,37 +638,51 @@ export class NftController extends Controller<NftState> {
     });
   }
 
-  private apply(
-    key: string,
-    network: string,
-    owner: string,
-    list: NftItemFacts[],
+  private apply(args: {
+    readonly key: string;
+    readonly network: string;
+    readonly owner: string;
+    readonly list: NftItemFacts[];
     // oxlint-disable-next-line typescript/no-restricted-types -- a page answer's cursor is null
-    cursor: string | null,
-    pages: number,
-    truncated: boolean,
-    // oxlint-disable-next-line typescript/no-restricted-types -- null means the load answered
-    failure: NftFailure | null,
-  ): void {
-    this.facts.set(key, list);
-    const items = this.views(list);
+    readonly cursor: string | null;
+    readonly pages: number;
+    readonly truncated: boolean;
+  }): void {
+    this.facts.set(args.key, args.list);
+    const items = this.views(args.list);
     this.update((state) => ({
       inventories: {
         ...state.inventories,
-        [key]: {
-          ...emptyInventory(network, owner),
+        [args.key]: {
+          ...emptyInventory(args.network, args.owner),
           items,
-          cursor,
-          pages,
-          truncated,
-          failure,
-          updatedAt:
-            failure === null
-              ? this.options.now()
-              : (this.getState().inventories[key]?.updatedAt ?? null),
+          cursor: args.cursor,
+          pages: args.pages,
+          truncated: args.truncated,
+          failure: null,
+          updatedAt: this.options.now(),
         },
       },
     }));
+  }
+
+  /**
+   * A failed read keeps the whole inventory as it was — items, cursor, pages, truncated, updatedAt
+   * — and only records the failure and clears `loading`, so `loadMore` still resumes.
+   */
+  private fail(key: string, failure: NftFailure): void {
+    this.update((state) => {
+      const existing = state.inventories[key];
+      if (existing === undefined) {
+        return state;
+      }
+      return {
+        inventories: {
+          ...state.inventories,
+          [key]: { ...existing, loading: false, failure },
+        },
+      };
+    });
   }
 
   /** Rebuilds every view from its facts — activity and visibility verdicts change outside fetch. */
@@ -740,36 +744,56 @@ export class NftController extends Controller<NftState> {
     if (named.size === 0) {
       return;
     }
+    const { epoch } = this;
+    const results = new Map<string, Map<string, bigint | "keep">>();
     for (const [key, list] of this.facts) {
       const inventory = this.getState().inventories[key];
       if (inventory === undefined || inventory.network !== tx.network) {
         continue;
       }
-      const touched: NftItemFacts[] = [];
-      const next: NftItemFacts[] = [];
+      const outcomes = new Map<string, bigint | "keep">();
       for (const item of list) {
         const tokenIds = named.get(norm(item.contract));
         const match =
           tokenIds !== undefined &&
           (family !== "evm" || [...tokenIds].some((id) => id === item.tokenId));
-        (match ? touched : next).push(item);
-      }
-      if (touched.length === 0) {
-        continue;
-      }
-      const kept = [...next];
-      for (const item of touched) {
+        if (!match) {
+          continue;
+        }
+        let outcome: bigint | "keep" = "keep";
         try {
           // oxlint-disable-next-line eslint/no-await-in-loop -- each read waits on the last, one RPC's pacing
-          const balance = await this.chainBalance(family, tx.network, item, inventory.owner);
-          if (balance > 0n) {
-            kept.push({ ...item, balance: balance.toString(10) });
-          }
+          outcome = await this.chainBalance(family, tx.network, item, inventory.owner);
         } catch (error) {
           this.options.logger.warn("NFT chain balance read failed", error);
-          kept.push(item);
         }
+        outcomes.set(item.id, outcome);
       }
+      if (outcomes.size > 0) {
+        results.set(key, outcomes);
+      }
+    }
+    // The reads took time; a lock or a state turnover since the collect invalidates them.
+    if (epoch !== this.epoch) {
+      return;
+    }
+    this.applyReRead(results);
+  }
+
+  private applyReRead(results: ReadonlyMap<string, ReadonlyMap<string, bigint | "keep">>): void {
+    for (const [key, outcomes] of results) {
+      const inventory = this.getState().inventories[key];
+      if (inventory === undefined) {
+        continue;
+      }
+      const list = this.facts.get(key) ?? [];
+      const kept = list.flatMap((item) => {
+        const outcome = outcomes.get(item.id);
+        if (outcome === undefined || outcome === "keep") {
+          return [item];
+        }
+        return outcome > 0n ? [{ ...item, balance: outcome.toString(10) }] : [];
+      });
       this.facts.set(key, kept);
       this.update((state) => ({
         inventories: {

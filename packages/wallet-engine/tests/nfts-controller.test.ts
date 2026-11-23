@@ -72,6 +72,7 @@ function rig(
     readonly balances?: Readonly<Record<string, AccountBalances>>;
     readonly evmClient?: unknown;
     readonly solanaReject?: boolean;
+    readonly solanaGate?: Promise<unknown>;
   } = {},
 ) {
   const session = "gateway" in options ? options.gateway : gatewaySession(GATEWAY, random);
@@ -133,10 +134,15 @@ function rig(
       },
       client: () => (options.evmClient ?? "evm-client") as never,
       solanaRpc: () => ({
-        call: async () =>
-          options.solanaReject === true
-            ? Promise.reject(new Error("rpc down"))
-            : Promise.resolve(undefined),
+        call: async () => {
+          if (options.solanaReject === true) {
+            throw new Error("rpc down");
+          }
+          if (options.solanaGate !== undefined) {
+            await options.solanaGate;
+          }
+          return undefined;
+        },
       }),
     },
     balances: () => options.balances ?? {},
@@ -291,6 +297,67 @@ describe("refresh", () => {
     expect(inventory.failure).toBe("unavailable");
   });
 
+  it("keeps pagination when a refresh page fails — loadMore still resumes", async () => {
+    const answers: Responder = (_p, body) => {
+      const {cursor} = body;
+      if (cursor === undefined) {
+        // page 1: full answer while loading, a failure while refreshing (3rd call)
+        return calls < 3
+          ? page([evmItem(CONTRACT, "1")], "c2")
+          : new Response("x", { status: 500 });
+      }
+      return page([evmItem(CONTRACT, cursor === "c2" ? "2" : "3")], cursor === "c2" ? "c3" : null);
+    };
+    let calls = 0;
+    const r = rig({
+      answer: (path, body) => {
+        calls += 1;
+        return answers(path, body);
+      },
+    });
+    await init(r);
+    await r.controller.load(OWNER, EVM);
+    const two = await r.controller.loadMore(OWNER, EVM);
+    expect(two.pages).toBe(2);
+    expect(two.cursor).toBe("c3");
+
+    const failed = await r.controller.refresh(OWNER, EVM);
+    expect(failed.failure).toBe("unavailable");
+    expect(failed.cursor).toBe("c3");
+    expect(failed.pages).toBe(2);
+    expect(failed.items.map((i) => i.tokenId)).toStrictEqual(["1", "2"]);
+
+    const three = await r.controller.loadMore(OWNER, EVM);
+    expect(three.pages).toBe(3);
+    expect(three.items.map((i) => i.tokenId)).toStrictEqual(["1", "2", "3"]);
+    expect(r.calls[3]?.body).toStrictEqual({ owner: OWNER_LC, cursor: "c3" });
+  });
+
+  it("keeps the cursor when a repeated load fails", async () => {
+    const answers: Responder = (_p, body) => {
+      const {cursor} = body;
+      if (cursor === undefined) {
+        return first ? page([evmItem(CONTRACT, "1")], "c2") : new Response("x", { status: 500 });
+      }
+      return page([evmItem(CONTRACT, "2")]);
+    };
+    let first = true;
+    const r = rig({
+      answer: (path, body) => {
+        const response = answers(path, body);
+        first = false;
+        return response;
+      },
+    });
+    await init(r);
+    await r.controller.load(OWNER, EVM);
+    const failed = await r.controller.load(OWNER, EVM);
+    expect(failed.failure).toBe("unavailable");
+    expect(failed.cursor).toBe("c2");
+    expect(failed.pages).toBe(1);
+    expect(failed.items.map((i) => i.tokenId)).toStrictEqual(["1"]);
+  });
+
   it("polls every NFT_POLL_MS while visible and stops when hidden", async () => {
     const r = rig({ answer: () => page([evmItem(CONTRACT, "7")]) });
     await init(r);
@@ -314,6 +381,11 @@ describe("failure mapping", () => {
       "a 404 unsupported",
       () => rig({ answer: () => Response.json({ error: "unsupported" }, { status: 404 }) }),
       "unsupported",
+    ],
+    [
+      "a 404 not-found",
+      () => rig({ answer: () => Response.json({ error: "not-found" }, { status: 404 }) }),
+      "not-found",
     ],
     ["a non-JSON body", () => rig({ answer: () => new Response("not json") }), "invalid-response"],
     [
@@ -561,6 +633,19 @@ describe("post-inclusion re-read", () => {
       ...over,
     }) as unknown as TrackedTransaction;
 
+  const ASSET2 = "9xyz9xyz9xyz9xyz9xyz9xyz9xyz9xyz9xyz9xyz9xyz";
+  const solItemRecord = (contract: string): Record<string, unknown> => ({
+    contract,
+    tokenId: null,
+    standard: "metaplex",
+    balance: "1",
+    name: null,
+    image: null,
+    animation: null,
+    collection: null,
+    spam: false,
+  });
+
   const solPage = () =>
     page([
       {
@@ -616,6 +701,55 @@ describe("post-inclusion re-read", () => {
     r.confirm(tx());
     await flush();
     expect(r.controller.getState().inventories[KEY]?.items).toStrictEqual([]);
+  });
+
+  it("a lock while a re-read is pending writes nothing", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const r = rig({ answer: () => solPage(), solanaGate: gate });
+    await init(r);
+    const owner = "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW";
+    await r.controller.load(owner, SOL);
+    r.confirm(
+      tx({
+        network: SOL,
+        intent: { outflows: [{ to: "x", amount: { asset: ASSET, amount: "1" } }] },
+      }),
+    );
+    r.controller.lock();
+    release();
+    await flush();
+    expect(r.controller.getState().inventories[`${SOL}:${owner}`]).toBeUndefined();
+  });
+
+  it("a refresh landing during a re-read is not lost", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let fresh = false;
+    const r = rig({
+      answer: () => (fresh ? page([solItemRecord(ASSET), solItemRecord(ASSET2)]) : solPage()),
+      solanaGate: gate,
+    });
+    await init(r);
+    const owner = "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW";
+    await r.controller.load(owner, SOL);
+    r.confirm(
+      tx({
+        network: SOL,
+        intent: { outflows: [{ to: "x", amount: { asset: ASSET, amount: "1" } }] },
+      }),
+    );
+    fresh = true;
+    await r.controller.refresh(owner, SOL);
+    release();
+    await flush();
+    const items = r.controller.getState().inventories[`${SOL}:${owner}`]?.items ?? [];
+    // The re-read dropped the named item (0n); the item the refresh added stays.
+    expect(items.map((i) => i.id)).toStrictEqual([ASSET2]);
   });
 
   it("leaves an item no outflow names untouched", async () => {
