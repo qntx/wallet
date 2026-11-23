@@ -39,12 +39,6 @@ after the upgrade, `unsupported` means the 0.13.0 vault: confirm with the user, 
 restore. (Later, `unsupported` keeps its meaning — a newer build wrote the vault — and must not be
 reset.)
 
-Format 5 never shipped: it existed only in development builds between 0.13.0 and this release, and
-this release reports it `unsupported` like every other non-6 format — reset and restore, do not
-try to open it. What changed from the development format: the password failure counters left
-`meta` for the vault anchor (a host-held record the store writer cannot rewind), and the manifest
-now binds `meta.revision`.
-
 The vault anchor: a 21-byte record (`vectors/vault-anchor.json`) the kernel keeps outside the
 vault store holds the vault's revision floor and the password failure counters that used to live
 in `meta` (`record-failure` / `reset-failures` are gone from the store). A vault image whose

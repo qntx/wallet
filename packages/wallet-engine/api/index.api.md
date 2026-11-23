@@ -2484,6 +2484,7 @@ type PushFamily = (typeof PUSH_FAMILIES)[number];
 export type PushKeyStore = {
     readonly put: (id: string, key: Uint8Array) => Promise<void>;
     readonly delete: (id: string) => Promise<void>;
+    readonly ids: () => Promise<ReadonlyArray<string>>;
 };
 
 // @public (undocumented)

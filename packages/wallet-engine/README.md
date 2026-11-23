@@ -823,7 +823,9 @@ only in conjunction with the packages while the licence is in effect, must mark 
 and must hand Reown the source/binary on request); your own app stays yours. Distribution
 requires the notice "Portions © 2025 Reown, Inc. All Rights Reserved" and a copy of the
 licence, and as a material condition all use must connect to the proprietary Reown gateway
-infrastructure and the WalletConnect messaging protocol. WalletConnect peers are ordinary dApp origins
+infrastructure and the WalletConnect messaging protocol.
+
+WalletConnect peers are ordinary dApp origins
 keyed `walletconnect:<session topic>`: their sessions live in `engine.connections` alongside
 browser sessions, and every `session_request` runs through the same handlers and request pipeline
 the in-app browser uses, so the approval UI and risk checks are unchanged.
