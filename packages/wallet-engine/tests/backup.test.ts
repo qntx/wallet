@@ -56,7 +56,6 @@ function corruptFirstRead(inner: CloudStore): CloudStore {
   };
 }
 
-
 type Rig = {
   readonly wallet: Wallet;
   readonly cloud: CloudStore;
