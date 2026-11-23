@@ -8,7 +8,11 @@
  * digest covers a transaction other than the one asked for.
  */
 import { ChainError } from "@qntx/wallet-chains";
-import { decodeTronContract, decodeTronRawData } from "@qntx/wallet-chains/tron";
+import {
+  decodeTronContract,
+  decodeTronRawData,
+  tronAddressFromPublicKey,
+} from "@qntx/wallet-chains/tron";
 import type { TronContract as ChainsContract, TronRawData } from "@qntx/wallet-chains/tron";
 
 import { supports } from "./device.ts";
@@ -143,7 +147,7 @@ function mapContract(contract: ChainsContract): WireContract {
   }
 }
 
-function mapTx(raw: TronRawData): WireTx {
+function mapTx(raw: TronRawData, publicKey: Uint8Array): WireTx {
   // serialize() drops every raw_data field it does not model (ref_block_num, auths, scripts,
   // unknown fields) and re-emits contract extras only for provider/contract_name/permission_id —
   // anything else makes the rebuild differ from the request, so refuse before the exchange.
@@ -181,13 +185,21 @@ function mapTx(raw: TronRawData): WireTx {
   if (decoded.extra.length > 0) {
     throw unsupported("contract value carries fields the device cannot rebuild");
   }
+  // The firmware substitutes the owner derived from its own key (sign_tx.py /
+  // tron.c fill owner_address from the signing node), so a foreign-owner request would be
+  // confirmed by the user and then never verify — refuse before the exchange, after the
+  // contract-type check so an unmodeled type still reports `unsupported`.
+  const contract = mapContract(decoded.contract);
+  if (decoded.contract.owner !== tronAddressFromPublicKey(publicKey)) {
+    throw invalid("contract owner does not match the signing key");
+  }
   return {
     refBlockBytes: raw.refBlockBytes,
     refBlockHash: raw.refBlockHash,
     expiration: raw.expiration,
     ...(raw.memo === undefined ? {} : { data: raw.memo }),
     contract: {
-      ...mapContract(decoded.contract),
+      ...contract,
       ...(provider === undefined ? {} : { provider }),
       ...(contractName === undefined ? {} : { contractName }),
       ...(raw.contract.permissionId === 0 ? {} : { permissionId: raw.contract.permissionId }),
@@ -202,12 +214,13 @@ function mapTx(raw: TronRawData): WireTx {
  * (`decodeTronRawData`) and be one the firmware can rebuild exactly; the device's `serialized_tx`
  * echo must then equal the request byte-for-byte.
  */
-export async function signTronTransaction(
-  exchange: Exchange,
-  path: ReadonlyArray<number>,
+// The full pre-exchange decision shared with tronDisplay: decode, rebuild-restrictions and the
+// owner check. Throws `unsupported` for shapes the device cannot rebuild and `invalid-input` for
+// malformed bytes or a foreign owner.
+function tronPrepare(
   rawData: Uint8Array,
-): Promise<Uint8Array> {
-  checkPath(path);
+  publicKey: Uint8Array,
+): { value: WireTx; typeId: number } {
   let raw: TronRawData;
   try {
     raw = decodeTronRawData(rawData);
@@ -219,13 +232,24 @@ export async function signTronTransaction(
   }
   let value: WireTx;
   try {
-    value = mapTx(raw);
+    value = mapTx(raw, publicKey);
   } catch (error) {
     if (error instanceof ChainError) {
       throw invalid(`malformed tron contract: ${error.message}`);
     }
     throw error;
   }
+  return { value, typeId: raw.contract.typeId };
+}
+
+export async function signTronTransaction(
+  exchange: Exchange,
+  path: ReadonlyArray<number>,
+  rawData: Uint8Array,
+  publicKey: Uint8Array,
+): Promise<Uint8Array> {
+  checkPath(path);
+  const { value } = tronPrepare(rawData, publicKey);
   const request: Decoded<TronSignTxFields> = { addressN: [...path], ...value };
   const response = await call(exchange, { def: TronSignTx, value: request }, TronSignedTx);
   if (response.signature.length !== 65) {
@@ -281,18 +305,24 @@ const CLEAR_CONTRACTS: ReadonlySet<number> = new Set([1, 4, 11, 12, 13, 54, 55, 
  * contract types both firmwares lay out field-by-field; a message is clear (both show it, as text
  * or a hex dump); typed data has no OneKey message.
  */
-export function tronDisplay(request: TronDisplayRequest): "clear" | "blind" {
+export function tronDisplay(
+  request: TronDisplayRequest,
+  publicKey: Uint8Array,
+): "clear" | "blind" | "unsupported" {
   if (request.kind === "tron.typed-data") {
     throw unsupported("firmware has no TRON typed-data message");
   }
   if (request.kind === "tron.message") {
     return "clear";
   }
-  let raw: TronRawData;
+  let typeId: number;
   try {
-    raw = decodeTronRawData(request.rawData);
-  } catch {
-    return "blind";
+    ({ typeId } = tronPrepare(request.rawData, publicKey));
+  } catch (error) {
+    if (error instanceof OneKeyError) {
+      return error.code === "unsupported" ? "unsupported" : "blind";
+    }
+    throw error;
   }
-  return CLEAR_CONTRACTS.has(raw.contract.typeId) ? "clear" : "blind";
+  return CLEAR_CONTRACTS.has(typeId) ? "clear" : "blind";
 }

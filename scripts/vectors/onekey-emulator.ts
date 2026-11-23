@@ -487,7 +487,12 @@ if (DEVICE === "pro") {
           }-single-signer`
         : name;
       // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
-      const sig = await signSolanaTransaction(recording(session), solPath, solMessage(plan, self));
+      const sig = await signSolanaTransaction(
+        recording(session),
+        solPath,
+        solMessage(plan, self),
+        hexToBytes(l4Case(plan).key.publicKey),
+      );
       console.log(`${name}: sig=${bytesToHex(sig).slice(0, 24)}…`);
     } catch (error) {
       console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);
@@ -503,6 +508,7 @@ if (DEVICE === "pro") {
         recording(session),
         solPath,
         solMessage("solana-transaction-v1-single-signer", false),
+        hexToBytes(l4Case("solana-transaction-v1-single-signer").key.publicKey),
       );
       console.log("solana-transaction-v1-single-signer: unexpectedly signed");
     } catch (error) {
@@ -562,7 +568,12 @@ if (DEVICE === "pro") {
     const session = { name, exchanges: [] as Step[] };
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
-      const sig = await signTronTransaction(recording(session), tronPath, rawData);
+      const sig = await signTronTransaction(
+        recording(session),
+        tronPath,
+        rawData,
+        hexToBytes(l4Case("tron-message").key.publicKey),
+      );
       console.log(`${name}: sig=${bytesToHex(sig).slice(0, 24)}…`);
     } catch (error) {
       console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);

@@ -18,14 +18,10 @@ export class OneKeyError extends Error {
   readonly code: OneKeyErrorCode;
   /** The device Failure code that triggered the error, when one did. */
   readonly failure: number | undefined;
-  /** The device-supplied Failure text — for programmatic matching only, never display. */
-  readonly deviceMessage: string | undefined;
-
-  constructor(code: OneKeyErrorCode, message: string, failure?: number, deviceMessage?: string) {
+  constructor(code: OneKeyErrorCode, message: string, failure?: number) {
     super(message);
     this.name = "OneKeyError";
     this.code = code;
     this.failure = failure;
-    this.deviceMessage = deviceMessage;
   }
 }

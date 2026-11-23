@@ -527,6 +527,28 @@ describe("evm display classification", () => {
     ).toBe("clear");
   });
 
+  it("returns unsupported exactly where signing refuses before the exchange", async () => {
+    expect(evmDisplay(INFO, { kind: "evm.transaction", tx: planTx("evm-eip2930") })).toBe(
+      "unsupported",
+    );
+    expect(
+      evmDisplay(MINI_CAP_INFO, {
+        kind: "evm.transaction",
+        tx: planTx("evm-eip7702-upgrade"),
+      }),
+    ).toBe("unsupported");
+    const { exchange, writes } = scripted([]);
+    const e1 = await thrown(async () =>
+      signEvmTransaction(exchange, INFO, EVM_PATH, planTx("evm-eip2930")),
+    );
+    const e2 = await thrown(async () =>
+      signEvmTransaction(exchange, MINI_CAP_INFO, EVM_PATH, planTx("evm-eip7702-upgrade")),
+    );
+    expect(e1.code).toBe("unsupported");
+    expect(e2.code).toBe("unsupported");
+    expect(writes).toHaveLength(0);
+  });
+
   it("classifies typed data by mode", () => {
     const { typedData } = planCase("evm-typed-data-mail").request;
     if (typedData === undefined) {

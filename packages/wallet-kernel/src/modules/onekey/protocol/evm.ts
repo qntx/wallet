@@ -355,7 +355,10 @@ const APPROVE_SELECTORS = new Set(["095ea7b3", "39509351"]);
  * bytes the user cannot fully verify on screen.
  */
 // oxlint-disable-next-line typescript/consistent-return -- every request kind returns above
-export function evmDisplay(info: DeviceInfo, request: EvmDisplayRequest): "clear" | "blind" {
+export function evmDisplay(
+  info: DeviceInfo,
+  request: EvmDisplayRequest,
+): "clear" | "blind" | "unsupported" {
   switch (request.kind) {
     case "evm.personal-message":
       return "clear";
@@ -363,11 +366,14 @@ export function evmDisplay(info: DeviceInfo, request: EvmDisplayRequest): "clear
       return typedDataMode(info, request.typedData) === "stream" ? "clear" : "blind";
     case "evm.transaction": {
       const { tx } = request;
+      if (tx.type === "eip2930") {
+        return "unsupported";
+      }
       if (tx.type === "eip7702") {
         // The device names a registered delegator and its delegation target on screen and
         // refuses anything else with Failure_DataError (mapped to `unsupported`), so the
         // delegation the user sees is always the one being signed.
-        return "clear";
+        return supports(info, "evm-7702") ? "clear" : "unsupported";
       }
       const data = tx.data.startsWith("0x") ? tx.data.slice(2) : tx.data;
       if (data.length === 0) {

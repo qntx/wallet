@@ -212,7 +212,7 @@ function l4Replay(emulator: "classic1s" | "pro"): void {
       "%s returns a signature verifying against the signed message",
       async (name) => {
         const message = solSelf(name);
-        const signature = await signSolanaTransaction(replay(name), SOL_PATH, message);
+        const signature = await signSolanaTransaction(replay(name), SOL_PATH, message, SOL_KEY);
         expect(signature).toHaveLength(64);
         expect(ed25519.verify(signature, message, SOL_KEY)).toBe(true);
       },
@@ -225,30 +225,18 @@ function l4Replay(emulator: "classic1s" | "pro"): void {
       expect(ed25519.verify(signature, message, SOL_KEY)).toBe(true);
     });
 
-    /* The plan fee payer is not the device key: Classic refuses the exchange
-       ("Invalid params" → invalid-input); Pro's debug build signs anyway — its signer check
-       is skipped in the emulator build, while real Pro hardware is expected to refuse. */
-    if (emulator === "classic1s") {
-      it.each([
-        "solana-transaction-legacy-single-signer",
-        "solana-transaction-v0-single-signer",
-      ] as const)("%s is a device rejection", async (name) => {
-        const error = await thrown(async () =>
-          signSolanaTransaction(replay(name), SOL_PATH, planMessage(name)),
-        );
-        expect(error.code).toBe("invalid-input");
-      });
-    } else {
-      it.each([
-        "solana-transaction-legacy-single-signer",
-        "solana-transaction-v0-single-signer",
-      ] as const)("%s signs and verifies (debug signer check)", async (name) => {
-        const message = planMessage(name);
-        const signature = await signSolanaTransaction(replay(name), SOL_PATH, message);
-        expect(signature).toHaveLength(64);
-        expect(ed25519.verify(signature, message, SOL_KEY)).toBe(true);
-      });
-    }
+    /* The plan fee payer is not the device key: the client refuses before any exchange
+       (Pro's debug build would sign anyway — its signer check is skipped in the emulator
+       build; the recorded sessions stay in the vectors as evidence). */
+    it.each([
+      "solana-transaction-legacy-single-signer",
+      "solana-transaction-v0-single-signer",
+    ] as const)("%s refuses a foreign signer with zero exchanges", async (name) => {
+      const error = await thrown(async () =>
+        signSolanaTransaction(noExchange(), SOL_PATH, planMessage(name), SOL_KEY),
+      );
+      expect(error.code).toBe("invalid-input");
+    });
 
     it("refuses a v1 message before any exchange", async () => {
       const session = transcriptSession(transcript, "solana-transaction-v1-single-signer");
@@ -258,6 +246,7 @@ function l4Replay(emulator: "classic1s" | "pro"): void {
           replay("solana-transaction-v1-single-signer"),
           SOL_PATH,
           planMessage("solana-transaction-v1-single-signer"),
+          SOL_KEY,
         ),
       );
       expect(error.code).toBe("unsupported");
@@ -272,7 +261,7 @@ function l4Replay(emulator: "classic1s" | "pro"): void {
         if (rawData === undefined) {
           throw new Error(`session ${name} has no fixture`);
         }
-        const signature = await signTronTransaction(replay(name), TRON_PATH, rawData);
+        const signature = await signTronTransaction(replay(name), TRON_PATH, rawData, TRON_KEY);
         expect(signature).toHaveLength(64);
         expect(tronVerifies(sha256(rawData), signature, TRON_KEY)).toBe(true);
       },
@@ -285,15 +274,16 @@ function l4Replay(emulator: "classic1s" | "pro"): void {
       expect(tronVerifies(tronMessageDigest(message), signature, TRON_KEY)).toBe(true);
     });
 
-    it("the plan transfer raises device-fault: the device re-signed its own owner", async () => {
+    it("the plan transfer refuses a foreign owner with zero exchanges", async () => {
       const error = await thrown(async () =>
         signTronTransaction(
-          replay("tron-transaction-trx-transfer"),
+          noExchange(),
           TRON_PATH,
           planRawData("tron-transaction-trx-transfer"),
+          TRON_KEY,
         ),
       );
-      expect(error.code).toBe("device-fault");
+      expect(error.code).toBe("invalid-input");
     });
   });
 }
@@ -313,14 +303,18 @@ describe("signSolanaTransaction hostile", () => {
   it.each(BAD_PATHS.map((path) => ({ path })))(
     "refuses path $path before any exchange",
     async ({ path }) => {
-      const error = await thrown(async () => signSolanaTransaction(noExchange(), path, message()));
+      const error = await thrown(async () =>
+        signSolanaTransaction(noExchange(), path, message(), SOL_KEY),
+      );
       expect(error.code).toBe("invalid-input");
     },
   );
 
   it("rejects an unparseable message before any exchange", async () => {
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signSolanaTransaction(exchange, SOL_PATH, hex("0a0b")));
+    const error = await thrown(async () =>
+      signSolanaTransaction(exchange, SOL_PATH, hex("0a0b"), SOL_KEY),
+    );
     expect(error.code).toBe("invalid-input");
     expect(writes).toHaveLength(0);
   });
@@ -328,7 +322,12 @@ describe("signSolanaTransaction hostile", () => {
   it("rejects a version-1 message before any exchange", async () => {
     const { exchange, writes } = scripted([]);
     const error = await thrown(async () =>
-      signSolanaTransaction(exchange, SOL_PATH, planMessage("solana-transaction-v1-single-signer")),
+      signSolanaTransaction(
+        exchange,
+        SOL_PATH,
+        planMessage("solana-transaction-v1-single-signer"),
+        SOL_KEY,
+      ),
     );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
@@ -336,13 +335,17 @@ describe("signSolanaTransaction hostile", () => {
 
   it.each([63, 65])("rejects a %i-byte signature as device-fault", async (length) => {
     const { exchange } = scripted([reply(SolanaSignedTx, { signature: new Uint8Array(length) })]);
-    const error = await thrown(async () => signSolanaTransaction(exchange, SOL_PATH, message()));
+    const error = await thrown(async () =>
+      signSolanaTransaction(exchange, SOL_PATH, message(), SOL_KEY),
+    );
     expect(error.code).toBe("device-fault");
   });
 
   it("rejects a missing signature as device-fault", async () => {
     const { exchange } = scripted([encodeMessage(SolanaSignedTx.typeId, new Uint8Array())]);
-    const error = await thrown(async () => signSolanaTransaction(exchange, SOL_PATH, message()));
+    const error = await thrown(async () =>
+      signSolanaTransaction(exchange, SOL_PATH, message(), SOL_KEY),
+    );
     expect(error.code).toBe("device-fault");
   });
 
@@ -350,14 +353,18 @@ describe("signSolanaTransaction hostile", () => {
     const { exchange } = scripted([
       reply(Failure, { code: 3, message: "Please confirm the BlindSign enabled" }),
     ]);
-    const error = await thrown(async () => signSolanaTransaction(exchange, SOL_PATH, message()));
+    const error = await thrown(async () =>
+      signSolanaTransaction(exchange, SOL_PATH, message(), SOL_KEY),
+    );
     expect(error.code).toBe("unsupported");
   });
 
-  it("maps another DataError to invalid-input without leaking the device text", async () => {
+  it("maps another DataError to unsupported without leaking the device text", async () => {
     const { exchange } = scripted([reply(Failure, { code: 3, message: "Invalid params" })]);
-    const error = await thrown(async () => signSolanaTransaction(exchange, SOL_PATH, message()));
-    expect(error.code).toBe("invalid-input");
+    const error = await thrown(async () =>
+      signSolanaTransaction(exchange, SOL_PATH, message(), SOL_KEY),
+    );
+    expect(error.code).toBe("unsupported");
     expect(error.message).not.toContain("Invalid params");
   });
 });
@@ -387,44 +394,75 @@ describe("solanaDisplay", () => {
   it("classifies transactions", () => {
     // The fixture is a plain System-program transfer — both firmwares describe it in full.
     expect(
-      solanaDisplay({
-        kind: "solana.transaction",
-        message: solSelf("solana-transaction-legacy-self"),
-      }),
+      solanaDisplay(
+        {
+          kind: "solana.transaction",
+          message: solSelf("solana-transaction-legacy-self"),
+        },
+        SOL_KEY,
+      ),
     ).toBe("clear");
     // Every versioned message gets the blind hash screen.
     expect(
-      solanaDisplay({
-        kind: "solana.transaction",
-        message: planMessage("solana-transaction-v0-single-signer"),
-      }),
+      solanaDisplay(
+        {
+          kind: "solana.transaction",
+          message: planMessage("solana-transaction-v0-single-signer"),
+        },
+        SOL_KEY,
+      ),
     ).toBe("blind");
-    expect(solanaDisplay({ kind: "solana.transaction", message: hex("0a0b") })).toBe("blind");
+    expect(solanaDisplay({ kind: "solana.transaction", message: hex("0a0b") }, SOL_KEY)).toBe(
+      "blind",
+    );
     // A legacy message over an unknown program: blind (only the clear-set programs render).
     const unknownProgram = solSelf("solana-transaction-legacy-self");
     unknownProgram.fill(0x09, 68, 100);
-    expect(solanaDisplay({ kind: "solana.transaction", message: unknownProgram })).toBe("blind");
+    expect(solanaDisplay({ kind: "solana.transaction", message: unknownProgram }, SOL_KEY)).toBe(
+      "blind",
+    );
   });
 
   it("classifies raw messages by printability", () => {
     expect(
-      solanaDisplay({ kind: "solana.message", message: new TextEncoder().encode("pay rent") }),
+      solanaDisplay(
+        { kind: "solana.message", message: new TextEncoder().encode("pay rent") },
+        SOL_KEY,
+      ),
     ).toBe("clear");
-    expect(solanaDisplay({ kind: "solana.message", message: hex("00ff10") })).toBe("blind");
+    expect(solanaDisplay({ kind: "solana.message", message: hex("00ff10") }, SOL_KEY)).toBe(
+      "blind",
+    );
     // Valid UTF-8 with a control character: hex dump, so blind.
     expect(
-      solanaDisplay({
-        kind: "solana.message",
-        message: new TextEncoder().encode("hithere"),
-      }),
+      solanaDisplay(
+        {
+          kind: "solana.message",
+          message: new TextEncoder().encode("hithere"),
+        },
+        SOL_KEY,
+      ),
     ).toBe("blind");
     // Valid UTF-8 with no printable ASCII (pure CJK): the device shows hex, so blind.
     expect(
-      solanaDisplay({
-        kind: "solana.message",
-        message: new TextEncoder().encode(""),
-      }),
+      solanaDisplay(
+        {
+          kind: "solana.message",
+          message: new TextEncoder().encode(""),
+        },
+        SOL_KEY,
+      ),
     ).toBe("blind");
+    // Sign refuses a v1 message with unsupported and zero exchanges — display must agree.
+    expect(
+      solanaDisplay(
+        {
+          kind: "solana.transaction",
+          message: planMessage("solana-transaction-v1-single-signer"),
+        },
+        SOL_KEY,
+      ),
+    ).toBe("unsupported");
   });
 });
 
@@ -435,7 +473,9 @@ describe("signTronTransaction hostile", () => {
     const { exchange } = scripted([
       reply(TronSignedTx, { signature: new Uint8Array(length), serializedTx: rawData() }),
     ]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, rawData()));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, rawData(), TRON_KEY),
+    );
     expect(error.code).toBe("device-fault");
   });
 
@@ -446,13 +486,17 @@ describe("signTronTransaction hostile", () => {
         serializedTx: TRON_SELF_SESSIONS["tron-delegate-energy"] ?? new Uint8Array(),
       }),
     ]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, rawData()));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, rawData(), TRON_KEY),
+    );
     expect(error.code).toBe("device-fault");
   });
 
   it("rejects a missing serialized_tx as device-fault", async () => {
     const { exchange } = scripted([reply(TronSignedTx, { signature: new Uint8Array(65) })]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, rawData()));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, rawData(), TRON_KEY),
+    );
     expect(error.code).toBe("device-fault");
   });
 
@@ -462,7 +506,7 @@ describe("signTronTransaction hostile", () => {
     const { exchange } = scripted([
       reply(TronSignedTx, { signature: new Uint8Array(65).fill(7), serializedTx: rawData() }),
     ]);
-    const signature = await signTronTransaction(exchange, TRON_PATH, rawData());
+    const signature = await signTronTransaction(exchange, TRON_PATH, rawData(), TRON_KEY);
     expect(signature).toHaveLength(64);
     expect(tronVerifies(sha256(rawData()), signature, TRON_KEY)).toBe(false);
   });
@@ -472,7 +516,7 @@ describe("signTronTransaction hostile", () => {
     async (name) => {
       const { exchange, writes } = scripted([]);
       const error = await thrown(async () =>
-        signTronTransaction(exchange, TRON_PATH, tronVector(name)),
+        signTronTransaction(exchange, TRON_PATH, tronVector(name), TRON_KEY),
       );
       expect(error.code).toBe("unsupported");
       expect(writes).toHaveLength(0);
@@ -492,7 +536,9 @@ describe("signTronTransaction hostile", () => {
       },
     });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, frozen));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, frozen, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -502,7 +548,12 @@ describe("signTronTransaction hostile", () => {
     // serialize() drops extras, so the rebuild would differ.
     const { exchange, writes } = scripted([]);
     const error = await thrown(async () =>
-      signTronTransaction(exchange, TRON_PATH, new Uint8Array([...rawData(), 0x7a, 0x01, 0xaa])),
+      signTronTransaction(
+        exchange,
+        TRON_PATH,
+        new Uint8Array([...rawData(), 0x7a, 0x01, 0xaa]),
+        TRON_KEY,
+      ),
     );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
@@ -517,7 +568,9 @@ describe("signTronTransaction hostile", () => {
     const value = encodeTronContract({ ...decoded.contract, amount: 0n });
     const zeroed = encodeTronRawData({ ...raw, contract: { ...raw.contract, value } });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, zeroed));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, zeroed, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -529,7 +582,9 @@ describe("signTronTransaction hostile", () => {
     const { timestamp: _dropped, ...rest } = raw;
     const timeless = encodeTronRawData(rest);
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, timeless));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, timeless, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -549,7 +604,9 @@ describe("signTronTransaction hostile", () => {
       },
     });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, widened));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, widened, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -570,7 +627,9 @@ describe("signTronTransaction hostile", () => {
     });
     const zeroed = encodeTronRawData({ ...raw, contract: { ...raw.contract, value } });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, zeroed));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, zeroed, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -584,7 +643,9 @@ describe("signTronTransaction hostile", () => {
     const value = encodeTronContract({ ...decoded.contract, balance: 0n });
     const zeroed = encodeTronRawData({ ...raw, contract: { ...raw.contract, value } });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, zeroed));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, zeroed, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -598,7 +659,9 @@ describe("signTronTransaction hostile", () => {
     const value = encodeTronContract({ ...decoded.contract, data: new Uint8Array(2) });
     const shortened = encodeTronRawData({ ...raw, contract: { ...raw.contract, value } });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, shortened));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, shortened, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -614,7 +677,9 @@ describe("signTronTransaction hostile", () => {
     const value = encodeTronContract({ ...decoded.contract, tokenId: 100n });
     const widened = encodeTronRawData({ ...raw, contract: { ...raw.contract, value } });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, widened));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, widened, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -631,7 +696,9 @@ describe("signTronTransaction hostile", () => {
       },
     });
     const { exchange, writes } = scripted([]);
-    const error = await thrown(async () => signTronTransaction(exchange, TRON_PATH, widened));
+    const error = await thrown(async () =>
+      signTronTransaction(exchange, TRON_PATH, widened, TRON_KEY),
+    );
     expect(error.code).toBe("unsupported");
     expect(writes).toHaveLength(0);
   });
@@ -646,7 +713,7 @@ describe("signTronTransaction hostile", () => {
       }),
     ]);
     const rawData = tronSelf(tronVector("freeze-v2-bandwidth"));
-    await signTronTransaction(exchange, TRON_PATH, rawData);
+    await signTronTransaction(exchange, TRON_PATH, rawData, TRON_KEY);
     const [written] = writes;
     if (written === undefined) {
       throw new Error("no request written");
@@ -689,16 +756,26 @@ describe("tronDisplay", () => {
     "withdraw-balance",
     "cancel-all-unfreeze-v2",
   ])("classifies %s as clear", (name) => {
-    expect(tronDisplay({ kind: "tron.transaction", rawData: tronVector(name) })).toBe("clear");
+    expect(
+      tronDisplay({ kind: "tron.transaction", rawData: tronSelf(tronVector(name)) }, TRON_KEY),
+    ).toBe("clear");
   });
 
   it.each(["trc20-transfer", "trc20-approve"])("classifies %s as blind", (name) => {
-    expect(tronDisplay({ kind: "tron.transaction", rawData: tronVector(name) })).toBe("blind");
+    expect(tronDisplay({ kind: "tron.transaction", rawData: tronVector(name) }, TRON_KEY)).toBe(
+      "blind",
+    );
   });
 
   it("classifies messages clear and unparseable raw_data blind", () => {
-    expect(tronDisplay({ kind: "tron.message" })).toBe("clear");
-    expect(tronDisplay({ kind: "tron.transaction", rawData: hex("0a0b") })).toBe("blind");
+    expect(tronDisplay({ kind: "tron.message" }, TRON_KEY)).toBe("clear");
+    // Sign refuses these contract types with unsupported and zero exchanges — display agrees.
+    for (const name of ["trc10-transfer", "account-permission-update"]) {
+      expect(tronDisplay({ kind: "tron.transaction", rawData: tronVector(name) }, TRON_KEY)).toBe(
+        "unsupported",
+      );
+    }
+    expect(tronDisplay({ kind: "tron.transaction", rawData: hex("0a0b") }, TRON_KEY)).toBe("blind");
   });
 });
 
@@ -713,7 +790,7 @@ describe("response decoder fuzz", () => {
         };
         let outcome: unknown;
         try {
-          outcome = await signSolanaTransaction(exchange, SOL_PATH, message);
+          outcome = await signSolanaTransaction(exchange, SOL_PATH, message, SOL_KEY);
         } catch (error) {
           outcome = error;
           if (!(error instanceof OneKeyError)) {
@@ -736,7 +813,7 @@ describe("response decoder fuzz", () => {
         };
         let outcome: unknown;
         try {
-          outcome = await signTronTransaction(exchange, TRON_PATH, rawData);
+          outcome = await signTronTransaction(exchange, TRON_PATH, rawData, TRON_KEY);
         } catch (error) {
           outcome = error;
           if (!(error instanceof OneKeyError)) {

@@ -8,7 +8,11 @@
  * message (a raw signature over them would authorise the transaction).
  */
 import { ChainError } from "@qntx/wallet-chains";
-import { mayBeTransactionMessage, parseCompiledMessage } from "@qntx/wallet-chains/solana";
+import {
+  mayBeTransactionMessage,
+  parseCompiledMessage,
+  solanaAddressFromPublicKey,
+} from "@qntx/wallet-chains/solana";
 
 import { OneKeyError } from "./errors.ts";
 import {
@@ -57,21 +61,45 @@ function checkPath(path: ReadonlyArray<number>): void {
   }
 }
 
+// Every remaining Failure_DataError means the device refused the message — for example because
+// blind signing is disabled on the device — and its reason text must not ride on our errors.
 function dataError(error: unknown): OneKeyError {
   if (
     error instanceof OneKeyError &&
     error.code === "device-error" &&
     error.failure === FAILURE_DATA_ERROR
   ) {
-    if (error.deviceMessage?.includes("BlindSign") === true) {
-      return unsupported("device has blind signing disabled");
-    }
-    return invalid("device rejected the message");
+    return unsupported(
+      "the device refused the message (for example blind signing is disabled on the device)",
+    );
   }
   if (error instanceof OneKeyError) {
     return error;
   }
   throw error;
+}
+
+// The device signs only when its key is one of the message's required signers (Pro sign_tx.py
+// checks the signer index; Classic its own param check) — refuse first so the refusal carries no
+// device text and needs no exchange.
+function prepareMessage(message: Uint8Array, publicKey: Uint8Array) {
+  let parsed;
+  try {
+    parsed = parseCompiledMessage(message);
+  } catch (error) {
+    if (error instanceof ChainError && error.code === "unsupported") {
+      throw unsupported(error.message);
+    }
+    throw invalid("solana message failed to parse");
+  }
+  if (parsed.version !== "legacy" && parsed.version !== 0) {
+    throw unsupported("firmware does not sign version-1 Solana messages");
+  }
+  const signer = solanaAddressFromPublicKey(publicKey);
+  if (!parsed.staticAccounts.slice(0, parsed.numRequiredSignatures).includes(signer)) {
+    throw invalid("signing key is not a required signer of the message");
+  }
+  return parsed;
 }
 
 /**
@@ -85,20 +113,10 @@ export async function signSolanaTransaction(
   exchange: Exchange,
   path: ReadonlyArray<number>,
   message: Uint8Array,
+  publicKey: Uint8Array,
 ): Promise<Uint8Array> {
   checkPath(path);
-  let version: "legacy" | number;
-  try {
-    ({ version } = parseCompiledMessage(message));
-  } catch (error) {
-    if (error instanceof ChainError && error.code === "unsupported") {
-      throw unsupported(error.message);
-    }
-    throw invalid("solana message failed to parse");
-  }
-  if (version !== "legacy" && version !== 0) {
-    throw unsupported("firmware does not sign version-1 Solana messages");
-  }
+  prepareMessage(message, publicKey);
   try {
     const response = await call(
       exchange,
@@ -180,15 +198,21 @@ function showsText(message: Uint8Array): boolean {
  * program ids the Pro firmware renders (CURRENT_ALLOWED_PROGRAM_IDS — the Classic set is a
  * superset). Raw messages: only printable text both firmwares show in full.
  */
-export function solanaDisplay(request: SolanaDisplayRequest): "clear" | "blind" {
+export function solanaDisplay(
+  request: SolanaDisplayRequest,
+  publicKey: Uint8Array,
+): "clear" | "blind" | "unsupported" {
   if (request.kind === "solana.message") {
     return showsText(request.message) ? "clear" : "blind";
   }
   let parsed;
   try {
-    parsed = parseCompiledMessage(request.message);
-  } catch {
-    return "blind";
+    parsed = prepareMessage(request.message, publicKey);
+  } catch (error) {
+    if (error instanceof OneKeyError) {
+      return error.code === "unsupported" ? "unsupported" : "blind";
+    }
+    throw error;
   }
   if (parsed.version !== "legacy") {
     return "blind";
