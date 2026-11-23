@@ -44551,8 +44551,8 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-kernel/src/modules/signers/onekey/protocol/messages.ts
 	/**
-	* The message descriptors layer 1 uses — message type ids and field numbers only, each cited to the
-	* firmware `.proto` file they were read from. Both schemas agree on every field listed here
+	* The message descriptors the client uses — message type ids and field numbers only, each cited to
+	* the firmware `.proto` file they were read from. Both schemas agree on every field listed here
 	* (firmware-pro v4.21.0 and firmware-classic1s v3.21.0, `common/protob/`); fields where they
 	* disagree are omitted, except the classic1s-only BixinPinInputOnDevice noted inline.
 	*/
