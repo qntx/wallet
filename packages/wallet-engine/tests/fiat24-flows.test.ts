@@ -20,7 +20,7 @@ import type { FlowState } from "@qntx/fiat24/flows";
 import type { Fiat24FlowEntry } from "../src/apps/fiat24/index.ts";
 import type { RequestController } from "../src/requests/controller.ts";
 import type { World } from "./apps-helpers.ts";
-import { until, untilPresent, VERIFY, world } from "./apps-helpers.ts";
+import { tick, until, VERIFY, world } from "./apps-helpers.ts";
 import { fixtureBody, makeFiat24ApiFetch } from "./support/fiat24-api.ts";
 import {
   accountByIdEntries,
@@ -50,6 +50,30 @@ import {
   txPayload,
 } from "./support/fiat24-chain.ts";
 import type { Fiat24Chain } from "./support/fiat24-chain.ts";
+
+/**
+ * Poll a store read until it answers, bounded by wall time rather than a tick count: a reconcile
+ * runs owner derivation, chain probes and a store write behind fire-and-forget hops whose tick
+ * count grows with runner load.
+ */
+const untilStored = async <T>(
+  read: () => Promise<T | undefined>,
+  budgetMs = 20_000,
+): Promise<T> => {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    const value = await read();
+    if (value !== undefined) {
+      return value;
+    }
+    if (Date.now() > deadline) {
+      throw new Error("read never produced a value");
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    await tick();
+  }
+};
 
 const OWNER = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94" as Address;
 const RECIPIENT = "0x00000000000000000000000000000000000bb0aa" as Address;
@@ -893,7 +917,7 @@ describe("fiat24 reconcile lifecycle", () => {
     await forgeSending(w, "beef0001");
     await w.wallet.vault.lock();
     await w.wallet.vault.unlock(VERIFY);
-    await untilPresent(async () =>
+    await untilStored(async () =>
       (await storedPhase(w, "beef0001")) === "not-sent" ? "not-sent" : undefined,
     );
     expect(openRequests(w)).toStrictEqual([]);
@@ -913,7 +937,7 @@ describe("fiat24 reconcile lifecycle", () => {
     /* First pump advances the clock to the armed 15 s timer, the second fires it. */
     w.timers.pump();
     w.timers.pump();
-    await untilPresent(async () =>
+    await untilStored(async () =>
       (await storedPhase(w, "beef0002")) === "not-sent" ? "not-sent" : undefined,
     );
     expect(chain.sent).toHaveLength(0);
@@ -953,9 +977,8 @@ describe("fiat24 reconcile lifecycle", () => {
     await parked;
     /* Flow A's broadcast consumed nonce 5 — the forged nonce-5 `sending` record lands `unknown`
        (a consumed nonce no own receipt explains). It still proves exactly one reconcile ran. */
-    await untilPresent(
-      async () => ((await storedPhase(w, "beef0003")) === "unknown" ? "unknown" : undefined),
-      300,
+    await untilStored(async () =>
+      (await storedPhase(w, "beef0003")) === "unknown" ? "unknown" : undefined,
     );
     /* Stop the poll so only the work already queued drains, then let it finish: with no dedup
        guard the four toggle passes each enqueued an advance, and each runs the record's
@@ -1313,7 +1336,7 @@ describe("fiat24 lock, disable and removal at every transfer stage", () => {
            `not-sent` on its own (the init reconcile pass beats a host advance); a fresh flow
            carries the intent forward. */
         chain.autoBlock = true;
-        await untilPresent(async () => {
+        await untilStored(async () => {
           const bytes = await w.store
             .collection("apps.fiat24")
             .get(`${group.walletId}/0/flow/${id}`);
@@ -1322,7 +1345,7 @@ describe("fiat24 lock, disable and removal at every transfer stage", () => {
           }
           const stored = decodeFlowState(new TextDecoder().decode(bytes));
           return stored.step === "not-sent" ? "not-sent" : undefined;
-        }, 300);
+        });
         chain.autoBlock = false;
         resumeId = await w.f24.flows
           .start(group, {
@@ -1432,7 +1455,7 @@ describe("fiat24 lock, disable and removal at every transfer stage", () => {
         /* The invalidated approve send never broadcast — the init reconcile lands it
            terminal `not-sent`; restart fresh. */
         chain.autoBlock = true;
-        await untilPresent(async () => {
+        await untilStored(async () => {
           const bytes = await w.store
             .collection("apps.fiat24")
             .get(`${group.walletId}/0/flow/${flowId}`);
@@ -1441,7 +1464,7 @@ describe("fiat24 lock, disable and removal at every transfer stage", () => {
           }
           const stored = decodeFlowState(new TextDecoder().decode(bytes));
           return stored.step === "not-sent" ? "not-sent" : undefined;
-        }, 300);
+        });
         chain.autoBlock = false;
         flowId = await w.f24.flows
           .start(group, {
