@@ -22,16 +22,16 @@ export async function loadInventory(
   return inventory;
 }
 
-/** Flagged items are hidden by default; a `shown` verdict pins one visible anyway. */
-export async function visibleItems(
-  engine: WalletEngine,
+/** Flagged items are hidden by default: list what is visible now. */
+export function visibleItems(
   inventory: NftInventory,
-): Promise<ReadonlyArray<NftInventory["items"][number]>> {
-  const flagged = inventory.items.find((item) => item.hidden);
-  if (flagged !== undefined) {
-    await engine.nfts.setHidden(inventory.network, flagged.id, "shown");
-  }
+): ReadonlyArray<NftInventory["items"][number]> {
   return inventory.items.filter((item) => !item.hidden);
+}
+
+/** The user pins a flagged item visible; the verdict persists and the item's `hidden` turns false. */
+export async function showAnyway(engine: WalletEngine, network: string, id: string): Promise<void> {
+  await engine.nfts.setHidden(network, id, "shown");
 }
 
 /**
@@ -41,7 +41,7 @@ export async function visibleItems(
  */
 export function mediaUrl(
   media: NftMedia | undefined,
-  ipfsGateway: (cid: string) => string,
+  ipfsGateway: (ipfsUrl: string) => string,
   sandboxed = false,
 ): string | undefined {
   if (media === undefined || (media.active && !sandboxed)) {
