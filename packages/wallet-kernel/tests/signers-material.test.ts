@@ -34,6 +34,11 @@ const pin: HardwarePin = {
 
 const material = pinnedMaterial(pin);
 
+const MASTER = HDKey.fromMasterSeed(SEED).publicKey;
+if (MASTER === null) {
+  throw new Error("no master key");
+}
+
 const code = async (call: () => Promise<unknown>): Promise<string> => {
   try {
     await call();
@@ -113,10 +118,6 @@ describe("pinnedMaterial", () => {
   });
 
   it("reports the pinned master fingerprint", async () => {
-    const master = HDKey.fromMasterSeed(SEED).publicKey;
-    if (master === null) {
-      throw new Error("no master key");
-    }
-    await expect(material.fingerprint()).resolves.toStrictEqual(hash160(master).subarray(0, 4));
+    await expect(material.fingerprint()).resolves.toStrictEqual(hash160(MASTER).subarray(0, 4));
   });
 });

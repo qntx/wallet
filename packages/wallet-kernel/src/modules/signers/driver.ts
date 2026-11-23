@@ -62,8 +62,8 @@ export type SignContext = {
 };
 
 /**
- * The device's answer to an address check. `matched: false` is the user reporting the device
- * shows a different address — the module, not the driver, decides that means `wrong-device`.
+ * The device's answer to an address check. `matched: false` is the user reporting the device shows
+ * a different address — the module, not the driver, decides that means `wrong-device`.
  */
 export type VerifyVerdict = {
   readonly method: "device" | "compare";
