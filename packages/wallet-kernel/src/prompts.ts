@@ -140,6 +140,39 @@ export const corePromptFor =
     corePrompt(promptLocale(keystore?.locale ?? "en"), kind);
 
 /**
+ * How much prompt text the system verification dialog can show. These are policy values, not
+ * platform facts — neither OS documents a limit — and docs/device-checklist.md is what confirms
+ * them on real devices; lowering a value is always the safe direction. iOS renders only the
+ * description, so it has no title bound. `lines` counts `description.split("\n")`, `characters`
+ * counts Unicode code points (not UTF-16 units).
+ */
+export type PromptBound = {
+  readonly title?: number | undefined;
+  readonly lines: number;
+  readonly characters: number;
+};
+
+export const PROMPT_BOUNDS: Readonly<Record<"ios" | "android", PromptBound>> = {
+  ios: { lines: 8, characters: 400 },
+  android: { title: 60, lines: 12, characters: 640 },
+};
+
+/** Unicode code points of `text` — what the platform dialog measures, not UTF-16 units. */
+export function codePoints(text: string): number {
+  // oxlint-disable-next-line typescript/no-misused-spread -- counts code points; grapheme clusters must not merge
+  return [...text].length;
+}
+
+/** Whether the rendered prompt fits the platform bound the keystore reports. */
+export function promptFits(prompt: KeystorePrompt, bound: PromptBound): boolean {
+  return (
+    (bound.title === undefined || codePoints(prompt.title) <= bound.title) &&
+    prompt.description.split("\n").length <= bound.lines &&
+    codePoints(prompt.description) <= bound.characters
+  );
+}
+
+/**
  * An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
  * float rounding — and trailing fractional zeros trimmed. `amount` is a canonical decimal string.
  */

@@ -2860,9 +2860,9 @@ describe("blind text prompts", () => {
       description:
         "A bearer grant for the Fiat24 account of the signing address, valid until " +
         "2026-11-21 16:20 (UTC)\n" +
-        "Until then, anyone holding this signature can read your Fiat24 profile and contact " +
-        "data, view your card details, create and change cards and payees, and change your " +
-        `email — the channel for card one-time passwords\nSigns: ${message}`,
+        "Until then, the holder can read your Fiat24 profile, contact data and card details, " +
+        "and create or change cards, payees and your email — " +
+        `the card one-time-password channel\nSigns: ${message}`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "授权访问 Fiat24 账户",
@@ -3813,6 +3813,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     tokenInSet: ["t", "root"],
     zoneRestriction: ["zone"],
     moreItems: [2],
+    moreLines: [3],
     orderHeader: ["name", "maker"],
     orderGiveAtMost: ["1"],
     orderReceiveAtLeast: ["r", "1"],

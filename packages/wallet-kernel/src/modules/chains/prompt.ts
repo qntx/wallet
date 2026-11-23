@@ -43,8 +43,8 @@ import { tronContractType } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
-import { formatUnits, joinLines } from "../../prompts.ts";
-import type { PromptLocale } from "../../prompts.ts";
+import { codePoints, formatUnits, joinLines, promptFits } from "../../prompts.ts";
+import type { PromptBound, PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
@@ -137,6 +137,7 @@ type Catalog = {
   readonly tokenInSet: (token: string, root: string) => string;
   readonly zoneRestriction: (zone: string) => string;
   readonly moreItems: (count: number) => string;
+  readonly moreLines: (count: number) => string;
   readonly orderHeader: (name: string, maker: string) => string;
   readonly orderGiveAtMost: (amount: string) => string;
   readonly orderReceiveAtLeast: (recipient: string, amount: string) => string;
@@ -344,6 +345,7 @@ const zh: Catalog = {
   tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
   zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
   moreItems: (count) => `… 还有 ${count} 项未显示`,
+  moreLines: (count) => `… 还有 ${count} 行未显示`,
   orderHeader: (name, maker) => `${name} 订单，挂单方 ${maker}`,
   orderGiveAtMost: (amount) => `最多付出 ${amount}`,
   orderReceiveAtLeast: (recipient, amount) => `${recipient} 至少收到 ${amount}`,
@@ -658,6 +660,7 @@ const en: Catalog = {
   tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
   zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
   moreItems: (count) => `… ${count} more items not shown`,
+  moreLines: (count) => `… ${count} more lines not shown`,
   orderHeader: (name, maker) => `${name} order by ${maker}`,
   orderGiveAtMost: (amount) => `Give at most ${amount}`,
   orderReceiveAtLeast: (recipient, amount) => `${recipient} receives at least ${amount}`,
@@ -922,7 +925,7 @@ const en: Catalog = {
   fiat24SessionBearer: (date) =>
     `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
   fiat24SessionPower:
-    "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
+    "Until then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel",
   fiat24SessionSigns: (message) => `Signs: ${message}`,
   clearApproval: (asset, id) => `Clear the approval on ${asset} #${id}`,
   delegateRevoked: (account) => `Revoke the delegate of token account ${account}`,
@@ -1827,4 +1830,33 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   return intent.message === undefined
     ? transactionPrompt(catalog, intent)
     : messagePrompt(catalog, intent, intent.message);
+}
+
+/**
+ * The rendered prompt bounded to what the platform's verification dialog can show. An over-long
+ * prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
+ * returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
+ * closing "more lines not shown" line: the kernel truncates, never the OS.
+ */
+export function boundChainPrompt(
+  locale: PromptLocale,
+  intent: PromptIntent,
+  bound: PromptBound,
+): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
+  const catalog = CATALOGS[locale];
+  const rendered = chainPrompt(locale, intent);
+  if (promptFits(rendered, bound)) {
+    return { prompt: rendered, oversize: false };
+  }
+  const lines = rendered.description.split("\n");
+  /* At least one line is withheld, so the closing line always counts down from a nonzero
+     remainder; a single over-long line leaves the closing line alone. */
+  let keep = Math.min(lines.length - 1, bound.lines - 1);
+  for (;;) {
+    const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
+    if (keep === 0 || codePoints(candidate) <= bound.characters) {
+      return { prompt: { title: catalog.blindTitle, description: candidate }, oversize: true };
+    }
+    keep -= 1;
+  }
 }

@@ -24,7 +24,10 @@ disclosure timeline with you.
   vault without user presence for everyday use; every fund-moving signature,
   export and guarded change still needs the presence-proving `hardware`
   factor on a kernel-rendered system prompt, and the optional app lock makes every unlock
-  verify too.
+  verify too. The platform decides what of that prompt is visible: iOS shows the
+  kernel's text only for Touch ID and the passcode sheet — Face ID shows nothing —
+  and both platforms bound the text, so an over-long prompt signs blind (or fails
+  `blind-signing-disabled`) instead of letting the OS clip it.
 - **Blind signing** is a kernel-enforced vault setting, off by default: a
   request the chain decoder can neither display nor bound fails
   `blind-signing-disabled` before any prompt, on every host.

@@ -475,16 +475,15 @@ describe("blind signing policy", () => {
             counter: "0",
           },
         }),
-      (address) => ({
+      () => ({
         title: "Confirm blind signing",
         description:
           "App: Seaport\n" +
           "Network: Ethereum\n" +
           "Verifying contract 0x0000000000000068F116a894984e2DB1123eB395\n" +
           "Type: OrderComponents\n" +
-          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
-          "… 1 more items not shown\n" +
-          `${address} receives 5 USDC`,
+          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
+          "… 7 more lines not shown",
       }),
     ],
     [
@@ -577,8 +576,8 @@ describe("blind signing policy", () => {
           `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeTx\n` +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `· to = ${OTHER}\n· value = 0\n· data = 0x\n· operation = 0\n· safeTxGas = 0\n· dataGas = 0\n· gasPrice = 0\n` +
-          `· gasToken = ${ZERO}\n· refundReceiver = ${ZERO}\n· nonce = 7`,
+          `· to = ${OTHER}\n· value = 0\n` +
+          "… 8 more lines not shown",
       }),
     ],
     [
@@ -609,7 +608,8 @@ describe("blind signing policy", () => {
           "Type: TransferWithAuthorization\n" +
           "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
           "The wallet cannot verify what this signature authorises\n" +
-          `· from = 0x2222222222222222222222222222222222222222\n· to = ${OTHER}\n· value = 1`,
+          `· from = 0x2222222222222222222222222222222222222222\n` +
+          "… 2 more lines not shown",
       }),
     ],
     [
