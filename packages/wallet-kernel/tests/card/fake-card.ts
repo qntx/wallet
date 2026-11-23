@@ -172,6 +172,8 @@ export type FakeCard = {
   readonly knobs: FakeKnobs;
   /** Every inner instruction byte the session layer let through — VERIFY is `0x22`. */
   readonly received: number[];
+  /** The host entropy the last generated-mode CREATE carried (bytes 32..64 of the payload). */
+  readonly createEntropy: Uint8Array | undefined;
   /** What the last OPEN derived — leak tests assert none of it escapes the kernel. */
   readonly secrets: {
     eph?: Uint8Array;
@@ -238,6 +240,7 @@ export function createFakeCard(opts?: {
     | { keys: Uint8Array; ctr: number; verified: boolean; seed: Uint8Array | undefined }
     | undefined;
   let offerValid = false;
+  let createEntropy: Uint8Array | undefined;
   let linkSecret: Uint8Array | undefined;
   let pendingExport: { kte: Uint8Array; ktm: Uint8Array } | undefined;
   let pendingImport: { kte: Uint8Array; ktm: Uint8Array; sender: Uint8Array } | undefined;
@@ -303,6 +306,9 @@ export function createFakeCard(opts?: {
         }
         const accessHash = data.subarray(0, 32);
         const material = data.subarray(32, min);
+        if (p1 === 0x00) {
+          createEntropy = new Uint8Array(material);
+        }
         const others: Uint8Array[] = [];
         for (let off = min; off < data.length; off += 16) {
           const id = data.subarray(off, off + 16);
@@ -950,6 +956,9 @@ export function createFakeCard(opts?: {
     cardId: ownId,
     knobs,
     received,
+    get createEntropy() {
+      return createEntropy;
+    },
     secrets,
     tearAt: (write) => {
       tearAt = write;

@@ -1,3 +1,4 @@
+import { equalBytes } from "@noble/ciphers/utils.js";
 // oxlint-disable eslint/no-await-in-loop, vitest/no-conditional-in-test -- the step driver is sequential and conditional by design
 /**
  * The multi-card ops against the fake card (layer 5): `create` with 2/3 cards (imported and
@@ -96,10 +97,11 @@ type Rig = {
   input: ReturnType<typeof testSecureInput>;
 };
 
-const rig = async (): Promise<Rig> => {
+const rig = async (harness?: Parameters<typeof createHarness>[0]): Promise<Rig> => {
   const reader = testCardReader();
   const input = testSecureInput();
   const h = createHarness({
+    ...harness,
     card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
   });
   const res = ok(
@@ -1496,6 +1498,37 @@ describe("multi-card mutation coverage (fake card)", () => {
     await r.h.settle();
     expect(code.every((b) => b === 0)).toBe(true);
     expect(confirm.every((b) => b === 0)).toBe(true);
+  });
+
+  it("a generated create sends the live host entropy — the kernel buffer is wiped after CREATE", async () => {
+    // Inject a stream that keeps a copy of every draw and a live view of the buffer the kernel got.
+    const drawn: Uint8Array[] = [];
+    const live: Uint8Array[] = [];
+    const random = (length: number): Uint8Array => {
+      const out = new Uint8Array(length);
+      for (let i = 0; i < length; i += 1) {
+        out[i] = (i * 31 + 0x5a + drawn.length) & 0xff;
+      }
+      drawn.push(new Uint8Array(out));
+      live.push(out);
+      return out;
+    };
+    const r = await rig({ random });
+    const at = drawn.length;
+    const source = createFakeCard();
+    const target = createFakeCard();
+    const result = await createSet(r, [source, target], { generate: true });
+    expect(result["kind"]).toBe("create");
+    // Only the source sees CREATE (the targets get IMPORT) — the wire carried the live draw,
+    // not a wiped buffer: the card captured entropy matching one of the op's own 32-byte draws.
+    expect(target.createEntropy).toBeUndefined();
+    const got = source.createEntropy;
+    expect(got).toBeDefined();
+    expect(got?.some((b) => b !== 0)).toBe(true);
+    const idx = drawn.slice(at).findIndex((d) => got !== undefined && equalBytes(d, got));
+    expect(idx).toBeGreaterThanOrEqual(0);
+    // The kernel wiped the exact buffer it sent — the live view now reads zeros.
+    expect(live[at + idx]?.every((b) => b === 0)).toBe(true);
   });
 
   it("health verifies every member of the set, not just the first", async () => {
