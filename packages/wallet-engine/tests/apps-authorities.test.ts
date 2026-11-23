@@ -45,7 +45,7 @@ describe("apps.authorities", () => {
         app: "hyperliquid",
         authority: {
           kind: "builder-fee",
-          network: "eip155:421614",
+          network: "Testnet",
           account: owner,
           holder: BUILDER.address,
           limit: String(BUILDER.feeRateTenthsBps),

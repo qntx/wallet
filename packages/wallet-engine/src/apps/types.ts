@@ -122,8 +122,9 @@ export type AppGroup = {
 export type AppAuthority = {
   readonly kind: "builder-fee" | "token-allowance" | "operator";
   /**
-   * CAIP-2 network the authority lives on; HyperCore authorities use the network id the engine
-   * signs HyperCore actions under.
+   * Where the authority lives: a CAIP-2 network for an on-chain authority, or, for a venue's own
+   * ledger, the venue network name its kernel sessions use as `scope` (Hyperliquid: `Mainnet` |
+   * `Testnet`).
    */
   readonly network: string;
   /** The account it acts on: the owner, or a venue account (a deposit wallet). */

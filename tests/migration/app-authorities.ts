@@ -7,7 +7,8 @@ export type AuthorityRow =
 
 /**
  * Every standing authority an app's venue holds over the group's funds, outside the approvals
- * inventory — the Hyperliquid builder fee lives on HyperCore. Display-only: `revoke` names how the
+ * inventory — the Hyperliquid builder fee lives on HyperCore, so its `network` names the venue
+ * network (`Mainnet` | `Testnet`), not a chain. Display-only: `revoke` names how the
  * user removes it; `none` rows (the builder fee) need a venue-side action, not a wallet
  * transaction. Unlocked sessions only.
  */

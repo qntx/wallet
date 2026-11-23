@@ -24,7 +24,6 @@ import type { HyperliquidErrorCategory } from "./errors.ts";
 import type { HyperliquidProvider, HyperliquidProviderInternals } from "./provider.ts";
 import type { HyperliquidDetail, HyperliquidFlow, HyperliquidHints } from "./state.ts";
 import type { HyperliquidUserSigned } from "./user-signed.ts";
-import { HYPERLIQUID_CHAIN } from "./user-signed.ts";
 
 /** Hyperliquid's own bound is 180 days; 179 keeps a day of slack inside it (research §Agents). */
 const AGENT_VALID_MS = 179 * 24 * 60 * 60 * 1000;
@@ -663,7 +662,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
       return [
         {
           kind: "builder-fee",
-          network: HYPERLIQUID_CHAIN[options.network].caip,
+          network: options.network,
           account: owner,
           holder: builder.address,
           limit: approved.toString(),

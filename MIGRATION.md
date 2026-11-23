@@ -1627,8 +1627,9 @@ operators deploy the new route. Nothing changes in the vault or the kernel proto
    `delegate-revoked`). A host that switches over `ApprovalChange.kind` must handle them.
 5. **Venue-held authorities.** `AppsController.authorities(group)` lists the standing
    authorities an app's venue holds over the group's funds outside the approvals inventory —
-   today the Hyperliquid builder-fee approval on HyperCore (`revoke: "none"`; the app removes it
-   only by signing `approveBuilderFee` to zero, which no engine surface reaches). One app's
+   today the Hyperliquid builder-fee approval on HyperCore — its `network` names the venue
+   network (`Mainnet` | `Testnet`), not a chain (`revoke: "none"`; the app removes it only by
+   signing `approveBuilderFee` to zero, which no engine surface reaches). One app's
    failed read lands as its own `{ app, error }` row.
 
 [`tests/migration/app-authorities.ts`](tests/migration/app-authorities.ts):

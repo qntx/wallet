@@ -30,7 +30,7 @@ import type { HyperliquidActionOutcome } from "./exchange.ts";
 import type { HyperliquidMarkets } from "./markets.ts";
 
 /** The chain ids the user-signed domain commits to (design §2 — the signature chain). */
-export const HYPERLIQUID_CHAIN = {
+const CHAIN = {
   Mainnet: { id: 42161, caip: "eip155:42161", signatureChainId: "0xa4b1" },
   Testnet: { id: 421614, caip: "eip155:421614", signatureChainId: "0x66eee" },
 } as const satisfies Record<
@@ -145,7 +145,7 @@ const fieldOf = (body: unknown, field: "status" | "response"): unknown => {
 export function createHyperliquidUserSigned(
   options: HyperliquidUserSignedOptions,
 ): HyperliquidUserSigned {
-  const chain = HYPERLIQUID_CHAIN[options.network];
+  const chain = CHAIN[options.network];
 
   const assertClock = async (): Promise<void> => {
     if (options.clock.skew() === undefined) {
