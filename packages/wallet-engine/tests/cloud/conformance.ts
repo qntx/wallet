@@ -6,11 +6,7 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  CLOUD_NAME_MAX_LENGTH,
-  CLOUD_TEXT_MAX_BYTES,
-  CloudStoreError,
-} from "../../src/backup/port.ts";
+import { CLOUD_TEXT_MAX_BYTES, CloudStoreError } from "../../src/backup/port.ts";
 import type { CloudStore } from "../../src/backup/port.ts";
 
 export type CloudStoreFault = "unavailable" | "auth-required" | "quota";
@@ -63,7 +59,7 @@ export function describeCloudStore(
   describe(`CloudStore: ${name}`, () => {
     it("S1: accepts valid names, rejects invalid ones on every op without touching the store", async () => {
       const { store } = await create();
-      const valid = ["a", "Z9.-_z", "x".repeat(CLOUD_NAME_MAX_LENGTH), VALID_BACKUP_NAME];
+      const valid = ["a", "Z9.-_z", "x".repeat(255), VALID_BACKUP_NAME];
       for (const good of valid) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- one name at a time keeps failures readable
         await store.write(good, "v");

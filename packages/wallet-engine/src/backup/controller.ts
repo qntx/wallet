@@ -212,6 +212,8 @@ export class BackupController extends Controller<BackupControllerState> {
    * invalidation; the map is cleared on lock() with the rest of the session state.
    */
   private readonly remoteCoverage = new Map<string, Coverage>();
+  /** Foreign names already seen to hold garbage — never read again this session. */
+  private readonly remoteInvalid = new Set<string>();
   /** Set by restore() before the kernel call — applied by the first pass that sees the record. */
   private pendingAdoption: { readonly name: string; readonly coverage: Coverage } | undefined;
 
@@ -242,6 +244,7 @@ export class BackupController extends Controller<BackupControllerState> {
     this.generation += 1;
     this.engineStore = undefined;
     this.remoteCoverage.clear();
+    this.remoteInvalid.clear();
     this.update(() => defaultState());
   }
 
@@ -305,22 +308,25 @@ export class BackupController extends Controller<BackupControllerState> {
       return [];
     }
     const listed = await cloud.list();
-    const names = listed.filter((n) => parseFileName(n) !== undefined);
     const rows = await Promise.all(
-      names.map(async (name) => {
+      listed.map(async (name) => {
         const parsed = parseFileName(name);
         if (parsed === undefined) {
           return undefined;
         }
+        const text = await cloud.read(name);
+        if (text === undefined) {
+          // Vanished between list and read — nothing to warn about.
+          return undefined;
+        }
+        if (digestOf(text) !== parsed.digest) {
+          this.logger.warn("backup file failed digest verification", new Error(name));
+          return undefined;
+        }
         try {
-          const text = await cloud.read(name);
-          if (text === undefined || digestOf(text) !== parsed.digest) {
-            this.logger.warn("backup file failed digest verification", new Error(name));
-            return undefined;
-          }
           return { name, id: parsed.id, header: parseBackupHeader(text) };
         } catch (error) {
-          this.logger.warn("backup file failed to read or parse", error);
+          this.logger.warn("backup file failed to parse", error);
           return undefined;
         }
       }),
@@ -702,29 +708,43 @@ export class BackupController extends Controller<BackupControllerState> {
     }
   }
 
-  /** The header coverage of a foreign version — cached by name; undefined on any failure. */
+  /**
+   * The header coverage of a foreign version — cached by name either way: the name binds the
+   * content, so garbage stays garbage and is never re-read. Read failures propagate for the pass to
+   * map them; only a verified-but-corrupt payload resolves undefined.
+   */
   private async remoteCoverageOf(cloud: CloudStore, name: string): Promise<Coverage | undefined> {
     const cached = this.remoteCoverage.get(name);
     if (cached !== undefined) {
       return cached;
     }
+    if (this.remoteInvalid.has(name)) {
+      return undefined;
+    }
     const parsed = parseFileName(name);
     if (parsed === undefined) {
       return undefined;
     }
-    try {
-      const text = await cloud.read(name);
-      if (text === undefined || digestOf(text) !== parsed.digest) {
-        this.logger.warn("foreign backup file failed digest verification", new Error(name));
-        return undefined;
-      }
-      const coverage = headerCoverage(parseBackupHeader(text));
-      this.remoteCoverage.set(name, coverage);
-      return coverage;
-    } catch (error) {
-      this.logger.warn("foreign backup file failed to read or parse", error);
+    const text = await cloud.read(name);
+    if (text === undefined) {
       return undefined;
     }
+    let coverage: Coverage | undefined;
+    if (digestOf(text) === parsed.digest) {
+      try {
+        coverage = headerCoverage(parseBackupHeader(text));
+      } catch (error) {
+        this.logger.warn("foreign backup file failed to parse", error);
+      }
+    } else {
+      this.logger.warn("foreign backup file failed digest verification", new Error(name));
+    }
+    if (coverage === undefined) {
+      this.remoteInvalid.add(name);
+      return undefined;
+    }
+    this.remoteCoverage.set(name, coverage);
+    return coverage;
   }
 
   /** Backup off: delete every recorded file, then the record itself; failures retry next pass. */
@@ -782,6 +802,9 @@ function adopt(
   adoption: { readonly name: string; readonly coverage: Coverage },
   local: Coverage,
 ): BackupRecord | undefined {
+  if (adoption.name === record?.head?.name) {
+    return record;
+  }
   if (!coverageSubset(adoption.coverage, local)) {
     // C_R ⊄ C_L: wallets were skipped — the file stays foreign and the conflict is reported.
     return record;

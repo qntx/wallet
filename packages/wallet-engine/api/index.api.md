@@ -735,9 +735,6 @@ export function checkCloudName(name: string): void;
 export function checkCloudText(text: string): void;
 
 // @public (undocumented)
-export const CLOUD_NAME_MAX_LENGTH = 255;
-
-// @public (undocumented)
 export const CLOUD_TEXT_MAX_BYTES = 4000000;
 
 // @public

@@ -74,6 +74,10 @@ type Rig = {
     /** Next write lands; the following read serves the pre-write value once (eventual consistency). */
     lagRead: boolean;
     stale: { readonly v: string | undefined } | undefined;
+    /** Per-name read failures: the hook's return is thrown like the provider's. */
+    readFail: Map<string, () => unknown>;
+    /** Every read attempt, in order — proves a corrupt file is never re-read. */
+    readLog: string[];
     writeCalls: number;
     stall: Promise<void> | undefined;
     stallCalls: number;
@@ -100,6 +104,8 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     landThenThrow: false,
     lagRead: false,
     stale: undefined as { readonly v: string | undefined } | undefined,
+    readFail: new Map<string, () => unknown>(),
+    readLog: [] as string[],
     writeCalls: 0,
     stall: undefined as Promise<void> | undefined,
     stallCalls: 0,
@@ -112,6 +118,11 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
       return inner.list();
     },
     read: async (name) => {
+      faults.readLog.push(name);
+      const fail = faults.readFail.get(name);
+      if (fail !== undefined) {
+        throw fail();
+      }
       if (faults.read) {
         throw new Error("read failed");
       }
@@ -541,6 +552,86 @@ describe("BackupController", () => {
 
       expect(r.engine.backup.getState().status).toBe("synced");
       expect(r.files.has(`qntx-wallet-backup-${backupId}-${"0".repeat(64)}.json`)).toBe(true);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a foreign version whose read fails reports the provider state, not a conflict", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+
+      const backupId = remoteName(r.files).split("-")[3]!;
+      const foreignName = `qntx-wallet-backup-${backupId}-${"a".repeat(64)}.json`;
+      r.files.set(foreignName, "ciphertext");
+      r.faults.readFail.set(foreignName, () => new CloudStoreError("unavailable", "drive down"));
+      await settle(r);
+
+      // The read error propagates to the pass and maps to the provider state — a silently
+      // skipped foreign file would have reported synced and hidden real coverage.
+      expect(r.engine.backup.getState().status).toBe("unavailable");
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a corrupt foreign version is read once and never again", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+
+      // The name binds the content, so garbage stays garbage — later passes skip the read.
+      const backupId = remoteName(r.files).split("-")[3]!;
+      const corrupt = `qntx-wallet-backup-${backupId}-${"a".repeat(64)}.json`;
+      r.files.set(corrupt, "garbage");
+      await settle(r);
+      expect(r.engine.backup.getState().status).toBe("synced");
+      await settle(r);
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(r.faults.readLog.filter((n) => n === corrupt)).toHaveLength(1);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("backup.list rejects on a read error instead of returning a short list", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      r.faults.readFail.set(remoteName(r.files), () => new Error("read failed"));
+      await expect(r.engine.backup.list()).rejects.toThrow("read failed");
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("merging a restore of the current head leaves the record untouched", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const head = remoteName(r.files);
+      const before = new Map(r.files);
+
+      // Restoring the file that IS the head changes nothing — not even a record write.
+      let puts = 0;
+      r.storeHooks.set("backupstate", () => {
+        puts += 1;
+        return Promise.resolve();
+      });
+      await r.engine.backup.restore({ name: head, backupFactor: BPW });
+      await settle(r);
+      expect(puts).toBe(0);
+
+      const state = r.storeBacking.get("backup")?.get("state");
+      const record: unknown = JSON.parse(new TextDecoder().decode(state));
+      expect(record).toMatchObject({ head: { name: head }, superseded: [] });
+      expect(r.files).toStrictEqual(before);
+      expect(r.engine.backup.getState().status).toBe("synced");
     } finally {
       await r.close();
     }

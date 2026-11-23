@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { createMemoryCloudStore } from "../src/backup/memory.ts";
 import {
-  CLOUD_NAME_MAX_LENGTH,
   CLOUD_TEXT_MAX_BYTES,
   CloudStoreError,
   checkCloudName,
@@ -25,7 +24,7 @@ describe("checkCloudName", () => {
   it("accepts the boundary names", () => {
     expect(() => checkCloudName("a")).not.toThrow();
     expect(() => checkCloudName("Z9.-_z")).not.toThrow();
-    expect(() => checkCloudName("x".repeat(CLOUD_NAME_MAX_LENGTH))).not.toThrow();
+    expect(() => checkCloudName("x".repeat(255))).not.toThrow();
     expect(() =>
       checkCloudName(`qntx-wallet-backup-${"a".repeat(32)}-${"b".repeat(64)}.json`),
     ).not.toThrow();

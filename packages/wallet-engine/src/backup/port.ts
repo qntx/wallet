@@ -5,8 +5,9 @@
  *
  * Semantics every implementation honours:
  *
- * - S1 names matching /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/ only; violations reject `invalid` before
- *   any I/O (the rule keeps Drive's `name = '…'` query escape-free).
+ * - S1 names matching /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/ only — ≤ 255 chars, CloudKit's recordName
+ *   limit; violations reject `invalid` before any I/O (the rule keeps Drive's `name = '…'` query
+ *   escape-free).
  * - S2 texts hold at most CLOUD_TEXT_MAX_BYTES UTF-8 bytes with no lone surrogate; non-ASCII
  *   round-trips byte-exact.
  * - S3 a write lands atomically: a read sees the old text or the new text, never a prefix.
@@ -40,14 +41,13 @@ export class CloudStoreError extends Error {
   }
 }
 
-export const CLOUD_NAME_MAX_LENGTH = 255;
 export const CLOUD_TEXT_MAX_BYTES = 4_000_000;
 
 const CLOUD_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
 const LONE_SURROGATE = /\p{Cs}/u;
 
 export function checkCloudName(name: string): void {
-  if (name.length > CLOUD_NAME_MAX_LENGTH || !CLOUD_NAME_PATTERN.test(name)) {
+  if (!CLOUD_NAME_PATTERN.test(name)) {
     throw new CloudStoreError("invalid", "cloud file name is not a valid portable name");
   }
 }

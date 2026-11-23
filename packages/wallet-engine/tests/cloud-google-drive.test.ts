@@ -300,4 +300,71 @@ describe("google-drive faults", () => {
     timers.at(0)?.();
     await expect(codeOf(pending)).resolves.toBe("unavailable");
   });
+
+  it("maps a truncated 2xx body to unavailable, never an untyped error", async () => {
+    const drive = createFakeDrive();
+    drive.files.set("f1", { id: "f1", name, text: "x" });
+    const broken = () =>
+      new Response(
+        new ReadableStream({
+          start: (controller) => {
+            controller.error(new TypeError("stream reset"));
+          },
+        }),
+        { status: 200 },
+      );
+    const reader = rig(drive, {
+      fetch: async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        return url.includes("alt=media") ? Promise.resolve(broken()) : drive.fetch(input, init);
+      },
+    });
+    await expect(codeOf(reader.store.read(name))).resolves.toBe("unavailable");
+    const lister = rig(drive, { fetch: async () => Promise.resolve(broken()) });
+    await expect(codeOf(lister.store.list())).resolves.toBe("unavailable");
+  });
+
+  it("a 404 on the cached write id re-queries and creates when the name is gone", async () => {
+    const drive = createFakeDrive();
+    const { store } = rig(drive);
+    await store.write(name, "v1");
+    drive.files.clear(); // the provider lost the file; the name→id cache still holds it
+    drive.resetLog();
+    await store.write(name, "v2");
+    expect(drive.requests).toHaveLength(3);
+    expect(nthRequest(drive, 0).method).toBe("PATCH");
+    expect(new URL(nthRequest(drive, 1).url).searchParams.get("q")).toBe(`name = '${name}'`);
+    expect(nthRequest(drive, 2).method).toBe("POST");
+    const [file] = [...drive.files.values()];
+    expect(file?.text).toBe("v2");
+  });
+
+  it("a 404 on the cached write id falls back to the fresh id", async () => {
+    const drive = createFakeDrive();
+    const { store } = rig(drive);
+    await store.write(name, "v1");
+    const [oldId] = [...drive.files.keys()];
+    drive.files.delete(oldId!);
+    drive.files.set("fresh-id", { id: "fresh-id", name, text: "v1" });
+    drive.resetLog();
+    await store.write(name, "v3");
+    expect(drive.requests).toHaveLength(3);
+    expect(nthRequest(drive, 0).method).toBe("PATCH");
+    expect(new URL(nthRequest(drive, 1).url).searchParams.get("q")).toBe(`name = '${name}'`);
+    expect(nthRequest(drive, 2).method).toBe("PATCH");
+    expect(nthRequest(drive, 2).url).toContain("fresh-id");
+    expect(drive.files.get("fresh-id")?.text).toBe("v3");
+  });
+
+  it("a list warms the id cache — reads and writes skip the name query", async () => {
+    const drive = createFakeDrive();
+    drive.files.set("f1", { id: "f1", name, text: "v1" });
+    const { store } = rig(drive);
+    drive.resetLog();
+    await store.list();
+    await store.read(name);
+    await store.write(name, "v2");
+    expect(drive.requests.every((r) => !r.url.includes("q="))).toBe(true);
+    await expect(store.read(name)).resolves.toBe("v2");
+  });
 });

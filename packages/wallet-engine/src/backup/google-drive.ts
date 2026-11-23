@@ -87,13 +87,19 @@ const errorReason = async (response: Response): Promise<string | undefined> => {
   }
 };
 
-/** A JSON body that must satisfy `guard`; anything else is a `failed` response. */
+/**
+ * A JSON body that must satisfy `guard`; a truncated read is `unavailable`, a non-JSON or
+ * mis-shaped body is `failed`.
+ */
 const jsonOf = async <T>(response: Response, guard: (value: unknown) => value is T): Promise<T> => {
   let body: unknown;
   try {
     body = await response.json();
-  } catch {
-    throw new CloudStoreError("failed", "drive returned a non-JSON response");
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new CloudStoreError("failed", "drive returned a non-JSON response");
+    }
+    throw new CloudStoreError("unavailable", "drive response body failed to arrive");
   }
   if (!guard(body)) {
     throw new CloudStoreError("failed", "drive returned an unexpected response shape");
@@ -237,19 +243,40 @@ export function createGoogleDriveCloudStore({
     return jsonOf(await expectOk(await send(url, { method: "GET" })), isDriveFilesPage);
   };
 
+  /** One media upload onto an existing id — the raw response so the caller can see a 404. */
+  const uploadMedia = async (id: string, text: string): Promise<Response> =>
+    send(`${UPLOAD}/${id}?uploadType=media`, {
+      method: "PATCH",
+      contentType: "text/plain; charset=UTF-8",
+      body: text,
+    });
+
   return {
     list: async () => {
       const names: string[] = [];
       const seen = new Set<string>();
+      const ids = new Map<string, string[]>();
       let page = await listPage();
       for (;;) {
         for (const file of page.files) {
-          if (file.name !== undefined && !seen.has(file.name)) {
+          if (file.name === undefined) {
+            continue;
+          }
+          const bucket = ids.get(file.name) ?? [];
+          if (!bucket.includes(file.id)) {
+            bucket.push(file.id);
+          }
+          ids.set(file.name, bucket);
+          if (!seen.has(file.name)) {
             seen.add(file.name);
             names.push(file.name);
           }
         }
         if (page.nextPageToken === undefined) {
+          // The rows carry ids already — later reads and writes need no name query.
+          for (const [name, fileIds] of ids) {
+            idsByName.set(name, fileIds);
+          }
           return names;
         }
         // oxlint-disable-next-line eslint/no-await-in-loop -- each page yields the next pageToken
@@ -282,13 +309,31 @@ export function createGoogleDriveCloudStore({
         }
       }
       await expectOk(response);
-      return response.text();
+      try {
+        return await response.text();
+      } catch {
+        throw new CloudStoreError("unavailable", "drive response body failed to arrive");
+      }
     },
 
     write: async (name, text) => {
       checkCloudName(name);
       checkCloudText(text);
-      const [first, ...extras] = await idsOf(name);
+      let [first, ...extras] = await idsOf(name);
+      if (first !== undefined) {
+        const response = await uploadMedia(first, text);
+        if (response.status === 404) {
+          // The cached id went stale — drop it and redo the write once from a fresh lookup.
+          idsByName.delete(name);
+          [first, ...extras] = await idsOf(name, true);
+        } else {
+          const updated = await jsonOf(await expectOk(response), isCreatedFile);
+          // Duplicate same-name files collapse onto the id Drive kept.
+          await Promise.all(extras.map(deleteId));
+          idsByName.set(name, [updated.id]);
+          return;
+        }
+      }
       if (first === undefined) {
         // One multipart request keeps create atomic — the file never exists without its content.
         const boundary = `qntx-${bytesToHex(sha256(utf8ToBytes(text))).slice(0, 48)}`;
@@ -318,17 +363,7 @@ export function createGoogleDriveCloudStore({
         idsByName.set(name, [created.id]);
         return;
       }
-      const updated = await jsonOf(
-        await expectOk(
-          await send(`${UPLOAD}/${first}?uploadType=media`, {
-            method: "PATCH",
-            contentType: "text/plain; charset=UTF-8",
-            body: text,
-          }),
-        ),
-        isCreatedFile,
-      );
-      // Duplicate same-name files collapse onto the id Drive kept.
+      const updated = await jsonOf(await expectOk(await uploadMedia(first, text)), isCreatedFile);
       await Promise.all(extras.map(deleteId));
       idsByName.set(name, [updated.id]);
     },
