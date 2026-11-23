@@ -45,7 +45,6 @@ const SIGNERS_FILES = [
   "operation.ts",
   "prompt.ts",
   "record.ts",
-  "keystone/cbor.ts",
   "keystone/derive.ts",
   "keystone/driver.ts",
   "keystone/registry.ts",

@@ -1,3 +1,15 @@
+import {
+  CborMap,
+  Tag,
+  asMap,
+  asUnsigned,
+  cbor,
+  decodeCbor,
+  encodeCbor,
+  isBytes,
+  taggedValue,
+} from "@blockchaincommons/dcbor";
+import type { CborInput } from "@blockchaincommons/dcbor";
 /**
  * Guard-level unit tests on the Keystone exchanges and the record id binding: a staged plan that no
  * longer matches the request about to be shown, a solana answer of the wrong length or a message
@@ -28,8 +40,6 @@ import type {
 import { KernelError } from "../src/errors.ts";
 import type { DeviceLink, SignContext } from "../src/modules/signers/driver.ts";
 import { createSignersModule } from "../src/modules/signers/index.ts";
-import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
-import type { Cbor } from "../src/modules/signers/keystone/cbor.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
 import { sign } from "../src/modules/signers/keystone/sign.ts";
@@ -257,18 +267,15 @@ const indexOf = (haystack: Uint8Array, needle: Uint8Array): number => {
 
 /** Re-encodes a signature answer's map with byte field `n` replaced by `value`. */
 const replaceByteField = (bytes: Uint8Array, n: number, value: Uint8Array): Uint8Array => {
-  const map = decodeCbor(bytes);
-  if (map.kind !== "map") {
+  const map = asMap(decodeCbor(bytes));
+  if (map === undefined) {
     throw new Error("not a map");
   }
-  return encodeCbor({
-    kind: "map",
-    entries: map.entries.map(([key, item]) =>
-      key.kind === "uint" && key.value === n && item.kind === "bytes"
-        ? [key, { kind: "bytes" as const, value }]
-        : [key, item],
-    ),
-  });
+  const out = new CborMap();
+  for (const { key, value: item } of map.entriesArray) {
+    out.set(key, asUnsigned(key) === n && isBytes(item) ? value : item);
+  }
+  return encodeCbor(out);
 };
 
 /** Signs verbatim, then rewrites the signature field to an oversized 65 bytes. */
@@ -489,71 +496,25 @@ describe("keystone key-derivation answer", () => {
     const path = [84 + HARDENED, HARDENED, 1 + HARDENED];
     const badKey = new Uint8Array(33);
     badKey[0] = 0x02;
-    const cbor = encodeCbor({
-      kind: "map",
-      entries: [
-        [
-          { kind: "uint", value: 1 },
-          { kind: "uint", value: MFP },
-        ],
-        [
-          { kind: "uint", value: 2 },
-          {
-            kind: "array",
-            items: [
-              {
-                kind: "tag",
-                tag: 303,
-                item: {
-                  kind: "map",
-                  entries: [
-                    [
-                      { kind: "uint", value: 3 },
-                      { kind: "bytes", value: badKey },
-                    ],
-                    [
-                      { kind: "uint", value: 4 },
-                      { kind: "bytes", value: new Uint8Array(32).fill(7) },
-                    ],
-                    [
-                      { kind: "uint", value: 6 },
-                      {
-                        kind: "tag",
-                        tag: 304,
-                        item: {
-                          kind: "map",
-                          entries: [
-                            [
-                              { kind: "uint", value: 1 },
-                              {
-                                kind: "array",
-                                items: path.flatMap((index): Cbor[] => [
-                                  { kind: "uint", value: index % HARDENED },
-                                  { kind: "bool", value: index >= HARDENED },
-                                ]),
-                              },
-                            ],
-                            [
-                              { kind: "uint", value: 2 },
-                              { kind: "uint", value: MFP },
-                            ],
-                          ],
-                        },
-                      },
-                    ],
-                  ],
-                },
-              },
-            ],
-          },
-        ],
-      ],
-    });
+    const keypath = new CborMap();
+    keypath.set(
+      1,
+      path.flatMap((index): CborInput[] => [index % HARDENED, index >= HARDENED]),
+    );
+    keypath.set(2, MFP);
+    const hdkey = new CborMap();
+    hdkey.set(3, badKey);
+    hdkey.set(4, new Uint8Array(32).fill(7));
+    hdkey.set(6, taggedValue(Tag.from(304, "crypto-keypath"), cbor(keypath)));
+    const accounts = new CborMap();
+    accounts.set(1, MFP);
+    accounts.set(2, [taggedValue(Tag.from(303, "crypto-hdkey"), cbor(hdkey))]);
+    const payload = encodeCbor(cbor(accounts));
     const hostile: DeviceLink = {
       exchange: async () =>
         Promise.resolve({
           kind: "qr",
-          ur: { type: "crypto-multi-accounts", cbor },
+          ur: { type: "crypto-multi-accounts", cbor: payload },
         }),
     };
     await expect(

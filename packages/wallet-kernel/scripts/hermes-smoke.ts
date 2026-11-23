@@ -26,7 +26,11 @@ declare const Bun: {
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-const runOne = async (hermes: string, name: "card" | "ledger", marker: string): Promise<number> => {
+const runOne = async (
+  hermes: string,
+  name: "card" | "ledger" | "keystone",
+  marker: string,
+): Promise<number> => {
   const outfile = resolve(root, `.hermes-${name}.iife.js`);
   // Same pipeline as scripts/build-kernel.ts: the es2017 target lowers class static blocks
   // (ox emits them) that bare Hermes cannot parse.
@@ -71,7 +75,11 @@ async function main(): Promise<number> {
   if (card !== 0) {
     return card;
   }
-  return runOne(hermes, "ledger", "HERMES_LEDGER_OK");
+  const ledger = await runOne(hermes, "ledger", "HERMES_LEDGER_OK");
+  if (ledger !== 0) {
+    return ledger;
+  }
+  return runOne(hermes, "keystone", "HERMES_KEYSTONE_OK");
 }
 
 process.exitCode = await main();

@@ -5,18 +5,17 @@
  * accounts, the ledger-legacy/live derivatives without chain code) parses structurally and is then
  * ignored: it may not influence the pin.
  */
-import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
+import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
+import type { Keypath } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceResponse } from "@qntx/wallet/protocol";
 
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { PairingResult } from "../driver.ts";
-import { decodeCbor } from "./cbor.ts";
-import { multiAccounts } from "./registry.ts";
-import type { CryptoKeyPath } from "./registry.ts";
+import { decodeRegistry } from "./registry.ts";
 
 const HARDENED = 0x80000000;
 
@@ -40,16 +39,23 @@ function fail(): never {
   throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
 }
 
-/** The derivation path a keypath claims, or `undefined` when a wildcard makes it unpinnable. */
-export const pathOf = (keyPath: CryptoKeyPath): KeyPath | undefined => {
+/** The derivation path a keypath claims, or `undefined` when a non-index makes it unpinnable. */
+export const pathOf = (keyPath: Keypath): KeyPath | undefined => {
   const components: number[] = [];
   for (const component of keyPath.components) {
-    if (component.index === undefined || component.index > 0x7fffffff) {
+    if (component.kind !== "index" || component.index > 0x7fffffff) {
       return undefined;
     }
     components.push(component.index + (component.hardened ? HARDENED : 0));
   }
   return components;
+};
+
+/** A registry uint32 fingerprint as the four-byte big-endian form the kernel pins. */
+export const fingerprintBytes = (n: number): Uint8Array => {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, n);
+  return out;
 };
 
 export const samePath = (a: KeyPath, b: KeyPath): boolean =>
@@ -60,20 +66,19 @@ export const parseSync = (response: DeviceResponse): PairingResult => {
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {
     fail();
   }
-  const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+  const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
   const claimed: KeyPath[] = [];
-  for (const key of accounts.keys) {
+  for (const entry of accounts.keys) {
+    const { key } = entry;
     const path = key.origin === undefined ? undefined : pathOf(key.origin);
-    // A key that cannot name its own path — or one carrying secret material — is not pinnable.
-    if (key.origin !== undefined) {
-      const source = key.origin.sourceFingerprint;
-      if (source !== undefined && !equalBytes(source, accounts.masterFingerprint)) {
-        fail();
-      }
+    // A key that cannot name its own path is not pinnable.
+    const source = key.origin?.sourceFingerprint;
+    if (source !== undefined && source !== accounts.masterFingerprint) {
+      fail();
     }
-    if (key.isMaster || key.isPrivate || key.key === undefined || path === undefined) {
+    if (path === undefined) {
       continue;
     }
     // Two pinnable keys claiming one path cannot both be the device account for it.
@@ -83,35 +88,34 @@ export const parseSync = (response: DeviceResponse): PairingResult => {
     claimed.push(path);
     if (SECP256K1_PATHS.some((wanted) => samePath(path, wanted))) {
       if (
-        key.key.length !== 33 ||
+        entry.curve !== "secp256k1" ||
         key.chainCode === undefined ||
-        key.chainCode.length !== 32 ||
-        !secp256k1.utils.isValidPublicKey(key.key)
+        !secp256k1.utils.isValidPublicKey(key.keyData)
       ) {
         fail();
       }
       nodes.push({
         path,
-        publicKey: new Uint8Array(key.key),
+        publicKey: new Uint8Array(key.keyData),
         chainCode: new Uint8Array(key.chainCode),
         ...(key.parentFingerprint === undefined
           ? {}
-          : { parent: new Uint8Array(key.parentFingerprint) }),
+          : { parent: fingerprintBytes(key.parentFingerprint) }),
       });
     } else if (ED25519_PATHS.some((wanted) => samePath(path, wanted))) {
-      if (key.key.length !== 32) {
+      if (entry.curve !== "ed25519") {
         fail();
       }
-      ed25519.push({ path, publicKey: new Uint8Array(key.key) });
+      ed25519.push({ path, publicKey: new Uint8Array(key.keyData) });
     }
   }
   if (nodes.length === 0 && ed25519.length === 0) {
     fail();
   }
   return {
-    fingerprint: accounts.masterFingerprint,
+    fingerprint: fingerprintBytes(accounts.masterFingerprint),
     ...(accounts.device === undefined ? {} : { model: accounts.device }),
-    ...(accounts.deviceVersion === undefined ? {} : { firmware: accounts.deviceVersion }),
+    ...(accounts.version === undefined ? {} : { firmware: accounts.version }),
     nodes,
     ed25519,
   };

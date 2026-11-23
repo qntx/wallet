@@ -24,12 +24,14 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json"
   },
   "dependencies": {
+    "@blockchaincommons/dcbor": "1.0.0-beta.5",
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/nostr": "0.16.0",
     "@qntx/siwx": "0.8.0",
     "@qntx/spark": "0.5.2",
+    "@qntx/ur": "4.0.0",
     "@qntx/wallet": "0.13.0",
     "@qntx/wallet-chains": "0.13.0",
     "@scure/base": "2.4.0",
