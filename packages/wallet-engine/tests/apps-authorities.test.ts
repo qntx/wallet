@@ -21,7 +21,7 @@ import {
 } from "../src/apps/polymarket/constants.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
 import { MNEMONIC, pmChainCode, world } from "./apps-helpers.ts";
-import type { World } from "./apps-helpers.ts";
+import type { Arb1Rpc, World } from "./apps-helpers.ts";
 import {
   accountEntries,
   allowanceEntries,
@@ -187,7 +187,7 @@ const pmFetch =
 const pmDeployed = (address: string): boolean =>
   address.toLowerCase() === PM_WALLETS.beacon.toLowerCase();
 
-const pmWorld = (contracts: ReadonlyArray<ReturnType<typeof pmApprovalRow>>) =>
+const pmWorld = async (contracts: ReadonlyArray<ReturnType<typeof pmApprovalRow>>) =>
   world(PM_GROUP_INDEX, {
     hyperliquid: false,
     polymarket: {},
@@ -272,6 +272,16 @@ const f24Calls = (owner: `0x${string}`) =>
     balanceEntries(owner),
     allowanceEntries(owner),
   );
+
+const f24CallsDown = (): never => {
+  throw new Error("arbitrum rpc down");
+};
+
+/** An `arb1` source whose every `eth_call` throws — the corroborated allowance read goes down. */
+const arb1WithDownCalls =
+  (chain: ReturnType<typeof makeFiat24Chain>): Arb1Rpc =>
+  (request) =>
+    request.method === "eth_call" ? f24CallsDown() : chain.arb1(request);
 
 const f24World = async (
   calls: Parameters<typeof makeFiat24Chain>[0]["calls"],
@@ -380,12 +390,7 @@ describe("apps.authorities — fiat24", () => {
     const w = await world(92, {
       hyperliquid: false,
       fiat24: true,
-      arb1: ({ method }) => {
-        if (method === "eth_call") {
-          throw new Error("arbitrum rpc down");
-        }
-        return chain.arb1({ method });
-      },
+      arb1: arb1WithDownCalls(chain),
     });
     try {
       await expect(rows(w)).resolves.toStrictEqual([

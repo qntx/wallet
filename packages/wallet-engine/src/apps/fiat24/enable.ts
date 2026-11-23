@@ -9,18 +9,21 @@
 import type { Client } from "viem";
 
 import { getAllowances } from "@qntx/fiat24/chain";
+import { CURRENCIES } from "@qntx/fiat24/core";
 import type { Currency } from "@qntx/fiat24/core";
 import { arbitrum } from "@qntx/fiat24/deployments";
 
 import { EngineStoreError } from "../spi.ts";
 import type { AppAuthority, AppFlow, AppGroup, AppProvider, AppStorage } from "../spi.ts";
 import type { Fiat24AccountRead } from "./account.ts";
-import { Fiat24AppError } from "./errors.ts";
-import { fromSdk } from "./errors.ts";
+import { Fiat24AppError, fromSdk } from "./errors.ts";
 import type { Fiat24Owner } from "./owner.ts";
 
 /** The group's enablement record — presence IS the fact; the payload is deliberately empty. */
 const RECORD = "enabled";
+
+/** `getAllowances`' deposit-side keys in order. */
+const DEPOSIT_ASSETS: ReadonlyArray<Currency | "USDC"> = [...CURRENCIES, "USDC"];
 const ENABLED_BYTES = new TextEncoder().encode("{}");
 
 const errorOf = (error: unknown): { category: string; message: string } =>
@@ -130,14 +133,14 @@ export function createFiat24Enable(options: {
           revoke: "approvals",
         });
       };
-      for (const [currency, amount] of Object.entries(allowances.card)) {
-        row(arbitrum.card.proxy, arbitrum.tokens[currency as Currency].proxy, amount);
+      for (const currency of CURRENCIES) {
+        row(arbitrum.card.proxy, arbitrum.tokens[currency].proxy, allowances.card[currency]);
       }
-      for (const [asset, amount] of Object.entries(allowances.deposit)) {
+      for (const asset of DEPOSIT_ASSETS) {
         row(
           arbitrum.deposit.proxy,
-          asset === "USDC" ? arbitrum.usdc : arbitrum.tokens[asset as Currency].proxy,
-          amount,
+          asset === "USDC" ? arbitrum.usdc : arbitrum.tokens[asset].proxy,
+          allowances.deposit[asset],
         );
       }
       row(arbitrum.account.proxy, arbitrum.f24.address, allowances.account.F24);
