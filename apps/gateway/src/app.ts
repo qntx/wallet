@@ -24,6 +24,7 @@ import { eligibilityRoutes } from "./routes/eligibility.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { historyRoutes } from "./routes/history.ts";
+import { hooksRoutes } from "./routes/hooks.ts";
 import { networksRoutes } from "./routes/networks.ts";
 import { pricesRoutes } from "./routes/prices.ts";
 import { pushRoutes } from "./routes/push.ts";
@@ -115,6 +116,7 @@ export function createGateway(
   );
   app.route("/", riskRoutes(options.risk));
   app.route("/", pushRoutes(options.push));
+  app.route("/", hooksRoutes(options.push, log));
   app.route(
     "/",
     tokensRoutes({ served, store: options.tokens, tokenNetworks: options.tokenNetworks }),

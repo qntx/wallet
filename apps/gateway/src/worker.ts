@@ -1,18 +1,14 @@
 import { PUSH_FAMILIES, PUSH_PLATFORMS } from "@qntx/wallet-engine/gateway/contract";
-import type { PushFamily } from "@qntx/wallet-engine/gateway/contract";
 
-import { durableBudget } from "./budget/leased.ts";
-import { PRODUCTION_ACCOUNTS, STAGING_ACCOUNTS } from "./config/accounts.ts";
-import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
-import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
 import { zeroExConfig } from "./providers/zerox.ts";
 import type { PushNamespace, PushService } from "./push/backend.ts";
-import type { PushFamilyConfig } from "./push/core.ts";
-import { pushFamilies, pushMaterials } from "./push/runtime.ts";
+import { pushRuntimeFor } from "./push/runtime.ts";
+import type { PushRuntime } from "./push/runtime.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import { tokenListSources } from "./tokens/sources.ts";
 import type { TokenListUpstream } from "./tokens/sources.ts";
 import type { GatewayOptions, PriceCache } from "./types.ts";
+import { upstreamFor } from "./upstream.ts";
 
 /**
  * Optional values no environment requires: the 0x integrator fee, staging's Jupiter and CoinGecko
@@ -30,6 +26,8 @@ type OptionalEnv = {
   readonly APNS_TEAM_ID?: string;
   readonly APNS_TOPIC?: string;
   readonly FCM_SERVICE_ACCOUNT?: string;
+  readonly ALCHEMY_NOTIFY_TOKEN?: string;
+  readonly ALCHEMY_WEBHOOKS?: string;
 };
 
 export type WorkerEnv = (Cloudflare.StagingEnv | Cloudflare.ProductionEnv) & OptionalEnv;
@@ -69,19 +67,22 @@ export const priceCacheOf = (open: () => Cache): PriceCache => ({
 
 /**
  * The push service for `GatewayOptions.push`, or `undefined` — enabled only when the seal key, at
- * least one sender and at least one family config all exist (`pushFamilies` is `{}` until the
- * watcher layer, so production advertises empty capabilities for now). Malformed secrets throw at
- * isolate startup.
+ * least one sender and at least one family config all exist (a complete Alchemy watcher env is the
+ * only family today, so Solana/Bitcoin/TRON keep answering empty capabilities). Malformed secrets
+ * throw at isolate startup.
  */
 export async function pushServiceFor(
   env: WorkerEnv,
-  families: Partial<Record<PushFamily, PushFamilyConfig>> = pushFamilies,
+  runtime?: PushRuntime,
 ): Promise<PushService | undefined> {
-  const materials = await pushMaterials(
-    env,
-    async (input, init) => fetch(input, init),
-    () => Date.now(),
-  );
+  const resolved =
+    runtime ??
+    (await pushRuntimeFor(
+      env,
+      async (input, init) => fetch(input, init),
+      (line) => console.log(line),
+    ));
+  const { materials, alchemy, families } = resolved;
   const served = PUSH_FAMILIES.filter((family) => families[family] !== undefined);
   if (materials === undefined || served.length === 0) {
     return undefined;
@@ -96,8 +97,10 @@ export async function pushServiceFor(
         subscribe: async (request) => object.subscribe(family, request),
         unsubscribe: async (id) => object.unsubscribe(family, id),
         watch: async (request) => object.watch(family, request),
+        ingest: async (items) => object.ingest(family, items),
       };
     },
+    ...(alchemy === undefined ? {} : { alchemy: alchemy.hooks }),
     limiter: env.PUSH_LIMITER,
   };
 }
@@ -122,46 +125,28 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
     ...(zeroEx === undefined ? {} : { zeroEx }),
   };
   const cache = priceCacheOf(() => caches.default);
-  const accounts = env.NETWORKS === "production" ? PRODUCTION_ACCOUNTS : STAGING_ACCOUNTS;
-  const budget = durableBudget(
-    env.PROVIDER_BUDGET,
-    accounts,
-    () => Date.now(),
-    (line) => console.log(line),
-  );
+  const upstream = upstreamFor(env, fetch, (line) => console.log(line));
   if (env.NETWORKS === "production") {
     return {
       ...base,
-      networks: PRODUCTION_NETWORKS,
-      accounts,
-      budget,
+      networks: upstream.networks,
+      accounts: upstream.accounts,
+      budget: upstream.budget,
       // Both environments run behind Cloudflare, which always sets cf-connecting-ip.
       clientAddress: "required",
-      auth: {
-        alchemy: bearer(env.ALCHEMY_API_KEY),
-        drpc: header("Drpc-Key", env.DRPC_API_KEY),
-        ankr: header("x-api-key", env.ANKR_API_KEY),
-        blockstream: blockstreamAuth({
-          fetch: async (input, init) => fetch(input, init),
-          clientId: env.BLOCKSTREAM_CLIENT_ID,
-          clientSecret: env.BLOCKSTREAM_CLIENT_SECRET,
-          now: () => Date.now(),
-        }),
-        trongrid: header("TRON-PRO-API-KEY", env.TRONGRID_API_KEY),
-        tatum: header("x-api-key", env.TATUM_API_KEY),
-      },
+      auth: upstream.auth,
       jupiter: { apiKey: env.JUPITER_API_KEY },
       prices: { cache, coingecko: { apiKey: env.COINGECKO_API_KEY } },
     };
   }
   return {
     ...base,
-    networks: STAGING_NETWORKS,
-    accounts,
-    budget,
+    networks: upstream.networks,
+    accounts: upstream.accounts,
+    budget: upstream.budget,
     // Both environments run behind Cloudflare, which always sets cf-connecting-ip.
     clientAddress: "required",
-    auth: {},
+    auth: upstream.auth,
     prices: {
       cache,
       ...(env.COINGECKO_API_KEY === undefined

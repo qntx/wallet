@@ -41,13 +41,14 @@ type Recorded = {
   subscribe: unknown[];
   unsubscribe: string[];
   watch: unknown[];
+  ingest: unknown[][];
 };
 
 const backendOf = (
   subscribed?: PushResult<typeof SUBSCRIPTION_RESPONSE>,
 ): { readonly backend: PushBackend; readonly calls: Recorded } => {
   const answer = subscribed ?? { ok: true, value: SUBSCRIPTION_RESPONSE };
-  const calls: Recorded = { subscribe: [], unsubscribe: [], watch: [] };
+  const calls: Recorded = { subscribe: [], unsubscribe: [], watch: [], ingest: [] };
   return {
     calls,
     backend: {
@@ -63,6 +64,11 @@ const backendOf = (
       },
       watch: async (request) => {
         calls.watch.push(request);
+        await Promise.resolve();
+        return { ok: true, value: undefined };
+      },
+      ingest: async (items) => {
+        calls.ingest.push([...items]);
         await Promise.resolve();
         return { ok: true, value: undefined };
       },

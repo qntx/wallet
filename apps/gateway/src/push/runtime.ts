@@ -1,11 +1,16 @@
 /**
- * Worker-side materialization of the push env: secrets → seal key and senders. Push is enabled only
- * when `PUSH_SEAL_KEY` is set AND at least one sender is configured AND at least one family config
- * exists — `pushFamilies` stays empty until Layer 3 lands a watcher, so production answers empty
- * capabilities now. Malformed secrets throw at startup rather than inside an alarm.
+ * Worker-side materialization of the push env. `pushMaterials` turns the secrets into the seal key
+ * and the senders; `pushRuntimeFor` adds the watcher config (`ALCHEMY_NOTIFY_TOKEN` +
+ * `ALCHEMY_WEBHOOKS`) and the family map — `evm` when the Alchemy env is complete, nothing
+ * otherwise, so Solana/Bitcoin/TRON keep answering `unsupported`. Malformed secrets and webhook
+ * config throw at startup rather than inside an alarm.
  */
 import type { PushFamily, PushPlatform } from "@qntx/wallet-engine/gateway/contract";
 
+import { indexNetworks } from "../middleware/network.ts";
+import { createForwarder } from "../providers/forward.ts";
+import { upstreamFor } from "../upstream.ts";
+import type { WorkerEnv } from "../worker.ts";
 import type { PushFamilyConfig } from "./core.ts";
 import { importSealKey } from "./seal.ts";
 import {
@@ -16,6 +21,9 @@ import {
   fcmServiceAccount,
 } from "./senders.ts";
 import type { PushSender } from "./senders.ts";
+import { evmVerifier } from "./verify-evm.ts";
+import { alchemyConfig, alchemySync } from "./watch-alchemy.ts";
+import type { AlchemyConfig } from "./watch-alchemy.ts";
 
 export type PushSecrets = {
   readonly PUSH_SEAL_KEY?: string;
@@ -33,8 +41,13 @@ export type PushMaterials = {
   readonly senders: Partial<Record<PushPlatform, PushSender>>;
 };
 
-/** Family watchers this deploy serves — none yet: the EVM watcher lands with Layer 3. */
-export const pushFamilies: Partial<Record<PushFamily, PushFamilyConfig>> = {};
+export type PushRuntime = {
+  /** `undefined` without `PUSH_SEAL_KEY` or without any configured sender. */
+  readonly materials: PushMaterials | undefined;
+  /** `undefined` without the complete Alchemy watcher env — then `families` is empty too. */
+  readonly alchemy: AlchemyConfig | undefined;
+  readonly families: Partial<Record<PushFamily, PushFamilyConfig>>;
+};
 
 export const pushMaterials = async (
   env: PushSecrets,
@@ -72,4 +85,40 @@ export const pushMaterials = async (
     return undefined;
   }
   return { sealKey, senders };
+};
+
+const evmAddress = (address: string): string | undefined =>
+  /^0x[0-9a-fA-F]{40}$/.test(address) ? address.toLowerCase() : undefined;
+
+/**
+ * One runtime for the HTTP worker and for every `PushObject`: the env-derived networks/accounts,
+ * the Alchemy watcher config and the family map (`evm` verifies through the shared forwarder over
+ * `upstreamFetch` and syncs addresses on the dashboard API). Each isolate and object builds its own
+ * — the forwarder and budget are per-isolate state by design.
+ */
+export const pushRuntimeFor = async (
+  env: WorkerEnv,
+  upstreamFetch: typeof globalThis.fetch,
+  log: (line: string) => void,
+): Promise<PushRuntime> => {
+  const upstream = upstreamFor(env, upstreamFetch, log);
+  const served = indexNetworks(upstream.networks, upstream.auth, upstream.accounts);
+  const evmNetworks = new Set(
+    [...served.values()].filter((network) => network.family === "evm").map(({ id }) => id),
+  );
+  const alchemy = alchemyConfig(env, evmNetworks);
+  const materials = await pushMaterials(env, upstreamFetch, () => Date.now());
+  if (alchemy === undefined) {
+    return { materials, alchemy: undefined, families: {} };
+  }
+  const forwarder = createForwarder(upstreamFetch, log, { budget: upstream.budget });
+  const families: Partial<Record<PushFamily, PushFamilyConfig>> = {
+    evm: {
+      networks: alchemy.networks,
+      normalizeAddress: evmAddress,
+      verify: evmVerifier({ forwarder, served }),
+      syncAddresses: alchemySync(alchemy, upstreamFetch),
+    },
+  };
+  return { materials, alchemy, families };
 };
