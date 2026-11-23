@@ -1,5 +1,9 @@
 import type { ExpoConfig } from "expo/config";
 
+// Set at prebuild to give the iOS app the iCloud container the cloud-store page
+// drives; unset keeps the default entitlements so CI prebuilds change nothing.
+const icloudContainer = process.env.EXPO_PUBLIC_ICLOUD_CONTAINER;
+
 const config = (): ExpoConfig => ({
   name: "V1 Harness",
   slug: "qntx-wallet-harness",
@@ -19,6 +23,12 @@ const config = (): ExpoConfig => ({
     entitlements: {
       // ISO 14443 tag sessions for the qntx card reader surface.
       "com.apple.developer.nfc.readersession.formats": ["TAG"],
+      ...(icloudContainer === undefined
+        ? {}
+        : {
+            "com.apple.developer.icloud-services": ["CloudKit"],
+            "com.apple.developer.icloud-container-identifiers": [icloudContainer],
+          }),
     },
     infoPlist: {
       NSFaceIDUsageDescription: "Face ID unlocks the wallet and approves each transaction.",

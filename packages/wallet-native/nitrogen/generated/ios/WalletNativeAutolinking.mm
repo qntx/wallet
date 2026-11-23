@@ -12,6 +12,7 @@
 
 #include "HybridKernelHost.hpp"
 #include "HybridSecureInputViewSpecSwift.hpp"
+#include "HybridCloudKitStoreSpecSwift.hpp"
 
 @interface WalletNativeAutolinking : NSObject
 @end
@@ -35,6 +36,13 @@
     "SecureInputView",
     []() -> std::shared_ptr<HybridObject> {
       std::shared_ptr<HybridSecureInputViewSpec> hybridObject = WalletNative::WalletNativeAutolinking::createSecureInputView();
+      return hybridObject;
+    }
+  );
+  HybridObjectRegistry::registerHybridObjectConstructor(
+    "CloudKitStore",
+    []() -> std::shared_ptr<HybridObject> {
+      std::shared_ptr<HybridCloudKitStoreSpec> hybridObject = WalletNative::WalletNativeAutolinking::createCloudKitStore();
       return hybridObject;
     }
   );

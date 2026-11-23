@@ -105,16 +105,18 @@ export function backupSaltBytes(source: FactorSource): Uint8Array {
 }
 
 /**
- * The host-run backup passkey ceremony (web): the PRF is evaluated over `backupSalt` with one of
- * the vault's passkey credentials, producing `prfBackup` instead of the vault `prf`.
+ * The host-run backup passkey ceremony (web): the PRF is evaluated over `backupSalt`, producing
+ * `prfBackup` instead of the vault `prf`. `credentialIds` scopes the assertion — sealing uses the
+ * vault's own credentials; opening uses the envelope's.
  */
 async function hostBackupPasskey(
   source: FactorSource,
   wire: SecretWire,
+  credentialIds?: ReadonlyArray<Uint8Array>,
 ): Promise<Extract<BackupFactor, { ceremony: "host" }>> {
   const ceremony = requireCeremony(source);
   const result = await ceremony.assert({
-    credentialIds: passkeyCredentialIds(source),
+    credentialIds: credentialIds ?? passkeyCredentialIds(source),
     salts: { first: backupSaltBytes(source) },
   });
   return {
@@ -162,11 +164,16 @@ export async function resolveBackupFactor(
   return hostBackupPasskey(source, wire);
 }
 
-/** Resolves a public `UnlockFactor` to a factor that opens a backup envelope. */
+/**
+ * Resolves a public `UnlockFactor` to a factor that opens a backup envelope. `credentialIds` is the
+ * envelope's own allow-list — a restored vault's passkey credentials are a different set (a fresh
+ * vault has none).
+ */
 export async function resolveBackupUnlockFactor(
   source: FactorSource,
   factor: UnlockFactor,
   wire: SecretWire,
+  credentialIds?: ReadonlyArray<Uint8Array>,
 ): Promise<BackupUnlockFactor> {
   const password = backupPassword(factor, wire);
   if (password !== undefined) {
@@ -180,7 +187,7 @@ export async function resolveBackupUnlockFactor(
       backupSalt: source.passkey.backupSalt,
     };
   }
-  return hostBackupPasskey(source, wire);
+  return hostBackupPasskey(source, wire, credentialIds);
 }
 
 /** Passkey credential ids of the current vault factors, for `assert`'s allowCredentials. */

@@ -207,6 +207,15 @@ Gateway (operators):
   under that family's client id, so the held asset set no longer links the gateway scopes.
   `@qntx/wallet-engine/gateway/contract` adds `PRICE_FAMILIES`, `PriceFamily`, `priceFamily`,
   `priceAssetFamily` and `pricesPath`. Deploy the gateway with the engine. (MIGRATION §9, §22)
+- `CloudStore` loses `available()`; every failure is a `CloudStoreError`. The port's
+  semantics (portable names, a 4 000 000-byte text cap, atomic whole-file writes, no partial reads,
+  read-your-own-write, eventually consistent but complete lists, delete-missing succeeds) are
+  documented on the type and checked by one conformance suite across every implementation.
+  Cloud backups are versioned: each upload is a new file
+  `qntx-wallet-backup-<id>-<sha256>.json` instead of an overwrite; two devices updating the same
+  backup keep both versions, and a version that holds wallets this device lacks reports `conflict`
+  without blocking this device's upload. `BackupController.list()` items carry the backup `id`;
+  `BackupErrorCategory` gains `quota` and `auth-required` (status `error`). (MIGRATION §28)
 
 ### Added
 
@@ -981,6 +990,23 @@ Gateway (operators):
   `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`, `FCM_SERVICE_ACCOUNT`, `ALCHEMY_NOTIFY_TOKEN` and
   `ALCHEMY_WEBHOOKS`; without them `GET /v1/push` advertises nothing. Solana, Bitcoin and TRON
   answer `unsupported`.
+- `@qntx/wallet-native/cloud`: the official cloud-backup transports. `createICloudStore({ container })`
+  stores backup envelopes in the CloudKit private database (custom zone `QntxWalletBackup`, record
+  type `Backup`, one `envelope` asset field) and reports `CKAccountChanged` through
+  `onAccountChange`; `createGoogleDriveStore()` stores them in Google Drive's hidden
+  `appDataFolder`, with tokens from Google Identity Services `AuthorizationClient`
+  (`drive.appdata` scope, no deprecated GoogleSignIn) and `authorize()` for the interactive
+  consent. The Nitro objects `CloudKitStore` (iOS) and `GoogleDriveAuth` (Android) only move backup
+  ciphertext and a Drive access token, so they are not secret-holding capabilities.
+- `@qntx/wallet-engine`: `createGoogleDriveCloudStore({ fetch, setTimer, token, invalidateToken })`,
+  the Drive v3 REST transport shared by Android and Web hosts (atomic multipart create, media
+  replace, paged list, one token refresh on 401); `CloudStoreError` with codes `unavailable`,
+  `auth-required`, `quota`, `invalid`, `failed`; `checkCloudName` / `checkCloudText` and
+  `CLOUD_TEXT_MAX_BYTES` for host implementations.
+- `@qntx/wallet`: `BackupHeader.keys` lists the imported keys an envelope carries
+  (`BackupHeaderKey`).
+- `apps/harness`: a cloud-store page (`EXPO_PUBLIC_CLOUD_STORE=1`) that probes the platform store and
+  runs the real-device conformance checks.
 
 ### Changed
 
@@ -1340,6 +1366,12 @@ Gateway (operators):
   400 ms). One gateway upstream could previously end a landed transaction `dropped`.
 - `@qntx/wallet-native`: `HybridKernelHost` failed to compile on iOS (`reset()` on a const
   captured `shared_ptr`).
+- `apps/harness`: the V1 probe module followed the `SecretBytes` kernel-runtime hooks again.
+- Importing a single private key now triggers a backup upload (coverage counted only HD wallets).
+- A restore into a fresh vault that skipped a wallet needing its BIP-39 passphrase no longer lets
+  the first sync overwrite the only cloud copy of that wallet.
+- A Web passkey restore asserts with the envelope's credential ids, not the destination vault's
+  (a fresh vault has none, so the ceremony failed).
 
 ### Security
 

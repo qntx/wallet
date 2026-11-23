@@ -76,7 +76,7 @@ export type BackupFactor = {
 export const backupHeader: Validator<BackupHeaderWire>;
 
 // @public (undocumented)
-type BackupHeaderKey = {
+export type BackupHeaderKey = {
     readonly keyId: string;
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
 };

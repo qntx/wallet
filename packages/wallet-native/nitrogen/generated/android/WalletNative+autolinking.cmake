@@ -33,10 +33,13 @@ target_sources(
   # Autolinking Setup
   ../nitrogen/generated/android/WalletNativeOnLoad.cpp
   # Shared Nitrogen C++ sources
+  ../nitrogen/generated/shared/c++/HybridCloudKitStoreSpec.cpp
+  ../nitrogen/generated/shared/c++/HybridGoogleDriveAuthSpec.cpp
   ../nitrogen/generated/shared/c++/HybridKernelHostSpec.cpp
   ../nitrogen/generated/shared/c++/HybridSecureInputViewSpec.cpp
   ../nitrogen/generated/shared/c++/views/HybridSecureInputViewComponent.cpp
   # Android-specific Nitrogen C++ sources
+  ../nitrogen/generated/android/c++/JHybridGoogleDriveAuthSpec.cpp
   ../nitrogen/generated/android/c++/JHybridSecureInputViewSpec.cpp
   ../nitrogen/generated/android/c++/views/JHybridSecureInputViewStateUpdater.cpp
 )

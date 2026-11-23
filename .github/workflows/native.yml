@@ -46,3 +46,5 @@ jobs:
           bun run native:kernel
           git diff --exit-code packages/wallet-native/kernel/generated/
           bun run native:host-test
+
+      - run: swift test --package-path packages/wallet-native

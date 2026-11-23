@@ -480,6 +480,7 @@ class BackupController extends Controller<BackupControllerState> {
     init(): Promise<void>;
     list(): Promise<ReadonlyArray<{
         readonly name: string;
+        readonly id: string;
         readonly header: BackupHeader;
     }>>;
     lock(): void;
@@ -521,7 +522,7 @@ type BackupControllerState = {
 };
 
 // @public
-type BackupErrorCategory = "cloud" | "conflict" | "unavailable" | "weak-password";
+type BackupErrorCategory = "cloud" | "conflict" | "unavailable" | "weak-password" | "quota" | "auth-required";
 
 // @public
 type BatchRecord = {
@@ -852,7 +853,6 @@ type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegat
 
 // @public
 type CloudStore = {
-    readonly available: () => Promise<boolean>;
     readonly list: () => Promise<ReadonlyArray<string>>;
     readonly read: (name: string) => Promise<string | undefined>;
     readonly write: (name: string, text: string) => Promise<void>;
