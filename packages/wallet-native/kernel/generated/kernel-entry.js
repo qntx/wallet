@@ -40898,19 +40898,14 @@ zoo`.split("\n"));
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
 		if (known !== void 0) return known;
-		let account;
-		if (record.kind === "entropy") account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+		const account = record.kind === "entropy" ? await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
 				return await accountFor(keys.material, params.template, params.network, params.groupIndex);
 			} finally {
 				keys.wipe();
 			}
-		});
-		else {
-			if (external === void 0) throw new KernelError("device-required", "this wallet derives on its device");
-			account = await accountFor(external(ctx.image, record), params.template, params.network, params.groupIndex);
-		}
+		}) : await accountFor(external(ctx.image, record), params.template, params.network, params.groupIndex);
 		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
 		accounts.set(key, account);
 		cache.set(record, accounts);
@@ -43997,8 +43992,7 @@ zoo`.split("\n"));
 					path,
 					publicKey: new Uint8Array(key.key)
 				});
-			} else integrity$2();
-			if (answered.some((seen) => samePath$2(seen, path))) integrity$2();
+			}
 			answered.push(path);
 		}
 		const wanted = [...need.secp256k1, ...need.ed25519];

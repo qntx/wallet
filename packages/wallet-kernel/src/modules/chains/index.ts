@@ -135,7 +135,7 @@ const walletAccounts = async (
   params: Parameters<Handler<"wallet.accounts">>[1],
   session: string | undefined,
   cache: AccountCache,
-  external: ExternalMaterial | undefined,
+  external: ExternalMaterial,
 ): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
   const record = findWalletRecord(ctx.image, params.walletId);
@@ -148,27 +148,27 @@ const walletAccounts = async (
   if (known !== undefined) {
     return known;
   }
-  let account: ChainAccount;
-  if (record.kind === "entropy") {
-    account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
-      const keys = seedKeys(seed, ctx.platform.random);
-      try {
-        return await accountFor(keys.material, params.template, params.network, params.groupIndex);
-      } finally {
-        keys.wipe();
-      }
-    });
-  } else {
-    if (external === undefined) {
-      throw new KernelError("device-required", "this wallet derives on its device");
-    }
-    account = await accountFor(
-      external(ctx.image, record),
-      params.template,
-      params.network,
-      params.groupIndex,
-    );
-  }
+  const account =
+    record.kind === "entropy"
+      ? await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+          const keys = seedKeys(seed, ctx.platform.random);
+          try {
+            return await accountFor(
+              keys.material,
+              params.template,
+              params.network,
+              params.groupIndex,
+            );
+          } finally {
+            keys.wipe();
+          }
+        })
+      : await accountFor(
+          external(ctx.image, record),
+          params.template,
+          params.network,
+          params.groupIndex,
+        );
   const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
   accounts.set(key, account);
   cache.set(record, accounts);
@@ -394,7 +394,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   );
 };
 
-export function createChainsModule(external?: ExternalMaterial): ChainsModule {
+export function createChainsModule(external: ExternalMaterial): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,

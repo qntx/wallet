@@ -124,15 +124,10 @@ export const derive = async (
         integrity();
       }
       ed25519.push({ path, publicKey: new Uint8Array(key.key) });
-    } else {
-      // An unrequested key is tampering, not padding.
-      integrity();
-    }
-    if (answered.some((seen) => samePath(seen, path))) {
-      integrity();
     }
     answered.push(path);
   }
+  // The answer must name exactly the requested paths — an extra, duplicated or missing key fails.
   const wanted = [...need.secp256k1, ...need.ed25519];
   if (
     answered.length !== wanted.length ||
