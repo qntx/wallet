@@ -147,7 +147,12 @@ export type {
   TransactionControllerState,
   TxState,
 } from "./transactions/controller.ts";
-export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transactions/route.ts";
+export type {
+  DelegationStatus,
+  DisplayIntent,
+  EvmRevokeTarget,
+  SparkDepositTag,
+} from "./transactions/route.ts";
 export type { TxBlock } from "./transactions/route.ts";
 export { SolanaClusterBindingError } from "./transactions/solana.ts";
 export type { SolanaBindingReason } from "./transactions/solana.ts";

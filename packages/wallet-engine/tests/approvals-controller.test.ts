@@ -8,12 +8,18 @@ import { createPublicClient, custom, decodeFunctionData, erc20Abi, isHex } from 
 import type { PublicClient } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ApprovalsController } from "../src/approvals/controller.ts";
+import { ApprovalsController, revokeInput } from "../src/approvals/controller.ts";
 import { encodeCandidates } from "../src/approvals/sources.ts";
 import type { ApprovalRow } from "../src/approvals/types.ts";
+import type { PendingRequest } from "../src/requests/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
-import type { AccountRef, DisplayIntent, TrackedTransaction } from "../src/transactions/route.ts";
+import type {
+  AccountRef,
+  ChainRequestInput,
+  DisplayIntent,
+  TrackedTransaction,
+} from "../src/transactions/route.ts";
 
 const OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const TOKEN = "0x1111111111111111111111111111111111111111";
@@ -158,6 +164,7 @@ const txStore = (initial: Readonly<Record<string, TrackedTransaction>> = {}) => 
 
 type Rig = {
   readonly controller: ApprovalsController;
+  readonly prepared: ChainRequestInput[];
   readonly store: EngineStore;
   readonly timers: Array<() => void>;
   readonly warnings: unknown[];
@@ -175,6 +182,11 @@ const make = (options: {
   readonly txs?: Readonly<Record<string, TrackedTransaction>>;
 }): Rig => {
   const timers: Array<() => void> = [];
+  const prepared: ChainRequestInput[] = [];
+  const record = (input: ChainRequestInput): PendingRequest => {
+    prepared.push(input);
+    return { input } as unknown as PendingRequest;
+  };
   const warnings: unknown[] = [];
   const txs = txStore(options.txs);
   const store = options.store ?? createMemoryEngineStore();
@@ -239,8 +251,9 @@ const make = (options: {
     known: () => [],
     tokenMetadata: async () => Promise.resolve({ symbol: "TKN", decimals: 18 }),
     sessions: async () => Promise.resolve([]),
+    prepare: async (input) => Promise.resolve(record(input)),
   });
-  return { controller, store, timers, warnings, txs };
+  return { controller, store, timers, warnings, txs, prepared };
 };
 
 const view = async (rig: Rig): Promise<void> => {
@@ -483,5 +496,439 @@ describe("approvals controller — the persisted candidate set", () => {
     await view(rig);
     expect(rig.warnings.length).toBeGreaterThan(0);
     expect(rig.controller.getState().views[key]?.status).toBe("ready");
+  });
+});
+
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const TRON_NET = "tron:728126428";
+const TOKEN_ACCOUNT = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+const TOKEN_ACCOUNT2 = "ETAwshsRhyCvmw5cRcknzG9yM7sL7yXcQ1yM7m6wS3wV";
+const TRON_TOKEN = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const TRON_SPENDER = "TJ2RqZ8n1VvC4gV4s7f9Z2q1fV5sV6yU8z";
+
+/** Row factories — every kind `revoke`/`revokeInput` may meet. */
+const rowBase = {
+  network: NETWORK,
+  risk: [],
+  verified: true,
+  sources: ["local" as const],
+};
+const erc20Row = (spender: string): ApprovalRow => ({
+  ...rowBase,
+  id: `erc20:${TOKEN.toLowerCase()}:${spender.toLowerCase()}`,
+  kind: "erc20",
+  revoke: "batchable",
+  token: { address: TOKEN },
+  spender,
+  amount: "80",
+  unlimited: false,
+});
+const permit2Row: ApprovalRow = {
+  ...rowBase,
+  id: `permit2:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`,
+  kind: "permit2",
+  revoke: "batchable",
+  token: { address: TOKEN },
+  spender: SPENDER,
+  amount: "80",
+  expiration: 1_900_000_000,
+  unlimited: false,
+};
+const operatorRow: ApprovalRow = {
+  ...rowBase,
+  id: `operator:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`,
+  kind: "operator",
+  revoke: "batchable",
+  contract: TOKEN,
+  operator: SPENDER,
+};
+const nftRow: ApprovalRow = {
+  ...rowBase,
+  id: `nft:${TOKEN.toLowerCase()}:42`,
+  kind: "nft",
+  revoke: "batchable",
+  contract: TOKEN,
+  tokenId: "42",
+  spender: SPENDER,
+};
+const delegationRow: ApprovalRow = {
+  ...rowBase,
+  id: "delegation",
+  kind: "delegation",
+  revoke: "single",
+  address: SPENDER,
+  ours: true,
+};
+const splRow = (tokenAccount: string): ApprovalRow => ({
+  ...rowBase,
+  network: SOL_NET,
+  id: `spl-delegate:${tokenAccount}`,
+  kind: "spl-delegate",
+  revoke: "batchable",
+  tokenAccount,
+  token: { address: TOKEN_ACCOUNT },
+  delegate: SPENDER,
+  amount: "80",
+  program: "token",
+});
+const trc20Row: ApprovalRow = {
+  ...rowBase,
+  network: TRON_NET,
+  id: `trc20:${TRON_TOKEN}:${TRON_SPENDER}`,
+  kind: "trc20",
+  revoke: "single",
+  token: { address: TRON_TOKEN },
+  spender: TRON_SPENDER,
+  amount: "80",
+  unlimited: false,
+};
+const closeRow: ApprovalRow = {
+  ...rowBase,
+  network: SOL_NET,
+  id: `spl-close-authority:${TOKEN_ACCOUNT}`,
+  kind: "spl-close-authority",
+  revoke: "none",
+  tokenAccount: TOKEN_ACCOUNT,
+  mint: TOKEN_ACCOUNT,
+  authority: SPENDER,
+};
+
+/** Plants a view whose rows chain reads cannot produce in this rig — the store is the seam. */
+const plant = async (rig: Rig, network: string, rows: ReadonlyArray<ApprovalRow>) => {
+  const key = `${network}|${OWNER}`;
+  await rig.controller.load(ACCOUNT, network);
+  await rig.controller.refresh(key).catch(() => undefined);
+  rig.controller.store.setState({
+    views: {
+      [key]: {
+        key,
+        network,
+        owner: OWNER,
+        status: "ready" as const,
+        rows,
+        exhaustive: [],
+        sources: [],
+        dropped: 0,
+        disputed: 0,
+        unread: 0,
+        unverified: 0,
+        sessions: [],
+      },
+    },
+  });
+  return key;
+};
+
+describe("approvals controller — revoke", () => {
+  it("an erc20 row prepares a single-target evm-revoke", async () => {
+    const rig = make({
+      gatewayBody: {
+        toBlock: "100",
+        candidates: [{ kind: "erc20", token: TOKEN, spender: SPENDER, block: "90" }],
+        truncated: false,
+      },
+      evm: {
+        allowances: new Map([[`${TOKEN}|${SPENDER}`, 80n]]),
+        balances: new Map([[TOKEN, 100n]]),
+      },
+    });
+    await rig.controller.init();
+    const key = `${NETWORK}|${OWNER}`;
+    await view(rig);
+    const rowId = `erc20:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`;
+    await rig.controller.revoke(key, rowId);
+    expect(rig.prepared).toStrictEqual([
+      {
+        method: "evm-revoke",
+        account: ACCOUNT,
+        network: NETWORK,
+        targets: [{ kind: "erc20", token: TOKEN, spender: SPENDER }],
+        fee: "normal",
+      },
+    ]);
+    /* Nothing was assumed gone — the row still stands until the chain says otherwise. */
+    const shown = rig.controller.getState().views[key];
+    expect(shown?.rows.map((r) => r.id)).toContain(rowId);
+  });
+
+  it("an unknown row id or view refuses with invalid-request", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = `${NETWORK}|${OWNER}`;
+    await view(rig);
+    await expect(rig.controller.revoke(key, "erc20:nope:nope")).rejects.toMatchObject({
+      code: "invalid-request",
+    });
+    await expect(rig.controller.revoke("eip155:9|nobody", "erc20:a:b")).rejects.toMatchObject({
+      code: "invalid-request",
+    });
+  });
+
+  it("two erc20 rows batch into one evm-revoke in the asked order", async () => {
+    const rig = make({
+      gatewayBody: {
+        toBlock: "100",
+        candidates: [
+          { kind: "erc20", token: TOKEN, spender: SPENDER, block: "90" },
+          { kind: "erc20", token: TOKEN, spender: OTHER, block: "89" },
+        ],
+        truncated: false,
+      },
+      evm: {
+        allowances: new Map([
+          [`${TOKEN}|${SPENDER}`, 80n],
+          [`${TOKEN}|${OTHER}`, 5n],
+        ]),
+        balances: new Map([[TOKEN, 100n]]),
+      },
+    });
+    await rig.controller.init();
+    const key = `${NETWORK}|${OWNER}`;
+    await view(rig);
+    const ids = [
+      `erc20:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`,
+      `erc20:${TOKEN.toLowerCase()}:${OTHER.toLowerCase()}`,
+    ];
+    await rig.controller.revokeBatch(key, ids);
+    const [input] = rig.prepared;
+    expect(input).toMatchObject({
+      method: "evm-revoke",
+      targets: [
+        { kind: "erc20", token: TOKEN, spender: SPENDER },
+        { kind: "erc20", token: TOKEN, spender: OTHER },
+      ],
+    });
+  });
+
+  it("a batch of one or of duplicates refuses", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = `${NETWORK}|${OWNER}`;
+    await view(rig);
+    const id = "x";
+    await expect(rig.controller.revokeBatch(key, [id])).rejects.toMatchObject({
+      code: "invalid-request",
+    });
+    await expect(rig.controller.revokeBatch(key, [id, id])).rejects.toMatchObject({
+      code: "invalid-request",
+    });
+  });
+
+  it("a delegation row revokes alone through evm-delegation, never in a batch", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = await plant(rig, NETWORK, [delegationRow, erc20Row(SPENDER)]);
+    await rig.controller.revoke(key, "delegation");
+    expect(rig.prepared[0]).toStrictEqual({
+      method: "evm-delegation",
+      account: ACCOUNT,
+      network: NETWORK,
+      action: "revoke",
+      fee: "normal",
+    });
+    await expect(
+      rig.controller.revokeBatch(key, [
+        "delegation",
+        `erc20:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`,
+      ]),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+  });
+
+  it("spl-delegate rows map to solana-revoke token accounts", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = await plant(rig, SOL_NET, [splRow(TOKEN_ACCOUNT), splRow(TOKEN_ACCOUNT2)]);
+    await rig.controller.revoke(key, `spl-delegate:${TOKEN_ACCOUNT}`);
+    expect(rig.prepared[0]).toStrictEqual({
+      method: "solana-revoke",
+      account: ACCOUNT,
+      network: SOL_NET,
+      tokenAccounts: [TOKEN_ACCOUNT],
+      fee: "normal",
+    });
+    await rig.controller.revokeBatch(key, [
+      `spl-delegate:${TOKEN_ACCOUNT}`,
+      `spl-delegate:${TOKEN_ACCOUNT2}`,
+    ]);
+    expect(rig.prepared[1]).toStrictEqual({
+      method: "solana-revoke",
+      account: ACCOUNT,
+      network: SOL_NET,
+      tokenAccounts: [TOKEN_ACCOUNT, TOKEN_ACCOUNT2],
+      fee: "normal",
+    });
+  });
+
+  it("a trc20 row maps to tron-approve with amount 0", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = await plant(rig, TRON_NET, [trc20Row]);
+    await rig.controller.revoke(key, `trc20:${TRON_TOKEN}:${TRON_SPENDER}`);
+    expect(rig.prepared[0]).toStrictEqual({
+      method: "tron-approve",
+      account: ACCOUNT,
+      network: TRON_NET,
+      token: TRON_TOKEN,
+      spender: TRON_SPENDER,
+      amount: 0n,
+    });
+  });
+
+  it("a none row refuses revocation", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = await plant(rig, SOL_NET, [closeRow]);
+    await expect(
+      rig.controller.revoke(key, `spl-close-authority:${TOKEN_ACCOUNT}`),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+  });
+
+  it("an oversized EVM batch refuses", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const spenders = Array.from(
+      { length: 11 },
+      (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`,
+    );
+    const key = await plant(rig, NETWORK, spenders.map(erc20Row));
+    await expect(
+      rig.controller.revokeBatch(
+        key,
+        spenders.map((s) => `erc20:${TOKEN.toLowerCase()}:${s}`),
+      ),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+  });
+
+  it("a mixed-family batch refuses", async () => {
+    const rig = make({});
+    await rig.controller.init();
+    const key = await plant(rig, SOL_NET, [splRow(TOKEN_ACCOUNT), erc20Row(SPENDER)]);
+    await expect(
+      rig.controller.revokeBatch(key, [
+        `spl-delegate:${TOKEN_ACCOUNT}`,
+        `erc20:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`,
+      ]),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+  });
+
+  it("a confirmed revoke transaction re-reads the view — the row stays while the chain shows it", async () => {
+    const rig = make({
+      gatewayBody: {
+        toBlock: "100",
+        candidates: [{ kind: "erc20", token: TOKEN, spender: SPENDER, block: "90" }],
+        truncated: false,
+      },
+      evm: {
+        allowances: new Map([[`${TOKEN}|${SPENDER}`, 80n]]),
+        balances: new Map([[TOKEN, 100n]]),
+      },
+    });
+    await rig.controller.init();
+    const key = `${NETWORK}|${OWNER}`;
+    await view(rig);
+    const rowId = `erc20:${TOKEN.toLowerCase()}:${SPENDER.toLowerCase()}`;
+    await rig.controller.revoke(key, rowId);
+    /* The revocation confirms: the subscription re-reads, and the chain still shows the grant. */
+    const tx = approvalTx("9", allowanceIntent(SPENDER, "0"), "submitted");
+    rig.txs.set({ "tx-9": tx });
+    rig.txs.set({ "tx-9": { ...tx, state: "confirmed" } });
+    await new Promise((resolve) => {
+      setTimeout(resolve);
+    });
+    const after = rig.controller.getState().views[key];
+    expect(after?.status).toBe("ready");
+    expect(after?.rows.map((r) => r.id)).toContain(rowId);
+  });
+});
+
+describe("revokeInput — one input per row kind", () => {
+  it("EVM kinds map to evm-revoke targets", () => {
+    expect(revokeInput(ACCOUNT, NETWORK, erc20Row(SPENDER), "normal")).toStrictEqual({
+      method: "evm-revoke",
+      account: ACCOUNT,
+      network: NETWORK,
+      targets: [{ kind: "erc20", token: TOKEN, spender: SPENDER }],
+      fee: "normal",
+    });
+    expect(revokeInput(ACCOUNT, NETWORK, permit2Row, "normal")).toStrictEqual({
+      method: "evm-revoke",
+      account: ACCOUNT,
+      network: NETWORK,
+      targets: [{ kind: "permit2", token: TOKEN, spender: SPENDER }],
+      fee: "normal",
+    });
+    expect(revokeInput(ACCOUNT, NETWORK, operatorRow, "normal")).toStrictEqual({
+      method: "evm-revoke",
+      account: ACCOUNT,
+      network: NETWORK,
+      targets: [{ kind: "operator", contract: TOKEN, operator: SPENDER }],
+      fee: "normal",
+    });
+    expect(revokeInput(ACCOUNT, NETWORK, nftRow, "normal")).toStrictEqual({
+      method: "evm-revoke",
+      account: ACCOUNT,
+      network: NETWORK,
+      targets: [{ kind: "nft", contract: TOKEN, tokenId: 42n }],
+      fee: "normal",
+    });
+    expect(revokeInput(ACCOUNT, NETWORK, delegationRow, "normal")).toStrictEqual({
+      method: "evm-delegation",
+      account: ACCOUNT,
+      network: NETWORK,
+      action: "revoke",
+      fee: "normal",
+    });
+  });
+
+  it("spl-delegate and trc20 map to their family methods", () => {
+    expect(revokeInput(ACCOUNT, SOL_NET, splRow(TOKEN_ACCOUNT), "normal")).toStrictEqual({
+      method: "solana-revoke",
+      account: ACCOUNT,
+      network: SOL_NET,
+      tokenAccounts: [TOKEN_ACCOUNT],
+      fee: "normal",
+    });
+    expect(revokeInput(ACCOUNT, TRON_NET, trc20Row, "normal")).toStrictEqual({
+      method: "tron-approve",
+      account: ACCOUNT,
+      network: TRON_NET,
+      token: TRON_TOKEN,
+      spender: TRON_SPENDER,
+      amount: 0n,
+    });
+  });
+
+  it("none kinds throw invalid-request", () => {
+    const mintAuthority: ApprovalRow = {
+      ...rowBase,
+      id: "spl-mint-authority:m",
+      kind: "spl-mint-authority",
+      revoke: "none",
+      mint: "m",
+      role: "freeze",
+      authority: "a",
+    };
+    const stakeAuthority: ApprovalRow = {
+      ...rowBase,
+      id: "stake-authority:s",
+      kind: "stake-authority",
+      revoke: "none",
+      stakeAccount: "s",
+      role: "withdrawer",
+      authority: "a",
+    };
+    const tronPermission: ApprovalRow = {
+      ...rowBase,
+      id: "tron-permission:active",
+      kind: "tron-permission",
+      revoke: "none",
+      permission: "active",
+      name: "active",
+      threshold: "1",
+      keys: [{ address: "a", weight: "1" }],
+    };
+    for (const row of [closeRow, mintAuthority, stakeAuthority, tronPermission]) {
+      expect(() => revokeInput(ACCOUNT, SOL_NET, row, "normal")).toThrow(/cannot be revoked/);
+    }
   });
 });

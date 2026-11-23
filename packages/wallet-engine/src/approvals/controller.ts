@@ -21,11 +21,20 @@ import { gatewayFetch } from "../gateway/client.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { networkById } from "../networks/registry.ts";
+import type { PendingRequest } from "../requests/controller.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 import type { TransactionController } from "../transactions/controller.ts";
-import type { AccountRef, TrackedTransaction } from "../transactions/route.ts";
+import { EVM_BATCH_LIMIT } from "../transactions/route.ts";
+import type {
+  AccountRef,
+  ChainRequestInput,
+  EvmRevokeTarget,
+  PrepareParams,
+  TrackedTransaction,
+} from "../transactions/route.ts";
+import { SOLANA_REVOKE_MAX } from "../transactions/solana-revoke.ts";
 import type { ChainResult } from "./evm.ts";
 import { evmApprovals } from "./evm.ts";
 import { solanaApprovals } from "./solana.ts";
@@ -82,6 +91,8 @@ export type ApprovalsControllerOptions = {
   ) => Promise<{ readonly symbol: string; readonly decimals: number }>;
   /** Kernel session keys signing for `owner` — engine root filters; [] + warn on failure. */
   readonly sessions: (owner: string) => Promise<ReadonlyArray<SessionLink>>;
+  /** Prepares a wallet-internal chain request — the engine root passes `requests.prepare`. */
+  readonly prepare: (input: ChainRequestInput) => Promise<PendingRequest>;
 };
 
 const emptyView = (key: string, network: string, owner: string): ApprovalsView => ({
@@ -98,6 +109,55 @@ const emptyView = (key: string, network: string, owner: string): ApprovalsView =
   unverified: 0,
   sessions: [],
 });
+
+/** The `evm-revoke` target for one EVM row, `undefined` for other families. */
+const evmTarget = (row: ApprovalRow): EvmRevokeTarget | undefined =>
+  row.kind === "erc20" || row.kind === "permit2"
+    ? { kind: row.kind, token: row.token.address, spender: row.spender }
+    : row.kind === "operator"
+      ? { kind: "operator", contract: row.contract, operator: row.operator }
+      : row.kind === "nft"
+        ? { kind: "nft", contract: row.contract, tokenId: BigInt(row.tokenId) }
+        : undefined;
+
+/** The chain request removing `row`'s authority — every `single`/`batchable` kind maps to one. */
+export const revokeInput = (
+  account: AccountRef,
+  network: string,
+  row: ApprovalRow,
+  fee: PrepareParams["fee"],
+): ChainRequestInput => {
+  const target = evmTarget(row);
+  if (target !== undefined) {
+    return { method: "evm-revoke", account, network, targets: [target], fee };
+  }
+  if (row.kind === "delegation") {
+    return { method: "evm-delegation", account, network, action: "revoke", fee };
+  }
+  if (row.kind === "spl-delegate") {
+    return {
+      method: "solana-revoke",
+      account,
+      network,
+      tokenAccounts: [row.tokenAccount],
+      fee,
+    };
+  }
+  if (row.kind === "trc20") {
+    return {
+      method: "tron-approve",
+      account,
+      network,
+      token: row.token.address,
+      spender: row.spender,
+      amount: 0n,
+    };
+  }
+  throw new ChainError(
+    "invalid-request",
+    `a ${row.kind} approval cannot be revoked from this wallet`,
+  );
+};
 
 /** Whether an intent grants anything — approvals or a 7702 authorization, batch calls included. */
 const intentHasApprovals = (intent: TrackedTransaction["intent"]): boolean => {
@@ -123,6 +183,8 @@ export class ApprovalsController extends Controller<ApprovalsState> {
   private cancelPoll: (() => void) | undefined;
   private unsubscribeTxs: (() => void) | undefined;
   private readonly inflight = new Map<string, Promise<void>>();
+  /** The account each loaded view was opened with — feeds `revoke`/`revokeBatch`. */
+  private readonly accounts = new Map<string, AccountRef>();
   private readonly rerun = new Set<string>();
   private readonly aborts = new Set<() => void>();
   /** Token metadata cached per session — a failed read is cached too (never retried in-session). */
@@ -177,6 +239,7 @@ export class ApprovalsController extends Controller<ApprovalsState> {
     }
     this.aborts.clear();
     this.tokens.clear();
+    this.accounts.clear();
     this.inflight.clear();
     this.rerun.clear();
     this.engineStore = undefined;
@@ -215,6 +278,7 @@ export class ApprovalsController extends Controller<ApprovalsState> {
     }
     const owner = await this.options.addressOf(account, network);
     const key = `${network}|${owner}`;
+    this.accounts.set(key, account);
     const existing = this.getState().views[key];
     if (existing !== undefined) {
       return key;
@@ -226,6 +290,7 @@ export class ApprovalsController extends Controller<ApprovalsState> {
 
   /** Removes a view; an in-flight refresh's answer is discarded via the state check. */
   unload(key: string): void {
+    this.accounts.delete(key);
     this.update((s) => {
       if (s.views[key] === undefined) {
         return s;
@@ -234,6 +299,108 @@ export class ApprovalsController extends Controller<ApprovalsState> {
         views: Object.fromEntries(Object.entries(s.views).filter(([k]) => k !== key)),
       };
     });
+  }
+
+  /**
+   * Builds one wallet-internal revocation request for a row — `none` rows and unknown ids throw
+   * `invalid-request`. The row is never removed optimistically: the confirmed-transaction
+   * subscription re-reads the view after inclusion, so it stays while the chain still shows the
+   * approval. One request per call — nonces are reserved at commit, so several prepared at once
+   * would make all but the first stale.
+   */
+  async revoke(
+    key: string,
+    rowId: string,
+    fee: PrepareParams["fee"] = "normal",
+  ): Promise<PendingRequest> {
+    const { view, row, account } = this.rowFor(key, rowId);
+    return this.options.prepare(revokeInput(account, view.network, row, fee));
+  }
+
+  /**
+   * Builds one wallet-internal revocation request covering several rows — at least two distinct,
+   * all `batchable`, all one family: EVM approvals (≤ {@link EVM_BATCH_LIMIT}) become one
+   * `evm-revoke`, SPL delegates (≤ {@link SOLANA_REVOKE_MAX}) one `solana-revoke`. Same nonce
+   * caveat as {@link revoke}: one request per call.
+   */
+  async revokeBatch(
+    key: string,
+    rowIds: ReadonlyArray<string>,
+    fee: PrepareParams["fee"] = "normal",
+  ): Promise<PendingRequest> {
+    const view = this.getState().views[key];
+    const account = this.accounts.get(key);
+    if (view === undefined || account === undefined) {
+      throw new ChainError("invalid-request", `unknown approvals view ${key}`);
+    }
+    if (rowIds.length < 2 || new Set(rowIds).size !== rowIds.length) {
+      throw new ChainError(
+        "invalid-request",
+        "a revocation batch needs at least two distinct rows",
+      );
+    }
+    const rows = rowIds.map((id) => {
+      const { row } = this.rowFor(key, id);
+      if (row.revoke !== "batchable") {
+        throw new ChainError("invalid-request", `${id} cannot be revoked in a batch`);
+      }
+      return row;
+    });
+    const targets = rows.map(evmTarget);
+    if (targets.every((t): t is EvmRevokeTarget => t !== undefined)) {
+      if (targets.length > EVM_BATCH_LIMIT) {
+        throw new ChainError(
+          "invalid-request",
+          `an EVM revocation batch allows at most ${EVM_BATCH_LIMIT.toString(10)} rows`,
+        );
+      }
+      return this.options.prepare({
+        method: "evm-revoke",
+        account,
+        network: view.network,
+        targets,
+        fee,
+      });
+    }
+    const tokenAccounts: string[] = [];
+    for (const row of rows) {
+      if (row.kind === "spl-delegate") {
+        tokenAccounts.push(row.tokenAccount);
+      }
+    }
+    if (tokenAccounts.length === rows.length) {
+      if (tokenAccounts.length > SOLANA_REVOKE_MAX) {
+        throw new ChainError(
+          "invalid-request",
+          `a Solana revocation batch allows at most ${SOLANA_REVOKE_MAX.toString(10)} rows`,
+        );
+      }
+      return this.options.prepare({
+        method: "solana-revoke",
+        account,
+        network: view.network,
+        tokenAccounts,
+        fee,
+      });
+    }
+    throw new ChainError(
+      "invalid-request",
+      "a revocation batch takes rows of one family — EVM approvals or SPL delegates",
+    );
+  }
+
+  /** The loaded view, its row and the account it was opened with — all three or a throw. */
+  private rowFor(
+    key: string,
+    rowId: string,
+  ): { view: ApprovalsView; row: ApprovalRow; account: AccountRef } {
+    const view = this.getState().views[key];
+    const account = this.accounts.get(key);
+    const row = view?.rows.find((r) => r.id === rowId);
+    if (view === undefined || account === undefined || row === undefined) {
+      throw new ChainError("invalid-request", `unknown approvals row ${rowId} in ${key}`);
+    }
+    return { view, row, account };
   }
 
   /** Re-reads a view: single-flight per key, a concurrent ask reruns once after. */

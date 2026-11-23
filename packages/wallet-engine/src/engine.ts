@@ -247,7 +247,7 @@ export type WalletEngine = {
    */
   readonly approvals: HostController<
     ApprovalsController,
-    "load" | "unload" | "refresh" | "setVisible"
+    "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"
   > & { readonly exposure: (key: string) => Valuation };
   /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
   readonly connections: HostController<
@@ -558,6 +558,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         family,
       ),
     tokenMetadata: async (network, address) => assets.tokenMetadata(network, address),
+    /* Internal requests — `requests` is constructed below; the thunk only runs at call time. */
+    prepare: async (input) => requests.prepare(input),
     sessions: async (owner) => {
       try {
         const list = await sessions(options.wallet).list();
@@ -1192,6 +1194,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       unload: (key) => approvals.unload(key),
       refresh: async (key) => approvals.refresh(key),
       setVisible: (visible) => approvals.setVisible(visible),
+      revoke: async (key, rowId, fee) => approvals.revoke(key, rowId, fee),
+      revokeBatch: async (key, rowIds, fee) => approvals.revokeBatch(key, rowIds, fee),
       /* The rows' fiat exposure at current quotes — display-only, like every valuation. */
       exposure: (key: string): Valuation => {
         const rows = approvals.getState().views[key]?.rows ?? [];

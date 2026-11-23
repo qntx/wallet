@@ -74,8 +74,9 @@ const ENTRIES: ReadonlyArray<Entry> = [
     name: "index",
     source: "src/index.ts",
     /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
-       deposit and the nonce/tracking fixes; the approvals inventory measures 153 915 B. */
-    budget: 151 * 1024,
+       deposit and the nonce/tracking fixes; the approvals inventory and the revocation
+       pipeline measure 156 533 B. */
+    budget: 153 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",

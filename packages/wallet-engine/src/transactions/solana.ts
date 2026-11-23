@@ -345,7 +345,7 @@ export const prepareSolana = async (
   });
 };
 
-type SolanaSignRequest = {
+export type SolanaSignRequest = {
   readonly kind: "solana.transaction";
   readonly network: string;
   readonly account: AccountRef;
@@ -353,7 +353,7 @@ type SolanaSignRequest = {
 };
 
 /** Everything after `solana.build`: fee tiers, endpoint cross-check, decode, simulate, submit. */
-const finishPrepared = async (
+export const finishPrepared = async (
   ctx: RouteContext,
   args: {
     readonly account: AccountRef;

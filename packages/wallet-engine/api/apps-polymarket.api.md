@@ -401,6 +401,12 @@ type ChainRequestInput = ({
     readonly amount: bigint;
     readonly fee: PrepareParams["fee"];
 } | {
+    readonly method: "evm-revoke";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly targets: ReadonlyArray<EvmRevokeTarget>;
+    readonly fee: PrepareParams["fee"];
+} | {
     readonly method: "evm-cctp";
     readonly account: AccountRef;
     readonly network: string;
@@ -456,6 +462,12 @@ type ChainRequestInput = ({
         readonly kind: "claim";
         readonly requestIds: ReadonlyArray<bigint>;
     };
+    readonly fee: PrepareParams["fee"];
+} | {
+    readonly method: "solana-revoke";
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly tokenAccounts: ReadonlyArray<string>;
     readonly fee: PrepareParams["fee"];
 } | {
     readonly method: "solana-stake";
@@ -516,7 +528,7 @@ type ChainRequestInput = ({
 };
 
 // @public (undocumented)
-type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-swap" | "tron-stake" | "tron-approve";
+type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp" | "evm-delegation" | "evm-batch" | "evm-approve" | "evm-revoke" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "solana-core-send" | "evm-lido" | "solana-stake" | "solana-revoke" | "solana-swap" | "tron-stake" | "tron-approve";
 
 // @public
 type Clearable<T> = { readonly [K in keyof T]?: T[K] | undefined; };
@@ -587,6 +599,25 @@ type Esplora = {
 
 // @public (undocumented)
 type EvmFeeTier = "slow" | "normal" | "fast";
+
+// @public
+type EvmRevokeTarget = {
+    readonly kind: "erc20";
+    readonly token: string;
+    readonly spender: string;
+} | {
+    readonly kind: "permit2";
+    readonly token: string;
+    readonly spender: string;
+} | {
+    readonly kind: "operator";
+    readonly contract: string;
+    readonly operator: string;
+} | {
+    readonly kind: "nft";
+    readonly contract: string;
+    readonly tokenId: bigint;
+};
 
 // @public
 type EvmSignInput = {
@@ -2270,7 +2301,7 @@ class TransactionController extends Controller<TransactionControllerState> {
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
-        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
+        method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-revoke" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
@@ -2279,6 +2310,9 @@ class TransactionController extends Controller<TransactionControllerState> {
     // (undocumented)
     prepareSolanaCoreSend(input: Extract<ChainRequestInput, {
         method: "solana-core-send";
+    }>, _requestId: string): Promise<PreparedRequest>;
+    prepareSolanaRevoke(input: Extract<ChainRequestInput, {
+        method: "solana-revoke";
     }>, _requestId: string): Promise<PreparedRequest>;
     prepareSolanaStake(input: Extract<ChainRequestInput, {
         method: "solana-stake";

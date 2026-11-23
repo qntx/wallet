@@ -38,6 +38,7 @@ import type {
   DelegationStatus,
 } from "./route.ts";
 import { accountAddressOf, awaitingFinality, newId } from "./route.ts";
+import { prepareSolanaRevoke } from "./solana-revoke.ts";
 import {
   bindDappSolana,
   pollSolana,
@@ -897,6 +898,7 @@ export class TransactionController extends Controller<TransactionControllerState
           | "evm-delegation"
           | "evm-batch"
           | "evm-approve"
+          | "evm-revoke"
           | "evm-cctp"
           | "evm-swap"
           | "evm-bridge"
@@ -924,6 +926,20 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return prepareSolanaStake(this.routeCtx(), input);
+  }
+
+  /**
+   * Internal `solana-revoke` requests: every token account is re-read on both endpoints before a
+   * program-matched `Revoke` goes through the same fee/simulation tail as a send.
+   */
+  async prepareSolanaRevoke(
+    input: Extract<ChainRequestInput, { method: "solana-revoke" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareSolanaRevoke(this.routeCtx(), input);
   }
 
   /**
