@@ -234,7 +234,6 @@ describe("push engine end to end", () => {
       crypto.getRandomValues(new Uint8Array(n)),
     );
     const seen: string[] = [];
-    // oxlint-disable-next-line typescript/require-await -- fetch signature requires a promise
     const viaApp: typeof globalThis.fetch = async (input, init) => {
       const url = String(input instanceof Request ? input.url : input);
       const res = await app.request(url, init);
