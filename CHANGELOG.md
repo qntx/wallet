@@ -9,8 +9,6 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-11-23
-
 Hardening and reach. The vault structure is authenticated, the kernel signs what it can describe
 and refuses what it cannot show unless the owner allows blind signing, broadcasts whose outcome is
 unknown are never failed, and the cloud-backup password is stretched with Argon2id. React Native
@@ -1960,8 +1958,7 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.14.0...HEAD
-[0.14.0]: https://github.com/qntx/wallet/compare/v0.13.0...v0.14.0
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.13.0...HEAD
 [0.13.0]: https://github.com/qntx/wallet/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/qntx/wallet/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/qntx/wallet/compare/v0.10.0...v0.11.0
