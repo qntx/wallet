@@ -2033,7 +2033,7 @@ export type NotificationsState = {
 };
 
 // @public (undocumented)
-export type NotificationStatus = "active" | "pending" | "failed";
+export type NotificationStatus = "active" | "pending" | "failed" | "device-required";
 
 // @public (undocumented)
 type Options$1 = {

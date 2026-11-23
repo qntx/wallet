@@ -162,6 +162,17 @@ type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 export { AllMidsResponse }
 
 // @public
+type AppAuthority = {
+    readonly kind: "builder-fee" | "token-allowance" | "operator";
+    readonly network: string;
+    readonly account: string;
+    readonly holder: string;
+    readonly asset?: string;
+    readonly limit?: string;
+    readonly revoke: "disable" | "approvals" | "none";
+};
+
+// @public
 type AppAvailability = "available" | "close-only" | "blocked";
 
 // @public
@@ -256,6 +267,7 @@ type AppProvider<D extends AppDetail = Record<never, never>> = {
         readonly revoke: boolean;
     }, flow: AppFlow<D>) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly authorities?: (group: AppGroup) => Promise<ReadonlyArray<AppAuthority>>;
 };
 
 // @public

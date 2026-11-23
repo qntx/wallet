@@ -123,6 +123,26 @@ type AddressFamily = "evm" | "solana" | "bitcoin" | "tron" | "spark";
 export type AppApis<A extends ReadonlyArray<AppDefinition<AppId, unknown>>> = { readonly [D in A[number] as D["id"]]: D extends AppDefinition<AppId, infer Api> ? Api : never; };
 
 // @public
+export type AppAuthority = {
+    readonly kind: "builder-fee" | "token-allowance" | "operator";
+    readonly network: string;
+    readonly account: string;
+    readonly holder: string;
+    readonly asset?: string;
+    readonly limit?: string;
+    readonly revoke: "disable" | "approvals" | "none";
+};
+
+// @public
+export type AppAuthorityRow = {
+    readonly app: AppId;
+} & ({
+    readonly authority: AppAuthority;
+} | {
+    readonly error: AppError;
+});
+
+// @public
 type AppAvailability = "available" | "close-only" | "blocked";
 
 // @public
@@ -220,6 +240,7 @@ export type AppProvider<D extends AppDetail = Record<never, never>> = {
         readonly revoke: boolean;
     }, flow: AppFlow<D>) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly authorities?: (group: AppGroup) => Promise<ReadonlyArray<AppAuthority>>;
 };
 
 // @public
@@ -245,6 +266,7 @@ type ApproveOptions = {
 export class AppsController<G extends AppGroups = AppGroups> extends Controller<AppsState<G>> {
     constructor(deps: AppsControllerDeps);
     acknowledgeTerms(group: AppGroup, app: Extract<keyof G, string>): Promise<void>;
+    authorities(group: AppGroup): Promise<ReadonlyArray<AppAuthorityRow>>;
     cancel(group: AppGroup, app: Extract<keyof G, string>): Promise<void>;
     // (undocumented)
     destroy(): Promise<void>;

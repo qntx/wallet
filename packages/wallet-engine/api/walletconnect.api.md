@@ -1824,7 +1824,7 @@ type NotificationsState = {
 };
 
 // @public (undocumented)
-type NotificationStatus = "active" | "pending" | "failed";
+type NotificationStatus = "active" | "pending" | "failed" | "device-required";
 
 // @public (undocumented)
 type Options$1 = {
