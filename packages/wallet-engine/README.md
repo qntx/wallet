@@ -348,6 +348,7 @@ only the apps it lists.
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
+import type { AppSocket } from "@qntx/wallet-engine/apps";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
 
@@ -364,9 +365,9 @@ const apps = await createApps({
   },
   random,
   logger: { warn: (m, e) => console.warn(m, e) },
-  openStore: async () => openIndexedDbEngineStore({ name: "app-apps", dataKey /* … */ }),
+  openStore: async () => openIndexedDbEngineStore({ name: "app-apps", dataKey, random }),
   // a separate EngineStore from the engine's own
-  socket: (url) => new WebSocket(url), // browser, RN or Node ≥ 22 — one socket for all views
+  socket: (url) => new WebSocket(url) as AppSocket, // browser, RN or Node ≥ 22 — one socket for all views
   gateway: { url: "https://api.example.com" },
   // the wallet gateway — /v1/eligibility is fetched here
   apps: [

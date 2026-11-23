@@ -210,6 +210,10 @@ export async function quoteBridge(
   live kernel without recreating the wallet.
 - Only one native kernel may be live per process: `destroy()` the previous wallet before creating
   another, or creation fails `integrity`.
+- On every platform, `WalletSnapshot` / `StatusPayload` gain the required fields `appLock`,
+  `verification` and `blindSigning` (the Web reports `appLock: true`), and the vault API gains
+  `enrolVerification`, `setAppLock` and `setBlindSigning`. Hand-written snapshot literals and
+  `Wallet` test doubles must add them.
 
 [`tests/migration/native-factors.ts`](tests/migration/native-factors.ts):
 
