@@ -81,7 +81,7 @@
         "@qntx/nostr": "0.16.0",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/ur": "3.0.0",
+        "@qntx/ur": "4.0.0",
         "@qntx/wallet-chains": "0.13.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
@@ -94,7 +94,7 @@
       "peerDependencies": {
         "@qntx/nostr": "~0.16.0",
         "@qntx/spark": "~0.5.2",
-        "@qntx/ur": "3.0.0",
+        "@qntx/ur": "4.0.0",
         "@qntx/wallet-chains": "0.13.0",
       },
       "optionalPeers": [
@@ -146,11 +146,13 @@
       "name": "@qntx/wallet-engine",
       "version": "0.13.0",
       "dependencies": {
+        "@blockchaincommons/dcbor": "1.0.0-beta.5",
         "@nktkas/hyperliquid": "0.33.3",
         "@noble/ciphers": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/fiat24": "0.1.0",
         "@qntx/siwx": "0.8.0",
+        "@qntx/ur": "4.0.0",
         "@scure/base": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@solana-program/address-lookup-table": "0.16.0",
@@ -212,12 +214,14 @@
       "name": "@qntx/wallet-kernel",
       "version": "0.13.0",
       "dependencies": {
+        "@blockchaincommons/dcbor": "1.0.0-beta.5",
         "@noble/ciphers": "2.4.0",
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/nostr": "0.16.0",
         "@qntx/siwx": "0.8.0",
         "@qntx/spark": "0.5.2",
+        "@qntx/ur": "4.0.0",
         "@qntx/wallet": "0.13.0",
         "@qntx/wallet-chains": "0.13.0",
         "@scure/base": "2.4.0",
@@ -353,6 +357,8 @@
     "@bcoe/v8-coverage": ["@bcoe/v8-coverage@1.0.2", "", {}, "sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA=="],
 
     "@blazediff/core": ["@blazediff/core@1.10.0", "", {}, "sha512-AOQff0zgR7cGsZL+4E7hVkmujoPUpm0J9xzWGWZj5wCjd3gmxESXAPfKyuzs93VdpQNFhHlBhfOjrcZ+XTERtQ=="],
+
+    "@blockchaincommons/dcbor": ["@blockchaincommons/dcbor@1.0.0-beta.5", "", {}, "sha512-dmuEkmfcJk6g/+m73F9Rosxb+sHb790fiNfOdE6CI/TFLZCnXCRr3+K1QR4Se+vtBllEBgv85s28zaC1Jnegkw=="],
 
     "@braidai/lang": ["@braidai/lang@1.1.2", "", {}, "sha512-qBcknbBufNHlui137Hft8xauQMTZDKdophmLFv05r2eNmdIv/MlPuP4TdUknHG68UdWLgVZwgxVe735HzJNIwA=="],
 
@@ -754,7 +760,7 @@
 
     "@qntx/tsconfig": ["@qntx/tsconfig@1.0.1", "", {}, "sha512-ONEFojcKeCateUga4lJO7tf0KUTLuz5DrPGuzf1zgoo9mQVJx7gHjWElj32tGNiCWE5lblO+9EJ28cvb/81PDQ=="],
 
-    "@qntx/ur": ["@qntx/ur@3.0.0", "", { "dependencies": { "@noble/hashes": "^2.4.0" }, "peerDependencies": { "@blockchaincommons/dcbor": "1.0.0-beta.3" }, "optionalPeers": ["@blockchaincommons/dcbor"] }, "sha512-T2JwKh5THlxBrFJ1WkpVf31YVbkZZtc7mQmzZW2gcpZAswTYXo9P1i2OvLmGt+NAhwdCtMLxHHi8Xtbw/cK50g=="],
+    "@qntx/ur": ["@qntx/ur@4.0.0", "", { "dependencies": { "@noble/hashes": "^2.4.0" }, "peerDependencies": { "@blockchaincommons/dcbor": "1.0.0-beta.5" }, "optionalPeers": ["@blockchaincommons/dcbor"] }, "sha512-1257AiSHTS4dTMAB6GbIE17NoPZ9txjIewEqaVLYMeFw2efZnszPUrhN+hIMAT5f/vENm60jOcxag4m7sth8/g=="],
 
     "@qntx/wallet": ["@qntx/wallet@workspace:packages/wallet"],
 

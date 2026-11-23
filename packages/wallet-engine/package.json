@@ -84,11 +84,13 @@
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
+    "@blockchaincommons/dcbor": "1.0.0-beta.5",
     "@nktkas/hyperliquid": "0.33.3",
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/fiat24": "0.1.0",
     "@qntx/siwx": "0.8.0",
+    "@qntx/ur": "4.0.0",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana-program/address-lookup-table": "0.16.0",
