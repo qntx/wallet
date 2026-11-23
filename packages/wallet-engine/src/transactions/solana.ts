@@ -1011,16 +1011,28 @@ const proveBlockhashDrop = async (
   const bankFloor =
     validity.slot !== undefined && validity.slot > tip.slot ? validity.slot : tip.slot;
   /* Invalid on this endpoint, no entry at any commitment, and a status bank at least as far
-     along as the tip and the validity read: `dropped` claimed. Anything else — a stale-bank
-     status, a processed-only entry — stays tracked and is not rebroadcast: a dead blockhash
-     can only hit "already processed" or nothing. A still-valid one keeps the wire going out. */
+     along as the tip and the validity read: `dropped` claimed — once the node's ledger provably
+     reaches back past the submission. `getSignatureStatuses` only searches what the node kept
+     (Agave rpc/src/rpc.rs: with searchTransactionHistory it reads the blockstore then BigTable,
+     so a node with neither the block nor BigTable depth answers `null` for a transaction that
+     did land). `getFirstAvailableBlock`/`getBlockTime` is the matching coverage signal — the
+     row itself carries no submission slot, only `submittedAt`, so the anchor is time like the
+     durable proof's. Coverage unreadable or not reaching past the submission is not a drop: the
+     row stays tracked and is not rebroadcast — a dead blockhash can only hit "already
+     processed" or nothing. A still-valid one keeps the wire going out. */
   if (
     !validity.valid &&
     status.entry === undefined &&
     status.slot !== undefined &&
     status.slot >= bankFloor
   ) {
-    return { poll: { kind: "ended", state: "dropped" }, rebroadcast: false };
+    const start = await solana.historyStart(rpc).catch(() => undefined);
+    const covered =
+      start !== undefined && start * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS;
+    return {
+      poll: covered ? { kind: "ended", state: "dropped" } : undefined,
+      rebroadcast: false,
+    };
   }
   return { poll: undefined, rebroadcast: validity.valid };
 };

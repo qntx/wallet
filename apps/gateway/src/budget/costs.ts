@@ -117,6 +117,7 @@ export const ALCHEMY_COSTS: CostModel = {
     getBlockTime: alchemy(20),
     getEpochInfo: alchemy(20),
     getFeeForMessage: alchemy(20),
+    getFirstAvailableBlock: alchemy(20),
     getGenesisHash: alchemy(10),
     getLatestBlockhash: alchemy(20),
     getMinimumBalanceForRentExemption: alchemy(10),

@@ -45,6 +45,7 @@ export const SOLANA_RPC_METHODS = [
   "getBlockTime",
   "getEpochInfo",
   "getFeeForMessage",
+  "getFirstAvailableBlock",
   "getGenesisHash",
   "getLatestBlockhash",
   "getMinimumBalanceForRentExemption",
@@ -284,6 +285,7 @@ const SOLANA_PARAMS: Record<SolanaRpcMethod, z.ZodMiniType> = {
   getBlockTime: z.tuple([z.int().check(z.nonnegative())]),
   getEpochInfo: configOnly,
   getFeeForMessage: z.tuple([z.string().check(z.minLength(1)), optional(solanaConfig)]),
+  getFirstAvailableBlock: noParams,
   getGenesisHash: noParams,
   getLatestBlockhash: configOnly,
   getMinimumBalanceForRentExemption: z.tuple([

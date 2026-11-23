@@ -134,6 +134,10 @@ type Node = {
   /** `getSignatureStatuses`: the entry it names and the bank it was read on. */
   entry: unknown;
   statusSlot: number;
+  /** `getFirstAvailableBlock`: the oldest slot served; `"fail"` rejects, `"weird"` misforms. */
+  firstBlock: number | "fail" | "weird";
+  /** `getBlockTime(firstBlock)`: its unix seconds — `null` answers a pruned block. */
+  firstBlockTime: number | null;
   /** The nonce account's stored value and read bank; `nonceGone` reads the account as closed. */
   nonce: string;
   nonceSlot: number;
@@ -152,6 +156,10 @@ const dropNode = (over: Partial<Node> = {}): Node => ({
   validitySlot: 6000,
   entry: undefined,
   statusSlot: 6000,
+  /* Slot 300 sits at second 300 — well before the rig's submission time (1_000_000 ms less the
+     ten-minute skew), so the default node's ledger provably covers the submission. */
+  firstBlock: 300,
+  firstBlockTime: 300,
   nonce: ADVANCED_VALUE,
   nonceSlot: 5000,
   nonceGone: false,
@@ -171,6 +179,13 @@ const answer = (n: Node, method: string, _params: unknown[]): unknown => {
       return { context: { slot: n.validitySlot }, value: n.blockhashAlive };
     case "getSignatureStatuses":
       return { context: { slot: n.statusSlot }, value: [n.entry ?? null] };
+    case "getFirstAvailableBlock":
+      if (n.firstBlock === "fail") {
+        throw new TypeError("fetch failed");
+      }
+      return n.firstBlock === "weird" ? "not-a-slot" : n.firstBlock;
+    case "getBlockTime":
+      return n.firstBlockTime;
     case "getAccountInfo":
       return {
         context: { slot: n.nonceSlot },
@@ -379,12 +394,14 @@ describe("a dropped answer must be proven on one upstream", () => {
     const w = world();
     w.nodes.b.entry = FINALIZED_ENTRY; // would contradict — but it is never asked mid-poll
     await pollSolana(ctx(w), tx(), ev());
-    // tip, blockhash validity, signature status: one poll is three reads…
+    // tip, blockhash validity, signature status, then the ledger-coverage pair: five reads…
     const methods = w.requests.map((r) => r.method);
-    expect(methods.slice(0, 3)).toStrictEqual([
+    expect(methods.slice(0, 5)).toStrictEqual([
       "getEpochInfo",
       "isBlockhashValid",
       "getSignatureStatuses",
+      "getFirstAvailableBlock",
+      "getBlockTime",
     ]);
     // …the first unpinned, its provider id pinned on every later read
     expect(w.requests[0]?.pin).toBeUndefined();
@@ -528,8 +545,14 @@ describe("with a host endpoint configured", () => {
     const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollSolana(ctx(w, independent), tx(), ev());
     expect(answer1).toStrictEqual({ kind: "ended", state: "dropped" });
-    // The host ran the whole proof too: tip, validity, status.
-    expect(host.calls).toStrictEqual(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
+    // The host ran the whole proof too: tip, validity, status, ledger coverage.
+    expect(host.calls).toStrictEqual([
+      "getEpochInfo",
+      "isBlockhashValid",
+      "getSignatureStatuses",
+      "getFirstAvailableBlock",
+      "getBlockTime",
+    ]);
   });
 
   it("a host endpoint that knows the transaction lands the row instead", async () => {
@@ -653,6 +676,93 @@ describe("with a host endpoint configured", () => {
   });
 });
 
+describe("the ledger must reach back past the submission", () => {
+  it("a node whose history starts after the submission cannot prove the drop", async () => {
+    const w = world();
+    /* The transaction was submitted at 1_000_000 ms; this node's oldest block sits at second
+       999 — `getSignatureStatuses` simply cannot see a landing that old, so `null` is not a
+       drop. An identically shallow host "agrees" — but the claim never forms on the primary,
+       so the host is never even asked. */
+    const shallow = dropNode({ firstBlock: 999_999, firstBlockTime: 999_999 });
+    w.nodes.a.firstBlock = 999_999;
+    w.nodes.a.firstBlockTime = 999_999;
+    const host = hostApi(shallow);
+    const independent = { kind: "available", source: "host", client: host.api };
+    const c = ctx(w, independent);
+    await expect(pollSolana(c, tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+    /* Nor can the streak rescue it: the claim stays unformed poll after poll. */
+    await expect(pollSolana(c, tx(), ev())).resolves.toBeUndefined();
+    expect(w.requests.every((r) => r.method !== "sendTransaction")).toBe(true);
+  });
+
+  it("a host whose ledger does not reach either cannot corroborate", async () => {
+    const w = world(); // the primary's ledger covers the submission — it claims
+    const host = hostApi(dropNode({ firstBlock: 999_999, firstBlockTime: 999_999 }));
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    // The host ran the coverage pair and could not agree.
+    expect(host.calls).toStrictEqual([
+      "getEpochInfo",
+      "isBlockhashValid",
+      "getSignatureStatuses",
+      "getFirstAvailableBlock",
+      "getBlockTime",
+    ]);
+  });
+
+  it("a node whose history starts inside the skew margin cannot prove the drop", async () => {
+    const w = world();
+    /* The ledger reaches back only to second 700 — inside the ten-minute skew margin around
+       the 1_000_000 ms submission, so it cannot rule out a landing before its own horizon. */
+    w.nodes.a.firstBlock = 700;
+    w.nodes.a.firstBlockTime = 700;
+    const host = hostApi(dropNode());
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+  });
+
+  it("a node whose oldest block has no recorded time cannot prove the drop", async () => {
+    const w = world();
+    w.nodes.a.firstBlockTime = null; // pruned or never recorded: coverage unknown
+    const host = hostApi(dropNode());
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+  });
+
+  it("a node whose coverage read fails cannot prove the drop", async () => {
+    const w = world();
+    w.nodes.a.firstBlock = "fail";
+    const host = hostApi(dropNode());
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+  });
+
+  it("a node whose coverage answer is malformed cannot prove the drop", async () => {
+    const w = world();
+    w.nodes.a.firstBlock = "weird";
+    const host = hostApi(dropNode());
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+  });
+
+  it("a status bank behind the tip and the validity read proves nothing", async () => {
+    const w = world();
+    /* The status answer came from bank 5_999, behind both the tip and the bank the validity
+       read ran on: the transaction may have landed on the bank the status was too stale to
+       see — so no claim forms and the host is never asked. */
+    w.nodes.a.statusSlot = 5999;
+    const host = hostApi(dropNode());
+    const independent = { kind: "available", source: "host", client: host.api };
+    await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
+    expect(host.calls).toHaveLength(0);
+  });
+});
+
 describe("pinnedSolanaCaller", () => {
   it("fails over only until the first answer, then pins that provider", async () => {
     const w = world();
@@ -744,6 +854,12 @@ describe("the corroborator is never the pinned upstream", () => {
       state: "dropped",
     });
     expect(pins).toStrictEqual([GATEWAY]);
-    expect(host.calls).toStrictEqual(["getEpochInfo", "isBlockhashValid", "getSignatureStatuses"]);
+    expect(host.calls).toStrictEqual([
+      "getEpochInfo",
+      "isBlockhashValid",
+      "getSignatureStatuses",
+      "getFirstAvailableBlock",
+      "getBlockTime",
+    ]);
   });
 });
