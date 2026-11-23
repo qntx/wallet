@@ -10,34 +10,33 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vite-plus/test";
 
+import { GatewayHttpError } from "../../../apps/gateway/src/middleware/errors.ts";
+import { indexNetworks } from "../../../apps/gateway/src/middleware/network.ts";
+import { createForwarder } from "../../../apps/gateway/src/providers/forward.ts";
+import type { PushResult } from "../../../apps/gateway/src/push/backend.ts";
+import { PushCore } from "../../../apps/gateway/src/push/core.ts";
+import { importSealKey } from "../../../apps/gateway/src/push/seal.ts";
+import { apnsSender } from "../../../apps/gateway/src/push/senders.ts";
+import { pushStore } from "../../../apps/gateway/src/push/store.ts";
+import { evmVerifier } from "../../../apps/gateway/src/push/verify-evm.ts";
+import { alchemyConfig, alchemySync } from "../../../apps/gateway/src/push/watch-alchemy.ts";
 import {
-  createMemoryEngineStore,
-  gatewayFetch,
-  gatewaySession,
-  NotificationsController,
-} from "@qntx/wallet-engine";
-import type {
-  AccountTreeState,
-  NetworkControllerState,
-  NotificationEvent,
-  TransactionControllerState,
-} from "@qntx/wallet-engine";
-import { openPush } from "@qntx/wallet-engine/push";
-
-import { GatewayHttpError } from "../src/middleware/errors.ts";
-import { indexNetworks } from "../src/middleware/network.ts";
-import { createForwarder } from "../src/providers/forward.ts";
-import type { PushResult } from "../src/push/backend.ts";
-import { PushCore } from "../src/push/core.ts";
-import { utf8 } from "../src/push/encoding.ts";
-import { importSealKey } from "../src/push/seal.ts";
-import { apnsSender } from "../src/push/senders.ts";
-import { pushStore } from "../src/push/store.ts";
-import { evmVerifier } from "../src/push/verify-evm.ts";
-import { alchemyConfig, alchemySync } from "../src/push/watch-alchemy.ts";
-import { TEST_ACCOUNTS, allowAll, fakeFetch, gateway, openBudget } from "./helpers.ts";
-import { SEAL_KEY_B64, p8Pem } from "./push/helpers.ts";
-import { nodeSql } from "./push/sql.ts";
+  TEST_ACCOUNTS,
+  allowAll,
+  fakeFetch,
+  gateway,
+  openBudget,
+} from "../../../apps/gateway/tests/helpers.ts";
+import { SEAL_KEY_B64, p8Pem } from "../../../apps/gateway/tests/push/helpers.ts";
+import type { AccountTreeState } from "../src/accounts/controller.ts";
+import { gatewayFetch, gatewaySession } from "../src/gateway/client.ts";
+import type { NetworkControllerState } from "../src/networks/controller.ts";
+import { NotificationsController } from "../src/notifications/controller.ts";
+import type { NotificationEvent } from "../src/notifications/controller.ts";
+import { openPush } from "../src/push/index.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { TransactionControllerState } from "../src/transactions/controller.ts";
+import { nodeSql } from "./push-sql.ts";
 
 const SIGNING_KEY = "e2e-engine-signing-key";
 const WEBHOOK_ID = "wh_engine_e2e";
@@ -76,7 +75,7 @@ const miniStore = <S>(initial: S) => {
 const hmac = async (body: string): Promise<string> => {
   const key = await crypto.subtle.importKey(
     "raw",
-    utf8(SIGNING_KEY),
+    new TextEncoder().encode(SIGNING_KEY),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],

@@ -94,7 +94,7 @@ export type UpstreamCall = {
   readonly url: string;
   readonly method: string;
   readonly body: string;
-  readonly headers: HeadersInit | undefined;
+  readonly headers: RequestInit["headers"];
 };
 export type Upstream = (call: UpstreamCall, signal: AbortSignal) => Response | Promise<Response>;
 

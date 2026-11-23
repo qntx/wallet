@@ -13,6 +13,7 @@ import type { PushFamilyConfig } from "../src/push/core.ts";
 import { PushObject } from "../src/push/object.ts";
 import { pushMaterials } from "../src/push/runtime.ts";
 import type { PushRuntime } from "../src/push/runtime.ts";
+import { pushObjectState } from "./push/do-state.ts";
 import {
   ADDRESS,
   EVM,
@@ -23,7 +24,7 @@ import {
   p8Pem,
   subscribeRequest,
 } from "./push/helpers.ts";
-import { dumpText, pushObjectState } from "./push/sql.ts";
+import { dumpText } from "./push/sql.ts";
 
 const env = async (sealed: boolean): Promise<WorkerEnv> =>
   ({
