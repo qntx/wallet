@@ -192,6 +192,13 @@ const probeMeter: Meter = async () => {
   return { ok: true };
 };
 
+/**
+ * Server-initiated calls (the push receipt checks) carry no client — there is no share to charge,
+ * so the meter admits every call. The provider account still pays: `send` bills `PROVIDER_BUDGET`
+ * and the breaker/cool-down apply exactly as for a client call.
+ */
+export const SERVICE_METER: Meter = probeMeter;
+
 /** Per-isolate account cool-down state the forwarder consults before metering. */
 type Throttle = {
   /** Whole seconds left on the account's cool-down; 0 when callable (expired entries dropped). */
