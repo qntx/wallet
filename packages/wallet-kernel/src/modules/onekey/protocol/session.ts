@@ -49,7 +49,7 @@ const FAILURE_CODE: Readonly<Record<number, OneKeyErrorCode>> = {
 
 function failureError(decoded: Decoded<typeof Failure.fields>): OneKeyError {
   const code = FAILURE_CODE[decoded.code ?? -1] ?? "device-error";
-  return new OneKeyError(code, "device reported failure", decoded.code);
+  return new OneKeyError(code, "device reported failure", decoded.code, decoded.message);
 }
 
 async function exchangeMessage<F extends Fields>(

@@ -16,15 +16,21 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { bytesToHex } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 import type { EvmTransaction } from "../../packages/wallet-chains/src/index.ts";
+import {
+  decodeTronContract,
+  decodeTronRawData,
+  encodeTronContract,
+  encodeTronRawData,
+} from "../../packages/wallet-chains/src/tron/index.ts";
 import { initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../../packages/wallet-kernel/src/modules/onekey/protocol/errors.ts";
+import { signTypedData } from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm-typed-data.ts";
 import {
   signEvmPersonalMessage,
   signEvmTransaction,
-  signTypedData,
 } from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm.ts";
 import {
   decodeMessage,
@@ -39,6 +45,14 @@ import {
 import { Initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/messages.ts";
 import { encode } from "../../packages/wallet-kernel/src/modules/onekey/protocol/proto.ts";
 import type { Exchange } from "../../packages/wallet-kernel/src/modules/onekey/protocol/session.ts";
+import {
+  signSolanaRawMessage,
+  signSolanaTransaction,
+} from "../../packages/wallet-kernel/src/modules/onekey/protocol/solana.ts";
+import {
+  signTronMessage,
+  signTronTransaction,
+} from "../../packages/wallet-kernel/src/modules/onekey/protocol/tron.ts";
 import {
   LoadDevice,
   TEST_MNEMONIC,
@@ -415,6 +429,157 @@ if (DEVICE === "pro") {
     console.log(
       `${name}: sig=${bytesToHex(sig).slice(0, 24)}… (${session.exchanges.length} exchanges)`,
     );
+  }
+}
+
+// Layer 4: Solana + TRON. The solana plan cases carry a fee payer that is not the
+// device's key (GmaDrppBC7…), so the plan vectors are refusal recordings; the self-payer
+// variants patch the payer to the device's ed25519 key and produce real signatures. Both
+// firmwares refuse version 1 — the client makes that `unsupported` before any exchange,
+// so its session is intentionally empty. The tron plan case's contract owner is not the
+// device key either: the firmware rebuilds raw_data with its own owner, so serialized_tx
+// differs and the client raises device-fault — the refusal is what we record; the self
+// variants swap the contract owner to the device address and verify end to end.
+{
+  const initSession = { name: "l4-init", exchanges: [] as Step[] };
+  const info = await initialize(recording(initSession));
+  sessions.push(initSession);
+  console.log(`l4-init: ${info.model} ${info.firmware.join(".")}`);
+
+  type L4Request = { message?: string; rawData?: string };
+  const l4plans = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../vectors/chains/signing-plans.json"), "utf8"),
+  ) as {
+    cases: Array<{
+      name: string;
+      key: { path: number[]; publicKey: string };
+      request: L4Request;
+    }>;
+  };
+  const l4Case = (name: string) => {
+    const found = l4plans.cases.find((c) => c.name === name);
+    if (found === undefined) {
+      throw new Error(`plan case ${name} missing from signing-plans.json`);
+    }
+    return found;
+  };
+  const solPath = l4Case("solana-transaction-legacy-single-signer").key.path;
+  const tronPath = l4Case("tron-transaction-trx-transfer").key.path;
+  const solKey = l4Case("solana-transaction-legacy-single-signer").key;
+  const OUR_SOL = solKey.publicKey;
+  const THEIR_SOL = "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+  const solMessage = (name: string, self: boolean): Uint8Array => {
+    const hex = l4Case(name).request.message ?? "";
+    return hexToBytes(self ? hex.replace(THEIR_SOL, OUR_SOL) : hex);
+  };
+
+  for (const [name, self] of [
+    ["solana-transaction-legacy-single-signer", false],
+    ["solana-transaction-legacy-self", true],
+    ["solana-transaction-v0-single-signer", false],
+    ["solana-transaction-v0-self", true],
+  ] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    try {
+      const plan = self
+        ? `solana-transaction-${
+            name === "solana-transaction-legacy-self" ? "legacy" : "v0"
+          }-single-signer`
+        : name;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      const sig = await signSolanaTransaction(recording(session), solPath, solMessage(plan, self));
+      console.log(`${name}: sig=${bytesToHex(sig).slice(0, 24)}…`);
+    } catch (error) {
+      console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);
+    }
+    sessions.push(session);
+  }
+
+  // Both firmwares refuse version 1 — `unsupported` before any exchange (empty session).
+  {
+    const session = { name: "solana-transaction-v1-single-signer", exchanges: [] as Step[] };
+    try {
+      await signSolanaTransaction(
+        recording(session),
+        solPath,
+        solMessage("solana-transaction-v1-single-signer", false),
+      );
+      console.log("solana-transaction-v1-single-signer: unexpectedly signed");
+    } catch (error) {
+      console.log(
+        `solana-transaction-v1-single-signer: ${error instanceof OneKeyError ? error.code : String(error)}`,
+      );
+    }
+    sessions.push(session);
+  }
+
+  {
+    const session = { name: "solana-message-raw", exchanges: [] as Step[] };
+    const sig = await signSolanaRawMessage(
+      recording(session),
+      solPath,
+      solMessage("solana-message-raw", false),
+    );
+    sessions.push(session);
+    console.log(`solana-message-raw: sig=${bytesToHex(sig).slice(0, 24)}…`);
+  }
+
+  // TRON: rebuild raw_data with the device address as contract owner — the firmware's
+  // serialize() substitutes its own owner, so serialized_tx matches only that rebuild.
+  const OUR_TRON = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH";
+  const tronSelf = (rawHex: string): Uint8Array => {
+    const raw = decodeTronRawData(hexToBytes(rawHex));
+    const decoded = decodeTronContract(raw.contract.typeId, raw.contract.value);
+    if (decoded === undefined) {
+      throw new Error("tron.json case is not decodable");
+    }
+    const value = encodeTronContract({ ...decoded.contract, owner: OUR_TRON });
+    return encodeTronRawData({
+      ...raw,
+      contract: { ...raw.contract, value },
+    });
+  };
+  const tronJson = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../vectors/chains/tron.json"), "utf8"),
+  ) as { transactions: Array<{ name: string; rawDataHex: string }> };
+  const tronVector = (name: string): string => {
+    const found = tronJson.transactions.find((t) => t.name === name);
+    if (found === undefined) {
+      throw new Error(`tron vector ${name} missing`);
+    }
+    return found.rawDataHex;
+  };
+
+  for (const [name, rawData] of [
+    [
+      "tron-transaction-trx-transfer",
+      hexToBytes(l4Case("tron-transaction-trx-transfer").request.rawData ?? ""),
+    ],
+    ["tron-transfer-self", tronSelf(l4Case("tron-transaction-trx-transfer").request.rawData ?? "")],
+    ["tron-trc20-transfer", tronSelf(tronVector("trc20-transfer"))],
+    ["tron-delegate-energy", tronSelf(tronVector("delegate-energy"))],
+  ] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      const sig = await signTronTransaction(recording(session), tronPath, rawData);
+      console.log(`${name}: sig=${bytesToHex(sig).slice(0, 24)}…`);
+    } catch (error) {
+      console.log(`${name}: ${error instanceof OneKeyError ? error.code : String(error)}`);
+    }
+    sessions.push(session);
+  }
+
+  {
+    const session = { name: "tron-message", exchanges: [] as Step[] };
+    const sig = await signTronMessage(
+      recording(session),
+      info,
+      tronPath,
+      hexToBytes(l4Case("tron-message").request.message ?? ""),
+    );
+    sessions.push(session);
+    console.log(`tron-message: sig=${bytesToHex(sig).slice(0, 24)}…`);
   }
 }
 

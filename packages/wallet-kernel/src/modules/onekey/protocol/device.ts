@@ -86,7 +86,7 @@ const CAPABILITY_BITCOIN_LIKE = 2;
 // family streams parsed EIP-712 structures only when it advertises this.
 const CAPABILITY_ETHEREUM_TYPED_DATA = 1000;
 
-export type OneKeyFeature = "evm-1559" | "evm-7702" | "evm-typed-data-stream";
+export type OneKeyFeature = "evm-1559" | "evm-7702" | "evm-typed-data-stream" | "tron-message-v2";
 
 const CLASSIC_FAMILY: ReadonlySet<OneKeyModel> = new Set(["classic", "classic1s", "pure", "mini"]);
 
@@ -109,6 +109,8 @@ const atLeast = (
  * - `evm-7702`: classic1s/pure ≥ 3.13.0, pro ≥ 4.16.0, never on the other models.
  * - `evm-typed-data-stream`: classic family needs Capability_EthereumTypedData (1000); touch/pro
  *   stream unconditionally.
+ * - `tron-message-v2`: classic ≥ 3.12.0, classic1s/pure ≥ 3.13.0, touch ≥ 4.12.0, pro ≥ 4.16.0, never
+ *   on mini (SDK api/tron/TronSignMessage.ts getVersionRange).
  */
 // oxlint-disable-next-line typescript/consistent-return -- every feature returns above
 export function supports(info: DeviceInfo, feature: OneKeyFeature): boolean {
@@ -124,6 +126,20 @@ export function supports(info: DeviceInfo, feature: OneKeyFeature): boolean {
       return CLASSIC_FAMILY.has(info.model)
         ? info.capabilities.includes(CAPABILITY_ETHEREUM_TYPED_DATA)
         : true;
+    case "tron-message-v2":
+      switch (info.model) {
+        case "classic":
+          return atLeast(info.firmware, [3, 12, 0]);
+        case "classic1s":
+        case "pure":
+          return atLeast(info.firmware, [3, 13, 0]);
+        case "touch":
+          return atLeast(info.firmware, [4, 12, 0]);
+        case "pro":
+          return atLeast(info.firmware, [4, 16, 0]);
+        case "mini":
+          return false;
+      }
   }
 }
 

@@ -30,3 +30,7 @@ export { decode, defineMessage, encode } from "./proto.ts";
 export type { Decoded, FieldSpec, Fields, MessageDef } from "./proto.ts";
 export { call } from "./session.ts";
 export type { Exchange, Request } from "./session.ts";
+export { signSolanaRawMessage, signSolanaTransaction, solanaDisplay } from "./solana.ts";
+export type { SolanaDisplayRequest } from "./solana.ts";
+export { signTronMessage, signTronTransaction, tronDisplay } from "./tron.ts";
+export type { TronDisplayRequest } from "./tron.ts";

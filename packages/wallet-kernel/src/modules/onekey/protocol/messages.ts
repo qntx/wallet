@@ -622,3 +622,370 @@ export const EthereumSignTypedHashOneKey: MessageDef<EthereumSignTypedHashOneKey
     messageHash: { no: 3, kind: "bytes", rule: "optional" },
     chainId: { no: 4, kind: "uint64", rule: "optional" },
   });
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaSignTx — the pro-only
+// extra_info field 3 is omitted (the host never sends ATA details).
+export type SolanaSignTxFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  rawTx: Field<"bytes", 2, "required">;
+};
+export const SolanaSignTx: MessageDef<SolanaSignTxFields> = defineMessage(10_102, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  rawTx: { no: 2, kind: "bytes", rule: "required" },
+});
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaSignedTx
+export type SolanaSignedTxFields = { signature: Field<"bytes", 1, "required"> };
+export const SolanaSignedTx: MessageDef<SolanaSignedTxFields> = defineMessage(10_103, {
+  signature: { no: 1, kind: "bytes", rule: "required" },
+});
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaMessageSignature — also the
+// answer to SolanaSignOffChainMessage, which this client does not send.
+export type SolanaMessageSignatureFields = {
+  signature: Field<"bytes", 1, "required">;
+  publicKey: Field<"bytes", 2, "optional">;
+};
+export const SolanaMessageSignature: MessageDef<SolanaMessageSignatureFields> = defineMessage(
+  10_105,
+  {
+    signature: { no: 1, kind: "bytes", rule: "required" },
+    publicKey: { no: 2, kind: "bytes", rule: "optional" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaSignUnsafeMessage
+export type SolanaSignUnsafeMessageFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  message: Field<"bytes", 2, "required">;
+};
+export const SolanaSignUnsafeMessage: MessageDef<SolanaSignUnsafeMessageFields> = defineMessage(
+  10_106,
+  {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    message: { no: 2, kind: "bytes", rule: "required" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-tron.proto — the TronContract oneof members.
+// Every nested contract is a record, not a wire message.
+export type TronTransferContractFields = {
+  toAddress: Field<"string", 2, "optional">;
+  amount: Field<"uint64", 3, "optional">;
+};
+export const TronTransferContract: MessageDef<TronTransferContractFields> = {
+  typeId: -1,
+  fields: {
+    toAddress: { no: 2, kind: "string", rule: "optional" },
+    amount: { no: 3, kind: "uint64", rule: "optional" },
+  },
+};
+
+export type TronVoteFields = {
+  voteAddress: Field<"string", 1, "required">;
+  voteCount: Field<"uint32", 2, "required">;
+};
+export const TronVote: MessageDef<TronVoteFields> = {
+  typeId: -1,
+  fields: {
+    voteAddress: { no: 1, kind: "string", rule: "required" },
+    voteCount: { no: 2, kind: "uint32", rule: "required" },
+  },
+};
+
+export type TronVoteWitnessContractFields = {
+  votes: MsgField<2, "repeated", typeof TronVote>;
+  support: Field<"bool", 3, "optional">;
+};
+export const TronVoteWitnessContract: MessageDef<TronVoteWitnessContractFields> = {
+  typeId: -1,
+  fields: {
+    votes: { no: 2, kind: "message", rule: "repeated", message: TronVote },
+    support: { no: 3, kind: "bool", rule: "optional" },
+  },
+};
+
+export type TronFreezeBalanceContractFields = {
+  frozenBalance: Field<"uint64", 1, "optional">;
+  frozenDuration: Field<"uint64", 2, "optional">;
+  resource: Field<"enum", 3, "optional">;
+  receiverAddress: Field<"string", 4, "optional">;
+};
+export const TronFreezeBalanceContract: MessageDef<TronFreezeBalanceContractFields> = {
+  typeId: -1,
+  fields: {
+    frozenBalance: { no: 1, kind: "uint64", rule: "optional" },
+    frozenDuration: { no: 2, kind: "uint64", rule: "optional" },
+    resource: { no: 3, kind: "enum", rule: "optional" },
+    receiverAddress: { no: 4, kind: "string", rule: "optional" },
+  },
+};
+
+export type TronUnfreezeBalanceContractFields = {
+  resource: Field<"enum", 1, "optional">;
+  receiverAddress: Field<"string", 2, "optional">;
+};
+export const TronUnfreezeBalanceContract: MessageDef<TronUnfreezeBalanceContractFields> = {
+  typeId: -1,
+  fields: {
+    resource: { no: 1, kind: "enum", rule: "optional" },
+    receiverAddress: { no: 2, kind: "string", rule: "optional" },
+  },
+};
+
+export type TronWithdrawBalanceContractFields = {
+  ownerAddress: Field<"bytes", 1, "optional">;
+};
+export const TronWithdrawBalanceContract: MessageDef<TronWithdrawBalanceContractFields> = {
+  typeId: -1,
+  fields: {
+    ownerAddress: { no: 1, kind: "bytes", rule: "optional" },
+  },
+};
+
+export type TronTriggerSmartContractFields = {
+  contractAddress: Field<"string", 2, "optional">;
+  callValue: Field<"uint64", 3, "optional">;
+  data: Field<"bytes", 4, "optional">;
+  callTokenValue: Field<"uint64", 5, "optional">;
+  assetId: Field<"uint64", 6, "optional">;
+};
+export const TronTriggerSmartContract: MessageDef<TronTriggerSmartContractFields> = {
+  typeId: -1,
+  fields: {
+    contractAddress: { no: 2, kind: "string", rule: "optional" },
+    callValue: { no: 3, kind: "uint64", rule: "optional" },
+    data: { no: 4, kind: "bytes", rule: "optional" },
+    callTokenValue: { no: 5, kind: "uint64", rule: "optional" },
+    assetId: { no: 6, kind: "uint64", rule: "optional" },
+  },
+};
+
+export type TronFreezeBalanceV2ContractFields = {
+  frozenBalance: Field<"uint64", 2, "optional">;
+  resource: Field<"enum", 3, "optional">;
+};
+export const TronFreezeBalanceV2Contract: MessageDef<TronFreezeBalanceV2ContractFields> = {
+  typeId: -1,
+  fields: {
+    frozenBalance: { no: 2, kind: "uint64", rule: "optional" },
+    resource: { no: 3, kind: "enum", rule: "optional" },
+  },
+};
+
+export type TronUnfreezeBalanceV2ContractFields = {
+  unfreezeBalance: Field<"uint64", 2, "optional">;
+  resource: Field<"enum", 3, "optional">;
+};
+export const TronUnfreezeBalanceV2Contract: MessageDef<TronUnfreezeBalanceV2ContractFields> = {
+  typeId: -1,
+  fields: {
+    unfreezeBalance: { no: 2, kind: "uint64", rule: "optional" },
+    resource: { no: 3, kind: "enum", rule: "optional" },
+  },
+};
+
+export type TronWithdrawExpireUnfreezeContractFields = Record<never, never>;
+export const TronWithdrawExpireUnfreezeContract: MessageDef<TronWithdrawExpireUnfreezeContractFields> =
+  {
+    typeId: -1,
+    fields: {},
+  };
+
+export type TronDelegateResourceContractFields = {
+  resource: Field<"enum", 2, "optional">;
+  balance: Field<"uint64", 3, "optional">;
+  receiverAddress: Field<"string", 4, "optional">;
+  lock: Field<"bool", 5, "optional">;
+  lockPeriod: Field<"uint64", 6, "optional">;
+};
+export const TronDelegateResourceContract: MessageDef<TronDelegateResourceContractFields> = {
+  typeId: -1,
+  fields: {
+    resource: { no: 2, kind: "enum", rule: "optional" },
+    balance: { no: 3, kind: "uint64", rule: "optional" },
+    receiverAddress: { no: 4, kind: "string", rule: "optional" },
+    lock: { no: 5, kind: "bool", rule: "optional" },
+    lockPeriod: { no: 6, kind: "uint64", rule: "optional" },
+  },
+};
+
+export type TronUnDelegateResourceContractFields = {
+  resource: Field<"enum", 2, "optional">;
+  balance: Field<"uint64", 3, "optional">;
+  receiverAddress: Field<"string", 4, "optional">;
+};
+export const TronUnDelegateResourceContract: MessageDef<TronUnDelegateResourceContractFields> = {
+  typeId: -1,
+  fields: {
+    resource: { no: 2, kind: "enum", rule: "optional" },
+    balance: { no: 3, kind: "uint64", rule: "optional" },
+    receiverAddress: { no: 4, kind: "string", rule: "optional" },
+  },
+};
+
+export type TronCancelAllUnfreezeV2ContractFields = Record<never, never>;
+export const TronCancelAllUnfreezeV2Contract: MessageDef<TronCancelAllUnfreezeV2ContractFields> = {
+  typeId: -1,
+  fields: {},
+};
+
+// TronContract — the oneof. provider is field 3 and contract_name field 5 on the wire even though
+// the chain encoding puts ContractName at field 4 and Permission_id at field 5 (the firmware
+// remaps them; core/src/apps/tron/serialize.py pack_contract, legacy/firmware/tron.c
+// pack_contract).
+export type TronContractFields = {
+  transferContract: MsgField<2, "optional", typeof TronTransferContract>;
+  provider: Field<"bytes", 3, "optional">;
+  voteWitnessContract: MsgField<4, "optional", typeof TronVoteWitnessContract>;
+  contractName: Field<"bytes", 5, "optional">;
+  permissionId: Field<"uint32", 6, "optional">;
+  freezeBalanceContract: MsgField<11, "optional", typeof TronFreezeBalanceContract>;
+  unfreezeBalanceContract: MsgField<12, "optional", typeof TronUnfreezeBalanceContract>;
+  withdrawBalanceContract: MsgField<13, "optional", typeof TronWithdrawBalanceContract>;
+  triggerSmartContract: MsgField<31, "optional", typeof TronTriggerSmartContract>;
+  freezeBalanceV2Contract: MsgField<54, "optional", typeof TronFreezeBalanceV2Contract>;
+  unfreezeBalanceV2Contract: MsgField<55, "optional", typeof TronUnfreezeBalanceV2Contract>;
+  withdrawExpireUnfreezeContract: MsgField<
+    56,
+    "optional",
+    typeof TronWithdrawExpireUnfreezeContract
+  >;
+  delegateResourceContract: MsgField<57, "optional", typeof TronDelegateResourceContract>;
+  undelegateResourceContract: MsgField<58, "optional", typeof TronUnDelegateResourceContract>;
+  cancelAllUnfreezeV2Contract: MsgField<59, "optional", typeof TronCancelAllUnfreezeV2Contract>;
+};
+export const TronContract: MessageDef<TronContractFields> = {
+  typeId: -1,
+  fields: {
+    transferContract: {
+      no: 2,
+      kind: "message",
+      rule: "optional",
+      message: TronTransferContract,
+    },
+    provider: { no: 3, kind: "bytes", rule: "optional" },
+    voteWitnessContract: {
+      no: 4,
+      kind: "message",
+      rule: "optional",
+      message: TronVoteWitnessContract,
+    },
+    contractName: { no: 5, kind: "bytes", rule: "optional" },
+    permissionId: { no: 6, kind: "uint32", rule: "optional" },
+    freezeBalanceContract: {
+      no: 11,
+      kind: "message",
+      rule: "optional",
+      message: TronFreezeBalanceContract,
+    },
+    unfreezeBalanceContract: {
+      no: 12,
+      kind: "message",
+      rule: "optional",
+      message: TronUnfreezeBalanceContract,
+    },
+    withdrawBalanceContract: {
+      no: 13,
+      kind: "message",
+      rule: "optional",
+      message: TronWithdrawBalanceContract,
+    },
+    triggerSmartContract: {
+      no: 31,
+      kind: "message",
+      rule: "optional",
+      message: TronTriggerSmartContract,
+    },
+    freezeBalanceV2Contract: {
+      no: 54,
+      kind: "message",
+      rule: "optional",
+      message: TronFreezeBalanceV2Contract,
+    },
+    unfreezeBalanceV2Contract: {
+      no: 55,
+      kind: "message",
+      rule: "optional",
+      message: TronUnfreezeBalanceV2Contract,
+    },
+    withdrawExpireUnfreezeContract: {
+      no: 56,
+      kind: "message",
+      rule: "optional",
+      message: TronWithdrawExpireUnfreezeContract,
+    },
+    delegateResourceContract: {
+      no: 57,
+      kind: "message",
+      rule: "optional",
+      message: TronDelegateResourceContract,
+    },
+    undelegateResourceContract: {
+      no: 58,
+      kind: "message",
+      rule: "optional",
+      message: TronUnDelegateResourceContract,
+    },
+    cancelAllUnfreezeV2Contract: {
+      no: 59,
+      kind: "message",
+      rule: "optional",
+      message: TronCancelAllUnfreezeV2Contract,
+    },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronSignTx
+export type TronSignTxFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  refBlockBytes: Field<"bytes", 2, "required">;
+  refBlockHash: Field<"bytes", 3, "required">;
+  expiration: Field<"uint64", 4, "required">;
+  data: Field<"bytes", 5, "optional">;
+  contract: MsgField<6, "required", typeof TronContract>;
+  timestamp: Field<"uint64", 7, "required">;
+  feeLimit: Field<"uint64", 8, "optional">;
+};
+export const TronSignTx: MessageDef<TronSignTxFields> = defineMessage(10_503, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  refBlockBytes: { no: 2, kind: "bytes", rule: "required" },
+  refBlockHash: { no: 3, kind: "bytes", rule: "required" },
+  expiration: { no: 4, kind: "uint64", rule: "required" },
+  data: { no: 5, kind: "bytes", rule: "optional" },
+  contract: { no: 6, kind: "message", rule: "required", message: TronContract },
+  timestamp: { no: 7, kind: "uint64", rule: "required" },
+  feeLimit: { no: 8, kind: "uint64", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronSignedTx
+export type TronSignedTxFields = {
+  signature: Field<"bytes", 1, "required">;
+  serializedTx: Field<"bytes", 2, "optional">;
+};
+export const TronSignedTx: MessageDef<TronSignedTxFields> = defineMessage(10_504, {
+  signature: { no: 1, kind: "bytes", rule: "required" },
+  serializedTx: { no: 2, kind: "bytes", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronSignMessage
+export type TronSignMessageFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  message: Field<"bytes", 2, "required">;
+  messageType: Field<"enum", 3, "optional">;
+};
+export const TronSignMessage: MessageDef<TronSignMessageFields> = defineMessage(10_505, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  message: { no: 2, kind: "bytes", rule: "required" },
+  messageType: { no: 3, kind: "enum", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronMessageSignature
+export type TronMessageSignatureFields = {
+  address: Field<"bytes", 1, "required">;
+  signature: Field<"bytes", 2, "required">;
+};
+export const TronMessageSignature: MessageDef<TronMessageSignatureFields> = defineMessage(10_506, {
+  address: { no: 1, kind: "bytes", rule: "required" },
+  signature: { no: 2, kind: "bytes", rule: "required" },
+});
